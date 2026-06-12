@@ -1,0 +1,37 @@
+{
+  "name": "sandbox-benchmarks",
+  "private": true,
+  "type": "module",
+  "workspaces": {
+    "packages": [
+      "packages/*",
+      "apps/*",
+      "tooling/*"
+    ],
+    "catalog": {
+      "typescript": "6.0.3",
+      "@types/bun": "1.3.14",
+      "arktype": "2.2.0",
+      "dotenv": "17.4.2"
+    },
+    "catalogs": {
+      "computesdk": {
+        "computesdk": "4.1.3",
+        "e2b": "2.27.1",
+        "@daytonaio/sdk": "0.184.0",
+        "modal": "0.7.6"
+      }
+    }
+  },
+  "scripts": {
+    "typecheck": "bun --filter '!./' --filter '*' --if-present typecheck",
+    "test": "bun --filter '!./' --filter '*' --if-present test",
+    "lint": "biome check .",
+    "format": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.16",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}

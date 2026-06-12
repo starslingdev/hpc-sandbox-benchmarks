@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "@repo/tsconfig library — extended by packages/*",
+  "extends": "./base.json"
+}
