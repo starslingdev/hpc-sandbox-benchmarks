@@ -10,6 +10,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/harness": {
+      "name": "@sandbox-benchmarks/harness",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/providers": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/providers": {
       "name": "@sandbox-benchmarks/providers",
       "version": "0.0.0",
@@ -40,6 +53,20 @@
       "version": "0.0.0",
       "dependencies": {
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/templates": {
+      "name": "@sandbox-benchmarks/templates",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/providers": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "computesdk": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -107,11 +134,15 @@
 
     "@repo/tsconfig": ["@repo/tsconfig@workspace:tooling/tsconfig"],
 
+    "@sandbox-benchmarks/harness": ["@sandbox-benchmarks/harness@workspace:packages/harness"],
+
     "@sandbox-benchmarks/providers": ["@sandbox-benchmarks/providers@workspace:packages/providers"],
 
     "@sandbox-benchmarks/results": ["@sandbox-benchmarks/results@workspace:packages/results"],
 
     "@sandbox-benchmarks/schema": ["@sandbox-benchmarks/schema@workspace:packages/schema"],
+
+    "@sandbox-benchmarks/templates": ["@sandbox-benchmarks/templates@workspace:packages/templates"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

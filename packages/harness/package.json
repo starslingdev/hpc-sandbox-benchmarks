@@ -1,0 +1,22 @@
+{
+  "name": "@sandbox-benchmarks/harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sandbox-benchmarks/providers": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}

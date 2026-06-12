@@ -1,0 +1,26 @@
+{
+  "name": "@sandbox-benchmarks/templates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./e2b": "./src/e2b.ts",
+    "./daytona": "./src/daytona.ts",
+    "./modal": "./src/modal.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sandbox-benchmarks/providers": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*",
+    "computesdk": "catalog:computesdk"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}
