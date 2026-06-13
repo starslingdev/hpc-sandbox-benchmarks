@@ -8,14 +8,14 @@ import { computeSdkExportCount, emptyCapabilities } from "./lib/internal.ts";
  * Stub — the real adapter interface lands in the providers implementation pass.
  */
 export interface ProviderAdapter {
-  descriptor: ProviderDescriptor;
+	descriptor: ProviderDescriptor;
 }
 
 /** Build a stub adapter for a provider id with no capabilities yet. */
 export function createStubAdapter(id: string, displayName: string): ProviderAdapter {
-  return {
-    descriptor: { id, displayName, capabilities: emptyCapabilities() },
-  };
+	return {
+		descriptor: { id, displayName, capabilities: emptyCapabilities() },
+	};
 }
 
 /** Re-exported witness that the computesdk surface is reachable and non-empty. */

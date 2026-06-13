@@ -11,9 +11,9 @@ export { buildDaytonaTemplate, buildE2bTemplate, buildModalTemplate };
 /** Each provider id mapped to its template builder. `templateProviders` is derived from these
  *  keys, so the published id list can't drift from the builders that actually exist. */
 const templateBuilders = {
-  e2b: buildE2bTemplate,
-  daytona: buildDaytonaTemplate,
-  modal: buildModalTemplate,
+	e2b: buildE2bTemplate,
+	daytona: buildDaytonaTemplate,
+	modal: buildModalTemplate,
 } satisfies Record<string, (tag?: string) => TemplateSpec>;
 
 /** All provider ids that ship a template builder this pass. */
