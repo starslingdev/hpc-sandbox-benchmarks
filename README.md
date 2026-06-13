@@ -58,8 +58,19 @@ private `lib/`.
 | `bun run format`     | `biome format . --write` — formatting only (no import sorting / lint fixes). |
 | `bun run lint:fix`   | `biome check . --write` — formatting + import sorting + safe lint fixes. |
 | `bun run lint:fix:unsafe` | `biome check . --fix --unsafe` — also applies behavior-changing fixes; review the diff. |
+| `bun run spell`      | `typos` — source-code spell check (run it before pushing).              |
+| `bun run spell:fix`  | `typos --write-changes` — apply typos' suggested corrections.            |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
+
+## Toolchain (mise)
+
+Non-Bun tools are version-pinned in [`mise.toml`](mise.toml) and managed with
+[mise](https://mise.jdx.dev). Today that's [`typos`](https://github.com/crate-ci/typos), the
+spell checker behind `bun run spell`. After cloning, run `mise install` (and `mise trust` once) so
+the pinned binaries are available; `bun run spell` invokes typos through `mise exec`, so it always
+uses the pinned version. mise fetches from official release sources with checksum verification — no
+npm republisher and no install-time postinstall.
 
 ## Continuous integration
 

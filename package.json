@@ -30,6 +30,8 @@
     "lint": "biome check . --error-on-warnings",
     "lint:fix": "biome check . --write",
     "lint:fix:unsafe": "biome check . --fix --unsafe",
+    "spell": "mise exec -- typos",
+    "spell:fix": "mise exec -- typos --write-changes",
     "prepare": "lefthook install"
   },
   "devDependencies": {

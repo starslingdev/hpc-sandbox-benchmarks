@@ -1,0 +1,7 @@
+# Non-Bun developer tools, version-pinned and installed by `mise install` (or on demand via
+# `mise exec`). mise fetches from official sources with checksum verification — `typos` resolves
+# to the official `aqua:crate-ci/typos` release, not an npm republisher, so nothing here runs a
+# postinstall or needs Bun `trustedDependencies`. Run `mise trust` once after cloning.
+
+[tools]
+typos = "1.47.2"

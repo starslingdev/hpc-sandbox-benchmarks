@@ -1,0 +1,9 @@
+# typos (https://github.com/crate-ci/typos) config. The checker is pinned in mise.toml and run
+# via `bun run spell` / `bun run spell:fix`, locally (pre-commit) and in CI. When typos flags an
+# intentional identifier, add it under [default.extend-words] rather than rewording the code.
+
+[files]
+# The lockfile is generated and full of hashes/identifiers — don't spell-check it.
+extend-exclude = ["bun.lock"]
+
+[default.extend-words]
