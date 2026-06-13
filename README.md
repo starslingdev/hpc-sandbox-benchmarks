@@ -61,6 +61,13 @@ private `lib/`.
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the command contract on every pull request and every push to
+`main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
+`bun run typecheck` → `bun run test`. The same checks run locally, so green-on-your-machine means
+green-in-CI.
+
 ## Supply-chain posture
 
 `bunfig.toml` sets `minimumReleaseAge = 604800` (7 days) so freshly published — possibly
