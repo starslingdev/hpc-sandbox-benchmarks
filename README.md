@@ -83,9 +83,13 @@ green-in-CI.
 ## Git hooks (pre-commit)
 
 [Lefthook](https://lefthook.dev) runs a fast local mirror of CI on every commit, configured in
-`lefthook.yml`. On staged files it runs Biome (`biome check --write`, restaging any auto-fixes;
-unfixable issues or warnings block the commit) and, when a manifest or the lockfile is touched,
-re-checks `bun install --frozen-lockfile` so `package.json` and `bun.lock` can't drift apart.
+`lefthook.yml`:
+
+- **Biome** on staged files (`biome check --write`, restaging any auto-fixes; unfixable issues or
+  warnings block the commit).
+- **Typos** repo-wide (`bun run spell`) — read-only, so run `bun run spell:fix` to apply corrections.
+- **Lockfile** check (`bun install --frozen-lockfile`) when a manifest or `bun.lock` is staged, so
+  `package.json` and `bun.lock` can't drift apart.
 
 `bun install` wires the hooks automatically via the project's own `prepare` script
 (`lefthook install`) — no third-party postinstall runs. Re-install them with `bunx lefthook

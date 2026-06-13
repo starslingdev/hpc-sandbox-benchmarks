@@ -15,6 +15,12 @@ pre-commit:
     biome:
       run: bun biome check --write --error-on-warnings --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
       stage_fixed: true
+    # Spell-check with typos (pinned in mise.toml), repo-wide so its config excludes (e.g. the
+    # generated lockfile) apply — typos ignores excludes when handed explicit file paths. Repo-wide
+    # means a typo anywhere (not only in staged files) blocks the commit. Read-only: run
+    # `bun run spell:fix` to apply corrections (it can rename identifiers, so review them).
+    typos:
+      run: bun run spell
     # Touch a manifest or the lockfile and the two must agree (--frozen-lockfile fails on drift).
     lockfile:
       glob: "{package.json,bun.lock,packages/*/package.json,apps/*/package.json,tooling/*/package.json}"
