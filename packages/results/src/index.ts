@@ -5,10 +5,10 @@ import { isoNow } from "./lib/internal.ts";
 
 /** Normalize a single raw run into a {@link RunDocument}. Stub logic. */
 export function normalize(raw: RawRun): RunDocument {
-  return {
-    provider: raw.provider,
-    operation: raw.operation,
-    durationMs: raw.durationMs,
-    normalizedAt: isoNow(),
-  };
+	return {
+		provider: raw.provider,
+		operation: raw.operation,
+		durationMs: raw.durationMs,
+		normalizedAt: isoNow(),
+	};
 }
