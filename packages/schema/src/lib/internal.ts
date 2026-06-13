@@ -7,9 +7,9 @@ import { type } from "arktype";
  * Stub shape — real fields land in the schema implementation pass.
  */
 export const rawRunSchema = type({
-  provider: "string",
-  operation: "string",
-  // A real benchmarked operation always takes measurable wall-clock time; a 0ms (or negative)
-  // duration is a timing error or dropped observation, so reject it at the boundary.
-  durationMs: "number>0",
+	provider: "string",
+	operation: "string",
+	// A real benchmarked operation always takes measurable wall-clock time; a 0ms (or negative)
+	// duration is a timing error or dropped observation, so reject it at the boundary.
+	durationMs: "number>0",
 });

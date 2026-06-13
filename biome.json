@@ -1,20 +1,26 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "root": true,
   "vcs": {
     "enabled": true,
     "clientKind": "git",
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/bun.lock"]
+    "ignoreUnknown": true
   },
   "formatter": {
     "enabled": true,
-    "indentStyle": "space",
-    "indentWidth": 2,
+    "indentStyle": "tab",
     "lineWidth": 100
   },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
   "assist": {
+    "enabled": true,
     "actions": {
       "source": {
         "organizeImports": "on"
@@ -24,12 +30,83 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "style": {
+        "useImportType": {
+          "level": "error",
+          "options": {
+            "style": "separatedType"
+          }
+        },
+        "useNodejsImportProtocol": "error",
+        "useConst": "error"
+      },
+      "suspicious": {
+        "noTsIgnore": "error",
+        "noDebugger": "error"
+      },
+      "performance": {
+        "noDelete": "error"
+      },
+      "complexity": {
+        "useDateNow": "error"
+      },
+      "correctness": {
+        "noUnusedImports": "warn",
+        "noUnusedVariables": "warn"
+      },
+      "nursery": {
+        "noFloatingPromises": "warn",
+        "noMisusedPromises": "warn"
+      }
     }
   },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "double"
+  "overrides": [
+    {
+      "includes": ["**/*.json"],
+      "formatter": {
+        "indentStyle": "space",
+        "indentWidth": 2
+      }
+    },
+    {
+      "includes": ["packages/**/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedTypes": {
+              "level": "error",
+              "options": {
+                "types": {
+                  "Buffer": {
+                    "message": "Buffer is Node-specific. Use `Uint8Array` for cross-runtime code.",
+                    "use": "Uint8Array"
+                  }
+                }
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Buffer": "Buffer is Node-specific. Use `Uint8Array` for cross-runtime code."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.*", "**/*.spec.*", "**/test/**", "**/__tests__/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedTypes": "off",
+            "noRestrictedGlobals": "off"
+          }
+        }
+      }
     }
-  }
+  ]
 }

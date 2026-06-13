@@ -26,8 +26,10 @@
   "scripts": {
     "typecheck": "bun --filter '!./' --filter '*' --if-present typecheck",
     "test": "bun --filter '!./' --filter '*' --if-present test",
-    "lint": "biome check .",
-    "format": "biome check --write ."
+    "format": "biome format . --write",
+    "lint": "biome check . --error-on-warnings",
+    "lint:fix": "biome check . --write",
+    "lint:fix:unsafe": "biome check . --fix --unsafe"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",

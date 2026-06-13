@@ -12,12 +12,12 @@ export type CapabilityFlags = Record<Capability, boolean>;
 
 /** Static description of a sandbox provider. */
 export interface ProviderDescriptor {
-  /** Stable identifier, e.g. "e2b", "daytona", "modal". */
-  id: string;
-  /** Human-readable name. */
-  displayName: string;
-  /** Capabilities the provider supports. */
-  capabilities: CapabilityFlags;
+	/** Stable identifier, e.g. "e2b", "daytona", "modal". */
+	id: string;
+	/** Human-readable name. */
+	displayName: string;
+	/** Capabilities the provider supports. */
+	capabilities: CapabilityFlags;
 }
 
 /**
@@ -28,18 +28,18 @@ export type RawRun = typeof rawRunSchema.infer;
 
 /** A normalized run document, as produced by @sandbox-benchmarks/results. */
 export interface RunDocument {
-  provider: string;
-  operation: string;
-  durationMs: number;
-  /** ISO-8601 timestamp the document was normalized at. */
-  normalizedAt: string;
+	provider: string;
+	operation: string;
+	durationMs: number;
+	/** ISO-8601 timestamp the document was normalized at. */
+	normalizedAt: string;
 }
 
 /** Validate an unknown value as a {@link RawRun} using the arktype schema. */
 export function parseRawRun(value: unknown): RawRun {
-  const out = rawRunSchema(value);
-  if (out instanceof type.errors) {
-    throw new Error(`invalid RawRun: ${out.summary}`);
-  }
-  return out;
+	const out = rawRunSchema(value);
+	if (out instanceof type.errors) {
+		throw new Error(`invalid RawRun: ${out.summary}`);
+	}
+	return out;
 }

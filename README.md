@@ -54,8 +54,10 @@ private `lib/`.
 | `bun install`        | Resolve the graph, symlink workspaces, install catalogs (≥7-day-old releases). |
 | `bun run typecheck`  | `tsc --noEmit` per member — proof of source-first/no-build.             |
 | `bun run test`       | `bun test` per member, including the repo-checks invariants.            |
-| `bun run lint`       | `biome check .` (root-only Biome config).                               |
-| `bun run format`     | `biome check --write .`                                                 |
+| `bun run lint`       | `biome check . --error-on-warnings` — CI gate; warnings fail (root-only Biome config). |
+| `bun run format`     | `biome format . --write` — formatting only (no import sorting / lint fixes). |
+| `bun run lint:fix`   | `biome check . --write` — formatting + import sorting + safe lint fixes. |
+| `bun run lint:fix:unsafe` | `biome check . --fix --unsafe` — also applies behavior-changing fixes; review the diff. |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 
