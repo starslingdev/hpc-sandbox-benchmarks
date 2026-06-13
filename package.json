@@ -29,10 +29,12 @@
     "format": "biome format . --write",
     "lint": "biome check . --error-on-warnings",
     "lint:fix": "biome check . --write",
-    "lint:fix:unsafe": "biome check . --fix --unsafe"
+    "lint:fix:unsafe": "biome check . --fix --unsafe",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
+    "lefthook": "2.1.9",
     "typescript": "catalog:",
     "@types/bun": "catalog:"
   }

@@ -4,9 +4,10 @@
 linker = "hoisted"
 
 # Supply-chain posture (PRD): no third-party lifecycle scripts run.
-# Bun only runs preinstall/install/postinstall/prepare scripts for packages listed in
-# `trustedDependencies` — we declare none, so nothing third-party executes at install time.
-# Add a package there as a documented exception only when genuinely required.
+# Bun runs preinstall/install/postinstall/prepare scripts for a *dependency* only when it is listed
+# in `trustedDependencies` — we declare none, so nothing third-party executes at install time.
+# (The root package's OWN scripts still run; that's how `prepare: lefthook install` wires git hooks.)
+# Add a package to trustedDependencies as a documented exception only when genuinely required.
 
 # Refuse to install any npm release younger than 7 days, blunting compromised-release attacks.
 minimumReleaseAge = 604800

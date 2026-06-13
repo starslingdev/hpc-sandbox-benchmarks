@@ -1,0 +1,21 @@
+# Local mirror of the CI checks (.github/workflows/ci.yml): every commit must leave its staged
+# changes Biome-clean and the bun lockfile in sync with the package manifests.
+#
+# Installed automatically by `bun install` via the project's own `prepare` script, which runs
+# `lefthook install` to wire the .git hooks — no third-party postinstall (trustedDependencies
+# stays empty). Re-wire with `bunx lefthook install`; skip a one-off commit with `LEFTHOOK=0 git commit`.
+
+pre-commit:
+  # Sequential (no `parallel`): Biome's stage_fixed (`git add`) finishes before the lockfile check
+  # shells out to `bun install`, so there's no concurrent git-index or manifest access.
+  commands:
+    # Format + lint + organize imports on staged files, restaging whatever Biome auto-fixes.
+    # Anything Biome can't fix — and any warning — blocks the commit, matching `bun run lint`.
+    # `bun biome` runs the local binary directly (no bunx resolution overhead).
+    biome:
+      run: bun biome check --write --error-on-warnings --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
+      stage_fixed: true
+    # Touch a manifest or the lockfile and the two must agree (--frozen-lockfile fails on drift).
+    lockfile:
+      glob: "{package.json,bun.lock,packages/*/package.json,apps/*/package.json,tooling/*/package.json}"
+      run: bun install --frozen-lockfile --ignore-scripts

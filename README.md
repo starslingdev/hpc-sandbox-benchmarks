@@ -68,8 +68,21 @@ Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 `bun run typecheck` → `bun run test`. The same checks run locally, so green-on-your-machine means
 green-in-CI.
 
+## Git hooks (pre-commit)
+
+[Lefthook](https://lefthook.dev) runs a fast local mirror of CI on every commit, configured in
+`lefthook.yml`. On staged files it runs Biome (`biome check --write`, restaging any auto-fixes;
+unfixable issues or warnings block the commit) and, when a manifest or the lockfile is touched,
+re-checks `bun install --frozen-lockfile` so `package.json` and `bun.lock` can't drift apart.
+
+`bun install` wires the hooks automatically via the project's own `prepare` script
+(`lefthook install`) — no third-party postinstall runs. Re-install them with `bunx lefthook
+install`, and bypass a single commit with `LEFTHOOK=0 git commit`.
+
 ## Supply-chain posture
 
 `bunfig.toml` sets `minimumReleaseAge = 604800` (7 days) so freshly published — possibly
-compromised — releases are not installed, and runs no third-party lifecycle scripts (empty
-`trustedDependencies`). Lint and formatting are root-only via a single `biome.json`.
+compromised — releases are not installed, and **no third-party lifecycle scripts run** (empty
+`trustedDependencies`). The git hooks above are wired by the project's own first-party `prepare`
+script, not a dependency's postinstall, and CI installs with `--ignore-scripts` so it runs none
+either. Lint and formatting are root-only via a single `biome.json`.
