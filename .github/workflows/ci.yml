@@ -1,7 +1,7 @@
 name: CI
 
 # Runs the README's "command contract" on every PR (and every push to main): the same Biome
-# lint, typecheck, and tests a developer runs locally must pass before code can merge.
+# lint, typecheck, tests, and spell check a developer runs locally must pass before code can merge.
 on:
   push:
     branches: [main]
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   check:
-    name: Lint, typecheck & test
+    name: Lint, typecheck, test & spell
     runs-on: starsling-ubuntu-24.04-2
     # The runner is self-hosted, so never execute untrusted fork-PR code on it: run only for
     # pushes and pull requests whose head is this same repository (fork PRs are skipped).
@@ -37,6 +37,15 @@ jobs:
           # Pinned to the toolchain version the repo develops against.
           bun-version: 1.3.14
 
+      # Installs the version-pinned tools from mise.toml (typos) with checksum verification, and
+      # caches them. mise itself is version-pinned for reproducibility.
+      - name: Set up mise tools
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          version: 2026.5.16
+          install: true
+          cache: true
+
       # Frozen lockfile: fail if package.json and bun.lock have drifted. --ignore-scripts so CI
       # runs zero lifecycle scripts, matching bunfig.toml's supply-chain posture (minimumReleaseAge,
       # no third-party postinstalls).
@@ -52,3 +61,7 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      # Spelling gate — typos (pinned in mise.toml); misspellings fail the build.
+      - name: Spell (typos)
+        run: bun run spell

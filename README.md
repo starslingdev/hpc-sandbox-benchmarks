@@ -76,7 +76,8 @@ npm republisher and no install-time postinstall.
 
 `.github/workflows/ci.yml` runs the command contract on every pull request and every push to
 `main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
-`bun run typecheck` → `bun run test`. The same checks run locally, so green-on-your-machine means
+`bun run typecheck` → `bun run test` → `bun run spell` (typos, set up via
+[mise](https://mise.jdx.dev)). The same checks run locally, so green-on-your-machine means
 green-in-CI.
 
 ## Git hooks (pre-commit)
