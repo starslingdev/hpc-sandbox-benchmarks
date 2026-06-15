@@ -1,0 +1,31 @@
+{
+  "name": "@sandbox-benchmarks/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "bench-lifecycle": "./src/bin/bench-lifecycle.ts",
+    "bench-suite": "./src/bin/bench-suite.ts",
+    "plan-matrix": "./src/bin/plan-matrix.ts",
+    "build-template": "./src/bin/build-template.ts",
+    "normalize": "./src/bin/normalize.ts",
+    "promote": "./src/bin/promote.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sandbox-benchmarks/schema": "workspace:*",
+    "@sandbox-benchmarks/providers": "workspace:*",
+    "@sandbox-benchmarks/templates": "workspace:*",
+    "@sandbox-benchmarks/harness": "workspace:*",
+    "@sandbox-benchmarks/results": "workspace:*",
+    "dotenv": "catalog:"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}

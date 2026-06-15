@@ -11,6 +11,31 @@
         "typescript": "catalog:",
       },
     },
+    "apps/cli": {
+      "name": "@sandbox-benchmarks/cli",
+      "version": "0.0.0",
+      "bin": {
+        "bench-lifecycle": "./src/bin/bench-lifecycle.ts",
+        "bench-suite": "./src/bin/bench-suite.ts",
+        "plan-matrix": "./src/bin/plan-matrix.ts",
+        "build-template": "./src/bin/build-template.ts",
+        "normalize": "./src/bin/normalize.ts",
+        "promote": "./src/bin/promote.ts",
+      },
+      "dependencies": {
+        "@sandbox-benchmarks/harness": "workspace:*",
+        "@sandbox-benchmarks/providers": "workspace:*",
+        "@sandbox-benchmarks/results": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "@sandbox-benchmarks/templates": "workspace:*",
+        "dotenv": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/harness": {
       "name": "@sandbox-benchmarks/harness",
       "version": "0.0.0",
@@ -135,6 +160,8 @@
 
     "@repo/tsconfig": ["@repo/tsconfig@workspace:tooling/tsconfig"],
 
+    "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
+
     "@sandbox-benchmarks/harness": ["@sandbox-benchmarks/harness@workspace:packages/harness"],
 
     "@sandbox-benchmarks/providers": ["@sandbox-benchmarks/providers@workspace:packages/providers"],
@@ -158,6 +185,8 @@
     "computesdk": ["computesdk@4.1.3", "", { "dependencies": { "@computesdk/cmd": "0.4.1", "daemond": "0.1.4" } }, "sha512-IVC7KenrhCyiGJ1FKTs7jzXTc+mJZNCljux39yzPeR2M48v6tr03YXTtiyefoJ+VZ1J/nVthrAqTF1ng+H4uOQ=="],
 
     "daemond": ["daemond@0.1.4", "", { "os": [ "linux", "darwin", ] }, "sha512-xiLScBiwYGGPmxfcAb24aH+FkmR/ZSd+PxOvigGpKda6OsDjE2Gj6/4oAX2N3hMWoL4atti1hYyF9dLV3FFM0A=="],
+
+    "dotenv": ["dotenv@17.4.2", "", {}, "sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw=="],
 
     "lefthook": ["lefthook@2.1.9", "", { "optionalDependencies": { "lefthook-darwin-arm64": "2.1.9", "lefthook-darwin-x64": "2.1.9", "lefthook-freebsd-arm64": "2.1.9", "lefthook-freebsd-x64": "2.1.9", "lefthook-linux-arm64": "2.1.9", "lefthook-linux-x64": "2.1.9", "lefthook-openbsd-arm64": "2.1.9", "lefthook-openbsd-x64": "2.1.9", "lefthook-windows-arm64": "2.1.9", "lefthook-windows-x64": "2.1.9" }, "bin": { "lefthook": "bin/index.js" } }, "sha512-bwDaIOViTktE8kJLf9jP0p+H2/RDTlFFlc43Am2YgUsX22hI6Sq4RbzsrecwzY5y+MHTipOH7WsmWSEniePHWQ=="],
 
