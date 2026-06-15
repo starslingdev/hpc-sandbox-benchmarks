@@ -100,6 +100,15 @@
         "typescript": "catalog:",
       },
     },
+    "tooling/repo-checks": {
+      "name": "@repo/repo-checks",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "tooling/test-utils": {
       "name": "@repo/test-utils",
       "version": "0.0.0",
@@ -155,6 +164,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.16", "", { "os": "win32", "cpu": "x64" }, "sha512-Kp85jgoBHa05gix6UIRjfCDiUV3w/8VIdZ247VyyO2gEjaw12WEVhdIjlxp/AMzXxqxQwbxNTDVZ3Mwd2RG5rw=="],
 
     "@computesdk/cmd": ["@computesdk/cmd@0.4.1", "", {}, "sha512-hhcYrwMnOpRSwWma3gkUeAVsDFG56nURwSaQx8vCepv0IuUv39bK4mMkgszolnUQrVjBDdW7b3lV+l5B2S8fRA=="],
+
+    "@repo/repo-checks": ["@repo/repo-checks@workspace:tooling/repo-checks"],
 
     "@repo/test-utils": ["@repo/test-utils@workspace:tooling/test-utils"],
 
