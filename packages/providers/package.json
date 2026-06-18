@@ -11,6 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@computesdk/daytona": "catalog:computesdk",
+    "@computesdk/e2b": "catalog:computesdk",
+    "@computesdk/modal": "catalog:computesdk",
     "@sandbox-benchmarks/schema": "workspace:*",
     "computesdk": "catalog:computesdk"
   },
