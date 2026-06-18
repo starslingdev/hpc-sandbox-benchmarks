@@ -1,0 +1,236 @@
+// Provider identity & economics — the static facts the comparison surfaces next to results:
+// isolation technology, pricing model, maturity, and whether the SDK can pin a target spec.
+// This is the SINGLE owner of Provider identity (`id`, `requiredEnvVars`); the harness adapter
+// in @sandbox-benchmarks/providers joins against it by id and refuses any one-sided provider.
+//
+// Validation status is deliberately NOT declared here: a provider is "validated" exactly when a
+// committed run carries real metrics for it (computed downstream), "pending" otherwise.
+
+/**
+ * Canonical provider ids — the single vocabulary every registry joins on. Adding an id forces a
+ * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
+ * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
+ */
+export type ProviderId = "e2b" | "daytona" | "modal";
+
+/** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
+export type SpecPinning = "settable" | "fixed" | "unknown";
+
+/**
+ * How a provider bills. A discriminated union so a vetted `per_vcpu_hour` rate cannot be declared
+ * without its `usdPerVcpuHour` — the missing-rate case is a compile error, not a silent `null`.
+ */
+export type ProviderPricing =
+	| {
+			model: "per_vcpu_hour";
+			/** USD per vCPU-hour at the pinned target spec. */
+			usdPerVcpuHour: number;
+			/** USD per GiB of memory per hour, when memory is billed separately. */
+			usdPerGibHour?: number;
+			/** Memory (GiB) billed at $0 before {@link usdPerGibHour} applies, e.g. Daytona's first 5 GiB. */
+			includedMemoryGb?: number;
+			/**
+			 * USD per GiB of disk per hour at the pinned target spec. `0` means free at that spec
+			 * (e.g. within a free tier); omitted entirely when the provider publishes no overage rate.
+			 * Recorded for display only — deliberately excluded from {@link hourlyCostAtTargetSpec} so
+			 * an unpublished disk rate can't bias the ranking.
+			 */
+			usdPerGibDiskHour?: number;
+			notes: string;
+			sourceUrl?: string;
+	  }
+	| {
+			/** No vetted rate in repo config; {@link hourlyCostAtTargetSpec} returns `null`. */
+			model: "unknown";
+			notes: string;
+			sourceUrl?: string;
+	  };
+
+/** Isolation technology a provider runs sandboxes under. */
+export interface ProviderIsolation {
+	/** e.g. "Firecracker microVM", "gVisor container", "unknown". */
+	technology: string;
+	notes?: string;
+}
+
+/** How production-ready a provider's integration is. */
+export interface ProviderMaturity {
+	status: "ga" | "beta" | "unknown";
+	notes?: string;
+}
+
+/** The static description of a sandbox provider, owned by the schema. */
+export interface ProviderMeta {
+	/** Stable identifier joined against the harness adapter map; one of {@link ProviderId}. */
+	id: ProviderId;
+	displayName: string;
+	website: string;
+	/** The npm package the harness adapter wraps, e.g. "@computesdk/e2b". */
+	sdkPackage: string;
+	/** Credentials the harness needs; any missing one produces a skip marker. */
+	requiredEnvVars: string[];
+	isolation: ProviderIsolation;
+	pricing: ProviderPricing;
+	maturity: ProviderMaturity;
+	specPinning: SpecPinning;
+}
+
+/**
+ * The pinned cross-provider target spec: 2 vCPU, 8 GiB RAM, 20 GB disk. Sized to fit inside every
+ * provider's reproducible envelope — E2B caps sandbox RAM at 8 GiB — so anyone can rerun the
+ * benchmark on the same shape. Providers that can't express a dimension run with actuals recorded
+ * and the mismatch disclosed downstream.
+ */
+export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 20 } as const;
+
+/**
+ * Modal provisions and prices in physical CPU cores, where 1 physical core = 2 vCPU. This is the one
+ * source of that factor: the Modal pricing entry below normalizes its per-physical-core rate to
+ * per-vCPU by it, and the harness adapter divides {@link TARGET_SPEC}.vcpus by it to reserve the
+ * matching number of cores (Modal's `SandboxCreateParams.cpu` is physical cores, not vCPUs).
+ */
+export const VCPUS_PER_PHYSICAL_CORE = 2;
+
+/**
+ * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
+ * keys the *behavioural* half of a provider the same way. A keyed Record (rather than an array of
+ * objects each repeating its `id`) buys three things for free: ids are unique by construction, the
+ * `Record<ProviderId, …>` type forces exactly one entry per id, and the `id` is attached from the
+ * key when the array form is built so it can never drift from its key.
+ *
+ * Pricing is normalized to USD per vCPU-hour and per GiB-hour from each provider's published
+ * per-second rates (see each entry's sourceUrl), cross-checked against the computesdk benchmark
+ * pricing table: https://github.com/computesdk/benchmarks/blob/master/pricing.json
+ * Disk is recorded per entry (`usdPerGibDiskHour`) but excluded from {@link hourlyCostAtTargetSpec},
+ * since overage rates are not uniformly published (E2B publishes none; Modal is free under its
+ * 1 TiB/mo tier) and a missing rate would otherwise read as free. Egress is omitted entirely.
+ */
+const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
+	e2b: {
+		displayName: "E2B",
+		website: "https://e2b.dev",
+		sdkPackage: "@computesdk/e2b",
+		requiredEnvVars: ["E2B_API_KEY"],
+		isolation: { technology: "Firecracker microVM" },
+		pricing: {
+			model: "per_vcpu_hour",
+			// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
+			usdPerVcpuHour: 0.0504,
+			usdPerGibHour: 0.0162,
+			notes:
+				"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s. Storage 10 GiB included (20 on Pro); no published overage rate.",
+			sourceUrl: "https://e2b.dev/pricing",
+		},
+		maturity: { status: "ga", notes: "Custom images via e2b template build." },
+		specPinning: "fixed",
+	},
+	daytona: {
+		displayName: "Daytona",
+		website: "https://daytona.io",
+		sdkPackage: "@computesdk/daytona",
+		requiredEnvVars: ["DAYTONA_API_KEY"],
+		isolation: {
+			technology: "container (OCI)",
+			notes:
+				"Snapshot-based images; orgs locked to a dedicated region need their own snapshot (DAYTONA_SNAPSHOT).",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
+			usdPerVcpuHour: 0.0504,
+			usdPerGibHour: 0.0162,
+			// First 5 GiB of memory ship free, so only the remainder is billed at the target spec.
+			includedMemoryGb: 5,
+			// $0.00000003/GiB-s × 3600 = $0.000108/GiB-hr (first 5 GiB free).
+			usdPerGibDiskHour: 0.000108,
+			notes:
+				"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s (first 5 GiB memory free). Disk $0.00000003/GiB-s (first 5 GiB free).",
+			sourceUrl: "https://www.daytona.io/pricing",
+		},
+		maturity: {
+			status: "ga",
+			notes: "The validated reference provider for this harness (pre-baked toolchain snapshot).",
+		},
+		specPinning: "settable",
+	},
+	modal: {
+		displayName: "Modal",
+		website: "https://modal.com",
+		sdkPackage: "@computesdk/modal",
+		requiredEnvVars: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
+		isolation: {
+			technology: "gVisor container",
+			notes: "scalableSandboxes enabled in the harness; nproc tracks the requested cpu 1:1.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// Sandbox non-preemptible rates. CPU: $0.00003942/physical-core-s ÷ VCPUS_PER_PHYSICAL_CORE × 3600 = $0.070956/vCPU-hr.
+			// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
+			usdPerVcpuHour: 0.070956,
+			usdPerGibHour: 0.024192,
+			// Volumes: 1 TiB/mo free, then $0.09/GiB/mo. The 20 GB target spec sits inside the free
+			// tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
+			usdPerGibDiskHour: 0,
+			notes:
+				"Sandbox non-preemptible rates (exact): CPU $0.00003942/physical-core-s (1 physical core = 2 vCPU), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
+			sourceUrl: "https://modal.com/pricing",
+		},
+		maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },
+		specPinning: "settable",
+	},
+};
+
+/** Recursively freeze a value so the shared registry can't be mutated by a downstream consumer. */
+function deepFreeze<T>(value: T): T {
+	for (const key of Object.getOwnPropertyNames(value)) {
+		const child = (value as Record<string, unknown>)[key];
+		if (child !== null && typeof child === "object") {
+			deepFreeze(child);
+		}
+	}
+	Object.freeze(value);
+	return value;
+}
+
+/**
+ * Every provider the benchmark knows about, in declaration order. Derived from {@link REGISTRY} so
+ * the `id` and its key can never disagree, and deep-frozen so a downstream consumer can't mutate
+ * shared pricing/identity at runtime. @sandbox-benchmarks/providers binds an adapter to each id via
+ * a matching `Record<ProviderId, …>`, so adding a provider here without an adapter there (or vice
+ * versa) is a compile error in that package — the two registries cannot drift.
+ */
+export const PROVIDERS: readonly ProviderMeta[] = deepFreeze(
+	(Object.entries(REGISTRY) as [ProviderId, Omit<ProviderMeta, "id">][]).map(([id, meta]) => ({
+		id,
+		...meta,
+	})),
+);
+
+/**
+ * Look up a provider's metadata by id. A known {@link ProviderId} literal always resolves; an
+ * arbitrary string (e.g. an id read back from a run document) may not.
+ */
+export function getProvider(id: ProviderId): ProviderMeta;
+export function getProvider(id: string): ProviderMeta | undefined;
+export function getProvider(id: string): ProviderMeta | undefined {
+	// A linear scan over a handful of frozen entries — no module-load Map to drift out of sync, and
+	// the entries are immutable, so returning the reference directly is safe.
+	return PROVIDERS.find((p) => p.id === id);
+}
+
+/**
+ * Hourly vCPU + memory cost of a provider at the pinned target spec, or `null` when no vetted rate
+ * exists. A provider's included-memory allowance is billed at $0 first; disk (`usdPerGibDiskHour`)
+ * is intentionally excluded — see {@link REGISTRY} for why.
+ */
+export function hourlyCostAtTargetSpec(meta: ProviderMeta): number | null {
+	// The union guarantees `usdPerVcpuHour` is present on the `per_vcpu_hour` arm, so narrowing on
+	// `model` is enough — no defensive undefined check needed.
+	if (meta.pricing.model !== "per_vcpu_hour") {
+		return null;
+	}
+	const cpuCost = meta.pricing.usdPerVcpuHour * TARGET_SPEC.vcpus;
+	const billableMemoryGb = Math.max(0, TARGET_SPEC.memoryGb - (meta.pricing.includedMemoryGb ?? 0));
+	const memCost = (meta.pricing.usdPerGibHour ?? 0) * billableMemoryGb;
+	return cpuCost + memCost;
+}

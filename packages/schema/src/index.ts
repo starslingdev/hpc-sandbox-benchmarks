@@ -3,6 +3,9 @@
 import { type } from "arktype";
 import { rawRunSchema } from "./lib/internal.ts";
 
+// Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).
+export * from "./providers.ts";
+
 /** The capabilities a sandbox provider may support. Stub set — expanded as providers land. */
 export const capabilities = ["spawn", "exec", "filesystem", "snapshot"] as const;
 export type Capability = (typeof capabilities)[number];
@@ -10,9 +13,13 @@ export type Capability = (typeof capabilities)[number];
 /** Which capabilities a given provider supports. */
 export type CapabilityFlags = Record<Capability, boolean>;
 
-/** Static description of a sandbox provider. */
+/**
+ * The capability view of a provider, keyed by the same `id` as the {@link ProviderMeta} registry in
+ * `./providers.ts`. Identity and economics live in `ProviderMeta` (its single owner); this type adds
+ * the orthogonal "what can it do" axis. The two are joined by `id`, never merged.
+ */
 export interface ProviderDescriptor {
-	/** Stable identifier, e.g. "e2b", "daytona", "modal". */
+	/** Stable identifier, joined against {@link ProviderMeta.id}, e.g. "e2b", "daytona", "modal". */
 	id: string;
 	/** Human-readable name. */
 	displayName: string;
