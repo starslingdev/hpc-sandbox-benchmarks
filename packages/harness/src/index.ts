@@ -1,11 +1,11 @@
-// Public surface of @sandbox-benchmarks/harness — drives an adapter and emits raw runs.
-import type { ProviderAdapter } from "@sandbox-benchmarks/providers";
+// Public surface of @sandbox-benchmarks/harness — drives a provider and emits raw runs.
+import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import type { RawRun } from "@sandbox-benchmarks/schema";
 import { now } from "./lib/internal.ts";
 
-/** Time a single operation against an adapter, producing a {@link RawRun}. Stub. */
+/** Time a single operation against a provider, producing a {@link RawRun}. Stub. */
 export async function timeOperation(
-	adapter: ProviderAdapter,
+	config: ProviderConfig,
 	operation: string,
 	run: () => Promise<void> | void,
 ): Promise<RawRun> {
@@ -14,7 +14,7 @@ export async function timeOperation(
 	// duration as an error sample lands when `rawRunSchema` grows an error shape.
 	await run();
 	return {
-		provider: adapter.descriptor.id,
+		provider: config.name,
 		operation,
 		// Floor to a strictly-positive value: `rawRunSchema` requires `durationMs > 0`, and a
 		// synchronous no-op can observe two equal `now()` readings (a 0 delta).

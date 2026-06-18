@@ -1,12 +1,19 @@
 # @sandbox-benchmarks/providers
 
-**Role:** provider adapters — the bridge between a sandbox SDK and the benchmark harness.
+**Role:** provider wiring — binds each schema provider to a computesdk runtime.
 
-**Public surface (`.`):** `ProviderAdapter`, `createStubAdapter()`, `providerRuntimeReady`.
+**Public surface (`.`):** `ProviderAdapter`, `ProviderConfig`, `DirectProvider` (types), the
+assembled `providers` registry, and the toolchain image constants (`TOOLCHAIN_IMAGE`,
+`TOOLCHAIN_VERSION`, `DAYTONA_SNAPSHOT_DEFAULT`).
 
-**Depends on:** `@sandbox-benchmarks/schema` (descriptor/capability types), `computesdk`
-(`catalog:computesdk`, the unified provider runtime).
+**Depends on:** `@sandbox-benchmarks/schema` (provider identity / `PROVIDERS`), `computesdk` and the
+`@computesdk/{e2b,daytona,modal}` wrappers (the unified provider runtime), plus the raw vendor SDK
+each wrapper peers on (`e2b`, `@daytonaio/sdk`, `modal`).
 
-**What lives here:** the adapter interface and per-provider adapters (stubs this pass). Private
-glue — including the computesdk wiring — lives in `src/lib/` and is never imported across a
-package boundary.
+**What lives here:** _not_ SDK wrappers. The `@computesdk/*` packages already adapt each raw vendor
+SDK to computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem,
+destroy). This package only holds what the framework can't infer: which factory builds each
+provider, and the benchmark's create-time policy — the pinned `TARGET_SPEC` and toolchain image
+(ADR-0003). The assembled `providers` registry joins the schema `PROVIDERS` metadata with the adapter
+map by id; both are keyed by `ProviderId`, so a one-sided provider is a compile error rather than a
+runtime check. Private glue lives in `src/lib/` and is never imported across a package boundary.
