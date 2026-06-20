@@ -1,8 +1,9 @@
-# Keep the build context minimal and reproducible: the install scripts plus the generated mise.toml
-# are the only build inputs (other pins arrive as --build-args). Everything else (the Dockerfile
-# itself, editor cruft, and — if the context is ever widened — TS sources / node_modules / configs)
-# stays out so the context can't bloat or leak unrelated files.
+# Keep the build context minimal and reproducible: the install scripts plus the generated mise.toml /
+# toolchain-manifest.json are the only build inputs (other pins arrive as --build-args). Everything else
+# (the Dockerfile itself, editor cruft, and — if the context is ever widened — TS sources /
+# node_modules / configs) stays out so the context can't bloat or leak unrelated files.
 *
 !scripts
 !scripts/**
 !mise.toml
+!toolchain-manifest.json

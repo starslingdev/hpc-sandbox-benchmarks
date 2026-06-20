@@ -1,3 +1,5 @@
-# Generated from packages/templates/src/pins.ts by build.sh (the mise tool versions); the TypeScript
-# config is its single source of truth, so the file is built, never committed.
+# Generated from packages/templates/src/pins.ts by build.sh; the TypeScript config is the single source
+# of truth, so these are built, never committed. mise.toml = the mise tool versions;
+# toolchain-manifest.json = the verification manifest (from packages/templates/src/manifest.ts).
 mise.toml
+toolchain-manifest.json

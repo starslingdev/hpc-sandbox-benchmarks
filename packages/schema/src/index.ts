@@ -5,6 +5,8 @@ import { rawRunSchema } from "./lib/internal.ts";
 
 // Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).
 export * from "./providers.ts";
+// Canonical toolchain image identity (name + version), shared by the build pins and runtime config.
+export * from "./toolchain.ts";
 
 /** The capabilities a sandbox provider may support. Stub set — expanded as providers land. */
 export const capabilities = ["spawn", "exec", "filesystem", "snapshot"] as const;

@@ -72,6 +72,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-lc"]
 # > at mise's system config path so `mise install` finds it.
 COPY mise.toml /etc/mise/config.toml
 
+# > The verification manifest, generated host-side from the validated pins (single source of truth) and
+# > shipped as-is — 99-manifest.sh confirms it landed; the smoke spec verifies the runtime matches it.
+COPY toolchain-manifest.json /toolchain-manifest.json
+
 # > orchestrator.sh runs each NN-*.sh install script in order; the manifest step fails the build on
 # > any drift. Pins are passed to the orchestrator as env (from the ARGs above) for this RUN only, so
 # > versions are not baked into the final image's environment.
