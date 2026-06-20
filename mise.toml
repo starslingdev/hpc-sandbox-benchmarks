@@ -5,3 +5,8 @@
 
 [tools]
 typos = "1.47.2"
+# Static-analysis for the toolchain images (packages/templates/images): shellcheck lints the install
+# scripts, hadolint the Dockerfiles. aqua backend with checksum verification — same posture as typos,
+# so nothing runs a postinstall or needs Bun `trustedDependencies`.
+"aqua:koalaman/shellcheck" = "0.11.0"
+"aqua:hadolint/hadolint" = "2.14.0"

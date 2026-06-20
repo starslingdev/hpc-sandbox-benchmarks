@@ -56,6 +56,14 @@ jobs:
       - name: Lint (Biome)
         run: bun run lint
 
+      # Shell + Dockerfile gates for the toolchain images (packages/templates/images). shellcheck and
+      # hadolint are version-pinned in mise.toml and installed by the mise step above.
+      - name: Lint shell (shellcheck)
+        run: bun run lint:shell
+
+      - name: Lint Dockerfiles (hadolint)
+        run: bun run lint:docker
+
       - name: Typecheck
         run: bun run typecheck
 

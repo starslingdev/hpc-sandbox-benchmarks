@@ -1,0 +1,7 @@
+# Keep the build context minimal and reproducible: only the install scripts are build inputs (pins
+# arrive as --build-args, not a file). Everything else (the Dockerfile itself, editor cruft, and — if
+# the context is ever widened — TS sources / node_modules / configs) stays out so the context can't
+# bloat or leak unrelated files.
+*
+!scripts
+!scripts/**
