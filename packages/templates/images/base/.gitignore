@@ -1,0 +1,3 @@
+# Generated from packages/templates/src/pins.ts by build.sh (the mise tool versions); the TypeScript
+# config is its single source of truth, so the file is built, never committed.
+mise.toml

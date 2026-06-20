@@ -18,8 +18,11 @@ apt-get update
 
 # > System build/runtime deps. The mise binary is fetched separately (its pinned release, below); curl
 # > + ca-certificates here are that fetch's only prerequisites.
+# > Security: no `sudo` — the image runs as root (see Dockerfile) so nothing needs privilege
+# > escalation, and shipping sudo would only widen the attack surface. --no-install-recommends keeps
+# > the set to exactly what the benchmark suites need.
 apt-get install -y --no-install-recommends \
-	sudo curl git ca-certificates \
+	curl git ca-certificates \
 	build-essential \
 	php-cli php-xml \
 	flex bison bc libelf-dev libssl-dev \
