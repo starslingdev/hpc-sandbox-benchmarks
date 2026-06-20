@@ -23,5 +23,10 @@ if (import.meta.main) {
 		process.exit(1);
 	}
 	const spec = builders[provider as keyof typeof builders](tag);
+	// Human-readable build context on stderr; the machine-readable spec stays on stdout.
+	console.error(`provider:   ${spec.provider}`);
+	console.error(`tag:        ${spec.tag}`);
+	console.error(`dockerfile: ${spec.dockerfile}`);
+	console.error(`base image: ${spec.baseImage}`);
 	console.log(JSON.stringify(spec));
 }

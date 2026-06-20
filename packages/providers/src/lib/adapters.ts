@@ -8,12 +8,12 @@ import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
-import { TOOLCHAIN_IMAGE } from "./toolchain.ts";
+import { config } from "./config.ts";
 import type { ProviderAdapter } from "./types.ts";
 
-// An explicit DAYTONA_SNAPSHOT (CI sets it to DAYTONA_SNAPSHOT_DEFAULT) boots the pre-baked toolchain
-// snapshot; absent one, Daytona runs a stock image and sets up the toolchain at runtime.
-const daytonaSnapshot = process.env.DAYTONA_SNAPSHOT;
+// The active Daytona region profile (key/target/snapshot), resolved by the config gatekeeper from
+// DAYTONA_REGION. Never read process.env directly here.
+const { daytonaRegion } = config;
 
 /**
  * Harness adapters, keyed by the schema {@link ProviderId}. The `Record<ProviderId, …>` type is what
@@ -22,18 +22,28 @@ const daytonaSnapshot = process.env.DAYTONA_SNAPSHOT;
  * compile error, no runtime reconciliation required.
  */
 export const adapters: Record<ProviderId, ProviderAdapter> = {
-	// e2b pins its spec at the template/image level rather than per-create — nothing to set here.
-	e2b: { createCompute: () => e2b({}) },
+	// Boot the e2b template built from the toolchain image (computesdk maps snapshotId → the e2b
+	// template id/name). cpu/memory are pinned in the template's e2b.toml, not per-create.
+	e2b: {
+		createCompute: () => e2b({}),
+		createOptions: { snapshotId: config.e2bTemplate },
+	},
 	daytona: {
-		createCompute: () => daytona({}),
-		// Omit createOptions entirely when there's no snapshot to pin (per the ProviderAdapter
-		// contract) — an empty {} would be passed through to compute.sandbox.create as real options.
-		...(daytonaSnapshot ? { createOptions: { snapshotId: daytonaSnapshot } } : {}),
+		// The region's API key (beta regions like ZEN5 use a separate key); the toolchain snapshot and
+		// runner target are pinned per-create. `target` rides the wrapper's create-options passthrough
+		// into Daytona's createParams. requiredEnvVars tracks the active region's key var so a missing
+		// credential skips (not errors).
+		createCompute: () => daytona({ apiKey: daytonaRegion.apiKey }),
+		createOptions: {
+			snapshotId: daytonaRegion.snapshot,
+			...(daytonaRegion.target ? { target: daytonaRegion.target } : {}),
+		},
+		requiredEnvVars: [daytonaRegion.apiKeyVar],
 	},
 	modal: {
 		createCompute: () => modal({ scalableSandboxes: true }),
 		createOptions: {
-			templateId: TOOLCHAIN_IMAGE,
+			templateId: config.toolchainImage,
 			// Modal's `cpu`/`cpuLimit` are physical cores, not vCPUs — convert from the pinned vCPU spec.
 			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
 			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,

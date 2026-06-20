@@ -57,6 +57,7 @@
         "@computesdk/e2b": "catalog:computesdk",
         "@computesdk/modal": "catalog:computesdk",
         "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
         "computesdk": "catalog:computesdk",
       },
       "devDependencies": {

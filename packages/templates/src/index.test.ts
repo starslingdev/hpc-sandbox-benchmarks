@@ -11,6 +11,14 @@ describe("@sandbox-benchmarks/templates", () => {
 		expect(buildModalTemplate("v1").provider).toBe("modal");
 	});
 
+	it("points each spec at its in-repo variant Dockerfile", () => {
+		expect(buildE2bTemplate("v1").dockerfile).toBe("packages/templates/images/e2b/Dockerfile");
+		expect(buildDaytonaTemplate("v1").dockerfile).toBe(
+			"packages/templates/images/daytona/Dockerfile",
+		);
+		expect(buildModalTemplate("v1").dockerfile).toBe("packages/templates/images/modal/Dockerfile");
+	});
+
 	it("lists every provider that has a builder", () => {
 		expect([...templateProviders]).toEqual(["e2b", "daytona", "modal"]);
 	});

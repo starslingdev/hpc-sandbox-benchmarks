@@ -28,6 +28,9 @@ export interface ProviderAdapter {
 	 *  image. Benchmark policy (ADR-0003), not a framework default; omitted when there is nothing to
 	 *  pin. */
 	createOptions?: CreateSandboxOptions;
+	/** Overrides the schema ProviderMeta's `requiredEnvVars` when the credential set is resolved at
+	 *  runtime (e.g. daytona's per-region API key var). Falls back to the schema default when absent. */
+	requiredEnvVars?: string[];
 }
 
 /** A provider as the harness consumes it: schema-owned identity joined with the harness adapter. */

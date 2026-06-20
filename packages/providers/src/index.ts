@@ -6,7 +6,8 @@ import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { adapters } from "./lib/adapters.ts";
 import type { ProviderConfig } from "./lib/types.ts";
 
-export { DAYTONA_SNAPSHOT_DEFAULT, TOOLCHAIN_IMAGE, TOOLCHAIN_VERSION } from "./lib/toolchain.ts";
+// The runtime configuration gatekeeper — the single validated config object consumers import.
+export { config } from "./lib/config.ts";
 export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/types.ts";
 
 /**
@@ -18,8 +19,13 @@ export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/type
  * `Record<ProviderId, ProviderAdapter>`, so every `meta.id` indexes exactly one adapter and the two
  * registries are provably the same set at compile time.
  */
-export const providers: ProviderConfig[] = PROVIDERS.map((meta) => ({
-	...adapters[meta.id],
-	name: meta.id,
-	requiredEnvVars: meta.requiredEnvVars,
-}));
+export const providers: ProviderConfig[] = PROVIDERS.map((meta) => {
+	const adapter = adapters[meta.id];
+	return {
+		...adapter,
+		name: meta.id,
+		// The adapter may refine the required credentials at runtime (daytona's per-region key var);
+		// otherwise the schema ProviderMeta's static list stands.
+		requiredEnvVars: adapter.requiredEnvVars ?? meta.requiredEnvVars,
+	};
+});
