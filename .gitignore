@@ -111,3 +111,7 @@ dist
 
 # TernJS port file
 .tern-port
+
+# Generated from packages/templates/src/pins.ts by build.sh / the publish workflow (the
+# e2b CLI requires this file on disk; the TypeScript config is its single source of truth).
+packages/templates/images/e2b/e2b.toml

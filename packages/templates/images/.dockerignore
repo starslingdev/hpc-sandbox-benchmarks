@@ -1,0 +1,6 @@
+# Build context for the provider variants is this images/ directory (so they can COPY the shared
+# _shared/validate-base.sh). Keep that context lean: the base build inputs and docs are not variant
+# build inputs. (The base image builds from images/base/ with its own .dockerignore.)
+base/
+README.md
+**/*.md
