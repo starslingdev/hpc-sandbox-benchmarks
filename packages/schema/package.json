@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "fetch-profiles": "bun run scripts/fetch-profiles.ts"
   },
   "dependencies": {
     "arktype": "catalog:"

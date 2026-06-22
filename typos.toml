@@ -3,8 +3,10 @@
 # intentional identifier, add it under [default.extend-words] rather than rewording the code.
 
 [files]
-# The lockfile is generated and full of hashes/identifiers — don't spell-check it.
-extend-exclude = ["bun.lock"]
+# The lockfile is generated and full of hashes/identifiers — don't spell-check it. The pts-profiles
+# are vendored verbatim from upstream PTS (fetch-profiles dev script) — we must not reword them, so
+# any typo in the upstream prose is theirs to keep, not ours to "fix".
+extend-exclude = ["bun.lock", "packages/schema/src/pts-profiles/**"]
 
 [default.extend-words]
 # Domain term: a parsed result not (yet) in the Metric Catalog. International spelling, used as the
