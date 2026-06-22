@@ -7,3 +7,6 @@
 extend-exclude = ["bun.lock"]
 
 [default.extend-words]
+# Domain term: a parsed result not (yet) in the Metric Catalog. International spelling, used as the
+# `uncatalogued` field name and `UncataloguedResult` type throughout the dataset model.
+uncatalogued = "uncatalogued"
