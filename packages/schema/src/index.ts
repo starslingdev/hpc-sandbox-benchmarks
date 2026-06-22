@@ -3,6 +3,12 @@
 import { type } from "arktype";
 import { rawRunSchema } from "./lib/internal.ts";
 
+// Pure analysis over retained Samples: the Aggregates distribution and how it's computed.
+export * from "./analysis.ts";
+// The Metric Catalog — the registry of rankable Metrics, plus lookup helpers.
+export * from "./catalog.ts";
+// Metric vocabulary: Dimension, Direction and the MetricDef shape every Metric declares.
+export * from "./metrics.ts";
 // Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).
 export * from "./providers.ts";
 // Canonical toolchain image identity (name + version), shared by the build pins and runtime config.
