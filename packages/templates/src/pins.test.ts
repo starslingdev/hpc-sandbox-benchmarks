@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import { pinsSchema } from "./lib/pins.ts";
-import { e2bToml, miseToml, pins } from "./pins.ts";
+import { e2bToml, miseToml, pins, validatedPins } from "./pins.ts";
 
-// A synthetic, fully-specified pin set — exercises the schema independently of the (TODO-placeholder)
-// real pins, so these tests don't break when the real pins get filled in.
+// A synthetic, fully-specified pin set — exercises the schema independently of the real pins, so
+// these schema-level tests stay stable across future pin updates.
 const validSample = {
 	miseVersion: "2026.6.1",
 	miseSha256X64: "a".repeat(64),
@@ -34,8 +34,30 @@ describe("@sandbox-benchmarks/templates pins", () => {
 		expect(pinsSchema({ ...validSample, nodeVersion: "" }) instanceof type.errors).toBe(true);
 	});
 
+	it("rejects the __TODO__ placeholder so an unfilled version pin fails loudly", () => {
+		expect(pinsSchema({ ...validSample, nodeVersion: "__TODO__" }) instanceof type.errors).toBe(
+			true,
+		);
+	});
+
+	it("rejects a whitespace-only version (no non-whitespace content)", () => {
+		expect(pinsSchema({ ...validSample, nodeVersion: "   " }) instanceof type.errors).toBe(true);
+	});
+
+	it("rejects a __TODO__ padded with surrounding whitespace", () => {
+		expect(pinsSchema({ ...validSample, nodeVersion: "  __TODO__  " }) instanceof type.errors).toBe(
+			true,
+		);
+	});
+
 	it("exposes every pin key as the single source of truth", () => {
 		expect(Object.keys(pins).sort()).toEqual(Object.keys(validSample).sort());
+	});
+
+	it("ships real, valid pins (no unfilled/garbled placeholder survives)", () => {
+		// validatedPins() throws if any real pin fails the schema — this guards against a future
+		// edit leaving a TODO/typo'd value, which would otherwise only surface at docker build time.
+		expect(() => validatedPins()).not.toThrow();
 	});
 
 	it("generates a mise.toml from the tool pins", () => {
