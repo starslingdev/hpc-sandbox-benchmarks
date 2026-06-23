@@ -98,17 +98,17 @@ jobs:
           export BUILD_VERSION="${IMAGE_VERSION}"
           bash packages/templates/images/build.sh
 
-      # Smoke-test the base — fail before pushing if the baked toolchain is incomplete.
+      # Smoke-test the base — fail before pushing if the baked toolchain is incomplete. The probes
+      # come from the single shared spec (packages/templates/src/smoke.ts) so this docker check and
+      # the in-sandbox bench-smoke check can't drift; --bash emits a self-logging assertion script.
       - name: Smoke-test base
         if: steps.guard.outputs.skip != 'true'
         run: |
-          docker run --rm "${BASE_REF}" bash -lc '
-            set -euo pipefail
-            bench-node --version
-            mise ls
-            test -d /var/lib/phoronix-test-suite/download-cache
-            cat /toolchain-manifest.json
-          '
+          set -euo pipefail
+          # Generate the script in its own step first: a non-zero exit of the generator must fail the
+          # job, not get swallowed inside docker's command substitution (which would smoke an empty script).
+          smoke_script="$(bun packages/templates/src/smoke.ts --bash)"
+          docker run --rm "${BASE_REF}" bash -lc "$smoke_script"
 
       # Push the base + provider variants to the registry.
       - name: Push images

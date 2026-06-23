@@ -9,7 +9,8 @@
     "./daytona": "./src/daytona.ts",
     "./modal": "./src/modal.ts",
     "./pins": "./src/pins.ts",
-    "./manifest": "./src/manifest.ts"
+    "./manifest": "./src/manifest.ts",
+    "./smoke": "./src/smoke.ts"
   },
   "scripts": {
     "test": "bun test",
