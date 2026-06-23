@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="CPU details from lscpu and /proc/cpuinfo (provenance probe)"
+# Tolerant probe: no -e — report whatever the runner exposes via try/get (error-mode: lib/bench.sh).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "=== CPU Information (lscpu) ==="
+try lscpu
+
+# Structured output for the observed-specs probe path; harmless when lscpu/--json is unavailable.
+lscpu --json >"$(results_dir)/$(task_result_name "lscpu").json" 2>/dev/null || true
+
+echo ""
+echo "=== /proc/cpuinfo (first core) ==="
+try sh -c 'sed "/^$/q" /proc/cpuinfo'
+
+echo ""
+echo "=== Virtualization ==="
+try systemd-detect-virt

@@ -34,7 +34,7 @@
     "lint": "biome check . --error-on-warnings",
     "lint:fix": "biome check . --write",
     "lint:fix:unsafe": "biome check . --fix --unsafe",
-    "lint:shell": "find packages/templates/images -name '*.sh' -exec mise exec -- shellcheck {} +",
+    "lint:shell": "find packages/templates/images lib .mise/tasks -type f \\( -name '*.sh' -o -path '*.mise/tasks/*' \\) -exec mise exec -- shellcheck {} +",
     "lint:docker": "find packages/templates/images -name 'Dockerfile' -exec mise exec -- hadolint {} +",
     "spell": "mise exec -- typos",
     "spell:fix": "mise exec -- typos --write-changes",

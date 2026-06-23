@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="CPU cache hierarchy sizes (provenance probe)"
+# Tolerant probe: no -e — report whatever the runner exposes (error-mode: lib/bench.sh).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "=== Cache Details ==="
+if [ -d /sys/devices/system/cpu/cpu0/cache ]; then
+	for idx in /sys/devices/system/cpu/cpu0/cache/index*; do
+		# Guard the unmatched-glob case: without nullglob the loop runs once with the literal pattern.
+		[ -d "$idx" ] || continue
+		echo "L$(get '?' cat "$idx/level") $(get '?' cat "$idx/type"): $(get '?' cat "$idx/size")"
+	done
+else
+	echo "(cache sysfs not available — sandboxed environment)"
+fi

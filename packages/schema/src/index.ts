@@ -15,6 +15,8 @@ export * from "./providers.ts";
 export * from "./raw-files.ts";
 // The canonical Run dataset model (Run/ProviderRun/MetricResult/…) and its validators.
 export * from "./run.ts";
+// The benchmark suite registry — shared by the harness and CI matrix planning.
+export * from "./suites.ts";
 // Canonical toolchain image identity (name + version), shared by the build pins and runtime config.
 export * from "./toolchain.ts";
 
