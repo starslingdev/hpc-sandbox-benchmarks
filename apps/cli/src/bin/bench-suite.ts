@@ -1,20 +1,37 @@
 #!/usr/bin/env bun
-// `bench-suite` — run the full benchmark suite across the matrix (stub).
+// `bench-suite` — run a benchmark suite on a provider sandbox, collect the raw results into a
+// data/raw tree, and normalize them into a validated Run document. Missing provider credentials are
+// recorded as a skip (the provider stays `pending` in the Run), so this is runnable without secrets.
 
-import { timeOperation } from "@sandbox-benchmarks/harness";
-import type { ProviderConfig } from "@sandbox-benchmarks/providers";
-import { providers } from "@sandbox-benchmarks/providers";
-import { buildMatrix } from "../lib/matrix.ts";
+import { join } from "node:path";
+import { runSuite, SuiteUsageError } from "@sandbox-benchmarks/harness";
+import { summarizeRun, writeNormalizedRun } from "@sandbox-benchmarks/results";
 
 if (import.meta.main) {
-	// Keyed by string: the matrix yields arbitrary provider names, and the guard below rejects any
-	// that isn't registered (the providers list is keyed by ProviderId, the matrix is not).
-	const byName = new Map<string, ProviderConfig>(providers.map((p) => [p.name, p]));
-	const runs = [];
-	for (const { provider, operation } of buildMatrix()) {
-		const config = byName.get(provider);
-		if (!config) throw new Error(`provider "${provider}" is not registered`);
-		runs.push(await timeOperation(config, operation, () => {}));
+	const provider = process.argv[2] ?? "daytona";
+	const suite = process.argv[3] ?? "cpu-node";
+	const runId = process.argv[4] ?? `local-${Date.now()}`;
+	const sha = process.env.GITHUB_SHA ?? "local";
+
+	const rawRoot = join("data", "raw", runId);
+	const outFile = join("data", "runs", `${runId}.json`);
+	const indexFile = join("data", "runs", "index.json");
+
+	try {
+		await runSuite({
+			providerName: provider,
+			suiteName: suite,
+			resultsDir: join(rawRoot, provider),
+		});
+	} catch (err) {
+		if (err instanceof SuiteUsageError) {
+			console.error(err.message);
+			process.exit(1);
+		}
+		throw err;
 	}
-	console.log(JSON.stringify({ runs }));
+
+	const run = writeNormalizedRun({ rawRoot, runId, sha, outFile, updateIndexFile: indexFile });
+	console.log(`\nNormalized Run ${runId} → ${outFile}`);
+	for (const line of summarizeRun(run)) console.log(line);
 }
