@@ -1,10 +1,21 @@
 #!/usr/bin/env bun
-// `normalize` — read raw runs and emit normalized run documents (stub).
+// `normalize` — read a raw results tree (`data/raw/<runId>/<provider>/`) and emit a validated Run
+// document, optionally appending it to a Run index.
 
-import { normalize } from "@sandbox-benchmarks/results";
-import { parseRawRun } from "@sandbox-benchmarks/schema";
+import { summarizeRun, writeNormalizedRun } from "@sandbox-benchmarks/results";
 
 if (import.meta.main) {
-	const raw = parseRawRun({ provider: "e2b", operation: "spawn", durationMs: 1280 });
-	console.log(JSON.stringify(normalize(raw)));
+	const [rawRoot, runId, sha, outFile, indexFile] = process.argv.slice(2);
+	if (!rawRoot || !runId || !sha || !outFile) {
+		console.error("usage: normalize <rawRoot> <runId> <sha> <outFile> [indexFile]");
+		process.exit(1);
+	}
+	const run = writeNormalizedRun({
+		rawRoot,
+		runId,
+		sha,
+		outFile,
+		...(indexFile ? { updateIndexFile: indexFile } : {}),
+	});
+	for (const line of summarizeRun(run)) console.log(line);
 }

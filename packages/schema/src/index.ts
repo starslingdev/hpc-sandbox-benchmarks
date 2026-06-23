@@ -45,15 +45,6 @@ export interface ProviderDescriptor {
  */
 export type RawRun = typeof rawRunSchema.infer;
 
-/** A normalized run document, as produced by @sandbox-benchmarks/results. */
-export interface RunDocument {
-	provider: string;
-	operation: string;
-	durationMs: number;
-	/** ISO-8601 timestamp the document was normalized at. */
-	normalizedAt: string;
-}
-
 /** Validate an unknown value as a {@link RawRun} using the arktype schema. */
 export function parseRawRun(value: unknown): RawRun {
 	const out = rawRunSchema(value);

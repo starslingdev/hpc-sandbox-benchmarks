@@ -1,0 +1,11 @@
+{
+  "vcpus": 2,
+  "memoryGb": 8,
+  "diskGb": 20,
+  "hostVcpus": 48,
+  "hostMemoryGb": 377,
+  "kernel": "6.8.0-generic",
+  "os": "Debian GNU/Linux 13",
+  "virtualization": "kvm",
+  "user": "daytona"
+}
