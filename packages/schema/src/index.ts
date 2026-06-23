@@ -11,6 +11,8 @@ export * from "./catalog.ts";
 export * from "./metrics.ts";
 // Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).
 export * from "./providers.ts";
+// The raw-file naming contract shared by the producers and the results extractor.
+export * from "./raw-files.ts";
 // The canonical Run dataset model (Run/ProviderRun/MetricResult/…) and its validators.
 export * from "./run.ts";
 // Canonical toolchain image identity (name + version), shared by the build pins and runtime config.
