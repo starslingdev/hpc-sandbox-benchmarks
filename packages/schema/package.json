@@ -8,13 +8,15 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "fetch-profiles": "bun run scripts/fetch-profiles.ts"
   },
   "dependencies": {
     "arktype": "catalog:"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
+    "@octokit/rest": "22.0.1",
     "typescript": "catalog:",
     "@types/bun": "catalog:"
   }
