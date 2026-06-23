@@ -23,6 +23,7 @@
     "@sandbox-benchmarks/templates": "workspace:*",
     "@sandbox-benchmarks/harness": "workspace:*",
     "@sandbox-benchmarks/results": "workspace:*",
+    "@daytonaio/sdk": "catalog:computesdk",
     "dotenv": "catalog:"
   },
   "devDependencies": {

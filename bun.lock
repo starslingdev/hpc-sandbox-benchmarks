@@ -17,12 +17,14 @@
       "bin": {
         "bench-lifecycle": "./src/bin/bench-lifecycle.ts",
         "bench-suite": "./src/bin/bench-suite.ts",
+        "bench-smoke": "./src/bin/bench-smoke.ts",
         "plan-matrix": "./src/bin/plan-matrix.ts",
         "build-template": "./src/bin/build-template.ts",
         "normalize": "./src/bin/normalize.ts",
         "promote": "./src/bin/promote.ts",
       },
       "dependencies": {
+        "@daytonaio/sdk": "catalog:computesdk",
         "@sandbox-benchmarks/harness": "workspace:*",
         "@sandbox-benchmarks/providers": "workspace:*",
         "@sandbox-benchmarks/results": "workspace:*",
@@ -145,6 +147,7 @@
       "@computesdk/daytona": "1.7.30",
       "@computesdk/e2b": "1.7.51",
       "@computesdk/modal": "1.9.3",
+      "@daytonaio/sdk": "0.143.0",
       "computesdk": "4.1.3",
     },
     "xml": {
