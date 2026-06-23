@@ -87,7 +87,21 @@ export function resolveDaytonaRegion(
 	};
 }
 
+// Candidate↔version naming. The public version (`:v1`, `…-v1`) is immutable and written only by
+// `promote`; iteration happens against a mutable candidate (`:v1-candidate`, `…-v1-candidate`),
+// reused every build so the public registry never accumulates versions. Bumping TOOLCHAIN_VERSION
+// then yields exactly one new public version per deliberate promote.
+const imageRepo = `ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}`;
+const CANDIDATE_SUFFIX = "-candidate";
+
+const toolchainImageVersion = `${imageRepo}:${TOOLCHAIN_VERSION}`;
+const toolchainImageCandidate = `${toolchainImageVersion}${CANDIDATE_SUFFIX}`;
+// Version-scope the e2b template + daytona snapshot (parity with each other): a v2 makes a new
+// named artifact instead of overwriting v1.
+const e2bTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
+const e2bTemplateCandidate = `${e2bTemplateVersion}${CANDIDATE_SUFFIX}`;
 const daytonaSnapshotDefault = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
+const daytonaSnapshotCandidate = `${daytonaSnapshotDefault}${CANDIDATE_SUFFIX}`;
 
 // 3. The single, fully-typed config object. Everything that needs config imports THIS.
 export const config = {
@@ -95,16 +109,24 @@ export const config = {
 	targetSpec: TARGET_SPEC,
 	/** Immutable toolchain image version tag. */
 	toolchainVersion: TOOLCHAIN_VERSION,
-	/** Full registry ref of the toolchain image: the `BENCH_TOOLCHAIN_IMAGE` override, else the
-	 *  canonical public image. modal boots from this; the daytona snapshot is built from it. */
-	toolchainImage:
-		env.BENCH_TOOLCHAIN_IMAGE ??
-		`ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}:${TOOLCHAIN_VERSION}`,
-	/** The e2b template the sandbox boots from (built by `e2b template build` from the toolchain
-	 *  image, name = e2b.toml `template_name`). Override with `E2B_TEMPLATE`. */
-	e2bTemplate: env.E2B_TEMPLATE ?? TOOLCHAIN_IMAGE_NAME,
-	/** Canonical daytona snapshot name baked from the toolchain image. */
+	/** Active toolchain image ref the adapters boot from: the `BENCH_TOOLCHAIN_IMAGE` override (CI
+	 *  points this at the candidate during iteration), else the canonical public version. */
+	toolchainImage: env.BENCH_TOOLCHAIN_IMAGE ?? toolchainImageVersion,
+	/** Immutable public image ref (`:v1`); the promote target. */
+	toolchainImageVersion,
+	/** Mutable candidate image ref (`:v1-candidate`); what the bake builds/pushes while iterating. */
+	toolchainImageCandidate,
+	/** The e2b template the sandbox boots from (name = e2b.toml `template_name`); `E2B_TEMPLATE`
+	 *  override, else the version-scoped public template. */
+	e2bTemplate: env.E2B_TEMPLATE ?? e2bTemplateVersion,
+	/** Public (version-scoped) e2b template name; the promote target. */
+	e2bTemplateVersion,
+	/** Candidate e2b template name the bake builds while iterating. */
+	e2bTemplateCandidate,
+	/** Canonical (version-scoped) daytona snapshot name; the promote target. */
 	daytonaSnapshotDefault,
+	/** Candidate daytona snapshot name the bake creates while iterating. */
+	daytonaSnapshotCandidate,
 	/** The active daytona region profile (key var, key, target, snapshot), selected by
 	 *  `DAYTONA_REGION` (`default` | `zen5`). */
 	daytonaRegion: resolveDaytonaRegion(rawEnv, daytonaSnapshotDefault),

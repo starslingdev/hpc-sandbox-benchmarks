@@ -74,11 +74,13 @@ export function miseToml(pins: Pins = validatedPins()): string {
  * its source of truth, so the file is generated, never hand-edited. cpu/memory come from the
  * benchmark {@link TARGET_SPEC}.
  */
-export function e2bToml(): string {
+export function e2bToml(
+	templateName: string = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`,
+): string {
 	return `${[
 		"# Generated from packages/templates/src/pins.ts — do not edit by hand.",
 		'dockerfile = "Dockerfile"',
-		`template_name = "${TOOLCHAIN_IMAGE_NAME}"`,
+		`template_name = "${templateName}"`,
 		`cpu_count = ${TARGET_SPEC.vcpus}`,
 		`memory_mb = ${TARGET_SPEC.memoryGb * 1024}`,
 	].join("\n")}\n`;

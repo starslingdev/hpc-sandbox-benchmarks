@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { pinsSchema } from "./lib/pins.ts";
 import { e2bToml, miseToml, pins, validatedPins } from "./pins.ts";
@@ -67,10 +68,15 @@ describe("@sandbox-benchmarks/templates pins", () => {
 		expect(toml).toContain('python = "3.13"');
 	});
 
-	it("generates an e2b manifest from the image identity and TARGET_SPEC", () => {
+	it("generates an e2b manifest with the version-scoped template name and TARGET_SPEC", () => {
 		const toml = e2bToml();
-		expect(toml).toContain('template_name = "sandbox-benchmarks-toolchain"');
+		expect(toml).toContain(`template_name = "${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}"`);
 		expect(toml).toContain("cpu_count = 2");
 		expect(toml).toContain("memory_mb = 8192");
+	});
+
+	it("accepts a custom template name (the bake passes the candidate name)", () => {
+		const candidate = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}-candidate`;
+		expect(e2bToml(candidate)).toContain(`template_name = "${candidate}"`);
 	});
 });
