@@ -11,7 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sandbox-benchmarks/schema": "workspace:*"
+    "@nodable/compact-builder": "catalog:xml",
+    "@nodable/flexible-xml-parser": "catalog:xml",
+    "@sandbox-benchmarks/schema": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { catalogSchema } from "./catalog.ts";
 import {
 	DIMENSIONS,
 	getMetric,
@@ -41,5 +42,55 @@ describe("metric catalog", () => {
 
 	it("throws when a dimension has no headline metric", () => {
 		expect(() => headlineMetric("economics")).toThrow();
+	});
+});
+
+describe("catalogSchema PTS-mapping invariant", () => {
+	// A valid non-PTS scaffold; each case overrides only id + pts to exercise the .narrow.
+	const base = {
+		dimension: "cpu",
+		unit: "runs/s",
+		direction: "HIB",
+		headline: false,
+		label: "x",
+		description: "x",
+	} as const;
+
+	it("accepts a wildcard and a described entry for DIFFERENT tests", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{ ...base, id: "a", pts: { test: "pts/a" } },
+				{ ...base, id: "b", pts: { test: "pts/b", description: "Foo" } },
+			]),
+		).not.toThrow();
+	});
+
+	it("accepts multiple described entries for the same test (the multi-result matrix)", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{ ...base, id: "a", pts: { test: "pts/a", description: "Compression" } },
+				{ ...base, id: "b", pts: { test: "pts/a", description: "Decompression" } },
+			]),
+		).not.toThrow();
+	});
+
+	it("rejects two description-less wildcards for the same test", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{ ...base, id: "a", pts: { test: "pts/a" } },
+				{ ...base, id: "b", pts: { test: "pts/a" } },
+			]),
+		).toThrow();
+	});
+
+	it("rejects a wildcard coexisting with a described entry for the same test", () => {
+		// This is the exact shape that would let ptsResultToMetric misattribute a non-matching
+		// <Description> to the wildcard — forbidden at load so the runtime fallback is safe.
+		expect(() =>
+			catalogSchema.assert([
+				{ ...base, id: "a", pts: { test: "pts/a" } },
+				{ ...base, id: "b", pts: { test: "pts/a", description: "Foo" } },
+			]),
+		).toThrow();
 	});
 });

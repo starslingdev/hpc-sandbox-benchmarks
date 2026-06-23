@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Generated>
+    <Title>sandbox-bench</Title>
+    <LastModified>2026-06-09 21:14:02</LastModified>
+    <TestClient>phoronix-test-suite/10.8.4</TestClient>
+  </Generated>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier>
+    <Title>Node.js V8 Web Tooling Benchmark</Title>
+    <AppVersion>1.0.1</AppVersion>
+    <Arguments>Run: default</Arguments>
+    <Description></Description>
+    <Scale>runs/s</Scale>
+    <Proportion>HIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>sandbox</Identifier>
+        <Value>16.19</Value>
+        <RawString>16.19:16.3:16.08</RawString>
+        <JSON></JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0",
+  "benchmark": "pts_git",
+  "skipped": true,
+  "skip_reason": "phoronix-test-suite not installed"
+}
