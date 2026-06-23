@@ -1,7 +1,7 @@
 // Public surface of @sandbox-benchmarks/harness — drives a provider to produce raw benchmark output.
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import type { ProviderConfig } from "@sandbox-benchmarks/providers";
+import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import { providers } from "@sandbox-benchmarks/providers";
 import type { RawRun, Suite } from "@sandbox-benchmarks/schema";
 import { isPtsResultFile, SUITES } from "@sandbox-benchmarks/schema";
@@ -11,7 +11,14 @@ import { MIN, StepRunner, withTimeout } from "./lib/execute.ts";
 import { now } from "./lib/internal.ts";
 import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
 
-/** Time a single operation against a provider, producing a {@link RawRun}. Stub (lifecycle path). */
+/**
+ * The universal sandbox a provider's `sandbox.create` returns (computesdk's `Sandbox`). Derived from
+ * {@link DirectProvider} so the harness depends only on providers — it never imports computesdk
+ * directly — while still being exactly typed (runCommand/destroy/filesystem).
+ */
+export type Sandbox = Awaited<ReturnType<DirectProvider["sandbox"]["create"]>>;
+
+/** Time a single operation against a provider, producing a {@link RawRun}. */
 export async function timeOperation(
 	config: ProviderConfig,
 	operation: string,
@@ -216,4 +223,102 @@ export async function runSuiteOnSandbox(
 
 	if (suiteError) throw suiteError;
 	console.log(`\nDone: ${suiteName} on ${providerName}`);
+}
+
+/**
+ * Run `fn` against a freshly created sandbox and guarantee teardown. Constructs the provider lazily
+ * (so importing the registry needs no credentials), creates a sandbox with the adapter's pinned
+ * {@link ProviderConfig.createOptions}, and always destroys it — even if `fn` throws. This is the
+ * boot→exec→teardown chain the benchmarks and bench-smoke drive.
+ */
+export async function withSandbox<T>(
+	config: ProviderConfig,
+	fn: (sandbox: Sandbox) => Promise<T>,
+): Promise<T> {
+	const compute = config.createCompute();
+	const sandbox = await compute.sandbox.create(config.createOptions);
+	let result: T;
+	try {
+		result = await fn(sandbox);
+	} catch (err) {
+		// fn failed: tear down once, but never let a destroy error mask the root cause (a
+		// `finally { await destroy() }` would swallow it). Log the secondary failure and rethrow fn's.
+		try {
+			await sandbox.destroy();
+		} catch (destroyErr) {
+			console.error(
+				`withSandbox: destroy failed after an error in fn (${config.name}):`,
+				destroyErr,
+			);
+		}
+		throw err;
+	}
+	// fn succeeded: tear down once. A teardown failure here is the only error, so let it surface
+	// (a leaked sandbox is worth failing on) — the result is already captured by the caller's fn.
+	await sandbox.destroy();
+	return result;
+}
+
+/**
+ * The credentials a provider needs that are missing (unset/empty) from `env`. A runner can both
+ * decide to skip and report exactly which vars are absent from this one list — the e2e surface is
+ * CI-with-secrets. `env` is injectable so this stays unit-testable without touching `process.env`.
+ */
+export function missingCreds(
+	config: ProviderConfig,
+	env: Record<string, string | undefined> = process.env,
+): string[] {
+	return config.requiredEnvVars.filter((name) => (env[name]?.length ?? 0) === 0);
+}
+
+/** Whether every credential a provider needs is present (non-empty) in `env`. */
+export function hasRequiredCreds(
+	config: ProviderConfig,
+	env: Record<string, string | undefined> = process.env,
+): boolean {
+	return missingCreds(config, env).length === 0;
+}
+
+/**
+ * The providers a run is *required* to exercise — parsed from `--require <ids>` (or `--require=<ids>`)
+ * in `argv`, falling back to the `REQUIRE_PROVIDERS` env var; both a comma-separated id list. Empty
+ * when neither is set, which is the lenient local-dev default (missing creds simply skip). CI passes
+ * `--require e2b,daytona,modal` at the publish boundary so a missing/misnamed secret fails loudly
+ * instead of silently shipping a version whose provider artifacts were never built/validated. Tokens
+ * are returned verbatim (not filtered to known ids) so a typo'd id surfaces as unmet rather than being
+ * dropped. `argv`/`env` are injectable to keep this unit-testable.
+ */
+export function requiredProviders(
+	argv: string[] = process.argv,
+	env: Record<string, string | undefined> = process.env,
+): string[] {
+	let raw = "";
+	const eq = argv.find((a) => a.startsWith("--require="));
+	if (eq) {
+		raw = eq.slice("--require=".length);
+	} else {
+		const i = argv.indexOf("--require");
+		const next = i === -1 ? undefined : argv[i + 1];
+		if (next !== undefined && !next.startsWith("-")) raw = next;
+	}
+	if (!raw) raw = env.REQUIRE_PROVIDERS ?? "";
+	return raw
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+}
+
+/**
+ * Of the `required` providers, those NOT satisfied by `reports` — i.e. no report with status `"ok"`.
+ * Skipped, failed, and entirely-absent providers all count as unmet. `reports` is typed structurally
+ * (`provider`/`status`) so both a {@link ProviderRun} list and a bake/promote report list fit without
+ * coupling the harness to either shape. A caller enforces the requirement by exiting non-zero when the
+ * result is non-empty (and `required` was non-empty).
+ */
+export function unmetRequirements(
+	reports: ReadonlyArray<{ provider: string; status: string }>,
+	required: readonly string[],
+): string[] {
+	const passed = new Set(reports.filter((r) => r.status === "ok").map((r) => r.provider));
+	return required.filter((id) => !passed.has(id));
 }

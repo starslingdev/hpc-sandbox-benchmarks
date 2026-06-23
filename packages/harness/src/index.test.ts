@@ -3,9 +3,19 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ProviderConfig } from "@sandbox-benchmarks/providers";
+import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import type { Suite } from "@sandbox-benchmarks/schema";
-import { runSuite, runSuiteOnSandbox, SuiteUsageError, timeOperation } from "./index.ts";
+import {
+	hasRequiredCreds,
+	missingCreds,
+	requiredProviders,
+	runSuite,
+	runSuiteOnSandbox,
+	SuiteUsageError,
+	timeOperation,
+	unmetRequirements,
+	withSandbox,
+} from "./index.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 
 // timeOperation only reads identity, never calls createCompute — a throwing stub keeps this unit
@@ -18,12 +28,134 @@ const config: ProviderConfig = {
 	},
 };
 
+// A fake provider that records its lifecycle calls, so withSandbox can be exercised offline with no
+// real SDK. Only the methods withSandbox touches are implemented; the cast recovers the full type.
+function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): ProviderConfig {
+	const sandbox = {
+		sandboxId: "sb-1",
+		provider: "e2b",
+		runCommand: (cmd: string) => {
+			calls.push(`run:${cmd}`);
+			return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+		},
+		destroy: () => {
+			calls.push("destroy");
+			return opts.destroyFails ? Promise.reject(new Error("destroy failed")) : Promise.resolve();
+		},
+	};
+	const compute = {
+		sandbox: {
+			create: () => {
+				calls.push("create");
+				return Promise.resolve(sandbox);
+			},
+		},
+	} as unknown as DirectProvider;
+	return { name: "e2b", requiredEnvVars: [], createCompute: () => compute };
+}
+
 describe("@sandbox-benchmarks/harness", () => {
 	it("times an operation and emits a raw run for the provider", async () => {
 		const run = await timeOperation(config, "spawn", () => {});
 		expect(run.provider).toBe("e2b");
 		expect(run.operation).toBe("spawn");
 		expect(run.durationMs).toBeGreaterThan(0);
+	});
+
+	it("withSandbox creates, runs the body, then destroys", async () => {
+		const calls: string[] = [];
+		const out = await withSandbox(fakeProvider(calls), async (sb) => {
+			await sb.runCommand("echo hi");
+			return "result";
+		});
+		expect(out).toBe("result");
+		expect(calls).toEqual(["create", "run:echo hi", "destroy"]);
+	});
+
+	it("withSandbox destroys even when the body throws", async () => {
+		const calls: string[] = [];
+		await expect(
+			withSandbox(fakeProvider(calls), async () => {
+				throw new Error("boom");
+			}),
+		).rejects.toThrow("boom");
+		expect(calls).toEqual(["create", "destroy"]);
+	});
+
+	it("withSandbox surfaces the body error, not a teardown error, when both fail", async () => {
+		const calls: string[] = [];
+		// destroy also rejects — the original "boom" must win so the root cause isn't masked, and
+		// destroy must be attempted exactly once (no double-teardown).
+		await expect(
+			withSandbox(fakeProvider(calls, { destroyFails: true }), async () => {
+				throw new Error("boom");
+			}),
+		).rejects.toThrow("boom");
+		expect(calls).toEqual(["create", "destroy"]);
+	});
+
+	it("withSandbox surfaces a teardown failure on the success path", async () => {
+		const calls: string[] = [];
+		// fn succeeded but destroy fails — a leaked sandbox is worth failing on, so it surfaces.
+		await expect(
+			withSandbox(fakeProvider(calls, { destroyFails: true }), async () => "ok"),
+		).rejects.toThrow("destroy failed");
+		expect(calls).toEqual(["create", "destroy"]);
+	});
+
+	const credsCfg: ProviderConfig = {
+		name: "modal",
+		requiredEnvVars: ["A", "B"],
+		createCompute: () => {
+			throw new Error("not exercised");
+		},
+	};
+
+	it("missingCreds lists the required vars that are unset or empty", () => {
+		expect(missingCreds(credsCfg, { A: "1", B: "2" })).toEqual([]);
+		expect(missingCreds(credsCfg, { A: "1", B: "" })).toEqual(["B"]);
+		expect(missingCreds(credsCfg, {})).toEqual(["A", "B"]);
+	});
+
+	it("hasRequiredCreds is true only when every required var is present and non-empty", () => {
+		expect(hasRequiredCreds(credsCfg, { A: "1", B: "2" })).toBe(true);
+		expect(hasRequiredCreds(credsCfg, { A: "1", B: "" })).toBe(false);
+		expect(hasRequiredCreds(credsCfg, { A: "1" })).toBe(false);
+		expect(hasRequiredCreds({ ...credsCfg, requiredEnvVars: [] }, {})).toBe(true);
+	});
+
+	it("requiredProviders parses --require, --require=, and the env fallback (empty by default)", () => {
+		expect(requiredProviders([], {})).toEqual([]);
+		expect(requiredProviders(["--require", "e2b,daytona,modal"], {})).toEqual([
+			"e2b",
+			"daytona",
+			"modal",
+		]);
+		expect(requiredProviders(["--require=e2b, daytona"], {})).toEqual(["e2b", "daytona"]);
+		// A bare --require with no value falls through to the env var rather than swallowing the next flag.
+		expect(requiredProviders(["--require", "--other"], { REQUIRE_PROVIDERS: "modal" })).toEqual([
+			"modal",
+		]);
+		// CLI takes precedence over env.
+		expect(requiredProviders(["--require", "e2b"], { REQUIRE_PROVIDERS: "modal" })).toEqual([
+			"e2b",
+		]);
+	});
+
+	it("unmetRequirements flags required providers that did not run-and-pass", () => {
+		const reports = [
+			{ provider: "e2b", status: "ok" },
+			{ provider: "daytona", status: "skipped" },
+			{ provider: "modal", status: "failed" },
+		];
+		expect(unmetRequirements(reports, [])).toEqual([]);
+		expect(unmetRequirements(reports, ["e2b"])).toEqual([]);
+		// skipped, failed, and entirely-absent (a typo'd id) all count as unmet.
+		expect(unmetRequirements(reports, ["e2b", "daytona", "modal", "typo"])).toEqual([
+			"daytona",
+			"modal",
+			"typo",
+		]);
 	});
 });
 

@@ -30,6 +30,7 @@
   "scripts": {
     "typecheck": "bun --filter '!./' --filter '*' --if-present typecheck",
     "test": "bun --filter '!./' --filter '*' --if-present test",
+    "smoke": "bun --filter @sandbox-benchmarks/cli smoke",
     "format": "biome format . --write",
     "lint": "biome check . --error-on-warnings",
     "lint:fix": "biome check . --write",
