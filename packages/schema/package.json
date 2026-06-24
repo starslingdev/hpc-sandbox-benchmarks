@@ -9,12 +9,15 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "fetch-profiles": "bun run scripts/fetch-profiles.ts"
+    "fetch-profiles": "bun run scripts/fetch-profiles.ts",
+    "generate-catalog": "bun run scripts/generate-catalog.ts"
   },
   "dependencies": {
     "arktype": "catalog:"
   },
   "devDependencies": {
+    "@nodable/compact-builder": "catalog:xml",
+    "@nodable/flexible-xml-parser": "catalog:xml",
     "@repo/tsconfig": "workspace:*",
     "@octokit/rest": "22.0.1",
     "typescript": "catalog:",

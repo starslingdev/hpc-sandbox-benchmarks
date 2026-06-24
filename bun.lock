@@ -90,6 +90,8 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
+        "@nodable/compact-builder": "catalog:xml",
+        "@nodable/flexible-xml-parser": "catalog:xml",
         "@octokit/rest": "22.0.1",
         "@repo/tsconfig": "workspace:*",
         "@types/bun": "catalog:",
