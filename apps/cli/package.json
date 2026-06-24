@@ -7,6 +7,7 @@
     "bench-lifecycle": "./src/bin/bench-lifecycle.ts",
     "bench-suite": "./src/bin/bench-suite.ts",
     "bench-smoke": "./src/bin/bench-smoke.ts",
+    "bake": "./src/bin/bake.ts",
     "plan-matrix": "./src/bin/plan-matrix.ts",
     "build-template": "./src/bin/build-template.ts",
     "normalize": "./src/bin/normalize.ts",
@@ -15,7 +16,8 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "smoke": "bun src/bin/bench-smoke.ts"
+    "smoke": "bun src/bin/bench-smoke.ts",
+    "bake": "bun src/bin/bake.ts"
   },
   "dependencies": {
     "@sandbox-benchmarks/schema": "workspace:*",

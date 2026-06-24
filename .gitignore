@@ -115,3 +115,6 @@ dist
 # Generated from packages/templates/src/pins.ts by build.sh / the publish workflow (the
 # e2b CLI requires this file on disk; the TypeScript config is its single source of truth).
 packages/templates/images/e2b/e2b.toml
+# Generated per-bake by `bake` (apps/cli/src/lib/bake/e2b.ts): the committed e2b/Dockerfile with its
+# base pinned to the candidate/version registry ref, since e2b CLI 2.x can't inject a build-arg.
+packages/templates/images/e2b/Dockerfile.generated
