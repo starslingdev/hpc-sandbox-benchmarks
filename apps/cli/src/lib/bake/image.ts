@@ -24,3 +24,36 @@ export async function buildAndPushCandidate(log: Log): Promise<void> {
 	await run(["docker", "tag", config.toolchainImageVersion, config.toolchainImageCandidate], log);
 	await run(["docker", "push", config.toolchainImageCandidate], log);
 }
+
+/** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */
+export function imagetoolsRetagCmd(from: string, to: string): string[] {
+	return ["docker", "buildx", "imagetools", "create", "-t", to, from];
+}
+
+/** Whether `ref` already exists in the registry — a successful `docker manifest inspect`. Queries the
+ *  registry (not local images), so a locally-built `:v1` tag never reads as published. promote uses
+ *  this to REFUSE overwriting the immutable public version.
+ *
+ *  Only a genuine "manifest not found" reads as absent. An auth, rate-limit, or network failure also
+ *  exits non-zero, but must NOT be mistaken for "not published" — that would bypass the immutability
+ *  guard and let promote overwrite an existing `:v1`. So those throw, and the caller refuses to publish
+ *  on an uncertain check rather than risk clobbering. */
+export async function imageExistsInRegistry(ref: string): Promise<boolean> {
+	const proc = Bun.spawn(["docker", "manifest", "inspect", ref], {
+		stdout: "ignore",
+		stderr: "pipe",
+		env: process.env,
+	});
+	const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+	if (code === 0) return true;
+	if (/no such manifest|manifest unknown|not found/i.test(stderr)) return false;
+	throw new Error(
+		`docker manifest inspect ${ref} failed (exit ${code}): ${stderr.trim() || "unknown error"}`,
+	);
+}
+
+/** Publish the validated candidate base as the immutable public version — a registry-side retag of
+ *  the exact validated bytes, so `:v1` is the same image the candidate validate booted. */
+export async function promoteImage(log: Log): Promise<void> {
+	await run(imagetoolsRetagCmd(config.toolchainImageCandidate, config.toolchainImageVersion), log);
+}

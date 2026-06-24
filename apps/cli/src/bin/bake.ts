@@ -16,6 +16,7 @@ import { bakeDaytonaSnapshot } from "../lib/bake/daytona.ts";
 import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
 import { buildAndPushCandidate } from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
+import { promoteAll } from "../lib/bake/promote.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
 import { candidateCreateOptions } from "../lib/bake/validate.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
@@ -38,6 +39,32 @@ const candidateRefs = {
 
 if (import.meta.main) {
 	const log: Log = (m) => console.error(m);
+
+	// Promote is the release step: publish the already-validated candidate as the public version.
+	if (process.argv.includes("--promote")) {
+		const promoted = await promoteAll(log);
+		console.log(
+			JSON.stringify(
+				{
+					version: {
+						image: config.toolchainImageVersion,
+						e2bTemplate: config.e2bTemplateVersion,
+						daytonaSnapshot: config.daytonaSnapshotDefault,
+					},
+					reports: promoted,
+				},
+				null,
+				2,
+			),
+		);
+		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona,modal`)
+		// runs INSIDE promoteAll before the immutable base is written, and every abort path (version already
+		// published, candidate re-validation failed, artifact failed, unmet requirements) pushes a structured
+		// `{ status: "failed" }` report. So a single `some(failed)` is the whole exit contract — re-deriving
+		// `unmet` here would mislabel an early abort (e.g. "version already exists") as a provider-credentials
+		// failure, since the early `reports` carry no provider "ok" entries.
+		process.exit(promoted.some((r) => r.status === "failed") ? 1 : 0);
+	}
 
 	if (process.argv.includes("--build-push")) {
 		log(">>> building + pushing candidate image…");
