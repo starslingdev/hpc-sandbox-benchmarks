@@ -18,7 +18,8 @@ async function readXml(path: string): Promise<string> {
 	return (await file.exists()) ? file.text() : "";
 }
 
-async function main(): Promise<void> {
+/** Regenerate `src/pts-generated.ts` in place. Exported so the drift gate can re-run it directly. */
+export async function generateCatalogFile(): Promise<void> {
 	// Sort the profile dirs so generation order — and thus output — is independent of readdir order.
 	const dirs = (await readdir(PROFILES_DIR, { withFileTypes: true }))
 		.filter((d) => d.isDirectory())
@@ -50,9 +51,10 @@ async function main(): Promise<void> {
 
 if (import.meta.main) {
 	try {
-		await main();
+		await generateCatalogFile();
 	} catch (err) {
-		console.error(`generate-catalog failed: ${err instanceof Error ? err.message : err}`);
+		// Log the whole error (preserves the stack) so a failure is debuggable, not just its message.
+		console.error("generate-catalog failed:", err);
 		process.exit(1);
 	}
 }

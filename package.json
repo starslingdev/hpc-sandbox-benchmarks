@@ -40,6 +40,7 @@
     "lint:docker": "find packages/templates/images -name 'Dockerfile' -exec mise exec -- hadolint {} +",
     "spell": "mise exec -- typos",
     "spell:fix": "mise exec -- typos --write-changes",
+    "check:catalog-drift": "bun --filter '@sandbox-benchmarks/schema' check:catalog-drift",
     "prepare": "lefthook install"
   },
   "devDependencies": {

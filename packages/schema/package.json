@@ -10,7 +10,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "fetch-profiles": "bun run scripts/fetch-profiles.ts",
-    "generate-catalog": "bun run scripts/generate-catalog.ts"
+    "generate-catalog": "bun run scripts/generate-catalog.ts",
+    "check:catalog-drift": "bun run scripts/check-catalog-drift.ts"
   },
   "dependencies": {
     "arktype": "catalog:"
