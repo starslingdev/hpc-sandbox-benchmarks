@@ -3,13 +3,14 @@
 // `dimension` — refined by the hand-authored override map (pts-overrides.ts) at import time; the
 // generator owns the XML-derived fields (`id`, `unit`, `direction`, `pts`) and id-uniqueness.
 //
-// Multi-result option matrices are handled by {@link synthesizeDescriptions}, a seam this core leaves
-// at the single-metric default (`[undefined]` → one description-less wildcard). The option-matrix
-// synthesis (cartesian product of `<TestSettings>`, results-parser inverse matching) fills that seam.
+// Multi-result option matrices are predicted by {@link synthesizeDescriptions} (./synthesize.ts): the
+// cartesian product of `<TestSettings>` × results-parser inverse matching, reproducing each runtime
+// `<Result>`'s `<Description>`. A single-metric profile collapses to one description-less wildcard.
 import { type } from "arktype";
 import type { Dimension, Direction, MetricDef } from "../../src/metrics.ts";
 import { directionSchema } from "../../src/metrics.ts";
 import type { PtsProfile } from "./parse.ts";
+import { synthesizeDescriptions } from "./synthesize.ts";
 
 /** Strip a trailing version: "node-web-tooling-1.0.1" → "node-web-tooling" (mirrors `versionlessTest`). */
 export function versionless(dir: string): string {
@@ -60,16 +61,6 @@ export function directionFor(profile: PtsProfile): Direction {
 	return out;
 }
 
-/**
- * The per-`<Result>` `<Description>` strings a profile emits at runtime, in deterministic order — the
- * disambiguator the runtime maps a result onto the catalog by. This core handles the single-metric
- * case only: one description-less wildcard. Option-matrix synthesis replaces this body; the signature
- * is the contract the rest of the generator builds on.
- */
-export function synthesizeDescriptions(_profile: PtsProfile): (string | undefined)[] {
-	return [undefined];
-}
-
 /** One profile → its draft `MetricDef[]` (one per synthesized description). */
 export function generateProfile(profile: PtsProfile): MetricDef[] {
 	const name = versionless(profile.dir);
@@ -83,6 +74,10 @@ export function generateProfile(profile: PtsProfile): MetricDef[] {
 	const base = slug(name);
 	const dimension = dimensionForTestType(profile.profile.TestType);
 	const direction = directionFor(profile);
+	// `unit` is `<ResultScale>`, which is already the post-transform scale: the results-definition
+	// numeric transforms (DivideResultBy/MultiplyResultBy/StripResultPostfix) rescale the runtime
+	// value, not the unit, so they're deliberately not applied here (c-ray's template reads
+	// "milliseconds" but ResultScale — and thus the unit — is "Seconds").
 	const { Title, SubTitle, Description, ResultScale } = profile.info;
 	const sourceUrl = profile.profile.ProjectURL;
 
