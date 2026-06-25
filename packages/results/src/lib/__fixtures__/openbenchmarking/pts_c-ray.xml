@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!--
+  Recorded c-ray-2.0.0 composite for the golden byte-match gate (design §3.7).
+
+  The three <Result> <Description> strings and their measured Seconds values are REAL recorded output
+  from the public OpenBenchmarking result 2406106-NE-BATCH207881
+  (https://openbenchmarking.org/result/2406106-NE-BATCH207881), which ran pts/c-ray-2.0.0 across the
+  1080p / 4K / 5K × 16-Rays-Per-Pixel option matrix. Each <Value> is that result's first compared
+  system's measurement; per-pass <RawString> samples are omitted (not exposed by the source export).
+
+  This fixture proves our synthesized pts.description strings byte-match what PTS actually emits for
+  c-ray-2.0.0 — distinct from the c-ray 1.x format ("Total Time - 4K, 16 Rays Per Pixel"), the exact
+  version-drift this gate exists to catch.
+-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>sandbox-bench</Title>
+    <TestClient>phoronix-test-suite/10.8.5</TestClient>
+  </Generated>
+  <Result>
+    <Identifier>pts/c-ray-2.0.0</Identifier>
+    <Title>C-Ray</Title>
+    <AppVersion>2.0</AppVersion>
+    <Description>Resolution: 1080p - Rays Per Pixel: 16</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <Data>
+      <Entry>
+        <Identifier>sandbox</Identifier>
+        <Value>25.359</Value>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>pts/c-ray-2.0.0</Identifier>
+    <Title>C-Ray</Title>
+    <AppVersion>2.0</AppVersion>
+    <Description>Resolution: 4K - Rays Per Pixel: 16</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <Data>
+      <Entry>
+        <Identifier>sandbox</Identifier>
+        <Value>101.494</Value>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>pts/c-ray-2.0.0</Identifier>
+    <Title>C-Ray</Title>
+    <AppVersion>2.0</AppVersion>
+    <Description>Resolution: 5K - Rays Per Pixel: 16</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <Data>
+      <Entry>
+        <Identifier>sandbox</Identifier>
+        <Value>180.289</Value>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

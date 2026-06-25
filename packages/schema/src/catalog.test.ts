@@ -36,6 +36,18 @@ describe("metric catalog", () => {
 		expect(getMetric(metric.id)).toBe(metric);
 	});
 
+	it("wires the generated PTS catalog (curated), not a hand-authored stand-in", () => {
+		// Guards against a revert to the old hand-authored `ptsCpu`: the c-ray option matrix only exists
+		// in the generated module, and the override-supplied short label proves curation was applied.
+		const cRay = getMetric("c_ray_resolution_1080p_rays_per_pixel_16");
+		expect(cRay?.pts).toEqual({
+			test: "pts/c-ray",
+			description: "Resolution: 1080p - Rays Per Pixel: 16",
+		});
+		expect(cRay?.label).toBe("C-Ray (1080p, 16 RPP)");
+		expect(getMetric("node_web_tooling_runs_per_s")?.headline).toBe(true);
+	});
+
 	it("returns undefined for an unknown metric id", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});
