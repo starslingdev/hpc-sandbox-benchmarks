@@ -16,7 +16,7 @@
  */
 import type { Aggregates, HarnessMetricId, RawRun, SkipMarker } from "@sandbox-benchmarks/schema";
 import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
-import { now } from "./internal.ts";
+import { time } from "./internal.ts";
 
 /** The slice of a computesdk sandbox the lifecycle driver times (its `Sandbox` satisfies this). */
 export interface LifecycleSandbox {
@@ -66,19 +66,6 @@ export interface LifecycleMeasurement {
 export interface LifecycleAggregate {
 	metricId: HarnessMetricId;
 	aggregates: Aggregates;
-}
-
-interface Timed<T> {
-	value: T;
-	ms: number;
-}
-
-/** Time an async (or sync) operation, flooring to a strictly-positive duration like {@link timeOperation}. */
-async function time<T>(run: () => Promise<T> | T): Promise<Timed<T>> {
-	const start = now();
-	const value = await run();
-	// `rawRunSchema` requires `durationMs > 0`; a sub-tick op can observe a 0 delta, so floor to EPSILON.
-	return { value, ms: Math.max(now() - start, Number.EPSILON) };
 }
 
 const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));

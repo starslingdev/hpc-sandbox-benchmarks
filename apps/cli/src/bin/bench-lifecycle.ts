@@ -14,6 +14,7 @@ import {
 	requiredProviders,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
+import type { LifecycleMetricSummary } from "../lib/lifecycle-summary.ts";
 import { formatLifecycleLines, summarizeLifecycleAggregates } from "../lib/lifecycle-summary.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 
@@ -21,8 +22,9 @@ import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 function intFlag(argv: string[], flag: string, fallback: number): number {
 	const i = argv.indexOf(flag);
 	const raw = i === -1 ? undefined : argv[i + 1];
+	// parseInt yields NaN for absent/garbage input, and `NaN > 0` is false — so this also rejects those.
 	const value = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
-	return Number.isFinite(value) && value > 0 ? value : fallback;
+	return value > 0 ? value : fallback;
 }
 
 if (import.meta.main) {
@@ -37,6 +39,9 @@ if (import.meta.main) {
 			`${controlPlaneSamples} control-plane probe(s)/cycle, snapshot=${snapshot}`,
 	);
 
+	// Summarize each provider's aggregates once, as it settles, then reuse for both the stderr log and the
+	// stdout JSON below. Skipped providers never settle through onComplete and carry no metrics.
+	const metricsByProvider = new Map<string, LifecycleMetricSummary[]>();
 	const runs = await forEachProviderWithCreds(
 		(provider) => {
 			log(`>>> ${provider.name}: measuring lifecycle…`);
@@ -46,11 +51,9 @@ if (import.meta.main) {
 			log,
 			onComplete: (run) => {
 				if (run.value) {
-					for (const line of formatLifecycleLines(
-						summarizeLifecycleAggregates(run.value.aggregates),
-					)) {
-						log(line);
-					}
+					const metrics = summarizeLifecycleAggregates(run.value.aggregates);
+					metricsByProvider.set(run.provider, metrics);
+					for (const line of formatLifecycleLines(metrics)) log(line);
 					for (const skip of run.value.skips) log(`    [skip] ${skip.suite}: ${skip.reason}`);
 				}
 				const time = run.durationMs ? `${run.durationMs.toFixed(0)}ms` : "";
@@ -66,7 +69,7 @@ if (import.meta.main) {
 		...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
 		...(run.value
 			? {
-					metrics: summarizeLifecycleAggregates(run.value.aggregates),
+					metrics: metricsByProvider.get(run.provider) ?? [],
 					skips: run.value.skips,
 				}
 			: {}),
