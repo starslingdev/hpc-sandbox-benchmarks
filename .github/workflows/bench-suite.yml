@@ -1,0 +1,100 @@
+name: Bench suite
+
+# Reusable per-suite lane: run ONE suite across a provider matrix, each cell on a real provider sandbox,
+# and upload its raw provider subtree as an artifact. Called once per suite by bench-matrix.yml, which
+# decides the credentialed provider list (plan-matrix) and passes it in as `providers`. Off the PR path —
+# it costs real sandbox time and needs provider credentials.
+#
+# Each cell writes ONLY its raw tree (`bench-suite … --raw-only`); bench-matrix.yml's package-raw job
+# merges every (provider, suite) subtree and normalizes the whole thing into one Run. A per-cell
+# normalize would emit a misleading single-provider Run and redo work package-raw must do anyway.
+on:
+  workflow_call:
+    inputs:
+      providers:
+        # Compact JSON array of credentialed provider ids (plan-matrix's `providers` output), e.g.
+        # ["daytona","e2b"]. The bench job matrixes over it.
+        description: JSON array of provider ids to fan out over
+        type: string
+        required: true
+      suite:
+        description: Suite to run (a key of SUITES)
+        type: string
+        required: true
+      timeout-minutes:
+        description: Per-cell job timeout (the suite runs for many minutes inside the sandbox)
+        type: number
+        required: false
+        default: 150
+
+# Least privilege: the job only reads the checked-out code and uploads an artifact.
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: ${{ inputs.suite }} on ${{ matrix.provider }}
+    # Defensive: the orchestrator already gates on a non-empty provider list, but guard here too so a
+    # direct call with an empty matrix is a no-op rather than a fan-out over nothing.
+    if: ${{ inputs.providers != '[]' }}
+    runs-on: starsling-ubuntu-24.04-2
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      # One provider's failure (a flaky boot, a missing snapshot) must not cancel the others — every
+      # credentialed cell gets its chance to land a Run.
+      fail-fast: false
+      matrix:
+        provider: ${{ fromJSON(inputs.providers) }}
+    steps:
+      # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
+      # moved/compromised tag can't silently change what runs.
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      # Frozen lockfile + no lifecycle scripts, matching bunfig.toml's supply-chain posture.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # Drives the provider SDK to create a sandbox, run the suite, and pull benchmark-results/ back into
+      # data/raw/<run_id>/<provider>/. --raw-only: no per-cell normalize (package-raw normalizes the
+      # merged tree). The sandbox clones THIS repo at the run's SHA so the in-sandbox producer matches.
+      - name: Run suite (raw only)
+        env:
+          BENCH_REPO_REF: ${{ github.sha }}
+          # The sandbox clones this private repo at the run's SHA; the short-lived job token authorizes it.
+          BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Dispatch values pass through the environment, never interpolated into the `run` script: a
+          # crafted matrix value would otherwise run arbitrary commands on the self-hosted runner.
+          # $GITHUB_RUN_ID is built-in.
+          BENCH_PROVIDER: ${{ matrix.provider }}
+          BENCH_SUITE: ${{ inputs.suite }}
+          # Daytona's default org is parked; the active region is ZEN5 (its own API key + target +
+          # snapshot). Keep this credential block in sync with bench-matrix.yml's setup job — the
+          # planner's credential-presence check must see exactly what this run does, or a provider it
+          # planned in could skip here (or vice versa). bench-matrix-workflow.test.ts gates the drift.
+          DAYTONA_REGION: zen5
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}
+          DAYTONA_TARGET_ZEN5: ${{ secrets.DAYTONA_TARGET_ZEN5 }}
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --raw-only
+
+      # Artifact name is the raw-files contract `resultsArtifactName(suite, provider)`; package-raw maps
+      # it back to a provider subtree via parseResultsArtifactName. always(): a benchmark error still pulls
+      # whatever partial results landed, so upload them too.
+      - name: Upload raw provider subtree
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: benchmark-results-${{ inputs.suite }}-sandbox-${{ matrix.provider }}
+          path: data/raw/${{ github.run_id }}/${{ matrix.provider }}
+          # A credentialed cell always writes a PTS result or skip marker (the harness fails the collect
+          # otherwise), so an empty subtree means the cell broke before producing anything — fail loudly.
+          if-no-files-found: error

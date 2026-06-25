@@ -1,0 +1,187 @@
+name: Bench matrix
+
+# The provider × suite orchestrator: fan the benchmark suites out across every credentialed provider so
+# each (provider, suite) cell produces a Run artifact on a schedule or dispatch. Three lanes:
+#   setup        — plan-matrix validates the requested providers/suites, drops credential-less providers
+#                  (emitting their skip markers once, here, instead of spinning a runner per cell), and
+#                  emits the credentialed provider list + selected suites.
+#   <suite> jobs — one per suite, each calling the reusable bench-suite.yml over the provider matrix.
+#   package-raw  — merge every cell's raw subtree into one curated tree and normalize it as a SCHEMA GATE,
+#                  then upload the Run. (Committing the Run into data/raw and redeploying the site is
+#                  ENG-67 / ENG-68 — this lane stops at emitting the validated Run artifact.)
+#
+# Off the PR path: it costs real sandbox time and needs provider credentials. The bake/publish lane stays
+# shared — the toolchain snapshot/template this boots come from toolchain-image.yml, not rebuilt here.
+on:
+  schedule:
+    # Weekly (Monday 06:00 UTC) so the dataset grows without manual dispatch. Scheduled runs fire only on
+    # the default branch. Tune the cadence as more providers/suites come online (ENG-60/63/64).
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      providers:
+        description: "Comma-separated provider ids (e2b, daytona, modal), or 'all'"
+        type: string
+        default: all
+      suites:
+        description: "Comma-separated suites to run, or 'all'"
+        type: string
+        default: all
+
+# Least privilege: every job here only reads the checked-out code and moves artifacts around.
+permissions:
+  contents: read
+
+# Serialize matrix runs per ref; never cancel an in-flight one (a half-produced dataset is worse than a
+# slow one, and cells hold real sandboxes).
+concurrency:
+  group: bench-matrix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Plan the matrix once. plan-matrix reads only credential PRESENCE, so this env block mirrors the
+  # runtime credentials in bench-suite.yml's bench job — drift between the two would let the planner keep
+  # a provider that then skips in the suite job (or drop one that could have run).
+  # bench-matrix-workflow.test.ts gates that the two env blocks stay in sync.
+  setup:
+    name: Plan provider × suite matrix
+    runs-on: starsling-ubuntu-24.04-2
+    timeout-minutes: 10
+    outputs:
+      providers: ${{ steps.plan.outputs.providers }}
+      # Comma-padded suite list (",cpu-node,") so the suite jobs gate on an exact contains(',name,')
+      # match — GitHub Actions expressions can't split strings.
+      suites: ${{ steps.plan.outputs.suites }}
+      has_skips: ${{ steps.plan.outputs.has_skips }}
+    env:
+      DAYTONA_REGION: zen5
+      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+      DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}
+      DAYTONA_TARGET_ZEN5: ${{ secrets.DAYTONA_TARGET_ZEN5 }}
+      E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Plan matrix
+        id: plan
+        env:
+          # Dispatch inputs through the environment, never interpolated into the `run` script. On the
+          # schedule trigger these are unset (empty), which plan-matrix reads as "all".
+          PROVIDERS_INPUT: ${{ inputs.providers }}
+          SUITES_INPUT: ${{ inputs.suites }}
+        run: |
+          bun apps/cli/src/bin/plan-matrix.ts \
+            --providers "$PROVIDERS_INPUT" \
+            --suites "$SUITES_INPUT" \
+            --skip-markers skip-markers
+      # Only exists when the planner dropped credential-less providers; package-raw merges these markers
+      # into the curated raw tree so the Run still records why those providers are absent.
+      - name: Upload setup skip markers
+        if: ${{ steps.plan.outputs.has_skips == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: setup-skips
+          path: skip-markers/
+          retention-days: 30
+
+  # One job per suite. Each gates on its own padded token and fans the credentialed providers out through
+  # the reusable lane. SUITES currently ships only cpu-node; add a block per suite as ENG-60 lands them
+  # (bench-matrix-workflow.test.ts fails if a SUITES entry has no job here). secrets: inherit hands the
+  # reusable workflow the provider credentials.
+  cpu-node:
+    needs: setup
+    if: ${{ needs.setup.outputs.providers != '[]' && contains(needs.setup.outputs.suites, ',cpu-node,') }}
+    uses: ./.github/workflows/bench-suite.yml
+    secrets: inherit
+    with:
+      providers: ${{ needs.setup.outputs.providers }}
+      suite: cpu-node
+      timeout-minutes: 150
+
+  # Merge, curate, and validate the Run in one job. !cancelled() (not the implicit success()): success()
+  # walks the transitive needs chain, so one failed provider cell would veto packaging the cells that did
+  # land. Requires setup to have succeeded (no plan → nothing to package).
+  package-raw:
+    name: Package & validate Run
+    needs: [setup, cpu-node]
+    if: ${{ !cancelled() && needs.setup.result == 'success' }}
+    runs-on: starsling-ubuntu-24.04-2
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      # Every cell's raw provider subtree: benchmark-results-<suite>-sandbox-<provider>.
+      - name: Download suite results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: benchmark-results-*
+          path: artifacts
+      # Present only when setup dropped credential-less providers; absent otherwise (continue-on-error).
+      - name: Download setup skip markers
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: setup-skips
+          path: artifacts/setup-skips
+      # Merge the per-suite artifacts for the same provider (cp -n: first writer wins on the rare
+      # duplicate filename across suites), curate down to structured tool output (drop logs), and stamp a
+      # run.json provenance file. The artifact name's `-sandbox-<provider>` tail names the provider dir.
+      - name: Assemble curated raw tree
+        env:
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          dest="data/raw/${RUN_ID}"
+          mkdir -p "$dest"
+          for d in artifacts/benchmark-results-*; do
+            [ -d "$d" ] || continue
+            provider="${d##*-sandbox-}"
+            mkdir -p "$dest/$provider"
+            cp -rn "$d"/. "$dest/$provider/"
+          done
+          # Skip markers for providers the planner dropped from the matrix.
+          for d in artifacts/setup-skips/*; do
+            [ -d "$d" ] || continue
+            provider="$(basename "$d")"
+            mkdir -p "$dest/$provider"
+            cp -rn "$d"/. "$dest/$provider/"
+          done
+          find "$dest" -name '*.log' -delete
+          find "$dest" -name '.DS_Store' -delete
+          printf '{"runId":"%s","sha":"%s","sourceRunUrl":"%s"}\n' \
+            "$RUN_ID" "$SHA" "$SOURCE_RUN_URL" > "$dest/run.json"
+          ls -R data/raw
+      # Normalize the merged tree into one validated Run — the schema gate. A tree that can't normalize
+      # fails here before it could ever be promoted (ENG-67).
+      - name: Normalize (schema gate)
+        env:
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          bun apps/cli/src/bin/normalize.ts \
+            "data/raw/${RUN_ID}" "${RUN_ID}" "${SHA}" "data/runs/${RUN_ID}.json"
+      # The Run artifact: the curated raw tree plus the validated Run document. ENG-67 commits this into
+      # data/raw/<run_id> and promotes; this lane stops at the artifact.
+      - name: Upload Run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bench-matrix-run-${{ github.run_id }}
+          path: data/
+          retention-days: 90
+          if-no-files-found: error

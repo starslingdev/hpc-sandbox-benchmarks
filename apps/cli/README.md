@@ -4,8 +4,10 @@
 
 **Bins (`bin`, no `exports`):**
 - `bench-lifecycle` — benchmark one provider's spawn→exec→teardown lifecycle.
-- `bench-suite` — run the full suite across the matrix.
-- `plan-matrix` — print the benchmark matrix as **single-line compact JSON** for `$GITHUB_OUTPUT`.
+- `bench-suite` — run one suite on one provider sandbox into a raw tree, then normalize it into a Run
+  (`--raw-only` stops after the raw tree; the bench-matrix fan-out uses it).
+- `plan-matrix` — plan the provider × suite matrix for the bench-matrix workflow: emit the credentialed
+  provider list + selected suites to `$GITHUB_OUTPUT` and write skip markers for credential-less providers.
 - `build-template` — build a provider's sandbox template.
 - `normalize` — turn raw runs into normalized run documents.
 - `promote` — promote normalized results to the published dataset.
