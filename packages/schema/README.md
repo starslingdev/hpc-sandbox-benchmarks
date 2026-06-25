@@ -4,7 +4,8 @@
 builds on.
 
 **Public surface (`.`):** the provider registry and economics, the toolchain identity, the Metric
-vocabulary + Catalog (`MetricDef`, `METRIC_CATALOG`, `aggregate()`), the Run dataset model (`Run`,
+vocabulary + Catalog (`MetricDef`, `METRIC_CATALOG`, `aggregate()`), the harness-measured Metric slice
+and its operation→id contract (`harnessMetrics`, `HARNESS_METRIC_IDS`), the Run dataset model (`Run`,
 `ProviderRun`, `MetricResult`, `parseRun()`), the raw-file naming contract, and `RawRun` /
 `parseRawRun()`.
 
