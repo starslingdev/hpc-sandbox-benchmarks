@@ -8,6 +8,8 @@
   (`--raw-only` stops after the raw tree; the bench-matrix fan-out uses it).
 - `plan-matrix` — plan the provider × suite matrix for the bench-matrix workflow: emit the credentialed
   provider list + selected suites to `$GITHUB_OUTPUT` and write skip markers for credential-less providers.
+- `assemble-run` — merge a bench-matrix run's per-cell raw artifacts into one curated raw tree (the
+  package-raw step's input to `normalize`).
 - `build-template` — build a provider's sandbox template.
 - `normalize` — turn raw runs into normalized run documents.
 - `promote` — promote normalized results to the published dataset.

@@ -137,36 +137,17 @@ jobs:
         with:
           name: setup-skips
           path: artifacts/setup-skips
-      # Merge the per-suite artifacts for the same provider (cp -n: first writer wins on the rare
-      # duplicate filename across suites), curate down to structured tool output (drop logs), and stamp a
-      # run.json provenance file. The artifact name's `-sandbox-<provider>` tail names the provider dir.
+      # Merge every cell's raw subtree into one dir-per-provider tree, curate it (drop logs/OS cruft), and
+      # stamp run.json. The artifact-name → provider mapping reuses parseResultsArtifactName (the tested
+      # inverse of the upload-side name), so it can't drift — see apps/cli/src/bin/assemble-run.ts.
       - name: Assemble curated raw tree
         env:
           RUN_ID: ${{ github.run_id }}
           SHA: ${{ github.sha }}
           SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          set -euo pipefail
-          dest="data/raw/${RUN_ID}"
-          mkdir -p "$dest"
-          for d in artifacts/benchmark-results-*; do
-            [ -d "$d" ] || continue
-            provider="${d##*-sandbox-}"
-            mkdir -p "$dest/$provider"
-            cp -rn "$d"/. "$dest/$provider/"
-          done
-          # Skip markers for providers the planner dropped from the matrix.
-          for d in artifacts/setup-skips/*; do
-            [ -d "$d" ] || continue
-            provider="$(basename "$d")"
-            mkdir -p "$dest/$provider"
-            cp -rn "$d"/. "$dest/$provider/"
-          done
-          find "$dest" -name '*.log' -delete
-          find "$dest" -name '.DS_Store' -delete
-          printf '{"runId":"%s","sha":"%s","sourceRunUrl":"%s"}\n' \
-            "$RUN_ID" "$SHA" "$SOURCE_RUN_URL" > "$dest/run.json"
-          ls -R data/raw
+          bun apps/cli/src/bin/assemble-run.ts \
+            artifacts "data/raw/${RUN_ID}" "${RUN_ID}" "${SHA}" "${SOURCE_RUN_URL}"
       # Normalize the merged tree into one validated Run — the schema gate. A tree that can't normalize
       # fails here before it could ever be promoted (ENG-67).
       - name: Normalize (schema gate)

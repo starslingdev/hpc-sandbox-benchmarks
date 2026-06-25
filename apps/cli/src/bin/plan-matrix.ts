@@ -77,12 +77,10 @@ if (import.meta.main) {
 	const skipDir = readFlag(argv, "skip-markers");
 	if (skipDir && plan.skipped.length > 0) writeSkipMarkers(skipDir, plan);
 
-	const outputs = planOutputs(plan);
+	const outputLines = Object.entries(planOutputs(plan)).map(([key, value]) => `${key}=${value}`);
 	const outFile = process.env.GITHUB_OUTPUT;
-	if (outFile) {
-		for (const [key, value] of Object.entries(outputs))
-			appendFileSync(outFile, `${key}=${value}\n`);
-	}
+	// One batched write — the $GITHUB_OUTPUT contract is line-oriented, so join and append once.
+	if (outFile) appendFileSync(outFile, `${outputLines.join("\n")}\n`);
 
 	// Human summary (always), then the raw name=value lines when there is no $GITHUB_OUTPUT to capture.
 	console.log(`providers (credentialed): ${plan.providers.join(", ") || "(none)"}`);
@@ -93,7 +91,5 @@ if (import.meta.main) {
 			console.log(`  - ${cell.provider}/${cell.suite}: ${cell.reason}`);
 		}
 	}
-	if (!outFile) {
-		for (const [key, value] of Object.entries(outputs)) console.log(`${key}=${value}`);
-	}
+	if (!outFile) for (const line of outputLines) console.log(line);
 }

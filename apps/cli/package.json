@@ -9,6 +9,7 @@
     "bench-smoke": "./src/bin/bench-smoke.ts",
     "bake": "./src/bin/bake.ts",
     "plan-matrix": "./src/bin/plan-matrix.ts",
+    "assemble-run": "./src/bin/assemble-run.ts",
     "build-template": "./src/bin/build-template.ts",
     "normalize": "./src/bin/normalize.ts",
     "promote": "./src/bin/promote.ts"
