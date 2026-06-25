@@ -60,6 +60,18 @@ export type PtsMapping =
 	| { kind: "matched"; def: MetricDef; samples: number[] }
 	| { kind: "uncatalogued"; test: string; description: string };
 
+// Index the catalog by versionless test once at module load. `ptsResultToMetric` runs per `<Result>`
+// — the golden gate alone calls it across every result of every recorded composite — so a per-call
+// linear `METRIC_CATALOG.filter` is O(results × catalog); the prebuilt map makes each lookup O(1).
+// Insertion order follows catalog order, so the wildcard-vs-description preference below is unchanged.
+const catalogByTest = new Map<string, MetricDef[]>();
+for (const metric of METRIC_CATALOG) {
+	if (!metric.pts) continue;
+	const forTest = catalogByTest.get(metric.pts.test);
+	if (forTest) forTest.push(metric);
+	else catalogByTest.set(metric.pts.test, [metric]);
+}
+
 /**
  * Map a parsed Result onto the Metric Catalog by its versionless test (and `<Description>` for
  * multi-result tests).
@@ -67,7 +79,7 @@ export type PtsMapping =
 export function ptsResultToMetric(result: PtsResult): PtsMapping {
 	const test = versionlessTest(result.Identifier);
 	const description = result.Description ?? "";
-	const forTest = METRIC_CATALOG.filter((metric) => metric.pts?.test === test);
+	const forTest = catalogByTest.get(test) ?? [];
 	// Prefer an exact `<Description>` match over the wildcard (description-less) entry, so a
 	// multi-result test's catalog ordering can't make the wildcard greedily shadow a specific metric.
 	// The catalog invariant (`catalogSchema` .narrow, catalog.ts) guarantees a wildcard never coexists
