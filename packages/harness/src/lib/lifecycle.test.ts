@@ -17,16 +17,36 @@ interface FakeOptions {
 	failInfo?: boolean;
 	failDestroy?: boolean;
 	failSnapshotCreate?: boolean;
+	/** Number of leading `runCommand` calls that report exitCode 1 (not-ready) before succeeding. */
+	notReadyFor?: number;
 }
+
+/**
+ * Test injection: a monotonic clock that ticks one ms per read, and a delay that never really sleeps.
+ * The driver's readiness loop retries `echo ok`, so without a no-op delay a not-ready path would block
+ * the test for `readinessMaxAttempts × readinessRetryDelayMs` of real time.
+ */
+function fastClock(): () => number {
+	let t = 0;
+	return () => ++t;
+}
+const noDelay = async (): Promise<void> => {};
 
 /** A fake compute that records its call order, so the driver's chain is checkable without a real SDK. */
 function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls: FakeCalls } {
 	const calls: FakeCalls = { order: [], deletedSnapshots: [] };
+	let readinessProbes = 0;
 	const sandbox: LifecycleSandbox = {
 		sandboxId: "sb-1",
 		async runCommand(command) {
 			calls.order.push(`exec:${command}`);
 			if (opts.failExec) throw new Error("exec boom");
+			// The readiness loop probes "echo ok"; report it not-ready (exitCode 1) for the first
+			// `notReadyFor` attempts so the cold-start retry path is exercised without a real SDK.
+			if (command === "echo ok") {
+				readinessProbes += 1;
+				if (opts.notReadyFor && readinessProbes <= opts.notReadyFor) return { exitCode: 1 };
+			}
 			return { exitCode: 0 };
 		},
 		async getInfo() {
@@ -81,16 +101,20 @@ const reasonFor = (skips: { suite: string; reason: string }[], op: string): stri
 	skips.find((s) => s.suite === op)?.reason;
 
 describe("measureLifecycle", () => {
-	it("times the full spawn→exec→info→list→snapshot→teardown chain in order", async () => {
+	it("times the full spawn→readiness→exec→payload→info→list→snapshot→teardown chain in order", async () => {
 		const { compute, calls } = fakeCompute({ withSnapshot: true, withList: true });
 		const { samples, skips } = await measureLifecycle(compute, {
 			provider: "e2b",
 			controlPlaneSamples: 2,
+			now: fastClock(),
+			delay: noDelay,
 		});
 
 		expect(calls.order).toEqual([
 			"create",
-			"exec:true",
+			"exec:echo ok", // readiness probe — first success marks the sandbox usable
+			"exec:true", // exec round-trip floor
+			"exec:head -c 65536 /dev/zero | base64", // 64KiB payload exec
 			"getInfo",
 			"getInfo",
 			"list",
@@ -101,7 +125,10 @@ describe("measureLifecycle", () => {
 		// controlPlaneSamples:2 governs BOTH control-plane reads — getInfo and list each probed twice.
 		expect(countByOp(samples)).toEqual({
 			[HARNESS_METRIC_IDS.spawn]: 1,
+			[HARNESS_METRIC_IDS.coldStart]: 1,
+			[HARNESS_METRIC_IDS.firstExec]: 1,
 			[HARNESS_METRIC_IDS.exec]: 1,
+			[HARNESS_METRIC_IDS.execPayload64k]: 1,
 			[HARNESS_METRIC_IDS.controlPlaneInfo]: 2,
 			[HARNESS_METRIC_IDS.controlPlaneList]: 2,
 			[HARNESS_METRIC_IDS.snapshot]: 1,
@@ -114,9 +141,74 @@ describe("measureLifecycle", () => {
 		expect(calls.deletedSnapshots).toEqual(["snap-1"]);
 	});
 
+	it("retries the readiness probe until the first success, then records cold-start honestly", async () => {
+		// Two not-ready probes (exitCode 1) then success: cold_start spans t0→3rd probe, first_exec
+		// create→3rd probe — both bigger than the create-resolve spawn delta alone.
+		const { compute, calls } = fakeCompute({ notReadyFor: 2 });
+		const { samples, skips } = await measureLifecycle(compute, {
+			provider: "e2b",
+			now: fastClock(),
+			delay: noDelay,
+		});
+		// create, three echo-ok probes (two not-ready + one ready), then exec floor + payload.
+		expect(calls.order.slice(0, 4)).toEqual([
+			"create",
+			"exec:echo ok",
+			"exec:echo ok",
+			"exec:echo ok",
+		]);
+		const ops = countByOp(samples);
+		expect(ops[HARNESS_METRIC_IDS.coldStart]).toBe(1);
+		expect(ops[HARNESS_METRIC_IDS.firstExec]).toBe(1);
+		// cold_start (t0→ready) strictly exceeds first_exec (create→ready) — it also carries create.
+		const cold = samples.find((s) => s.operation === HARNESS_METRIC_IDS.coldStart);
+		const first = samples.find((s) => s.operation === HARNESS_METRIC_IDS.firstExec);
+		expect(cold?.durationMs).toBeGreaterThan(first?.durationMs ?? 0);
+		// A recovered readiness is NOT a skip (only the unsupported snapshot/list ops on this bare fake).
+		expect(reasonFor(skips, HARNESS_METRIC_IDS.coldStart)).toBeUndefined();
+		expect(reasonFor(skips, HARNESS_METRIC_IDS.firstExec)).toBeUndefined();
+	});
+
+	it("skips both readiness Metrics when the sandbox never goes ready, capped at readinessMaxAttempts", async () => {
+		// notReadyFor exceeds the attempt cap → never ready; the loop must stop at the cap, not spin.
+		const { compute, calls } = fakeCompute({ notReadyFor: 10 });
+		const { samples, skips } = await measureLifecycle(compute, {
+			provider: "e2b",
+			readinessMaxAttempts: 3,
+			now: fastClock(),
+			delay: noDelay,
+		});
+		expect(calls.order.filter((c) => c === "exec:echo ok").length).toBe(3);
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.coldStart]).toBeUndefined();
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.firstExec]).toBeUndefined();
+		expect(reasonFor(skips, HARNESS_METRIC_IDS.coldStart)).toMatch(/never ready/);
+		expect(reasonFor(skips, HARNESS_METRIC_IDS.firstExec)).toMatch(/never ready/);
+		// Spawn and teardown still measured around the unusable sandbox.
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.spawn]).toBe(1);
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);
+	});
+
+	it("records a skip when the 64KiB payload exec is disabled, without calling it", async () => {
+		const { compute, calls } = fakeCompute();
+		const { samples, skips } = await measureLifecycle(compute, {
+			provider: "e2b",
+			payload: false,
+			now: fastClock(),
+			delay: noDelay,
+		});
+		expect(calls.order.some((c) => c.includes("base64"))).toBe(false);
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.execPayload64k]).toBeUndefined();
+		expect(reasonFor(skips, HARNESS_METRIC_IDS.execPayload64k)).toMatch(/disabled/);
+	});
+
 	it("honors a custom exec command", async () => {
 		const { compute, calls } = fakeCompute();
-		await measureLifecycle(compute, { provider: "e2b", execCommand: "uname -a" });
+		await measureLifecycle(compute, {
+			provider: "e2b",
+			execCommand: "uname -a",
+			now: fastClock(),
+			delay: noDelay,
+		});
 		expect(calls.order).toContain("exec:uname -a");
 	});
 
@@ -148,11 +240,20 @@ describe("measureLifecycle", () => {
 	});
 
 	it("turns a mid-chain exec failure into a skip and still tears down", async () => {
+		// A throwing runCommand also fails every readiness probe, so cap attempts + inject a no-op delay
+		// to keep the retry loop fast.
 		const { compute, calls } = fakeCompute({ failExec: true });
-		const { samples, skips } = await measureLifecycle(compute, { provider: "e2b" });
+		const { samples, skips } = await measureLifecycle(compute, {
+			provider: "e2b",
+			readinessMaxAttempts: 2,
+			now: fastClock(),
+			delay: noDelay,
+		});
 		// exec failed → no exec sample, but a skip carrying the error message.
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.exec]).toBeUndefined();
 		expect(reasonFor(skips, HARNESS_METRIC_IDS.exec)).toBe("exec boom");
+		// A never-ready sandbox skips both readiness Metrics.
+		expect(reasonFor(skips, HARNESS_METRIC_IDS.coldStart)).toMatch(/never ready/);
 		// Teardown still ran and was sampled.
 		expect(calls.order).toContain("destroy");
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);

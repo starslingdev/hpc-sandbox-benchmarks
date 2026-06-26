@@ -23,8 +23,15 @@ import type { MetricDef } from "./metrics.ts";
  * `HARNESS_METRIC_IDS.spawn` rather than repeating the string literal.
  */
 export const HARNESS_METRIC_IDS = {
-	/** Cold start: `sandbox.create()` returns a usable handle. */
+	/** Create-resolve: wall time until `sandbox.create()` returns a handle — NOT yet a usable sandbox. */
 	spawn: "lifecycle_spawn_ms",
+	/**
+	 * Honest cold start: t0 (before create) → the FIRST trivial exec that returns successfully. Unlike
+	 * {@link spawn} this includes the readiness wait, so it is the real "ready to do work" latency.
+	 */
+	coldStart: "lifecycle_cold_start_ms",
+	/** Readiness wait: create-resolve → the first successful exec — the gap {@link spawn} can't see. */
+	firstExec: "lifecycle_time_to_first_exec_ms",
 	/** A trivial in-sandbox command round-trip — the exec-path latency floor. */
 	exec: "lifecycle_exec_ms",
 	/** Capturing a snapshot/image from a running sandbox. */
@@ -35,6 +42,8 @@ export const HARNESS_METRIC_IDS = {
 	controlPlaneInfo: "control_plane_info_ms",
 	/** Control-plane enumeration: listing the account's sandboxes. */
 	controlPlaneList: "control_plane_list_ms",
+	/** A 64KiB-stdout exec round-trip — exec overhead including output streaming. */
+	execPayload64k: "control_plane_exec_payload_64k_ms",
 } as const;
 
 /** The operations the lifecycle driver times — the keys of {@link HARNESS_METRIC_IDS}. */
@@ -50,7 +59,7 @@ const LIB = "LIB";
 
 /**
  * The non-PTS Metric Catalog slice: the lifecycle and control-plane Metrics, in display order. Exactly
- * one `headline:true` per Dimension (spawn for lifecycle, sandbox-info for control-plane), the
+ * one `headline:true` per Dimension (cold-start for lifecycle, sandbox-info for control-plane), the
  * invariant catalog.ts enforces at load and harness-metrics.test asserts here. No `pts` field — these
  * are populated from harness timings, so the catalogSchema PTS-mapping invariant skips them.
  */
@@ -60,10 +69,30 @@ export const harnessMetrics: MetricDef[] = [
 		dimension: "lifecycle",
 		unit: MS,
 		direction: LIB,
-		headline: true,
+		headline: false,
 		label: "Spawn",
 		description:
-			"Wall time for the provider to create a sandbox and return a usable handle (cold start), measured by the harness around the SDK create() call.",
+			"Wall time for the provider's SDK create() call to return a sandbox handle. This is create-resolve only — the handle is not necessarily ready to run a command yet, so cold-start is the honest headline.",
+	},
+	{
+		id: HARNESS_METRIC_IDS.coldStart,
+		dimension: "lifecycle",
+		unit: MS,
+		direction: LIB,
+		headline: true,
+		label: "Cold start",
+		description:
+			"Honest cold start: wall time from before the SDK create() call until the first trivial in-sandbox command returns successfully — create plus the readiness wait. The real 'ready to do work' latency.",
+	},
+	{
+		id: HARNESS_METRIC_IDS.firstExec,
+		dimension: "lifecycle",
+		unit: MS,
+		direction: LIB,
+		headline: false,
+		label: "Time to first exec",
+		description:
+			"Wall time from create() returning a handle until the first trivial command runs successfully — the readiness gap between a resolved handle and a usable sandbox that spawn alone cannot see.",
 	},
 	{
 		id: HARNESS_METRIC_IDS.exec,
@@ -114,5 +143,15 @@ export const harnessMetrics: MetricDef[] = [
 		label: "List sandboxes",
 		description:
 			"Round-trip latency of listing the account's sandboxes — the control-plane enumeration path. Recorded as a skip for providers whose SDK exposes no list operation.",
+	},
+	{
+		id: HARNESS_METRIC_IDS.execPayload64k,
+		dimension: "control-plane",
+		unit: MS,
+		direction: LIB,
+		headline: false,
+		label: "Exec 64KiB payload",
+		description:
+			"Round-trip latency of an exec that writes 64KiB to stdout (head -c 65536 /dev/zero | base64) — exec overhead including output streaming, isolated from the trivial round-trip floor.",
 	},
 ];
