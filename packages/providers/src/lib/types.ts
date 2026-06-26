@@ -1,7 +1,7 @@
 // The harness-facing adapter contract. Identity (`name`, `requiredEnvVars`) is owned by the schema's
 // ProviderMeta; this module owns only how to construct a provider and the benchmark's create-time
 // policy. `index.ts` joins the two registries by id (PROVIDERS × adapters, both keyed by ProviderId).
-import type { ProviderId } from "@sandbox-benchmarks/schema";
+import type { ProviderId, ProviderTransport } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions, ExplicitComputeConfig } from "computesdk";
 
 /**
@@ -39,4 +39,6 @@ export interface ProviderConfig extends ProviderAdapter {
 	name: ProviderId;
 	/** Env vars that must all be set to run (mirrored from the schema ProviderMeta). */
 	requiredEnvVars: string[];
+	/** Exec transport capability (schema-owned), from which the harness picks a per-step transport. */
+	transport: ProviderTransport;
 }

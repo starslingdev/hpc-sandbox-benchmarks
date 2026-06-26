@@ -14,6 +14,17 @@ describe("@sandbox-benchmarks/providers", () => {
 		}
 	});
 
+	it("carries each provider's schema-owned transport capability through to the config", () => {
+		// The join must surface the same transport the schema declares, so the harness selects a
+		// transport from the provider's real capability rather than a hardcoded default. `providers` is
+		// `PROVIDERS.map(...)`, so the two are index-aligned by construction — assert positionally
+		// instead of an O(N²) `.find`, which also keeps the failure message pointing at the drift.
+		expect(providers.length).toBe(PROVIDERS.length);
+		for (let i = 0; i < providers.length; i++) {
+			expect(providers[i]?.transport).toEqual(PROVIDERS[i]?.transport);
+		}
+	});
+
 	it("pins modal's create-time spec from the shared TARGET_SPEC", () => {
 		const modal = providers.find((p) => p.name === "modal");
 		// Modal bills/provisions in physical cores, so the pinned vCPU count is halved for cpu/cpuLimit.

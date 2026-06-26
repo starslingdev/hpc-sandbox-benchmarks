@@ -18,11 +18,16 @@ import {
 } from "./index.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 
+// A transport capability for the test fixtures — capped-with-detach, matching a single-round-trip
+// provider; none of these tests exercise real exec, so the exact values are inert here.
+const fixtureTransport = { streaming: false, syncCapMs: 60_000, detachedPoll: true } as const;
+
 // timeOperation only reads identity, never calls createCompute — a throwing stub keeps this unit
 // test free of any real SDK while staying fully typed.
 const config: ProviderConfig = {
 	name: "e2b",
 	requiredEnvVars: [],
+	transport: fixtureTransport,
 	createCompute: () => {
 		throw new Error("not exercised");
 	},
@@ -51,7 +56,12 @@ function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): P
 			},
 		},
 	} as unknown as DirectProvider;
-	return { name: "e2b", requiredEnvVars: [], createCompute: () => compute };
+	return {
+		name: "e2b",
+		requiredEnvVars: [],
+		transport: fixtureTransport,
+		createCompute: () => compute,
+	};
 }
 
 describe("@sandbox-benchmarks/harness", () => {
@@ -103,9 +113,14 @@ describe("@sandbox-benchmarks/harness", () => {
 		expect(calls).toEqual(["create", "destroy"]);
 	});
 
+	// Named "modal", so it carries modal's real (uncapped) transport rather than the capped
+	// fixtureTransport — these creds tests never read transport, but keeping the fixture faithful to
+	// the name stops a future transport-aware test from exercising E2B/Daytona semantics under a
+	// modal-named config.
 	const credsCfg: ProviderConfig = {
 		name: "modal",
 		requiredEnvVars: ["A", "B"],
+		transport: { streaming: false, syncCapMs: null, detachedPoll: true },
 		createCompute: () => {
 			throw new Error("not exercised");
 		},

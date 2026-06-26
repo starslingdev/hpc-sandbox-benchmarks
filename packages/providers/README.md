@@ -17,3 +17,7 @@ provider, and the benchmark's create-time policy — the pinned `TARGET_SPEC` an
 (ADR-0003). The assembled `providers` registry joins the schema `PROVIDERS` metadata with the adapter
 map by id; both are keyed by `ProviderId`, so a one-sided provider is a compile error rather than a
 runtime check. Private glue lives in `src/lib/` and is never imported across a package boundary.
+
+The join also carries each provider's schema-owned `transport` capability (`ProviderTransport`:
+streaming, synchronous cap, detached+poll) onto the `ProviderConfig`, so the harness selects a
+per-step exec transport from the declared capability instead of hardcoding one provider's quirks.
