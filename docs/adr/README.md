@@ -1,0 +1,19 @@
+# Architecture Decision Records
+
+Short records of the load-bearing decisions in this repo — the ones that shape what you can import,
+how a measurement becomes a published number, and why the gates are where they are. Each ADR is
+**Context / Decision / Consequences**: the problem, the choice, and what we accept by making it.
+
+These describe *why the code is the way it is*; the [methodology](../methodology.md) describes *how a
+measurement is produced* and [CONTRIBUTING](../../CONTRIBUTING.md) the local gate. When a decision
+here changes, supersede the ADR (leave it in place, note what replaced it) rather than deleting it.
+
+| ADR | Decision |
+|-----|----------|
+| [0001](./0001-arktype-parse-dont-validate-boundary.md) | arktype parse-don't-validate boundary |
+| [0002](./0002-enforced-dependency-dag.md) | Enforced dependency DAG with a uniform package shape |
+| [0003](./0003-generated-pts-catalog-and-drift-gate.md) | Generated PTS catalog behind a drift gate |
+| [0004](./0004-consumption-layer-aggregation.md) | Raw-first history, consumption-layer candidate→promote |
+| [0005](./0005-host-vs-effective-spec-split.md) | Host-vs-effective spec split |
+</content>
+</invoke>

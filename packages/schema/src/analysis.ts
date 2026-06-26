@@ -39,6 +39,32 @@ function percentile(sorted: readonly number[], p: number): number {
 	return loValue + (h - lo) * (hiValue - loValue);
 }
 
+/**
+ * Percentile `p` (0–1) of an unsorted, non-empty Sample set — the public entry point to the same R-7
+ * interpolation {@link aggregate} computes its p50/p95 with. Sorts a copy and defers to the private
+ * {@link percentile} order-statistic helper, so a one-off percentile and the Aggregates distribution
+ * share one code path and can never diverge. Throws on an empty set, a non-finite Sample, or a `p`
+ * outside [0, 1] (same fail-fast posture as {@link aggregate}); `p` of 0 and 1 resolve to min and max.
+ */
+export function percentileOf(samples: number[], p: number): number {
+	if (samples.length === 0) {
+		throw new Error("percentileOf() requires at least one sample");
+	}
+	// `!(0 <= p <= 1)` rather than `p < 0 || p > 1` so a NaN `p` is rejected too.
+	if (!(p >= 0 && p <= 1)) {
+		throw new Error(`percentileOf() requires p in [0, 1]; got ${p}`);
+	}
+	for (const sample of samples) {
+		if (!Number.isFinite(sample)) {
+			throw new Error(`percentileOf() requires finite samples; got ${sample}`);
+		}
+	}
+	return percentile(
+		[...samples].sort((a, b) => a - b),
+		p,
+	);
+}
+
 /** Aggregate Samples into the canonical distribution. Throws on an empty Sample set. */
 export function aggregate(samples: number[]): Aggregates {
 	if (samples.length === 0) {

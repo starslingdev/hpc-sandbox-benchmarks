@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { aggregate } from "./index.ts";
+import { aggregate, percentileOf } from "./index.ts";
 
 describe("aggregate", () => {
 	it("summarises a multi-sample distribution (R-7 percentiles, n-1 stdev)", () => {
@@ -46,5 +46,35 @@ describe("aggregate", () => {
 		const a = aggregate([100_000_001, 100_000_002, 100_000_003]);
 		expect(a.mean).toBe(100_000_002);
 		expect(a.stdev).toBeCloseTo(1, 10);
+	});
+});
+
+describe("percentileOf", () => {
+	it("matches aggregate's percentiles on the same unsorted samples", () => {
+		// Same samples, same R-7 interpolation: the public helper and aggregate() share one code path,
+		// so a one-off percentile can never diverge from the catalogued distribution.
+		const samples = [16.3, 16.08, 16.19];
+		const a = aggregate(samples);
+		expect(percentileOf(samples, 0.5)).toBeCloseTo(a.p50, 10);
+		expect(percentileOf(samples, 0.95)).toBeCloseTo(a.p95, 10);
+	});
+
+	it("resolves p=0 to the min and p=1 to the max", () => {
+		expect(percentileOf([3, 1, 2], 0)).toBe(1);
+		expect(percentileOf([3, 1, 2], 1)).toBe(3);
+	});
+
+	it("rejects an empty sample set", () => {
+		expect(() => percentileOf([], 0.5)).toThrow();
+	});
+
+	it("rejects a non-finite sample", () => {
+		expect(() => percentileOf([1, Number.NaN], 0.5)).toThrow(/finite/);
+	});
+
+	it("rejects a p outside [0, 1]", () => {
+		expect(() => percentileOf([1, 2, 3], -0.1)).toThrow(/\[0, 1\]/);
+		expect(() => percentileOf([1, 2, 3], 1.5)).toThrow(/\[0, 1\]/);
+		expect(() => percentileOf([1, 2, 3], Number.NaN)).toThrow(/\[0, 1\]/);
 	});
 });
