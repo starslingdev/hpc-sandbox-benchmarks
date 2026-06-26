@@ -23,4 +23,10 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// rounds it out. Both single-result wildcards, so curation only supplies labels + the one headline.
 	pybench_milliseconds: { headline: true, label: "PyBench" },
 	sqlite_speedtest_seconds: { label: "SQLite Speedtest" },
+	// Memory dimension: STREAM Triad is the canonical headline (the fused multiply-add is the most
+	// representative memory-bandwidth figure); the other three operations round out the matrix.
+	stream_type_triad: { headline: true, label: "STREAM Triad" },
+	stream_type_copy: { label: "STREAM Copy" },
+	stream_type_scale: { label: "STREAM Scale" },
+	stream_type_add: { label: "STREAM Add" },
 };

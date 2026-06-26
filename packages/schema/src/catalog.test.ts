@@ -58,6 +58,21 @@ describe("metric catalog", () => {
 		expect(getMetric("sqlite_speedtest_seconds")?.dimension).toBe("system");
 	});
 
+	it("resolves the STREAM Triad headline for the memory dimension (multi-result option matrix)", () => {
+		const metric = headlineMetric("memory");
+		expect(metric.id).toBe("stream_type_triad");
+		expect(metric.label).toBe("STREAM Triad"); // curated short label
+		expect(metric.unit).toBe("MB/s");
+		expect(metric.direction).toBe("HIB");
+		// Multi-result: the description disambiguator is the byte-match the golden gate proves.
+		expect(metric.pts).toEqual({ test: "pts/stream", description: "Type: Triad" });
+		expect(
+			metricsForDimension("memory")
+				.map((m) => m.id)
+				.sort(),
+		).toEqual(["stream_type_add", "stream_type_copy", "stream_type_scale", "stream_type_triad"]);
+	});
+
 	it("returns undefined for an unknown metric id", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});

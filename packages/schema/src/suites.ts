@@ -76,6 +76,15 @@ export const SUITES = {
 		metrics: ["pybench_milliseconds", "sqlite_speedtest_seconds"],
 		commands: ["mise run benchmark:system:all"],
 	},
+	// The memory dimension: STREAM (Copy/Scale/Add/Triad). Short — STREAM runs in a couple of minutes.
+	memory: {
+		setupPts: true,
+		commandTimeoutMinutes: 30,
+		timeoutMinutes: 40,
+		dimensions: ["memory"],
+		metrics: ["stream_type_copy", "stream_type_scale", "stream_type_add", "stream_type_triad"],
+		commands: ["mise run benchmark:memory:all"],
+	},
 } as const satisfies Record<string, Suite>;
 
 /** A registered suite name. */

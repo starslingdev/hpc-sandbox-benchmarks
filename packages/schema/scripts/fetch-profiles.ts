@@ -41,6 +41,10 @@ const PROFILES = [
 	// wildcard entry (zero byte-match risk).
 	"pybench-1.1.3",
 	"sqlite-speedtest-1.0.1",
+	// Memory dimension — STREAM is a multi-result option matrix (Type: Copy/Scale/Add/Triad). The
+	// synthesized pts.description strings are byte-match-proven by a recorded composite golden fixture
+	// (sourced from runner-benchmarking's stream-1.3.5 run; versionless join is `pts/stream` either way).
+	"stream-1.3.4",
 ] as const;
 
 // Only these definition files feed the generator; siblings (downloads.xml, install.sh) are ignored.
