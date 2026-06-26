@@ -31,6 +31,8 @@ export const ECONOMICS_METRIC_IDS = {
 	usdPerHour: "usd_per_hour",
 	/** Cost of one measured sandbox lifecycle (spawn→exec→snapshot→teardown) at the target spec. */
 	usdPerLifecycle: "usd_per_lifecycle",
+	/** Cost of one end-to-end compute/realworld pipeline at the target spec, from a supplied runtime. */
+	usdPerComputeRun: "usd_per_compute_run",
 } as const;
 
 /** A derived economics Metric id — a value of {@link ECONOMICS_METRIC_IDS}. */
@@ -67,6 +69,17 @@ export const economicsMetrics: MetricDef[] = [
 			"USD to run one measured sandbox lifecycle (sum of the measured lifecycle timings — spawn, exec, snapshot, teardown) at the target hourly cost. Emitted only when the Run carries lifecycle timings.",
 		derived: true,
 	},
+	{
+		id: ECONOMICS_METRIC_IDS.usdPerComputeRun,
+		dimension: "economics",
+		unit: "USD",
+		direction: LIB,
+		headline: false,
+		label: "Cost per compute run",
+		description:
+			"USD to run one end-to-end compute/realworld pipeline at the target hourly cost (hourly × the pipeline's wall-clock runtime). Burst-priced: you pay only for the seconds the sandbox is alive. Emitted only when a total-runtime input is supplied; OURS has no realworld suite yet, so today's Runs omit it.",
+		derived: true,
+	},
 ];
 
 /** One measured Metric's id and the mean of its Samples — the input {@link deriveEconomics} reads. */
@@ -83,13 +96,17 @@ export interface MeasuredMetric {
  * - `usd_per_hour` — {@link hourlyCostAtTargetSpec}; emitted whenever the provider has a vetted rate.
  * - `usd_per_lifecycle` — the hourly cost prorated over the summed measured lifecycle timings;
  *   emitted only when `measured` carries ≥1 lifecycle-Dimension Metric.
+ * - `usd_per_compute_run` — the hourly cost prorated over a whole compute/realworld pipeline's
+ *   wall-clock runtime, supplied via `runtimeMs`. OURS has no realworld suite yet, so this is
+ *   omitted unless a caller passes a positive runtime — we never fabricate a pipeline duration.
  *
- * Returns `[]` for an unknown/unpriced provider so a null rate can never read as free. Pure — `meta`
- * and `measured` are the only inputs, so this is unit-testable without a Run.
+ * Returns `[]` for an unknown/unpriced provider so a null rate can never read as free. Pure — `meta`,
+ * `measured`, and `runtimeMs` are the only inputs, so this is unit-testable without a Run.
  */
 export function deriveEconomics(
 	meta: ProviderMeta,
 	measured: readonly MeasuredMetric[],
+	runtimeMs?: number,
 ): MetricResult[] {
 	const hourly = hourlyCostAtTargetSpec(meta);
 	if (hourly === null) return [];
@@ -108,11 +125,58 @@ export function deriveEconomics(
 	}
 	if (lifecycleCount > 0) {
 		results.push(
-			economicsResult(ECONOMICS_METRIC_IDS.usdPerLifecycle, hourly * (lifecycleMs / MS_PER_HOUR)),
+			economicsResult(ECONOMICS_METRIC_IDS.usdPerLifecycle, burstCostPerRun(hourly, lifecycleMs)),
+		);
+	}
+
+	// usd_per_compute_run — the cost of a full compute/realworld pipeline, billed burst-style over the
+	// runtime the caller measured. Gated on a positive finite runtime so a missing suite (undefined) or
+	// a 0/NaN can never read as a free run; OURS has no realworld suite, so live Runs omit it today.
+	if (runtimeMs !== undefined && Number.isFinite(runtimeMs) && runtimeMs > 0) {
+		results.push(
+			economicsResult(ECONOMICS_METRIC_IDS.usdPerComputeRun, burstCostPerRun(hourly, runtimeMs)),
 		);
 	}
 
 	return results;
+}
+
+/**
+ * Burst (pay-per-use) cost of one run: you pay only for the wall-clock the sandbox is alive, so the
+ * cost scales linearly with runtime. The model behind every runtime economics Metric here
+ * (`usd_per_lifecycle`, `usd_per_compute_run`) — the serverless/per-second default.
+ */
+export function burstCostPerRun(hourlyUsd: number, runtimeMs: number): number {
+	return hourlyUsd * (runtimeMs / MS_PER_HOUR);
+}
+
+/**
+ * Fixed-infra amortized cost of one run: a reserved box bills `monthlyUsd` whether busy or idle, so
+ * the cost *attributable* to a single run is that fixed bill spread across the runs it serves that
+ * month. Per-run cost therefore FALLS as utilization rises — the mirror image of
+ * {@link burstCostPerRun}. `runsPerMonth <= 0` returns `Infinity` (a box that serves no runs
+ * amortizes its bill over nothing). Ported in spirit from THEIRS `compute_costs` `ec2_full`
+ * (variable per-run + a `monthly_fixed` overhead), kept as a documented helper rather than a
+ * catalogued Metric since OURS prices no reserved infra yet.
+ */
+export function amortizedCostPerRun(monthlyUsd: number, runsPerMonth: number): number {
+	return runsPerMonth > 0 ? monthlyUsd / runsPerMonth : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * The break-even utilization between the two models: the runs/month at which a fixed-infra box's
+ * amortized per-run cost equals burst's. Below it burst wins (idle infra wastes the fixed bill);
+ * above it the reserved box wins. From equating the two —
+ *   monthlyUsd / runsPerMonth = hourlyUsd × runtimeHours  ⇒  runsPerMonth = monthlyUsd / burstCost.
+ * Returns `Infinity` when a run's burst cost is 0 (no per-run cost to amortize against).
+ */
+export function amortizationBreakEvenRunsPerMonth(
+	monthlyUsd: number,
+	hourlyUsd: number,
+	runtimeMs: number,
+): number {
+	const burst = burstCostPerRun(hourlyUsd, runtimeMs);
+	return burst > 0 ? monthlyUsd / burst : Number.POSITIVE_INFINITY;
 }
 
 /** A derived economics Metric as a single-Sample MetricResult (n=1, stdev=0). */
