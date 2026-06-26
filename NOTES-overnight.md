@@ -91,3 +91,16 @@ defensible option, document, continue).
 - **Drift gate caveat.** `bun run check:catalog-drift` fails on *any* uncommitted change to
   `pts-generated.ts` (it `git diff --exit-code`s vs HEAD), so it only goes green after the commit;
   verified regeneration is byte-identical, so it is green post-commit.
+
+## ENG-66 — Generalize plan-matrix to provider × suite
+
+- `matrix.ts` was a stub (provider × *capability*). Rewrote `buildMatrix()` as provider × **suite** over
+  `PROVIDERS` × `SUITE_NAMES` (both injectable; defaults are the real registries) → one CI cell per
+  `(provider, suite)`. The dataset grows by registering a provider/suite, never by editing the workflow.
+- Added `.github/workflows/bench-matrix.yml`: a `plan` job runs `plan-matrix` → `$GITHUB_OUTPUT`
+  `matrix=…`, and a `bench` job fans out with `matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}`,
+  `fail-fast: false`, running `bench-suite <provider> <suite>` per cell and uploading per-cell artifacts.
+  Mirrors `bench-smoke`'s runner/secrets/env-passing (matrix values via env, never shell-interpolated).
+- `plan-matrix.test.ts` updated (`operation` → `suite`); asserts the cross-product size and that every
+  cell names a registered provider + suite. CI fan-out itself is live-only (needs provider secrets), so
+  only the planning is exercised offline — the workflow is authored but not executed here.

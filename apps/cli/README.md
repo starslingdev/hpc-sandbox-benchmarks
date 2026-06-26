@@ -8,7 +8,7 @@
   `--iterations N` (cold-start cycles/provider), `--control-plane-samples N`, `--no-snapshot`. Providers
   with absent creds skip; per-Metric distributions go to stdout JSON, a timing log to stderr.
 - `bench-suite` — run the full suite across the matrix.
-- `plan-matrix` — print the benchmark matrix as **single-line compact JSON** for `$GITHUB_OUTPUT`.
+- `plan-matrix` — print the **provider × suite** benchmark matrix as **single-line compact JSON** for `$GITHUB_OUTPUT` (the `bench-matrix` workflow's fan-out contract).
 - `build-template` — build a provider's sandbox template.
 - `normalize` — turn raw runs into normalized run documents.
 - `promote` — promote normalized results to the published dataset.

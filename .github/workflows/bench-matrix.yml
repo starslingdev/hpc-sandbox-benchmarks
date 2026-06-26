@@ -1,0 +1,96 @@
+name: Bench matrix
+
+# Fan the live benchmark out across the full provider × suite matrix: one job per (provider, suite)
+# cell, each spinning up a real sandbox, running its suite, and uploading the normalized Run as an
+# artifact. The matrix is computed from the SUITES × PROVIDERS registries by `plan-matrix` — adding a
+# provider or suite to its registry grows CI with no workflow edit. Off the PR path (real sandbox time
+# + provider credentials); dispatch on demand or on a schedule.
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        # Daytona only: the default org is parked, so real runs use the ZEN5-VM region. Ignored by e2b/modal.
+        description: Daytona region
+        type: choice
+        default: ZEN5-VM
+        options: [ZEN5-VM, default]
+
+# Least privilege: jobs only read the checked-out code and upload artifacts.
+permissions:
+  contents: read
+
+# Serialize matrix runs on a ref so concurrent dispatches don't contend for provider quota.
+concurrency:
+  group: bench-matrix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Compute the provider × suite matrix once, as the single $GITHUB_OUTPUT contract the fan-out reads.
+  plan:
+    name: Plan matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      # plan-matrix prints one line of compact JSON ({"include":[...]}) — the strategy.matrix contract.
+      - name: Plan
+        id: plan
+        run: echo "matrix=$(bun apps/cli/src/bin/plan-matrix.ts)" >> "$GITHUB_OUTPUT"
+
+  bench:
+    name: ${{ matrix.suite }} on ${{ matrix.provider }}
+    needs: plan
+    runs-on: starsling-ubuntu-24.04-2
+    timeout-minutes: 150
+    strategy:
+      # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # Drive the provider SDK to create a sandbox, run the suite, collect results, and normalize. The
+      # cell's provider/suite are matrix values, passed through the environment (never interpolated into
+      # the shell) so a registry value can't inject into the runner command.
+      - name: Run suite and normalize
+        env:
+          BENCH_REPO_REF: ${{ github.sha }}
+          BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENCH_PROVIDER: ${{ matrix.provider }}
+          BENCH_SUITE: ${{ matrix.suite }}
+          DAYTONA_REGION: ${{ inputs.region }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}
+          DAYTONA_TARGET_ZEN5: ${{ secrets.DAYTONA_TARGET_ZEN5 }}
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
+
+      - name: Upload Run + raw results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          # Per-cell artifact name so every (provider, suite) shard uploads independently.
+          name: bench-${{ matrix.suite }}-${{ matrix.provider }}-${{ github.run_id }}
+          path: data/
+          # A successful run always writes data/runs/<id>.json (even an all-skipped Run), so an empty
+          # data/ means the job is genuinely broken — fail the upload rather than bury a warning.
+          if-no-files-found: error
