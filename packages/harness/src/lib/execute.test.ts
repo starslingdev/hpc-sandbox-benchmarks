@@ -1,6 +1,40 @@
 import { describe, expect, it } from "bun:test";
+import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import type { SandboxHandle } from "./execute.ts";
-import { PREAMBLE, StepRunner, shellQuote } from "./execute.ts";
+import { MIN, PREAMBLE, StepRunner, selectTransport, shellQuote } from "./execute.ts";
+
+const CAPPED: ProviderTransport = { streaming: false, syncCapMs: MIN, detachedPoll: true };
+const UNCAPPED: ProviderTransport = { streaming: false, syncCapMs: null, detachedPoll: true };
+const CAPPED_NO_DETACH: ProviderTransport = {
+	streaming: false,
+	syncCapMs: MIN,
+	detachedPoll: false,
+};
+
+describe("selectTransport", () => {
+	it("detaches a step that could reach or outlast a capped provider's synchronous limit", () => {
+		// Budget past the cap, and the provider supports detached+poll → detached.
+		expect(selectTransport(CAPPED, 2 * MIN)).toBe("detached");
+		// Budget exactly at the cap could run right up to a hard limit with no margin (E2B's cap *is*
+		// its SDK connection timeout) → detached, not sync. The boundary is inclusive of detach.
+		expect(selectTransport(CAPPED, MIN)).toBe("detached");
+	});
+
+	it("keeps a step safely within the cap synchronous", () => {
+		// Strictly under the cap → direct exec.
+		expect(selectTransport(CAPPED, MIN - 1)).toBe("sync");
+		expect(selectTransport(CAPPED, MIN / 2)).toBe("sync");
+	});
+
+	it("keeps every step synchronous on an uncapped provider", () => {
+		// No cap → a synchronous exec is always safe, even for a long step.
+		expect(selectTransport(UNCAPPED, 200 * MIN)).toBe("sync");
+	});
+
+	it("stays synchronous past the cap when the provider can't detach (no durable alternative)", () => {
+		expect(selectTransport(CAPPED_NO_DETACH, 5 * MIN)).toBe("sync");
+	});
+});
 
 describe("shellQuote", () => {
 	it("wraps in single quotes and escapes embedded quotes", () => {
@@ -119,5 +153,77 @@ describe("StepRunner.runDetached", () => {
 		// Foreground path: a single synchronous bash -c exec, no background flag, no detach wrapper.
 		expect(commands[0]).toContain("bash -c");
 		expect(commands[0]).not.toContain("nohup setsid");
+	});
+});
+
+describe("StepRunner.step (capability-driven transport)", () => {
+	// A sandbox WITH a filesystem (so a detached selection truly detaches rather than falling back),
+	// recording each command and its background flag. The done-file is present from the first poll.
+	function fsSandbox(): {
+		sandbox: SandboxHandle;
+		commands: Array<{ command: string; background?: boolean }>;
+	} {
+		const commands: Array<{ command: string; background?: boolean }> = [];
+		const sandbox: SandboxHandle = {
+			runCommand: async (command, options) => {
+				commands.push({ command, background: options?.background });
+				return { exitCode: 0, stdout: "" };
+			},
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async (path) => path.endsWith(".done"),
+				readFile: async (path) => (path.endsWith(".done") ? "0" : "out"),
+			},
+		};
+		return { sandbox, commands };
+	}
+
+	it("detaches a long step on a capped provider", async () => {
+		const { sandbox, commands } = fsSandbox();
+		const runner = new StepRunner(sandbox, CAPPED);
+		await runner.step("long", "mise install", 20 * MIN);
+		// Detached start: backgrounded, wrapped in nohup setsid.
+		expect(commands[0]?.background).toBe(true);
+		expect(commands[0]?.command).toContain("nohup setsid");
+	});
+
+	it("runs a short step synchronously on a capped provider", async () => {
+		const { sandbox, commands } = fsSandbox();
+		const runner = new StepRunner(sandbox, CAPPED);
+		// Budget strictly under the cap → direct exec.
+		await runner.step("short", "df -Pk /", MIN / 2);
+		// Direct exec: a single bash -c, no background flag, no detach wrapper.
+		expect(commands[0]?.background).toBeUndefined();
+		expect(commands[0]?.command).toContain("bash -c");
+		expect(commands[0]?.command).not.toContain("nohup setsid");
+	});
+
+	it("stays synchronous past the cap on a provider that can't detach", async () => {
+		// CAPPED_NO_DETACH exercises step()'s wiring end-to-end (selectTransport via the constructor):
+		// even a long budget has no durable alternative, so it must stay a direct foreground exec and
+		// never background. Guards the no-detach fallback against a future regression in step()'s wiring.
+		const { sandbox, commands } = fsSandbox();
+		const runner = new StepRunner(sandbox, CAPPED_NO_DETACH);
+		await runner.step("long", "mise install", 5 * MIN);
+		expect(commands[0]?.background).toBeUndefined();
+		expect(commands[0]?.command).toContain("bash -c");
+		expect(commands[0]?.command).not.toContain("nohup setsid");
+	});
+
+	it("runs a long step synchronously on an uncapped provider", async () => {
+		const { sandbox, commands } = fsSandbox();
+		const runner = new StepRunner(sandbox, UNCAPPED);
+		await runner.step("long", "mise run benchmark", 110 * MIN);
+		// No cap → direct exec even for a multi-minute step; the filesystem is never polled.
+		expect(commands[0]?.background).toBeUndefined();
+		expect(commands[0]?.command).not.toContain("nohup setsid");
+	});
+
+	it("defaults to a capped profile when constructed without a transport", async () => {
+		// The no-transport constructor (used by the unit-test fakes) detaches a long step by default.
+		const { sandbox, commands } = fsSandbox();
+		const runner = new StepRunner(sandbox);
+		await runner.step("long", "mise install", 20 * MIN);
+		expect(commands[0]?.background).toBe(true);
 	});
 });

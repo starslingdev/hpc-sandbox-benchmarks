@@ -1,19 +1,28 @@
 /**
  * Suite-step execution against a live sandbox: the in-sandbox shell preamble, a liveness heartbeat,
- * a per-step timeout, and per-phase wall-time accounting. Two transports:
+ * a per-step timeout, and per-phase wall-time accounting. Two transports, and a capability-driven
+ * selector ({@link StepRunner.step}) that picks between them per provider instead of hardcoding one
+ * provider's quirks:
  *
  *   - {@link StepRunner.run}: a direct synchronous exec. Fine for short steps, but NOT durable for
- *     long ones: Daytona's synchronous executeCommand returns HTTP 408 on multi-minute commands
- *     while the process keeps running server-side, and computesdk's Daytona adapter doesn't stream
- *     (it ignores onStdout/onStderr).
+ *     long ones on a capped provider: Daytona's synchronous executeCommand returns HTTP 408 on
+ *     multi-minute commands while the process keeps running server-side, and computesdk's Daytona
+ *     adapter doesn't stream (it ignores onStdout/onStderr).
  *   - {@link StepRunner.runDetached}: starts the step in the background (computesdk's `background:true`,
  *     fully detached with nohup+setsid) writing its output to a log file and its exit code to a
  *     done-file, then polls the sandbox filesystem until the done-file appears. This survives the
  *     408-prone exec round-trip, so multi-minute benchmarks complete. Falls back to `run` when the
  *     sandbox exposes no filesystem (the unit-test fakes) — correctness is unchanged, only durability.
+ *
+ * {@link StepRunner.step} reads the provider's declared {@link ProviderTransport} (via
+ * {@link selectTransport}) and dispatches: a step that could outlast the provider's synchronous cap
+ * runs detached where the provider supports it; everything else runs synchronously. So Daytona keeps
+ * its detached+poll path while an uncapped provider (e.g. Modal) runs the same step directly — the
+ * harness adapts to the capability rather than hardcoding one provider's transport.
  */
 
 import { randomUUID } from "node:crypto";
+import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 
 export const MIN = 60_000;
 
@@ -41,6 +50,41 @@ export interface CommandResult {
 export interface RunCommandOptions {
 	/** Start detached and return immediately, rather than waiting for the command to finish. */
 	background?: boolean;
+}
+
+/** Which transport {@link StepRunner.step} chose for a step. */
+export type TransportKind = "sync" | "detached";
+
+/**
+ * Conservative transport profile used when a {@link StepRunner} is built without a declared one (the
+ * unit-test fakes). Mirrors a single-round-trip-capped provider: short execs go direct, anything
+ * budgeted past ~1 minute detaches — the safe default when a provider's real capability is unknown.
+ */
+export const DEFAULT_TRANSPORT: ProviderTransport = Object.freeze({
+	streaming: false,
+	syncCapMs: MIN,
+	detachedPoll: true,
+});
+
+/**
+ * Pick the exec transport for a step from the provider's declared {@link ProviderTransport} and the
+ * step's timeout budget. A step runs detached when it could reach or outlast the provider's synchronous
+ * cap (`syncCapMs`) AND the provider supports detached+poll; otherwise it runs as a direct synchronous
+ * exec. A `null` cap (uncapped) always stays synchronous; a provider without `detachedPoll` has no
+ * durable alternative, so it stays synchronous and best-effort even past its cap.
+ *
+ * The budget is the comparison key (worst case = a step that runs its full timeout), so the choice is
+ * deterministic and provider-driven, not a guess about a step's actual runtime. The comparison is `>=`,
+ * not `>`: when `syncCapMs` equals a provider's hard limit (E2B's `syncCapMs` *is* its SDK
+ * `defaultProcessConnectionTimeout`), a step budgeted at exactly the cap could run right up to it and
+ * drop the connection with no margin — so a budget that *reaches* the cap detaches, not just one that
+ * exceeds it. `streaming` is modeled on the capability but does not tip this decision today: no shipped
+ * `@computesdk/*` adapter delivers incremental output, so there is no streaming transport to prefer —
+ * when one lands, it is selected here.
+ */
+export function selectTransport(transport: ProviderTransport, timeoutMs: number): TransportKind {
+	const couldExceedSyncCap = transport.syncCapMs !== null && timeoutMs >= transport.syncCapMs;
+	return couldExceedSyncCap && transport.detachedPoll ? "detached" : "sync";
 }
 
 /** The slice of a computesdk sandbox filesystem the detached transport polls (its `filesystem` satisfies this). */
@@ -131,7 +175,30 @@ export class StepRunner {
 	/** Every executed step with its phase, elapsed ms, and exit code. */
 	readonly stepLog: StepLogEntry[] = [];
 
-	constructor(private readonly sandbox: SandboxHandle) {}
+	constructor(
+		private readonly sandbox: SandboxHandle,
+		/** The provider's exec transport capability — {@link step} selects sync vs detached from it. */
+		private readonly transport: ProviderTransport = DEFAULT_TRANSPORT,
+	) {}
+
+	/**
+	 * Run a step on the transport the provider's {@link ProviderTransport} calls for: detached+poll when
+	 * the step's budget could outlast the provider's synchronous cap and the provider supports it,
+	 * otherwise a direct synchronous exec (see {@link selectTransport}). This is the capability-driven
+	 * entry point the orchestrator uses for every step whose runtime can reach into the minutes (setup
+	 * installs, the benchmark, result collection); trivial sub-second probes can call {@link run}
+	 * directly. Both underlying transports populate `result.stdout`, so callers read it identically.
+	 */
+	async step(
+		label: string,
+		script: string,
+		timeoutMs: number,
+		opts: StepOptions = {},
+	): Promise<CommandResult> {
+		return selectTransport(this.transport, timeoutMs) === "detached"
+			? this.runDetached(label, script, timeoutMs, opts)
+			: this.run(label, script, timeoutMs, opts);
+	}
 
 	/**
 	 * Synchronous foreground exec — for short steps. The timeout is a wait-cap, not a kill: on timeout
