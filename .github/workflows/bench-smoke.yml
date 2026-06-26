@@ -15,12 +15,12 @@ on:
         description: Suite to run
         default: cpu-node
       region:
-        # Daytona only: the default org is parked, so real runs use the ZEN5 region (its own API key +
-        # target + snapshot). Ignored by e2b/modal.
+        # Daytona only: the default org is parked, so real runs use the ZEN5-VM region (its own API key +
+        # target + snapshot, keyed by the _ZEN5 env-var suffix). Ignored by e2b/modal.
         description: Daytona region
         type: choice
-        default: zen5
-        options: [zen5, default]
+        default: ZEN5-VM
+        options: [ZEN5-VM, default]
 
 # Least privilege: the job only reads the checked-out code and uploads an artifact.
 permissions:
@@ -63,7 +63,7 @@ jobs:
           # crafted value run arbitrary commands on the self-hosted runner. `$GITHUB_RUN_ID` is built-in.
           BENCH_PROVIDER: ${{ inputs.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
-          # Daytona region selection (default org is parked; ZEN5 is the active region).
+          # Daytona region selection (default org is parked; ZEN5-VM is the active region).
           DAYTONA_REGION: ${{ inputs.region }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}

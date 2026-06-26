@@ -60,17 +60,27 @@ describe("resolveDaytonaRegion", () => {
 		});
 	});
 
-	it("selects the ZEN5 region's suffixed key + target", () => {
+	it("maps the hyphenated ZEN5-VM region to its _ZEN5 suffixed key + target", () => {
+		// The region identifier (`ZEN5-VM`, with a hyphen) is decoupled from the env-var suffix
+		// (`ZEN5`), so the per-region vars resolve to valid names despite the illegal-in-env hyphen.
 		const r = resolveDaytonaRegion(
-			{ DAYTONA_REGION: "zen5", DAYTONA_API_KEY_ZEN5: "kz", DAYTONA_TARGET_ZEN5: "zen5-rgn" },
+			{
+				DAYTONA_REGION: "ZEN5-VM",
+				DAYTONA_API_KEY_ZEN5: "kz",
+				DAYTONA_TARGET_ZEN5: "zen5-rgn",
+				DAYTONA_SNAPSHOT_ZEN5: "zen5-snap",
+			},
 			SNAP,
 		);
-		expect(r).toMatchObject({
-			region: "zen5",
+		// The suffix applies to every per-region var, including the snapshot — `DAYTONA_SNAPSHOT_ZEN5`
+		// wins over the default snapshot, so a regression that wrongly applied the suffix to the snapshot
+		// var (or fell back to SNAP) would be caught here.
+		expect(r).toEqual({
+			region: "ZEN5-VM",
 			apiKeyVar: "DAYTONA_API_KEY_ZEN5",
 			apiKey: "kz",
 			target: "zen5-rgn",
-			snapshot: SNAP,
+			snapshot: "zen5-snap",
 		});
 	});
 
