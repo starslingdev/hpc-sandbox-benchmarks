@@ -21,7 +21,10 @@ if (import.meta.main) {
 		await runSuite({
 			providerName: provider,
 			suiteName: suite,
-			resultsDir: join(rawRoot, provider),
+			// Tag the raw tree by suite: `<rawRoot>/<provider>/<suite>/`. The normalizer reads each suite
+			// subdirectory independently and rejects any catalogued metric a suite emits off its declared
+			// Dimensions (the runtime half of the suite↔dimension↔metric contract).
+			resultsDir: join(rawRoot, provider, suite),
 		});
 	} catch (err) {
 		if (err instanceof SuiteUsageError) {

@@ -4,15 +4,26 @@
  * validated against the shared schema before it leaves this module — validation happens at the
  * producer boundary, so no malformed Run can reach a consumer. SDK-free — filesystem + schema only.
  */
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	MetricResult,
+	OffDimensionEmission,
 	ProviderRun,
 	Run,
+	SkipMarker,
 	UncataloguedResult,
 } from "@sandbox-benchmarks/schema";
-import { aggregate, PROVIDERS, parseRun, TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import {
+	aggregate,
+	describeOffDimensionEmission,
+	offDimensionEmissions,
+	PROVIDERS,
+	parseRun,
+	SUITE_NAMES,
+	TARGET_SPEC,
+} from "@sandbox-benchmarks/schema";
+import type { SampleContribution } from "./extract.ts";
 import { extractProviderDir } from "./extract.ts";
 import { computeSpecMatched, readObservedSpecs } from "./specs.ts";
 
@@ -57,6 +68,15 @@ function sameSamples(a: readonly number[], b: readonly number[]): boolean {
 	return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
+/** Parse a JSON file, returning undefined (never throwing) when it's absent or malformed. */
+function readJsonFile(path: string): unknown {
+	try {
+		return JSON.parse(readFileSync(path, "utf8"));
+	} catch {
+		return undefined;
+	}
+}
+
 /** Normalize one provider's raw directory into a ProviderRun (pending when the directory is absent). */
 export function normalizeProviderDir(rawRoot: string, providerId: string): ProviderRun {
 	const dir = join(rawRoot, providerId);
@@ -79,7 +99,66 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		};
 	}
 
-	const extraction = extractProviderDir(dir, providerId);
+	// The raw tree tags results by suite (`<provider>/<suite>/`). Read each registered-suite
+	// subdirectory on its own, so every produced metric can be attributed to — and contract-checked
+	// against — the suite that wrote it. Also read any files directly under the provider dir: the older
+	// un-nested layout, kept working for back-compat. extractProviderDir only reads files (it skips
+	// subdirectories), so the flat read never double-counts a suite subdir's contents.
+	const registered = new Set<string>(SUITE_NAMES);
+	const suiteDirs: string[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+		a.name.localeCompare(b.name),
+	)) {
+		if (!entry.isDirectory()) continue;
+		if (registered.has(entry.name)) {
+			suiteDirs.push(entry.name);
+			continue;
+		}
+		// An unexpected subdirectory can't be attributed to a suite, so it can't be contract-checked;
+		// skip it loudly rather than silently fold its results into the provider untagged.
+		console.warn(
+			`[normalize] ${providerId}: ignoring subdirectory "${entry.name}" — not a registered suite`,
+		);
+	}
+
+	const contributions: SampleContribution[] = [];
+	const rawUncatalogued: UncataloguedResult[] = [];
+	const skips: SkipMarker[] = [];
+	const offDimension: OffDimensionEmission[] = [];
+
+	for (const suite of suiteDirs) {
+		const ext = extractProviderDir(join(dir, suite), providerId);
+		// Runtime half of the contract: collect any catalogued metric this suite emitted on a Dimension it
+		// does not declare. (Uncatalogued emissions are NOT breaches — they stay inert stragglers below.)
+		offDimension.push(
+			...offDimensionEmissions(
+				suite,
+				ext.contributions.map((c) => c.metricId),
+			),
+		);
+		// Carry the suite in each result's provenance so a metric/straggler stays traceable to its source.
+		for (const c of ext.contributions)
+			contributions.push({ ...c, sourceFile: `${suite}/${c.sourceFile}` });
+		for (const u of ext.uncatalogued)
+			rawUncatalogued.push({ ...u, sourceFile: `${suite}/${u.sourceFile}` });
+		skips.push(...ext.skips);
+	}
+	// Reject at the boundary before any further work: a suite emitting a catalogued metric off its
+	// declared Dimensions is a producer/registry drift that would land a number under the wrong
+	// leaderboard axis. Fail the run with every such emission listed at once, rather than silently
+	// ranking it — and before the flat read below, so the error path does no extra I/O.
+	if (offDimension.length > 0) {
+		const lines = offDimension.map((e) => `  - ${describeOffDimensionEmission(e)}`);
+		throw new Error(
+			`provider "${providerId}" emitted off-contract metrics (suite ↔ dimension ↔ metric contract):\n${lines.join("\n")}`,
+		);
+	}
+
+	// Legacy flat files (no suite subdir): no suite to attribute to, so they can't be contract-checked.
+	const flat = extractProviderDir(dir, providerId);
+	contributions.push(...flat.contributions);
+	rawUncatalogued.push(...flat.uncatalogued);
+	skips.push(...flat.skips);
 
 	// De-dupe catalogued metrics by metricId across source files — keep the FIRST (deterministic file
 	// order). In our model one <Result> owns a metric's per-pass samples, so the same metricId in two
@@ -92,7 +171,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		string,
 		{ samples: number[]; sourceFile: string; appVersion?: string; arguments?: string }
 	>();
-	for (const contribution of extraction.contributions) {
+	for (const contribution of contributions) {
 		const existing = merged.get(contribution.metricId);
 		if (existing) {
 			const diverged = !sameSamples(existing.samples, contribution.samples);
@@ -131,18 +210,24 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// composite it lands in); keep the first occurrence and preserve extraction order.
 	const seenUncatalogued = new Set<string>();
 	const uncatalogued: UncataloguedResult[] = [];
-	for (const straggler of extraction.uncatalogued) {
+	for (const straggler of rawUncatalogued) {
 		if (seenUncatalogued.has(straggler.id)) continue;
 		seenUncatalogued.add(straggler.id);
 		uncatalogued.push(straggler);
 	}
 
+	// Observed specs are per-sandbox; each suite ran in its own sandbox of the same provider, so the
+	// readings describe the same machine. Prefer a suite subdirectory's file (the suite-scoped, current
+	// layout) over a provider-dir file (legacy flat), so a stray legacy file can't shadow the tagged one.
+	// `suiteDirs` is sorted, so when several suites carry one the alphabetically-first wins — an arbitrary
+	// but deterministic tie-break, fine while suites share a provider's spec; revisit if tiers diverge.
+	const specSources = [...suiteDirs, ""];
 	const observedSpecs = readObservedSpecs((name) => {
-		try {
-			return JSON.parse(readFileSync(join(dir, name), "utf8"));
-		} catch {
-			return undefined;
+		for (const sub of specSources) {
+			const parsed = readJsonFile(join(dir, sub, name));
+			if (parsed !== undefined) return parsed;
 		}
+		return undefined;
 	});
 	const specMatched = computeSpecMatched(observedSpecs);
 
@@ -153,7 +238,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		...(specMatched !== undefined ? { specMatched } : {}),
 		observedSpecs,
 		metrics,
-		skips: extraction.skips,
+		skips,
 		uncatalogued,
 	};
 }
