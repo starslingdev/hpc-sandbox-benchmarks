@@ -12,8 +12,14 @@ on:
         default: daytona
         options: [daytona, e2b, modal]
       suite:
+        # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
+        # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
+        # new suite must be added here too. Still passed through the environment below (never
+        # interpolated into the shell) as defense-in-depth.
         description: Suite to run
+        type: choice
         default: cpu-node
+        options: [cpu-node, system, memory, disk]
       region:
         # Daytona only: the default org is parked, so real runs use the ZEN5-VM region (its own API key +
         # target + snapshot, keyed by the _ZEN5 env-var suffix). Ignored by e2b/modal.
@@ -58,9 +64,10 @@ jobs:
           BENCH_REPO_REF: ${{ github.sha }}
           # The sandbox clones this private repo at the run's SHA; the short-lived job token authorizes it.
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Pass the dispatch inputs through the environment, never interpolated into the `run` script:
-          # `suite` is a free-text input, so a `${{ }}` expansion straight into the shell would let a
-          # crafted value run arbitrary commands on the self-hosted runner. `$GITHUB_RUN_ID` is built-in.
+          # Pass the dispatch inputs through the environment, never interpolated into the `run` script.
+          # `provider` and `suite` are both constrained choices, but env passthrough is kept as
+          # defense-in-depth so no input value can ever expand straight into the self-hosted runner
+          # shell. `$GITHUB_RUN_ID` is built-in.
           BENCH_PROVIDER: ${{ inputs.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
           # Daytona region selection (default org is parked; ZEN5-VM is the active region).
