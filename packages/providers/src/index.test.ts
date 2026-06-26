@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config, providers } from "./index.ts";
 import { resolveDaytonaRegion } from "./lib/config.ts";
+import { assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
 	it("wires every schema provider through to a computesdk factory", () => {
@@ -43,6 +44,48 @@ describe("@sandbox-benchmarks/providers", () => {
 		expect(daytona?.createOptions?.snapshotId).toBe(config.daytonaRegion.snapshot);
 		// requiredEnvVars tracks the active region's key var (the schema default for the default region).
 		expect(daytona?.requiredEnvVars).toEqual([config.daytonaRegion.apiKeyVar]);
+	});
+});
+
+describe("assertProviderJoin", () => {
+	it("passes silently when the schema ids and the adapter ids are the same set", () => {
+		// The real registries are already index-aligned, so the live module load (above) exercises the
+		// happy path; assert it explicitly here too, including when order differs between the two sides.
+		expect(() =>
+			assertProviderJoin(["e2b", "daytona", "modal"], ["modal", "e2b", "daytona"]),
+		).not.toThrow();
+		expect(() =>
+			assertProviderJoin(
+				PROVIDERS.map((m) => m.id),
+				providers.map((p) => p.name),
+			),
+		).not.toThrow();
+	});
+
+	it("throws naming a provider that's in the schema but missing an adapter", () => {
+		// A provider added to the schema registry without a matching harness adapter — the compile-time
+		// Record can't catch this across a version drift, so the runtime guard must.
+		expect(() => assertProviderJoin(["e2b", "daytona", "modal"], ["e2b", "daytona"])).toThrow(
+			/missing a harness adapter: modal/,
+		);
+	});
+
+	it("throws naming an adapter that has no schema entry", () => {
+		expect(() => assertProviderJoin(["e2b", "daytona"], ["e2b", "daytona", "modal"])).toThrow(
+			/no schema PROVIDERS entry: modal/,
+		);
+	});
+
+	it("reports both one-sided directions at once", () => {
+		const err = (() => {
+			try {
+				assertProviderJoin(["e2b", "ghost"], ["e2b", "modal"]);
+			} catch (e) {
+				return e as Error;
+			}
+		})();
+		expect(err?.message).toContain("missing a harness adapter: ghost");
+		expect(err?.message).toContain("no schema PROVIDERS entry: modal");
 	});
 });
 
