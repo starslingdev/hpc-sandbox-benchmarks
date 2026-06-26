@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import type { Suite } from "@sandbox-benchmarks/schema";
 import {
+	benchmarkLifecycle,
 	hasRequiredCreds,
 	missingCreds,
 	requiredProviders,
@@ -17,6 +18,7 @@ import {
 	withSandbox,
 } from "./index.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
+import type { LifecycleCompute } from "./lib/lifecycle.ts";
 
 // A transport capability for the test fixtures — capped-with-detach, matching a single-round-trip
 // provider; none of these tests exercise real exec, so the exact values are inert here.
@@ -155,6 +157,94 @@ describe("@sandbox-benchmarks/harness", () => {
 		expect(requiredProviders(["--require", "e2b"], { REQUIRE_PROVIDERS: "modal" })).toEqual([
 			"e2b",
 		]);
+	});
+
+	// A lifecycle-capable fake provider: createCompute returns a structural LifecycleCompute (cast to the
+	// SDK's DirectProvider, as the real adapters do), letting benchmarkLifecycle run with no real SDK.
+	function lifecycleConfig(
+		opts: { withSnapshot?: boolean; withList?: boolean; failCreateOnCycle?: number } = {},
+	): ProviderConfig {
+		let created = 0;
+		const sandbox = {
+			create: async () => {
+				const cycle = ++created;
+				if (cycle === opts.failCreateOnCycle) throw new Error("spawn boom");
+				return {
+					sandboxId: `sb-${cycle}`,
+					runCommand: async () => ({ exitCode: 0 }),
+					getInfo: async () => ({ status: "running" }),
+					destroy: async () => undefined,
+				};
+			},
+			...(opts.withList ? { list: async () => [] } : {}),
+		};
+		const compute: LifecycleCompute = { sandbox };
+		if (opts.withSnapshot) {
+			compute.snapshot = {
+				create: async () => ({ id: "snap-1" }),
+				delete: async () => undefined,
+			};
+		}
+		return {
+			name: "e2b",
+			requiredEnvVars: [],
+			transport: fixtureTransport,
+			createCompute: () => compute as unknown as DirectProvider,
+		};
+	}
+
+	it("benchmarkLifecycle runs N cold-start cycles and aggregates Samples per Metric", async () => {
+		const result = await benchmarkLifecycle(
+			lifecycleConfig({ withSnapshot: true, withList: true }),
+			{
+				iterations: 3,
+				controlPlaneSamples: 2,
+			},
+		);
+		expect(result.provider).toBe("e2b");
+		// 3 cold starts → 3 spawn + 3 teardown Samples; 2 info probes per cycle → 6.
+		const spawn = result.aggregates.find((a) => a.metricId === "lifecycle_spawn_ms");
+		const info = result.aggregates.find((a) => a.metricId === "control_plane_info_ms");
+		expect(spawn?.aggregates.n).toBe(3);
+		expect(info?.aggregates.n).toBe(6);
+		expect(result.skips).toEqual([]);
+	});
+
+	it("benchmarkLifecycle dedups a repeated unsupported-op skip across cycles", async () => {
+		const result = await benchmarkLifecycle(lifecycleConfig(), { iterations: 4 });
+		// No snapshot/list support → one skip each, not four, despite four cycles.
+		const snapshotSkips = result.skips.filter((s) => s.suite === "lifecycle_snapshot_ms");
+		const listSkips = result.skips.filter((s) => s.suite === "control_plane_list_ms");
+		expect(snapshotSkips.length).toBe(1);
+		expect(listSkips.length).toBe(1);
+		// Cold-start Samples still accrue per cycle.
+		expect(result.aggregates.find((a) => a.metricId === "lifecycle_spawn_ms")?.aggregates.n).toBe(
+			4,
+		);
+	});
+
+	it("benchmarkLifecycle records a mid-run spawn failure as a skip and keeps the surviving cycles", async () => {
+		const result = await benchmarkLifecycle(lifecycleConfig({ failCreateOnCycle: 2 }), {
+			iterations: 3,
+		});
+		// Cycle 2 fails to spawn; cycles 1 and 3 still produce spawn/teardown Samples (not discarded).
+		expect(result.aggregates.find((a) => a.metricId === "lifecycle_spawn_ms")?.aggregates.n).toBe(
+			2,
+		);
+		expect(
+			result.aggregates.find((a) => a.metricId === "lifecycle_teardown_ms")?.aggregates.n,
+		).toBe(2);
+		// The failure surfaces as a spawn skip carrying the create error.
+		const spawnSkip = result.skips.find((s) => s.suite === "lifecycle_spawn_ms");
+		expect(spawnSkip?.reason).toBe("spawn boom");
+	});
+
+	it("benchmarkLifecycle clamps a non-finite iterations to a single cycle", async () => {
+		const result = await benchmarkLifecycle(lifecycleConfig(), { iterations: Number.NaN });
+		// NaN must not make `i < iterations` never run (zero Samples) — it falls back to one cold start.
+		expect(result.aggregates.find((a) => a.metricId === "lifecycle_spawn_ms")?.aggregates.n).toBe(
+			1,
+		);
 	});
 
 	it("unmetRequirements flags required providers that did not run-and-pass", () => {
