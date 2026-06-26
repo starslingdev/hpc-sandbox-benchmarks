@@ -29,4 +29,6 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	stream_type_copy: { label: "STREAM Copy" },
 	stream_type_scale: { label: "STREAM Scale" },
 	stream_type_add: { label: "STREAM Add" },
+	// Disk dimension: Hardlink throughput (a repo-local PTS profile sourced from runner-benchmarking).
+	hardlink_bogo_ops_per_s: { headline: true, label: "Hardlink throughput" },
 };

@@ -18,20 +18,44 @@ async function readXml(path: string): Promise<string> {
 	return (await file.exists()) ? file.text() : "";
 }
 
+/**
+ * Discover every vendored profile as a `{ repo, dir }` pair. A flat `pts-profiles/<name>-<ver>` (with a
+ * test-definition.xml directly inside) is an upstream profile → repo `pts`. A `pts-profiles/<repo>/…`
+ * directory (no test-definition.xml of its own, only child profile dirs) is a repo-local source → that
+ * `<repo>` is the prefix (PTS reports e.g. `local/hardlink-1.0.0`). Sorted by repo then dir so the
+ * generated output is independent of readdir order (the drift gate needs byte-stability).
+ */
+async function discoverProfiles(): Promise<Array<{ repo: string; dir: string; base: string }>> {
+	const out: Array<{ repo: string; dir: string; base: string }> = [];
+	for (const entry of await readdir(PROFILES_DIR, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue;
+		const path = `${PROFILES_DIR}/${entry.name}`;
+		if (await Bun.file(`${path}/test-definition.xml`).exists()) {
+			out.push({ repo: "pts", dir: entry.name, base: path });
+			continue;
+		}
+		// Repo subdir (e.g. `local/`): one level of nested profile dirs.
+		for (const child of await readdir(path, { withFileTypes: true })) {
+			if (!child.isDirectory()) continue;
+			if (await Bun.file(`${path}/${child.name}/test-definition.xml`).exists()) {
+				out.push({ repo: entry.name, dir: child.name, base: `${path}/${child.name}` });
+			}
+		}
+	}
+	return out.sort((a, b) => `${a.repo}/${a.dir}`.localeCompare(`${b.repo}/${b.dir}`));
+}
+
 /** Regenerate `src/pts-generated.ts` in place. Exported so the drift gate can re-run it directly. */
 export async function generateCatalogFile(): Promise<void> {
-	// Sort the profile dirs so generation order — and thus output — is independent of readdir order.
-	const dirs = (await readdir(PROFILES_DIR, { withFileTypes: true }))
-		.filter((d) => d.isDirectory())
-		.map((d) => d.name)
-		.sort();
+	const discovered = await discoverProfiles();
 
 	const profiles = await Promise.all(
-		dirs.map(async (dir) =>
+		discovered.map(async ({ repo, dir, base }) =>
 			parseProfile(
+				repo,
 				dir,
-				await readXml(`${PROFILES_DIR}/${dir}/test-definition.xml`),
-				await readXml(`${PROFILES_DIR}/${dir}/results-definition.xml`),
+				await readXml(`${base}/test-definition.xml`),
+				await readXml(`${base}/results-definition.xml`),
 			),
 		),
 	);
@@ -46,7 +70,9 @@ export async function generateCatalogFile(): Promise<void> {
 	});
 	if ((await fmt.exited) !== 0) throw new Error("biome format failed on generated catalog");
 
-	console.log(`✓ ${catalog.length} metrics from ${dirs.length} profiles -> src/pts-generated.ts`);
+	console.log(
+		`✓ ${catalog.length} metrics from ${profiles.length} profiles -> src/pts-generated.ts`,
+	);
 }
 
 if (import.meta.main) {

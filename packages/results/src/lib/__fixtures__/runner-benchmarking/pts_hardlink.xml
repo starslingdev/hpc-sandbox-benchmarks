@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+  Recorded local/hardlink-1.0.0 composite for the golden byte-match gate, sourced VERBATIM from
+  starslingdev/runner-benchmarking (computesdk-benchmarks/data/raw/27326736211/daytona/pts_hardlink.xml)
+  — a real Daytona run. hardlink is a REPO-LOCAL PTS profile, so its <Result><Identifier> is
+  `local/hardlink-1.0.0` (not `pts/...`). This proves our generator's source-segment-aware prefix
+  (pts.test = "local/hardlink") resolves a non-`pts/` profile instead of routing it to uncatalogued.
+  Single-result (empty <Description>) → the description-less wildcard, so no option-matrix synthesis.
+-->
+<!--Phoronix Test Suite v10.8.4-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>benchmark</Title>
+    <LastModified>2026-06-11 05:52:02</LastModified>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+    <Description>Docker testing on Debian GNU/Linux 13 via the Phoronix Test Suite.</Description>
+  </Generated>
+  <System>
+    <Identifier>ci</Identifier>
+    <Hardware>Processor: AMD EPYC 9275F 24-Core @ 4.82GHz (24 Cores / 48 Threads), Motherboard: Supermicro H14SHM v1.01 (1.3 BIOS), Memory: 768GB, Disk: 2 x 3841GB MTFDKCC3T8TGP-1BK1JABYY + 2 x 480GB Micron_7450_MTFDKBA480TFR, Graphics: astdrmfb</Hardware>
+    <Software>OS: Debian GNU/Linux 13, Kernel: 6.17.0-22-generic (x86_64), Compiler: GCC 14.2.0, File-System: overlayfs, Screen Resolution: 1024x768, System Layer: Docker</Software>
+    <User>root</User>
+    <TimeStamp>2026-06-11 05:50:19</TimeStamp>
+    <TestClientVersion>10.8.4</TestClientVersion>
+    <Notes></Notes>
+    <JSON>{"compiler-configuration":"--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=3 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=\/build\/reproducible-path\/gcc-14-14.2.0\/debian\/tmp-nvptx\/usr,amdgcn-amdhsa=\/build\/reproducible-path\/gcc-14-14.2.0\/debian\/tmp-gcn\/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v","disk-scheduler":"NONE","cpu-scaling-governor":"amd-pstate-epp performance (Boost: Enabled EPP: performance)","cpu-microcode":"0xb00211e","kernel-extra-details":"Transparent Huge Pages: madvise","security":"gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Mitigation of Reduced Speculation + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy\/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced \/ Automatic IBRS; IBPB: conditional; STIBP: always-on; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Mitigation of IBPB before exit userspace"}</JSON>
+  </System>
+  <Result>
+    <Identifier>local/hardlink-1.0.0</Identifier>
+    <Title>Hardlink Throughput</Title>
+    <AppVersion>0.16</AppVersion>
+    <Arguments></Arguments>
+    <Description></Description>
+    <Scale>bogo ops/s</Scale>
+    <Proportion>HIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>6.63</Value>
+        <RawString>6.52:6.82:6.56</RawString>
+        <JSON>{"test-run-times":"30.19:30.08:30.08"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

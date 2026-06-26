@@ -85,6 +85,17 @@ export const SUITES = {
 		metrics: ["stream_type_copy", "stream_type_scale", "stream_type_add", "stream_type_triad"],
 		commands: ["mise run benchmark:memory:all"],
 	},
+	// The disk dimension: hardlink throughput (stress-ng --link), a repo-local PTS profile installed
+	// into PTS by the producer task. Needs a little free disk for the link storm.
+	disk: {
+		setupPts: true,
+		commandTimeoutMinutes: 30,
+		timeoutMinutes: 40,
+		minDiskGb: 2,
+		dimensions: ["disk"],
+		metrics: ["hardlink_bogo_ops_per_s"],
+		commands: ["mise run benchmark:disk:all"],
+	},
 } as const satisfies Record<string, Suite>;
 
 /** A registered suite name. */

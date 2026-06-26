@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="Run disk benchmarks (PTS hardlink throughput)"
+# Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
+# (error-mode conventions: lib/bench.sh).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "========================================"
+echo "  DISK BENCHMARKS"
+echo "========================================"
+
+ensure_pts || true
+
+run_task benchmark:disk:pts:hardlink
+
+summary

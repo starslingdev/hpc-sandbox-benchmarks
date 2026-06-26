@@ -41,6 +41,18 @@ export const ptsGenerated: MetricDef[] = [
 		sourceUrl: "http://nuclear.mutantstargoat.com/sw/c-ray/",
 	},
 	{
+		id: "hardlink_bogo_ops_per_s",
+		dimension: "disk",
+		unit: "bogo ops/s",
+		direction: "HIB",
+		headline: false,
+		label: "Hardlink Throughput",
+		description:
+			"Measures hardlink() syscall throughput using the stress-ng --link stressor. Mirrors the per-syscall pattern that pnpm install hits when materialising thousands of node_modules entries from a content-addressable store. Reports bogo ops/sec (real time) — one bogo op = one create+unlink hardlink cycle.",
+		pts: { test: "local/hardlink" },
+		sourceUrl: "https://github.com/ColinIanKing/stress-ng",
+	},
+	{
 		id: "node_web_tooling_runs_per_s",
 		dimension: "cpu",
 		unit: "runs/s",

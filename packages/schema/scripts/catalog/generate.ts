@@ -64,12 +64,16 @@ export function directionFor(profile: PtsProfile): Direction {
 /** One profile → its draft `MetricDef[]` (one per synthesized description). */
 export function generateProfile(profile: PtsProfile): MetricDef[] {
 	const name = versionless(profile.dir);
-	// `name` becomes the `pts/<name>` runtime join key: an empty slug routes every metric to
-	// uncatalogued, and one already embedding `pts/` would yield `pts/pts/…`. Guard both at source.
-	if (!name || name.startsWith("pts/")) {
+	// `pts.test` = `<repo>/<name>` — the versionless runtime `<Identifier>` join key, whose prefix is the
+	// profile's source segment (`pts` upstream, `local` for repo-local). Guard: an empty name routes
+	// every metric to uncatalogued, and a name that already embeds a slash would double the prefix.
+	if (!name || name.includes("/")) {
 		throw new Error(`invalid versionless profile dir "${profile.dir}" → name "${name}"`);
 	}
-	const ptsTest = `pts/${name}`;
+	if (!profile.repo || profile.repo.includes("/")) {
+		throw new Error(`invalid profile repo segment "${profile.repo}" for dir "${profile.dir}"`);
+	}
+	const ptsTest = `${profile.repo}/${name}`;
 
 	const base = slug(name);
 	const dimension = dimensionForTestType(profile.profile.TestType);

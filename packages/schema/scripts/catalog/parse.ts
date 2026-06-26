@@ -85,6 +85,13 @@ const resultsDefinitionSchema = type({
 
 /** A vendored profile, fully parsed: its dir (the version pin) plus the nodes the generator reads. */
 export interface PtsProfile {
+	/**
+	 * The profile's source repo segment — the prefix of the runtime `<Result><Identifier>` and thus of
+	 * `pts.test`: `pts` for upstream phoronix profiles, `local` for repo-local ones (PTS reports
+	 * `local/hardlink-1.0.0`). Derived from the vendored layout (a profile under `pts-profiles/<repo>/…`
+	 * carries that `<repo>`; a flat `pts-profiles/<name>-<ver>` defaults to `pts`).
+	 */
+	readonly repo: string;
 	/** The `<name>-<ver>` directory name — the version pin and the source of `pts.test`. */
 	readonly dir: string;
 	readonly info: PtsTestInformation;
@@ -100,8 +107,17 @@ function assertValid<T>(out: T | type.errors, what: string): T {
 	return out;
 }
 
-/** Parse one vendored profile. `resultsXml` may be empty when no results-definition.xml is vendored. */
-export function parseProfile(dir: string, testXml: string, resultsXml: string): PtsProfile {
+/**
+ * Parse one vendored profile. `repo` is the source segment (`pts` upstream, `local` for repo-local) the
+ * generator uses as the `pts.test` prefix. `resultsXml` may be empty when no results-definition.xml is
+ * vendored.
+ */
+export function parseProfile(
+	repo: string,
+	dir: string,
+	testXml: string,
+	resultsXml: string,
+): PtsProfile {
 	const test = assertValid(
 		testDefinitionSchema(parser.parse(testXml)),
 		`${dir}/test-definition.xml`,
@@ -113,6 +129,7 @@ export function parseProfile(dir: string, testXml: string, resultsXml: string): 
 			).PhoronixTestSuite.ResultsParser ?? [])
 		: [];
 	return {
+		repo,
 		dir,
 		info: test.PhoronixTestSuite.TestInformation,
 		profile: test.PhoronixTestSuite.TestProfile,

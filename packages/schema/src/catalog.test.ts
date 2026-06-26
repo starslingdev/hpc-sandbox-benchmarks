@@ -73,6 +73,15 @@ describe("metric catalog", () => {
 		).toEqual(["stream_type_add", "stream_type_copy", "stream_type_scale", "stream_type_triad"]);
 	});
 
+	it("resolves the Hardlink headline for the disk dimension via a non-`pts/` (local) join key", () => {
+		const metric = headlineMetric("disk");
+		expect(metric.id).toBe("hardlink_bogo_ops_per_s");
+		expect(metric.label).toBe("Hardlink throughput");
+		expect(metric.direction).toBe("HIB");
+		// Repo-local profile: the join prefix is `local/`, proving the generator is source-segment-aware.
+		expect(metric.pts).toEqual({ test: "local/hardlink" });
+	});
+
 	it("returns undefined for an unknown metric id", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});
