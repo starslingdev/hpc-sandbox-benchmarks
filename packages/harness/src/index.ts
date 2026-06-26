@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import { providers } from "@sandbox-benchmarks/providers";
-import type { RawRun, Suite } from "@sandbox-benchmarks/schema";
+import type { ProviderTransport, RawRun, Suite } from "@sandbox-benchmarks/schema";
 import { isPtsResultFile, SUITES } from "@sandbox-benchmarks/schema";
 import { collectResults, writeSkipMarker } from "./lib/collect.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
@@ -128,7 +128,13 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		}
 	}
 
-	await runSuiteOnSandbox(sandbox, { suite, suiteName, providerName, resultsDir });
+	await runSuiteOnSandbox(sandbox, {
+		suite,
+		suiteName,
+		providerName,
+		resultsDir,
+		transport: config.transport,
+	});
 }
 
 /** The already-resolved context {@link runSuiteOnSandbox} runs against. */
@@ -137,21 +143,25 @@ export interface SuiteRunContext {
 	suiteName: string;
 	providerName: string;
 	resultsDir: string;
+	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
+	transport: ProviderTransport;
 }
 
 /**
  * Run a suite against an already-created sandbox, then tear it down (run-and-dispose). Split from
  * {@link runSuite} so the orchestration — disk gate, setup, benchmark, result collection, the
  * benchmark-vs-collect error precedence, and the always-runs teardown — is testable against a fake
- * sandbox without provisioning a real one. Long steps (setup installs, the benchmark) run on the
- * durable detached transport so Daytona's 408 on multi-minute synchronous execs can't truncate them.
+ * sandbox without provisioning a real one. Long steps (setup installs, the benchmark, result
+ * collection) run through the capability-driven {@link StepRunner.step}, which picks the detached
+ * transport for a provider whose synchronous exec is capped (e.g. Daytona's 408 on multi-minute
+ * commands) and a direct exec for an uncapped one.
  */
 export async function runSuiteOnSandbox(
 	sandbox: SandboxHandle,
 	ctx: SuiteRunContext,
 ): Promise<void> {
-	const { suite, suiteName, providerName, resultsDir } = ctx;
-	const runner = new StepRunner(sandbox);
+	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
+	const runner = new StepRunner(sandbox, transport);
 	let suiteError: unknown;
 	try {
 		runner.phase = "setup";
@@ -172,8 +182,9 @@ export async function runSuiteOnSandbox(
 			const attempts = (step.retries ?? 0) + 1;
 			for (let attempt = 1; ; attempt++) {
 				try {
-					// Detached: a multi-minute install (mise/PTS/apt) would 408 a synchronous exec.
-					await runner.runDetached(step.label, step.script, step.timeoutMs);
+					// A multi-minute install (mise/PTS/apt) would 408 a synchronous exec on a capped
+					// provider — step() detaches it there and runs it directly on an uncapped one.
+					await runner.step(step.label, step.script, step.timeoutMs);
 					break;
 				} catch (err) {
 					if (attempt >= attempts) throw err;
@@ -188,12 +199,9 @@ export async function runSuiteOnSandbox(
 		try {
 			runner.phase = "benchmark";
 			for (const command of suite.commands) {
-				// Detached: the cpu-node command budgets 110 min — far past Daytona's synchronous-exec 408.
-				await runner.runDetached(
-					command,
-					`cd ${DIR} && ${command}`,
-					suite.commandTimeoutMinutes * MIN,
-				);
+				// The cpu-node command budgets 110 min — far past a capped provider's synchronous-exec
+				// limit (Daytona's 408), so step() detaches there; an uncapped provider runs it directly.
+				await runner.step(command, `cd ${DIR} && ${command}`, suite.commandTimeoutMinutes * MIN);
 			}
 		} catch (err) {
 			// Still pull whatever results were produced before failing the job.

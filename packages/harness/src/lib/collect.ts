@@ -25,10 +25,11 @@ const RESULTS_END = "__BENCH_RESULTS_TGZ_END__";
 /** Pull the sandbox's benchmark-results/ into `resultsDir` on the host. */
 export async function collectResults(runner: StepRunner, resultsDir: string): Promise<void> {
 	runner.phase = "collect";
-	// Detached transport: the tar|base64 payload lands in the step's log file and is read back, so a
-	// large or slow collect can't 408 the synchronous exec mid-stream (the path long steps use). The
-	// BEGIN/END markers still bound the base64 within that captured output.
-	const result = await runner.runDetached(
+	// Capability-driven transport: on a capped provider the tar|base64 payload lands in the step's log
+	// file and is read back, so a large or slow collect can't 408 the synchronous exec mid-stream; on an
+	// uncapped provider it streams straight back over a direct exec. Both populate `result.stdout`, and
+	// the BEGIN/END markers bound the base64 within that captured output either way.
+	const result = await runner.step(
 		"collect benchmark-results",
 		`cd ${DIR} && mkdir -p benchmark-results && ` +
 			`echo ${RESULTS_BEGIN} && tar -czf - benchmark-results | base64 | tr -d '\\n' && echo && echo ${RESULTS_END}`,

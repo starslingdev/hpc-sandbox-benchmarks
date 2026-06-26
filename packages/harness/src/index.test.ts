@@ -238,6 +238,9 @@ const ctx = (s: Suite, resultsDir: string) => ({
 	suiteName: "cpu-node",
 	providerName: "daytona",
 	resultsDir,
+	// Daytona-shaped: synchronous execs capped, detached+poll available. The fake sandbox has no
+	// filesystem, so a detached selection falls back to the foreground path — behavior is unchanged.
+	transport: fixtureTransport,
 });
 
 describe("runSuite (resolution + credential gate)", () => {

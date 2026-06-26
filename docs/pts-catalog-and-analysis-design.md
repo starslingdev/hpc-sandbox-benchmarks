@@ -195,6 +195,8 @@ Producer never *sets* MONITOR; the risk is **inherited env** from the image/harn
 ## 5. Transport Caveat
 
 > **Status update: the detached+poll transport described below has since been IMPLEMENTED** in the harness (`StepRunner.runDetached`, execute.ts). `SandboxHandle` now carries an optional `filesystem` slice and `runCommand` takes a `RunCommandOptions` with `background`; the benchmark, the long setup installs, and the result collection all run over it. The caveat below is retained as the rationale; the work it prescribes as a "separate stack" is no longer pending.
+>
+> **Follow-up (ENG-62): transport selection is now capability-driven, not hardcoded.** Each provider declares a `ProviderTransport` capability in the schema (`streaming`, `syncCapMs`, `detachedPoll`), and the harness picks per step via `StepRunner.step` / `selectTransport`: a step that could outlast the provider's synchronous cap detaches where supported, everything else runs directly. Daytona's HTTP 408 is one declared capability among several (E2B caps a synchronous `commands.run` at ~60s; Modal's exec is uncapped), so the long-step path is no longer Daytona-specific — it follows whichever provider is running.
 
 Per spike `bn2f5pmp4` (`docs/evidence/daytona-exec-transport.md`), Daytona itself caps a long synchronous `executeCommand` round-trip at **server-side HTTP 408** (FACT 2), and `@computesdk/daytona` does **not** stream — it ignores `onStdout`/`onStderr` and hardcodes `stderr:""` (FACT 1). So Daytona is **not** a safe direct-exec path for multi-minute suites: it is itself a **single-round-trip-capped provider**, alongside Blaxel's ~120s gateway. (`execute.ts`'s header now documents this, with the provider and exact HTTP 408 cap cited.)
 
