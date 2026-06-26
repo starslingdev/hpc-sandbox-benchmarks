@@ -229,6 +229,10 @@ function makeSandbox(opts: {
 const suite = (overrides: Partial<Suite>): Suite => ({
 	commandTimeoutMinutes: 1,
 	timeoutMinutes: 1,
+	// The harness never reads dimensions/metrics (those drive the results contract, not orchestration);
+	// keep the fixture empty so it stays decoupled from real catalog ids — like setup.test.ts's bare suite.
+	dimensions: [],
+	metrics: [],
 	commands: ["benchmark-cmd"],
 	...overrides,
 });

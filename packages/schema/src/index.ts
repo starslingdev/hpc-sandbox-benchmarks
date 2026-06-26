@@ -15,6 +15,8 @@ export * from "./providers.ts";
 export * from "./raw-files.ts";
 // The canonical Run dataset model (Run/ProviderRun/MetricResult/…) and its validators.
 export * from "./run.ts";
+// The suite↔dimension↔metric contract checker (fail-fast at load) and its violation types.
+export * from "./suite-contract.ts";
 // The benchmark suite registry — shared by the harness and CI matrix planning.
 export * from "./suites.ts";
 // Canonical toolchain image identity (name + version), shared by the build pins and runtime config.

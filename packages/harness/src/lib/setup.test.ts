@@ -21,9 +21,13 @@ describe("setupSteps", () => {
 	});
 
 	it("omits node/PTS setup for a bare suite", () => {
-		const bare = setupSteps({ commandTimeoutMinutes: 1, timeoutMinutes: 1, commands: [] }).map(
-			(step) => step.label,
-		);
+		const bare = setupSteps({
+			commandTimeoutMinutes: 1,
+			timeoutMinutes: 1,
+			dimensions: [],
+			metrics: [],
+			commands: [],
+		}).map((step) => step.label);
 		expect(bare).not.toContain("setup node 22 + pnpm 10");
 		expect(bare).not.toContain("setup phoronix-test-suite");
 	});
