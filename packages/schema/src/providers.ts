@@ -17,6 +17,39 @@ export type ProviderId = "e2b" | "daytona" | "modal";
 export type SpecPinning = "settable" | "fixed" | "unknown";
 
 /**
+ * How a provider's command-exec transport behaves *through its `@computesdk/*` adapter* — the facts the
+ * harness needs to pick a per-step transport instead of hardcoding one provider's quirks (the original
+ * sin this models away: the harness forced Daytona's detached+poll on every provider). Owned here
+ * alongside the other declared capabilities ({@link SpecPinning}, isolation, maturity) because it is a
+ * static, comparable property of the integration, and the schema already names the `@computesdk/*`
+ * adapter via {@link ProviderMeta.sdkPackage}.
+ *
+ * Three independent capabilities, each load-bearing for transport selection:
+ *
+ *   - `streaming` — does the adapter deliver stdout/stderr incrementally (computesdk's
+ *     `onStdout`/`onStderr`)? All three shipped adapters drop those callbacks, so a long synchronous
+ *     exec buffers silently. Modeled because a streaming path keeps a connection productive past an
+ *     idle gateway cap; today it is uniformly `false`, so it does not yet tip the harness's choice.
+ *   - `syncCapMs` — the longest a single *synchronous* exec round-trip is safe before the provider
+ *     caps it, or `null` when uncapped. The conservative policy bound the harness compares a step's
+ *     timeout budget against: a step that could run past it must not go synchronous. Daytona returns a
+ *     server-side HTTP 408 on multi-minute synchronous execs while the process keeps running
+ *     (`docs/evidence/daytona-exec-transport.md`); E2B's `commands.run` defaults to a 60s command
+ *     timeout the computesdk wrapper never overrides.
+ *   - `detachedPoll` — can the provider run a step fully detached (background exec + a pollable
+ *     filesystem), the durable path for steps that would outlast `syncCapMs`? Without it there is no
+ *     alternative, so such a step stays synchronous and best-effort.
+ */
+export interface ProviderTransport {
+	/** Does the `@computesdk/*` adapter stream stdout/stderr chunks (`onStdout`/`onStderr`)? */
+	streaming: boolean;
+	/** Conservative bound (ms) on a safe single synchronous exec round-trip; `null` when uncapped. */
+	syncCapMs: number | null;
+	/** Can a step run detached (background exec + filesystem poll), the durable long-step path? */
+	detachedPoll: boolean;
+}
+
+/**
  * How a provider bills. A discriminated union so a vetted `per_vcpu_hour` rate cannot be declared
  * without its `usdPerVcpuHour` — the missing-rate case is a compile error, not a silent `null`.
  */
@@ -73,6 +106,8 @@ export interface ProviderMeta {
 	pricing: ProviderPricing;
 	maturity: ProviderMaturity;
 	specPinning: SpecPinning;
+	/** How the provider's exec transport behaves — the harness selects sync vs detached from this. */
+	transport: ProviderTransport;
 }
 
 /**
@@ -123,6 +158,15 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 		maturity: { status: "ga", notes: "Custom images via e2b template build." },
 		specPinning: "fixed",
+		transport: {
+			// `@computesdk/e2b` calls `sandbox.commands.run(cmd)` with no options, so the E2B SDK applies
+			// its default 60s command timeout (`Commands.defaultProcessConnectionTimeout = 6e4`) and the
+			// onStdout/onStderr callbacks are never passed through. A step budgeted past ~60s must detach;
+			// E2B exposes a filesystem + `background`, so detached+poll is available.
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
 	},
 	daytona: {
 		displayName: "Daytona",
@@ -152,6 +196,18 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			notes: "The validated reference provider for this harness (pre-baked toolchain snapshot).",
 		},
 		specPinning: "settable",
+		transport: {
+			// The single-round-trip-capped reference case: the Daytona server returns HTTP 408 on a
+			// multi-minute synchronous `executeCommand` while the process keeps running server-side, and
+			// `@computesdk/daytona` ignores onStdout/onStderr (hardcoding `stderr:""`) — no streaming to
+			// keep the connection productive. See docs/evidence/daytona-exec-transport.md. The exact
+			// server threshold is unmeasured (sub-second probes succeed; multi-minute execs 408), so the
+			// bound is a conservative 60s policy: budget anything longer to the detached+poll path
+			// (`background` via nohup + the pollable filesystem).
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
 	},
 	modal: {
 		displayName: "Modal",
@@ -177,6 +233,17 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 		maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },
 		specPinning: "settable",
+		transport: {
+			// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
+			// separate per-exec timeout — a synchronous exec is bounded only by the create-time sandbox
+			// lifetime, not a server gateway cap (`syncCapMs: null`). It still doesn't surface
+			// onStdout/onStderr (it reads the piped streams to completion), and `background` + filesystem
+			// are available, so detached+poll remains an option even though direct exec is the default.
+			// ENG-64 validates this end-to-end against a live multi-minute suite.
+			streaming: false,
+			syncCapMs: null,
+			detachedPoll: true,
+		},
 	},
 };
 

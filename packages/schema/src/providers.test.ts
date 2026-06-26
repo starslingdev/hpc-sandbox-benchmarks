@@ -14,6 +14,7 @@ const fixture: ProviderMeta = {
 	pricing: { model: "per_vcpu_hour", usdPerVcpuHour: 0.05, usdPerGibHour: 0.01, notes: "fixture" },
 	maturity: { status: "ga" },
 	specPinning: "settable",
+	transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },
 };
 
 describe("@sandbox-benchmarks/schema providers", () => {
@@ -22,6 +23,30 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		expect(new Set(ids).size).toBe(ids.length);
 		for (const p of PROVIDERS) {
 			expect(p.requiredEnvVars.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("declares a well-formed exec transport for every provider", () => {
+		for (const p of PROVIDERS) {
+			const t = p.transport;
+			expect(typeof t.streaming).toBe("boolean");
+			expect(typeof t.detachedPoll).toBe("boolean");
+			// A cap is either "uncapped" (null) or a strictly-positive, *finite* duration — a 0/negative
+			// cap would force every step past it (always detached) and is never a real bound, and a
+			// non-finite cap (`Infinity`) is "uncapped" smuggled in as a number instead of `null`.
+			// Split into explicit branches so a failure says which rule broke, not "expected false".
+			if (t.syncCapMs === null) {
+				expect(t.syncCapMs).toBeNull();
+			} else {
+				expect(typeof t.syncCapMs).toBe("number");
+				expect(Number.isFinite(t.syncCapMs)).toBe(true);
+				expect(t.syncCapMs).toBeGreaterThan(0);
+				// A bounded cap is only honourable if there's a detached path to fall back to: the harness
+				// routes steps past the cap to detached+poll. A finite cap with `detachedPoll: false` would
+				// silently strand capped steps in synchronous best-effort mode — the exact failure this
+				// schema exists to prevent — so assert the invariant the type alone can't.
+				expect(t.detachedPoll).toBe(true);
+			}
 		}
 	});
 
