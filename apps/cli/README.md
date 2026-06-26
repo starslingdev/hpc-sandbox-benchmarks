@@ -3,7 +3,10 @@
 **Role:** the entrypoint app — wires the five `@sandbox-benchmarks/*` packages into runnable commands.
 
 **Bins (`bin`, no `exports`):**
-- `bench-lifecycle` — benchmark one provider's spawn→exec→teardown lifecycle.
+- `bench-lifecycle` — measure each provider's lifecycle (spawn→exec→snapshot→teardown) and
+  control-plane (sandbox info/list) timings directly in the harness, the axes PTS cannot see. Flags:
+  `--iterations N` (cold-start cycles/provider), `--control-plane-samples N`, `--no-snapshot`. Providers
+  with absent creds skip; per-Metric distributions go to stdout JSON, a timing log to stderr.
 - `bench-suite` — run the full suite across the matrix.
 - `plan-matrix` — print the benchmark matrix as **single-line compact JSON** for `$GITHUB_OUTPUT`.
 - `build-template` — build a provider's sandbox template.
