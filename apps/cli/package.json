@@ -12,7 +12,8 @@
     "build-template": "./src/bin/build-template.ts",
     "normalize": "./src/bin/normalize.ts",
     "aggregate": "./src/bin/aggregate.ts",
-    "promote": "./src/bin/promote.ts"
+    "promote": "./src/bin/promote.ts",
+    "leaderboard": "./src/bin/leaderboard.ts"
   },
   "scripts": {
     "test": "bun test",

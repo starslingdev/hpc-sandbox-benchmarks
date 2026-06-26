@@ -123,3 +123,17 @@ defensible option, document, continue).
 - **CI.** Added a `publish` job to `bench-matrix.yml`: downloads every shard artifact, aggregates →
   promotes → commits `data/dataset/` back to the branch (contents: write, github-actions bot). The
   aggregate/promote logic is unit-tested offline; the CI commit path is live-only.
+
+## ENG-68 — Public leaderboard / comparison surface
+
+- **`buildLeaderboard(run)` + `renderLeaderboardMarkdown(board)`** (`results/lib/leaderboard.ts`): one
+  ranked table per Dimension keyed on that Dimension's headline Metric (catalog guarantees exactly one),
+  every provider that produced it, ranked by Direction (HIB highest-first, LIB lowest-first), tie-broken
+  on providerId for determinism. Representative value = Samples' p50. Economics rides in as just another
+  Dimension (its `usd_per_hour` headline → a cheapest-first ranking), so "ranking with economics" needs
+  no special case. Unpopulated dimensions (no headline value) are omitted.
+- **`leaderboard` CLI bin**: renders a Run JSON to Markdown (stdout or a file). Smoke-tested against a
+  synthetic two-provider run — produces the cpu (HIB) and economics (LIB) tables correctly.
+- **Scope.** Renders from a published Run document; with no committed dataset yet (live runs are out of
+  scope), there's no `LEADERBOARD.md` artifact to commit — the renderer + bin are the deliverable, wired
+  to run over `data/dataset/` once the matrix publishes one.
