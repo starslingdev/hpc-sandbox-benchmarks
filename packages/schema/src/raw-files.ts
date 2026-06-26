@@ -1,8 +1,15 @@
 /**
  * The raw-file naming contract — the ONE home for how files in a Run's curated raw tree
- * (`data/raw/<runId>/<provider>/`) are named, and how skip markers are shaped. The in-sandbox
+ * (`data/raw/<runId>/<provider>/<suite>/`) are named, and how skip markers are shaped. The in-sandbox
  * producer and the harness collector (writers) and the results extractor (the single reader) all
  * route through this module, so a filename's spelling can never drift between them.
+ *
+ * Layout: a Run nests one subdirectory per provider, and under it one subdirectory per suite that ran
+ * (the harness pulls each suite's output into `<provider>/<suite>/`). Tagging the tree by suite lets
+ * the normalizer attribute every result to the suite that produced it and reject — per suite — any
+ * catalogued metric emitted on a Dimension that suite does not declare (the runtime half of the
+ * suite↔dimension↔metric contract; see suite-contract.ts). The normalizer still accepts the older
+ * un-nested `<provider>/<file>` layout (results directly under the provider dir) for back-compatibility.
  *
  * Parse, don't validate: the filename predicates and the skip-marker/artifact-name readers are arktype
  * Types — `.matching` regex narrowing plus `.pipe` morphs — so a malformed marker or off-contract name

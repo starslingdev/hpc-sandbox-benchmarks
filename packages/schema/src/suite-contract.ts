@@ -27,6 +27,13 @@
  * against crafted registries and catalogs, independent of the singletons; {@link assertSuiteContract}
  * is the load-time wrapper that throws, invoked once at module end over the real `SUITES` and
  * `METRIC_CATALOG`.
+ *
+ * The load check above guards the suite's *declaration*. The other half — guarding what a suite
+ * actually *emits* at runtime — is {@link offDimensionEmissions}: the results normalizer tags each
+ * suite's raw output by suite (`data/raw/<runId>/<provider>/<suite>/`) and, per suite, rejects any
+ * catalogued metric produced on a Dimension the suite does not declare. Together they close the gap
+ * between "what the registry says a suite measures" and "what its mise tasks really wrote", so a
+ * producer that drifts from the registry fails the run instead of landing a number under the wrong axis.
  */
 import { METRIC_CATALOG } from "./catalog.ts";
 import type { Dimension, MetricDef } from "./metrics.ts";
@@ -132,3 +139,57 @@ export function assertSuiteContract(
 // Fail fast at schema load: importing @sandbox-benchmarks/schema (every consumer does) validates the
 // real registry against the real Catalog, so an off-contract suite can never reach a running benchmark.
 assertSuiteContract();
+
+/**
+ * A catalogued metric a suite EMITTED at runtime on a Dimension it does not declare — the runtime half
+ * of the contract, the mirror of the declaration-time `off-dimension` {@link SuiteContractViolation}.
+ * The declaration check proves a suite's *declared* metrics are catalogued and on-axis; this proves a
+ * suite's *produced* results stay on the axes it measures. Only off-dimension emissions are breaches:
+ * an uncatalogued emission is the normalizer's inert straggler (reported, never ranked), and a
+ * catalogued metric on a Dimension the suite DOES declare is fine even if the suite didn't list that
+ * exact id — a suite may run a subset of a multi-result test's combinations, and the unlisted siblings
+ * are still correctly-dimensioned (design §"which combination runs").
+ */
+export interface OffDimensionEmission {
+	suite: string;
+	metricId: string;
+	/** The metric's catalog Dimension — the axis the suite does not declare. */
+	dimension: Dimension;
+}
+
+/**
+ * Which of `emittedMetricIds` a suite produced on a Dimension outside its declared `dimensions`,
+ * resolved against the Catalog. Ids absent from the Catalog are skipped (inert stragglers, not
+ * breaches); a repeated id is reported once (a metric can land in several of a suite's raw files). An
+ * unknown suite name yields none — the caller scopes to registered suites. Pure / injectable like
+ * {@link suiteContractViolations}, so it is testable against crafted suites and catalogs.
+ */
+export function offDimensionEmissions(
+	suite: string,
+	emittedMetricIds: Iterable<string>,
+	suites: Record<string, SuiteContract> = SUITES,
+	catalog: readonly MetricDef[] = METRIC_CATALOG,
+): OffDimensionEmission[] {
+	const contract = suites[suite];
+	if (!contract) return [];
+	const declared = new Set<Dimension>(contract.dimensions);
+	const dimensionById = new Map<string, Dimension>(
+		catalog.map((metric) => [metric.id, metric.dimension]),
+	);
+	const out: OffDimensionEmission[] = [];
+	const seen = new Set<string>();
+	for (const metricId of emittedMetricIds) {
+		if (seen.has(metricId)) continue;
+		seen.add(metricId);
+		const dimension = dimensionById.get(metricId);
+		if (dimension === undefined) continue; // uncatalogued → inert straggler, not this check's job
+		if (declared.has(dimension)) continue; // on a measured axis → fine (declared id or subset sibling)
+		out.push({ suite, metricId, dimension });
+	}
+	return out;
+}
+
+/** Render an off-dimension emission as one line — the single owner of this breach's text. */
+export function describeOffDimensionEmission(emission: OffDimensionEmission): string {
+	return `suite "${emission.suite}" emitted metric "${emission.metricId}" on dimension "${emission.dimension}", which it does not measure`;
+}

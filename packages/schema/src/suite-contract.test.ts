@@ -4,7 +4,9 @@ import type { Dimension, MetricDef } from "./metrics.ts";
 import type { SuiteContract } from "./suite-contract.ts";
 import {
 	assertSuiteContract,
+	describeOffDimensionEmission,
 	describeSuiteContractViolation,
+	offDimensionEmissions,
 	suiteContractViolations,
 } from "./suite-contract.ts";
 import { SUITES } from "./suites.ts";
@@ -177,5 +179,45 @@ describe("assertSuiteContract", () => {
 		expect(() =>
 			assertSuiteContract(suites({ ok: { dimensions: ["disk"], metrics: ["disk_a"] } }), catalog),
 		).not.toThrow();
+	});
+});
+
+describe("offDimensionEmissions (runtime half)", () => {
+	const reg = suites({ "cpu-suite": { dimensions: ["cpu"], metrics: ["cpu_a"] } });
+
+	it("returns nothing when every emitted metric is on a declared dimension", () => {
+		// cpu_a is declared; cpu_b is a catalogued sibling on the SAME declared axis (subset pattern) —
+		// allowed even though the suite didn't list it.
+		expect(offDimensionEmissions("cpu-suite", ["cpu_a", "cpu_b"], reg, catalog)).toEqual([]);
+	});
+
+	it("flags a catalogued metric emitted on a dimension the suite does not declare", () => {
+		expect(offDimensionEmissions("cpu-suite", ["cpu_a", "disk_a"], reg, catalog)).toEqual([
+			{ suite: "cpu-suite", metricId: "disk_a", dimension: "disk" },
+		]);
+	});
+
+	it("ignores an uncatalogued emission — that is the inert-straggler path, not a breach", () => {
+		expect(offDimensionEmissions("cpu-suite", ["ghost"], reg, catalog)).toEqual([]);
+	});
+
+	it("reports a repeated off-dimension id only once", () => {
+		expect(offDimensionEmissions("cpu-suite", ["disk_a", "disk_a"], reg, catalog)).toEqual([
+			{ suite: "cpu-suite", metricId: "disk_a", dimension: "disk" },
+		]);
+	});
+
+	it("returns nothing for an unknown suite name (caller scopes to registered suites)", () => {
+		expect(offDimensionEmissions("not-a-suite", ["disk_a"], reg, catalog)).toEqual([]);
+	});
+
+	it("defaults to the real SUITES + catalog: cpu-node's real emission is on-axis", () => {
+		expect(offDimensionEmissions("cpu-node", ["node_web_tooling_runs_per_s"])).toEqual([]);
+	});
+
+	it("renders a breach line from its structured fields", () => {
+		expect(describeOffDimensionEmission({ suite: "s", metricId: "m", dimension: "disk" })).toBe(
+			'suite "s" emitted metric "m" on dimension "disk", which it does not measure',
+		);
 	});
 });
