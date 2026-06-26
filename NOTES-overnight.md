@@ -152,3 +152,16 @@ defensible option, document, continue).
   and would double-count the measured shift it's computed from.
 - **`stability` CLI bin**: `stability <prev.json> <cur.json> [threshold]` prints each shift and exits
   non-zero on any regression (the CI gate). `regressions()` + `describeShift()` exported for reuse.
+
+## ENG-69 — Docs: methodology + add-a-provider/suite/metric
+
+- `docs/methodology.md` — how a measurement is produced: target spec, dimensions + headline metrics,
+  the three metric sources, economics ($/run), the **host-vs-effective** caveat (and the MONITOR/forensics
+  notes), the capability-driven transport model, and the matrix→aggregate→promote→leaderboard→stability
+  pipeline. Cross-links the code it describes.
+- `CONTRIBUTING.md` — the local gate commands (incl. the catalog drift gate) and three walkthroughs:
+  add a provider (identity+economics → adapter → template), add a suite (SUITES + mise tasks), add a
+  metric (PTS single-result vs multi-result-needs-recorded-composite; non-PTS slices). Documents the
+  parse-don't-validate + cross-registry-invariant conventions.
+- README links both. Docs reflect everything built this session (economics, host-fingerprint, system
+  dimension, matrix, dataset, leaderboard, stability) so they're accurate to the branch, not aspirational.
