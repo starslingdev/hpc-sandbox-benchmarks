@@ -121,6 +121,42 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		);
 	});
 
+	it("maps the composite <System> to host specs while the probe owns the effective specs", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		// A composite that discloses a 48-thread host through <System>, plus a node-web-tooling result.
+		writeFileSync(
+			join(suiteDir, "pts_node-web-tooling.xml"),
+			`<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <System>
+    <Identifier>sandbox</Identifier>
+    <Hardware>Processor: AMD EPYC 9R14 96-Core Processor (48 Cores), Memory: 4 x 16 GB</Hardware>
+    <Software>OS: Ubuntu 24.04, Kernel: 6.8.0-1014-aws (x86_64)</Software>
+    <User>root</User>
+  </System>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier>
+    <Title>Node.js V8 Web Tooling Benchmark</Title>
+    <Scale>runs/s</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value>10.5</Value><RawString>10.5:10.6</RawString></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`,
+		);
+		// The in-sandbox probe reports the EFFECTIVE 2-vCPU cgroup quota.
+		writeFileSync(join(suiteDir, "observed-specs.json"), JSON.stringify({ vcpus: 2, memoryGb: 8 }));
+
+		const run = normalizeProviderDir(root, "daytona");
+		// Host disclosure from <System> lands on the host side…
+		expect(run.observedSpecs.hostVcpus).toBe(48);
+		expect(run.observedSpecs.hostMemoryGb).toBe(64);
+		expect(run.observedSpecs.cpuModel).toBe("AMD EPYC 9R14 96-Core Processor");
+		expect(run.observedSpecs.os).toBe("Ubuntu 24.04");
+		// …while the probe still owns the effective fields (the host count never masquerades as effective).
+		expect(run.observedSpecs.vcpus).toBe(2);
+		expect(run.observedSpecs.memoryGb).toBe(8);
+	});
+
 	it("does NOT attach economics to a pending provider (no measured metrics)", () => {
 		// Empty provider dir → pending; economics must not promote it or appear.
 		const run = normalizeProviderDir(root, "daytona");

@@ -41,3 +41,27 @@ defensible option, document, continue).
   economics MetricResults — so economics, which no suite declares, never trips the
   off-dimension check.
 - **`derived: true`** on both, so they are visibly distinct from parsed/measured metrics.
+
+## ENG-70 — Host-fingerprint + forensics capture
+
+- **Producer pieces already landed.** The scoped `composite.xml` find (`-path "*benchmark*/…"`) and
+  `unset MONITOR PERFORMANCE_PER_WATT` (design §4.3/§4.4) were already in `lib/bench.sh` from earlier
+  PRs. The only producer work left for ENG-70 was the forensics tarball.
+- **`<System>` is read-only host disclosure.** Added `<System>` to `ptsCompositeSchema` and a tolerant
+  regex parser `parseSystemHost` (`results/lib/system-specs.ts`). PTS Hardware/Software are free-text,
+  so each field is best-effort: unmatched → unset. Host logical CPUs prefer the thread count over the
+  core count ("(24 Cores / 48 Threads)" → 48); memory handles "K x S GB" and "S GB".
+- **Never effective.** `parseSystemHost` sets ONLY host-side ObservedSpecs fields
+  (`hostVcpus`/`hostMemoryGb`/`cpuModel`/`cpuMhz`/`kernel`/`os`/`virtualization`/`user`). The normalizer
+  merges it UNDER the in-sandbox spec probe (`{ ...systemHost, ...probeSpecs }`), so the probe always
+  wins on the effective `vcpus`/`memoryGb` and a host disclosure can never masquerade as the sandbox
+  quota. Threaded via a new `observedHost?` slot on `ProviderExtraction` (first composite with a
+  non-empty `<System>` wins) — extract.ts surfaces it, the run-writer layer merges it (design §4.1).
+- **Forensics tarball.** `ptsForensicsFile`/`isPtsForensicsFile` in `raw-files.ts` with suffix
+  `--forensics.tar.gz`; provably disjoint from `isPtsResultFile` (ends `.tar.gz`, never `.xml`) so its
+  nested XML can't be misrouted. Producer `run_pts_benchmark` now `tar -czf`s the result dir with
+  `|| true`. Updated the raw-files doc comment that claimed siblings "deliberately don't match" — one
+  sibling now intentionally has a recognized provenance name.
+- **shellcheck unavailable.** The `bench.sh` edit could not be shellcheck-linted (shellcheck is a
+  Haskell binary, not cargo-installable, and `mise` is egress-blocked). Edit follows the file's existing
+  conventions (`local` decls, `|| true` on the tar, portable `dirname`/`basename`). Flagging for review.

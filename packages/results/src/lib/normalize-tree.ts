@@ -8,6 +8,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	MetricResult,
+	ObservedSpecs,
 	OffDimensionEmission,
 	ProviderRun,
 	Run,
@@ -127,9 +128,13 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	const rawUncatalogued: UncataloguedResult[] = [];
 	const skips: SkipMarker[] = [];
 	const offDimension: OffDimensionEmission[] = [];
+	// Host fingerprint from a composite's <System>, first non-empty across the read order (all suites of
+	// one provider ran on the same machine). Merged UNDER the spec probe below so the probe always wins.
+	let systemHost: ObservedSpecs | undefined;
 
 	for (const suite of suiteDirs) {
 		const ext = extractProviderDir(join(dir, suite), providerId);
+		if (!systemHost && ext.observedHost) systemHost = ext.observedHost;
 		// Runtime half of the contract: collect any catalogued metric this suite emitted on a Dimension it
 		// does not declare. (Uncatalogued emissions are NOT breaches — they stay inert stragglers below.)
 		offDimension.push(
@@ -161,6 +166,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	contributions.push(...flat.contributions);
 	rawUncatalogued.push(...flat.uncatalogued);
 	skips.push(...flat.skips);
+	if (!systemHost && flat.observedHost) systemHost = flat.observedHost;
 
 	// De-dupe catalogued metrics by metricId across source files — keep the FIRST (deterministic file
 	// order). In our model one <Result> owns a metric's per-pass samples, so the same metricId in two
@@ -241,13 +247,17 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// `suiteDirs` is sorted, so when several suites carry one the alphabetically-first wins — an arbitrary
 	// but deterministic tie-break, fine while suites share a provider's spec; revisit if tiers diverge.
 	const specSources = [...suiteDirs, ""];
-	const observedSpecs = readObservedSpecs((name) => {
+	const probeSpecs = readObservedSpecs((name) => {
 		for (const sub of specSources) {
 			const parsed = readJsonFile(join(dir, sub, name));
 			if (parsed !== undefined) return parsed;
 		}
 		return undefined;
 	});
+	// Merge the <System> host fingerprint UNDER the in-sandbox spec probe: the probe owns the effective
+	// fields (vcpus/memoryGb), and <System> only ever fills host-side fields, so the probe always wins on
+	// overlap and a host disclosure can never masquerade as the sandbox's effective size.
+	const observedSpecs: ObservedSpecs = { ...(systemHost ?? {}), ...probeSpecs };
 	const specMatched = computeSpecMatched(observedSpecs);
 
 	return {

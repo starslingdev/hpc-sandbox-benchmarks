@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
 	harnessSkipMarkerJson,
+	isPtsForensicsFile,
 	isPtsResultFile,
 	isSkipMarkerFile,
 	parseResultsArtifactName,
 	parseSkipMarker,
+	ptsForensicsFile,
 	resultsArtifactName,
 	sandboxSkipMarkerFile,
 } from "./index.ts";
@@ -14,6 +16,16 @@ describe("raw-file naming", () => {
 		expect(isPtsResultFile("pts_node-web-tooling.xml")).toBe(true);
 		expect(isPtsResultFile("pts_node-web-tooling.log")).toBe(false);
 		expect(isPtsResultFile("observed-specs.json")).toBe(false);
+	});
+
+	it("names a forensics tarball and keeps it disjoint from the PTS result predicate", () => {
+		const file = ptsForensicsFile("pts_node-web-tooling");
+		expect(file).toBe("pts_node-web-tooling--forensics.tar.gz");
+		expect(isPtsForensicsFile(file)).toBe(true);
+		// Provably disjoint: the tarball starts pts_ but must NEVER route through the .xml extractor.
+		expect(isPtsResultFile(file)).toBe(false);
+		// And a real result XML is not a forensics tarball.
+		expect(isPtsForensicsFile("pts_node-web-tooling.xml")).toBe(false);
 	});
 
 	it("names and detects suite skip markers", () => {
