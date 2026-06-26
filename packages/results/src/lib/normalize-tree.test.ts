@@ -151,6 +151,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		expect(run.observedSpecs.hostVcpus).toBe(48);
 		expect(run.observedSpecs.hostMemoryGb).toBe(64);
 		expect(run.observedSpecs.cpuModel).toBe("AMD EPYC 9R14 96-Core Processor");
+		expect(run.observedSpecs.cpuMicroarch).toBe("Zen 4 (Genoa)");
 		expect(run.observedSpecs.os).toBe("Ubuntu 24.04");
 		// …while the probe still owns the effective fields (the host count never masquerades as effective).
 		expect(run.observedSpecs.vcpus).toBe(2);

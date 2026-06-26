@@ -105,6 +105,40 @@ describe("aggregateRuns", () => {
 		expect(merged.generatedAt).toBe("2026-06-02T00:00:00.000Z");
 	});
 
+	it("flags hardware heterogeneity when a provider's shards disclose differing host CPUs", () => {
+		const a = shard([
+			{
+				...provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]),
+				observedSpecs: { cpuModel: "AMD EPYC 9R14", cpuMicroarch: "Zen 4 (Genoa)" },
+			},
+		]);
+		const b = shard([
+			{
+				...provider("daytona", [metric("pybench_milliseconds", [900])]),
+				observedSpecs: { cpuModel: "AMD EPYC 9R45", cpuMicroarch: "Zen 5 (Turin)" },
+			},
+		]);
+		const merged = aggregateRuns([a, b]);
+		const daytona = merged.providers.find((p) => p.providerId === "daytona");
+		expect(daytona?.observedSpecs.hostHeterogeneous).toBe(true);
+	});
+
+	it("does not flag heterogeneity when every shard saw the same host CPU", () => {
+		const same = { cpuModel: "AMD EPYC 9R45", cpuMicroarch: "Zen 5 (Turin)" };
+		const a = shard([
+			{
+				...provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]),
+				observedSpecs: same,
+			},
+		]);
+		const b = shard([
+			{ ...provider("daytona", [metric("pybench_milliseconds", [900])]), observedSpecs: same },
+		]);
+		const merged = aggregateRuns([a, b]);
+		const daytona = merged.providers.find((p) => p.providerId === "daytona");
+		expect(daytona?.observedSpecs.hostHeterogeneous).toBeUndefined();
+	});
+
 	it("throws on a shard-identity mismatch and on empty input", () => {
 		const a = shard([provider("daytona", [metric("node_web_tooling_runs_per_s", [10])])]);
 		const b: Run = { ...a, sha: "different" };

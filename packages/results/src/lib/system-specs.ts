@@ -9,6 +9,7 @@
  * effective `vcpus`/`memoryGb`/`diskGb` — those come solely from the in-sandbox spec probe.
  */
 import type { ObservedSpecs } from "@sandbox-benchmarks/schema";
+import { resolveCpuMicroarch } from "./cpu-fingerprint.ts";
 import type { PtsSystem } from "./pts-schema.ts";
 
 export function parseSystemHost(system: PtsSystem): ObservedSpecs {
@@ -53,6 +54,14 @@ export function parseSystemHost(system: PtsSystem): ObservedSpecs {
 
 	const user = (system.User ?? "").trim();
 	if (user) specs.user = user;
+
+	// Host-side microarch fingerprint, derived purely from the disclosed CPU model. Host-only by
+	// construction: cpuModel here is always the <System> brand string (the physical machine), so the
+	// label can never masquerade as the effective spec.
+	if (specs.cpuModel) {
+		const fp = resolveCpuMicroarch(specs.cpuModel);
+		if (fp) specs.cpuMicroarch = fp.name;
+	}
 
 	return specs;
 }

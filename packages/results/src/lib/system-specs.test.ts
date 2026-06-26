@@ -12,6 +12,8 @@ describe("parseSystemHost", () => {
 			User: "root",
 		});
 		expect(host.cpuModel).toBe("AMD EPYC 9R14 96-Core Processor");
+		// Host-side microarch fingerprint derived from the brand string (9R14 = AWS-masked Genoa).
+		expect(host.cpuMicroarch).toBe("Zen 4 (Genoa)");
 		expect(host.hostVcpus).toBe(48);
 		expect(host.hostMemoryGb).toBe(64); // 4 x 16 GB
 		expect(host.os).toBe("Ubuntu 24.04");
