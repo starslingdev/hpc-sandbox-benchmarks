@@ -17,7 +17,7 @@ import {
 	unmetRequirements,
 	withSandbox,
 } from "./index.ts";
-import type { SandboxHandle } from "./lib/execute.ts";
+import type { CommandResult, SandboxHandle } from "./lib/execute.ts";
 import type { LifecycleCompute } from "./lib/lifecycle.ts";
 
 // A transport capability for the test fixtures — capped-with-detach, matching a single-round-trip
@@ -287,8 +287,10 @@ function collectPayload(files: Record<string, string>): string {
 }
 
 // A fake sandbox that dispatches on command content: the disk probe, the benchmark command (token
-// `benchmark-cmd`), and the base64 collect stream. No filesystem, so runDetached uses the foreground
-// path. `destroyed` flips when teardown runs.
+// `benchmark-cmd`), and the base64 collect stream. No filesystem, so a detached step uses the
+// cat-poll fallback — the detached launch wraps the real script (so the step's result is computed
+// from the launch command) and is stashed under the step's tag for the done-file/log `cat` polls to
+// read back, exercising the no-filesystem transport end-to-end. `destroyed` flips when teardown runs.
 function makeSandbox(opts: {
 	freeKb?: string;
 	benchmarkFails?: boolean;
@@ -296,18 +298,45 @@ function makeSandbox(opts: {
 	collectFiles?: Record<string, string>;
 	destroyed: { hit: boolean };
 }): SandboxHandle {
+	// Results of detached steps, keyed by their /tmp/<tag> so the cat-polls can read them back.
+	const detached = new Map<string, { exit: number; out: string }>();
+	const resultFor = (command: string): CommandResult => {
+		if (command.includes("df -Pk")) return { exitCode: 0, stdout: opts.freeKb ?? "999999999" };
+		if (command.includes("base64")) {
+			if (opts.collectFails) return { exitCode: 1, stderr: "collect boom" };
+			const files = opts.collectFiles ?? { "pts_node-web-tooling.xml": "<xml/>" };
+			return { exitCode: 0, stdout: collectPayload(files) };
+		}
+		if (command.includes("benchmark-cmd")) {
+			return opts.benchmarkFails ? { exitCode: 1, stderr: "bench boom" } : { exitCode: 0 };
+		}
+		return { exitCode: 0, stdout: "" };
+	};
+	const tagOf = (command: string, ext: string): string | undefined =>
+		command.match(new RegExp(`/tmp/(bench-[0-9a-f-]+)\\.${ext}`))?.[1];
 	return {
 		async runCommand(command) {
-			if (command.includes("df -Pk")) return { exitCode: 0, stdout: opts.freeKb ?? "999999999" };
-			if (command.includes("base64")) {
-				if (opts.collectFails) return { exitCode: 1, stderr: "collect boom" };
-				const files = opts.collectFiles ?? { "pts_node-web-tooling.xml": "<xml/>" };
-				return { exitCode: 0, stdout: collectPayload(files) };
+			// Detached launch (double-fork, so it carries nohup): compute the wrapped step's result and
+			// stash it under its tag for the cat-polls. The launch itself just acknowledges.
+			if (command.includes("nohup")) {
+				const tag = tagOf(command, "log");
+				if (tag) {
+					const r = resultFor(command);
+					detached.set(tag, { exit: r.exitCode, out: r.stdout ?? r.stderr ?? "" });
+				}
+				return { exitCode: 0, stdout: "launched" };
 			}
-			if (command.includes("benchmark-cmd")) {
-				return opts.benchmarkFails ? { exitCode: 1, stderr: "bench boom" } : { exitCode: 0 };
+			// Cat-poll of the done-file: the stashed exit code (present from launch), else still-running.
+			const doneTag = tagOf(command, "done");
+			if (doneTag) {
+				const d = detached.get(doneTag);
+				return { exitCode: 0, stdout: d ? String(d.exit) : "__RUNNING__" };
 			}
-			return { exitCode: 0, stdout: "" };
+			// Cat-read of the log: the stashed output (stderr merged into stdout, mirroring live 2>&1).
+			const logTag = tagOf(command, "log");
+			if (logTag) return { exitCode: 0, stdout: detached.get(logTag)?.out ?? "" };
+			// Synchronous foreground exec (short steps: the disk probe, observed-specs).
+			return resultFor(command);
 		},
 		async destroy() {
 			opts.destroyed.hit = true;
@@ -333,7 +362,7 @@ const ctx = (s: Suite, resultsDir: string) => ({
 	providerName: "daytona",
 	resultsDir,
 	// Daytona-shaped: synchronous execs capped, detached+poll available. The fake sandbox has no
-	// filesystem, so a detached selection falls back to the foreground path — behavior is unchanged.
+	// filesystem, so a detached selection drives the cat-poll fallback (done-file read over exec).
 	transport: fixtureTransport,
 });
 
