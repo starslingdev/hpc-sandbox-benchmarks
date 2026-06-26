@@ -104,3 +104,22 @@ defensible option, document, continue).
 - `plan-matrix.test.ts` updated (`operation` → `suite`); asserts the cross-product size and that every
   cell names a registered provider + suite. CI fan-out itself is live-only (needs provider secrets), so
   only the planning is exercised offline — the workflow is authored but not executed here.
+
+## ENG-67 — Aggregate & commit the published Run dataset (candidate → promote)
+
+- **`aggregateRuns(runs)`** (`results/lib/aggregate.ts`): merges the per-shard Runs the matrix emits
+  (one per `(provider,suite)` cell) into one validated Run — measured Metrics unioned per provider
+  across suites, skips/uncatalogued/observed-specs combined (first-wins), latest `generatedAt`. Guards
+  shard-identity (same runId+sha) and empty input; validates via `parseRun`.
+- **Economics re-derived post-merge.** Per-shard economics are *dropped* (identified by the catalog
+  `derived` flag) and recomputed from the merged measured set, so `usd_per_lifecycle` reflects every
+  suite's timings rather than whichever shard carried them. Reuses `deriveEconomics`.
+- **Publish primitive.** `writeRunDocument(run, outFile, indexFile?)` in write-run.ts writes an
+  already-built Run + updates the newest-first index (atomic), distinct from `writeNormalizedRun` which
+  normalizes a raw tree.
+- **Bins.** `aggregate <runId> <candidateDir> <shard.json...>` (collect → candidate) and an enhanced
+  `promote <candidateRun.json> [datasetDir]` (gate on ≥1 validated provider, then publish into
+  `data/dataset/` + index). promote stays a pure validation gate when no datasetDir is given (back-compat).
+- **CI.** Added a `publish` job to `bench-matrix.yml`: downloads every shard artifact, aggregates →
+  promotes → commits `data/dataset/` back to the branch (contents: write, github-actions bot). The
+  aggregate/promote logic is unit-tested offline; the CI commit path is live-only.

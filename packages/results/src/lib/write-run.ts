@@ -59,6 +59,18 @@ export function updateRunIndex(indexPath: string, run: Run, runFilePath: string)
 	return index;
 }
 
+/**
+ * Write an already-built {@link Run} to disk (optionally updating a Run index) — the publish primitive
+ * the candidate→promote flow uses. Unlike {@link writeNormalizedRun} it does not normalize a raw tree;
+ * the Run is already aggregated/validated. Atomic write + atomic index update, so a crash mid-publish
+ * leaves the dataset consistent.
+ */
+export function writeRunDocument(run: Run, outFile: string, updateIndexFile?: string): void {
+	const outPath = resolve(outFile);
+	atomicWriteFileSync(outPath, `${JSON.stringify(run, null, 2)}\n`);
+	if (updateIndexFile) updateRunIndex(resolve(updateIndexFile), run, outPath);
+}
+
 /** Normalize a raw tree and write the validated Run JSON (optionally updating a Run index). */
 export function writeNormalizedRun(input: WriteNormalizedRunInput): Run {
 	const run = normalizeResultsTree({
