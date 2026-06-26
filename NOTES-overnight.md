@@ -165,3 +165,17 @@ defensible option, document, continue).
   parse-don't-validate + cross-registry-invariant conventions.
 - README links both. Docs reflect everything built this session (economics, host-fingerprint, system
   dimension, matrix, dataset, leaderboard, stability) so they're accurate to the branch, not aspirational.
+
+---
+
+# Run 2 — closing the comparison gaps (Borrow into OURS ← THEIRS)
+
+Both repos are local now; THEIRS = /Users/dbworku/repos/runner-benchmarking (read-only, port-from). Live runs still out of scope; golden fixtures sourced from THEIRS's real recorded composites.
+
+## Setup
+- gitignore'd `.claude/` (agent state — was tripping `biome check .`) + `data/raw,runs` (transient; `data/dataset/` stays committable). Greens the lint gate (biome useIgnoreFile).
+
+## Task 1 — ENG-60 memory + disk (was deferred for byte-match risk)
+- **memory: pts/stream-1.3.4** (multi-result Copy/Scale/Add/Triad). Golden fixture = REAL Daytona `pts_stream.xml` from THEIRS (stream-1.3.5; versionless `pts/stream`). Proves option-matrix description synthesis byte-matches. STREAM Triad = headline.
+- **disk: local/hardlink** via a NEW generator capability: source-segment-aware `pts.test` prefix (design §3.2 intent, never implemented). `parseProfile(repo, dir, ...)`; `generate-catalog` discovers flat (`repo=pts`) + nested `pts-profiles/<repo>/<name>-<ver>`. Vendored hardlink from THEIRS; golden fixture = real `pts_hardlink.xml` (proves `local/` join resolves). Hardlink = disk headline.
+- **Decision:** network deferred (needs external peer); FIO deferred (no recorded composite) — hardlink is the disk headline. Both documented on ENG-60.
