@@ -47,6 +47,10 @@ jobs:
       # moved/compromised tag can't silently change what runs.
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # The job only reads code (the sandbox clones via BENCH_REPO_TOKEN, not the checkout's
+          # credentials), so don't persist the job token in .git/config.
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0

@@ -1,0 +1,7 @@
+# actionlint configuration. The only custom entry is the self-hosted runner label every CI job
+# targets: `starsling-ubuntu-24.04-2` is registered at the org (starslingdev) level, not in
+# actionlint's built-in label set, so without this entry actionlint flags every `runs-on:` as an
+# unknown label. Keep this list in sync with the labels used across .github/workflows/.
+self-hosted-runner:
+  labels:
+    - starsling-ubuntu-24.04-2

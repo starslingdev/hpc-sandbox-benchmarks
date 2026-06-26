@@ -1,0 +1,95 @@
+name: CI Lint
+
+# Lints the GitHub Actions layer itself — the workflows under .github/workflows:
+#   - actionlint: workflow syntax, expressions, runner labels (via the .github/actionlint.yaml
+#     self-hosted-runner registry) and the shell embedded in `run:` steps (embedded shellcheck).
+#   - zizmor: workflow security audits (template injection, credential persistence, excessive
+#     permissions, ...). Accepted findings live in .github/zizmor.yml.
+# Both linters are version-pinned in mise.toml (aqua backend, checksum + attestation verified) and
+# installed by the mise step below — the same supply-chain posture as the rest of the repo's tooling.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/**"
+      - "mise.toml"
+  pull_request:
+    paths:
+      - ".github/**"
+      - "mise.toml"
+
+# One in-flight run per ref — a new push cancels the previous, still-running lint for that branch.
+concurrency:
+  group: ci-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: the linters only read the checked-out workflows (zizmor's online audits use the
+# read-only job token).
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: Lint workflows (actionlint)
+    runs-on: starsling-ubuntu-24.04-2
+    timeout-minutes: 10
+    # The runner is self-hosted, so never execute untrusted fork-PR code on it: run only for pushes
+    # and pull requests whose head is this same repository (fork PRs are skipped).
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      # Third-party actions are pinned to a commit SHA (the tag comment is for humans only) so a
+      # moved/compromised tag can't silently change what runs.
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # The linter only reads the workflows; never persist the job token in .git/config.
+          persist-credentials: false
+
+      # Installs the version-pinned tools from mise.toml (actionlint + shellcheck for actionlint's
+      # embedded shell check) with checksum verification, and caches them.
+      - name: Set up mise tools
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          version: 2026.5.16
+          install: true
+          cache: true
+
+      # With no path args actionlint scans .github/workflows automatically; .github/actionlint.yaml
+      # (the self-hosted runner registry) is picked up from the repo root. shellcheck comes from mise,
+      # so actionlint's embedded shell linting runs against the same pinned version as `lint:shell`.
+      - name: Run actionlint
+        run: mise exec -- actionlint -no-color
+
+  zizmor:
+    name: Audit workflows (zizmor)
+    runs-on: starsling-ubuntu-24.04-2
+    timeout-minutes: 10
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up mise tools
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          version: 2026.5.16
+          install: true
+          cache: true
+
+      # Gate on findings zizmor is confident about (medium+ severity at high confidence) so the job
+      # fails only on real, actionable findings; lower-confidence audits stay visible locally without
+      # blocking CI. Accepted findings: .github/zizmor.yml. github.token enables the online audits
+      # (known-vulnerable-actions, impostor-commit, ref-confusion) zizmor skips when offline.
+      - name: Run zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mise exec -- zizmor --no-progress --persona regular \
+            --min-severity medium --min-confidence high \
+            .github/workflows/
