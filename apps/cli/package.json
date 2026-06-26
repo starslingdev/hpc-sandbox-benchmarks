@@ -13,7 +13,8 @@
     "normalize": "./src/bin/normalize.ts",
     "aggregate": "./src/bin/aggregate.ts",
     "promote": "./src/bin/promote.ts",
-    "leaderboard": "./src/bin/leaderboard.ts"
+    "leaderboard": "./src/bin/leaderboard.ts",
+    "stability": "./src/bin/stability.ts"
   },
   "scripts": {
     "test": "bun test",

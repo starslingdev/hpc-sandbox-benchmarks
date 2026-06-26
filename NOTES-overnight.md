@@ -137,3 +137,18 @@ defensible option, document, continue).
 - **Scope.** Renders from a published Run document; with no committed dataset yet (live runs are out of
   scope), there's no `LEADERBOARD.md` artifact to commit — the renderer + bin are the deliverable, wired
   to run over `data/dataset/` once the matrix publishes one.
+
+## ENG-71 — Cross-run stability / regression gate
+
+- **`compareRuns(previous, current, {threshold})`** (`results/lib/stability.ts`): per provider, per
+  measured metric present in both Runs, classifies the p50 movement as
+  `regression`/`improvement`/`stable`/`incomparable`. Direction-aware (HIB regresses on a fall, LIB on a
+  rise); default noise threshold ±10%, configurable.
+- **Provenance is the gate's integrity.** A pair is only comparable when `appVersion` AND `arguments`
+  match across Runs (the fields ENG retains on `MetricResult`); otherwise the profile/options changed and
+  the move is expected — classified `incomparable`, never a regression. This is the direct consumer of
+  the retained provenance the issue calls for.
+- **Derived metrics excluded.** Economics (`derived:true`) is skipped — it has no measurement provenance
+  and would double-count the measured shift it's computed from.
+- **`stability` CLI bin**: `stability <prev.json> <cur.json> [threshold]` prints each shift and exits
+  non-zero on any regression (the CI gate). `regressions()` + `describeShift()` exported for reuse.
