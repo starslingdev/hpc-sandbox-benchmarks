@@ -1,0 +1,7 @@
+{
+  "kernel_name": "Linux",
+  "node_name": "sandbox",
+  "kernel_release": "6.8.0-45-generic",
+  "kernel_version": "#45-Ubuntu SMP PREEMPT_DYNAMIC",
+  "machine": "x86_64"
+}
