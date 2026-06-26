@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="Run system benchmarks (PTS PyBench + SQLite Speedtest)"
+# Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
+# (error-mode conventions: lib/bench.sh).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "========================================"
+echo "  SYSTEM BENCHMARKS"
+echo "========================================"
+
+# One install/configure attempt for the PTS children; each leaf skips fast via its own `command -v`
+# guard and writes a skip record if PTS is still unavailable.
+ensure_pts || true
+
+run_task benchmark:system:pts:pybench
+run_task benchmark:system:pts:sqlite-speedtest
+
+summary

@@ -19,4 +19,8 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	c_ray_resolution_1080p_rays_per_pixel_16: { label: "C-Ray (1080p, 16 RPP)" },
 	c_ray_resolution_4k_rays_per_pixel_16: { label: "C-Ray (4K, 16 RPP)" },
 	c_ray_resolution_5k_rays_per_pixel_16: { label: "C-Ray (5K, 16 RPP)" },
+	// System dimension: PyBench is its headline (a broad Python interpreter workload); SQLite Speedtest
+	// rounds it out. Both single-result wildcards, so curation only supplies labels + the one headline.
+	pybench_milliseconds: { headline: true, label: "PyBench" },
+	sqlite_speedtest_seconds: { label: "SQLite Speedtest" },
 };

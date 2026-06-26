@@ -48,6 +48,16 @@ describe("metric catalog", () => {
 		expect(getMetric("node_web_tooling_runs_per_s")?.headline).toBe(true);
 	});
 
+	it("resolves the PyBench headline for the system dimension (both system metrics catalogued)", () => {
+		const metric = headlineMetric("system");
+		expect(metric.id).toBe("pybench_milliseconds");
+		expect(metric.label).toBe("PyBench"); // curated short label
+		expect(metric.pts?.test).toBe("pts/pybench");
+		// Single-result wildcard: no pts.description (so the byte-match gate needs no recorded composite).
+		expect(metric.pts?.description).toBeUndefined();
+		expect(getMetric("sqlite_speedtest_seconds")?.dimension).toBe("system");
+	});
+
 	it("returns undefined for an unknown metric id", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});

@@ -65,3 +65,29 @@ defensible option, document, continue).
 - **shellcheck unavailable.** The `bench.sh` edit could not be shellcheck-linted (shellcheck is a
   Haskell binary, not cargo-installable, and `mise` is egress-blocked). Edit follows the file's existing
   conventions (`local` decls, `|| true` on the tar, portable `dirname`/`basename`). Flagging for review.
+
+## ENG-60 — Disk/memory/network/system PTS suites + catalog (scoped to system)
+
+- **Scope decision.** Delivered the **system** dimension end to end; **memory/disk/network deferred**
+  with documentation. Rationale: the generator emits a description-less *wildcard* for single-result
+  profiles (zero byte-match risk, no recorded composite needed), but a *multi-result* profile's
+  synthesized `pts.description` must byte-match real PTS output, which the golden gate (§3.7) proves
+  only against a **recorded composite** — a live PTS artifact unavailable offline.
+  - **system** → `pts/pybench` + `pts/sqlite-speedtest`, both single-result (no `<Option>`). Safe offline.
+  - **memory** (`stream`), **disk** (`dbench`/`fio`) → multi-result option matrices; need recorded
+    composites to wire safely. Deferred.
+  - **network** → PTS network profiles need an external peer/server; not runnable in one sandbox.
+    Deferred pending an infra decision.
+- **Generator robustness fix.** `parse.ts` required `TestSettings.Option`; pybench/sqlite carry a
+  `<TestSettings>` with only a `<Default>` (fixed args, no menu). Made `Option` optional → such a
+  profile collapses to one wildcard, exactly like a profile with no `<TestSettings>`.
+- **Vendoring.** Added the two profiles to `fetch-profiles.ts` PROFILES (pinned at the existing REF,
+  verified present there) and re-ran it; `generate-catalog` produced `pybench_milliseconds` +
+  `sqlite_speedtest_seconds` (regeneration is byte-stable → drift gate green once committed).
+- **Curation + suite.** `pts-overrides.ts` headlines PyBench for `system` + short labels; new `system`
+  suite in SUITES (`pybench_milliseconds`, `sqlite_speedtest_seconds`) with producer mise tasks
+  (`benchmark:system:all` orchestrator + two PTS leaves under `system/pts/`). Suite orchestrator is a
+  file named `all` because a task path can't be both a dir and a file (mirrors cpu's `node`).
+- **Drift gate caveat.** `bun run check:catalog-drift` fails on *any* uncommitted change to
+  `pts-generated.ts` (it `git diff --exit-code`s vs HEAD), so it only goes green after the commit;
+  verified regeneration is byte-identical, so it is green post-commit.

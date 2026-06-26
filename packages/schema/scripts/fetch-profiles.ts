@@ -34,7 +34,14 @@ const REPO = "test-profiles";
 // `phoronix-test-suite/test-profiles` commit SHA and re-run. Latest on master:
 //   gh api repos/phoronix-test-suite/test-profiles/commits/master --jq .sha
 const REF = "d2f1a150d388bd062737b445891edda0780f7e25";
-const PROFILES = ["node-web-tooling-1.0.1", "c-ray-2.0.0"] as const;
+const PROFILES = [
+	"node-web-tooling-1.0.1",
+	"c-ray-2.0.0",
+	// System dimension — both single-result (no <Option> matrix), so each generates a description-less
+	// wildcard entry (zero byte-match risk).
+	"pybench-1.1.3",
+	"sqlite-speedtest-1.0.1",
+] as const;
 
 // Only these definition files feed the generator; siblings (downloads.xml, install.sh) are ignored.
 // `required` distinguishes the essential `test-definition.xml` (a missing one is a hard failure, not

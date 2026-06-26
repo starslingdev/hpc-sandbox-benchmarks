@@ -66,6 +66,16 @@ export const SUITES = {
 		metrics: ["node_web_tooling_runs_per_s"],
 		commands: ["mise run benchmark:cpu:node"],
 	},
+	// The system dimension: PyBench (Python interpreter) + SQLite Speedtest, both single-result PTS
+	// profiles. Lighter than cpu-node (no Node toolchain, shorter runtime), so smaller budgets.
+	system: {
+		setupPts: true,
+		commandTimeoutMinutes: 40,
+		timeoutMinutes: 50,
+		dimensions: ["system"],
+		metrics: ["pybench_milliseconds", "sqlite_speedtest_seconds"],
+		commands: ["mise run benchmark:system:all"],
+	},
 } as const satisfies Record<string, Suite>;
 
 /** A registered suite name. */

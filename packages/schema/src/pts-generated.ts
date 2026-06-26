@@ -52,4 +52,28 @@ export const ptsGenerated: MetricDef[] = [
 		pts: { test: "pts/node-web-tooling" },
 		sourceUrl: "https://v8.github.io/web-tooling-benchmark/",
 	},
+	{
+		id: "pybench_milliseconds",
+		dimension: "system",
+		unit: "Milliseconds",
+		direction: "LIB",
+		headline: false,
+		label: "PyBench - Total For Average Test Times",
+		description:
+			"This test profile reports the total time of the different average timed test results from PyBench. PyBench reports average test times for different functions such as BuiltinFunctionCalls and NestedForLoops, with this total result providing a rough estimate as to Python's average performance on a given system. This test profile runs PyBench each time for 20 rounds.",
+		pts: { test: "pts/pybench" },
+		sourceUrl: "http://svn.python.org/projects/python/trunk/Tools/pybench/",
+	},
+	{
+		id: "sqlite_speedtest_seconds",
+		dimension: "system",
+		unit: "Seconds",
+		direction: "LIB",
+		headline: false,
+		label: "SQLite Speedtest - Timed Time - Size 1,000",
+		description:
+			"This is a benchmark of SQLite's speedtest1 benchmark program with an increased problem size of 1,000.",
+		pts: { test: "pts/sqlite-speedtest" },
+		sourceUrl: "http://www.sqlite.org/",
+	},
 ];

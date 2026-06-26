@@ -72,7 +72,10 @@ const testDefinitionSchema = type({
 	PhoronixTestSuite: {
 		TestInformation: testInformationSchema,
 		TestProfile: testProfileSchema,
-		"TestSettings?": { Option: optionSchema.array() },
+		// `Option` is optional: a profile may carry a <TestSettings> with only a <Default> (fixed
+		// arguments, no tunable menu) — a single-result profile, like one with no <TestSettings> at all.
+		// Both collapse to one description-less wildcard (settings: [] below).
+		"TestSettings?": { "Option?": optionSchema.array() },
 	},
 });
 
