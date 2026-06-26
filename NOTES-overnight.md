@@ -1,0 +1,43 @@
+# Overnight autonomous run — decision log
+
+Branch: `claude/sandbox-benchmarking-exploration-22na64`. One long branch, TDD-style,
+one vertical slice per commit. Scope: all offline-unblocked tasks of the Sandbox
+Benchmark Matrix & Leaderboard project. Live provider runs (ENG-63/64/65) are
+code-wired + fixture-tested only — no real provider API calls.
+
+Each entry records a design decision made under the ambiguity protocol (pick the most
+defensible option, document, continue).
+
+## Setup
+
+- Merged the in-flight ENG-59 lifecycle stack (#62–#65, commits `fb6969d..e1b3ec6`)
+  into this branch as the base (fast-forward; the stack was linear off `main`).
+- `mise` install is blocked by org egress policy (403 on `mise.en.dev`). Installed the
+  real `typos` checker via `cargo install typos-cli` (crates.io is allowlisted) so the
+  spell gate runs for real. Green gate per slice: `bun run typecheck` + `bun run test`
+  + `bun run lint` + `typos`.
+
+## ENG-61 — Economics dimension wiring
+
+- **What "economics" emits.** Two derived MetricDefs on the `economics` dimension:
+  - `usd_per_hour` (headline) — the provider's hourly cost at the pinned target spec,
+    i.e. `hourlyCostAtTargetSpec(meta)`. The price/performance denominator the
+    leaderboard needs; always derivable for a provider with a vetted rate.
+  - `usd_per_lifecycle` — `hourlyCostAtTargetSpec × (sum of measured lifecycle-dimension
+    metric means, in hours)`. Honors the issue's "× measured runtime" using ENG-59's
+    lifecycle timings; emitted only when ≥1 lifecycle metric is present.
+- **Why not a single `usd_per_run` over total suite wall-clock?** The Run model does not
+  record a total suite wall-clock today (PTS emits throughput, not a single duration).
+  Rather than add producer plumbing in this slice, economics is derived purely from data
+  already on the Run: pricing (always available) + measured lifecycle durations (when
+  present). A true `$/suite-run` over recorded wall-clock is a documented follow-up that
+  needs a producer-side total-runtime field.
+- **When emitted.** Only for providers that already produced ≥1 measured (non-economics)
+  metric — i.e. already `validated`. Keeps "validated = produced real measurements"
+  honest; economics enriches a validated provider, never promotes a pending one.
+- **Where computed.** Pure `deriveEconomics(meta, measuredMetrics)` in
+  `packages/schema/src/economics.ts` (schema is the single owner of pricing). The
+  results normalizer calls it after the suite↔dimension contract check and appends the
+  economics MetricResults — so economics, which no suite declares, never trips the
+  off-dimension check.
+- **`derived: true`** on both, so they are visibly distinct from parsed/measured metrics.

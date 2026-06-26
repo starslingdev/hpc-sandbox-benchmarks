@@ -53,7 +53,8 @@ describe("metric catalog", () => {
 	});
 
 	it("throws when a dimension has no headline metric", () => {
-		expect(() => headlineMetric("economics")).toThrow();
+		// `realworld` is the dimension still without any metrics (economics is now populated + headlined).
+		expect(() => headlineMetric("realworld")).toThrow();
 	});
 });
 
