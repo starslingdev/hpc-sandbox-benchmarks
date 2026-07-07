@@ -4,6 +4,7 @@
 // `providers` is the schema identity joined with those adapters.
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { adapters } from "./lib/adapters.ts";
+import { assertProviderJoin } from "./lib/join.ts";
 import type { ProviderConfig } from "./lib/types.ts";
 
 // The runtime configuration gatekeeper — the single validated config object consumers import.
@@ -18,7 +19,17 @@ export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/type
  * `PROVIDERS` is derived from the schema's `Record<ProviderId, …>` registry and `adapters` is a
  * `Record<ProviderId, ProviderAdapter>`, so every `meta.id` indexes exactly one adapter and the two
  * registries are provably the same set at compile time.
+ *
+ * The runtime {@link assertProviderJoin} below backs that compile-time guarantee for any path the
+ * type-checker never saw — a published/installed build or a cross-version schema/providers drift —
+ * failing loudly at module load rather than letting a one-sided provider surface as an `undefined`
+ * adapter mid-run.
  */
+assertProviderJoin(
+	PROVIDERS.map((meta) => meta.id),
+	Object.keys(adapters),
+);
+
 export const providers: ProviderConfig[] = PROVIDERS.map((meta) => {
 	const adapter = adapters[meta.id];
 	return {
