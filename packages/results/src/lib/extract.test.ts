@@ -51,4 +51,27 @@ describe("extractProviderDir", () => {
 			},
 		]);
 	});
+
+	it("extracts every realworld task from a real end-to-end smoke composite.xml, none uncatalogued", () => {
+		// Captured from a real Docker run of the actual install.sh + realworld-runner.sh + mise task
+		// (packages/results/src/lib/__fixtures__/realworld-smoke/ -- see its header comment for
+		// provenance); 7 of the 11 better-auth tasks were deliberately pointed at `false` to also
+		// exercise the partial-failure path end to end against real PTS output.
+		const dir = join(import.meta.dir, "__fixtures__/realworld-smoke");
+		const extraction = extractProviderDir(dir, "daytona");
+		expect(extraction.uncatalogued).toEqual([]);
+		expect(extraction.contributions.map((c) => c.metricId).sort()).toEqual(
+			[
+				"realworld_better_auth_task_git_clone",
+				"realworld_better_auth_task_cold_install",
+				"realworld_better_auth_task_build",
+				"realworld_better_auth_task_test",
+			].sort(),
+		);
+		for (const contribution of extraction.contributions) {
+			expect(contribution.appVersion).toBe("6f3ba45639579da152b69e8e5342e02f28288670");
+			expect(contribution.samples.length).toBeGreaterThan(0);
+			for (const sample of contribution.samples) expect(sample).toBeGreaterThan(0);
+		}
+	});
 });

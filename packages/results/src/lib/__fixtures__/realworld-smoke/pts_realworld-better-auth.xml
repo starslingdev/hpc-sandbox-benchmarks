@@ -1,0 +1,227 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite v10.8.4-->
+<!--Captured from a real end-to-end Docker run of the real install.sh + realworld-runner.sh + the
+real realworld-better-auth-1.0.0 profile, via the actual mise leaf task, through actual PTS
+batch-install/batch-run -- proves the full producer chain and the extraction/catalog mapping, not
+performance numbers: target.env's REPO_URL/PIN_SHA pointed at a throwaway local fixture repo (a
+package.json with build/test echo scripts) instead of the real better-auth checkout, and the lint/
+typecheck TASK_CMD_* entries were swapped for `false` to also exercise the partial-failure path
+(empty <Value>, see pts.test.ts) end to end against real PTS output. Every <Result> here maps to a
+catalogued realworld_better_auth_task_* metric -- the extraction fixture test asserts zero
+uncatalogued and confirms the Entry-Name-parentheses fix (docs/pts-catalog-and-analysis-design.md).-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>benchmark</Title>
+    <LastModified>2026-07-07 20:45:02</LastModified>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+    <Description>Docker testing on Ubuntu 24.04.4 LTS via the Phoronix Test Suite.</Description>
+  </Generated>
+  <System>
+    <Identifier>ci</Identifier>
+    <Hardware>Processor: Apple (14 Cores), Memory: 8GB, Disk: 1007GB</Hardware>
+    <Software>OS: Ubuntu 24.04.4 LTS, Kernel: 6.12.76-linuxkit (aarch64), Compiler: GCC 13.3.0, File-System: overlayfs, System Layer: Docker</Software>
+    <User>root</User>
+    <TimeStamp>2026-07-07 20:43:14</TimeStamp>
+    <TestClientVersion>10.8.4</TestClientVersion>
+    <Notes></Notes>
+    <JSON>{"kernel-extra-details":"Transparent Huge Pages: always","security":"gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Vulnerable + spectre_v1: Mitigation of __user pointer sanitization + spectre_v2: Mitigation of CSV2 but not BHB + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"}</JSON>
+  </System>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>test</Arguments>
+    <Description>Task: Test</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>0.142</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"1.32"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>build</Arguments>
+    <Description>Task: Build</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>0.2</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.43"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>git_clone</Arguments>
+    <Description>Task: Git Clone</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>0.038</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.06"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>typecheck</Arguments>
+    <Description>Task: Typecheck</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.24","error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_biome</Arguments>
+    <Description>Task: Lint Biome</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.21","error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_spell</Arguments>
+    <Description>Task: Lint Spell</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.20","error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_types</Arguments>
+    <Description>Task: Lint Types</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.21","error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_format</Arguments>
+    <Description>Task: Lint Format</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.29","error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>cold_install</Arguments>
+    <Description>Task: Cold Install</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>0.215</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.30"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_packages</Arguments>
+    <Description>Task: Lint Packages</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.24","error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_deps</Arguments>
+    <Description>Task: Lint Deps Knip</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"0.25","error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

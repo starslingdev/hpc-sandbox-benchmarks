@@ -250,3 +250,49 @@ Detached+poll transport (§5) is a **third, independent stack**, prerequisite fo
 - **Transport blocks heavier suites.** On single-round-trip-capped providers (e.g. Daytona's HTTP 408, confirmed via spike `bn2f5pmp4`; Blaxel ~120s) only short suites complete until detached+poll lands; a capped round-trip can yield a misleading "green" while the process keeps running. **Open:** does a capped/aborted round-trip leave a partial/locked result dir that corrupts the next run's scoped find?
 - **`/var/lib` perms if a non-root path is introduced.** Sandboxes run as root today (suites.ts:24); `cp`/`tar` reads assume root. Documentation note; keep `|| true` on the tar.
 - **Headline selection at scale.** `headlineMetric` (catalog.ts:57-63) throws if a dimension has metrics but none headline. Every populated dimension needs exactly one curated `headline:true` in `pts-overrides.ts`. **Open:** add a catalog-completeness lint (every dimension with ≥1 metric has exactly one headline)?
+
+---
+
+## 8. Realworld Profile Pattern (ENG-135/136/137/138)
+
+Real OSS repos (Mastra, Better-Auth, OpenClaw) run through the CI tasks their own pipelines run —
+clone, cold install, lints, typecheck, build, test — each as a **repo-local PTS profile**
+(`packages/schema/src/pts-profiles/local/realworld-<repo>-1.0.0/`), reusing the whole existing
+pipeline (`run_pts_benchmark` → `composite.xml` → `parsePtsComposite` → generated catalog → suite
+contract → CI matrix → dataset) with zero new consumer code. Granularity comes from a single `Task`
+`<Option>` axis: one `<Entry>` per CI task, one catalogued metric per task
+(`realworld_<repo>_task_<slug>`), one `batch-run` measuring every task as a separate `<Result>`.
+
+**The PTS local-profile contract** (confirmed empirically, not documented upstream): `install.sh`
+runs with its working directory set to PTS's `installed-tests/local/<name>/` dir, but `$0` still
+resolves to its own source location under `test-profiles/local/<name>/` — so `$(dirname "$0")` reads
+install-time siblings (`target.env`, the shared runner) while relative writes (the generated
+executable) land in the persistent install dir. The executable PTS looks for at `batch-run` is named
+after the **versionless** profile dir (`realworld-better-auth`, not `-1.0.0`); it receives the
+selected `<Entry>/<Value>` as `$1` and must pipe its own stdout/stderr to `$LOG_FILE`.
+
+**One trap this pattern must avoid:** PTS truncates a Menu `<Entry>/<Name>` at its first `(`
+character when building the runtime `<Description>` — dropping the parenthetical *and everything
+after it* — but the offline description predictor (`synthesizeDescriptions`, §3.3) has no way to
+know this and predicts the literal Name. A parenthesized Entry Name (`"Lint (Biome)"`) therefore
+byte-mismatches at runtime (`"Task: Lint"` vs. the predicted `"Task: Lint (Biome)"`), routing that
+task to `uncatalogued` in production despite the golden gate (§3.7) looking clean against a
+hand-authored fixture. **Every realworld Entry Name must avoid parentheses** (`"Lint Biome"`, not
+`"Lint (Biome)"`); the `pts-profiles.test.ts` consistency test and the golden gate together catch a
+regression, but neither can catch it from XML alone without a real recorded composite exercising the
+name.
+
+**`target.env` is the per-repo config seam**, adjacent to the XML: `REPO_URL`, `PIN_SHA`,
+`NODE_VERSION`, and one `TASK_CMD_<value>` per `<Option>` `Entry`/`Value` (asserted 1:1 by
+`pts-profiles.test.ts`, both directions). `lib/pts/realworld-runner.sh` is the one shared runner
+script for all three repos — byte-identical, no per-repo branching beyond reading `target.env` — so
+a repo's *quirks* (its exact CI install invocation, which lint/build/test scripts it exposes) live
+entirely in that repo's `target.env`, never in the runner or `install.sh`.
+
+**Pin bump = profile-version bump.** `AppVersion` in `test-definition.xml` is pinned to the exact
+commit SHA `target.env`'s `PIN_SHA` checks out (cross-checked by `pts-profiles.test.ts`), which PTS
+echoes into `composite.xml`'s `<Result><AppVersion>` and `extract.ts` already carries through as
+`MetricResult.appVersion` provenance (§4.2) — for free, no extraction change needed. Moving a pin
+forward is a content change to an already-versioned profile dir (`realworld-<repo>-1.0.0`), not a new
+profile version: the versionless `pts.test` join key and every metric id stay stable across a pin
+bump, only `AppVersion` (and whatever task set/commands changed upstream) moves.

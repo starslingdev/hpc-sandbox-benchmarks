@@ -96,6 +96,67 @@ export const SUITES = {
 		metrics: ["hardlink_bogo_ops_per_s"],
 		commands: ["mise run benchmark:disk:all"],
 	},
+	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
+	// each a repo-local PTS profile with a Task option axis. Budgets are starting points (tuned from
+	// smoke); mastra is the lightest (scoped to packages/core), better-auth and openclaw run their
+	// full task matrices including a cold pnpm install and a full build.
+	"realworld-mastra": {
+		setupPts: true,
+		setupNode: true,
+		commandTimeoutMinutes: 90,
+		timeoutMinutes: 105,
+		minDiskGb: 30,
+		dimensions: ["realworld"],
+		metrics: [
+			"realworld_mastra_task_git_clone",
+			"realworld_mastra_task_cold_install",
+			"realworld_mastra_task_lint_format",
+			"realworld_mastra_task_build_core",
+			"realworld_mastra_task_test_core",
+		],
+		commands: ["mise run benchmark:realworld:pts:mastra"],
+	},
+	"realworld-better-auth": {
+		setupPts: true,
+		setupNode: true,
+		commandTimeoutMinutes: 60,
+		timeoutMinutes: 75,
+		minDiskGb: 10,
+		dimensions: ["realworld"],
+		metrics: [
+			"realworld_better_auth_task_git_clone",
+			"realworld_better_auth_task_cold_install",
+			"realworld_better_auth_task_lint_biome",
+			"realworld_better_auth_task_lint_deps_knip",
+			"realworld_better_auth_task_lint_format",
+			"realworld_better_auth_task_lint_spell",
+			"realworld_better_auth_task_lint_types",
+			"realworld_better_auth_task_lint_packages",
+			"realworld_better_auth_task_typecheck",
+			"realworld_better_auth_task_build",
+			"realworld_better_auth_task_test",
+		],
+		commands: ["mise run benchmark:realworld:pts:better-auth"],
+	},
+	"realworld-openclaw": {
+		setupPts: true,
+		setupNode: true,
+		commandTimeoutMinutes: 90,
+		timeoutMinutes: 105,
+		minDiskGb: 25,
+		dimensions: ["realworld"],
+		metrics: [
+			"realworld_openclaw_task_git_clone",
+			"realworld_openclaw_task_cold_install",
+			"realworld_openclaw_task_lint_oxlint",
+			"realworld_openclaw_task_lint_format",
+			"realworld_openclaw_task_typecheck",
+			"realworld_openclaw_task_shrinkwrap_check",
+			"realworld_openclaw_task_test_unit_fast",
+			"realworld_openclaw_task_build",
+		],
+		commands: ["mise run benchmark:realworld:pts:openclaw"],
+	},
 } as const satisfies Record<string, Suite>;
 
 /** A registered suite name. */

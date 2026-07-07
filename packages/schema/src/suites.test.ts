@@ -16,7 +16,15 @@ describe("suite registry", () => {
 	});
 
 	it("exposes the suite names", () => {
-		expect(SUITE_NAMES).toEqual(["cpu-node", "system", "memory", "disk"]);
+		expect(SUITE_NAMES).toEqual([
+			"cpu-node",
+			"system",
+			"memory",
+			"disk",
+			"realworld-mastra",
+			"realworld-better-auth",
+			"realworld-openclaw",
+		]);
 	});
 
 	it("keeps command timeouts within the requested sandbox lifetime", () => {
