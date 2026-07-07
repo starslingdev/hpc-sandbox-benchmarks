@@ -211,6 +211,35 @@ ensure_pts() {
 	return 0
 }
 
+# Install a repo-local PTS profile (packages/schema/src/pts-profiles/local/<name>) into PTS's
+# local-profile dir, so `phoronix-test-suite batch-install local/<name>` can find it — PTS won't fetch
+# a repo-local profile itself. The dir depends on the run user ($HOME/.phoronix-test-suite vs
+# /var/lib/... for root); pts_init creates it and pts_user_dir locates it, so installing elsewhere
+# makes PTS reject it with "Invalid Argument: local/<name>". Any `overlay-file` args are copied into
+# the installed dir alongside the vendored XML+install.sh — for a runner script shared across several
+# profiles (kept once with the rest of the producer bash, not duplicated per-profile in schema).
+# Usage: install_local_pts_profile <name> [overlay-file...]
+install_local_pts_profile() {
+	local name="$1"
+	shift
+	local src="${REPO_ROOT}/packages/schema/src/pts-profiles/local/${name}"
+
+	pts_init
+	local pts_dir dst
+	pts_dir="$(pts_user_dir)"
+	dst="${pts_dir}/test-profiles/local/${name}"
+	mkdir -p "$(dirname "$dst")"
+	rm -rf "$dst"
+	cp -r "$src" "$dst"
+
+	local overlay
+	for overlay in "$@"; do
+		cp "$overlay" "$dst/"
+	done
+
+	echo "Installed local PTS profile: ${dst} (PTS data dir: ${pts_dir})"
+}
+
 # Install and run one PTS test, capturing timing via bench_cmd and copying the result XML to
 # benchmark-results/<prefix>.xml (the contract the results extractor reads).
 # Usage: run_pts_benchmark <test-name> <results-prefix>

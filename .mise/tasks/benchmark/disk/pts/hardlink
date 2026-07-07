@@ -15,18 +15,7 @@ if ! command -v stress-ng &>/dev/null; then
 fi
 
 # hardlink is a REPO-LOCAL PTS profile (Identifier local/hardlink-1.0.0), so PTS won't download it —
-# install our vendored copy into PTS's local-profile dir first. The dir depends on the run user
-# ($HOME/.phoronix-test-suite vs /var/lib/... for root); pts_init creates it and pts_user_dir locates
-# it, so installing elsewhere makes PTS reject it with "Invalid Argument: local/hardlink-1.0.0".
-PROFILE_NAME="hardlink-1.0.0"
-SRC="${REPO_ROOT}/packages/schema/src/pts-profiles/local/${PROFILE_NAME}"
-
-pts_init
-PTS_DIR="$(pts_user_dir)"
-DST="${PTS_DIR}/test-profiles/local/${PROFILE_NAME}"
-mkdir -p "$(dirname "$DST")"
-rm -rf "$DST"
-cp -r "$SRC" "$DST"
-echo "Installed local PTS profile: ${DST} (PTS data dir: ${PTS_DIR})"
+# install our vendored copy into PTS's local-profile dir first.
+install_local_pts_profile "hardlink-1.0.0"
 
 run_pts_benchmark "local/hardlink-1.0.0" "pts_hardlink"
