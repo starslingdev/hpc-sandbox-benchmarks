@@ -61,13 +61,17 @@ describe("extractProviderDir", () => {
 		// exercise the partial-failure path end to end against real PTS output.
 		const dir = join(import.meta.dir, "__fixtures__/realworld-smoke");
 		const extraction = extractProviderDir(dir, "daytona");
-		expect(extraction.uncatalogued).toEqual([]);
+		// The fixture predates the deliberate drop of better-auth's `test` task (needs docker-compose
+		// DB services no sandbox provides); its measured <Result> now routes to `uncatalogued` -- the
+		// designed straggler path, pinned here so an ACCIDENTAL catalog miss can't hide behind it.
+		expect(extraction.uncatalogued.map((u) => u.id)).toEqual([
+			"local/realworld-better-auth::Task: Test",
+		]);
 		expect(extraction.contributions.map((c) => c.metricId).sort()).toEqual(
 			[
 				"realworld_better_auth_task_git_clone",
 				"realworld_better_auth_task_cold_install",
 				"realworld_better_auth_task_build",
-				"realworld_better_auth_task_test",
 			].sort(),
 		);
 		for (const contribution of extraction.contributions) {
@@ -88,8 +92,10 @@ describe("extractProviderDir", () => {
 		);
 		const results = parsePtsComposite(xml).PhoronixTestSuite.Result;
 		expect(results).toHaveLength(11);
-		for (const result of results) {
-			expect(ptsResultToMetric(result).kind).toBe("matched");
-		}
+		const kinds = results.map((r) => [r.Description, ptsResultToMetric(r).kind]);
+		// 10 of 11 map; the dropped `test` task is the one expected uncatalogued straggler.
+		expect(kinds.filter(([, kind]) => kind !== "matched")).toEqual([
+			["Task: Test", "uncatalogued"],
+		]);
 	});
 });

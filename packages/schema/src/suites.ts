@@ -135,7 +135,6 @@ export const SUITES = {
 			"realworld_better_auth_task_lint_packages",
 			"realworld_better_auth_task_typecheck",
 			"realworld_better_auth_task_build",
-			"realworld_better_auth_task_test",
 		],
 		commands: ["mise run benchmark:realworld:pts:better-auth"],
 	},

@@ -49,6 +49,18 @@ function discoverComposites(): [string, string][] {
 
 const composites = discoverComposites();
 
+/**
+ * Tasks deliberately removed from a profile AFTER its composite was recorded. Recorded fixtures are
+ * never hand-edited (they prove the byte-match against real PTS output), so a dropped task's
+ * `<Result>` now legitimately routes to `uncatalogued`. Every entry documents a deliberate drop;
+ * anything not listed here must still resolve.
+ */
+const DROPPED_RESULTS = new Set([
+	// better-auth's `test` needs docker-compose DB services (postgres, mongodb) no provider sandbox
+	// provides -- removed from the profile in the ENG-136 review; the fixture predates the drop.
+	'local/realworld-better-auth | "Task: Test"',
+]);
+
 describe("golden composite byte-match (design §3.7)", () => {
 	it("discovers at least one recorded composite fixture", () => {
 		// A zero-fixture run would make every per-fixture assertion below vacuously pass — fail loudly
@@ -68,7 +80,7 @@ describe("golden composite byte-match (design §3.7)", () => {
 					? [`${mapping.test} | "${mapping.description}"`]
 					: [];
 			});
-			expect(uncatalogued).toEqual([]);
+			expect(uncatalogued.filter((id) => !DROPPED_RESULTS.has(id))).toEqual([]);
 		});
 	}
 });
