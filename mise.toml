@@ -10,3 +10,9 @@ typos = "1.47.2"
 # so nothing runs a postinstall or needs Bun `trustedDependencies`.
 "aqua:koalaman/shellcheck" = "0.11.0"
 "aqua:hadolint/hadolint" = "2.14.0"
+# GitHub Actions linters for the ci-lint workflow: actionlint checks workflow syntax, expressions and
+# runner labels (via .github/actionlint.yaml) plus embedded shellcheck; zizmor security-audits the
+# workflows (template injection, excessive permissions, ...). aqua backend with checksum + attestation
+# verification — same posture as the tools above, so nothing runs a postinstall.
+"aqua:rhysd/actionlint" = "1.7.12"
+"aqua:zizmorcore/zizmor" = "1.26.1"

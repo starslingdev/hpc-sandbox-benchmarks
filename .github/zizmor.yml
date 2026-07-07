@@ -1,0 +1,12 @@
+# ci-lint.yml runs zizmor with `--min-severity medium --min-confidence high`; only findings zizmor is
+# confident about block CI. The ignores below accept specific findings — never blanket-disable an audit
+# repo-wide, and always record why the finding is accepted.
+rules:
+  artipacked:
+    ignore:
+      # bench-matrix.yml's `publish` job is the one checkout that must keep its persisted job token:
+      # it commits the promoted dataset and `git push`es it back to the branch (the job grants
+      # `contents: write` for exactly this). Every other checkout in the repo sets
+      # persist-credentials: false; this one can't, by design. (Filename-scoped, not repo-wide — the
+      # other checkouts in this file already opt out, so only the publish-job finding is accepted.)
+      - bench-matrix.yml

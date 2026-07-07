@@ -112,6 +112,14 @@ dist
 # TernJS port file
 .tern-port
 
+# Claude Code agent/harness state (skills, workflows, settings) — machine-local, not repo source.
+.claude/
+
+# Local benchmark outputs are transient (per-run raw trees + the local run index). The PUBLISHED
+# dataset lives under data/dataset/ and is committed by the promote step, so it is NOT ignored.
+data/raw/
+data/runs/
+
 # Generated from packages/templates/src/pins.ts by build.sh / the publish workflow (the
 # e2b CLI requires this file on disk; the TypeScript config is its single source of truth).
 packages/templates/images/e2b/e2b.toml
