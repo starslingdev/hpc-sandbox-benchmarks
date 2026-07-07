@@ -57,10 +57,25 @@ const ptsGenerated = type({
 	"TestClient?": "string",
 });
 
-/** A full `composite.xml`: the generator header and one-or-more test results. */
+/**
+ * The host fingerprint PTS embeds in `<System>`: free-text Hardware/Software description strings plus
+ * the run user. Inside a container these disclose the HOST machine (e.g. a 48-thread EPYC), never the
+ * sandbox's effective cgroup quota — so the reader (./system-specs.ts) maps them ONLY to the host side
+ * of ObservedSpecs (`hostVcpus`/`hostMemoryGb`/…), never the effective `vcpus`/`memoryGb`. Optional:
+ * PTS writes `<System>` into composite.xml, but older/partial trees may omit it.
+ */
+const ptsSystem = type({
+	"Identifier?": "string",
+	"Hardware?": "string",
+	"Software?": "string",
+	"User?": "string",
+});
+
+/** A full `composite.xml`: the generator header, the host `<System>` fingerprint, and the results. */
 export const ptsCompositeSchema = type({
 	PhoronixTestSuite: {
 		"Generated?": ptsGenerated,
+		"System?": ptsSystem,
 		Result: ptsResult.array(),
 	},
 });
@@ -71,3 +86,5 @@ export type PtsComposite = typeof ptsCompositeSchema.infer;
 export type PtsResult = typeof ptsResult.infer;
 /** A single typed `<Entry>` from a parsed result. */
 export type PtsEntry = typeof ptsEntry.infer;
+/** The typed `<System>` host fingerprint from a parsed composite. */
+export type PtsSystem = typeof ptsSystem.infer;

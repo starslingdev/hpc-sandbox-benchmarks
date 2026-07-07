@@ -61,7 +61,10 @@ export type UncataloguedResult = typeof uncataloguedResultSchema.infer;
  * {@link TargetSpec}. All optional: providers differ in what in-sandbox
  * probes can see. `vcpus`/`memoryGb` are the EFFECTIVE Sandbox size (cgroup quota where enforced);
  * `hostVcpus`/`hostMemoryGb` disclose the underlying machine when probes see through the container
- * boundary (e.g. Daytona: a 4-vCPU quota on a 48-thread host).
+ * boundary (e.g. Daytona: a 4-vCPU quota on a 48-thread host). `cpuMicroarch` is a HOST-side
+ * generation/microarch label derived from `cpuModel` (e.g. "Zen 5 (Turin)"). `hostCpuModels` is set
+ * only by the aggregate path — the distinct host CPU models a provider's shards disclosed, present
+ * only when there was more than one (a scheduling confound the published Run names rather than hides).
  */
 export const observedSpecsSchema = type({
 	"vcpus?": "number",
@@ -70,11 +73,16 @@ export const observedSpecsSchema = type({
 	"hostVcpus?": "number",
 	"hostMemoryGb?": "number",
 	"cpuModel?": "string",
+	// Host-side generation/microarch label derived from cpuModel; never reflects the effective spec.
+	"cpuMicroarch?": "string",
 	"cpuMhz?": "number",
 	"kernel?": "string",
 	"os?": "string",
 	"virtualization?": "string",
 	"user?": "string",
+	// The distinct host CPU models when merged shards of one provider disclosed more than one — the
+	// aggregate-only heterogeneity disclosure (cpuModel is the key; cpuMicroarch is derived from it).
+	"hostCpuModels?": "string[]",
 });
 export type ObservedSpecs = typeof observedSpecsSchema.infer;
 

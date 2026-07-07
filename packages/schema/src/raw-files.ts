@@ -28,11 +28,29 @@ const SKIP_SUFFIX = "--skipped.json";
 
 /**
  * A PTS structured result, e.g. `pts_node-web-tooling.xml`. The producer writes one per test under a
- * `pts_` prefix; the extractor keys on this to route XML through the PTS parser. The `.json`/`.log`
- * siblings are provenance, not metrics, so they deliberately don't match.
+ * `pts_` prefix; the extractor keys on this to route XML through the PTS parser. Most `pts_*` siblings
+ * (`.json`/`.log`) are provenance, not metrics, so they don't match — with one intentional exception:
+ * the forensics tarball ({@link isPtsForensicsFile}), a recognized provenance name that is provably
+ * disjoint from this predicate (it ends `--forensics.tar.gz`, never `.xml`).
  */
 const ptsResultFile = type("string").matching("^pts_.*\\.xml$");
 export const isPtsResultFile = (filename: string): boolean => ptsResultFile.allows(filename);
+
+const FORENSICS_SUFFIX = "--forensics.tar.gz";
+
+/**
+ * `pts_<test>--forensics.tar.gz` — the full PTS result directory (composite.xml + installation-logs/ +
+ * test-logs/) captured as a tarball for post-hoc debugging. A tarball, not a flattened copy, so its
+ * nested `.xml` files can't be misrouted by {@link isPtsResultFile}: it `startsWith("pts_")` yet ends
+ * `--forensics.tar.gz`, so it is provably disjoint from the `.xml` result predicate.
+ */
+export function ptsForensicsFile(prefix: string): string {
+	return `${prefix}${FORENSICS_SUFFIX}`;
+}
+
+const ptsForensicsFileName = type("string").matching("^pts_.+--forensics\\.tar\\.gz$");
+export const isPtsForensicsFile = (filename: string): boolean =>
+	ptsForensicsFileName.allows(filename);
 
 const skipMarkerFileName = type("string").matching("--skipped\\.json$");
 export const isSkipMarkerFile = (filename: string): boolean => skipMarkerFileName.allows(filename);
