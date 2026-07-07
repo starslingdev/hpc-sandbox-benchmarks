@@ -8,6 +8,14 @@
 export { aggregateRuns } from "./lib/aggregate.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
 export {
+	type CompareRunsOptions,
+	compareRuns,
+	DEFAULT_THRESHOLD,
+	describeShift,
+	type MetricShift,
+	regressions,
+} from "./lib/stability.ts";
+export {
 	summarizeRun,
 	updateRunIndex,
 	type WriteNormalizedRunInput,
