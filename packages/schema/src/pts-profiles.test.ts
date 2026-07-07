@@ -1,7 +1,7 @@
 /**
  * Consistency gate for the realworld PTS profiles (ENG-135/136/137/138): each profile's `Task` Option
  * (test-definition.xml) and its `target.env` sibling are two hand-authored, unrelated-by-construction
- * files that must stay in lockstep -- lib/pts/realworld-runner.sh looks up `TASK_CMD_<value>` for
+ * files that must stay in lockstep -- lib/pts/realworld/realworld-runner.sh looks up `TASK_CMD_<value>` for
  * whichever Option Value PTS invokes it with, so a Value with no matching key would fail at runtime
  * with no compile-time signal. Checked here instead: every Entry's Value has exactly one
  * `TASK_CMD_<value>` key, and vice versa (no orphaned key). Also cross-checks target.env's PIN_SHA
