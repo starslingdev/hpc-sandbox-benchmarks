@@ -68,7 +68,10 @@ echo 1 > ~/install-exit-status
 		exit 1
 	fi
 	corepack install >/dev/null 2>&1 || true
-	pnpm install --frozen-lockfile || pnpm install
+	# No un-frozen fallback: a lockfile that can't install frozen at PIN_SHA must fail HERE, loudly —
+	# the fallback would provision warm node_modules from a regenerated (unpinned) package set while
+	# every measured cold_install sample (also --frozen-lockfile) fails against the restored lockfile.
+	pnpm install --frozen-lockfile
 )
 
 echo 0 > ~/install-exit-status
