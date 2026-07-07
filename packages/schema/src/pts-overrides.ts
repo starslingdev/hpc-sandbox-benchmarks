@@ -31,4 +31,20 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	stream_type_add: { label: "STREAM Add" },
 	// Disk dimension: Hardlink throughput (a repo-local PTS profile sourced from runner-benchmarking).
 	hardlink_bogo_ops_per_s: { headline: true, label: "Hardlink throughput" },
+
+	// Realworld dimension (ENG-135/137): mastra-ai/mastra run through its own CI tasks, a repo-local
+	// PTS profile with a Task option axis. TestType System's default dimension is corrected to
+	// realworld here for every metric this profile generates -- a forgotten entry fails fast at
+	// catalog load (an off-dimension metric would otherwise land under the wrong axis). Mastra's cold
+	// install is the dimension's headline: cold install is the phase every CI pipeline pays regardless
+	// of language/framework, and Mastra's is the fastest of the three realworld repos to run.
+	realworld_mastra_task_cold_install: {
+		dimension: "realworld",
+		headline: true,
+		label: "Mastra: cold install",
+	},
+	realworld_mastra_task_git_clone: { dimension: "realworld", label: "Mastra: git clone" },
+	realworld_mastra_task_lint_format: { dimension: "realworld", label: "Mastra: lint:format" },
+	realworld_mastra_task_build_core: { dimension: "realworld", label: "Mastra: build:core" },
+	realworld_mastra_task_test_core: { dimension: "realworld", label: "Mastra: test:core" },
 };

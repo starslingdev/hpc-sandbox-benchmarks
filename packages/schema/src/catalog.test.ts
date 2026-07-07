@@ -87,8 +87,9 @@ describe("metric catalog", () => {
 	});
 
 	it("throws when a dimension has no headline metric", () => {
-		// `realworld` is the dimension still without any metrics (economics is now populated + headlined).
-		expect(() => headlineMetric("realworld")).toThrow();
+		// `network` is the dimension still without any metrics (economics and realworld are now
+		// populated + headlined too).
+		expect(() => headlineMetric("network")).toThrow();
 	});
 });
 
