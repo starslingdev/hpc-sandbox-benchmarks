@@ -14,6 +14,16 @@ on:
         type: choice
         default: ZEN5-VM
         options: [ZEN5-VM, default]
+  # Nightly, unattended: publish one fresh dataset point per day with no human dispatch. Daily (not
+  # per-commit or hourly) is deliberate — each run fans the full provider × suite matrix out over real,
+  # metered sandbox time on three paid providers, and the numbers track slow host/provider drift rather
+  # than code changes, so a day is the right resolution to feed the cross-run regression gate without
+  # burning quota. 07:27 UTC is overnight for US/EU contributors (a multi-hour matrix won't crowd out
+  # interactive dispatches) and off the top of the hour, which GitHub delays under scheduler load (the
+  # plan job runs on a GitHub-hosted runner). Scheduled runs carry no dispatch inputs, so every
+  # `inputs.*` reference below is defaulted for the empty-input path.
+  schedule:
+    - cron: "27 7 * * *"
 
 # Least privilege: jobs only read the checked-out code and upload artifacts.
 permissions:
@@ -86,7 +96,11 @@ jobs:
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_PROVIDER: ${{ matrix.provider }}
           BENCH_SUITE: ${{ matrix.suite }}
-          DAYTONA_REGION: ${{ inputs.region }}
+          # On a schedule run there are no dispatch inputs (inputs.region == ""), and the config
+          # gatekeeper (packages/providers/src/lib/config.ts) rejects an explicitly-set-but-empty env
+          # var — an unguarded empty DAYTONA_REGION would kill the suite at module load. Default the
+          # empty case to the active region (matching the dispatch input's default).
+          DAYTONA_REGION: ${{ inputs.region || 'ZEN5-VM' }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}
           DAYTONA_TARGET_ZEN5: ${{ secrets.DAYTONA_TARGET_ZEN5 }}
