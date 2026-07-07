@@ -1,0 +1,38 @@
+[
+  {
+    "filesystem": "overlay",
+    "type": "overlay",
+    "size": 8482560409,
+    "used": 15728640,
+    "mounted_on": "/",
+    "available": 8482560409,
+    "use_percent": 1
+  },
+  {
+    "filesystem": "devtmpfs",
+    "type": "devtmpfs",
+    "size": 8482560409,
+    "used": 0,
+    "mounted_on": "/dev",
+    "available": 8482560409,
+    "use_percent": 0
+  },
+  {
+    "filesystem": "tmpfs",
+    "type": "tmpfs",
+    "size": 8482560409,
+    "used": 0,
+    "mounted_on": "/dev/shm",
+    "available": 8482560409,
+    "use_percent": 0
+  },
+  {
+    "filesystem": "fs0",
+    "type": "virtiofs",
+    "size": 1048576,
+    "used": 4096,
+    "mounted_on": "/run/secrets/blaxel.ai/identity",
+    "available": 1044480,
+    "use_percent": 1
+  }
+]
