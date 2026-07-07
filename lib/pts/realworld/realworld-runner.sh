@@ -1,8 +1,8 @@
 #!/bin/sh
-# Shared realworld-suite runner (ENG-135/136/137/138), byte-identical for every
-# realworld-<repo>-1.0.0 profile. install.sh (packages/schema/src/pts-profiles/local/realworld-*)
-# overlays this script and the profile's target.env into the PTS install dir; the generated PTS
-# executable wrapper invokes it as `realworld-runner.sh <task-value>`, with stdout/stderr already
+# Shared realworld-suite runner (ENG-135/136/137/138), one copy for every realworld-<repo>-1.0.0
+# profile. run_realworld_pts (lib/bench.sh) overlays this script and the adjacent install.sh into
+# the installed profile dir next to the profile's vendored target.env; the generated PTS executable
+# wrapper invokes it as `realworld-runner.sh <task-value>`, with stdout/stderr already
 # redirected to $LOG_FILE by that wrapper. One measured task per invocation -- the unmeasured
 # "prepare" step below runs first on every invocation so every sample starts from the same state
 # regardless of what task ran before it.

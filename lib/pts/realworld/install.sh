@@ -1,12 +1,14 @@
 #!/bin/sh
-# PTS local-profile install script (ENG-135/136/137/138) -- byte-identical across every
-# realworld-<repo>-1.0.0 profile; all per-repo config lives in target.env. Copies target.env + the
-# shared runner (lib/pts/realworld-runner.sh) from $(dirname "$0") into the install dir, writes the
-# PTS executable wrapper the runtime convention expects (an executable named after the versionless
-# profile dir, receiving the selected Task Option's Value as $1, stdout/stderr piped to $LOG_FILE),
-# then does the UNMEASURED provisioning: pin the toolchain, shallow-fetch the pinned SHA into work/,
-# one warm install -- so every measured task starts from a deps-ready workspace. See
-# lib/pts/realworld-runner.sh for the per-task measured logic this wrapper invokes at batch-run.
+# PTS local-profile install script (ENG-135/136/137/138), SHARED by every realworld-<repo>-1.0.0
+# profile: the profiles vendor only XML + target.env, and run_realworld_pts (lib/bench.sh) overlays
+# this file (and realworld-runner.sh, adjacent here) into the installed profile dir, where PTS
+# executes it as the profile's install.sh. All per-repo config lives in target.env. Copies
+# target.env + the runner from $(dirname "$0") into the install dir, writes the PTS executable
+# wrapper the runtime convention expects (an executable named after the versionless profile dir,
+# receiving the selected Task Option's Value as $1, stdout/stderr piped to $LOG_FILE), then does
+# the UNMEASURED provisioning: pin the toolchain, shallow-fetch the pinned SHA into work/, one warm
+# install -- so every measured task starts from a deps-ready workspace. See realworld-runner.sh for
+# the per-task measured logic the wrapper invokes at batch-run.
 set -eu
 
 # shellcheck disable=SC1007 # CDPATH= (no value) is the idiom that disables CDPATH's cd-echoes-a-path

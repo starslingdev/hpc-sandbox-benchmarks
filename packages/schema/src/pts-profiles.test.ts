@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseProfile } from "../scripts/catalog/parse.ts";
 
@@ -72,6 +72,10 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 						.map((key) => key.slice("TASK_CMD_".length)),
 				);
 				expect(taskCmdKeys).toEqual(values);
+			});
+
+			it("stays data-only: no per-profile install.sh (the shared lib/pts/realworld/ copy is overlaid)", () => {
+				expect(existsSync(join(base, "install.sh"))).toBe(false);
 			});
 
 			it("declares REPO_URL, PIN_SHA and NODE_VERSION", () => {

@@ -5,17 +5,4 @@ set -euo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
-if ! command -v phoronix-test-suite &>/dev/null; then
-	skip_result "phoronix-test-suite not installed" "pts_realworld-mastra"
-	exit 0
-fi
-if ! command -v node &>/dev/null; then
-	skip_result "node not installed" "pts_realworld-mastra"
-	exit 0
-fi
-
-# mastra is a REPO-LOCAL PTS profile (Identifier local/realworld-mastra-1.0.0); overlay the shared
-# runner alongside the vendored XML+install.sh+target.env before install.
-install_local_pts_profile "realworld-mastra-1.0.0" "${REPO_ROOT}/lib/pts/realworld-runner.sh"
-
-run_pts_benchmark "local/realworld-mastra-1.0.0" "pts_realworld-mastra"
+run_realworld_pts mastra
