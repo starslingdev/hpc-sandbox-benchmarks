@@ -65,10 +65,6 @@
           <Name>Build</Name>
           <Value>build</Value>
         </Entry>
-        <Entry>
-          <Name>Test</Name>
-          <Value>test</Value>
-        </Entry>
       </Menu>
     </Option>
   </TestSettings>

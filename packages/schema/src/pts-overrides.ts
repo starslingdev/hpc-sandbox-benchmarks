@@ -82,5 +82,4 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	},
 	realworld_better_auth_task_typecheck: { dimension: "realworld", label: "Better-Auth: typecheck" },
 	realworld_better_auth_task_build: { dimension: "realworld", label: "Better-Auth: build" },
-	realworld_better_auth_task_test: { dimension: "realworld", label: "Better-Auth: test" },
 };

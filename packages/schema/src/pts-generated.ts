@@ -185,18 +185,6 @@ export const ptsGenerated: MetricDef[] = [
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
 	{
-		id: "realworld_better_auth_task_test",
-		dimension: "system",
-		unit: "Seconds",
-		direction: "LIB",
-		headline: false,
-		label: "Better-Auth CI Tasks - Task: Test",
-		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
-		pts: { test: "local/realworld-better-auth", description: "Task: Test" },
-		sourceUrl: "https://github.com/better-auth/better-auth",
-	},
-	{
 		id: "realworld_better_auth_task_typecheck",
 		dimension: "system",
 		unit: "Seconds",
