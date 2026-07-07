@@ -48,6 +48,40 @@ describe("metric catalog", () => {
 		expect(getMetric("node_web_tooling_runs_per_s")?.headline).toBe(true);
 	});
 
+	it("resolves the PyBench headline for the system dimension (both system metrics catalogued)", () => {
+		const metric = headlineMetric("system");
+		expect(metric.id).toBe("pybench_milliseconds");
+		expect(metric.label).toBe("PyBench"); // curated short label
+		expect(metric.pts?.test).toBe("pts/pybench");
+		// Single-result wildcard: no pts.description (so the byte-match gate needs no recorded composite).
+		expect(metric.pts?.description).toBeUndefined();
+		expect(getMetric("sqlite_speedtest_seconds")?.dimension).toBe("system");
+	});
+
+	it("resolves the STREAM Triad headline for the memory dimension (multi-result option matrix)", () => {
+		const metric = headlineMetric("memory");
+		expect(metric.id).toBe("stream_type_triad");
+		expect(metric.label).toBe("STREAM Triad"); // curated short label
+		expect(metric.unit).toBe("MB/s");
+		expect(metric.direction).toBe("HIB");
+		// Multi-result: the description disambiguator is the byte-match the golden gate proves.
+		expect(metric.pts).toEqual({ test: "pts/stream", description: "Type: Triad" });
+		expect(
+			metricsForDimension("memory")
+				.map((m) => m.id)
+				.sort(),
+		).toEqual(["stream_type_add", "stream_type_copy", "stream_type_scale", "stream_type_triad"]);
+	});
+
+	it("resolves the Hardlink headline for the disk dimension via a non-`pts/` (local) join key", () => {
+		const metric = headlineMetric("disk");
+		expect(metric.id).toBe("hardlink_bogo_ops_per_s");
+		expect(metric.label).toBe("Hardlink throughput");
+		expect(metric.direction).toBe("HIB");
+		// Repo-local profile: the join prefix is `local/`, proving the generator is source-segment-aware.
+		expect(metric.pts).toEqual({ test: "local/hardlink" });
+	});
+
 	it("returns undefined for an unknown metric id", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});

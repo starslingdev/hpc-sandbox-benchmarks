@@ -8,6 +8,7 @@ const PROFILES = `${import.meta.dir}/../../src/pts-profiles`;
 
 async function load(dir: string): Promise<PtsProfile> {
 	return parseProfile(
+		"pts",
 		dir,
 		await Bun.file(`${PROFILES}/${dir}/test-definition.xml`).text(),
 		await Bun.file(`${PROFILES}/${dir}/results-definition.xml`).text(),
@@ -17,6 +18,7 @@ async function load(dir: string): Promise<PtsProfile> {
 // Build a profile from just the option/parser shape the synthesis reads (other fields are unused here).
 function profile(settings: PtsProfile["settings"], parsers: PtsProfile["parsers"]): PtsProfile {
 	return {
+		repo: "pts",
 		dir: "synthetic-1.0.0",
 		info: { Title: "T", Description: "d", ResultScale: "ms", Proportion: "HIB" },
 		profile: { TestType: "Processor" },

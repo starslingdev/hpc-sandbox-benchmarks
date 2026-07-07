@@ -66,6 +66,36 @@ export const SUITES = {
 		metrics: ["node_web_tooling_runs_per_s"],
 		commands: ["mise run benchmark:cpu:node"],
 	},
+	// The system dimension: PyBench (Python interpreter) + SQLite Speedtest, both single-result PTS
+	// profiles. Lighter than cpu-node (no Node toolchain, shorter runtime), so smaller budgets.
+	system: {
+		setupPts: true,
+		commandTimeoutMinutes: 40,
+		timeoutMinutes: 50,
+		dimensions: ["system"],
+		metrics: ["pybench_milliseconds", "sqlite_speedtest_seconds"],
+		commands: ["mise run benchmark:system:all"],
+	},
+	// The memory dimension: STREAM (Copy/Scale/Add/Triad). Short — STREAM runs in a couple of minutes.
+	memory: {
+		setupPts: true,
+		commandTimeoutMinutes: 30,
+		timeoutMinutes: 40,
+		dimensions: ["memory"],
+		metrics: ["stream_type_copy", "stream_type_scale", "stream_type_add", "stream_type_triad"],
+		commands: ["mise run benchmark:memory:all"],
+	},
+	// The disk dimension: hardlink throughput (stress-ng --link), a repo-local PTS profile installed
+	// into PTS by the producer task. Needs a little free disk for the link storm.
+	disk: {
+		setupPts: true,
+		commandTimeoutMinutes: 30,
+		timeoutMinutes: 40,
+		minDiskGb: 2,
+		dimensions: ["disk"],
+		metrics: ["hardlink_bogo_ops_per_s"],
+		commands: ["mise run benchmark:disk:all"],
+	},
 } as const satisfies Record<string, Suite>;
 
 /** A registered suite name. */

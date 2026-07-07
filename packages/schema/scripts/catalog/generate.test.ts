@@ -13,11 +13,14 @@ import { parseProfile } from "./parse.ts";
 
 const PROFILES = `${import.meta.dir}/../../src/pts-profiles`;
 
-async function load(dir: string): Promise<PtsProfile> {
+async function load(dir: string, repo = "pts"): Promise<PtsProfile> {
+	// Repo-local profiles (repo !== "pts") are vendored one level deeper, under pts-profiles/<repo>/.
+	const base = repo === "pts" ? `${PROFILES}/${dir}` : `${PROFILES}/${repo}/${dir}`;
 	return parseProfile(
+		repo,
 		dir,
-		await Bun.file(`${PROFILES}/${dir}/test-definition.xml`).text(),
-		await Bun.file(`${PROFILES}/${dir}/results-definition.xml`).text(),
+		await Bun.file(`${base}/test-definition.xml`).text(),
+		await Bun.file(`${base}/results-definition.xml`).text(),
 	);
 }
 
@@ -67,12 +70,21 @@ describe("generateProfile", () => {
 		expect(def.pts?.description).toBeUndefined(); // the legal description-less wildcard
 	});
 
-	test("every emitted pts.test carries the `pts/` join prefix", async () => {
+	test("every emitted pts.test carries the source repo segment as its prefix", async () => {
 		for (const dir of ["node-web-tooling-1.0.1", "c-ray-2.0.0"]) {
 			for (const def of generateProfile(await load(dir))) {
 				expect(def.pts?.test.startsWith("pts/")).toBe(true);
 			}
 		}
+	});
+
+	test("a repo-local profile keeps its `local/` prefix (not hardcoded `pts/`)", async () => {
+		// hardlink reports `local/hardlink-1.0.0` at runtime; a `pts/`-only prefix would route it to
+		// uncatalogued. The generator must mirror the source segment.
+		const defs = generateProfile(await load("hardlink-1.0.0", "local"));
+		expect(defs).toHaveLength(1);
+		expect(defs[0]?.pts).toEqual({ test: "local/hardlink" });
+		expect(defs[0]?.dimension).toBe("disk");
 	});
 
 	test("direction mirrors <Proportion>; unit mirrors <ResultScale>", async () => {
@@ -84,6 +96,7 @@ describe("generateProfile", () => {
 
 	test("throws when <Proportion> is missing", () => {
 		const noProportion: PtsProfile = {
+			repo: "pts",
 			dir: "x-1.0.0",
 			info: { Title: "X", Description: "d", ResultScale: "ms" },
 			profile: { TestType: "Processor" },

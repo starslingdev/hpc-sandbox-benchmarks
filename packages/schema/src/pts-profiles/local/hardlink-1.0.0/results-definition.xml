@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <ResultsParser>
+    <!-- stress-ng metrics-brief output for the link stressor:
+         stress-ng: info: [PID] link  BOGOOPS  REALTIME  USRTIME  SYSTIME  BOGOOPS/S(real)  BOGOOPS/S(usr+sys)
+         We extract column 6 — bogo ops/sec measured against real time. -->
+    <OutputTemplate>stress-ng: info: [1234] link             123456     30.00      5.00     25.00      #_RESULT_#       2244.65</OutputTemplate>
+    <ResultScale>bogo ops/s</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+</PhoronixTestSuite>

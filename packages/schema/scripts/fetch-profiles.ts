@@ -34,7 +34,18 @@ const REPO = "test-profiles";
 // `phoronix-test-suite/test-profiles` commit SHA and re-run. Latest on master:
 //   gh api repos/phoronix-test-suite/test-profiles/commits/master --jq .sha
 const REF = "d2f1a150d388bd062737b445891edda0780f7e25";
-const PROFILES = ["node-web-tooling-1.0.1", "c-ray-2.0.0"] as const;
+const PROFILES = [
+	"node-web-tooling-1.0.1",
+	"c-ray-2.0.0",
+	// System dimension — both single-result (no <Option> matrix), so each generates a description-less
+	// wildcard entry (zero byte-match risk).
+	"pybench-1.1.3",
+	"sqlite-speedtest-1.0.1",
+	// Memory dimension — STREAM is a multi-result option matrix (Type: Copy/Scale/Add/Triad). The
+	// synthesized pts.description strings are byte-match-proven by a recorded composite golden fixture
+	// (sourced from runner-benchmarking's stream-1.3.5 run; versionless join is `pts/stream` either way).
+	"stream-1.3.4",
+] as const;
 
 // Only these definition files feed the generator; siblings (downloads.xml, install.sh) are ignored.
 // `required` distinguishes the essential `test-definition.xml` (a missing one is a hard failure, not

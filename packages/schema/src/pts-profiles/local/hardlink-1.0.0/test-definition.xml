@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite local profile: hardlink throughput via stress-ng-->
+<PhoronixTestSuite>
+  <TestInformation>
+    <Title>Hardlink Throughput</Title>
+    <AppVersion>0.16</AppVersion>
+    <Description>Measures hardlink() syscall throughput using the stress-ng --link stressor. Mirrors the per-syscall pattern that pnpm install hits when materialising thousands of node_modules entries from a content-addressable store. Reports bogo ops/sec (real time) — one bogo op = one create+unlink hardlink cycle.</Description>
+    <ResultScale>bogo ops/s</ResultScale>
+    <Proportion>HIB</Proportion>
+    <TimesToRun>3</TimesToRun>
+  </TestInformation>
+  <TestProfile>
+    <Version>1.0.0</Version>
+    <SupportedPlatforms>Linux</SupportedPlatforms>
+    <SoftwareType>Benchmark</SoftwareType>
+    <TestType>Disk</TestType>
+    <License>Free</License>
+    <Status>Verified</Status>
+    <ExternalDependencies>build-utilities</ExternalDependencies>
+    <EnvironmentSize>1</EnvironmentSize>
+    <ProjectURL>https://github.com/ColinIanKing/stress-ng</ProjectURL>
+    <Maintainer>StarSling</Maintainer>
+  </TestProfile>
+  <TestSettings>
+    <Default>
+      <Arguments>--link 1 --metrics-brief --no-rand-seed -t 30</Arguments>
+    </Default>
+  </TestSettings>
+</PhoronixTestSuite>

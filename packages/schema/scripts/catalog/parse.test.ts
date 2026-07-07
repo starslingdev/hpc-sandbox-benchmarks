@@ -5,6 +5,7 @@ const PROFILES = `${import.meta.dir}/../../src/pts-profiles`;
 
 async function load(dir: string) {
 	return parseProfile(
+		"pts",
 		dir,
 		await Bun.file(`${PROFILES}/${dir}/test-definition.xml`).text(),
 		await Bun.file(`${PROFILES}/${dir}/results-definition.xml`).text(),
@@ -35,6 +36,7 @@ describe("parseProfile", () => {
 
 	test("tolerates a missing results-definition.xml", async () => {
 		const p = parseProfile(
+			"pts",
 			"x-1.0.0",
 			await Bun.file(`${PROFILES}/node-web-tooling-1.0.1/test-definition.xml`).text(),
 			"",
@@ -43,8 +45,8 @@ describe("parseProfile", () => {
 	});
 
 	test("throws with a summary on malformed test-definition.xml", () => {
-		expect(() => parseProfile("bad-1.0.0", "<PhoronixTestSuite></PhoronixTestSuite>", "")).toThrow(
-			/invalid bad-1.0.0\/test-definition\.xml/,
-		);
+		expect(() =>
+			parseProfile("pts", "bad-1.0.0", "<PhoronixTestSuite></PhoronixTestSuite>", ""),
+		).toThrow(/invalid bad-1.0.0\/test-definition\.xml/);
 	});
 });

@@ -16,7 +16,7 @@ describe("suite registry", () => {
 	});
 
 	it("exposes the suite names", () => {
-		expect(SUITE_NAMES).toEqual(["cpu-node"]);
+		expect(SUITE_NAMES).toEqual(["cpu-node", "system", "memory", "disk"]);
 	});
 
 	it("keeps command timeouts within the requested sandbox lifetime", () => {

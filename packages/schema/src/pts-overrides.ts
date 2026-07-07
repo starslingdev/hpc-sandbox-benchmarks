@@ -19,4 +19,16 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	c_ray_resolution_1080p_rays_per_pixel_16: { label: "C-Ray (1080p, 16 RPP)" },
 	c_ray_resolution_4k_rays_per_pixel_16: { label: "C-Ray (4K, 16 RPP)" },
 	c_ray_resolution_5k_rays_per_pixel_16: { label: "C-Ray (5K, 16 RPP)" },
+	// System dimension: PyBench is its headline (a broad Python interpreter workload); SQLite Speedtest
+	// rounds it out. Both single-result wildcards, so curation only supplies labels + the one headline.
+	pybench_milliseconds: { headline: true, label: "PyBench" },
+	sqlite_speedtest_seconds: { label: "SQLite Speedtest" },
+	// Memory dimension: STREAM Triad is the canonical headline (the fused multiply-add is the most
+	// representative memory-bandwidth figure); the other three operations round out the matrix.
+	stream_type_triad: { headline: true, label: "STREAM Triad" },
+	stream_type_copy: { label: "STREAM Copy" },
+	stream_type_scale: { label: "STREAM Scale" },
+	stream_type_add: { label: "STREAM Add" },
+	// Disk dimension: Hardlink throughput (a repo-local PTS profile sourced from runner-benchmarking).
+	hardlink_bogo_ops_per_s: { headline: true, label: "Hardlink throughput" },
 };
