@@ -47,4 +47,40 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	realworld_mastra_task_lint_format: { dimension: "realworld", label: "Mastra: lint:format" },
 	realworld_mastra_task_build_core: { dimension: "realworld", label: "Mastra: build:core" },
 	realworld_mastra_task_test_core: { dimension: "realworld", label: "Mastra: test:core" },
+
+	// Realworld dimension (ENG-136): better-auth/better-auth run through its own CI tasks, a
+	// repo-local PTS profile with a Task option axis. TestType System's default dimension is
+	// corrected to realworld here for every metric this profile generates.
+	realworld_better_auth_task_git_clone: { dimension: "realworld", label: "Better-Auth: git clone" },
+	realworld_better_auth_task_cold_install: {
+		dimension: "realworld",
+		label: "Better-Auth: cold install",
+	},
+	realworld_better_auth_task_lint_biome: {
+		dimension: "realworld",
+		label: "Better-Auth: lint (Biome)",
+	},
+	realworld_better_auth_task_lint_deps_knip: {
+		dimension: "realworld",
+		label: "Better-Auth: lint deps (Knip)",
+	},
+	realworld_better_auth_task_lint_format: {
+		dimension: "realworld",
+		label: "Better-Auth: lint format",
+	},
+	realworld_better_auth_task_lint_spell: {
+		dimension: "realworld",
+		label: "Better-Auth: lint spell",
+	},
+	realworld_better_auth_task_lint_types: {
+		dimension: "realworld",
+		label: "Better-Auth: lint types",
+	},
+	realworld_better_auth_task_lint_packages: {
+		dimension: "realworld",
+		label: "Better-Auth: lint packages",
+	},
+	realworld_better_auth_task_typecheck: { dimension: "realworld", label: "Better-Auth: typecheck" },
+	realworld_better_auth_task_build: { dimension: "realworld", label: "Better-Auth: build" },
+	realworld_better_auth_task_test: { dimension: "realworld", label: "Better-Auth: test" },
 };
