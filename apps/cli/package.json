@@ -11,6 +11,7 @@
     "plan-matrix": "./src/bin/plan-matrix.ts",
     "build-template": "./src/bin/build-template.ts",
     "normalize": "./src/bin/normalize.ts",
+    "aggregate": "./src/bin/aggregate.ts",
     "promote": "./src/bin/promote.ts"
   },
   "scripts": {
