@@ -91,6 +91,9 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 				case "modal":
 					log("    modal boots the published version image — nothing to build");
 					break;
+				case "blaxel":
+					log("    blaxel boots the stock base image — nothing to promote");
+					break;
 				default: {
 					// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
 					const unhandled: never = provider.name;
