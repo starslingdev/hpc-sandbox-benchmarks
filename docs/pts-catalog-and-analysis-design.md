@@ -284,7 +284,7 @@ name.
 
 **`target.env` is the per-repo config seam**, adjacent to the XML: `REPO_URL`, `PIN_SHA`,
 `NODE_VERSION`, and one `TASK_CMD_<value>` per `<Option>` `Entry`/`Value` (asserted 1:1 by
-`pts-profiles.test.ts`, both directions). `lib/pts/realworld-runner.sh` is the one shared runner
+`pts-profiles.test.ts`, both directions). `lib/pts/realworld/realworld-runner.sh` is the one shared runner
 script for all three repos — byte-identical, no per-repo branching beyond reading `target.env` — so
 a repo's *quirks* (its exact CI install invocation, which lint/build/test scripts it exposes) live
 entirely in that repo's `target.env`, never in the runner or `install.sh`.
