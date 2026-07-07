@@ -5,9 +5,10 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SkipMarker, UncataloguedResult } from "@sandbox-benchmarks/schema";
+import type { ObservedSpecs, SkipMarker, UncataloguedResult } from "@sandbox-benchmarks/schema";
 import { isPtsResultFile, isSkipMarkerFile, parseSkipMarker } from "@sandbox-benchmarks/schema";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
+import { parseSystemHost } from "./system-specs.ts";
 
 /** One Metric's samples sourced from a single raw file — the provenance the normalizer preserves. */
 export interface SampleContribution {
@@ -25,6 +26,13 @@ export interface ProviderExtraction {
 	contributions: SampleContribution[];
 	uncatalogued: UncataloguedResult[];
 	skips: SkipMarker[];
+	/**
+	 * HOST-side specs read from a composite's `<System>` fingerprint (the underlying machine, not the
+	 * sandbox quota), when any composite in this directory carried one. The first composite with a
+	 * non-empty `<System>` wins (all files come from one sandbox). The run-writer layer merges this UNDER
+	 * the in-sandbox spec probe, so the dedicated probe always wins on the effective fields.
+	 */
+	observedHost?: ObservedSpecs;
 }
 
 /** Parse JSON, returning undefined rather than throwing on a malformed skip marker. */
@@ -51,6 +59,12 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 
 		if (isPtsResultFile(filename)) {
 			const composite = parsePtsComposite(readFileSync(fullPath, "utf8"));
+			// Capture the host fingerprint from the first composite that carries a non-empty <System>.
+			// Host-only (never effective): merged under the in-sandbox spec probe at the run-writer layer.
+			if (!out.observedHost && composite.PhoronixTestSuite.System) {
+				const host = parseSystemHost(composite.PhoronixTestSuite.System);
+				if (Object.keys(host).length > 0) out.observedHost = host;
+			}
 			for (const result of composite.PhoronixTestSuite.Result) {
 				// A <Result> with no <Entry> carries no measurement — no sample to aggregate and no
 				// headline value to report. Skip it rather than emit a zero-sample contribution (which
