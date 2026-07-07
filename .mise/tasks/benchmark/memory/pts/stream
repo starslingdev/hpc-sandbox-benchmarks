@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="PTS: STREAM memory bandwidth (Copy/Scale/Add/Triad)"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_stream"
+	exit 0
+fi
+
+run_pts_benchmark "pts/stream" "pts_stream"
