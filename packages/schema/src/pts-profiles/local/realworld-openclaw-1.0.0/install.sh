@@ -51,7 +51,12 @@ corepack enable >/dev/null 2>&1 || true
 
 rm -rf work
 mkdir -p work
-if ! (
+# Pessimistic status: POSIX suspends `set -e` inside any compound run as an `if !` condition, so
+# wrapping the subshell that way would let an intermediate failure (e.g. `git fetch`) fall through
+# to the next command. Written as a plain subshell, -e stays live inside it and any failure aborts
+# the whole script (outer -e) with the 1 already on disk; only full success overwrites it below.
+echo 1 > ~/install-exit-status
+(
 	cd work
 	git init -q .
 	git remote add origin "$REPO_URL"
@@ -64,9 +69,6 @@ if ! (
 	fi
 	corepack install >/dev/null 2>&1 || true
 	pnpm install --frozen-lockfile || pnpm install
-); then
-	echo 1 > ~/install-exit-status
-	exit 1
-fi
+)
 
 echo 0 > ~/install-exit-status
