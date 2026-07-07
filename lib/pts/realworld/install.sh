@@ -38,6 +38,15 @@ chmod +x "$EXE_NAME"
 # shellcheck source=/dev/null
 . ./target.env
 
+# Warm the SAME cache locations realworld-runner.sh pins at run time (relative to this install
+# dir, which is the runner's SCRIPT_DIR), so the unmeasured provisioning below populates exactly
+# what the runner reads: a fresh COREPACK_HOME would otherwise make the first measured pnpm task
+# of a batch pay a pnpm-toolchain download inside its sample. The runner's cold_install branch
+# still wipes the store + XDG cache before measuring, so this never warms a cold-install sample.
+export XDG_CACHE_HOME="${PWD}/.cache"
+export COREPACK_HOME="${PWD}/.corepack"
+export npm_config_store_dir="${PWD}/.pnpm-store"
+
 if ! command -v node >/dev/null 2>&1; then
 	echo "ERROR: node not found (the sandbox harness's setupNode step provisions it)" >&2
 	echo 1 > ~/install-exit-status
@@ -70,10 +79,12 @@ echo 1 > ~/install-exit-status
 		exit 1
 	fi
 	corepack install >/dev/null 2>&1 || true
-	# No un-frozen fallback: a lockfile that can't install frozen at PIN_SHA must fail HERE, loudly —
-	# the fallback would provision warm node_modules from a regenerated (unpinned) package set while
-	# every measured cold_install sample (also --frozen-lockfile) fails against the restored lockfile.
-	pnpm install --frozen-lockfile
+	# The warm install IS the profile's cold_install command (single source of truth in target.env) —
+	# no un-frozen fallback: a lockfile that can't install frozen at PIN_SHA must fail HERE, loudly,
+	# not provision warm node_modules from a regenerated (unpinned) package set while every measured
+	# cold_install sample fails against the restored lockfile.
+	# shellcheck disable=SC2154 # sourced from target.env above.
+	eval "$TASK_CMD_cold_install"
 )
 
 echo 0 > ~/install-exit-status

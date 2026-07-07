@@ -78,6 +78,22 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 				expect(existsSync(join(base, "install.sh"))).toBe(false);
 			});
 
+			it("anchors every TASK_PREP_<value> to a declared Task Value (no orphaned prep)", () => {
+				// TASK_PREP_<value> runs unmeasured before the timed TASK_CMD_<value> (realworld-runner.sh);
+				// a prep keyed to a renamed/removed Value would silently stop running.
+				const values = new Set(
+					profile.settings
+						.find((option) => option.DisplayName === "Task")
+						?.Menu.Entry.map((e) => e.Value) ?? [],
+				);
+				const prepKeys = Object.keys(env)
+					.filter((key) => key.startsWith("TASK_PREP_"))
+					.map((key) => key.slice("TASK_PREP_".length));
+				for (const key of prepKeys) {
+					expect(values).toContain(key);
+				}
+			});
+
 			it("declares REPO_URL, PIN_SHA and NODE_VERSION", () => {
 				expect(env.REPO_URL).toBeTruthy();
 				expect(env.PIN_SHA).toMatch(/^[0-9a-f]{40}$/);

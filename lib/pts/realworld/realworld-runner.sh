@@ -78,13 +78,25 @@ cold_install)
 	git clean -xdff -e node_modules
 	rm -rf node_modules/.cache
 	if [ ! -d node_modules ]; then
-		eval "$TASK_CMD_cold_install" >/dev/null 2>&1
+		# Recovery install: output stays on the (already-redirected) log — discarding it would hide
+		# the one diagnostic that explains a subsequent task failure.
+		eval "$TASK_CMD_cold_install"
 	fi
 	cmd_var="TASK_CMD_${TASK}"
 	eval "cmd=\"\${${cmd_var}:-}\""
 	if [ -z "$cmd" ]; then
 		echo "no ${cmd_var} in target.env for task '${TASK}'" >&2
 		exit 1
+	fi
+	# Phase isolation: an optional TASK_PREP_<value> runs UNMEASURED before the timer, so a task
+	# whose upstream graph has build dependencies (e.g. turbo dependsOn) can be provisioned here and
+	# measured with `--only` — the timed command executes exactly the named phase. The clean above
+	# wiped dist + node_modules/.cache (turbo's local cache), so the measured run is a genuine
+	# execution, never a cache replay.
+	prep_var="TASK_PREP_${TASK}"
+	eval "prep=\"\${${prep_var}:-}\""
+	if [ -n "$prep" ]; then
+		eval "$prep"
 	fi
 	start_ns=$(date +%s%N)
 	eval "$cmd"
