@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<!--Captured from a Docker PTS smoke test: a two-Option batch-run where one Option's every pass
+failed. PTS still emits a <Result> for the failed Option, with an empty <Value>/<RawString> and a
+JSON error field, rather than omitting it -- the shape parsePtsComposite (pts-schema.ts) must
+tolerate instead of throwing on. See extract.test.ts "skips a Result whose every pass failed".-->
+<PhoronixTestSuite>
+  <Generated>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+  </Generated>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier>
+    <Title>Node.js V8 Web Tooling Benchmark</Title>
+    <AppVersion></AppVersion>
+    <Arguments>ok</Arguments>
+    <Description>Task: OK Task</Description>
+    <Scale>runs/s</Scale>
+    <Proportion>HIB</Proportion>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>20.5</Value>
+        <RawString>20.5</RawString>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier>
+    <Title>Node.js V8 Web Tooling Benchmark</Title>
+    <AppVersion></AppVersion>
+    <Arguments>fail</Arguments>
+    <Description>Task: Fail Task</Description>
+    <Scale>runs/s</Scale>
+    <Proportion>HIB</Proportion>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"error":"The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

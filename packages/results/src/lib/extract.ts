@@ -66,11 +66,12 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 				if (Object.keys(host).length > 0) out.observedHost = host;
 			}
 			for (const result of composite.PhoronixTestSuite.Result) {
-				// A <Result> with no <Entry> carries no measurement — no sample to aggregate and no
-				// headline value to report. Skip it rather than emit a zero-sample contribution (which
-				// would throw in the normalizer's aggregate([])) or fabricate a 0-valued straggler.
+				// A <Result> with no <Entry>, or one whose every pass failed (empty <Value> — pts-schema.ts
+				// treats that as "no measurement", not a parse error), carries no sample to aggregate and no
+				// headline value to report. Skip it rather than emit a zero-sample contribution (which would
+				// throw in the normalizer's aggregate([])) or fabricate a 0-valued straggler.
 				const headEntry = result.Data.Entry[0];
-				if (!headEntry) continue;
+				if (!headEntry || headEntry.Value === undefined) continue;
 				const mapped = ptsResultToMetric(result);
 				switch (mapped.kind) {
 					case "matched":
