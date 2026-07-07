@@ -36,6 +36,9 @@ jobs:
         with:
           # Pinned to the toolchain version the repo develops against.
           bun-version: 1.3.14
+          # This runner's setup-bun cache restores without a working ~/.bun/bin/bun, so a cache hit
+          # fails the "Set up Bun" step. Always download bun fresh instead of restoring the cache.
+          no-cache: true
 
       # Installs the version-pinned tools from mise.toml (typos) with checksum verification, and
       # caches them. mise itself is version-pinned for reproducibility.
