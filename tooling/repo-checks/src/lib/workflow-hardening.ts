@@ -1,14 +1,14 @@
-// Drift gate: the security posture of the GitHub Actions layer. The persist-credentials invariant the
-// .github/ files must hold, which the type system can't enforce (GHA is YAML):
+// Drift gate: the security posture of the GitHub Actions layer. Two invariants the .github/ files
+// must hold, neither of which the type system can enforce (GHA is YAML):
 //
 //   1. persist-credentials hygiene — every `actions/checkout` step sets `persist-credentials: false`
 //      UNLESS it is one of the few jobs that later `git push`es (it needs the persisted job token).
 //      The pushing checkouts are enumerated in CREDENTIALED_CHECKOUTS with provenance; the gate fails
 //      both when a read-only checkout forgets the opt-out AND when a pushing checkout is in the
 //      allowlist but no longer exists / no longer keeps its token (so the allowlist can't rot).
-//
-// The ci-lint threshold invariant (ci-lint.yml runs actionlint + zizmor at the agreed gate) builds on
-// the same parse core and lands in the next PR up the stack.
+//   2. The ci-lint workflow actually runs the two linters at the agreed gate threshold — an actionlint
+//      job and a zizmor job invoked with `--min-severity medium --min-confidence high`. A renamed job
+//      or a loosened threshold (e.g. someone dropping --min-confidence) must fail this gate.
 //
 // Mirrors runner-benchmarking's ci-lint.yml + zizmor.yml hardening, adapted to this repo's workflows.
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
@@ -18,6 +18,7 @@ import { Glob } from "bun";
 import { findRepoRoot } from "./workspace.ts";
 
 export const WORKFLOWS_DIR = ".github/workflows";
+export const CI_LINT_WORKFLOW = ".github/workflows/ci-lint.yml";
 
 /** Checkout steps that intentionally keep the persisted job token, keyed "<file>::<jobId>", with the
  *  reason they push. Every other `actions/checkout` must set persist-credentials: false. */
@@ -125,4 +126,55 @@ export function checkPersistCredentials(
 		}
 	}
 	return errors;
+}
+
+/** Invariant 2: ci-lint.yml runs actionlint + zizmor, and zizmor at the agreed gate threshold. */
+export function checkCiLintGate(doc: unknown, label: string = CI_LINT_WORKFLOW): string[] {
+	const errors: string[] = [];
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	// The joined `run:` text of a job's steps — used to confirm the job actually invokes its tool.
+	const jobRun = (jobId: string): string => {
+		const job = asRecord(jobs[jobId], `${label}: "${jobId}" job is not a mapping`);
+		const steps = Array.isArray(job.steps) ? job.steps : [];
+		return steps
+			.map((s) => asRecord(s, `${label}: malformed "${jobId}" step`).run)
+			.filter((r): r is string => typeof r === "string")
+			.join("\n");
+	};
+	for (const tool of ["actionlint", "zizmor"]) {
+		if (!(tool in jobs)) {
+			errors.push(`${label}: missing the "${tool}" job — the ${tool} linter is the gate`);
+			continue;
+		}
+		// Job existence isn't enough: it must actually invoke the tool, or the gate false-passes if
+		// the real invocation is renamed/removed while an empty job shell survives.
+		if (!jobRun(tool).includes(tool)) {
+			errors.push(
+				`${label}: the "${tool}" job must actually run \`${tool}\` — the gate must not pass on a job that no longer invokes it`,
+			);
+		}
+	}
+	if ("zizmor" in jobs) {
+		const run = jobRun("zizmor");
+		for (const flag of ["--min-severity medium", "--min-confidence high"]) {
+			if (!run.includes(flag)) {
+				errors.push(
+					`${label}: the zizmor job must invoke zizmor with \`${flag}\` — the gate threshold can't be loosened`,
+				);
+			}
+		}
+	}
+	return errors;
+}
+
+/** The whole gate against the real .github files under `root`. */
+export function runHardeningCheck(root: string = findRepoRoot()): string[] {
+	const steps = listWorkflowFiles(root).flatMap((file) =>
+		checkoutSteps(readWorkflow(`${WORKFLOWS_DIR}/${file}`, root), file),
+	);
+	return [
+		...checkPersistCredentials(steps),
+		...checkCiLintGate(readWorkflow(CI_LINT_WORKFLOW, root)),
+	];
 }
