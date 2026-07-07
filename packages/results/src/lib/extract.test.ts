@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractProviderDir } from "./extract.ts";
+import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 
 const daytonaDir = join(import.meta.dir, "__fixtures__/daytona");
 
@@ -72,6 +74,22 @@ describe("extractProviderDir", () => {
 			expect(contribution.appVersion).toBe("6f3ba45639579da152b69e8e5342e02f28288670");
 			expect(contribution.samples.length).toBeGreaterThan(0);
 			for (const sample of contribution.samples) expect(sample).toBeGreaterThan(0);
+		}
+	});
+
+	it("maps every realworld <Result> onto the catalog, including the 7 all-passes-failed ones", () => {
+		// extractProviderDir drops a valueless (all-passes-failed) <Result> before the catalog router,
+		// so the extraction-level `uncatalogued: []` above can't vouch for the 7 deliberately-failed
+		// tasks. Route every raw <Result> through ptsResultToMetric directly: a drifted <Description>
+		// on ANY of the 11 must surface here, measured or not.
+		const xml = readFileSync(
+			join(import.meta.dir, "__fixtures__/realworld-smoke/pts_realworld-better-auth.xml"),
+			"utf8",
+		);
+		const results = parsePtsComposite(xml).PhoronixTestSuite.Result;
+		expect(results).toHaveLength(11);
+		for (const result of results) {
+			expect(ptsResultToMetric(result).kind).toBe("matched");
 		}
 	});
 });

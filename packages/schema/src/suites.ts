@@ -98,8 +98,9 @@ export const SUITES = {
 	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
 	// each a repo-local PTS profile with a Task option axis. Budgets are starting points (tuned from
-	// smoke); mastra is the lightest (scoped to packages/core), better-auth and openclaw run their
-	// full task matrices including a cold pnpm install and a full build.
+	// smoke); mastra's task matrix is the narrowest (scoped to packages/core) but its monorepo has
+	// the largest install/build footprint — hence the biggest minDiskGb. better-auth and openclaw
+	// run their full task matrices including a cold pnpm install and a full build.
 	"realworld-mastra": {
 		setupPts: true,
 		setupNode: true,
