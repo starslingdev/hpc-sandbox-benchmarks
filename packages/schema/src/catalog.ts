@@ -10,6 +10,7 @@
 // the editorial fields the XML can't (a short `label`, the one `headline:true` per dimension, any
 // `dimension` correction). The previously hand-authored cpu entry (node-web-tooling) is now this
 // generated module's wildcard entry; its curation lives in pts-overrides.ts.
+import { economicsMetrics } from "./economics.ts";
 import { harnessMetrics } from "./harness-metrics.ts";
 import type { Dimension, MetricDef } from "./metrics.ts";
 import { metricDefSchema } from "./metrics.ts";
@@ -80,12 +81,14 @@ export const catalogSchema = metricDefSchema.array().narrow((cat, ctx) => {
  * silently broken stability contract.
  *
  * The PTS-derived slice (generated + curated) is followed by the hand-authored harness-measured
- * Metrics (lifecycle + control-plane); the latter carry no `pts` field, so the PTS-mapping invariant
- * skips them while id-uniqueness and the one-headline-per-dimension check below still cover them.
+ * Metrics (lifecycle + control-plane) and the derived economics Metrics; neither carries a `pts` field,
+ * so the PTS-mapping invariant skips them while id-uniqueness and the one-headline-per-dimension check
+ * below still cover them.
  */
 export const METRIC_CATALOG: readonly MetricDef[] = catalogSchema.assert([
 	...ptsCurated,
 	...harnessMetrics,
+	...economicsMetrics,
 ]);
 
 const byId = new Map(METRIC_CATALOG.map((metric) => [metric.id, metric]));
