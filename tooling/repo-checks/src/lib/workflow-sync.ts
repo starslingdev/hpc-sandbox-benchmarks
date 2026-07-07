@@ -1,16 +1,18 @@
 // Drift gate: the GitHub workflows that dispatch live benchmarks must stay in lockstep with the
-// schema registries. GHA can't import TypeScript, so the provider/suite vocabulary is re-spelled by
-// hand in the workflow files; this module re-derives the truth from PROVIDERS + SUITE_NAMES
-// (packages/schema) and compares. It mirrors runner-benchmarking's check-workflow-suite-sync.ts,
-// adapted to this repo's two workflows.
+// schema registries. GHA can't import TypeScript, so the provider/suite vocabulary and the
+// per-provider credential wiring are re-spelled by hand in the workflow files; this module re-derives
+// the truth from PROVIDERS + SUITE_NAMES (packages/schema) and compares. It mirrors
+// runner-benchmarking's check-workflow-{env,suite}-sync.ts, adapted to this repo's two workflows.
 //
 // Invariants (each maps to a real "added X, forgot the workflow" failure mode):
 //   1. bench-smoke.yml's `provider` dispatch input options == the PROVIDERS id set, and its default
 //      is one of them — a new provider must be dispatchable, a removed one must not linger.
 //   2. bench-smoke.yml's `suite` dispatch input options == SUITE_NAMES, with a valid default.
-//
-// The per-provider credential-env invariants (3 + 4) build on the same parsers and land in the next
-// PR up the stack.
+//   3. Every provider's requiredEnvVars (schema) is present in the "Run suite and normalize" step env
+//      of BOTH bench-smoke.yml and bench-matrix.yml — the secret a new provider needs must be wired
+//      into both the smoke lane and the matrix lane, or the live run silently skips it.
+//   4. A credential key shared across the two workflows maps to the same value expression — both
+//      lanes must hand the suite the same secret, not plan one and run the other.
 //
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency), so the parse stays dependency-light.
 import { readFileSync } from "node:fs";
@@ -20,6 +22,11 @@ import { type } from "arktype";
 import { findRepoRoot } from "./workspace.ts";
 
 export const SMOKE_WORKFLOW = ".github/workflows/bench-smoke.yml";
+export const MATRIX_WORKFLOW = ".github/workflows/bench-matrix.yml";
+/** The step (in both workflows) that drives the provider SDK; it owns the credential env block. */
+export const RUN_STEP = "Run suite and normalize";
+export const SMOKE_JOB = "smoke";
+export const MATRIX_JOB = "bench";
 
 // Single source of truth: this schema drives BOTH the runtime parse (coercions live in the morphs)
 // and the exported DispatchInput type (inferred below) — there is no hand-written interface or
@@ -71,9 +78,69 @@ export function dispatchInput(doc: unknown, name: string, label: string): Dispat
 	return input;
 }
 
+/**
+ * Assert `value` is a non-null, non-array object, or throw `message`. A lazy per-node guard for the
+ * {@link stepEnv} navigation below: unlike the fixed `on.workflow_dispatch` path (an arktype envelope),
+ * step-env walks to one *named* job/step, so validating the whole `jobs` map with a schema would
+ * over-reject sibling jobs the gate doesn't care about.
+ */
+function asRecord(value: unknown, message: string): Record<string, unknown> {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(message);
+	}
+	return value as Record<string, unknown>;
+}
+
+/**
+ * The `env` mapping of a named step inside a job, as key -> value-expression entries. Throws if the
+ * job, the step, or its env block is missing, or an env value is not a string — a renamed job/step
+ * must fail the gate, not silently match nothing.
+ */
+export function stepEnv(
+	doc: unknown,
+	jobId: string,
+	stepName: string,
+	label: string,
+): Record<string, string> {
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	const job = asRecord(jobs[jobId], `${label}: job "${jobId}" not found`);
+	const steps = job.steps;
+	if (!Array.isArray(steps)) throw new Error(`${label}: job "${jobId}" has no steps list`);
+	const step = steps.find((s) => asRecord(s, `${label}: malformed step`).name === stepName);
+	if (step === undefined) {
+		throw new Error(`${label}: job "${jobId}" has no step named "${stepName}"`);
+	}
+	const env = asRecord(
+		(step as Record<string, unknown>).env,
+		`${label}: step "${stepName}" has no env mapping`,
+	);
+	const entries: Record<string, string> = {};
+	for (const [key, value] of Object.entries(env)) {
+		if (typeof value !== "string") {
+			throw new Error(`${label}: step "${stepName}" env.${key} is not a string value`);
+		}
+		entries[key] = value;
+	}
+	return entries;
+}
+
 /** The canonical provider ids from the schema registry. */
 export function providerIds(): string[] {
 	return PROVIDERS.map((p) => p.id);
+}
+
+/** Every requiredEnvVars entry across the Provider registry, with provenance (key -> owning ids). */
+export function requiredCredentialKeys(): Map<string, string[]> {
+	const byKey = new Map<string, string[]>();
+	for (const provider of PROVIDERS) {
+		for (const key of provider.requiredEnvVars) {
+			const owners = byKey.get(key) ?? [];
+			owners.push(provider.id);
+			byKey.set(key, owners);
+		}
+	}
+	return byKey;
 }
 
 /** Pure comparison of a dispatch input's options against an expected id set. */
@@ -148,4 +215,53 @@ export function checkSuiteInput(input: DispatchInput, label: string = SMOKE_WORK
 		"SUITE_NAMES (packages/schema/src/suites.ts)",
 		label,
 	);
+}
+
+/**
+ * Invariants 3 + 4: every provider requiredEnvVar is present in the run-step env of every workflow,
+ * and a key shared across them maps to the same value expression. `envByWorkflow` keys are workflow
+ * paths so error messages name the offending file.
+ */
+export function checkCredentialEnv(
+	envByWorkflow: Record<string, Record<string, string>>,
+): string[] {
+	const errors: string[] = [];
+	const workflows = Object.keys(envByWorkflow);
+	for (const [key, owners] of requiredCredentialKeys()) {
+		// biome-ignore lint/style/noNonNullAssertion: keys come from Object.keys(envByWorkflow).
+		const missing = workflows.filter((wf) => !(key in envByWorkflow[wf]!));
+		if (missing.length > 0) {
+			errors.push(
+				`${key}: required by provider ${owners.join(", ")} (packages/schema/src/providers.ts ` +
+					`requiredEnvVars) but missing from the "${RUN_STEP}" step env of ${missing.join(" and ")}`,
+			);
+			continue;
+		}
+		// biome-ignore lint/style/noNonNullAssertion: presence checked above.
+		const values = new Set(workflows.map((wf) => envByWorkflow[wf]![key]!));
+		if (values.size > 1) {
+			errors.push(
+				`${key}: maps to different value expressions across workflows ` +
+					`(${[...values].map((v) => `"${v}"`).join(" vs ")}) — every lane must hand the suite the same secret`,
+			);
+		}
+	}
+	return errors;
+}
+
+/**
+ * The whole gate against the real workflow files under `root` — the single owner of which files feed
+ * the gate, used by the real-file test in workflow-registry-sync.test.ts.
+ */
+export function runCheck(root: string = findRepoRoot()): string[] {
+	const smoke = readWorkflow(SMOKE_WORKFLOW, root);
+	const matrix = readWorkflow(MATRIX_WORKFLOW, root);
+	return [
+		...checkProviderInput(dispatchInput(smoke, "provider", SMOKE_WORKFLOW)),
+		...checkSuiteInput(dispatchInput(smoke, "suite", SMOKE_WORKFLOW)),
+		...checkCredentialEnv({
+			[SMOKE_WORKFLOW]: stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW),
+			[MATRIX_WORKFLOW]: stepEnv(matrix, MATRIX_JOB, RUN_STEP, MATRIX_WORKFLOW),
+		}),
+	];
 }
