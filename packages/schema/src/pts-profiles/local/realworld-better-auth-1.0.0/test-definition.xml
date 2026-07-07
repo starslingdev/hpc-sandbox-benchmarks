@@ -34,6 +34,10 @@
           <Value>cold_install</Value>
         </Entry>
         <Entry>
+          <Name>Build</Name>
+          <Value>build</Value>
+        </Entry>
+        <Entry>
           <Name>Lint Biome</Name>
           <Value>lint_biome</Value>
         </Entry>
@@ -60,10 +64,6 @@
         <Entry>
           <Name>Typecheck</Name>
           <Value>typecheck</Value>
-        </Entry>
-        <Entry>
-          <Name>Build</Name>
-          <Value>build</Value>
         </Entry>
       </Menu>
     </Option>
