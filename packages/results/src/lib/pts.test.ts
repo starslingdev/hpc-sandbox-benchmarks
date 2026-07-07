@@ -55,6 +55,19 @@ describe("parsePtsComposite", () => {
 		);
 	});
 
+	it("tolerates a Result whose every pass failed (empty <Value>) instead of throwing", () => {
+		// PTS doesn't omit a fully-failed option's <Result> — it emits one with an empty <Value>. A
+		// composite carrying one alongside a successful Result must still parse (captured shape: a Docker
+		// smoke test of a two-Option batch-run where one Option's every pass failed).
+		const xml = `<?xml version="1.0"?>
+<PhoronixTestSuite><Result>
+  <Identifier>pts/x-1.0</Identifier><Title>X</Title><Scale>Seconds</Scale><Proportion>LIB</Proportion>
+  <Data><Entry><Value></Value><RawString></RawString></Entry></Data>
+</Result></PhoronixTestSuite>`;
+		const result = parsePtsComposite(xml).PhoronixTestSuite.Result[0];
+		expect(result?.Data.Entry[0]?.Value).toBeUndefined();
+	});
+
 	it("rejects a malformed RawString sample token at the schema boundary", () => {
 		// A non-numeric per-pass token fails the schema's sampleList morph, so the whole composite is
 		// rejected loudly here rather than the bad token silently vanishing during aggregation.
@@ -86,6 +99,16 @@ describe("resultSamples", () => {
 </Result></PhoronixTestSuite>`;
 		const result = parsePtsComposite(xml).PhoronixTestSuite.Result[0];
 		expect(result && resultSamples(result)).toEqual([0, 5, 0]);
+	});
+
+	it("returns no samples for a Result whose every pass failed (empty <Value>)", () => {
+		const xml = `<?xml version="1.0"?>
+<PhoronixTestSuite><Result>
+  <Identifier>pts/x-1.0</Identifier><Title>X</Title><Scale>Seconds</Scale><Proportion>LIB</Proportion>
+  <Data><Entry><Value></Value><RawString></RawString></Entry></Data>
+</Result></PhoronixTestSuite>`;
+		const result = parsePtsComposite(xml).PhoronixTestSuite.Result[0];
+		expect(result && resultSamples(result)).toEqual([]);
 	});
 
 	it("returns no samples for an entry-less result (nothing to aggregate)", () => {

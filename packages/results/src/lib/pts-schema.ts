@@ -28,11 +28,22 @@ const sampleList = type("string").pipe((raw, ctx) => {
 	return out;
 });
 
+// PTS writes the value as text; the schema is where it becomes a number (the parser stays dumb). When
+// every pass of a `<Result>` fails (a real command erroring — expected for realworld CI tasks, not
+// just synthetic PTS microbenchmarks), PTS still emits the `<Result>` but with an empty `<Value>`
+// rather than omitting it. Treated as "no measurement" (undefined), not a parse failure, so one failed
+// option can't throw away every other `<Result>` in the same composite.xml.
+const entryValue = type("string").pipe((raw, ctx) => {
+	if (raw.trim() === "") return undefined;
+	const parsed = type("string.numeric.parse")(raw);
+	if (parsed instanceof type.errors) return ctx.error("a well-formed numeric string");
+	return parsed;
+});
+
 /** One `<Entry>`: a single measured value plus the per-pass samples that produced it. */
 const ptsEntry = type({
 	"Identifier?": "string",
-	// PTS writes the value as text; the schema is where it becomes a number (the parser stays dumb).
-	Value: "string.numeric.parse",
+	Value: entryValue,
 	// Per-pass samples, parsed string → validated number[] here (see {@link sampleList}).
 	"RawString?": sampleList,
 });

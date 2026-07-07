@@ -39,4 +39,16 @@ describe("extractProviderDir", () => {
 			},
 		]);
 	});
+
+	it("skips a Result whose every pass failed instead of throwing, keeping the successful one", () => {
+		const dir = join(import.meta.dir, "__fixtures__/partial-failure");
+		expect(extractProviderDir(dir, "daytona").contributions).toEqual([
+			{
+				metricId: "node_web_tooling_runs_per_s",
+				samples: [20.5],
+				sourceFile: "pts_node-web-tooling.xml",
+				arguments: "ok",
+			},
+		]);
+	});
 });
