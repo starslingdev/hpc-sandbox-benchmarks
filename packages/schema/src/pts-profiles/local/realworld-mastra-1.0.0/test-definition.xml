@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite local profile: mastra-ai/mastra's own CI tasks (ENG-137), timed per phase.-->
+<PhoronixTestSuite>
+  <TestInformation>
+    <Title>Mastra CI Tasks</Title>
+    <AppVersion>b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767</AppVersion>
+    <Description>Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.</Description>
+    <ResultScale>Seconds</ResultScale>
+    <Proportion>LIB</Proportion>
+    <TimesToRun>3</TimesToRun>
+  </TestInformation>
+  <TestProfile>
+    <Version>1.0.0</Version>
+    <SupportedPlatforms>Linux</SupportedPlatforms>
+    <SoftwareType>Benchmark</SoftwareType>
+    <TestType>System</TestType>
+    <License>Free</License>
+    <Status>Verified</Status>
+    <EnvironmentSize>3</EnvironmentSize>
+    <ProjectURL>https://github.com/mastra-ai/mastra</ProjectURL>
+    <Maintainer>StarSling</Maintainer>
+  </TestProfile>
+  <TestSettings>
+    <Option>
+      <DisplayName>Task</DisplayName>
+      <Identifier>task</Identifier>
+      <Menu>
+        <Entry>
+          <Name>Git Clone</Name>
+          <Value>git_clone</Value>
+        </Entry>
+        <Entry>
+          <Name>Cold Install</Name>
+          <Value>cold_install</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Format</Name>
+          <Value>lint_format</Value>
+        </Entry>
+        <Entry>
+          <Name>Build Core</Name>
+          <Value>build_core</Value>
+        </Entry>
+        <Entry>
+          <Name>Test Core</Name>
+          <Value>test_core</Value>
+        </Entry>
+      </Menu>
+    </Option>
+  </TestSettings>
+</PhoronixTestSuite>

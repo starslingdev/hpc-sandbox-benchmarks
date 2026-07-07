@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <ResultsParser>
+    <!-- lib/pts/realworld-runner.sh prints exactly one sentinel line per measured task run. -->
+    <OutputTemplate>REALWORLD_RESULT_SECONDS: #_RESULT_#</OutputTemplate>
+    <ResultScale>Seconds</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+</PhoronixTestSuite>
