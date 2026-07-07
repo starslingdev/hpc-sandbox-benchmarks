@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+	ECONOMICS_METRIC_IDS,
+	getProvider,
+	hourlyCostAtTargetSpec,
+} from "@sandbox-benchmarks/schema";
 import { normalizeProviderDir } from "./normalize-tree.ts";
 
 // A composite carrying a catalogued node-web-tooling result plus an uncatalogued pts/git result.
@@ -45,8 +50,11 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 		writeFileSync(join(providerDir, "pts_node-web-tooling.xml"), composite("10.5:10.6:10.4"));
 
 		const run = normalizeProviderDir(root, "daytona");
-		const metric = run.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
-		expect(run.metrics).toHaveLength(1);
+		const matches = run.metrics.filter((m) => m.metricId === "node_web_tooling_runs_per_s");
+		// The leaked metric is kept exactly once (other catalogued metrics — e.g. derived economics — may
+		// also be present; this asserts the de-dup, not the total count).
+		expect(matches).toHaveLength(1);
+		const metric = matches[0];
 		expect(metric?.samples).toEqual([10.5, 10.6, 10.4]);
 		expect(metric?.aggregates.n).toBe(3);
 		// The uncatalogued git straggler is collapsed to a single entry too.
@@ -95,6 +103,29 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		]);
 		// observed-specs.json is read from the suite subdirectory (per-sandbox), not just the provider dir.
 		expect(run.observedSpecs.vcpus).toBe(4);
+	});
+
+	it("appends derived economics ($/hr) to a validated provider", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
+
+		const run = normalizeProviderDir(root, "daytona");
+		const usdPerHour = run.metrics.find((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerHour);
+		expect(usdPerHour?.samples).toEqual([
+			hourlyCostAtTargetSpec(getProvider("daytona")) ?? Number.NaN,
+		]);
+		// No lifecycle timings in a PTS-only run, so no per-lifecycle cost.
+		expect(run.metrics.some((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerLifecycle)).toBe(
+			false,
+		);
+	});
+
+	it("does NOT attach economics to a pending provider (no measured metrics)", () => {
+		// Empty provider dir → pending; economics must not promote it or appear.
+		const run = normalizeProviderDir(root, "daytona");
+		expect(run.validationStatus).toBe("pending");
+		expect(run.metrics).toEqual([]);
 	});
 
 	it("ignores (with a warning) a subdirectory that is not a registered suite", () => {

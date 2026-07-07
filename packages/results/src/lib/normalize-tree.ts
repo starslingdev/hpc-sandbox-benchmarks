@@ -16,7 +16,9 @@ import type {
 } from "@sandbox-benchmarks/schema";
 import {
 	aggregate,
+	deriveEconomics,
 	describeOffDimensionEmission,
+	getProvider,
 	offDimensionEmissions,
 	PROVIDERS,
 	parseRun,
@@ -205,6 +207,23 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 			...(args !== undefined ? { arguments: args } : {}),
 		}))
 		.sort((a, b) => a.metricId.localeCompare(b.metricId));
+
+	// Enrich a measured provider with derived economics ($/run): pricing × the runtime already on the
+	// Run. Done here, AFTER the off-dimension contract check above, because economics is derived and
+	// declared by no suite — running it through that check would flag it as off-contract. Gated on ≥1
+	// measured Metric so economics enriches a `validated` provider and never promotes a `pending` one
+	// (a provider with no real measurements has no economics either). An unknown/unpriced provider
+	// yields no economics, so a null rate can never read as free.
+	const meta = getProvider(providerId);
+	if (meta && metrics.length > 0) {
+		metrics.push(
+			...deriveEconomics(
+				meta,
+				metrics.map((m) => ({ metricId: m.metricId, mean: m.aggregates.mean })),
+			),
+		);
+		metrics.sort((a, b) => a.metricId.localeCompare(b.metricId));
+	}
 
 	// De-dupe uncatalogued stragglers by id for the same reason (a contaminating result leaks into every
 	// composite it lands in); keep the first occurrence and preserve extraction order.
