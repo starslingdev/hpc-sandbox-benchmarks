@@ -9,10 +9,11 @@
  *     multi-minute commands while the process keeps running server-side, and computesdk's Daytona
  *     adapter doesn't stream (it ignores onStdout/onStderr).
  *   - {@link StepRunner.runDetached}: starts the step in the background (computesdk's `background:true`,
- *     fully detached with nohup+setsid) writing its output to a log file and its exit code to a
- *     done-file, then polls the sandbox filesystem until the done-file appears. This survives the
- *     408-prone exec round-trip, so multi-minute benchmarks complete. Falls back to `run` when the
- *     sandbox exposes no filesystem (the unit-test fakes) — correctness is unchanged, only durability.
+ *     double-fork daemonized so it detaches even on e2b's envd) writing its output to a log file and
+ *     its exit code to a done-file, then polls until the done-file appears — via the sandbox filesystem
+ *     when one is exposed, else by `cat`-ing the done-file over `exec`. The poll interval backs off
+ *     adaptively so a short step isn't over-charged for polling. This survives the 408-prone exec
+ *     round-trip, so multi-minute benchmarks complete on every provider.
  *
  * {@link StepRunner.step} reads the provider's declared {@link ProviderTransport} (via
  * {@link selectTransport}) and dispatches: a step that could outlast the provider's synchronous cap
@@ -26,8 +27,17 @@ import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 
 export const MIN = 60_000;
 
-/** Poll cadence for {@link StepRunner.runDetached} while it waits on a detached step's done-file. */
-const POLL_MS = 10_000;
+/**
+ * Adaptive poll backoff for {@link StepRunner.runDetached} while it waits on a detached step's
+ * done-file. Setup steps no-op in ~1s on a pre-baked image, so a fixed quantum charged most of a
+ * short run to pure polling overhead (~44% of one measured suite). Start tight, grow geometrically,
+ * and cap so a multi-minute benchmark still settles at a cheap steady cadence.
+ */
+const POLL_START_MS = 1_500;
+const POLL_BACKOFF = 1.5;
+const POLL_CAP_MS = 10_000;
+/** Done-file sentinel for the no-filesystem cat-poll fallback: printed while the file isn't there yet. */
+const RUNNING_SENTINEL = "__RUNNING__";
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type Phase = "create" | "setup" | "benchmark" | "collect";
@@ -128,6 +138,12 @@ export function shellQuote(script: string): string {
 	return `'${script.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Parse a done-file's exit-code contents, defaulting a malformed value to a failure (1). */
+function parseExitCode(raw: string): number {
+	const code = Number.parseInt(raw, 10);
+	return Number.isFinite(code) ? code : 1;
+}
+
 /**
  * Re-establish env + PATH on every step (each runCommand is a fresh shell). `$SUDO` covers both root
  * images (no prefix) and non-root images with sudo. The toolchain image (packages/templates/images)
@@ -179,6 +195,9 @@ export class StepRunner {
 		private readonly sandbox: SandboxHandle,
 		/** The provider's exec transport capability — {@link step} selects sync vs detached from it. */
 		private readonly transport: ProviderTransport = DEFAULT_TRANSPORT,
+		/** The inter-poll sleep used by {@link runDetached}; injectable so tests can assert the backoff
+		 *  schedule without real waiting. */
+		private readonly sleep: (ms: number) => Promise<void> = delay,
 	) {}
 
 	/**
@@ -230,12 +249,18 @@ export class StepRunner {
 
 	/**
 	 * Run a long step on the durable detached transport: start it in the background (output → log
-	 * file, exit code → done-file), then poll the sandbox filesystem until the done-file appears and
-	 * read both back. Survives Daytona's 408 on multi-minute synchronous execs. On timeout the
-	 * detached job is best-effort killed; the job teardown's `destroy()` is the backstop either way.
+	 * file, exit code → done-file), then poll until the done-file appears and read both back. Survives
+	 * Daytona's 408 on multi-minute synchronous execs. On timeout the detached job is best-effort
+	 * killed; the job teardown's `destroy()` is the backstop either way.
 	 *
-	 * Requires a sandbox filesystem; without one (the unit-test fakes) it transparently delegates to
-	 * {@link run}, so behavior is identical save for durability.
+	 * The background launch is double-fork daemonized: a single nohup/setsid still blocks e2b's envd,
+	 * which holds the exec open for as long as its direct child lives (probed live), so the direct
+	 * child backgrounds the real job via a second nohup and exits at once — the step truly detaches
+	 * across providers. Completion is observed through the sandbox filesystem when one is exposed;
+	 * otherwise (providers whose adapter has no filesystem API, and the unit-test fakes) it falls back
+	 * to reading the done-file with a `cat` exec. The poll interval backs off adaptively
+	 * ({@link POLL_START_MS} → ×{@link POLL_BACKOFF}, capped at {@link POLL_CAP_MS}) so a step that
+	 * finishes quickly isn't over-charged for polling.
 	 */
 	async runDetached(
 		label: string,
@@ -243,10 +268,8 @@ export class StepRunner {
 		timeoutMs: number,
 		opts: StepOptions = {},
 	): Promise<CommandResult> {
-		const fs = this.sandbox.filesystem;
-		if (!fs) return this.run(label, script, timeoutMs, opts);
-
 		console.log(`\n=== [${label}] (detached) ===`);
+		const fs = this.sandbox.filesystem;
 		const started = performance.now();
 		const stopHeartbeat = startHeartbeat(label, started, timeoutMs);
 		const tag = `bench-${randomUUID()}`;
@@ -254,20 +277,35 @@ export class StepRunner {
 		const donePath = `/tmp/${tag}.done`;
 		try {
 			// Start fully detached so the job outlives the (short-lived, 408-prone) exec round-trip.
-			// The `&&/||` capture keeps the script's exit code without letting the preamble's `set -e`
-			// abort before the done-file is written — success writes 0, failure writes the real code.
+			// Run preamble+script in a nested `bash -c` so `set -eo pipefail` governs the inner shell:
+			// as part of the outer `&&/||` list a `{ … }` group has `set -e` suspended, so a mid-script
+			// failure followed by a passing command would exit 0 and be recorded as success. The inner
+			// shell aborts on first failure and its real exit code flows through the `&&/||` capture —
+			// success writes 0, failure writes the real code.
 			const wrapped =
-				`${PREAMBLE}; { ${script}; } > ${logPath} 2>&1 ` +
+				`bash -c ${shellQuote(`${PREAMBLE}; ${script}`)} > ${logPath} 2>&1 ` +
 				`&& echo 0 > ${donePath} || echo $? > ${donePath}`;
-			await this.sandbox.runCommand(
-				`nohup setsid bash -c ${shellQuote(wrapped)} >/dev/null 2>&1 &`,
-				{
-					background: true,
-				},
-			);
+			// Double-fork daemonization: a single nohup/setsid still blocks e2b's envd, which holds the
+			// exec open for as long as its DIRECT child lives (probed live: even `nohup ... &` pins the
+			// exec for the child's whole life; setsid doesn't help). So the direct child backgrounds the
+			// real job via a second nohup and exits at once — Daytona/Blaxel detach fine either way.
+			const daemonized = `nohup bash -c ${shellQuote(wrapped)} </dev/null >/dev/null 2>&1 &`;
+			const launch = `nohup bash -c ${shellQuote(daemonized)} </dev/null >/dev/null 2>&1 & echo launched`;
+			await this.sandbox.runCommand(`bash -c ${shellQuote(launch)}`, { background: true });
 
+			// Poll for the done-file, backing off adaptively so a quick step isn't over-charged for polls.
 			const deadline = started + timeoutMs;
-			while (!(await fs.exists(donePath))) {
+			let pollDelayMs = POLL_START_MS;
+			for (;;) {
+				const exitCode = fs
+					? await this.pollDoneViaFs(fs, donePath)
+					: await this.pollDoneViaCat(donePath);
+				if (exitCode !== undefined) {
+					const stdout = fs
+						? await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read").catch(() => "")
+						: await this.catFile(logPath);
+					return this.finishStep(label, started, { exitCode, stdout }, opts);
+				}
 				if (performance.now() > deadline) {
 					// Best-effort stop the detached job; don't let a failing kill mask the timeout.
 					await this.sandbox
@@ -275,16 +313,63 @@ export class StepRunner {
 						.catch(() => undefined);
 					throw new Error(`Step "${label}" timed out after ${Math.round(timeoutMs / 1000)}s`);
 				}
-				await delay(POLL_MS);
+				await this.sleep(pollDelayMs);
+				pollDelayMs = Math.min(pollDelayMs * POLL_BACKOFF, POLL_CAP_MS);
 			}
-
-			const exitCode = Number.parseInt((await fs.readFile(donePath)).trim(), 10);
-			const stdout = await fs.readFile(logPath).catch(() => "");
-			const result: CommandResult = { exitCode: Number.isFinite(exitCode) ? exitCode : 1, stdout };
-			return this.finishStep(label, started, result, opts);
 		} finally {
 			stopHeartbeat();
 		}
+	}
+
+	/** Check the filesystem-backed done-file: its trimmed contents are the exit code, or `undefined`
+	 *  while the detached step is still running. */
+	private async pollDoneViaFs(
+		fs: SandboxFilesystem,
+		donePath: string,
+	): Promise<number | undefined> {
+		try {
+			// Bound both fs calls so a hung filesystem API (some adapters go over the network) can't
+			// stall the poll loop indefinitely — the outer deadline only advances between iterations.
+			if (!(await withTimeout(fs.exists(donePath), POLL_CAP_MS, "done-file fs exists"))) {
+				return undefined;
+			}
+			// The background script writes the done-file non-atomically (truncate, then echo the code),
+			// so an empty read means "created but not yet written" — still running, not exit 0.
+			const raw = (
+				await withTimeout(fs.readFile(donePath), POLL_CAP_MS, "done-file fs read")
+			).trim();
+			return raw === "" ? undefined : parseExitCode(raw);
+		} catch {
+			// A transient fs blip counts as not-yet-done; the caller's deadline bounds total retry time.
+			return undefined;
+		}
+	}
+
+	/** Poll fallback for providers whose adapter exposes no filesystem API: read the done-file with a
+	 *  `cat` exec, treating the {@link RUNNING_SENTINEL} (or empty output) as not-done-yet. */
+	private async pollDoneViaCat(donePath: string): Promise<number | undefined> {
+		// Bound the exec so a hung `cat` can't outlast the step budget, and treat any transient
+		// exec error as not-yet-done (the caller's deadline bounds total retry time).
+		const probe = await withTimeout(
+			this.sandbox.runCommand(
+				`bash -c ${shellQuote(`cat ${donePath} 2>/dev/null || echo ${RUNNING_SENTINEL}`)}`,
+			),
+			POLL_CAP_MS,
+			"done-file cat poll",
+		).catch(() => undefined);
+		const out = (probe?.stdout ?? "").trim();
+		if (out === "" || out === RUNNING_SENTINEL) return undefined;
+		return parseExitCode(out);
+	}
+
+	/** Read the detached step's log over `exec` — the output transport for the no-filesystem path. */
+	private async catFile(logPath: string): Promise<string> {
+		const res = await withTimeout(
+			this.sandbox.runCommand(`bash -c ${shellQuote(`cat ${logPath} 2>/dev/null || true`)}`),
+			POLL_CAP_MS,
+			"log cat read",
+		).catch(() => undefined);
+		return res?.stdout ?? "";
 	}
 
 	/** Shared post-step bookkeeping: record the step, echo output (unless silent), enforce exit code. */

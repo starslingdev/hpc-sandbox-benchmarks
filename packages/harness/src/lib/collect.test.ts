@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import { harnessSkipMarkerJson } from "@sandbox-benchmarks/schema";
 import { collectResults, writeSkipMarker } from "./collect.ts";
 import type { SandboxHandle } from "./execute.ts";
@@ -10,6 +11,11 @@ import { StepRunner } from "./execute.ts";
 
 const work = mkdtempSync(join(tmpdir(), "harness-collect-"));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
+
+// Marker extraction is transport-agnostic, so run collect synchronously (uncapped) — the dumb payload
+// fakes return their stdout for every command, which the detached cat-poll would misread as a done-file.
+// The detached collect path is covered by execute.test.ts and end-to-end in index.test.ts.
+const UNCAPPED: ProviderTransport = { streaming: false, syncCapMs: null, detachedPoll: false };
 
 // Build the exact stdout the in-sandbox collect command emits: markers around a base64'd tar of a
 // benchmark-results/ directory holding the given files (name → contents).
@@ -39,7 +45,7 @@ const sandbox = payloadSandbox({ "pts_node-web-tooling.xml": "<xml/>" });
 describe("collectResults", () => {
 	it("extracts the base64 tar stream into the results directory", async () => {
 		const resultsDir = join(work, "daytona");
-		await collectResults(new StepRunner(sandbox), resultsDir);
+		await collectResults(new StepRunner(sandbox, UNCAPPED), resultsDir);
 		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(true);
 		expect(readFileSync(join(resultsDir, "pts_node-web-tooling.xml"), "utf8")).toBe("<xml/>");
 	});
@@ -50,7 +56,7 @@ describe("collectResults", () => {
 			"pts_node-web-tooling--skipped.json": '{"skipped":true,"benchmark":"pts_node-web-tooling"}',
 			"manifest.ndjson": "{}\n",
 		});
-		await collectResults(new StepRunner(skipped), resultsDir);
+		await collectResults(new StepRunner(skipped, UNCAPPED), resultsDir);
 		expect(existsSync(join(resultsDir, "pts_node-web-tooling--skipped.json"))).toBe(true);
 	});
 
@@ -58,9 +64,9 @@ describe("collectResults", () => {
 		// A suite that produced only provenance/timing files and neither a result nor a marker must
 		// fail collection, not upload an empty-of-signal directory as a green run.
 		const empty = payloadSandbox({ "manifest.ndjson": "{}\n", "cpu-info.json": "{}" });
-		await expect(collectResults(new StepRunner(empty), join(work, "no-signal"))).rejects.toThrow(
-			/no PTS result or skip marker/,
-		);
+		await expect(
+			collectResults(new StepRunner(empty, UNCAPPED), join(work, "no-signal")),
+		).rejects.toThrow(/no PTS result or skip marker/);
 	});
 
 	it("throws when the payload markers are missing", async () => {
@@ -68,9 +74,9 @@ describe("collectResults", () => {
 			runCommand: async () => ({ exitCode: 0, stdout: "no markers here" }),
 			destroy: async () => undefined,
 		};
-		await expect(collectResults(new StepRunner(noMarkers), join(work, "x"))).rejects.toThrow(
-			/markers/,
-		);
+		await expect(
+			collectResults(new StepRunner(noMarkers, UNCAPPED), join(work, "x")),
+		).rejects.toThrow(/markers/);
 	});
 });
 

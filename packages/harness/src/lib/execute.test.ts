@@ -111,7 +111,9 @@ describe("StepRunner.runDetached", () => {
 		expect(result.stdout).toBe("ran on the host");
 		// First command is the detached start, flagged background; never a synchronous foreground exec.
 		expect(commands[0]?.background).toBe(true);
-		expect(commands[0]?.command).toContain("nohup setsid");
+		// Double-fork daemonization: an outer nohup launches an inner nohup, not a single setsid.
+		expect(commands[0]?.command).toContain("nohup");
+		expect(commands[0]?.command).not.toContain("setsid");
 		expect(runner.stepLog).toHaveLength(1);
 		expect(runner.stepLog[0]).toMatchObject({ label: "bench", exitCode: 0 });
 	});
@@ -138,21 +140,74 @@ describe("StepRunner.runDetached", () => {
 		expect(commands.some((c) => c.includes("pkill"))).toBe(true);
 	});
 
-	it("falls back to the foreground transport when the sandbox has no filesystem", async () => {
-		const commands: string[] = [];
+	// A sandbox with NO filesystem API: the detached transport must still detach (double-fork) and
+	// observe completion by `cat`-ing the done-file over exec. runCommand answers each command shape —
+	// the launch (contains nohup), the done-file probe (`cat …done`), and the log read (`cat …log`).
+	function catPollSandbox(opts: { readyAfter?: number; exitCode?: string; log?: string }): {
+		sandbox: SandboxHandle;
+		commands: Array<{ command: string; background?: boolean }>;
+	} {
+		const commands: Array<{ command: string; background?: boolean }> = [];
+		const readyAfter = opts.readyAfter ?? 0;
+		let probes = 0;
 		const sandbox: SandboxHandle = {
-			runCommand: async (command) => {
-				commands.push(command);
-				return { exitCode: 0, stdout: "fg" };
+			runCommand: async (command, options) => {
+				commands.push({ command, background: options?.background });
+				if (command.includes("nohup")) return { exitCode: 0, stdout: "launched" };
+				if (command.includes(".done")) {
+					const ready = probes++ >= readyAfter;
+					return { exitCode: 0, stdout: ready ? (opts.exitCode ?? "0") : "__RUNNING__" };
+				}
+				return { exitCode: 0, stdout: opts.log ?? "cat output" }; // the `.log` read
 			},
 			destroy: async () => undefined,
 		};
-		const runner = new StepRunner(sandbox);
-		const result = await runner.runDetached("bench", "echo hi", 5_000);
-		expect(result.stdout).toBe("fg");
-		// Foreground path: a single synchronous bash -c exec, no background flag, no detach wrapper.
-		expect(commands[0]).toContain("bash -c");
-		expect(commands[0]).not.toContain("nohup setsid");
+		return { sandbox, commands };
+	}
+
+	it("polls the done-file over exec when the sandbox has no filesystem", async () => {
+		const { sandbox, commands } = catPollSandbox({
+			readyAfter: 2,
+			log: "ran via cat",
+			exitCode: "0",
+		});
+		// Inject a no-op sleep so the two not-ready polls don't actually wait.
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+
+		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("ran via cat");
+		// Still a real detach: the launch is backgrounded and double-fork daemonized, not a foreground run.
+		expect(commands[0]?.background).toBe(true);
+		expect(commands[0]?.command).toContain("nohup");
+		// Completion is observed by cat-ing the done-file (the no-filesystem fallback), then the log.
+		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".done"))).toBe(
+			true,
+		);
+		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".log"))).toBe(
+			true,
+		);
+	});
+
+	it("propagates a non-zero exit from the cat-polled done-file", async () => {
+		const { sandbox } = catPollSandbox({ exitCode: "42" });
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		await expect(runner.runDetached("bench", "false", 60_000)).rejects.toThrow(/exit code 42/);
+	});
+
+	it("backs off the poll interval geometrically up to the cap", async () => {
+		// Done only after 7 not-ready polls → 7 inter-poll sleeps, exercising the geometric ramp + cap.
+		const { sandbox } = detachedSandbox({ readyAfter: 7, exitCode: "0", log: "done" });
+		const slept: number[] = [];
+		const runner = new StepRunner(sandbox, CAPPED, async (ms) => {
+			slept.push(ms);
+		});
+
+		await runner.runDetached("bench", "mise install", 60 * MIN);
+
+		// 1.5s start, ×1.5 each poll, capped at 10s: 1500, 2250, 3375, 5062.5, 7593.75, 10000, 10000.
+		expect(slept).toEqual([1_500, 2_250, 3_375, 5_062.5, 7_593.75, 10_000, 10_000]);
 	});
 });
 
@@ -182,9 +237,9 @@ describe("StepRunner.step (capability-driven transport)", () => {
 		const { sandbox, commands } = fsSandbox();
 		const runner = new StepRunner(sandbox, CAPPED);
 		await runner.step("long", "mise install", 20 * MIN);
-		// Detached start: backgrounded, wrapped in nohup setsid.
+		// Detached start: backgrounded, double-fork daemonized (nohup).
 		expect(commands[0]?.background).toBe(true);
-		expect(commands[0]?.command).toContain("nohup setsid");
+		expect(commands[0]?.command).toContain("nohup");
 	});
 
 	it("runs a short step synchronously on a capped provider", async () => {
@@ -195,7 +250,7 @@ describe("StepRunner.step (capability-driven transport)", () => {
 		// Direct exec: a single bash -c, no background flag, no detach wrapper.
 		expect(commands[0]?.background).toBeUndefined();
 		expect(commands[0]?.command).toContain("bash -c");
-		expect(commands[0]?.command).not.toContain("nohup setsid");
+		expect(commands[0]?.command).not.toContain("nohup");
 	});
 
 	it("stays synchronous past the cap on a provider that can't detach", async () => {
@@ -207,7 +262,7 @@ describe("StepRunner.step (capability-driven transport)", () => {
 		await runner.step("long", "mise install", 5 * MIN);
 		expect(commands[0]?.background).toBeUndefined();
 		expect(commands[0]?.command).toContain("bash -c");
-		expect(commands[0]?.command).not.toContain("nohup setsid");
+		expect(commands[0]?.command).not.toContain("nohup");
 	});
 
 	it("runs a long step synchronously on an uncapped provider", async () => {
@@ -216,7 +271,7 @@ describe("StepRunner.step (capability-driven transport)", () => {
 		await runner.step("long", "mise run benchmark", 110 * MIN);
 		// No cap → direct exec even for a multi-minute step; the filesystem is never polled.
 		expect(commands[0]?.background).toBeUndefined();
-		expect(commands[0]?.command).not.toContain("nohup setsid");
+		expect(commands[0]?.command).not.toContain("nohup");
 	});
 
 	it("defaults to a capped profile when constructed without a transport", async () => {
