@@ -82,4 +82,25 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	},
 	realworld_better_auth_task_typecheck: { dimension: "realworld", label: "Better-Auth: typecheck" },
 	realworld_better_auth_task_build: { dimension: "realworld", label: "Better-Auth: build" },
+
+	// Realworld dimension (ENG-138): openclaw/openclaw run through its own CI tasks, a repo-local PTS
+	// profile with a Task option axis. TestType System's default dimension is corrected to realworld
+	// here for every metric this profile generates.
+	realworld_openclaw_task_git_clone: { dimension: "realworld", label: "OpenClaw: git clone" },
+	realworld_openclaw_task_cold_install: { dimension: "realworld", label: "OpenClaw: cold install" },
+	realworld_openclaw_task_lint_oxlint: { dimension: "realworld", label: "OpenClaw: lint (Oxlint)" },
+	realworld_openclaw_task_lint_format: { dimension: "realworld", label: "OpenClaw: lint format" },
+	realworld_openclaw_task_typecheck: {
+		dimension: "realworld",
+		label: "OpenClaw: typecheck (tsgo)",
+	},
+	realworld_openclaw_task_shrinkwrap_check: {
+		dimension: "realworld",
+		label: "OpenClaw: shrinkwrap check",
+	},
+	realworld_openclaw_task_test_unit_fast: {
+		dimension: "realworld",
+		label: "OpenClaw: test (unit, fast)",
+	},
+	realworld_openclaw_task_build: { dimension: "realworld", label: "OpenClaw: build" },
 };
