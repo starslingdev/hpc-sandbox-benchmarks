@@ -7,6 +7,8 @@ import { rawRunSchema } from "./lib/internal.ts";
 export * from "./analysis.ts";
 // The Metric Catalog — the registry of rankable Metrics, plus lookup helpers.
 export * from "./catalog.ts";
+// The pure cost models ($/run — burst vs fixed-infra amortization) the economics Dimension builds on.
+export * from "./economics.ts";
 // The non-PTS, harness-measured Metric slice (lifecycle + control-plane) and its operation→id contract.
 export * from "./harness-metrics.ts";
 // Metric vocabulary: Dimension, Direction and the MetricDef shape every Metric declares.
