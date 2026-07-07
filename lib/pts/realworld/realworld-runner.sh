@@ -75,28 +75,34 @@ cold_install)
 	# exclude), then ensure deps exist so tasks are order-independent regardless of whether
 	# cold_install has run yet in this batch.
 	cd "$WORK_DIR"
-	git clean -xdff -e node_modules
-	rm -rf node_modules/.cache
-	if [ ! -d node_modules ]; then
-		# Recovery install: output stays on the (already-redirected) log — discarding it would hide
-		# the one diagnostic that explains a subsequent task failure.
-		eval "$TASK_CMD_cold_install"
+	prep_var="TASK_PREP_${TASK}"
+	eval "prep=\"\${${prep_var}:-}\""
+	if [ -n "$prep" ]; then
+		# Build-dependent task (declared via TASK_PREP_<value>): keep dist + node_modules (turbo's
+		# local cache lives inside it) through the reset, so the UNMEASURED prep below is a
+		# near-instant turbo cache REPLAY of the build the Task menu already measured earlier in the
+		# batch — never a duplicate slow build (a full build happens only when the task runs
+		# standalone). TURBO_FORCE is lifted for the prep only; the measured command keeps
+		# TURBO_FORCE=true so it is always a genuine execution, never a cache replay.
+		git clean -xdff -e node_modules -e dist
+		if [ ! -d node_modules ]; then
+			eval "$TASK_CMD_cold_install"
+		fi
+		(unset TURBO_FORCE && eval "$prep")
+	else
+		git clean -xdff -e node_modules
+		rm -rf node_modules/.cache
+		if [ ! -d node_modules ]; then
+			# Recovery install: output stays on the (already-redirected) log — discarding it would
+			# hide the one diagnostic that explains a subsequent task failure.
+			eval "$TASK_CMD_cold_install"
+		fi
 	fi
 	cmd_var="TASK_CMD_${TASK}"
 	eval "cmd=\"\${${cmd_var}:-}\""
 	if [ -z "$cmd" ]; then
 		echo "no ${cmd_var} in target.env for task '${TASK}'" >&2
 		exit 1
-	fi
-	# Phase isolation: an optional TASK_PREP_<value> runs UNMEASURED before the timer, so a task
-	# whose upstream graph has build dependencies (e.g. turbo dependsOn) can be provisioned here and
-	# measured with `--only` — the timed command executes exactly the named phase. The clean above
-	# wiped dist + node_modules/.cache (turbo's local cache), so the measured run is a genuine
-	# execution, never a cache replay.
-	prep_var="TASK_PREP_${TASK}"
-	eval "prep=\"\${${prep_var}:-}\""
-	if [ -n "$prep" ]; then
-		eval "$prep"
 	fi
 	start_ns=$(date +%s%N)
 	eval "$cmd"
