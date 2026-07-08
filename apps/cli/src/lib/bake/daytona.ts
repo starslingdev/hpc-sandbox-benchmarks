@@ -11,8 +11,8 @@
 // `sandboxClass` to LINUX_VM so its create — and every sandbox booted from it — routes to microVM
 // runners. Without it Daytona defaults to the `container` class, which fails on a region that only has
 // microVM runners with "No runners are configured … for sandbox class 'container'". (Needs
-// @daytonaio/sdk ≥ 0.192, which first exposed the selector.)
-import { Daytona, SandboxClass } from "@daytonaio/sdk";
+// @daytona/sdk ≥ 0.192, which first exposed the selector.)
+import { Daytona, SandboxClass } from "@daytona/sdk";
 import { config } from "@sandbox-benchmarks/providers";
 import type { Log } from "./types.ts";
 

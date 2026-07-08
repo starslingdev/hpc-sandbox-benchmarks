@@ -18,13 +18,16 @@
         "bench-lifecycle": "./src/bin/bench-lifecycle.ts",
         "bench-suite": "./src/bin/bench-suite.ts",
         "bench-smoke": "./src/bin/bench-smoke.ts",
+        "bake": "./src/bin/bake.ts",
         "plan-matrix": "./src/bin/plan-matrix.ts",
         "build-template": "./src/bin/build-template.ts",
         "normalize": "./src/bin/normalize.ts",
+        "aggregate": "./src/bin/aggregate.ts",
         "promote": "./src/bin/promote.ts",
+        "stability": "./src/bin/stability.ts",
       },
       "dependencies": {
-        "@daytonaio/sdk": "catalog:computesdk",
+        "@daytona/sdk": "catalog:computesdk",
         "@sandbox-benchmarks/harness": "workspace:*",
         "@sandbox-benchmarks/providers": "workspace:*",
         "@sandbox-benchmarks/results": "workspace:*",
@@ -153,7 +156,7 @@
       "@computesdk/daytona": "1.7.31",
       "@computesdk/e2b": "1.7.51",
       "@computesdk/modal": "1.9.3",
-      "@daytonaio/sdk": "0.192.0",
+      "@daytona/sdk": "0.192.0",
       "computesdk": "4.1.3",
     },
     "xml": {
@@ -273,6 +276,8 @@
     "@connectrpc/connect-web": ["@connectrpc/connect-web@2.0.0-rc.3", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.2.0", "@connectrpc/connect": "2.0.0-rc.3" } }, "sha512-w88P8Lsn5CCsA7MFRl2e6oLY4J/5toiNtJns/YJrlyQaWOy3RO8pDgkz+iIkG98RPMhj2thuBvsd3Cn4DKKCkw=="],
 
     "@daytona/api-client": ["@daytona/api-client@0.192.0", "", { "dependencies": { "axios": "^1.6.1" } }, "sha512-fBzQ7KT9ZW2c4TgryYVGI8KUiUH02SCuKl1m0hqJQZDVkE6sbMiMlm5DZ0jwMCbQ8afWyOscvXmSSxdGQ/jUKQ=="],
+
+    "@daytona/sdk": ["@daytona/sdk@0.192.0", "", { "dependencies": { "@aws-sdk/client-s3": "^3.787.0", "@aws-sdk/lib-storage": "^3.798.0", "@daytona/api-client": "0.192.0", "@daytona/toolbox-api-client": "0.192.0", "@iarna/toml": "^2.2.5", "@opentelemetry/api": "^1.9.0", "@opentelemetry/exporter-trace-otlp-http": "^0.217.0", "@opentelemetry/instrumentation-http": "^0.217.0", "@opentelemetry/otlp-exporter-base": "0.217.0", "@opentelemetry/resources": "2.7.1", "@opentelemetry/sdk-node": "^0.217.0", "@opentelemetry/sdk-trace-base": "^2.7.1", "@opentelemetry/semantic-conventions": "^1.40.0", "axios": "^1.15.2", "busboy": "^1.0.0", "dotenv": "^17.0.1", "expand-tilde": "^2.0.2", "fast-glob": "^3.3.0", "form-data": "^4.0.4", "isomorphic-ws": "^5.0.0", "pathe": "^2.0.3", "shell-quote": "^1.8.2", "tar": "^7.5.11" } }, "sha512-pAA1curJCiZ0rqZcE0BUIjsgS90QdDFZ2QYw8nVWwGjjdr+Fndof4MaJfoZRjpcMHjUBoqEZpzO9C5HPv38QeA=="],
 
     "@daytona/toolbox-api-client": ["@daytona/toolbox-api-client@0.192.0", "", { "dependencies": { "axios": "^1.6.1" } }, "sha512-fEyA3YPK+IJezECBfZoNhf29qtZhy8AqI0lcgR+Bob6hEiInx9+sH26506ZkxmpGM4/5EApeLzUI1g5B9u2XHA=="],
 
