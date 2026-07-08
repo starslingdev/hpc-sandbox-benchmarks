@@ -1,11 +1,10 @@
 // Bake a daytona snapshot directly from a pushed toolchain image, via the raw Daytona SDK (the
 // @computesdk/daytona wrapper only snapshots a running sandbox). Idempotent: delete an existing
-// snapshot of that name, then recreate. Region-aware: the active region's API key + target come from
-// config.daytonaRegion (ZEN5 supported).
+// snapshot of that name, then recreate. The API key + runner target come from config.daytona
+// (single-region: DAYTONA_API_KEY + DAYTONA_TARGET, e.g. us-west-2).
 //
-// Iteration surface: a snapshot's region must match where sandboxes boot. We pass the region's
-// `target` to the client; if a beta region (ZEN5) also needs an explicit snapshot `regionId`, add it
-// to CreateSnapshotParams here.
+// Iteration surface: a snapshot's region must match where sandboxes boot. We pass the client `target`;
+// if the target also needs an explicit snapshot `regionId`, add it to CreateSnapshotParams here.
 //
 // microVM-only: the fleet is Firecracker microVMs, never containers. We pin the snapshot's
 // `sandboxClass` to LINUX_VM so its create — and every sandbox booted from it — routes to microVM
@@ -58,18 +57,18 @@ async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log)
 	}
 }
 
-/** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote),
- *  in the active region. Idempotent: delete any existing snapshot of that name first. */
+/** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote).
+ *  Idempotent: delete any existing snapshot of that name first. */
 export async function bakeDaytonaSnapshot(name: string, image: string, log: Log): Promise<void> {
-	const { daytonaRegion, targetSpec } = config;
+	const { daytona: daytonaCfg, targetSpec } = config;
 	const daytona = new Daytona({
-		apiKey: daytonaRegion.apiKey,
-		...(daytonaRegion.target ? { target: daytonaRegion.target } : {}),
+		apiKey: daytonaCfg.apiKey,
+		...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
 	});
 
 	await deleteExistingSnapshots(daytona, name, log);
 
-	log(`creating snapshot ${name} from ${image} (target ${daytonaRegion.target ?? "default"})`);
+	log(`creating snapshot ${name} from ${image} (target ${daytonaCfg.target ?? "default"})`);
 	await daytona.snapshot.create(
 		{
 			name,

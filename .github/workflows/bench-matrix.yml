@@ -7,13 +7,6 @@ name: Bench matrix
 # + provider credentials); dispatch on demand.
 on:
   workflow_dispatch:
-    inputs:
-      region:
-        # Daytona only: the default org is parked, so real runs use the ZEN5-VM region. Ignored by e2b/modal.
-        description: Daytona region
-        type: choice
-        default: ZEN5-VM
-        options: [ZEN5-VM, default]
 
 # Least privilege: jobs only read the checked-out code and upload artifacts.
 permissions:
@@ -86,10 +79,10 @@ jobs:
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_PROVIDER: ${{ matrix.provider }}
           BENCH_SUITE: ${{ matrix.suite }}
-          DAYTONA_REGION: ${{ inputs.region }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}
-          DAYTONA_TARGET_ZEN5: ${{ secrets.DAYTONA_TARGET_ZEN5 }}
+          # Boot daytona sandboxes in the active region (us-west-2). Defaulted so an unsynced secret
+          # can't fail the config gatekeeper at module load.
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
