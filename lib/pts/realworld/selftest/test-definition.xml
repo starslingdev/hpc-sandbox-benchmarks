@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<!--Synthetic realworld-selftest profile TEMPLATE (never vendored into packages/schema): the
+selftest payload substitutes @PIN_SHA@ at runtime and installs it via the production
+install_local_pts_profile path. results-definition.xml is deliberately absent here — the payload
+copies a real profile's, so the selftest exercises the actual parser definition.-->
+<PhoronixTestSuite>
+  <TestInformation>
+    <Title>Realworld Selftest</Title>
+    <AppVersion>@PIN_SHA@</AppVersion>
+    <Description>Synthetic fixture exercising the realworld runner contract.</Description>
+    <Executable>realworld-run</Executable>
+    <ResultScale>Seconds</ResultScale>
+    <Proportion>LIB</Proportion>
+    <TimesToRun>1</TimesToRun>
+  </TestInformation>
+  <TestProfile>
+    <Version>1.0.0</Version>
+    <SupportedPlatforms>Linux</SupportedPlatforms>
+    <SoftwareType>Benchmark</SoftwareType>
+    <TestType>System</TestType>
+    <License>Free</License>
+    <Status>Verified</Status>
+    <EnvironmentSize>1</EnvironmentSize>
+    <ProjectURL>https://example.com</ProjectURL>
+    <Maintainer>StarSling</Maintainer>
+  </TestProfile>
+  <TestSettings>
+    <Option>
+      <DisplayName>Task</DisplayName>
+      <Identifier>task</Identifier>
+      <Menu>
+        <Entry><Name>Git Clone</Name><Value>git_clone</Value></Entry>
+        <Entry><Name>Cold Install</Name><Value>cold_install</Value></Entry>
+        <Entry><Name>Build</Name><Value>build</Value></Entry>
+        <Entry><Name>Plain</Name><Value>plain</Value></Entry>
+        <Entry><Name>Prepped</Name><Value>prepped</Value></Entry>
+      </Menu>
+    </Option>
+  </TestSettings>
+</PhoronixTestSuite>

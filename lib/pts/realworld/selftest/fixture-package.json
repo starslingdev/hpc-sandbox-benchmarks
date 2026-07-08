@@ -1,0 +1,10 @@
+{
+  "name": "selftest-fixture",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "build": "mkdir -p dist && echo ok > dist/out.txt && echo x >> /tmp/counts/build && sleep 2",
+    "lint": "echo x >> /tmp/counts/lint && sleep 0.5",
+    "test": "test -f dist/out.txt && echo x >> /tmp/counts/test && sleep 1"
+  }
+}
