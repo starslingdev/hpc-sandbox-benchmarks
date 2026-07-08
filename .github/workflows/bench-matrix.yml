@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       region:
-        # Daytona only: the default org is parked, so real runs use the ZEN5-VM region. Ignored by e2b/modal.
+        # Daytona only (ignored by e2b/modal): the default org — Daytona target us-west-2 — is the active
+        # region; ZEN5-VM stays selectable for the beta fast-machine region if its _ZEN5 creds are provisioned.
         description: Daytona region
         type: choice
-        default: ZEN5-VM
-        options: [ZEN5-VM, default]
+        default: default
+        options: [default, ZEN5-VM]
   # Nightly, unattended: publish one fresh dataset point per day with no human dispatch. Daily (not
   # per-commit or hourly) is deliberate — each run fans the full provider × suite matrix out over real,
   # metered sandbox time on three paid providers, and the numbers track slow host/provider drift rather
@@ -104,10 +105,11 @@ jobs:
           # gatekeeper (packages/providers/src/lib/config.ts) rejects an explicitly-set-but-empty env
           # var — an unguarded empty DAYTONA_REGION would kill the suite at module load. Default the
           # empty case to the active region (matching the dispatch input's default).
-          DAYTONA_REGION: ${{ inputs.region || 'ZEN5-VM' }}
+          DAYTONA_REGION: ${{ inputs.region || 'default' }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}
-          DAYTONA_TARGET_ZEN5: ${{ secrets.DAYTONA_TARGET_ZEN5 }}
+          # The default region's Daytona target. Same empty-input guard as DAYTONA_REGION: default to the
+          # active target so a scheduled run (or an unsynced secret) can't die on an empty value at load.
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}

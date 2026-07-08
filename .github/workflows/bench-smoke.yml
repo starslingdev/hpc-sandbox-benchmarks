@@ -30,12 +30,13 @@ on:
             realworld-openclaw,
           ]
       region:
-        # Daytona only: the default org is parked, so real runs use the ZEN5-VM region (its own API key +
-        # target + snapshot, keyed by the _ZEN5 env-var suffix). Ignored by e2b/modal.
+        # Daytona only (ignored by e2b/modal): the default org — Daytona target us-west-2 — is the active
+        # region; ZEN5-VM stays selectable for the beta fast-machine region (its own key/target/snapshot,
+        # keyed by the _ZEN5 env-var suffix) if those creds are provisioned.
         description: Daytona region
         type: choice
-        default: ZEN5-VM
-        options: [ZEN5-VM, default]
+        default: default
+        options: [default, ZEN5-VM]
 
 # Least privilege: the job only reads the checked-out code and uploads an artifact.
 permissions:
@@ -86,11 +87,12 @@ jobs:
           # shell. `$GITHUB_RUN_ID` is built-in.
           BENCH_PROVIDER: ${{ inputs.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
-          # Daytona region selection (default org is parked; ZEN5-VM is the active region).
+          # Daytona region selection (the default org, Daytona target us-west-2, is the active region).
           DAYTONA_REGION: ${{ inputs.region }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          DAYTONA_API_KEY_ZEN5: ${{ secrets.DAYTONA_API_KEY_ZEN5 }}
-          DAYTONA_TARGET_ZEN5: ${{ secrets.DAYTONA_TARGET_ZEN5 }}
+          # The default region's Daytona target; default to the active target so an unsynced secret can't
+          # die on an empty value at module load (parity with bench-matrix.yml).
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
