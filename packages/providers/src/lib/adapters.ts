@@ -3,6 +3,7 @@
 // computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem, destroy), so
 // nothing here re-wraps an SDK — these are pure config. Credentials are read from each provider's
 // env vars by its factory.
+import { blaxel } from "@computesdk/blaxel";
 import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
@@ -39,6 +40,15 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			...(daytonaRegion.target ? { target: daytonaRegion.target } : {}),
 		},
 		requiredEnvVars: [daytonaRegion.apiKeyVar],
+	},
+	blaxel: {
+		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). The stock
+		// base-image is Alpine (no apt — PTS uninstallable) and disk is a tmpfs overlay carved from VM
+		// RAM (~78%), so boot the Debian ts-app image and buy disk with memory: 16384 MB ≈ 12.5 GiB
+		// disk. No pre-baked toolchain snapshot yet — setup steps run their fallback paths.
+		createCompute: () =>
+			blaxel({ image: "blaxel/ts-app:latest", memory: 16384, region: "us-pdx-1" }),
+		createOptions: {},
 	},
 	modal: {
 		createCompute: () => modal({ scalableSandboxes: true }),

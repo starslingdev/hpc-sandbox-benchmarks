@@ -18,6 +18,12 @@ const fixture: ProviderMeta = {
 };
 
 describe("@sandbox-benchmarks/schema providers", () => {
+	it("pins the registered provider id set (the independent oracle downstream joins derive from)", () => {
+		// Deliberately hardcoded: downstream tests (e.g. results' normalizeResultsTree) assert their
+		// output against PROVIDERS, so this pin is what makes an accidental registry removal loud.
+		expect(PROVIDERS.map((p) => p.id).sort()).toEqual(["blaxel", "daytona", "e2b", "modal"]);
+	});
+
 	it("keeps the registry well-formed (unique ids, non-empty required env vars)", () => {
 		const ids = PROVIDERS.map((p) => p.id);
 		expect(new Set(ids).size).toBe(ids.length);

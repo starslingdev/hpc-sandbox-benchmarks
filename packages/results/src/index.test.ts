@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { normalizeResultsTree, summarizeRun } from "./index.ts";
 
 // The committed fixture tree has one provider directory (daytona) holding a real node-web-tooling
@@ -16,11 +17,9 @@ describe("normalizeResultsTree", () => {
 
 	it("validates as a Run and includes every known provider", () => {
 		expect(run.schemaVersion).toBe("1");
-		expect(run.providers.map((provider) => provider.providerId).sort()).toEqual([
-			"daytona",
-			"e2b",
-			"modal",
-		]);
+		expect(run.providers.map((provider) => provider.providerId).sort()).toEqual(
+			PROVIDERS.map((provider) => provider.id).sort(),
+		);
 	});
 
 	it("normalizes daytona's node-web-tooling into an aggregated, validated metric", () => {
@@ -49,6 +48,6 @@ describe("normalizeResultsTree", () => {
 	});
 
 	it("summarizes one line per provider", () => {
-		expect(summarizeRun(run)).toHaveLength(3);
+		expect(summarizeRun(run)).toHaveLength(PROVIDERS.length);
 	});
 });

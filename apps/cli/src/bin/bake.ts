@@ -28,6 +28,9 @@ const bakers: Record<ProviderId, (log: Log) => Promise<void>> = {
 	daytona: (log) =>
 		bakeDaytonaSnapshot(config.daytonaSnapshotCandidate, config.toolchainImageCandidate, log),
 	modal: bakeModalImage,
+	blaxel: async (log) => {
+		log("blaxel boots the stock base image — no candidate artifact to bake");
+	},
 };
 
 const candidateRefs = {

@@ -27,5 +27,8 @@ export function candidateCreateOptions(
 			};
 		case "modal":
 			return { templateId: refs.toolchainImageCandidate };
+		case "blaxel":
+			// Stock base image — no candidate artifact to point at.
+			return {};
 	}
 }

@@ -11,7 +11,7 @@
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId = "e2b" | "daytona" | "modal";
+export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -204,6 +204,38 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// server threshold is unmeasured (sub-second probes succeed; multi-minute execs 408), so the
 			// bound is a conservative 60s policy: budget anything longer to the detached+poll path
 			// (`background` via nohup + the pollable filesystem).
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
+	blaxel: {
+		displayName: "Blaxel",
+		website: "https://blaxel.ai",
+		sdkPackage: "@computesdk/blaxel",
+		requiredEnvVars: ["BL_API_KEY", "BL_WORKSPACE"],
+		isolation: {
+			technology: "microVM",
+			notes:
+				"Blaxel sandboxes (sub-25ms boot claim). Spec dimensions are COUPLED: CPU cores = memory MB / 2048 and disk is a tmpfs overlay at ~78% of memory, so the 2 vCPU / 8 GiB / 20 GB target spec is inexpressible -- the adapter runs oversized (16 GiB => 8-core allocation, ~12.5 GiB disk) and relies on observed-specs disclosure (specMatched=false) downstream.",
+		},
+		pricing: {
+			model: "unknown",
+			notes: "Not yet vetted against a published per-second rate.",
+			sourceUrl: "https://blaxel.ai/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Local e2e validation wiring; not yet a committed run. Realworld suites with minDiskGb > ~12.5 (mastra 30, openclaw 25) skip on the harness disk gate until Blaxel exposes disk independently of memory.",
+		},
+		// Values ARE settable, but the CPU/disk coupling makes the shared target spec unreachable --
+		// "fixed" is the honest capability for cross-provider comparability purposes.
+		specPinning: "fixed",
+		transport: {
+			// `@computesdk/blaxel` execs through the sandbox gateway; long synchronous execs are not
+			// validated, so apply the conservative 60s policy bound and use the detached+poll path
+			// (background nohup + pollable filesystem, both supported by the wrapper) for long steps.
 			streaming: false,
 			syncCapMs: 60_000,
 			detachedPoll: true,
