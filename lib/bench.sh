@@ -168,6 +168,11 @@ _configure_pts_batch() {
 	# The readings are host-level sensors anyway (unattributable for provider comparison). Unset any
 	# value inherited from the image/harness env defensively — the producer never sets it.
 	unset MONITOR PERFORMANCE_PER_WATT
+	# Pin the batch run queue to each profile's natural (menu) order. PTS's AutoSortRunQueue
+	# otherwise usort()s the queue (pts_test_run_manager.php) — effectively arbitrary within one
+	# test's option matrix — which would run build-dependent tasks before the measured `build`
+	# their unmeasured prep replays (correct either way, but the prep then pays a full rebuild).
+	export TEST_EXECUTION_SORT=none
 	export TEST_RESULTS_NAME=benchmark
 	export TEST_RESULTS_DESCRIPTION=ci
 	export TEST_RESULTS_IDENTIFIER=ci
