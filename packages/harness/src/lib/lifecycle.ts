@@ -7,16 +7,29 @@
  * {@link HARNESS_METRIC_IDS} id, so a {@link RawRun}'s `operation` is a catalogued Metric id by
  * construction — the harness-side analogue of the PTS `<Result>`→id mapping.
  *
- * {@link measureLifecycle} drives ONE cold-start cycle (spawn → exec → control-plane probes → snapshot
- * → teardown) against a structural {@link LifecycleCompute}, so it is unit-testable against a fake with
- * no real SDK. Spawn is the bookend that must succeed (a failure has nothing to tear down, so it
- * rejects); every middle step is best-effort (a flaky exec/probe records a skip, never losing the
- * spawn/teardown samples); teardown always runs in `finally` and never throws out of it. Repeat the
- * cycle for a cold-start distribution — that is what {@link benchmarkLifecycle} (in index.ts) does.
+ * {@link measureLifecycle} drives ONE cold-start cycle (spawn → readiness probe → exec → control-plane
+ * probes → payload exec → snapshot → teardown) against a structural {@link LifecycleCompute}, so it is
+ * unit-testable against a fake with no real SDK. `spawn` times only create-resolve (the handle is not
+ * yet usable); a readiness loop then retries a trivial exec until it succeeds, yielding the HONEST cold
+ * start (`lifecycle_cold_start_ms`, t0→first success) and the readiness gap (`time_to_first_exec_ms`,
+ * create→first success) — the latency `spawn` alone cannot see. Spawn is the bookend that must succeed
+ * (a failure has nothing to tear down, so it rejects); every middle step is best-effort (a flaky
+ * exec/probe records a skip, never losing the spawn/teardown samples); teardown always runs in `finally`
+ * and never throws out of it. Repeat the cycle for a cold-start distribution — that is what
+ * {@link benchmarkLifecycle} (in index.ts) does.
  */
 import type { Aggregates, HarnessMetricId, RawRun, SkipMarker } from "@sandbox-benchmarks/schema";
 import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
-import { time } from "./internal.ts";
+import { now as defaultNow, time } from "./internal.ts";
+
+/** The trivial command whose first successful (exitCode 0) return marks the sandbox ready. */
+const READINESS_CMD = "echo ok";
+/** Writes exactly 64KiB (65536 bytes) to stdout — exec overhead including output streaming. Uses `tr`
+ *  rather than `base64` so the stream is exactly 64KiB, matching the metric's name (base64 expands the
+ *  input ~33%, overstating the payload). */
+const PAYLOAD_CMD = "head -c 65536 /dev/zero | tr '\\0' 'a'";
+/** Real wall-clock delay between readiness retries; swapped for a no-op in tests. */
+const realDelay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The slice of a computesdk sandbox the lifecycle driver times (its `Sandbox` satisfies this). */
 export interface LifecycleSandbox {
@@ -54,6 +67,16 @@ export interface MeasureLifecycleOptions {
 	controlPlaneSamples?: number;
 	/** Attempt a snapshot (recorded as a skip when the SDK exposes none, or when false). Default `true`. */
 	snapshot?: boolean;
+	/** Readiness probes (`echo ok`) per cold start before giving up. Default `40`. */
+	readinessMaxAttempts?: number;
+	/** Delay between failed readiness probes, in ms. Default `250`. */
+	readinessRetryDelayMs?: number;
+	/** Time a 64KiB-stdout exec (recorded as the payload control-plane Metric). Default `true`. */
+	payload?: boolean;
+	/** Injectable monotonic clock (ms) for cold-start timestamps. Default the harness internal clock. */
+	now?: () => number;
+	/** Injectable readiness-retry delay; tests pass a no-op so they never really sleep. Default real `setTimeout`. */
+	delay?: (ms: number) => Promise<void>;
 }
 
 /** One cold-start cycle's output: a timing Sample per measured op, a skip per op that couldn't run. */
@@ -86,6 +109,17 @@ export async function measureLifecycle(
 	const rawSamples = options.controlPlaneSamples ?? 1;
 	const controlPlaneSamples = Number.isFinite(rawSamples) ? Math.max(1, Math.floor(rawSamples)) : 1;
 	const wantSnapshot = options.snapshot ?? true;
+	const wantPayload = options.payload ?? true;
+	// Same non-finite guard as controlPlaneSamples: a NaN bound would make the readiness loop never run.
+	const rawAttempts = options.readinessMaxAttempts ?? 40;
+	const readinessMaxAttempts = Number.isFinite(rawAttempts)
+		? Math.max(1, Math.floor(rawAttempts))
+		: 40;
+	// Same non-finite guard as readinessMaxAttempts; also clamp negatives (a negative delay is meaningless).
+	const rawDelayMs = options.readinessRetryDelayMs ?? 250;
+	const readinessRetryDelayMs = Number.isFinite(rawDelayMs) ? Math.max(0, rawDelayMs) : 250;
+	const clock = options.now ?? defaultNow;
+	const delay = options.delay ?? realDelay;
 
 	const samples: RawRun[] = [];
 	const skips: SkipMarker[] = [];
@@ -105,15 +139,55 @@ export async function measureLifecycle(
 		}
 	};
 
-	// Spawn: the opening bookend. A failure has no sandbox to tear down, so it rejects and the caller
-	// records the failed cold-start cycle.
-	const spawned = await time(() => compute.sandbox.create(options.createOptions));
-	sample(HARNESS_METRIC_IDS.spawn, spawned.ms);
-	const sandbox = spawned.value;
+	// Floor cold-start deltas to a strictly-positive duration (the rawRunSchema contract `time()` also
+	// upholds): a sub-tick op can read two equal clock values, and durationMs must be > 0.
+	const floor = (ms: number): number => Math.max(ms, Number.EPSILON);
+
+	// Spawn: the opening bookend, timed create-resolve ONLY — the returned handle is not necessarily
+	// usable yet (the readiness loop below measures when it becomes so). A failure has no sandbox to tear
+	// down, so it rejects and the caller records the failed cold-start cycle.
+	const t0 = clock();
+	const sandbox = await compute.sandbox.create(options.createOptions);
+	const createdAt = clock();
+	sample(HARNESS_METRIC_IDS.spawn, floor(createdAt - t0));
 
 	try {
+		// Readiness: retry a trivial exec until it returns exitCode 0 — the FIRST success marks a usable
+		// sandbox. cold_start (t0→ready) is the honest cold start spawn alone can't see; first_exec
+		// (create→ready) isolates the readiness wait. A probe that throws counts as not-ready and retries.
+		let readyAt: number | undefined;
+		for (let attempt = 1; attempt <= readinessMaxAttempts; attempt++) {
+			let ready = false;
+			try {
+				ready = (await sandbox.runCommand(READINESS_CMD)).exitCode === 0;
+			} catch {
+				ready = false;
+			}
+			if (ready) {
+				readyAt = clock();
+				break;
+			}
+			if (attempt < readinessMaxAttempts) await delay(readinessRetryDelayMs);
+		}
+		if (readyAt === undefined) {
+			// Never went ready: record both readiness Metrics as skips rather than fabricate a timing.
+			const reason = `sandbox never ready: no successful "${READINESS_CMD}" in ${readinessMaxAttempts} attempts`;
+			skip(HARNESS_METRIC_IDS.firstExec, reason);
+			skip(HARNESS_METRIC_IDS.coldStart, reason);
+		} else {
+			sample(HARNESS_METRIC_IDS.firstExec, floor(readyAt - createdAt));
+			sample(HARNESS_METRIC_IDS.coldStart, floor(readyAt - t0));
+		}
+
 		// Exec: a trivial command round-trip — the exec-path latency floor, independent of the work done.
 		await step(HARNESS_METRIC_IDS.exec, () => sandbox.runCommand(execCommand));
+
+		// Payload: a 64KiB-stdout exec — exec overhead including output streaming, above the trivial floor.
+		if (wantPayload) {
+			await step(HARNESS_METRIC_IDS.execPayload64k, () => sandbox.runCommand(PAYLOAD_CMD));
+		} else {
+			skip(HARNESS_METRIC_IDS.execPayload64k, "64KiB payload exec disabled for this run");
+		}
 
 		// Control-plane read: getInfo, sampled within this one (cheap) sandbox to build a distribution
 		// without paying a fresh spawn/teardown per Sample.

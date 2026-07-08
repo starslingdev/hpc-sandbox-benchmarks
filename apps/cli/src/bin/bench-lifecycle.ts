@@ -15,7 +15,12 @@ import {
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
 import type { LifecycleMetricSummary } from "../lib/lifecycle-summary.ts";
-import { formatLifecycleLines, summarizeLifecycleAggregates } from "../lib/lifecycle-summary.ts";
+import {
+	formatLifecycleLines,
+	lifecycleFailureReason,
+	lifecycleOk,
+	summarizeLifecycleAggregates,
+} from "../lib/lifecycle-summary.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 
 /** A positive integer flag (`--flag N`), falling back when absent or malformed. */
@@ -49,6 +54,11 @@ if (import.meta.main) {
 		},
 		{
 			log,
+			// A provider that spawns but never captures the honest cold start (readiness never succeeds, or
+			// spawn throws every cycle) returns without throwing — mark it failed so a green run and
+			// `--require` can't hide that the benchmark's headline metric was never measured.
+			ok: lifecycleOk,
+			failureReason: lifecycleFailureReason,
 			onComplete: (run) => {
 				if (run.value) {
 					const metrics = summarizeLifecycleAggregates(run.value.aggregates);
@@ -57,7 +67,8 @@ if (import.meta.main) {
 					for (const skip of run.value.skips) log(`    [skip] ${skip.suite}: ${skip.reason}`);
 				}
 				const time = run.durationMs ? `${run.durationMs.toFixed(0)}ms` : "";
-				log(`<<< ${run.provider}: ${run.status}${time ? ` (${time})` : ""}`);
+				const why = run.status === "failed" && run.reason ? ` — ${run.reason}` : "";
+				log(`<<< ${run.provider}: ${run.status}${time ? ` (${time})` : ""}${why}`);
 			},
 		},
 	);

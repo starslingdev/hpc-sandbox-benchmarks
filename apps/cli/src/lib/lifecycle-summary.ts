@@ -2,8 +2,34 @@
 // feeds to its stderr logs and stdout JSON. Kept out of the bin so the catalog-label lookup and rounding
 // are unit-testable without driving a real provider. SDK-free: the schema Catalog + the harness result
 // shape only.
-import type { LifecycleAggregate } from "@sandbox-benchmarks/harness";
-import { getMetric } from "@sandbox-benchmarks/schema";
+import type { LifecycleAggregate, LifecycleBenchmark } from "@sandbox-benchmarks/harness";
+import { getMetric, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
+
+/** The one Metric a lifecycle run exists to capture: the honest cold start (t0 → first ready exec). */
+const REQUIRED_METRIC = HARNESS_METRIC_IDS.coldStart;
+
+/**
+ * A lifecycle run passed iff it captured the honest cold-start metric at least once. Spawn only times
+ * create-resolve, so a provider that spawns but never becomes exec-ready still records spawn/teardown
+ * Samples while every cycle skips {@link REQUIRED_METRIC} (a spawn that throws every cycle is recorded as
+ * a skip too, leaving no Samples at all). Without this gate such a run reads `ok` and satisfies
+ * `--require`, masking that the provider was never actually measured for the latency the benchmark
+ * exists to report — this is `bench-lifecycle`'s analogue of {@link smokeOk}.
+ */
+export function lifecycleOk(benchmark: LifecycleBenchmark): boolean {
+	return benchmark.samples.some((s) => s.operation === REQUIRED_METRIC);
+}
+
+/**
+ * A human reason for a failed lifecycle run: the recorded cold-start skip reason(s) (e.g. "sandbox never
+ * ready…" or a spawn error), else a generic no-samples note. Skips reuse `suite` for the skipped Metric
+ * id (see the lifecycle driver), so a {@link REQUIRED_METRIC} skip is matched on `suite`.
+ */
+export function lifecycleFailureReason(benchmark: LifecycleBenchmark): string {
+	const reasons = benchmark.skips.filter((s) => s.suite === REQUIRED_METRIC).map((s) => s.reason);
+	const detail = reasons.length > 0 ? reasons.join("; ") : "no samples recorded";
+	return `no ${REQUIRED_METRIC} sample captured (${detail})`;
+}
 
 /** One Metric's distribution, resolved to its catalog label/unit and rounded for display. */
 export interface LifecycleMetricSummary {

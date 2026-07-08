@@ -32,15 +32,20 @@ describe("harness-measured metrics", () => {
 
 	it("places the lifecycle ops in the lifecycle dimension and the control-plane ops in control-plane", () => {
 		expect(getMetric(HARNESS_METRIC_IDS.spawn)?.dimension).toBe("lifecycle");
+		expect(getMetric(HARNESS_METRIC_IDS.coldStart)?.dimension).toBe("lifecycle");
+		expect(getMetric(HARNESS_METRIC_IDS.firstExec)?.dimension).toBe("lifecycle");
 		expect(getMetric(HARNESS_METRIC_IDS.exec)?.dimension).toBe("lifecycle");
 		expect(getMetric(HARNESS_METRIC_IDS.snapshot)?.dimension).toBe("lifecycle");
 		expect(getMetric(HARNESS_METRIC_IDS.teardown)?.dimension).toBe("lifecycle");
 		expect(getMetric(HARNESS_METRIC_IDS.controlPlaneInfo)?.dimension).toBe("control-plane");
 		expect(getMetric(HARNESS_METRIC_IDS.controlPlaneList)?.dimension).toBe("control-plane");
+		expect(getMetric(HARNESS_METRIC_IDS.execPayload64k)?.dimension).toBe("control-plane");
 	});
 
-	it("headlines spawn for lifecycle and sandbox-info for control-plane", () => {
-		expect(headlineMetric("lifecycle").id).toBe(HARNESS_METRIC_IDS.spawn);
+	it("headlines cold-start for lifecycle (not the create-resolve spawn) and sandbox-info for control-plane", () => {
+		expect(headlineMetric("lifecycle").id).toBe(HARNESS_METRIC_IDS.coldStart);
+		// Spawn is now a non-headline sub-metric: create-resolve, blind to the readiness wait.
+		expect(getMetric(HARNESS_METRIC_IDS.spawn)?.headline).toBe(false);
 		expect(headlineMetric("control-plane").id).toBe(HARNESS_METRIC_IDS.controlPlaneInfo);
 		// Exactly one headline per harness dimension (catalog.ts also fails fast on a second).
 		for (const dimension of ["lifecycle", "control-plane"] as const) {
