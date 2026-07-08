@@ -16,9 +16,9 @@ import { Daytona, SandboxClass } from "@daytona/sdk";
 import { config } from "@sandbox-benchmarks/providers";
 import type { Log } from "./types.ts";
 
-/** Whether a snapshot.get/delete error is a genuine "no such snapshot" (so the idempotent path may
- *  swallow it) — as opposed to auth/network/in-use failures, which must surface their root cause
- *  instead of being masked into a confusing create-time error. */
+/** Whether a snapshot delete error is a genuine "no such snapshot" (so the idempotent path may
+ *  swallow it — e.g. a snapshot deleted out from under us between the list and the delete) — as
+ *  opposed to auth/network/in-use failures, which must surface their root cause. */
 function isNotFound(err: unknown): boolean {
 	if (typeof err !== "object" || err === null) return false;
 	const e = err as {
@@ -32,8 +32,34 @@ function isNotFound(err: unknown): boolean {
 	return typeof e.message === "string" && /not found|does not exist|404/i.test(e.message);
 }
 
+/** Delete every existing snapshot named `name`, in any state. We sweep `list()` rather than
+ *  `get(name)`: a snapshot stuck in a failed/error state — a prior bake that died mid-create — is NOT
+ *  returned by `get`, yet still makes `create` reject the name as "already exists for this
+ *  organization". Page count is read up front so the paginated read is stable before any delete
+ *  shifts it; deletes run after. */
+async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log): Promise<void> {
+	const LIMIT = 100;
+	const first = await daytona.snapshot.list(1, LIMIT);
+	const matches = first.items.filter((s) => s.name === name);
+	const pages = Math.ceil(first.total / LIMIT);
+	for (let page = 2; page <= pages; page++) {
+		const { items } = await daytona.snapshot.list(page, LIMIT);
+		matches.push(...items.filter((s) => s.name === name));
+	}
+	for (const snap of matches) {
+		log(`deleting existing snapshot ${name} (state ${snap.state})`);
+		try {
+			await daytona.snapshot.delete(snap);
+		} catch (err) {
+			// A snapshot already gone (concurrent delete) is fine; rethrow auth/network/in-use so the
+			// real failure isn't masked by a downstream "already exists" from create.
+			if (!isNotFound(err)) throw err;
+		}
+	}
+}
+
 /** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote),
- *  in the active region. Idempotent: delete an existing snapshot of that name first. */
+ *  in the active region. Idempotent: delete any existing snapshot of that name first. */
 export async function bakeDaytonaSnapshot(name: string, image: string, log: Log): Promise<void> {
 	const { daytonaRegion, targetSpec } = config;
 	const daytona = new Daytona({
@@ -41,15 +67,7 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 		...(daytonaRegion.target ? { target: daytonaRegion.target } : {}),
 	});
 
-	try {
-		const existing = await daytona.snapshot.get(name);
-		log(`deleting existing snapshot ${name}`);
-		await daytona.snapshot.delete(existing);
-	} catch (err) {
-		// Only "no such snapshot" is expected here; rethrow auth/network/in-use so the real failure
-		// isn't masked by a downstream "already exists"/permission error from create.
-		if (!isNotFound(err)) throw err;
-	}
+	await deleteExistingSnapshots(daytona, name, log);
 
 	log(`creating snapshot ${name} from ${image} (target ${daytonaRegion.target ?? "default"})`);
 	await daytona.snapshot.create(
