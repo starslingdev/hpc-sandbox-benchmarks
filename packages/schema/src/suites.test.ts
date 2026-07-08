@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { paddedSuiteToken, padSuiteList, SUITE_NAMES, SUITES } from "./index.ts";
+import { METRIC_CATALOG, paddedSuiteToken, padSuiteList, SUITE_NAMES, SUITES } from "./index.ts";
 
 describe("suite registry", () => {
 	it("registers cpu-node as a PTS- and Node-backed suite", () => {
@@ -16,7 +16,35 @@ describe("suite registry", () => {
 	});
 
 	it("exposes the suite names", () => {
-		expect(SUITE_NAMES).toEqual(["cpu-node", "system", "memory", "disk"]);
+		expect(SUITE_NAMES).toEqual([
+			"cpu-node",
+			"system",
+			"memory",
+			"disk",
+			"realworld-mastra",
+			"realworld-better-auth",
+			"realworld-openclaw",
+		]);
+	});
+
+	it("mirrors each realworld suite's metrics from the generated catalog (no hand-drift)", () => {
+		// The task set already lives in test-definition.xml, target.env, and the generated catalog;
+		// this pins the fourth (hand-maintained) copy in SUITES to the catalog in BOTH directions, so
+		// an added/removed/renamed task can't leave a suite emitting an undeclared metric or
+		// declaring a metric its profile no longer produces.
+		const profileOf = {
+			"realworld-mastra": "local/realworld-mastra",
+			"realworld-better-auth": "local/realworld-better-auth",
+			"realworld-openclaw": "local/realworld-openclaw",
+		} as const;
+		for (const [suiteName, ptsTest] of Object.entries(profileOf)) {
+			const fromCatalog = METRIC_CATALOG.filter((m) => m.pts?.test === ptsTest)
+				.map((m) => m.id)
+				.sort();
+			expect(fromCatalog.length).toBeGreaterThan(0);
+			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics];
+			expect(declared.sort()).toEqual(fromCatalog);
+		}
 	});
 
 	it("keeps command timeouts within the requested sandbox lifetime", () => {

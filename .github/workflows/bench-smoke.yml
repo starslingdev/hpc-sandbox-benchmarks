@@ -19,7 +19,16 @@ on:
         description: Suite to run
         type: choice
         default: cpu-node
-        options: [cpu-node, system, memory, disk]
+        options:
+          [
+            cpu-node,
+            system,
+            memory,
+            disk,
+            realworld-mastra,
+            realworld-better-auth,
+            realworld-openclaw,
+          ]
       region:
         # Daytona only: the default org is parked, so real runs use the ZEN5-VM region (its own API key +
         # target + snapshot, keyed by the _ZEN5 env-var suffix). Ignored by e2b/modal.
