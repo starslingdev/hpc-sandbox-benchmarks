@@ -10,11 +10,13 @@ on:
     inputs:
       region:
         # Daytona only (ignored by e2b/modal): the default org — Daytona target us-west-2 — is the active
-        # region; ZEN5-VM stays selectable for the beta fast-machine region if its _ZEN5 creds are provisioned.
+        # region. CI runs default-only; ZEN5-VM's _ZEN5 creds can't be safely wired into a static env block
+        # (an unset secret renders as an empty string, which the config gatekeeper rejects), so it is not
+        # offered here. The resolver still supports ZEN5-VM for local/manual runs where its creds are set.
         description: Daytona region
         type: choice
         default: default
-        options: [default, ZEN5-VM]
+        options: [default]
   # Nightly, unattended: publish one fresh dataset point per day with no human dispatch. Daily (not
   # per-commit or hourly) is deliberate — each run fans the full provider × suite matrix out over real,
   # metered sandbox time on three paid providers, and the numbers track slow host/provider drift rather

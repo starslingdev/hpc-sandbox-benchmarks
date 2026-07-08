@@ -31,12 +31,13 @@ on:
           ]
       region:
         # Daytona only (ignored by e2b/modal): the default org — Daytona target us-west-2 — is the active
-        # region; ZEN5-VM stays selectable for the beta fast-machine region (its own key/target/snapshot,
-        # keyed by the _ZEN5 env-var suffix) if those creds are provisioned.
+        # region. CI runs default-only; ZEN5-VM's _ZEN5 creds can't be safely wired into a static env block
+        # (an unset secret renders as an empty string, which the config gatekeeper rejects), so it is not
+        # offered here. The resolver still supports ZEN5-VM for local/manual runs where its creds are set.
         description: Daytona region
         type: choice
         default: default
-        options: [default, ZEN5-VM]
+        options: [default]
 
 # Least privilege: the job only reads the checked-out code and uploads an artifact.
 permissions:
