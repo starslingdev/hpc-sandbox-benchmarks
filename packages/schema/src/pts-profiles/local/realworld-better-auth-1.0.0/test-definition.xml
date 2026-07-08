@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite local profile: better-auth's own CI tasks (ENG-136), timed per phase.-->
+<PhoronixTestSuite>
+  <TestInformation>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Description>Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.</Description>
+    <ResultScale>Seconds</ResultScale>
+    <Proportion>LIB</Proportion>
+    <Executable>realworld-run</Executable>
+    <TimesToRun>3</TimesToRun>
+  </TestInformation>
+  <TestProfile>
+    <Version>1.0.0</Version>
+    <SupportedPlatforms>Linux</SupportedPlatforms>
+    <SoftwareType>Benchmark</SoftwareType>
+    <TestType>System</TestType>
+    <License>Free</License>
+    <Status>Verified</Status>
+    <EnvironmentSize>2</EnvironmentSize>
+    <ProjectURL>https://github.com/better-auth/better-auth</ProjectURL>
+    <RepositoryURL>https://github.com/better-auth/better-auth</RepositoryURL>
+    <Maintainer>StarSling</Maintainer>
+  </TestProfile>
+  <TestSettings>
+    <Option>
+      <DisplayName>Task</DisplayName>
+      <Identifier>task</Identifier>
+      <Menu>
+        <Entry>
+          <Name>Git Clone</Name>
+          <Value>git_clone</Value>
+        </Entry>
+        <Entry>
+          <Name>Cold Install</Name>
+          <Value>cold_install</Value>
+        </Entry>
+        <Entry>
+          <Name>Build</Name>
+          <Value>build</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Biome</Name>
+          <Value>lint_biome</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Deps Knip</Name>
+          <Value>lint_deps</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Format</Name>
+          <Value>lint_format</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Spell</Name>
+          <Value>lint_spell</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Types</Name>
+          <Value>lint_types</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Packages</Name>
+          <Value>lint_packages</Value>
+        </Entry>
+        <Entry>
+          <Name>Typecheck</Name>
+          <Value>typecheck</Value>
+        </Entry>
+      </Menu>
+    </Option>
+  </TestSettings>
+</PhoronixTestSuite>
