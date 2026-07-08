@@ -90,8 +90,15 @@ cold_install)
 		fi
 		(unset TURBO_FORCE && eval "$prep")
 	else
-		git clean -xdff -e node_modules
-		rm -rf node_modules/.cache
+		# Turbo's cache dirs (.turbo/ at the root, node_modules/.cache/turbo) survive EVERY generic
+		# reset — not just prep tasks' — so the cache the measured build wrote is still there when a
+		# later prep replays it, regardless of which tasks ran in between. Measurement-safe: every
+		# measured turbo command runs with TURBO_FORCE=true, so preserved cache is never read inside
+		# a timed window; all other tool caches in node_modules/.cache are still wiped.
+		git clean -xdff -e node_modules -e .turbo
+		if [ -d node_modules/.cache ]; then
+			find node_modules/.cache -mindepth 1 -maxdepth 1 ! -name turbo -exec rm -rf {} +
+		fi
 		if [ ! -d node_modules ]; then
 			# Recovery install: output stays on the (already-redirected) log — discarding it would
 			# hide the one diagnostic that explains a subsequent task failure.
