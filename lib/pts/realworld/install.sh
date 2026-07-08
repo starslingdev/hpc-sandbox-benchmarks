@@ -4,8 +4,8 @@
 # this file (and realworld-runner.sh, adjacent here) into the installed profile dir, where PTS
 # executes it as the profile's install.sh. All per-repo config lives in target.env. Copies
 # target.env + the runner from $(dirname "$0") into the install dir, writes the PTS executable
-# wrapper the runtime convention expects (an executable named after the versionless profile dir,
-# receiving the selected Task Option's Value as $1, stdout/stderr piped to $LOG_FILE), then does
+# wrapper each profile declares via <Executable>realworld-run</Executable> (receiving the selected
+# Task Option's Value as $1, stdout/stderr piped to $LOG_FILE), then does
 # the UNMEASURED provisioning: pin the toolchain, shallow-fetch the pinned SHA into work/, one warm
 # install -- so every measured task starts from a deps-ready workspace. See realworld-runner.sh for
 # the per-task measured logic the wrapper invokes at batch-run.
@@ -14,10 +14,9 @@ set -eu
 # shellcheck disable=SC1007 # CDPATH= (no value) is the idiom that disables CDPATH's cd-echoes-a-path
 # behavior for this one invocation; shellcheck misreads it as a mistyped assignment.
 SRC_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-# The versionless profile dir name, e.g. "realworld-better-auth-1.0.0" -> "realworld-better-auth" --
-# the executable name PTS looks for at batch-run (mirrors versionless()/versionlessTest() in schema).
-PROFILE_DIR_NAME="$(basename "$SRC_DIR")"
-EXE_NAME=$(printf '%s' "$PROFILE_DIR_NAME" | sed -E 's/-[0-9]+(\.[0-9]+)*$//')
+# Every profile declares <Executable>realworld-run</Executable> (test-definition.xml), so the
+# wrapper name is a fixed constant -- no versionless-dir derivation.
+EXE_NAME="realworld-run"
 
 if [ ! -f "${SRC_DIR}/target.env" ] || [ ! -f "${SRC_DIR}/realworld-runner.sh" ]; then
 	echo "ERROR: target.env or realworld-runner.sh missing next to install.sh (${SRC_DIR})" >&2
