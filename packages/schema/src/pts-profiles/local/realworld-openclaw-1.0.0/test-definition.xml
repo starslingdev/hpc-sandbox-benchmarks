@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite local profile: openclaw/openclaw's own CI tasks (ENG-138), timed per phase.-->
+<PhoronixTestSuite>
+  <TestInformation>
+    <Title>OpenClaw CI Tasks</Title>
+    <AppVersion>623534400684eca7c451cf587189fae714f2abe2</AppVersion>
+    <Description>Runs the CI tasks openclaw/openclaw's own pipeline runs -- clone, cold install (its exact CI invocation), lint (Oxlint), format check, typecheck (tsgo), shrinkwrap check, fast unit tests, build -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.</Description>
+    <ResultScale>Seconds</ResultScale>
+    <Proportion>LIB</Proportion>
+    <Executable>realworld-run</Executable>
+    <TimesToRun>3</TimesToRun>
+  </TestInformation>
+  <TestProfile>
+    <Version>1.0.0</Version>
+    <SupportedPlatforms>Linux</SupportedPlatforms>
+    <SoftwareType>Benchmark</SoftwareType>
+    <TestType>System</TestType>
+    <License>Free</License>
+    <Status>Verified</Status>
+    <EnvironmentSize>2</EnvironmentSize>
+    <ProjectURL>https://github.com/openclaw/openclaw</ProjectURL>
+    <RepositoryURL>https://github.com/openclaw/openclaw</RepositoryURL>
+    <Maintainer>StarSling</Maintainer>
+  </TestProfile>
+  <TestSettings>
+    <Option>
+      <DisplayName>Task</DisplayName>
+      <Identifier>task</Identifier>
+      <Menu>
+        <Entry>
+          <Name>Git Clone</Name>
+          <Value>git_clone</Value>
+        </Entry>
+        <Entry>
+          <Name>Cold Install</Name>
+          <Value>cold_install</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Oxlint</Name>
+          <Value>lint_oxlint</Value>
+        </Entry>
+        <Entry>
+          <Name>Lint Format</Name>
+          <Value>lint_format</Value>
+        </Entry>
+        <Entry>
+          <Name>Typecheck</Name>
+          <Value>typecheck</Value>
+        </Entry>
+        <Entry>
+          <Name>Shrinkwrap Check</Name>
+          <Value>shrinkwrap_check</Value>
+        </Entry>
+        <Entry>
+          <Name>Test Unit Fast</Name>
+          <Value>test_unit_fast</Value>
+        </Entry>
+        <Entry>
+          <Name>Build</Name>
+          <Value>build</Value>
+        </Entry>
+      </Menu>
+    </Option>
+  </TestSettings>
+</PhoronixTestSuite>
