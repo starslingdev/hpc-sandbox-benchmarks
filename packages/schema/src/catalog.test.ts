@@ -21,6 +21,26 @@ describe("metric catalog", () => {
 		}
 	});
 
+	it("uses snake_case slugs for every metric id", () => {
+		// The id is a stability-contract key and shows up in URLs/filenames/JSON, so it must be a plain
+		// lowercase snake_case slug — no uppercase, leading/trailing/doubled underscores, or punctuation.
+		// A generated PTS slug or a hand-authored harness/economics id that drifts off this shape fails
+		// here rather than shipping an un-greppable id.
+		const slug = /^[a-z0-9]+(_[a-z0-9]+)*$/;
+		for (const metric of METRIC_CATALOG) {
+			expect(metric.id).toMatch(slug);
+		}
+	});
+
+	it("never gives a derived metric a pts source", () => {
+		// `derived` (economics) and `pts` (parsed from a PTS <Result>) are mutually exclusive provenances:
+		// a derived metric is computed from pricing + measured runtime, never parsed. A derived entry that
+		// also carried `pts` would make ptsResultToMetric try to route a parsed result onto it.
+		for (const metric of METRIC_CATALOG) {
+			if (metric.derived) expect(metric.pts).toBeUndefined();
+		}
+	});
+
 	it("has at most one headline metric per dimension", () => {
 		for (const dimension of DIMENSIONS) {
 			const headlines = metricsForDimension(dimension).filter((metric) => metric.headline);

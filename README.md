@@ -2,6 +2,11 @@
 
 Compare top sandbox providers' performance for real developer and CI/CD tasks.
 
+> **Docs:** [Methodology](./docs/methodology.md) — how a measurement is produced (target spec,
+> dimensions, economics, host-vs-effective specs, transport model, the dataset pipeline). ·
+> [ADRs](./docs/adr/README.md) — the load-bearing architecture decisions and why. ·
+> [Contributing](./CONTRIBUTING.md) — the local gate and how to add a provider, suite, or metric.
+
 This repo is a **Bun workspace monorepo** with a strict, enforced dependency DAG and a uniform
 package shape. The guiding rule: *"can I import this?"* is answered by the path alone, and
 boundary violations fail CI.
