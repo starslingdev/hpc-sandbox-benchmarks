@@ -6,7 +6,13 @@
 // Iteration surface: a snapshot's region must match where sandboxes boot. We pass the region's
 // `target` to the client; if a beta region (ZEN5) also needs an explicit snapshot `regionId`, add it
 // to CreateSnapshotParams here.
-import { Daytona } from "@daytonaio/sdk";
+//
+// microVM-only: the fleet is Firecracker microVMs, never containers. We pin the snapshot's
+// `sandboxClass` to LINUX_VM so its create — and every sandbox booted from it — routes to microVM
+// runners. Without it Daytona defaults to the `container` class, which fails on a region that only has
+// microVM runners with "No runners are configured … for sandbox class 'container'". (Needs
+// @daytonaio/sdk ≥ 0.192, which first exposed the selector.)
+import { Daytona, SandboxClass } from "@daytonaio/sdk";
 import { config } from "@sandbox-benchmarks/providers";
 import type { Log } from "./types.ts";
 
@@ -51,6 +57,8 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 			name,
 			image,
 			resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: targetSpec.diskGb },
+			// Pin to microVM runners (never the `container` default) — the fleet's hard constraint.
+			sandboxClass: SandboxClass.LINUX_VM,
 		},
 		{ onLogs: log },
 	);
