@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#MISE description="Realworld runner/PTS contract selftest in a local Docker container (~3 min, no provider)"
+# Fast local iteration on the realworld machinery: runs lib/pts/realworld/selftest-payload.sh in a
+# throwaway node:22-bookworm container against a synthetic fixture repo — the full
+# run_realworld_pts -> PTS -> sentinel -> composite chain with second-scale tasks and hard
+# assertions (menu-order execution, prep-time exclusion, warm-up-once). Requires Docker.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+
+command -v docker >/dev/null 2>&1 || { echo "ERROR: docker is required for the selftest" >&2; exit 1; }
+
+OUT_DIR="${REPO_ROOT}/.scratch/selftest-out"
+mkdir -p "$OUT_DIR"
+exec docker run --rm \
+	-v "${REPO_ROOT}:/repo:ro" \
+	-v "${OUT_DIR}:/out" \
+	node:22-bookworm \
+	bash /repo/lib/pts/realworld/selftest-payload.sh
