@@ -119,8 +119,13 @@ cold_install)
 		# the same reset again, so the measured run is warm-toolchain + cold-artifact on every pass.
 		# Prep-carrying tasks skip this: their prep already exercised the toolchain.
 		eval "$cmd"
-		git clean -xdff -e node_modules
-		rm -rf node_modules/.cache
+		# Same PRESERVING reset as above — the old destructive form here wiped the turbo cache the
+		# measured build had written, killing the replay for any prep task downstream of a no-prep
+		# task's warm-up cycle.
+		git clean -xdff -e node_modules -e .turbo
+		if [ -d node_modules/.cache ]; then
+			find node_modules/.cache -mindepth 1 -maxdepth 1 ! -name turbo -exec rm -rf {} +
+		fi
 	fi
 	start_ns=$(date +%s%N)
 	eval "$cmd"
