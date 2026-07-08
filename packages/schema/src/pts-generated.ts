@@ -84,7 +84,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Build",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Build" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -96,7 +96,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Cold Install",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Cold Install" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -108,7 +108,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Git Clone",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Git Clone" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -120,7 +120,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Lint Biome",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Lint Biome" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -132,7 +132,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Lint Deps Knip",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Lint Deps Knip" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -144,7 +144,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Lint Format",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Lint Format" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -156,7 +156,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Lint Packages",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Lint Packages" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -168,7 +168,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Lint Spell",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Lint Spell" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -180,7 +180,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Lint Types",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Lint Types" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
@@ -192,7 +192,7 @@ export const ptsGenerated: MetricDef[] = [
 		headline: false,
 		label: "Better-Auth CI Tasks - Task: Typecheck",
 		description:
-			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, lint (Biome/Knip/format/spell/types/packages), typecheck, build, test -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs the CI tasks better-auth/better-auth's own pipeline runs -- clone, cold install, build, lint (Biome/Knip/format/spell/types/packages), typecheck -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
 		pts: { test: "local/realworld-better-auth", description: "Task: Typecheck" },
 		sourceUrl: "https://github.com/better-auth/better-auth",
 	},
