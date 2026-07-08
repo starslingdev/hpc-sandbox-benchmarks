@@ -16,6 +16,7 @@
     },
     "catalogs": {
       "computesdk": {
+        "@computesdk/blaxel": "1.6.16",
         "@computesdk/daytona": "1.7.30",
         "@computesdk/e2b": "1.7.51",
         "@computesdk/modal": "1.9.3",
