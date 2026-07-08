@@ -7,6 +7,7 @@
     <Description>Runs the CI tasks openclaw/openclaw's own pipeline runs -- clone, cold install (its exact CI invocation), lint (Oxlint), format check, typecheck (tsgo), shrinkwrap check, fast unit tests, build -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.</Description>
     <ResultScale>Seconds</ResultScale>
     <Proportion>LIB</Proportion>
+    <Executable>realworld-run</Executable>
     <TimesToRun>3</TimesToRun>
   </TestInformation>
   <TestProfile>
@@ -18,6 +19,7 @@
     <Status>Verified</Status>
     <EnvironmentSize>2</EnvironmentSize>
     <ProjectURL>https://github.com/openclaw/openclaw</ProjectURL>
+    <RepositoryURL>https://github.com/openclaw/openclaw</RepositoryURL>
     <Maintainer>StarSling</Maintainer>
   </TestProfile>
   <TestSettings>
