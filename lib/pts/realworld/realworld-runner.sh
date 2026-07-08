@@ -78,13 +78,13 @@ cold_install)
 	prep_var="TASK_PREP_${TASK}"
 	eval "prep=\"\${${prep_var}:-}\""
 	if [ -n "$prep" ]; then
-		# Build-dependent task (declared via TASK_PREP_<value>): keep dist + node_modules (turbo's
-		# local cache lives inside it) through the reset, so the UNMEASURED prep below is a
+		# Build-dependent task (declared via TASK_PREP_<value>): keep dist + node_modules + .turbo
+		# (turbo 2's local cache dir) through the reset, so the UNMEASURED prep below is a
 		# near-instant turbo cache REPLAY of the build the Task menu already measured earlier in the
 		# batch — never a duplicate slow build (a full build happens only when the task runs
 		# standalone). TURBO_FORCE is lifted for the prep only; the measured command keeps
 		# TURBO_FORCE=true so it is always a genuine execution, never a cache replay.
-		git clean -xdff -e node_modules -e dist
+		git clean -xdff -e node_modules -e dist -e .turbo
 		if [ ! -d node_modules ]; then
 			eval "$TASK_CMD_cold_install"
 		fi
@@ -103,6 +103,17 @@ cold_install)
 	if [ -z "$cmd" ]; then
 		echo "no ${cmd_var} in target.env for task '${TASK}'" >&2
 		exit 1
+	fi
+	if [ -z "$prep" ]; then
+		# Steady-state warm-up (fio's ramp_time, adapted): the FIRST execution of a JS toolchain in a
+		# fresh sandbox pays one-time JIT/compile-cache costs that live outside work/ and survive the
+		# per-pass reset — observed 75s vs ~10s on an identical better-auth build, an asymmetry that
+		# poisons the sample set and trips PTS's dynamic run count. One unmeasured execution, then
+		# the same reset again, so the measured run is warm-toolchain + cold-artifact on every pass.
+		# Prep-carrying tasks skip this: their prep already exercised the toolchain.
+		eval "$cmd"
+		git clean -xdff -e node_modules
+		rm -rf node_modules/.cache
 	fi
 	start_ns=$(date +%s%N)
 	eval "$cmd"
