@@ -31,12 +31,14 @@ function isNotFound(err: unknown): boolean {
 	return typeof e.message === "string" && /not found|does not exist|404/i.test(e.message);
 }
 
-/** Delete every existing snapshot named `name`, in any state. We sweep `list()` rather than
+/** Every snapshot named `name`, in any state, across all pages. We sweep `list()` rather than
  *  `get(name)`: a snapshot stuck in a failed/error state — a prior bake that died mid-create — is NOT
  *  returned by `get`, yet still makes `create` reject the name as "already exists for this
- *  organization". Page count is read up front so the paginated read is stable before any delete
- *  shifts it; deletes run after. */
-async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log): Promise<void> {
+ *  organization". Page count is read up front so the paginated read is stable within one call. */
+async function listSnapshotsByName(
+	daytona: Daytona,
+	name: string,
+): Promise<Awaited<ReturnType<Daytona["snapshot"]["list"]>>["items"]> {
 	const LIMIT = 100;
 	const first = await daytona.snapshot.list(1, LIMIT);
 	const matches = first.items.filter((s) => s.name === name);
@@ -45,6 +47,16 @@ async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log)
 		const { items } = await daytona.snapshot.list(page, LIMIT);
 		matches.push(...items.filter((s) => s.name === name));
 	}
+	return matches;
+}
+
+/** Delete every existing snapshot named `name` and WAIT until it's fully gone. `snapshot.delete` is
+ *  asynchronous (active → `removing` → gone), and `create` rejects the name while ANY snapshot of it
+ *  still exists — so returning right after issuing the delete races the not-yet-completed removal
+ *  ("already exists for this organization"). Poll `list()` until no match remains, bounded by a
+ *  deadline so a stuck removal fails loudly instead of hanging. */
+async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log): Promise<void> {
+	const matches = await listSnapshotsByName(daytona, name);
 	for (const snap of matches) {
 		log(`deleting existing snapshot ${name} (state ${snap.state})`);
 		try {
@@ -54,6 +66,26 @@ async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log)
 			// real failure isn't masked by a downstream "already exists" from create.
 			if (!isNotFound(err)) throw err;
 		}
+	}
+	if (matches.length === 0) return;
+
+	const DEADLINE_MS = 180_000;
+	const POLL_MS = 3_000;
+	const start = performance.now();
+	for (;;) {
+		const remaining = await listSnapshotsByName(daytona, name);
+		if (remaining.length === 0) return;
+		if (performance.now() - start > DEADLINE_MS) {
+			throw new Error(
+				`daytona snapshot ${name} still present after ${DEADLINE_MS}ms (states: ${remaining
+					.map((s) => s.state)
+					.join(", ")}) — deletion did not complete`,
+			);
+		}
+		log(
+			`waiting for snapshot ${name} deletion (states: ${remaining.map((s) => s.state).join(", ")})…`,
+		);
+		await new Promise((resolve) => setTimeout(resolve, POLL_MS));
 	}
 }
 
