@@ -6,6 +6,13 @@
 // are implementation detail. This surface exposes only the entry points consumers (the CLI) need:
 // normalize a raw tree, write the Run, and summarize it.
 export { aggregateRuns } from "./lib/aggregate.ts";
+export {
+	buildLeaderboard,
+	type Leaderboard,
+	type LeaderboardDimension,
+	type LeaderboardRow,
+	renderLeaderboardMarkdown,
+} from "./lib/leaderboard.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
 export {
 	type CompareRunsOptions,
