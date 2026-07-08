@@ -1,7 +1,7 @@
 /**
  * Consistency gate for the realworld PTS profiles (ENG-135/136/137/138): each profile's `Task` Option
  * (test-definition.xml) and its `target.env` sibling are two hand-authored, unrelated-by-construction
- * files that must stay in lockstep -- lib/pts/realworld-runner.sh looks up `TASK_CMD_<value>` for
+ * files that must stay in lockstep -- lib/pts/realworld/realworld-runner.sh looks up `TASK_CMD_<value>` for
  * whichever Option Value PTS invokes it with, so a Value with no matching key would fail at runtime
  * with no compile-time signal. Checked here instead: every Entry's Value has exactly one
  * `TASK_CMD_<value>` key, and vice versa (no orphaned key). Also cross-checks target.env's PIN_SHA
@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseProfile } from "../scripts/catalog/parse.ts";
 
@@ -72,6 +72,26 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 						.map((key) => key.slice("TASK_CMD_".length)),
 				);
 				expect(taskCmdKeys).toEqual(values);
+			});
+
+			it("stays data-only: no per-profile install.sh (the shared lib/pts/realworld/ copy is overlaid)", () => {
+				expect(existsSync(join(base, "install.sh"))).toBe(false);
+			});
+
+			it("anchors every TASK_PREP_<value> to a declared Task Value (no orphaned prep)", () => {
+				// TASK_PREP_<value> runs unmeasured before the timed TASK_CMD_<value> (realworld-runner.sh);
+				// a prep keyed to a renamed/removed Value would silently stop running.
+				const values = new Set(
+					profile.settings
+						.find((option) => option.DisplayName === "Task")
+						?.Menu.Entry.map((e) => e.Value) ?? [],
+				);
+				const prepKeys = Object.keys(env)
+					.filter((key) => key.startsWith("TASK_PREP_"))
+					.map((key) => key.slice("TASK_PREP_".length));
+				for (const key of prepKeys) {
+					expect(values).toContain(key);
+				}
 			});
 
 			it("declares REPO_URL, PIN_SHA and NODE_VERSION", () => {

@@ -168,6 +168,11 @@ _configure_pts_batch() {
 	# The readings are host-level sensors anyway (unattributable for provider comparison). Unset any
 	# value inherited from the image/harness env defensively — the producer never sets it.
 	unset MONITOR PERFORMANCE_PER_WATT
+	# Pin the batch run queue to each profile's natural (menu) order. PTS's AutoSortRunQueue
+	# otherwise usort()s the queue (pts_test_run_manager.php) — effectively arbitrary within one
+	# test's option matrix — which would run build-dependent tasks before the measured `build`
+	# their unmeasured prep replays (correct either way, but the prep then pays a full rebuild).
+	export TEST_EXECUTION_SORT=none
 	export TEST_RESULTS_NAME=benchmark
 	export TEST_RESULTS_DESCRIPTION=ci
 	export TEST_RESULTS_IDENTIFIER=ci
@@ -299,6 +304,32 @@ run_pts_benchmark() {
 		skip_result "PTS batch-run of ${test_name} produced no composite.xml" "$prefix"
 	fi
 	return 0
+}
+
+# Run one realworld suite end to end: gate on the toolchain, install the repo-local profile with
+# the SHARED install.sh + runner overlaid from lib/pts/realworld/ (the profiles vendor only
+# XML + target.env — no per-profile scripts to drift), then batch-run it. The single body behind
+# every benchmark:realworld:pts:<repo> mise leaf.
+# Usage: run_realworld_pts <repo>   (repo = mastra | better-auth | openclaw)
+run_realworld_pts() {
+	local repo="$1"
+	local profile="realworld-${repo}-1.0.0"
+	local prefix="pts_realworld-${repo}"
+
+	if ! command -v phoronix-test-suite &>/dev/null; then
+		skip_result "phoronix-test-suite not installed" "$prefix"
+		return 0
+	fi
+	if ! command -v node &>/dev/null; then
+		skip_result "node not installed" "$prefix"
+		return 0
+	fi
+
+	install_local_pts_profile "$profile" \
+		"${REPO_ROOT}/lib/pts/realworld/install.sh" \
+		"${REPO_ROOT}/lib/pts/realworld/realworld-runner.sh"
+
+	run_pts_benchmark "local/${profile}" "$prefix"
 }
 
 # --- Orchestrator helpers ---
