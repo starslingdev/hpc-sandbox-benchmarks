@@ -2,7 +2,8 @@
 // public-facing artifacts. Run after `bake` validates the candidate.
 //
 // The order makes the immutable base tag the COMMIT POINT, so a mid-promote failure is always clean:
-//   1. Refuse if the public version tag already exists — it is immutable (no --force; bump to republish).
+//   1. Refuse if the public version tag already exists — it is immutable; bump to republish (or pass
+//      `--force`, wired only to a manual force_republish dispatch, to deliberately regenerate in place).
 //   2. Re-validate the candidate (boot + smoke) right now, so the bytes we publish are verified again
 //      (the candidate tag is mutable and may have changed since `bake`). Abort on any failure.
 //   3. Build each provider's version-named artifact FROM the candidate base (the just-revalidated
@@ -13,7 +14,7 @@
 //   4. LAST: retag the candidate base → the public version (registry-side). Reached only when every
 //      prior step succeeded, so a failure never leaves a published version with missing/stale artifacts.
 // A rerun after a mid-promote failure is clean (the version tag was never written); once published it
-// is refused at step 1 — bump the version to publish again.
+// is refused at step 1 — bump the version, or force_republish, to publish again.
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
@@ -24,26 +25,36 @@ import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
 
-export async function promoteAll(log: Log): Promise<BakeReport[]> {
+export async function promoteAll(log: Log, force = false): Promise<BakeReport[]> {
 	const reports: BakeReport[] = [];
 
 	// 1. Refuse to overwrite the immutable public version (D2b). Checked first, before any mutation, so
 	//    a refused promote leaves everything untouched. A registry error here (auth/network) is NOT
 	//    "not published" — refuse rather than risk overwriting an existing :v1 we couldn't see.
-	let alreadyPublished: boolean;
-	try {
-		alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
-	} catch (err) {
-		const reason = `could not verify whether ${config.toolchainImageVersion} is already published, so refusing to publish: ${err instanceof Error ? err.message : String(err)}`;
-		log(`<<< promote refused — ${reason}`);
-		reports.push({ provider: "image", status: "failed", reason });
-		return reports;
-	}
-	if (alreadyPublished) {
-		const reason = `${config.toolchainImageVersion} already exists — the public version is immutable; bump the version to publish again`;
-		log(`<<< promote refused — ${reason}`);
-		reports.push({ provider: "image", status: "failed", reason });
-		return reports;
+	//    `force` (manual dispatch only — see toolchain-image.yml) deliberately republishes over an
+	//    existing version for dev iteration; automated push-to-main never sets it, so the invariant
+	//    holds in production. The image retag, e2b `template create`, and the daytona list-sweep all
+	//    overwrite by name, so a forced republish is a clean regenerate.
+	if (force) {
+		log(
+			`>>> force-republish: regenerating ${config.toolchainImageVersion}, overwriting if present`,
+		);
+	} else {
+		let alreadyPublished: boolean;
+		try {
+			alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
+		} catch (err) {
+			const reason = `could not verify whether ${config.toolchainImageVersion} is already published, so refusing to publish: ${err instanceof Error ? err.message : String(err)}`;
+			log(`<<< promote refused — ${reason}`);
+			reports.push({ provider: "image", status: "failed", reason });
+			return reports;
+		}
+		if (alreadyPublished) {
+			const reason = `${config.toolchainImageVersion} already exists — the public version is immutable; bump the version or dispatch with force_republish to publish again`;
+			log(`<<< promote refused — ${reason}`);
+			reports.push({ provider: "image", status: "failed", reason });
+			return reports;
+		}
 	}
 
 	// 2. Re-validate the candidate immediately before publishing, so the bytes we promote are verified

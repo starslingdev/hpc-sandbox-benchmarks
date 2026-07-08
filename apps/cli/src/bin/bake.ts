@@ -45,7 +45,9 @@ if (import.meta.main) {
 
 	// Promote is the release step: publish the already-validated candidate as the public version.
 	if (process.argv.includes("--promote")) {
-		const promoted = await promoteAll(log);
+		// `--force` republishes over an existing (immutable) version — dev regeneration, set only by a
+		// manual toolchain-image.yml dispatch. Automated pushes never pass it, so :v1 stays immutable there.
+		const promoted = await promoteAll(log, process.argv.includes("--force"));
 		console.log(
 			JSON.stringify(
 				{
