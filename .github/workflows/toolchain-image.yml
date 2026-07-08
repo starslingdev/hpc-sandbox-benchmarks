@@ -196,6 +196,11 @@ jobs:
           BUILD_VERSION: ${{ env.IMAGE_VERSION }}
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          # Bake/validate the daytona snapshot in the active region. Without a target the snapshot lands
+          # in the account's default region (which has no `container` runners) and the bake fails at
+          # snapshot creation. Defaulted to the active target so an unsynced secret can't break the
+          # publish at module load (parity with bench-matrix.yml / bench-smoke.yml).
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
@@ -203,9 +208,12 @@ jobs:
           # Declare then assign so the command substitution's exit status isn't masked (SC2155).
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           export BUILD_DATE
-          # --require fails the publish loudly if any provider's secret is missing/misnamed, so a merge
-          # can't bless a candidate while a provider was silently skipped (never built or validated).
-          bun apps/cli/src/bin/bake.ts --build-push --require e2b,daytona,modal
+          # --require fails the publish loudly if a required provider's secret is missing/misnamed, so a
+          # merge can't bless a candidate while a required provider was silently skipped (never built or
+          # validated). modal is intentionally NOT required here: its creds aren't synced yet, so a
+          # required modal would skip and fail the publish; add it back once MODAL_TOKEN_* land. (blaxel
+          # is likewise excluded — its bake is a no-op.)
+          bun apps/cli/src/bin/bake.ts --build-push --require e2b,daytona
 
       # Promote the validated candidate to the immutable public version (+ version-named artifacts).
       - name: Promote candidate → version
@@ -213,8 +221,15 @@ jobs:
         env:
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          # Bake/validate the daytona snapshot in the active region. Without a target the snapshot lands
+          # in the account's default region (which has no `container` runners) and the bake fails at
+          # snapshot creation. Defaulted to the active target so an unsynced secret can't break the
+          # publish at module load (parity with bench-matrix.yml / bench-smoke.yml).
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
-        # public version is never published while a provider's version artifact was silently skipped.
-        run: bun apps/cli/src/bin/bake.ts --promote --require e2b,daytona,modal
+        # public version is never published while a required provider's version artifact was silently
+        # skipped. modal is intentionally NOT required here (creds not synced yet); add it back once
+        # MODAL_TOKEN_* land. (blaxel is likewise excluded — its bake is a no-op.)
+        run: bun apps/cli/src/bin/bake.ts --promote --require e2b,daytona

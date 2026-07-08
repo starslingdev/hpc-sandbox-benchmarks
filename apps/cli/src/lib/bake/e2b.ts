@@ -29,20 +29,41 @@ const E2B_DOCKERFILE = "e2b/Dockerfile"; // committed template: ARG BASE_IMAGE d
 const E2B_DOCKERFILE_GENERATED = "e2b/Dockerfile.generated"; // base pinned to a registry ref per bake
 const E2B_TOML = "e2b/e2b.toml"; // generated manifest (record + parity)
 
-/** Generate the per-bake e2b Dockerfile: the committed variant Dockerfile with its `ARG BASE_IMAGE`
- *  default rewritten to a concrete, registry-pullable `baseImage`. Throws if the anchor is missing so
- *  a Dockerfile refactor can't silently ship the wrong (local `:dev`) base. */
-function writeE2bDockerfile(baseImage: string): void {
-	const anchor = /^ARG BASE_IMAGE=.*$/m;
-	const template = readFileSync(`${E2B_CONTEXT}/${E2B_DOCKERFILE}`, "utf8");
-	// Test the regex matched (not `pinned !== template`): a base that already equals the committed
+/**
+ * Pin the e2b variant Dockerfile's base to a concrete, registry-pullable `baseImage`. Unlike
+ * `docker build` (used for the daytona/modal variants), E2B's remote builder does NOT expand a
+ * pre-`FROM` `ARG BASE_IMAGE`, so a `FROM ${BASE_IMAGE}` reaches it verbatim and fails with
+ * "invalid image reference '${BASE_IMAGE}'". So rewrite the `FROM` line itself to the concrete ref;
+ * the `ARG BASE_IMAGE=` default is pinned too so the `${BASE_IMAGE}` labels still record the real base.
+ * Throws if either anchor is missing so a Dockerfile refactor can't silently ship the wrong (local
+ * `:dev`) base. Pure (string in, string out) so the substitution is unit-testable without file I/O.
+ */
+export function pinE2bBaseImage(template: string, baseImage: string): string {
+	const argAnchor = /^ARG BASE_IMAGE=.*$/m;
+	// Only the pre-FROM `FROM ${BASE_IMAGE}` needs concreting; trailing horizontal whitespace is
+	// tolerated, but not a newline (so the anchor can't swallow following lines). `[^\S\r\n]` is
+	// horizontal-whitespace-only: excluding `\r` too keeps a CRLF source Dockerfile's line endings
+	// intact (a `\r`-consuming match would rewrite FROM as LF while ARG stays CRLF → mixed endings).
+	const fromAnchor = /^FROM \$\{BASE_IMAGE\}[^\S\r\n]*$/m;
+	// Test each regex matched (not `pinned !== template`): a base that already equals the committed
 	// default would otherwise be misread as a missing anchor.
-	if (!anchor.test(template)) {
+	if (!argAnchor.test(template)) {
 		throw new Error(`e2b Dockerfile has no 'ARG BASE_IMAGE=' default to pin (${E2B_DOCKERFILE})`);
 	}
-	// Function replacement so a `$` in `baseImage` (e.g. `$&`) isn't interpreted as a replacement pattern.
-	const pinned = template.replace(anchor, () => `ARG BASE_IMAGE=${baseImage}`);
-	writeFileSync(`${E2B_CONTEXT}/${E2B_DOCKERFILE_GENERATED}`, pinned);
+	if (!fromAnchor.test(template)) {
+		throw new Error(`e2b Dockerfile has no 'FROM \${BASE_IMAGE}' line to pin (${E2B_DOCKERFILE})`);
+	}
+	// Function replacements so a `$` in `baseImage` (e.g. `$&`) isn't interpreted as a replacement pattern.
+	return template
+		.replace(argAnchor, () => `ARG BASE_IMAGE=${baseImage}`)
+		.replace(fromAnchor, () => `FROM ${baseImage}`);
+}
+
+/** Generate the per-bake e2b Dockerfile: the committed variant Dockerfile with its base pinned to a
+ *  concrete, registry-pullable `baseImage` (see {@link pinE2bBaseImage}). */
+function writeE2bDockerfile(baseImage: string): void {
+	const template = readFileSync(`${E2B_CONTEXT}/${E2B_DOCKERFILE}`, "utf8");
+	writeFileSync(`${E2B_CONTEXT}/${E2B_DOCKERFILE_GENERATED}`, pinE2bBaseImage(template, baseImage));
 }
 
 /** Build the e2b template `name` from `baseImage` (the candidate base while iterating, the published
