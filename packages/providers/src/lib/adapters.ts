@@ -66,7 +66,11 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			// physical core); it is deliberately NOT applied here.
 			cpu: TARGET_SPEC.vcpus,
 			cpuLimit: TARGET_SPEC.vcpus,
+			// `memoryMiB` is only a RESERVATION — on its own the guest still sees the host's RAM (a live
+			// sandbox reported 464 GB), and PTS sizes STREAM's arrays from that, so the memory suite never
+			// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report the target spec.
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
+			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		},
 	},
 };

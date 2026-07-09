@@ -140,6 +140,34 @@ describe("StepRunner.runDetached", () => {
 		expect(commands.some((c) => c.includes("pkill"))).toBe(true);
 	});
 
+	it("surfaces the detached log's tail on timeout, before the kill discards the sandbox", async () => {
+		// Regression: the timeout path used to pkill and throw without ever reading logPath, so a hung
+		// step (the one whose output matters most) was a black box in CI.
+		const reads: string[] = [];
+		const sandbox: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: "" }),
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async () => false,
+				readFile: async (path) => {
+					reads.push(path);
+					return "line one\nStarted Run 18 @ 04:10:59 *";
+				},
+			},
+		};
+		const logged: string[] = [];
+		const spy = console.log;
+		console.log = (msg: string) => void logged.push(String(msg));
+		try {
+			const runner = new StepRunner(sandbox);
+			await expect(runner.runDetached("bench", "sleep 999", 0)).rejects.toThrow(/timed out/);
+		} finally {
+			console.log = spy;
+		}
+		expect(reads.some((p) => p.endsWith(".log"))).toBe(true);
+		expect(logged.join("\n")).toContain("Started Run 18");
+	});
+
 	// A sandbox with NO filesystem API: the detached transport must still detach (double-fork) and
 	// observe completion by `cat`-ing the done-file over exec. runCommand answers each command shape —
 	// the launch (contains nohup), the done-file probe (`cat …done`), and the log read (`cat …log`).

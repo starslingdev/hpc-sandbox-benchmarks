@@ -36,6 +36,8 @@ export const MIN = 60_000;
 const POLL_START_MS = 1_500;
 const POLL_BACKOFF = 1.5;
 const POLL_CAP_MS = 10_000;
+/** How much of a timed-out detached step's log to surface — enough to diagnose, not enough to flood. */
+const TIMEOUT_LOG_TAIL_LINES = 50;
 /** Done-file sentinel for the no-filesystem cat-poll fallback: printed while the file isn't there yet. */
 const RUNNING_SENTINEL = "__RUNNING__";
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -309,10 +311,16 @@ export class StepRunner {
 					return this.finishStep(label, started, { exitCode, stdout }, opts);
 				}
 				if (performance.now() > deadline) {
+					// Recover the detached job's own output BEFORE killing it and tearing the sandbox down.
+					// A timed-out step is otherwise a black box: the log lives only inside the sandbox, and
+					// a step that hangs is exactly the one whose output we need. Best-effort — a failed read
+					// must not mask the timeout.
+					const tail = await this.readLogTail(fs, logPath);
 					// Best-effort stop the detached job; don't let a failing kill mask the timeout.
 					await this.sandbox
 						.runCommand(`pkill -f ${shellQuote(tag)} || true`)
 						.catch(() => undefined);
+					if (tail) console.log(`--- last output from "${label}" before timeout ---\n${tail}`);
 					throw new Error(`Step "${label}" timed out after ${Math.round(timeoutMs / 1000)}s`);
 				}
 				await this.sleep(pollDelayMs);
@@ -365,6 +373,16 @@ export class StepRunner {
 	}
 
 	/** Read the detached step's log over `exec` — the output transport for the no-filesystem path. */
+	/** The last {@link TIMEOUT_LOG_TAIL_LINES} lines of a detached step's log, or "" if unreadable.
+	 *  Bounded so a runaway log can't flood the CI transcript; never throws. */
+	private async readLogTail(fs: SandboxFilesystem | undefined, logPath: string): Promise<string> {
+		const text = fs
+			? await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read").catch(() => "")
+			: await this.catFile(logPath);
+		const lines = text.trimEnd().split("\n");
+		return lines.slice(-TIMEOUT_LOG_TAIL_LINES).join("\n");
+	}
+
 	private async catFile(logPath: string): Promise<string> {
 		const res = await withTimeout(
 			this.sandbox.runCommand(`bash -c ${shellQuote(`cat ${logPath} 2>/dev/null || true`)}`),
