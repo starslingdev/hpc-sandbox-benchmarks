@@ -168,6 +168,30 @@ describe("StepRunner.runDetached", () => {
 		expect(logged.join("\n")).toContain("Started Run 18");
 	});
 
+	it("distinguishes an unreadable log (wedged sandbox) from a quiet one", async () => {
+		// A read that never resolves means the sandbox stopped answering — not that the step was silent.
+		const sandbox: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: "" }),
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async () => false,
+				readFile: async () => {
+					throw new Error("sandbox unresponsive");
+				},
+			},
+		};
+		const logged: string[] = [];
+		const spy = console.log;
+		console.log = (msg: string) => void logged.push(String(msg));
+		try {
+			const runner = new StepRunner(sandbox);
+			await expect(runner.runDetached("bench", "sleep 999", 0)).rejects.toThrow(/timed out/);
+		} finally {
+			console.log = spy;
+		}
+		expect(logged.join("\n")).toContain("stopped responding");
+	});
+
 	// A sandbox with NO filesystem API: the detached transport must still detach (double-fork) and
 	// observe completion by `cat`-ing the done-file over exec. runCommand answers each command shape —
 	// the launch (contains nohup), the done-file probe (`cat …done`), and the log read (`cat …log`).

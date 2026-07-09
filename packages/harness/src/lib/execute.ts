@@ -320,7 +320,14 @@ export class StepRunner {
 					await this.sandbox
 						.runCommand(`pkill -f ${shellQuote(tag)} || true`)
 						.catch(() => undefined);
-					if (tail) console.log(`--- last output from "${label}" before timeout ---\n${tail}`);
+					if (tail === null) {
+						console.log(
+							`--- "${label}" timed out and its log could not be read: the sandbox stopped ` +
+								`responding (memory exhaustion or a dead agent), rather than running quietly ---`,
+						);
+					} else if (tail) {
+						console.log(`--- last output from "${label}" before timeout ---\n${tail}`);
+					}
 					throw new Error(`Step "${label}" timed out after ${Math.round(timeoutMs / 1000)}s`);
 				}
 				await this.sleep(pollDelayMs);
@@ -373,12 +380,19 @@ export class StepRunner {
 	}
 
 	/** Read the detached step's log over `exec` — the output transport for the no-filesystem path. */
-	/** The last {@link TIMEOUT_LOG_TAIL_LINES} lines of a detached step's log, or "" if unreadable.
+	/** The last {@link TIMEOUT_LOG_TAIL_LINES} lines of a detached step's log, or `null` when the log
+	 *  could not be read at all. The distinction matters: an empty tail means the step ran quietly,
+	 *  whereas an unreadable one means the sandbox stopped answering — a very different diagnosis, and
+	 *  collapsing both to "" once sent us hunting a detach bug that was really memory exhaustion.
 	 *  Bounded so a runaway log can't flood the CI transcript; never throws. */
-	private async readLogTail(fs: SandboxFilesystem | undefined, logPath: string): Promise<string> {
+	private async readLogTail(
+		fs: SandboxFilesystem | undefined,
+		logPath: string,
+	): Promise<string | null> {
 		const text = fs
-			? await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read").catch(() => "")
-			: await this.catFile(logPath);
+			? await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read").catch(() => null)
+			: await this.catFile(logPath).catch(() => null);
+		if (text === null) return null;
 		const lines = text.trimEnd().split("\n");
 		return lines.slice(-TIMEOUT_LOG_TAIL_LINES).join("\n");
 	}

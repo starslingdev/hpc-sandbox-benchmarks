@@ -10,4 +10,20 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 	exit 0
 fi
 
+# Pin STREAM's working set so every provider measures the same thing.
+#
+# pts/stream's install.sh sizes the arrays as `max(100e6, getconf LEVEL3_CACHE_SIZE * 4)` elements.
+# Under gVisor (modal) getconf reports the HOST's L3, not the sandbox's, so a big host CPU inflates
+# the arrays without bound: with the target spec's 8 GiB cap that allocation is OOM-killed, and
+# uncapped it merely ran ~4x slower per trial with a deviation that never converged. It also means
+# two providers on different host CPUs were silently benchmarking different working sets, which is
+# not a bandwidth comparison at all.
+#
+# 150e6 elements = 3 arrays x 8 B x 150e6 = ~3.6 GiB: comfortably inside the 8 GiB target spec, and
+# >=4x the L3 of any plausible host (per-array 1.2 GiB), which is the ratio upstream STREAM asks for.
+# install.sh appends $CFLAGS_OVERRIDE AFTER its own -DSTREAM_ARRAY_SIZE, so ours wins; on failure it
+# retries with -mcmodel=medium, which arrays this large require.
+STREAM_ARRAY_SIZE=150000000
+export CFLAGS_OVERRIDE="-O3 -march=native -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_SIZE}"
+
 run_pts_benchmark "pts/stream" "pts_stream"
