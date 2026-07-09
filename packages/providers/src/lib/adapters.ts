@@ -8,7 +8,7 @@ import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
-import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
+import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
 import type { ProviderAdapter } from "./types.ts";
 
@@ -59,9 +59,13 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createCompute: () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME }),
 		createOptions: {
 			templateId: config.toolchainImage,
-			// Modal's `cpu`/`cpuLimit` are physical cores, not vCPUs — convert from the pinned vCPU spec.
-			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
-			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
+			// `cpu`/`cpuLimit` are what the sandbox sees: nproc tracks the requested value 1:1 (observed
+			// on a live sandbox — requesting 1 yielded `nproc == 1`). Pass the pinned vCPU count straight
+			// through, so Modal matches the target spec instead of running the suite on half the CPU of
+			// every other provider. VCPUS_PER_PHYSICAL_CORE stays a pricing-only concern (Modal bills per
+			// physical core); it is deliberately NOT applied here.
+			cpu: TARGET_SPEC.vcpus,
+			cpuLimit: TARGET_SPEC.vcpus,
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 		},
 	},

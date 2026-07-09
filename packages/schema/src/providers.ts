@@ -119,10 +119,14 @@ export interface ProviderMeta {
 export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 20 } as const;
 
 /**
- * Modal provisions and prices in physical CPU cores, where 1 physical core = 2 vCPU. This is the one
- * source of that factor: the Modal pricing entry below normalizes its per-physical-core rate to
- * per-vCPU by it, and the harness adapter divides {@link TARGET_SPEC}.vcpus by it to reserve the
- * matching number of cores (Modal's `SandboxCreateParams.cpu` is physical cores, not vCPUs).
+ * Modal *prices* in physical CPU cores, where 1 physical core = 2 vCPU. This is the one source of that
+ * factor, and it is a pricing concern only: the Modal pricing entry below normalizes its
+ * per-physical-core rate to per-vCPU by it.
+ *
+ * It is deliberately NOT applied to `SandboxCreateParams.cpu`. Whatever the billing unit, a Modal
+ * sandbox sees the requested `cpu` 1:1 (`cpu: 1` came up with `nproc == 1`), so the adapter passes
+ * {@link TARGET_SPEC}.vcpus straight through. Dividing here once left Modal running every suite on
+ * half the CPU of the other providers.
  */
 export const VCPUS_PER_PHYSICAL_CORE = 2;
 

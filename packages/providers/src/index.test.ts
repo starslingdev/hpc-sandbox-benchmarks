@@ -27,12 +27,15 @@ describe("@sandbox-benchmarks/providers", () => {
 
 	it("pins modal's create-time spec from the shared TARGET_SPEC", () => {
 		const modal = providers.find((p) => p.name === "modal");
-		// Modal bills/provisions in physical cores, so the pinned vCPU count is halved for cpu/cpuLimit.
+		// A Modal sandbox sees the requested `cpu` 1:1, so the pinned vCPU count passes straight through.
+		// Regression: halving it by VCPUS_PER_PHYSICAL_CORE (a pricing-only factor) booted a 1-vCPU
+		// sandbox against the 2-vCPU target spec, so modal ran every suite on half the CPU of its peers.
 		expect(modal?.createOptions).toMatchObject({
-			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
-			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
+			cpu: TARGET_SPEC.vcpus,
+			cpuLimit: TARGET_SPEC.vcpus,
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 		});
+		expect(modal?.createOptions?.cpu).not.toBe(TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE);
 	});
 
 	it("boots e2b from the configured template and daytona from the configured snapshot", () => {
