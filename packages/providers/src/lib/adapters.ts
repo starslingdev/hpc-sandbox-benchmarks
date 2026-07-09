@@ -16,6 +16,9 @@ import type { ProviderAdapter } from "./types.ts";
 // DAYTONA_REGION. Never read process.env directly here.
 const { daytonaRegion } = config;
 
+// This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
+const MODAL_APP_NAME = "sandbox-benchmarks";
+
 /**
  * Harness adapters, keyed by the schema {@link ProviderId}. The `Record<ProviderId, …>` type is what
  * keeps the two registries honest: it forces exactly one adapter per schema provider, so a provider
@@ -51,7 +54,10 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: {},
 	},
 	modal: {
-		createCompute: () => modal({ scalableSandboxes: true }),
+		// Boot sandboxes under this project's own Modal app (auto-created via apps.fromName on first
+		// create), not the wrapper's generic `computesdk-modal` default — so this project's sandboxes
+		// are namespaced/attributable in the Modal dashboard, separate from any other computesdk usage.
+		createCompute: () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME }),
 		createOptions: {
 			templateId: config.toolchainImage,
 			// Modal's `cpu`/`cpuLimit` are physical cores, not vCPUs — convert from the pinned vCPU spec.

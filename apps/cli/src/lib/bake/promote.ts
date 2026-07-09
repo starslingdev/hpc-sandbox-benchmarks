@@ -130,7 +130,7 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 	}
 
 	// Required-providers gate (D1), enforced HERE — before step 4 writes the immutable base — not
-	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona`; a required
+	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona,modal`; a required
 	// provider whose version artifact was skipped (missing/misnamed secret) or failed is `skipped`/
 	// `failed`, so `reports.some(failed)` above does NOT catch a pure skip. Were the base published
 	// first and the gap detected only in bake.ts, the immutable `:v1` would already be tagged and a

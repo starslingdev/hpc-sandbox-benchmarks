@@ -210,10 +210,10 @@ jobs:
           export BUILD_DATE
           # --require fails the publish loudly if a required provider's secret is missing/misnamed, so a
           # merge can't bless a candidate while a required provider was silently skipped (never built or
-          # validated). modal is intentionally NOT required here: its creds aren't synced yet, so a
-          # required modal would skip and fail the publish; add it back once MODAL_TOKEN_* land. (blaxel
-          # is likewise excluded — its bake is a no-op.)
-          bun apps/cli/src/bin/bake.ts --build-push --require e2b,daytona
+          # validated). modal boots the toolchain image via fromRegistry under this project's Modal app
+          # and is validated the same as e2b/daytona, so it's required — MODAL_TOKEN_* must be synced.
+          # (blaxel is excluded — its bake is a no-op.)
+          bun apps/cli/src/bin/bake.ts --build-push --require e2b,daytona,modal
 
       # Promote the validated candidate to the immutable public version (+ version-named artifacts).
       - name: Promote candidate → version
@@ -230,6 +230,6 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
         # public version is never published while a required provider's version artifact was silently
-        # skipped. modal is intentionally NOT required here (creds not synced yet); add it back once
-        # MODAL_TOKEN_* land. (blaxel is likewise excluded — its bake is a no-op.)
-        run: bun apps/cli/src/bin/bake.ts --promote --require e2b,daytona
+        # skipped. modal is required (validated via its fromRegistry boot); MODAL_TOKEN_* must be synced.
+        # (blaxel is excluded — its bake is a no-op.)
+        run: bun apps/cli/src/bin/bake.ts --promote --require e2b,daytona,modal
