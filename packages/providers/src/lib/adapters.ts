@@ -6,10 +6,10 @@
 import { blaxel } from "@computesdk/blaxel";
 import { cloudRun } from "@computesdk/cloud-run";
 import { daytona } from "@computesdk/daytona";
-import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import { vercel } from "@computesdk/vercel";
 import type { DirectProvider, ProviderAdapter } from "@sandbox-benchmarks/provider-core";
+import { e2bAdapter } from "@sandbox-benchmarks/provider-e2b";
 import { novitaAdapter } from "@sandbox-benchmarks/provider-novita";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
@@ -34,12 +34,9 @@ const VERCEL_GB_PER_VCPU = 2;
  * compile error, no runtime reconciliation required.
  */
 export const adapters: Record<ProviderId, ProviderAdapter> = {
-	// Boot the e2b template built from the toolchain image (computesdk maps snapshotId → the e2b
-	// template id/name). cpu/memory are pinned in the template's e2b.toml, not per-create.
-	e2b: {
-		createCompute: () => e2b({}),
-		createOptions: { snapshotId: config.e2bTemplate },
-	},
+	// Boots the pre-baked toolchain template; owns its own env slice (E2B_TEMPLATE) and vendor dep —
+	// see @sandbox-benchmarks/provider-e2b.
+	e2b: e2bAdapter,
 	daytona: {
 		// The account API key; the toolchain snapshot and runner target are pinned per-create. `target`
 		// rides the wrapper's create-options passthrough into Daytona's createParams. No requiredEnvVars

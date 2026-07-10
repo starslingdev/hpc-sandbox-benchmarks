@@ -2,17 +2,22 @@
 // rest of the app imports: process.env is validated here once, at module load, so no unvalidated
 // environment data reaches business logic. Static identity/spec come from the schema (the shared
 // source of truth); the env overrides layer on top.
-import { readProviderEnv } from "@sandbox-benchmarks/provider-core";
+import { CANDIDATE_SUFFIX, readProviderEnv } from "@sandbox-benchmarks/provider-core";
+import {
+	e2bTemplate,
+	e2bTemplateCandidate,
+	e2bTemplateVersion,
+} from "@sandbox-benchmarks/provider-e2b";
 import { TARGET_SPEC, TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
 
 // 1. Startup gatekeeper — only the variables this app reads, validated once at module load through
 //    provider-core's env contract: declared keys forwarded, all optional, an explicitly-set but
-//    empty value rejected. Daytona is single-region (the base DAYTONA_* vars): the beta `ZEN5-VM`
-//    region and its `_ZEN5`-suffixed vars were retired in favor of `us-west-2` (set via
+//    empty value rejected. Extracted provider packages read their own slices (E2B_TEMPLATE,
+//    NOVITA_API_KEY, …) the same way. Daytona is single-region (the base DAYTONA_* vars): the beta
+//    `ZEN5-VM` region and its `_ZEN5`-suffixed vars were retired in favor of `us-west-2` (set via
 //    DAYTONA_TARGET), so there's no region selector any more.
 const env = readProviderEnv([
 	"BENCH_TOOLCHAIN_IMAGE",
-	"E2B_TEMPLATE",
 	"DAYTONA_API_KEY",
 	"DAYTONA_TARGET",
 	"DAYTONA_SNAPSHOT",
@@ -39,19 +44,17 @@ export interface CloudRunConfig {
 	sandboxSecret?: string;
 }
 
-// Candidate↔version naming. The public version (`:v1`, `…-v1`) is immutable and written only by
-// `promote`; iteration happens against a mutable candidate (`:v1-candidate`, `…-v1-candidate`),
-// reused every build so the public registry never accumulates versions. Bumping TOOLCHAIN_VERSION
-// then yields exactly one new public version per deliberate promote.
+// Candidate↔version naming (the convention itself — CANDIDATE_SUFFIX — is provider-core's, shared
+// with the per-provider packages). The public version (`:v1`, `…-v1`) is immutable and written only
+// by `promote`; iteration happens against a mutable candidate, reused every build so the public
+// registry never accumulates versions. Bumping TOOLCHAIN_VERSION then yields exactly one new public
+// version per deliberate promote.
 const imageRepo = `ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}`;
-const CANDIDATE_SUFFIX = "-candidate";
 
 const toolchainImageVersion = `${imageRepo}:${TOOLCHAIN_VERSION}`;
 const toolchainImageCandidate = `${toolchainImageVersion}${CANDIDATE_SUFFIX}`;
-// Version-scope the e2b template + daytona snapshot (parity with each other): a v2 makes a new
-// named artifact instead of overwriting v1.
-const e2bTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
-const e2bTemplateCandidate = `${e2bTemplateVersion}${CANDIDATE_SUFFIX}`;
+// Version-scope the daytona snapshot (parity with provider-e2b's template naming): a v2 makes a
+// new named artifact instead of overwriting v1.
 const daytonaSnapshotDefault = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
 const daytonaSnapshotCandidate = `${daytonaSnapshotDefault}${CANDIDATE_SUFFIX}`;
 
@@ -69,8 +72,9 @@ export const config = {
 	/** Mutable candidate image ref (`:v1-candidate`); what the bake builds/pushes while iterating. */
 	toolchainImageCandidate,
 	/** The e2b template the sandbox boots from (name = e2b.toml `template_name`); `E2B_TEMPLATE`
-	 *  override, else the version-scoped public template. */
-	e2bTemplate: env.E2B_TEMPLATE ?? e2bTemplateVersion,
+	 *  override, else the version-scoped public template. Owned by provider-e2b; composed here so
+	 *  the bake pipeline keeps its single config import. */
+	e2bTemplate,
 	/** Public (version-scoped) e2b template name; the promote target. */
 	e2bTemplateVersion,
 	/** Candidate e2b template name the bake builds while iterating. */

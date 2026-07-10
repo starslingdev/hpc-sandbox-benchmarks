@@ -14,10 +14,10 @@
     "@computesdk/blaxel": "catalog:computesdk",
     "@computesdk/cloud-run": "catalog:computesdk",
     "@computesdk/daytona": "catalog:computesdk",
-    "@computesdk/e2b": "catalog:computesdk",
     "@computesdk/modal": "catalog:computesdk",
     "@computesdk/vercel": "catalog:computesdk",
     "@sandbox-benchmarks/provider-core": "workspace:*",
+    "@sandbox-benchmarks/provider-e2b": "workspace:*",
     "@sandbox-benchmarks/provider-novita": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "computesdk": "catalog:computesdk"

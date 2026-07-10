@@ -5,6 +5,14 @@
 import { type } from "arktype";
 
 /**
+ * Candidate↔version artifact naming, shared by every provider that bakes a toolchain artifact. The
+ * public version (`:v1`, `…-v1`) is immutable and written only by `promote`; iteration happens
+ * against a mutable candidate (`:v1-candidate`, `…-v1-candidate`), reused every build so the public
+ * registry never accumulates versions. One constant so the convention can't drift per provider.
+ */
+export const CANDIDATE_SUFFIX = "-candidate";
+
+/**
  * Read and validate a declared slice of the environment. Only the declared keys are forwarded
  * (process.env carries hundreds of unrelated ones), every key is optional — a missing credential is
  * a *skip* decision made downstream, not an error here — but an explicitly-set-yet-empty value is a
