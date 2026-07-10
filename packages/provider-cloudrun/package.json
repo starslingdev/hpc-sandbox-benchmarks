@@ -1,0 +1,22 @@
+{
+  "name": "@sandbox-benchmarks/provider-cloudrun",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@computesdk/cloud-run": "catalog:computesdk",
+    "@sandbox-benchmarks/provider-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}

@@ -1,7 +1,7 @@
-// Public surface of @sandbox-benchmarks/providers.
-// Depends on @sandbox-benchmarks/schema (provider identity) and computesdk + the @computesdk/*
-// wrappers (the unified provider runtime). Each provider is wired via its @computesdk/* factory;
-// `providers` is the schema identity joined with those adapters.
+// Public surface of @sandbox-benchmarks/providers — the pure aggregator.
+// Depends on @sandbox-benchmarks/schema (provider identity) and the per-provider packages
+// (@sandbox-benchmarks/provider-<id>, each owning its vendor SDK + env slice); `providers` is the
+// schema identity joined with those packages' adapters. No vendor SDK is a dependency here.
 
 import type { ProviderConfig } from "@sandbox-benchmarks/provider-core";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";

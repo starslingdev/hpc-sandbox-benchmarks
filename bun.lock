@@ -68,6 +68,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/provider-cloudrun": {
+      "name": "@sandbox-benchmarks/provider-cloudrun",
+      "version": "0.0.0",
+      "dependencies": {
+        "@computesdk/cloud-run": "catalog:computesdk",
+        "@sandbox-benchmarks/provider-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/provider-core": {
       "name": "@sandbox-benchmarks/provider-core",
       "version": "0.0.0",
@@ -157,8 +170,8 @@
       "name": "@sandbox-benchmarks/providers",
       "version": "0.0.0",
       "dependencies": {
-        "@computesdk/cloud-run": "catalog:computesdk",
         "@sandbox-benchmarks/provider-blaxel": "workspace:*",
+        "@sandbox-benchmarks/provider-cloudrun": "workspace:*",
         "@sandbox-benchmarks/provider-core": "workspace:*",
         "@sandbox-benchmarks/provider-daytona": "workspace:*",
         "@sandbox-benchmarks/provider-e2b": "workspace:*",
@@ -166,7 +179,6 @@
         "@sandbox-benchmarks/provider-novita": "workspace:*",
         "@sandbox-benchmarks/provider-vercel": "workspace:*",
         "@sandbox-benchmarks/schema": "workspace:*",
-        "computesdk": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -560,6 +572,8 @@
     "@sandbox-benchmarks/harness": ["@sandbox-benchmarks/harness@workspace:packages/harness"],
 
     "@sandbox-benchmarks/provider-blaxel": ["@sandbox-benchmarks/provider-blaxel@workspace:packages/provider-blaxel"],
+
+    "@sandbox-benchmarks/provider-cloudrun": ["@sandbox-benchmarks/provider-cloudrun@workspace:packages/provider-cloudrun"],
 
     "@sandbox-benchmarks/provider-core": ["@sandbox-benchmarks/provider-core@workspace:packages/provider-core"],
 

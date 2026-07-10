@@ -11,16 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@computesdk/cloud-run": "catalog:computesdk",
     "@sandbox-benchmarks/provider-blaxel": "workspace:*",
+    "@sandbox-benchmarks/provider-cloudrun": "workspace:*",
     "@sandbox-benchmarks/provider-core": "workspace:*",
     "@sandbox-benchmarks/provider-daytona": "workspace:*",
     "@sandbox-benchmarks/provider-e2b": "workspace:*",
     "@sandbox-benchmarks/provider-modal": "workspace:*",
     "@sandbox-benchmarks/provider-novita": "workspace:*",
     "@sandbox-benchmarks/provider-vercel": "workspace:*",
-    "@sandbox-benchmarks/schema": "workspace:*",
-    "computesdk": "catalog:computesdk"
+    "@sandbox-benchmarks/schema": "workspace:*"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
