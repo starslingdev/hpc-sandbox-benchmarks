@@ -2,14 +2,21 @@
 // Depends on @sandbox-benchmarks/schema (provider identity) and computesdk + the @computesdk/*
 // wrappers (the unified provider runtime). Each provider is wired via its @computesdk/* factory;
 // `providers` is the schema identity joined with those adapters.
+
+import type { ProviderConfig } from "@sandbox-benchmarks/provider-core";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { adapters } from "./lib/adapters.ts";
 import { assertProviderJoin } from "./lib/join.ts";
-import type { ProviderConfig } from "./lib/types.ts";
 
+// The adapter-contract types live in provider-core (the shared vocabulary of the provider
+// packages); re-exported here so the harness/CLI import surface predating the split still holds.
+export type {
+	DirectProvider,
+	ProviderAdapter,
+	ProviderConfig,
+} from "@sandbox-benchmarks/provider-core";
 // The runtime configuration gatekeeper — the single validated config object consumers import.
 export { config } from "./lib/config.ts";
-export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/types.ts";
 
 /**
  * All provider benchmark configurations: each schema provider's identity joined with its harness

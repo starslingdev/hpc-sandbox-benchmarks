@@ -2,11 +2,13 @@
 
 **Role:** provider wiring — binds each schema provider to a computesdk runtime.
 
-**Public surface (`.`):** `ProviderAdapter`, `ProviderConfig`, `DirectProvider` (types), the
-assembled `providers` registry, and the toolchain image constants (`TOOLCHAIN_IMAGE`,
-`TOOLCHAIN_VERSION`, `DAYTONA_SNAPSHOT_DEFAULT`).
+**Public surface (`.`):** `ProviderAdapter`, `ProviderConfig`, `DirectProvider` (re-exported from
+`@sandbox-benchmarks/provider-core`, which owns the contract), the assembled `providers` registry,
+and the toolchain image constants (`TOOLCHAIN_IMAGE`, `TOOLCHAIN_VERSION`,
+`DAYTONA_SNAPSHOT_DEFAULT`).
 
-**Depends on:** `@sandbox-benchmarks/schema` (provider identity / `PROVIDERS`), `computesdk` and the
+**Depends on:** `@sandbox-benchmarks/schema` (provider identity / `PROVIDERS`),
+`@sandbox-benchmarks/provider-core` (the adapter contract + env gate), `computesdk` and the
 `@computesdk/{e2b,daytona,modal,blaxel,vercel,cloud-run}` wrappers (the unified provider runtime),
 plus the raw vendor SDK each wrapper peers on (`e2b`, `@daytonaio/sdk`, `modal`, `@blaxel/core`,
 `@vercel/sandbox`). Novita has no wrapper of its own: its control plane is E2B-protocol-compatible,

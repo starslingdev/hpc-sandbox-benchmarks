@@ -17,8 +17,8 @@
     "@computesdk/e2b": "catalog:computesdk",
     "@computesdk/modal": "catalog:computesdk",
     "@computesdk/vercel": "catalog:computesdk",
+    "@sandbox-benchmarks/provider-core": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
-    "arktype": "catalog:",
     "computesdk": "catalog:computesdk",
     "e2b": "catalog:computesdk"
   },

@@ -2,25 +2,15 @@
 // rest of the app imports: process.env is validated here once, at module load, so no unvalidated
 // environment data reaches business logic. Static identity/spec come from the schema (the shared
 // source of truth); the env overrides layer on top.
+import { readProviderEnv } from "@sandbox-benchmarks/provider-core";
 import { TARGET_SPEC, TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
-import { type } from "arktype";
 
-// 1. Env schema — only the variables this app reads, validated at the boundary. All optional; an
-//    explicitly-set but empty value is a misconfiguration and is rejected. Daytona is single-region
-//    (the base DAYTONA_* vars): the beta `ZEN5-VM` region and its `_ZEN5`-suffixed vars were retired
-//    in favor of `us-west-2` (set via DAYTONA_TARGET), so there's no region selector any more.
-const envSchema = type({
-	"BENCH_TOOLCHAIN_IMAGE?": "string >= 1",
-	"E2B_TEMPLATE?": "string >= 1",
-	"DAYTONA_API_KEY?": "string >= 1",
-	"DAYTONA_TARGET?": "string >= 1",
-	"DAYTONA_SNAPSHOT?": "string >= 1",
-	"CLOUD_RUN_SANDBOX_URL?": "string >= 1",
-	"CLOUD_RUN_SANDBOX_SECRET?": "string >= 1",
-	"NOVITA_API_KEY?": "string >= 1",
-});
-
-const ENV_KEYS = [
+// 1. Startup gatekeeper — only the variables this app reads, validated once at module load through
+//    provider-core's env contract: declared keys forwarded, all optional, an explicitly-set but
+//    empty value rejected. Daytona is single-region (the base DAYTONA_* vars): the beta `ZEN5-VM`
+//    region and its `_ZEN5`-suffixed vars were retired in favor of `us-west-2` (set via
+//    DAYTONA_TARGET), so there's no region selector any more.
+const env = readProviderEnv([
 	"BENCH_TOOLCHAIN_IMAGE",
 	"E2B_TEMPLATE",
 	"DAYTONA_API_KEY",
@@ -29,19 +19,7 @@ const ENV_KEYS = [
 	"CLOUD_RUN_SANDBOX_URL",
 	"CLOUD_RUN_SANDBOX_SECRET",
 	"NOVITA_API_KEY",
-] as const;
-
-// 2. Startup gatekeeper — validate the environment once, fail fast with a clear message. Only the
-//    keys we declare are forwarded (process.env carries hundreds of unrelated ones).
-const rawEnv: Record<string, string> = {};
-for (const key of ENV_KEYS) {
-	const value = process.env[key];
-	if (value !== undefined) rawEnv[key] = value;
-}
-const env = envSchema(rawEnv);
-if (env instanceof type.errors) {
-	throw new Error(`Invalid configuration: ${env.summary}`);
-}
+] as const);
 
 /** The daytona account/target the adapter boots from. Single-region: the base DAYTONA_* env vars. */
 export interface DaytonaConfig {
@@ -84,7 +62,7 @@ const e2bTemplateCandidate = `${e2bTemplateVersion}${CANDIDATE_SUFFIX}`;
 const daytonaSnapshotDefault = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
 const daytonaSnapshotCandidate = `${daytonaSnapshotDefault}${CANDIDATE_SUFFIX}`;
 
-// 3. The single, fully-typed config object. Everything that needs config imports THIS.
+// 2. The single, fully-typed config object. Everything that needs config imports THIS.
 export const config = {
 	/** Pinned cross-provider target spec (2 vCPU / 8 GiB / 20 GB). */
 	targetSpec: TARGET_SPEC,

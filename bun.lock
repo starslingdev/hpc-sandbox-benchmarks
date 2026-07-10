@@ -55,6 +55,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/provider-core": {
+      "name": "@sandbox-benchmarks/provider-core",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+        "computesdk": "catalog:computesdk",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/providers": {
       "name": "@sandbox-benchmarks/providers",
       "version": "0.0.0",
@@ -65,8 +79,8 @@
         "@computesdk/e2b": "catalog:computesdk",
         "@computesdk/modal": "catalog:computesdk",
         "@computesdk/vercel": "catalog:computesdk",
+        "@sandbox-benchmarks/provider-core": "workspace:*",
         "@sandbox-benchmarks/schema": "workspace:*",
-        "arktype": "catalog:",
         "computesdk": "catalog:computesdk",
         "e2b": "catalog:computesdk",
       },
@@ -460,6 +474,8 @@
     "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
 
     "@sandbox-benchmarks/harness": ["@sandbox-benchmarks/harness@workspace:packages/harness"],
+
+    "@sandbox-benchmarks/provider-core": ["@sandbox-benchmarks/provider-core@workspace:packages/provider-core"],
 
     "@sandbox-benchmarks/providers": ["@sandbox-benchmarks/providers@workspace:packages/providers"],
 

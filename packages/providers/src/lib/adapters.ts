@@ -9,11 +9,11 @@ import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import { vercel } from "@computesdk/vercel";
+import type { DirectProvider, ProviderAdapter } from "@sandbox-benchmarks/provider-core";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
 import { novitaCompute } from "./novita.ts";
-import type { DirectProvider, ProviderAdapter } from "./types.ts";
 
 // The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
 // `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.

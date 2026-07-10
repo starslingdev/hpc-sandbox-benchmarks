@@ -16,11 +16,11 @@
 // those three config-taking methods for domain-aware, guard-free equivalents and leaves the rest of
 // the generated provider untouched.
 import { e2b } from "@computesdk/e2b";
+import type { DirectProvider } from "@sandbox-benchmarks/provider-core";
 import type { CreateSandboxOptions } from "computesdk";
 // The raw e2b SDK, depended on directly: `@computesdk/e2b` re-exports it as `E2BSandbox` in its type
 // declarations only — the runtime ESM build ships just the factory — so the re-export can't be used.
 import { Sandbox as E2BSandbox } from "e2b";
-import type { DirectProvider } from "./types.ts";
 
 /** Novita's E2B-compatible control-plane domain (what their docs set E2B_DOMAIN to). */
 export const NOVITA_E2B_DOMAIN = "sandbox.novita.ai";
