@@ -35,18 +35,27 @@ function runIdOf(markdown: string): string {
 	return match[1];
 }
 
-const committed = readFileSync(ARTIFACT, "utf8");
-const runId = runIdOf(committed);
-const source = runFile(runId);
-
-/** Read and parse the source Run, translating a bare ENOENT into the diagnosis that matters here:
- *  a named Run missing from the committed dataset means the artifact was rendered from the
- *  gitignored raw tree. try/catch rather than an existsSync pre-check, so there is no TOCTOU gap. */
-function readCommittedRun(): ReturnType<typeof parseRun> {
+/**
+ * Load the Run the committed artifact names. Called INSIDE each test, never at module scope: a throw
+ * during module initialisation aborts the whole file before Bun collects any test, so a missing source
+ * Run would take the determinism test below down with it — silencing the check precisely in the
+ * scenario it exists to catch (an artifact rendered from the gitignored `data/runs/`).
+ */
+function loadCommittedRun(): {
+	committed: string;
+	runId: string;
+	run: ReturnType<typeof parseRun>;
+} {
+	const committed = readFileSync(ARTIFACT, "utf8");
+	const runId = runIdOf(committed);
+	const source = runFile(runId);
 	try {
-		return parseRun(JSON.parse(readFileSync(source, "utf8")));
+		return { committed, runId, run: parseRun(JSON.parse(readFileSync(source, "utf8"))) };
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			// A named Run that isn't in the committed dataset means the artifact was rendered from the
+			// gitignored raw tree — say so, rather than failing later with a bare ENOENT. try/catch
+			// rather than an existsSync pre-check, so there is no TOCTOU gap.
 			throw new Error(
 				`LEADERBOARD.md names Run "${runId}", but ${source} is not committed. The artifact must be ` +
 					`rendered from the published dataset (data/dataset/runs/), not the gitignored data/runs/.`,
@@ -55,10 +64,10 @@ function readCommittedRun(): ReturnType<typeof parseRun> {
 		throw error;
 	}
 }
-const run = readCommittedRun();
 
 describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	it("is byte-identical to a fresh render of the Run it names", () => {
+		const { committed, runId, run } = loadCommittedRun();
 		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run));
 		if (committed !== rendered) {
 			// Name the remedy in the failure, rather than leaving whoever hits this to work it out.
@@ -71,6 +80,9 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	});
 
 	it("renders the same bytes twice, so this gate can't flake on an unseeded bootstrap", () => {
+		// Loads independently of the test above: each resolves the Run itself, so one failing reports
+		// its own diagnosis instead of aborting the file and taking the other down with it.
+		const { run } = loadCommittedRun();
 		expect(renderLeaderboardMarkdown(buildLeaderboard(run))).toBe(
 			renderLeaderboardMarkdown(buildLeaderboard(run)),
 		);

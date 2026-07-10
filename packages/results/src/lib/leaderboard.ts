@@ -48,6 +48,9 @@ export interface LeaderboardRow {
 	 * `mannWhitney` tests a shift in central tendency and drives the tie grouping; `ks` compares the full
 	 * empirical CDFs, catching a provider whose median matches but whose distribution is bimodal — the
 	 * signature of environmental noise rather than a real difference.
+	 *
+	 * Both are rendered: `mannWhitney` as `p vs. above`, `ks` as `p (KS)`. Only `mannWhitney` decides the
+	 * rank; `ks` is shown so a reader can see the two disagree.
 	 */
 	pVsPrevious: { mannWhitney: number; ks: number } | null;
 	/** Whether this row is statistically separable from the one above it. `null` for rank 1. */
@@ -192,8 +195,8 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			"",
 			`Headline: **${metric.label}** (${metric.unit}, ${better})`,
 			"",
-			`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | p vs. above |`,
-			"| ---: | --- | ---: | ---: | ---: | ---: |",
+			`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | p vs. above | p (KS) |`,
+			"| ---: | --- | ---: | ---: | ---: | ---: | ---: |",
 			...rows.map((r) => {
 				const ci =
 					r.interval.resamples === 0
@@ -207,7 +210,11 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 						: r.separated
 							? formatPValue(r.pVsPrevious.mannWhitney)
 							: `${formatPValue(r.pVsPrevious.mannWhitney)} (tied)`;
-				return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} | ${p} |`;
+				// KS is rendered, not just stored: it is the only column that exposes a provider whose
+				// median matches its neighbour's while its distribution is bimodal. A small `p (KS)` beside
+				// a large, tied `p vs. above` is exactly that case — same typical speed, different machine.
+				const ks = r.pVsPrevious === null ? "—" : formatPValue(r.pVsPrevious.ks);
+				return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} | ${p} | ${ks} |`;
 			}),
 			"",
 		);
@@ -228,6 +235,13 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"so their spread is environmental (neighbours, host contention, virtualization), and a wide CI or a",
 		"large `n` (the harness re-runs a test that will not converge) is itself the signal that the",
 		"provider's performance is unstable, not that the measurement is imprecise.",
+		"",
+		"`p (KS)` is a two-sample Kolmogorov-Smirnov test against the same row above. It does **not** drive",
+		"the ranking — it compares the two empirical distributions' *shapes* rather than their central",
+		"tendency. Read it where it disagrees with `p vs. above`: a tied rank (large Mann-Whitney p) beside a",
+		"small `p (KS)` means two providers with the same typical speed but different behaviour — usually one",
+		"of them alternating between fast and stalled passes. That bimodality is what environmental noise",
+		"looks like, and it is the reason a median alone cannot rank these providers.",
 		"",
 		"At the small `n` this suite produces, a non-significant result means *not enough evidence to",
 		"separate*, never *the providers are equal*.",

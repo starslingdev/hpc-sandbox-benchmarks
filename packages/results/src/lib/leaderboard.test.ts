@@ -218,12 +218,47 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		expect(md).toContain("Mann-Whitney");
 	});
 
+	it("surfaces the KS p-value in the table, not only on the row object", () => {
+		// Regression: `ks` was computed and stored on every LeaderboardRow, documented as the way to spot
+		// a bimodal provider, and then never rendered — so no reader of LEADERBOARD.md could ever see it.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
+				provider("e2b", [metric(HEADLINE, [11, 12, 10, 14, 13])]),
+			]),
+		);
+		const md = renderLeaderboardMarkdown(board);
+
+		expect(md).toContain("p (KS)");
+		// The note must explain the column, since a second p-value is otherwise cryptic.
+		expect(md).toContain("Kolmogorov-Smirnov");
+
+		// The second row carries both p-values (rank 1 has no predecessor, so both cells are em-dashes).
+		expect(board.dimensions[0]?.rows[1]?.pVsPrevious).not.toBeNull();
+
+		// Assert the SHAPE of the rendered rows, not a re-derived format string: duplicating
+		// `formatPValue`'s rule here would let the test agree with itself and drift from the renderer
+		// (`toPrecision(2)` keeps a trailing zero — "0.0080" — which a `Number(...)` round-trip drops).
+		const rows = md.split("\n").filter((l) => /^\| \d+ \| (Daytona|E2B) \|/.test(l));
+		expect(rows).toHaveLength(2);
+		for (const row of rows) {
+			// 7 columns: rank, provider, value, CI, n, p vs. above, p (KS).
+			expect(row.split("|").filter((c) => c.trim() !== "")).toHaveLength(7);
+		}
+		const [first, second] = rows as [string, string];
+		expect(first.trimEnd().endsWith("| — |")).toBe(true); // no predecessor → no KS
+		const secondKs = second.trimEnd().split("|").at(-2)?.trim() as string;
+		expect(secondKs).not.toBe("—");
+		expect(secondKs).toMatch(/^(<0\.001|\d+(\.\d+)?(e[+-]?\d+)?)$/);
+	});
+
 	it("renders a point value with no interval for a single-Sample Metric", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(run([provider("daytona", [metric(HEADLINE, [10])])])),
 		);
-		// n=1 → em-dash for both CI and p, never a fabricated bound.
-		expect(md).toMatch(/\| 1 \| Daytona \| 10 \| — \| 1 \| — \|/);
+		// n=1 → em-dash for the CI and BOTH p-values, never a fabricated bound. Anchored to the row end so
+		// a future column can't be silently dropped from the assertion.
+		expect(md).toMatch(/\| 1 \| Daytona \| 10 \| — \| 1 \| — \| — \|\n/);
 	});
 
 	it("never prints a p-value as a misleading 0", () => {

@@ -8,17 +8,17 @@ Each table ranks the providers on that dimension's headline metric. Generated fr
 
 Headline: **Node.js web tooling** (runs/s, higher is better)
 
-| Rank | Provider | Node.js web tooling (runs/s) | 95% CI | n | p vs. above |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 22.77 | 22.66 – 23 | 3 | — |
+| Rank | Provider | Node.js web tooling (runs/s) | 95% CI | n | p vs. above | p (KS) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Daytona | 22.77 | 22.66 – 23 | 3 | — | — |
 
 ## economics
 
 Headline: **Hourly cost** (USD/hr, lower is better)
 
-| Rank | Provider | Hourly cost (USD/hr) | 95% CI | n | p vs. above |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 0.1494 | — | 1 | — |
+| Rank | Provider | Hourly cost (USD/hr) | 95% CI | n | p vs. above | p (KS) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Daytona | 0.1494 | — | 1 | — | — |
 
 ---
 
@@ -34,6 +34,13 @@ earned inside the noise is not a faster provider. Samples are repeated trials in
 so their spread is environmental (neighbours, host contention, virtualization), and a wide CI or a
 large `n` (the harness re-runs a test that will not converge) is itself the signal that the
 provider's performance is unstable, not that the measurement is imprecise.
+
+`p (KS)` is a two-sample Kolmogorov-Smirnov test against the same row above. It does **not** drive
+the ranking — it compares the two empirical distributions' *shapes* rather than their central
+tendency. Read it where it disagrees with `p vs. above`: a tied rank (large Mann-Whitney p) beside a
+small `p (KS)` means two providers with the same typical speed but different behaviour — usually one
+of them alternating between fast and stalled passes. That bimodality is what environmental noise
+looks like, and it is the reason a median alone cannot rank these providers.
 
 At the small `n` this suite produces, a non-significant result means *not enough evidence to
 separate*, never *the providers are equal*.
