@@ -1,6 +1,6 @@
 # Sandbox provider leaderboard
 
-Run `zen5-collected-1782365479` · commit `zen5-ssh` · generated 2026-06-25T05:31:48.987Z
+Run `29061549181` · commit `9605098976fa81c1c14fc12c9329f1f719501bac` · generated 2026-07-10T01:35:36.576Z
 
 Each table ranks the providers on that dimension's headline metric. Generated from the published Run dataset — do not edit by hand.
 
@@ -10,7 +10,26 @@ Headline: **Node.js web tooling** (runs/s, higher is better)
 
 | Rank | Provider | Node.js web tooling (runs/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 22.77 | 22.66 – 23 | 3 | — | — |
+| 1 | Daytona | 19.16 | 18.77 – 19.56 | 15 | — | — |
+| 2 | Modal | 7.505 | 7.31 – 7.71 | 14 | <0.001 | <0.001 |
+
+## disk
+
+Headline: **Hardlink throughput** (bogo ops/s, higher is better)
+
+| Rank | Provider | Hardlink throughput (bogo ops/s) | 95% CI | n | p vs. above | p (KS) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Daytona | 26.16 | 25.89 – 26.29 | 3 | — | — |
+| 2 | Modal | 1.5 | 1.46 – 1.53 | 15 | 0.0088 | 0.0038 |
+| 2 | E2B | 1.46 | 1.46 – 1.5 | 3 | 0.40 (tied) | 0.70 |
+
+## memory
+
+Headline: **STREAM Triad** (MB/s, higher is better)
+
+| Rank | Provider | STREAM Triad (MB/s) | 95% CI | n | p vs. above | p (KS) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Daytona | 53930 | 53420 – 79050 | 5 | — | — |
 
 ## economics
 
@@ -19,6 +38,8 @@ Headline: **Hourly cost** (USD/hr, lower is better)
 | Rank | Provider | Hourly cost (USD/hr) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | Daytona | 0.1494 | — | 1 | — | — |
+| 2 | E2B | 0.2304 | — | 1 | — | — |
+| 3 | Modal | 0.3354 | — | 1 | — | — |
 
 ---
 

@@ -1,0 +1,269 @@
+{
+  "schemaVersion": "1",
+  "runId": "29061549181",
+  "sha": "9605098976fa81c1c14fc12c9329f1f719501bac",
+  "generatedAt": "2026-07-10T01:35:36.576Z",
+  "targetSpec": {
+    "vcpus": 2,
+    "memoryGb": 8,
+    "diskGb": 20
+  },
+  "providers": [
+    {
+      "providerId": "blaxel",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "skips": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD EPYC",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.19.14",
+        "virtualization": "kvm",
+        "user": "root",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 19.5
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [25.89, 26.29, 26.16],
+          "aggregates": {
+            "p50": 26.16,
+            "p95": 26.276999999999997,
+            "mean": 26.113333333333333,
+            "stdev": 0.20404247923737218,
+            "min": 25.89,
+            "max": 26.29,
+            "n": 3
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            18.14, 19.58, 19.17, 19.03, 18.88, 19.52, 18.77, 20.48, 19.56, 19.16, 19.61, 18.98,
+            19.72, 18.67, 18.76
+          ],
+          "aggregates": {
+            "p50": 19.16,
+            "p95": 19.947999999999997,
+            "mean": 19.201999999999998,
+            "stdev": 0.5617854191262501,
+            "min": 18.14,
+            "max": 20.48,
+            "n": 15
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [79515.8, 53961.1, 53660.2, 53294.7, 53337.2],
+          "aggregates": {
+            "p50": 53660.2,
+            "p95": 74404.86,
+            "mean": 58753.799999999996,
+            "stdev": 11609.443425720292,
+            "min": 53294.7,
+            "max": 79515.8,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [
+            84272.3, 65939.5, 65921.4, 65226.4, 65282.7, 65561.2, 65386.2, 65712.3, 65847.2,
+            65547.1, 66075.9, 66141.4, 65993.6, 66331.5, 66188.4, 66064.6, 66250.7, 66028.2,
+            66088.5, 66134, 66219.8
+          ],
+          "aggregates": {
+            "p50": 66028.2,
+            "p95": 66331.5,
+            "mean": 66772.04285714285,
+            "stdev": 4022.9115280566934,
+            "min": 65226.4,
+            "max": 84272.3,
+            "n": 21
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [73992.1, 49381.5, 49117, 48737.9, 48717.2],
+          "aggregates": {
+            "p50": 49117,
+            "p95": 69069.98,
+            "mean": 53989.14,
+            "stdev": 11185.42998963384,
+            "min": 48717.2,
+            "max": 73992.1,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [79054.9, 54183.4, 53929.5, 53454.5, 53419.7],
+          "aggregates": {
+            "p50": 53929.5,
+            "p95": 74080.59999999999,
+            "mean": 58808.399999999994,
+            "stdev": 11322.735815164107,
+            "min": 53419.7,
+            "max": 79054.9,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.1494],
+          "aggregates": {
+            "p50": 0.1494,
+            "p95": 0.1494,
+            "mean": 0.1494,
+            "stdev": 0,
+            "min": 0.1494,
+            "max": 0.1494,
+            "n": 1
+          }
+        }
+      ],
+      "skips": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.1.158+",
+        "virtualization": "kvm",
+        "user": "user",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 22.6
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [1.5, 1.46, 1.46],
+          "aggregates": {
+            "p50": 1.46,
+            "p95": 1.496,
+            "mean": 1.4733333333333334,
+            "stdev": 0.023094010767585018,
+            "min": 1.46,
+            "max": 1.5,
+            "n": 3
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.2304],
+          "aggregates": {
+            "p50": 0.2304,
+            "p95": 0.2304,
+            "mean": 0.2304,
+            "stdev": 0,
+            "min": 0.2304,
+            "max": 0.2304,
+            "n": 1
+          }
+        }
+      ],
+      "skips": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal",
+      "validationStatus": "validated",
+      "specMatched": false,
+      "observedSpecs": {
+        "cpuModel": "unknown",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "4.19.0-gvisor",
+        "user": "root",
+        "vcpus": 1,
+        "virtualization": "unknown",
+        "memoryGb": 8
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [
+            1.42, 1.43, 1.5, 1.47, 1.57, 1.5, 1.53, 1.44, 1.5, 1.46, 1.5, 1.49, 1.56, 1.53, 1.86
+          ],
+          "aggregates": {
+            "p50": 1.5,
+            "p95": 1.6569999999999998,
+            "mean": 1.5173333333333334,
+            "stdev": 0.10450336062037613,
+            "min": 1.42,
+            "max": 1.86,
+            "n": 15
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            7.35, 7.7, 7.71, 7.19, 7.7, 7.61, 7.4, 7.92, 7.21, 7.82, 7.31, 7.37, 8.11, 6.92
+          ],
+          "aggregates": {
+            "p50": 7.505000000000001,
+            "p95": 7.9864999999999995,
+            "mean": 7.522857142857142,
+            "stdev": 0.32603512249280947,
+            "min": 6.92,
+            "max": 8.11,
+            "n": 14
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.335448],
+          "aggregates": {
+            "p50": 0.335448,
+            "p95": 0.335448,
+            "mean": 0.335448,
+            "stdev": 0,
+            "min": 0.335448,
+            "max": 0.335448,
+            "n": 1
+          }
+        }
+      ],
+      "skips": [],
+      "uncatalogued": []
+    }
+  ]
+}
