@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
+import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { config, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
-	it("wires every schema provider through to a computesdk factory", () => {
+	it("wires every schema provider through to a provider package's adapter", () => {
 		// `adapters` is a Record<ProviderId, …>, so it's the same set as the schema registry by
 		// construction — assert that against PROVIDERS rather than a hardcoded list.
 		expect(providers.map((p) => p.name).sort()).toEqual(PROVIDERS.map((m) => m.id).sort());
@@ -25,47 +25,20 @@ describe("@sandbox-benchmarks/providers", () => {
 		}
 	});
 
-	it("pins modal's create-time spec from the shared TARGET_SPEC", () => {
-		const modal = providers.find((p) => p.name === "modal");
-		expect(modal).toBeDefined();
-		// Modal bills/provisions in physical cores, so the pinned vCPU count is halved for cpu/cpuLimit.
-		// `memoryLimitMiB` is the hard cap (memoryMiB alone is only a reservation, and the guest then
-		// still sees the host's RAM) — assert it, or the memory fix has no regression guard at all.
-		expect(modal?.createOptions).toMatchObject({
-			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
-			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
-			memoryMiB: TARGET_SPEC.memoryGb * 1024,
-			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
-		});
-	});
-
-	it("buys vercel's memory parity through the 2 GB/vCPU coupling", () => {
-		const vercel = providers.find((p) => p.name === "vercel");
-		expect(vercel).toBeDefined();
-		// RAM rides vCPUs at 2 GB each, so the 8 GiB memory target costs 4 vCPUs (CPU oversized,
-		// disclosed downstream via observed-specs) — pin the derivation so a TARGET_SPEC change
-		// re-derives it rather than orphaning a hardcoded 4.
-		expect(vercel?.createOptions).toMatchObject({
-			resources: { vcpus: TARGET_SPEC.memoryGb / 2 },
-		});
-	});
-
-	it("joins the extracted novita package's adapter under the schema's novita id", () => {
-		// The adapter itself is specified in @sandbox-benchmarks/provider-novita's own tests; here we
-		// only pin the join — the aggregator binds that package's adapter to the right id, with the
-		// schema meta's credential list riding along.
-		const novita = providers.find((p) => p.name === "novita");
-		expect(novita).toBeDefined();
-		expect(novita?.requiredEnvVars).toEqual(["NOVITA_API_KEY"]);
-	});
-
-	it("boots e2b from the configured template and daytona from the configured snapshot", () => {
+	it("joins each provider package's adapter under its schema id (policy lives in the packages)", () => {
+		// Create-time policy is specified in each @sandbox-benchmarks/provider-<id> package's own
+		// tests; here we pin only the JOIN — the aggregator binds the right package to the right id.
+		// The template/snapshot pins double as proof the composed config surface and the adapters
+		// agree, since both now come from the same provider-package source.
 		const e2b = providers.find((p) => p.name === "e2b");
 		expect(e2b?.createOptions?.snapshotId).toBe(config.e2bTemplate);
 
 		const daytona = providers.find((p) => p.name === "daytona");
 		expect(daytona).toBeDefined();
 		expect(daytona?.createOptions?.snapshotId).toBe(config.daytona.snapshot);
+
+		const novita = providers.find((p) => p.name === "novita");
+		expect(novita?.requiredEnvVars).toEqual(["NOVITA_API_KEY"]);
 
 		// No adapter override — requiredEnvVars falls back to the schema meta's static list. Pin the
 		// concrete value rather than only comparing the two lookups against each other: if both `find`s

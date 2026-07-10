@@ -27,9 +27,11 @@ export type SpecPinning = "settable" | "fixed" | "unknown";
  * Three independent capabilities, each load-bearing for transport selection:
  *
  *   - `streaming` — does the adapter deliver stdout/stderr incrementally (computesdk's
- *     `onStdout`/`onStderr`)? All three shipped adapters drop those callbacks, so a long synchronous
- *     exec buffers silently. Modeled because a streaming path keeps a connection productive past an
- *     idle gateway cap; today it is uniformly `false`, so it does not yet tip the harness's choice.
+ *     `onStdout`/`onStderr`)? Every shipped adapter drops those callbacks (cloud-run only streams in
+ *     its direct in-container mode, not through the remote gateway the harness uses), so a long
+ *     synchronous exec buffers silently. Modeled because a streaming path keeps a connection
+ *     productive past an idle gateway cap; today it is uniformly `false`, so it does not yet tip the
+ *     harness's choice.
  *   - `syncCapMs` — the longest a single *synchronous* exec round-trip is safe before the provider
  *     caps it, or `null` when uncapped. The conservative policy bound the harness compares a step's
  *     timeout budget against: a step that could run past it must not go synchronous. Daytona returns a
