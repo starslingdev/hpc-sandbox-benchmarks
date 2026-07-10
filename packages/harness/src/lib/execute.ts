@@ -36,6 +36,8 @@ export const MIN = 60_000;
 const POLL_START_MS = 1_500;
 const POLL_BACKOFF = 1.5;
 const POLL_CAP_MS = 10_000;
+/** How much of a timed-out detached step's log to surface — enough to diagnose, not enough to flood. */
+const TIMEOUT_LOG_TAIL_LINES = 50;
 /** Done-file sentinel for the no-filesystem cat-poll fallback: printed while the file isn't there yet. */
 const RUNNING_SENTINEL = "__RUNNING__";
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -309,10 +311,23 @@ export class StepRunner {
 					return this.finishStep(label, started, { exitCode, stdout }, opts);
 				}
 				if (performance.now() > deadline) {
+					// Recover the detached job's own output BEFORE killing it and tearing the sandbox down.
+					// A timed-out step is otherwise a black box: the log lives only inside the sandbox, and
+					// a step that hangs is exactly the one whose output we need. Best-effort — a failed read
+					// must not mask the timeout.
+					const tail = await this.readLogTail(fs, logPath);
 					// Best-effort stop the detached job; don't let a failing kill mask the timeout.
 					await this.sandbox
 						.runCommand(`pkill -f ${shellQuote(tag)} || true`)
 						.catch(() => undefined);
+					if (tail === null) {
+						console.log(
+							`--- "${label}" timed out and its log could not be read: the sandbox stopped ` +
+								`responding (memory exhaustion or a dead agent), rather than running quietly ---`,
+						);
+					} else if (tail) {
+						console.log(`--- last output from "${label}" before timeout ---\n${tail}`);
+					}
 					throw new Error(`Step "${label}" timed out after ${Math.round(timeoutMs / 1000)}s`);
 				}
 				await this.sleep(pollDelayMs);
@@ -362,6 +377,37 @@ export class StepRunner {
 		const out = (probe?.stdout ?? "").trim();
 		if (out === "" || out === RUNNING_SENTINEL) return undefined;
 		return parseExitCode(out);
+	}
+
+	/** The last {@link TIMEOUT_LOG_TAIL_LINES} lines of a detached step's log, or `null` when the log
+	 *  could not be read at all. The distinction matters: an empty tail means the step ran quietly,
+	 *  whereas an unreadable one means the sandbox stopped answering — a very different diagnosis, and
+	 *  collapsing both to "" once sent us hunting a detach bug that was really memory exhaustion.
+	 *  Bounded so a runaway log can't flood the CI transcript; never throws. */
+	private async readLogTail(
+		fs: SandboxFilesystem | undefined,
+		logPath: string,
+	): Promise<string | null> {
+		const text = fs
+			? await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read").catch(() => null)
+			: await this.catLogOrNull(logPath);
+		if (text === null) return null;
+		const lines = text.trimEnd().split("\n");
+		return lines.slice(-TIMEOUT_LOG_TAIL_LINES).join("\n");
+	}
+
+	/** `cat` the log for {@link readLogTail}, preserving a read failure as `null`. Deliberately NOT
+	 *  {@link catFile}: that one folds every failure into `""`, which is right for the poll loop (an
+	 *  absent done-file is not an error) but would make a wedged sandbox indistinguishable from a step
+	 *  that simply printed nothing — the one distinction this diagnostic exists to draw. */
+	private async catLogOrNull(logPath: string): Promise<string | null> {
+		return withTimeout(
+			this.sandbox.runCommand(`bash -c ${shellQuote(`cat ${logPath} 2>/dev/null || true`)}`),
+			POLL_CAP_MS,
+			"log cat read",
+		)
+			.then((res) => res.stdout ?? "")
+			.catch(() => null);
 	}
 
 	/** Read the detached step's log over `exec` — the output transport for the no-filesystem path. */
