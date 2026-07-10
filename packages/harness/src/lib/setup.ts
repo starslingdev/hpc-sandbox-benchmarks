@@ -42,12 +42,16 @@ export function setupSteps(suite: Suite): SetupStep[] {
 			label: "install base packages",
 			// No-op on pre-baked images; fall back gracefully on images that already ship git/curl.
 			// Debian-family images install via apt; dnf covers rpm-family bases (Vercel's sandboxes run
-			// Amazon Linux 2023, which has no apt).
+			// Amazon Linux 2023, which has no apt). The dnf list deliberately omits `curl`: AL2023 ships
+			// `curl-minimal` (which already provides /usr/bin/curl), and installing full `curl` conflicts
+			// with it, failing the WHOLE transaction without --allowerasing. The terminal arm re-asserts
+			// the opening guard's full requirement — a weaker check (git+curl only) once masked a failed
+			// dnf transaction green, surfacing as a baffling "python3: not found" many steps later.
 			script:
 				"(command -v git && command -v curl && command -v python3) >/dev/null 2>&1 " +
 				"|| ($SUDO apt-get update -qq && $SUDO apt-get install -y -qq git curl ca-certificates tar gzip xz-utils unzip python3) " +
-				"|| ($SUDO dnf install -y -q git curl ca-certificates tar gzip xz unzip python3) " +
-				"|| (command -v git >/dev/null && command -v curl >/dev/null)",
+				"|| ($SUDO dnf install -y -q git ca-certificates tar gzip xz unzip python3) " +
+				"|| (command -v git && command -v curl && command -v python3) >/dev/null 2>&1",
 			timeoutMs: 10 * MIN,
 		},
 		{

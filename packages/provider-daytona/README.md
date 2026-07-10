@@ -11,9 +11,9 @@ pipeline boots from, and the snapshot names (`daytonaSnapshotDefault`, `daytonaS
 (runner region, e.g. `us-west-2`; unset → account default), `DAYTONA_SNAPSHOT` (override the booted
 snapshot — CI points it at the candidate while iterating).
 
-**Depends on:** `@sandbox-benchmarks/provider-core` (adapter contract + env gate + candidate
-naming), `@sandbox-benchmarks/schema` (toolchain identity the snapshot names derive from),
-`@computesdk/daytona` (the vendor wrapper).
+**Depends on:** `@sandbox-benchmarks/provider-core` (adapter contract + env gate + the shared
+toolchain artifact identity the snapshot names derive from), `@computesdk/daytona` (the vendor
+wrapper).
 
 **What lives here:** pure create-time policy. The snapshot carries the toolchain and the pinned
 spec class; the adapter is "boot this snapshot on this target" — the snapshot itself is created by

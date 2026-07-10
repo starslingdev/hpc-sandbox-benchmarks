@@ -22,6 +22,7 @@ import { bakeE2bTemplate } from "./e2b.ts";
 import { imageExistsInRegistry, promoteImage } from "./image.ts";
 import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
+import { NO_ARTIFACT } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
 
 export async function promoteAll(log: Log): Promise<BakeReport[]> {
@@ -92,16 +93,10 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 					log("    modal boots the published version image — nothing to build");
 					break;
 				case "blaxel":
-					log("    blaxel boots the stock base image — nothing to promote");
-					break;
 				case "vercel":
-					log("    vercel boots the stock Amazon Linux image — nothing to promote");
-					break;
 				case "cloudrun":
-					log("    cloudrun executes inside the pre-deployed gateway service — nothing to promote");
-					break;
 				case "novita":
-					log("    novita boots its default template — nothing to promote");
+					log(`    ${NO_ARTIFACT[provider.name]} — nothing to promote`);
 					break;
 				default: {
 					// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).

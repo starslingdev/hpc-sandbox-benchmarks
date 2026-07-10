@@ -32,8 +32,11 @@ aggregator as the only join point:
 
 The decoupling is enforced by `@repo/repo-checks` (`provider-boundaries.test.ts`), extending
 ADR-0002's DAG gates: no provider package may depend on a sibling, every provider package must
-speak the provider-core contract, the aggregator declares no external dep, and `@computesdk/*`
-wrappers are declared nowhere else.
+speak the provider-core contract, the aggregator declares no external dep, and vendor SDKs
+(`@computesdk/*` wrappers plus a maintained raw-SDK list) are declared nowhere else. One reviewed
+exemption exists: `apps/cli` keeps a direct `@daytona/sdk` dependency because the bake pipeline
+administers daytona snapshot images — control-plane operations `@computesdk/daytona` doesn't
+expose; the fence encodes it explicitly rather than widening the rule.
 
 ## Consequences
 

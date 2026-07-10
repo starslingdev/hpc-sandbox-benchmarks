@@ -3,6 +3,20 @@
 // it's unit-testable without the env-backed config.
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 
+/**
+ * Providers with no candidate artifact, and why — the single message source the bake, promote, and
+ * validate loops all consume. These boot stock environments (base image / gateway / default
+ * template) that can never pass the pinned toolchain smoke, so the loops must SKIP validating them
+ * rather than boot-and-fail: a red bake that means "stock image lacks the toolchain" would be
+ * indistinguishable from a real toolchain regression on the providers that do bake.
+ */
+export const NO_ARTIFACT: Partial<Record<ProviderId, string>> = {
+	blaxel: "blaxel boots the stock base image — no candidate artifact",
+	vercel: "vercel boots the stock Amazon Linux image — no candidate artifact",
+	cloudrun: "cloudrun executes inside the pre-deployed gateway service — no candidate artifact",
+	novita: "novita boots its default template — no candidate artifact",
+};
+
 export interface CandidateRefs {
 	e2bTemplateCandidate: string;
 	daytonaSnapshotCandidate: string;
@@ -27,17 +41,11 @@ export function candidateCreateOptions(
 			};
 		case "modal":
 			return { templateId: refs.toolchainImageCandidate };
+		// No candidate artifact to point at (see NO_ARTIFACT) — stock environments boot as-is.
 		case "blaxel":
-			// Stock base image — no candidate artifact to point at.
-			return {};
 		case "vercel":
-			// Stock Amazon Linux image — no candidate artifact to point at.
-			return {};
 		case "cloudrun":
-			// Sandboxes execute inside the pre-deployed gateway service — no candidate artifact.
-			return {};
 		case "novita":
-			// Novita's default template — no candidate artifact to point at.
 			return {};
 	}
 }

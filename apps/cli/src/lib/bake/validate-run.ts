@@ -7,10 +7,16 @@ import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import type { SmokeOutcome } from "../smoke-run.ts";
-import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../smoke-run.ts";
+import {
+	bootAndSmoke,
+	logChecks,
+	NO_ARTIFACT_OUTCOME,
+	smokeFailureReason,
+	smokeOk,
+} from "../smoke-run.ts";
 import type { Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
-import { candidateCreateOptions } from "./validate.ts";
+import { candidateCreateOptions, NO_ARTIFACT } from "./validate.ts";
 
 /** Validate every provider's candidate artifact (boot + smoke), sharing the skip-vs-fail contract. A
  *  provider with no creds skips; one that boots and fails its smoke is `failed`. Never throws. */
@@ -20,6 +26,11 @@ export function validateCandidates(
 ): Promise<ProviderRun<SmokeOutcome>[]> {
 	return forEachProviderWithCreds(
 		(provider) => {
+			const noArtifact = NO_ARTIFACT[provider.name];
+			if (noArtifact) {
+				log(`>>> ${provider.name}: ${noArtifact} — validation skipped`);
+				return Promise.resolve(NO_ARTIFACT_OUTCOME);
+			}
 			log(`>>> ${provider.name}: validating candidate (boot + smoke)…`);
 			// Boot the candidate artifact (override the registry adapter's version create-options).
 			const validateConfig: ProviderConfig = {

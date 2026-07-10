@@ -36,6 +36,22 @@ export function smokeOk(outcome: SmokeOutcome): boolean {
 	return !outcome.error && outcome.checks.length > 0 && outcome.checks.every((c) => c.ok);
 }
 
+/** Synthetic passing outcome for providers with no candidate artifact (see bake's NO_ARTIFACT):
+ *  they have nothing to regress, so the bake/promote loops mark them ok without booting a stock
+ *  environment that can only fail the pinned toolchain smoke. */
+export const NO_ARTIFACT_OUTCOME: SmokeOutcome = {
+	checks: [
+		{
+			name: "no candidate artifact",
+			cmd: "(validation skipped)",
+			ok: true,
+			exitCode: 0,
+			durationMs: 0,
+			output: "provider boots a stock environment; no baked artifact to validate",
+		},
+	],
+};
+
 /** A human reason for a failed smoke run: the lifecycle error, else the failed-probe count. */
 export function smokeFailureReason(outcome: SmokeOutcome): string {
 	if (outcome.error) {

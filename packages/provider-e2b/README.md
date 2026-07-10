@@ -11,9 +11,9 @@ the bake pipeline composes into its candidate refs.
 provider). `E2B_TEMPLATE` optionally overrides the booted template — CI points it at the candidate
 while iterating on the toolchain image.
 
-**Depends on:** `@sandbox-benchmarks/provider-core` (adapter contract + env gate + candidate
-naming), `@sandbox-benchmarks/schema` (toolchain identity the template names derive from),
-`@computesdk/e2b` (the vendor wrapper).
+**Depends on:** `@sandbox-benchmarks/provider-core` (adapter contract + env gate + the shared
+toolchain artifact identity the template names derive from), `@computesdk/e2b` (the vendor
+wrapper).
 
 **What lives here:** pure create-time policy. The template carries the cpu/memory pins (its
 `e2b.toml`) and the toolchain, so the adapter is just "boot this template" — the template itself is

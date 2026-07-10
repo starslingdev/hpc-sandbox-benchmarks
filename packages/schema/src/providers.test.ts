@@ -15,6 +15,7 @@ const fixture: ProviderMeta = {
 	maturity: { status: "ga" },
 	specPinning: "settable",
 	transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },
+	probes: { controlPlaneInfo: true, controlPlaneList: true, snapshot: "safe" },
 };
 
 describe("@sandbox-benchmarks/schema providers", () => {
@@ -37,6 +38,14 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		expect(new Set(ids).size).toBe(ids.length);
 		for (const p of PROVIDERS) {
 			expect(p.requiredEnvVars.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("declares probe capabilities for every provider", () => {
+		for (const p of PROVIDERS) {
+			expect(typeof p.probes.controlPlaneInfo).toBe("boolean");
+			expect(typeof p.probes.controlPlaneList).toBe("boolean");
+			expect(["safe", "stops-sandbox", "unsupported"]).toContain(p.probes.snapshot);
 		}
 	});
 
@@ -118,7 +127,9 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		for (const [id, cost] of Object.entries(expected)) {
 			const meta = getProvider(id);
 			expect(meta).toBeDefined();
-			expect(meta && hourlyCostAtTargetSpec(meta)).toBeCloseTo(cost);
+			// Explicit high precision: the default (±0.005) is ~30x looser than a last-digit
+			// transcription error in a per-GiB rate, which this guard exists to catch.
+			expect(meta && hourlyCostAtTargetSpec(meta)).toBeCloseTo(cost, 6);
 		}
 	});
 

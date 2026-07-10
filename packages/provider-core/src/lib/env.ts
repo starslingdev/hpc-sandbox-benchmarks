@@ -1,18 +1,16 @@
 // The env-contract half of the provider packages' shared core: each provider package declares the
-// env keys it owns and reads them through this single validated gate, so no unvalidated environment
-// data reaches adapter logic (the same posture the original monolithic config gatekeeper enforced,
-// now reusable per package).
-import { type } from "arktype";
-
-// One compiled validator for the whole process — every key shares the same rule, so there is no
-// per-call schema to build (readProviderEnv runs at module load in several packages).
-const nonEmptyString = type("string >= 1");
+// env keys it owns and reads them through this single gate, so no unfiltered environment data
+// reaches adapter logic.
 
 /**
- * Read and validate a declared slice of the environment. Only the declared keys are forwarded
- * (process.env carries hundreds of unrelated ones), every key is optional — a missing credential is
- * a *skip* decision made downstream, not an error here — but an explicitly-set-yet-empty value is a
- * misconfiguration and is rejected loudly at module load.
+ * Read a declared slice of the environment. Only the declared keys are forwarded (process.env
+ * carries hundreds of unrelated ones), and both missing AND empty values resolve to `undefined`:
+ * GitHub Actions materializes an unconfigured secret as an empty-string env var (`FOO: ${{
+ * secrets.MISSING }}` sets FOO=""), so treating "" as a misconfiguration would crash every provider
+ * at module load the moment one optional secret is unsynced — the exact failure the DAYTONA_TARGET
+ * `|| 'us-west-2'` workflow guard once papered over. Empty ⇒ unset keeps a missing credential what
+ * it is everywhere else in the harness (missingCreds treats "" as missing): a downstream skip
+ * decision, never an import-time crash.
  */
 export function readProviderEnv<const K extends readonly string[]>(
 	keys: K,
@@ -21,12 +19,7 @@ export function readProviderEnv<const K extends readonly string[]>(
 	const out: Partial<Record<K[number], string>> = {};
 	for (const key of keys as readonly K[number][]) {
 		const value = env[key];
-		if (value === undefined) continue;
-		const parsed = nonEmptyString(value);
-		if (parsed instanceof type.errors) {
-			throw new Error(`Invalid configuration: ${key} ${parsed.summary}`);
-		}
-		out[key] = parsed;
+		if (value !== undefined && value !== "") out[key] = value;
 	}
 	return out;
 }

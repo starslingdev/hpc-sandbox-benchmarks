@@ -18,7 +18,14 @@
  * and never throws out of it. Repeat the cycle for a cold-start distribution — that is what
  * {@link benchmarkLifecycle} (in index.ts) does.
  */
-import type { Aggregates, HarnessMetricId, RawRun, SkipMarker } from "@sandbox-benchmarks/schema";
+import type { ProviderSnapshots } from "@sandbox-benchmarks/providers";
+import type {
+	Aggregates,
+	HarnessMetricId,
+	ProviderProbes,
+	RawRun,
+	SkipMarker,
+} from "@sandbox-benchmarks/schema";
 import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import { now as defaultNow, time } from "./internal.ts";
 
@@ -39,16 +46,9 @@ export interface LifecycleSandbox {
 	destroy(): Promise<unknown>;
 }
 
-/** The slice of a computesdk snapshot manager the driver times (provider-core's `ProviderSnapshots`
- *  satisfies this). `create`'s return stays `unknown` on purpose: wrappers disagree on the snapshot
- *  shape (computesdk-conformant managers return `{ id }`; `@computesdk/vercel` returns the raw
- *  vendor Snapshot carrying `snapshotId`), so the probe normalizes behind runtime guards. */
-export interface LifecycleSnapshots {
-	create(sandboxId: string, options?: { name?: string }): Promise<unknown>;
-	delete(snapshotId: string): Promise<unknown>;
-}
-
-/** The created snapshot's identifier for cleanup, from whichever field the wrapper populates. */
+/** The created snapshot's identifier for cleanup, from whichever field the wrapper populates
+ *  (computesdk-conformant managers return `{ id }`; `@computesdk/vercel` returns the raw vendor
+ *  Snapshot carrying `snapshotId`). */
 function snapshotIdOf(created: unknown): string | undefined {
 	const shape = created as { id?: unknown; snapshotId?: unknown } | null | undefined;
 	if (typeof shape?.id === "string") return shape.id;
@@ -64,7 +64,7 @@ export interface LifecycleCompute {
 		list?(): Promise<unknown[]>;
 	};
 	/** Present on providers whose SDK exposes snapshots — the lifecycle snapshot probe. */
-	snapshot?: LifecycleSnapshots;
+	snapshot?: ProviderSnapshots;
 }
 
 export interface MeasureLifecycleOptions {
@@ -78,6 +78,9 @@ export interface MeasureLifecycleOptions {
 	controlPlaneSamples?: number;
 	/** Attempt a snapshot (recorded as a skip when the SDK exposes none, or when false). Default `true`. */
 	snapshot?: boolean;
+	/** What this provider's probes honestly measure (schema-declared). Absent — the unit-test fakes —
+	 *  means fully capable, so the probes exercise whatever surface the fake exposes. */
+	probes?: ProviderProbes;
 	/** Readiness probes (`echo ok`) per cold start before giving up. Default `40`. */
 	readinessMaxAttempts?: number;
 	/** Delay between failed readiness probes, in ms. Default `250`. */
@@ -121,6 +124,12 @@ export async function measureLifecycle(
 	const controlPlaneSamples = Number.isFinite(rawSamples) ? Math.max(1, Math.floor(rawSamples)) : 1;
 	const wantSnapshot = options.snapshot ?? true;
 	const wantPayload = options.payload ?? true;
+	// Absent probes (unit-test fakes) mean fully capable — the real registry always declares them.
+	const probes: ProviderProbes = options.probes ?? {
+		controlPlaneInfo: true,
+		controlPlaneList: true,
+		snapshot: "safe",
+	};
 	// Same non-finite guard as controlPlaneSamples: a NaN bound would make the readiness loop never run.
 	const rawAttempts = options.readinessMaxAttempts ?? 40;
 	const readinessMaxAttempts = Number.isFinite(rawAttempts)
@@ -201,15 +210,31 @@ export async function measureLifecycle(
 		}
 
 		// Control-plane read: getInfo, sampled within this one (cheap) sandbox to build a distribution
-		// without paying a fresh spawn/teardown per Sample.
-		for (let i = 0; i < controlPlaneSamples; i++) {
-			await step(HARNESS_METRIC_IDS.controlPlaneInfo, () => sandbox.getInfo());
+		// without paying a fresh spawn/teardown per Sample. Gated on the schema-declared capability:
+		// most wrappers fabricate getInfo locally, and publishing microsecond "control-plane" timings
+		// that measure object allocation would poison the cross-provider comparison.
+		if (probes.controlPlaneInfo) {
+			for (let i = 0; i < controlPlaneSamples; i++) {
+				await step(HARNESS_METRIC_IDS.controlPlaneInfo, () => sandbox.getInfo());
+			}
+		} else {
+			skip(
+				HARNESS_METRIC_IDS.controlPlaneInfo,
+				"provider SDK fabricates getInfo locally (not a control-plane read)",
+			);
 		}
 
-		// Control-plane enumeration: list, when the SDK exposes it. Bind `this` so the captured method
-		// keeps its receiver, and narrow on a const (property narrowing wouldn't survive the closure).
+		// Control-plane enumeration: list, gated on the declared capability rather than surface
+		// presence — the generated providers always EXPOSE list() even when the wrapper throws "not
+		// supported" (vercel) or enumerates a process-local map (cloud-run), so duck-typing here would
+		// probe fabrications. The presence check stays as the fallback for non-generated computes.
 		const listSandboxes = compute.sandbox.list?.bind(compute.sandbox);
-		if (listSandboxes) {
+		if (!probes.controlPlaneList) {
+			skip(
+				HARNESS_METRIC_IDS.controlPlaneList,
+				"provider SDK exposes no real sandbox list operation",
+			);
+		} else if (listSandboxes) {
 			// Sampled `controlPlaneSamples` times like getInfo — list is a control-plane read too, so the
 			// configured probe depth governs both reads, not just info.
 			for (let i = 0; i < controlPlaneSamples; i++) {
@@ -224,6 +249,15 @@ export async function measureLifecycle(
 		const snapshots = compute.snapshot;
 		if (!wantSnapshot) {
 			skip(HARNESS_METRIC_IDS.snapshot, "snapshot measurement disabled for this run");
+		} else if (probes.snapshot === "unsupported") {
+			skip(HARNESS_METRIC_IDS.snapshot, "provider control plane exposes no snapshot operation");
+		} else if (probes.snapshot === "stops-sandbox") {
+			// Probing would fabricate every downstream timing: the vendor's snapshot() halts the sandbox
+			// (Vercel documents this), so the finally-block teardown would time a no-op on a dead VM.
+			skip(
+				HARNESS_METRIC_IDS.snapshot,
+				"snapshot stops the sandbox (provider side effect); skipped to keep teardown honest",
+			);
 		} else if (!snapshots) {
 			skip(HARNESS_METRIC_IDS.snapshot, "provider SDK exposes no snapshot operation");
 		} else {

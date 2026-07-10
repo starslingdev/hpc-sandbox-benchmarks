@@ -14,6 +14,7 @@ export type {
 	DirectProvider,
 	ProviderAdapter,
 	ProviderConfig,
+	ProviderSnapshots,
 } from "@sandbox-benchmarks/provider-core";
 // The runtime configuration gatekeeper — the single validated config object consumers import.
 export { config } from "./lib/config.ts";
@@ -44,8 +45,10 @@ export const providers: ProviderConfig[] = PROVIDERS.map((meta) => {
 		name: meta.id,
 		// Credentials are schema-owned identity; the join mirrors the ProviderMeta's static list.
 		requiredEnvVars: meta.requiredEnvVars,
-		// Transport capability is schema-owned (a static fact of the @computesdk/* integration), so it
-		// rides the same id-keyed join — the harness reads it to pick sync vs detached per step.
+		// Transport + probe capabilities are schema-owned (static facts of the @computesdk/*
+		// integration), so they ride the same id-keyed join — the harness reads them to pick a per-step
+		// transport and to gate the lifecycle probes on what each wrapper can honestly measure.
 		transport: meta.transport,
+		probes: meta.probes,
 	};
 });

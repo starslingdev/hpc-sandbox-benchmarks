@@ -52,6 +52,30 @@ export interface ProviderTransport {
 }
 
 /**
+ * What the lifecycle benchmark's control-plane/snapshot probes actually measure through this
+ * provider's `@computesdk/*` adapter — declared here (like {@link ProviderTransport}) so the harness
+ * gates each probe on a static capability instead of duck-typing the wrapper's surface. Duck-typing
+ * lies twice over: the generated provider always *exposes* `list()` even when the wrapper throws
+ * "not supported", and several wrappers implement `getInfo` as a locally-constructed literal — a
+ * probe against those publishes microsecond "control-plane" timings that measure object allocation.
+ */
+export interface ProviderProbes {
+	/** Does the adapter's `getInfo` do a real control-plane read (e.g. Modal's `poll()`), rather than
+	 *  fabricate the result locally? Fabricated ⇒ the probe is skipped, not published. */
+	controlPlaneInfo: boolean;
+	/** Does the adapter's `list` do a real control-plane enumeration? `false` covers wrappers that
+	 *  throw "not supported" (vercel) and ones that return a process-local map (cloud-run). */
+	controlPlaneList: boolean;
+	/**
+	 * Snapshot probe safety: `"safe"` — supported without side effects on the running sandbox;
+	 * `"stops-sandbox"` — supported but halts the sandbox (Vercel's `snapshot()` stops it), which
+	 * would fabricate every downstream teardown timing, so the probe is skipped to keep teardown
+	 * honest; `"unsupported"` — no snapshot operation on this control plane.
+	 */
+	snapshot: "safe" | "stops-sandbox" | "unsupported";
+}
+
+/**
  * How a provider bills. A discriminated union so a vetted `per_vcpu_hour` rate cannot be declared
  * without its `usdPerVcpuHour` — the missing-rate case is a compile error, not a silent `null`.
  */
@@ -110,6 +134,8 @@ export interface ProviderMeta {
 	specPinning: SpecPinning;
 	/** How the provider's exec transport behaves — the harness selects sync vs detached from this. */
 	transport: ProviderTransport;
+	/** What the lifecycle probes really measure here — the harness gates each probe on this. */
+	probes: ProviderProbes;
 }
 
 /**
@@ -161,6 +187,9 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
+		// getInfo is a locally-built literal in the wrapper (no network) — not a control-plane read;
+		// list drives the real sandboxes API; snapshots (beta) are probed as before.
+		probes: { controlPlaneInfo: false, controlPlaneList: true, snapshot: "safe" },
 	},
 	daytona: {
 		displayName: "Daytona",
@@ -202,6 +231,8 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
+		// getInfo is a locally-built literal in the wrapper (no network); list drives the real API.
+		probes: { controlPlaneInfo: false, controlPlaneList: true, snapshot: "safe" },
 	},
 	blaxel: {
 		displayName: "Blaxel",
@@ -234,6 +265,8 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
+		// getInfo reads the in-memory handle (no network); list drives the real SandboxInstance API.
+		probes: { controlPlaneInfo: false, controlPlaneList: true, snapshot: "safe" },
 	},
 	modal: {
 		displayName: "Modal",
@@ -271,6 +304,9 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			syncCapMs: null,
 			detachedPoll: true,
 		},
+		// The one wrapper whose getInfo does a real control-plane read (sandbox.poll()); its list
+		// throws "not supported", so the enumeration probe is skipped.
+		probes: { controlPlaneInfo: true, controlPlaneList: false, snapshot: "safe" },
 	},
 	vercel: {
 		displayName: "Vercel Sandbox",
@@ -310,6 +346,11 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			syncCapMs: null,
 			detachedPoll: false,
 		},
+		// getInfo is a hardcoded literal and list throws "not supported" in the wrapper. Vercel's
+		// snapshot() STOPS the sandbox as a side effect ("this sandbox will be stopped as part of the
+		// snapshot creation process" — @vercel/sandbox), which would fabricate every downstream
+		// teardown timing, so the snapshot probe is skipped to keep teardown honest.
+		probes: { controlPlaneInfo: false, controlPlaneList: false, snapshot: "stops-sandbox" },
 	},
 	cloudrun: {
 		displayName: "Google Cloud Run",
@@ -350,6 +391,9 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
+		// getInfo reads the local handle and list enumerates a process-local map — neither touches the
+		// gateway; the sandbox CLI exposes no snapshot operation.
+		probes: { controlPlaneInfo: false, controlPlaneList: false, snapshot: "unsupported" },
 	},
 	novita: {
 		displayName: "Novita",
@@ -391,6 +435,10 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
+		// getInfo is the e2b wrapper's local literal; list is re-pointed at Novita's real control
+		// plane. The wrapper's snapshot manager reconnects without a domain (it would hit e2b.dev), so
+		// the adapter removes it and the capability is honestly "unsupported".
+		probes: { controlPlaneInfo: false, controlPlaneList: true, snapshot: "unsupported" },
 	},
 };
 

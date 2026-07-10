@@ -67,6 +67,19 @@ describe("providerBoundaryViolations (rule spec on synthetic fixtures)", () => {
 		expect(violations[0]).toContain("@computesdk/modal");
 	});
 
+	it("fences known raw SDKs even when no provider package declares them, minus documented exemptions", () => {
+		// `@daytona/sdk` reaches the daytona control plane directly but no provider package declares
+		// it (provider-daytona speaks @computesdk/daytona) — the KNOWN_RAW_SDKS floor fences it, and
+		// only apps/cli's reviewed bake-pipeline exemption passes.
+		const violations = providerBoundaryViolations([
+			member("@sandbox-benchmarks/cli", { "@daytona/sdk": "catalog:computesdk" }),
+			member("@sandbox-benchmarks/harness", { "@daytona/sdk": "catalog:computesdk" }),
+		]);
+		expect(violations).toHaveLength(1);
+		expect(violations[0]).toContain("harness");
+		expect(violations[0]).toContain("@daytona/sdk");
+	});
+
 	it("fences raw vendor SDKs by deriving the set from provider packages' own deps", () => {
 		// provider-a declares the raw `some-sdk` — that makes it vendor surface, so harness declaring
 		// it too is the exact re-coupling the split prevents, even though it isn't @computesdk/*.

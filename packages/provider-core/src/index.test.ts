@@ -52,10 +52,12 @@ describe("readProviderEnv", () => {
 		expect(Object.keys(env)).toEqual(["FOO_KEY"]);
 	});
 
-	it("rejects an explicitly-set but empty value as a misconfiguration", () => {
-		expect(() => readProviderEnv(["FOO_KEY"], { FOO_KEY: "" })).toThrow(
-			/Invalid configuration.*FOO_KEY/s,
-		);
+	it("treats a set-but-empty value as unset (GHA renders unsynced secrets as empty strings)", () => {
+		// `FOO: ${{ secrets.MISSING }}` sets FOO="" — if that threw here, one unsynced optional secret
+		// would crash EVERY provider at module load instead of skipping the one it belongs to.
+		const env = readProviderEnv(["FOO_KEY"], { FOO_KEY: "" });
+		expect(env.FOO_KEY).toBeUndefined();
+		expect(Object.keys(env)).toEqual([]);
 	});
 
 	it("reads process.env by default", () => {

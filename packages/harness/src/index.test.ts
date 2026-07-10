@@ -23,6 +23,12 @@ import type { LifecycleCompute } from "./lib/lifecycle.ts";
 // A transport capability for the test fixtures — capped-with-detach, matching a single-round-trip
 // provider; none of these tests exercise real exec, so the exact values are inert here.
 const fixtureTransport = { streaming: false, syncCapMs: 60_000, detachedPoll: true } as const;
+// Fully-capable probes so the fakes keep exercising whatever surface each test wires up.
+const fixtureProbes = {
+	controlPlaneInfo: true,
+	controlPlaneList: true,
+	snapshot: "safe",
+} as const;
 
 // timeOperation only reads identity, never calls createCompute — a throwing stub keeps this unit
 // test free of any real SDK while staying fully typed.
@@ -30,6 +36,7 @@ const config: ProviderConfig = {
 	name: "e2b",
 	requiredEnvVars: [],
 	transport: fixtureTransport,
+	probes: fixtureProbes,
 	createCompute: () => {
 		throw new Error("not exercised");
 	},
@@ -62,6 +69,7 @@ function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): P
 		name: "e2b",
 		requiredEnvVars: [],
 		transport: fixtureTransport,
+		probes: fixtureProbes,
 		createCompute: () => compute,
 	};
 }
@@ -123,6 +131,7 @@ describe("@sandbox-benchmarks/harness", () => {
 		name: "modal",
 		requiredEnvVars: ["A", "B"],
 		transport: { streaming: false, syncCapMs: null, detachedPoll: true },
+		probes: fixtureProbes,
 		createCompute: () => {
 			throw new Error("not exercised");
 		},
@@ -189,6 +198,7 @@ describe("@sandbox-benchmarks/harness", () => {
 			name: "e2b",
 			requiredEnvVars: [],
 			transport: fixtureTransport,
+			probes: fixtureProbes,
 			createCompute: () => compute as unknown as DirectProvider,
 		};
 	}
@@ -364,6 +374,7 @@ const ctx = (s: Suite, resultsDir: string) => ({
 	// Daytona-shaped: synchronous execs capped, detached+poll available. The fake sandbox has no
 	// filesystem, so a detached selection drives the cat-poll fallback (done-file read over exec).
 	transport: fixtureTransport,
+	probes: fixtureProbes,
 });
 
 describe("runSuite (resolution + credential gate)", () => {

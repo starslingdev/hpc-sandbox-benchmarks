@@ -69,15 +69,6 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 	}
 	const connection: SandboxConnectOpts = { apiKey, domain: NOVITA_E2B_DOMAIN };
 
-	/** Reconnect to a live sandbox on Novita's control plane, or null when it's already gone. */
-	const connectTo = async (sandboxId: string): Promise<E2BSandbox | null> => {
-		try {
-			return await E2BSandbox.connect(sandboxId, connection);
-		} catch {
-			return null;
-		}
-	};
-
 	const overrides: ConnectionMethods = {
 		// The wrapper's create minus the `e2b_` prefix guard, with Novita's domain pinned. Mirrors the
 		// wrapper's option handling exactly — including the open `...providerOptions` passthrough that
@@ -98,12 +89,15 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 				directory: _directory,
 				...providerOptions
 			} = options ?? {};
+			// The connection spread goes LAST: CreateSandboxOptions has an open index signature, so a
+			// stray `domain`/`apiKey` riding providerOptions would otherwise silently re-point creation
+			// at e2b.dev with the nvta_ key — the exact failure this module exists to prevent.
 			const createOpts: SandboxOpts = {
-				...connection,
 				timeoutMs: timeout,
 				envs,
 				metadata,
 				...providerOptions,
+				...connection,
 			};
 			const template = templateId ?? snapshotId;
 			const sandbox = template
@@ -113,27 +107,32 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 			return { sandbox, sandboxId: sandbox.sandboxId };
 		},
 		getById: async (_config, sandboxId) => {
-			const sandbox = await connectTo(sandboxId);
-			return sandbox ? { sandbox, sandboxId } : null;
+			// "Not found" is a legitimate null; anything else (network, auth) propagates.
+			try {
+				const sandbox = await E2BSandbox.connect(sandboxId, connection);
+				return { sandbox, sandboxId };
+			} catch {
+				return null;
+			}
 		},
-		// Best-effort like the wrapper's own destroy: a sandbox that's already gone must not fail
-		// the harness's teardown path.
+		// One domain-aware DELETE via the SDK's static kill — no connect round-trip first (connect
+		// also re-extends the sandbox timeout as a side effect, pure waste on a teardown path the
+		// lifecycle benchmark TIMES). `kill` resolves false when the sandbox is already gone (the
+		// legitimate best-effort case); a real control-plane failure REJECTS and propagates, so the
+		// harness records a teardown failure instead of a fake success over a leaked, billing sandbox.
 		destroy: async (_config, sandboxId) => {
-			const sandbox = await connectTo(sandboxId);
-			await sandbox?.kill().catch(() => undefined);
+			await E2BSandbox.kill(sandboxId, connection);
 		},
 		// The wrapper's list with the domain pinned — the harness's control-plane probe rides this.
+		// Deliberately NOT swallowing errors into [] (the stock wrapper does): a failed enumeration
+		// must surface as a probe skip, not publish a fast fake "success" sample.
 		list: async (_config) => {
-			try {
-				const paginator = E2BSandbox.list(connection);
-				const items = await paginator.nextItems();
-				return items.map((info) => ({
-					sandbox: info as unknown as E2BSandbox,
-					sandboxId: info.sandboxId,
-				}));
-			} catch {
-				return [];
-			}
+			const paginator = E2BSandbox.list(connection);
+			const items = await paginator.nextItems();
+			return items.map((info) => ({
+				sandbox: info as unknown as E2BSandbox,
+				sandboxId: info.sandboxId,
+			}));
 		},
 	};
 

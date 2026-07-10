@@ -2,7 +2,7 @@
 // ProviderMeta; this module owns only how to construct a provider and the benchmark's create-time
 // policy. The aggregator (@sandbox-benchmarks/providers) joins the two registries by id
 // (PROVIDERS × adapters, both keyed by ProviderId).
-import type { ProviderId, ProviderTransport } from "@sandbox-benchmarks/schema";
+import type { ProviderId, ProviderProbes, ProviderTransport } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions, ExplicitComputeConfig } from "computesdk";
 
 /**
@@ -63,4 +63,6 @@ export interface ProviderConfig extends ProviderAdapter {
 	requiredEnvVars: string[];
 	/** Exec transport capability (schema-owned), from which the harness picks a per-step transport. */
 	transport: ProviderTransport;
+	/** Probe capability (schema-owned): what the lifecycle benchmark may honestly measure here. */
+	probes: ProviderProbes;
 }

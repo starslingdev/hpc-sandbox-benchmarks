@@ -9,6 +9,7 @@
 //   bun packages/templates/src/pins.ts --mise-toml  # the mise tool config (node, python, ...)
 //   bun packages/templates/src/pins.ts --e2b-toml   # the e2b template manifest
 
+import { config } from "@sandbox-benchmarks/providers";
 import { TARGET_SPEC, TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import type { Pins } from "./lib/pins.ts";
@@ -74,9 +75,10 @@ export function miseToml(pins: Pins = validatedPins()): string {
  * its source of truth, so the file is generated, never hand-edited. cpu/memory come from the
  * benchmark {@link TARGET_SPEC}.
  */
-export function e2bToml(
-	templateName: string = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`,
-): string {
+// Default to the provider layer's template name (ultimately provider-core's shared
+// toolchainArtifactName) — a hand-spelled copy here could silently drift from what the adapter
+// actually boots when the naming convention changes.
+export function e2bToml(templateName: string = config.e2bTemplateVersion): string {
 	return `${[
 		"# Generated from packages/templates/src/pins.ts — do not edit by hand.",
 		'dockerfile = "Dockerfile"',

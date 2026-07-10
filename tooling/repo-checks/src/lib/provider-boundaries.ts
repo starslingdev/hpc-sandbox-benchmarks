@@ -13,6 +13,32 @@ const VENDOR_WRAPPER_PREFIX = "@computesdk/";
 // package declares externally is that provider's vendor surface and is fenced.
 const SHARED_EXTERNALS = new Set(["computesdk"]);
 
+/**
+ * Raw vendor SDKs fenced even though no provider package declares them — deriving the fence only
+ * from provider packages' own deps left a hole: `@daytona/sdk` reaches the daytona control plane
+ * directly, yet provider-daytona speaks it through `@computesdk/daytona`, so derivation alone never
+ * fences the raw SDK. Extend this list when a provider's raw SDK exists as a separate npm package.
+ */
+const KNOWN_RAW_SDKS = new Set([
+	"e2b",
+	"@daytona/sdk",
+	"@daytonaio/sdk",
+	"modal",
+	"@vercel/sandbox",
+	"@blaxel/core",
+]);
+
+/**
+ * Documented member-level exemptions from the vendor fence — each entry is a deliberate,
+ * reviewed exception, not a loophole. apps/cli's bake pipeline drives daytona snapshot
+ * creation/deletion directly through the raw SDK because `@computesdk/daytona` exposes no
+ * snapshot-image administration; the dependency predates the per-provider split (ADR-0006
+ * documents the exemption).
+ */
+const FENCE_EXEMPTIONS = new Map<string, ReadonlySet<string>>([
+	["@sandbox-benchmarks/cli", new Set(["@daytona/sdk"])],
+]);
+
 /** A provider package (`provider-<id>`): implements the contract. provider-core IS the contract. */
 export function isProviderPackage(name: string): boolean {
 	return name.startsWith(PROVIDER_PREFIX) && name !== CORE;
@@ -51,7 +77,7 @@ export function providerBoundaryViolations(members: MemberDeps[]): string[] {
 		}
 	}
 	const isVendorDep = (dep: string): boolean =>
-		vendorDeps.has(dep) || dep.startsWith(VENDOR_WRAPPER_PREFIX);
+		vendorDeps.has(dep) || KNOWN_RAW_SDKS.has(dep) || dep.startsWith(VENDOR_WRAPPER_PREFIX);
 
 	// Pass 2 — enforce the rules against every member.
 	for (const member of members) {
@@ -83,9 +109,10 @@ export function providerBoundaryViolations(members: MemberDeps[]): string[] {
 		}
 
 		// Everyone else: computesdk core (universal types) is fine; the vendor surface is fenced into
-		// provider packages.
+		// provider packages, minus the explicitly documented exemptions.
+		const exempt = FENCE_EXEMPTIONS.get(member.name);
 		for (const dep of deps) {
-			if (isVendorDep(dep)) {
+			if (isVendorDep(dep) && !exempt?.has(dep)) {
 				violations.push(
 					`${member.name} declares vendor dependency ${dep} — vendor SDKs belong to @sandbox-benchmarks/provider-<id> packages only`,
 				);

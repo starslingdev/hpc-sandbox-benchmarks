@@ -86,7 +86,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@sandbox-benchmarks/schema": "workspace:*",
-        "arktype": "catalog:",
         "computesdk": "catalog:computesdk",
       },
       "devDependencies": {

@@ -41,9 +41,9 @@ describe("@sandbox-benchmarks/providers", () => {
 		const novita = providers.find((p) => p.name === "novita");
 		expect(novita?.requiredEnvVars).toEqual(["NOVITA_API_KEY"]);
 
-		// No adapter override — requiredEnvVars falls back to the schema meta's static list. Pin the
-		// concrete value rather than only comparing the two lookups against each other: if both `find`s
-		// missed (provider renamed on one side), `undefined === undefined` would pass — a false green.
+		// requiredEnvVars is schema-owned identity mirrored by the join. Pin the concrete value rather
+		// than only comparing the two lookups against each other: if both `find`s missed (provider
+		// renamed on one side), `undefined === undefined` would pass — a false green.
 		const daytonaMeta = PROVIDERS.find((m) => m.id === "daytona");
 		expect(daytonaMeta?.requiredEnvVars).toEqual(["DAYTONA_API_KEY"]);
 		expect(daytona?.requiredEnvVars).toEqual(daytonaMeta?.requiredEnvVars);

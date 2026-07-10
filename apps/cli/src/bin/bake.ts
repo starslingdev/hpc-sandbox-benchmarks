@@ -18,9 +18,15 @@ import { buildAndPushCandidate } from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
-import { candidateCreateOptions } from "../lib/bake/validate.ts";
+import { candidateCreateOptions, NO_ARTIFACT } from "../lib/bake/validate.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
-import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
+import {
+	bootAndSmoke,
+	logChecks,
+	NO_ARTIFACT_OUTCOME,
+	smokeFailureReason,
+	smokeOk,
+} from "../lib/smoke-run.ts";
 
 // Each provider's candidate bake, bound to the candidate names + base ref from config.
 const bakers: Record<ProviderId, (log: Log) => Promise<void>> = {
@@ -28,20 +34,12 @@ const bakers: Record<ProviderId, (log: Log) => Promise<void>> = {
 	daytona: (log) =>
 		bakeDaytonaSnapshot(config.daytonaSnapshotCandidate, config.toolchainImageCandidate, log),
 	modal: bakeModalImage,
-	blaxel: async (log) => {
-		log("blaxel boots the stock base image — no candidate artifact to bake");
-	},
-	vercel: async (log) => {
-		log("vercel boots the stock Amazon Linux image — no candidate artifact to bake");
-	},
-	cloudrun: async (log) => {
-		log(
-			"cloudrun executes inside the pre-deployed gateway service — no candidate artifact to bake",
-		);
-	},
-	novita: async (log) => {
-		log("novita boots its default template — no candidate artifact to bake");
-	},
+	// No-artifact providers (see NO_ARTIFACT): nothing to bake, and their validation is skipped in
+	// the loop below — booting a stock environment against the toolchain smoke can only fail.
+	blaxel: async () => {},
+	vercel: async () => {},
+	cloudrun: async () => {},
+	novita: async () => {},
 };
 
 const candidateRefs = {
@@ -92,6 +90,11 @@ if (import.meta.main) {
 
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {
+			const noArtifact = NO_ARTIFACT[provider.name];
+			if (noArtifact) {
+				log(`>>> ${provider.name}: ${noArtifact} — nothing to bake or validate`);
+				return NO_ARTIFACT_OUTCOME;
+			}
 			log(`>>> ${provider.name}: baking candidate…`);
 			await bakers[provider.name]((m) => log(`    ${m}`));
 
