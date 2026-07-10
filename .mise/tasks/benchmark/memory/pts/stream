@@ -10,4 +10,38 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 	exit 0
 fi
 
+# Pin STREAM's working set so every provider measures the same thing.
+#
+# pts/stream's install.sh sizes the arrays as `max(100e6, getconf LEVEL3_CACHE_SIZE * 4)` elements.
+# Under gVisor (modal) getconf reports the HOST's L3, not the sandbox's, so a big host CPU inflates
+# the arrays without bound: with the target spec's 8 GiB cap that allocation is OOM-killed, and
+# uncapped it merely ran ~4x slower per trial with a deviation that never converged. It also means
+# two providers on different host CPUs were silently benchmarking different working sets, which is
+# not a bandwidth comparison at all.
+#
+# 150e6 elements: each array is 1144 MiB, and the three together are 3.35 GiB — comfortably inside the
+# 8 GiB target spec. Upstream STREAM asks that each array be >=4x the cache it must spill; the largest
+# L3 in the current fleet is the EPYC 9275F behind Daytona at 256 MiB, giving 4.47x.
+#
+# TRIPWIRE: that ratio holds only for an L3 up to 286 MiB (1144/4). Today's biggest server parts already
+# exceed it — an EPYC 9965 has 384 MiB (2.98x) and a Xeon 6980P has 504 MiB (2.27x) — so if a provider
+# ever schedules us onto one, part of the working set stays resident in cache and STREAM reports
+# inflated bandwidth for that provider only, which is exactly the cross-provider skew this pin exists to
+# remove. Landing on such a host means raising this: 4x a 504 MiB L3 needs ~264e6 elements (5.91 GiB of
+# the 8 GiB cap), which still fits but leaves much less headroom.
+#
+# install.sh appends $CFLAGS_OVERRIDE AFTER its own -DSTREAM_ARRAY_SIZE, so ours wins; on failure it
+# retries with -mcmodel=medium, which arrays this large require.
+#
+# `-march=native` is DELIBERATE, and is not the same kind of variable as the array size. The array size
+# had to be pinned because a host-derived L3 made providers measure *different working sets* — an
+# artifact of the sandbox, not a property of the machine you rent. The ISA is the opposite: if a
+# provider's host is a newer CPU that exposes AVX-512 where another only reaches AVX2, that is a real
+# advantage of that provider's hardware, and a customer running their own workload there would get it.
+# Compiling every provider down to a fixed baseline (e.g. -march=x86-64-v3) would *hide* a difference we
+# exist to measure. Caveat for readers of the leaderboard: STREAM is DRAM-bandwidth-bound, so once past
+# the L3 ceiling SIMD width contributes little — expect the ISA to show up as a small effect, if at all.
+STREAM_ARRAY_SIZE=150000000
+export CFLAGS_OVERRIDE="-O3 -march=native -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_SIZE}"
+
 run_pts_benchmark "pts/stream" "pts_stream"
