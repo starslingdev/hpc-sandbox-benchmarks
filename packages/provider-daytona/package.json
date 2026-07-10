@@ -1,0 +1,23 @@
+{
+  "name": "@sandbox-benchmarks/provider-daytona",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@computesdk/daytona": "catalog:computesdk",
+    "@sandbox-benchmarks/provider-core": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}

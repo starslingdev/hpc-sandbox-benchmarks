@@ -5,19 +5,15 @@
 // env vars by its factory.
 import { blaxel } from "@computesdk/blaxel";
 import { cloudRun } from "@computesdk/cloud-run";
-import { daytona } from "@computesdk/daytona";
 import { modal } from "@computesdk/modal";
 import { vercel } from "@computesdk/vercel";
 import type { DirectProvider, ProviderAdapter } from "@sandbox-benchmarks/provider-core";
+import { daytonaAdapter } from "@sandbox-benchmarks/provider-daytona";
 import { e2bAdapter } from "@sandbox-benchmarks/provider-e2b";
 import { novitaAdapter } from "@sandbox-benchmarks/provider-novita";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
-
-// The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
-// `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.
-const daytonaCfg = config.daytona;
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
@@ -37,17 +33,9 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	// Boots the pre-baked toolchain template; owns its own env slice (E2B_TEMPLATE) and vendor dep —
 	// see @sandbox-benchmarks/provider-e2b.
 	e2b: e2bAdapter,
-	daytona: {
-		// The account API key; the toolchain snapshot and runner target are pinned per-create. `target`
-		// rides the wrapper's create-options passthrough into Daytona's createParams. No requiredEnvVars
-		// override needed — it falls back to the schema meta's static ["DAYTONA_API_KEY"], so a missing
-		// credential skips (not errors).
-		createCompute: () => daytona({ apiKey: daytonaCfg.apiKey }),
-		createOptions: {
-			snapshotId: daytonaCfg.snapshot,
-			...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
-		},
-	},
+	// Boots the pre-baked toolchain snapshot; owns its own env slice (DAYTONA_*) and vendor dep —
+	// see @sandbox-benchmarks/provider-daytona.
+	daytona: daytonaAdapter,
 	blaxel: {
 		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). The stock
 		// base-image is Alpine (no apt — PTS uninstallable) and disk is a tmpfs overlay carved from VM
