@@ -6,8 +6,10 @@ status: accepted
 
 ## Context
 
-This is a Bun workspace monorepo: `schema`, `providers`, `templates`, `harness`, `results`, the `cli`
-app, and dev-only `@repo/*` tooling. Left unconstrained, monorepos rot into a tangle — `results`
+This is a Bun workspace monorepo: `schema`, the provider layer (`provider-core`, one
+`provider-<id>` package per provider, and the `providers` aggregator — ADR-0006), `templates`,
+`harness`, `results`, the `cli` app, and dev-only `@repo/*` tooling. Left unconstrained, monorepos
+rot into a tangle — `results`
 reaching into a provider SDK, a package importing another's private `lib/`, a cycle between two
 peers — and the rot is invisible until something breaks. We wanted "can I import this?" answerable
 from the path alone, and the answer enforced rather than documented.

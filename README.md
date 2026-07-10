@@ -21,36 +21,42 @@ workspace sources natively. There is no compile step: `bun install` → `typeche
 
 ```text
 packages/   importable libraries   — scope @sandbox-benchmarks/*
-  schema/       shared types + arktype schemas (bottom of the DAG)
-  providers/    provider adapters → schema + computesdk
-  templates/    per-provider template builders (one export subpath each)
-  harness/      benchmark timing → providers + schema
-  results/      normalization → schema only (no provider SDKs)
+  schema/           shared types + arktype schemas (bottom of the DAG)
+  provider-core/    the provider contract: adapter types + env gate + toolchain identity
+  provider-<id>/    one package per provider (e2b, daytona, modal, blaxel,
+                    vercel, cloudrun, novita) — each owns its vendor SDK + env slice
+  providers/        the aggregator: schema registry ⋈ provider packages (no vendor deps)
+  templates/        per-provider template builders (one export subpath each)
+  harness/          benchmark timing → providers + schema
+  results/          normalization → schema only (no provider SDKs)
 apps/
-  cli/          entrypoint with bin commands → all five packages
+  cli/          entrypoint with bin commands → the library packages
 tooling/        dev-only            — scope @repo/*
   tsconfig/     shared source-first TS configs (config-only)
   test-utils/   provider conformance suite factory
-  repo-checks/  boundary + package-meta invariant tests
+  repo-checks/  boundary + package-meta + provider-decoupling invariant tests
 ```
 
 ## Dependency DAG (enforced)
 
-| Member                      | Internal deps (`workspace:*`)                   | External (catalog)                  |
-|-----------------------------|-------------------------------------------------|-------------------------------------|
-| `@sandbox-benchmarks/schema`     | —                                               | `arktype`                           |
-| `@sandbox-benchmarks/providers`  | schema                                          | `computesdk` (`catalog:computesdk`) |
-| `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
-| `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
-| `@sandbox-benchmarks/results`    | schema                                          | —                                   |
-| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results  | `dotenv`                            |
-| `@repo/tsconfig`            | —                                               | —                                   |
-| `@repo/test-utils`          | schema                                          | —                                   |
-| `@repo/repo-checks`         | —                                               | —                                   |
+| Member                              | Internal deps (`workspace:*`)                   | External (catalog)                  |
+|-------------------------------------|-------------------------------------------------|-------------------------------------|
+| `@sandbox-benchmarks/schema`        | —                                               | `arktype`                           |
+| `@sandbox-benchmarks/provider-core` | schema                                          | `arktype`, `computesdk`             |
+| `@sandbox-benchmarks/provider-<id>` | provider-core (+ schema where spec math needs it) | its own `@computesdk/<x>` wrapper (+ raw SDK where needed) |
+| `@sandbox-benchmarks/providers`     | provider-core, provider-<id> ×7, schema         | — (zero: the aggregator only joins) |
+| `@sandbox-benchmarks/templates`     | providers, schema                               | `computesdk` (`catalog:computesdk`) |
+| `@sandbox-benchmarks/harness`       | providers, schema                               | —                                   |
+| `@sandbox-benchmarks/results`       | schema                                          | —                                   |
+| `@sandbox-benchmarks/cli` (app)     | schema, providers, templates, harness, results  | `dotenv`                            |
+| `@repo/tsconfig`                    | —                                               | —                                   |
+| `@repo/test-utils`                  | schema                                          | —                                   |
+| `@repo/repo-checks`                 | —                                               | —                                   |
 
-`results` deliberately depends on `schema` only — it must normalize without any provider SDK, and
-`@repo/repo-checks` enforces that no package reaches across boundaries or into another package's
-private `lib/`.
+`results` deliberately depends on `schema` only — it must normalize without any provider SDK — and
+each vendor SDK is declared by exactly one `provider-<id>` package (ADR-0006). `@repo/repo-checks`
+enforces all of it: no cross-boundary or private-`lib/` reach, no provider package depending on a
+sibling, no vendor dep on the aggregator.
 
 ## Command contract
 
