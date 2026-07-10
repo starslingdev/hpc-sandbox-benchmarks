@@ -104,3 +104,310 @@ export function aggregate(samples: number[]): Aggregates {
 		n,
 	};
 }
+
+// ---------------------------------------------------------------------------------------------
+// Inference. A provider's Samples are repeated trials inside ONE sandbox, so the spread across them
+// is environmental noise (neighbours, host contention, gVisor), not measurement error that shrinks
+// with more trials. Reporting a bare p50 therefore invites a false ranking: a provider whose trials
+// span 9.7k–65k MB/s can out-rank a provider pinned at 66.5k ±0.14% on a lucky median. The tools
+// below quantify that — an interval around the median, and a test for whether two providers'
+// distributions differ at all.
+// ---------------------------------------------------------------------------------------------
+
+/** Bootstrap resamples per interval. 10k puts the Monte-Carlo error on a 95% bound well under the
+ *  precision the leaderboard prints (4 significant digits). */
+const DEFAULT_RESAMPLES = 10_000;
+/** Two-sided significance level for "are these two providers actually different?". */
+export const DEFAULT_ALPHA = 0.05;
+
+/**
+ * Reject an empty or non-finite sample set at the boundary, naming the caller and the bad value.
+ *
+ * Every function below consumes Samples by ORDER (sorting, ranking, ECDF sweeps), and `NaN` has no
+ * order: every comparison against it is `false`. That is not a cosmetic problem. In
+ * {@link kolmogorovSmirnov}'s two-pointer sweep neither index advances past a `NaN`, so the loop
+ * never terminates; in {@link mannWhitneyU} it silently corrupts the midranks and yields a plausible
+ * but meaningless p-value. Fail fast instead, exactly as `aggregate`/`percentileOf` already do.
+ */
+function assertFiniteSamples(fn: string, samples: readonly number[]): void {
+	if (samples.length === 0) {
+		throw new Error(`${fn}() requires at least one sample`);
+	}
+	for (const sample of samples) {
+		if (!Number.isFinite(sample)) {
+			throw new Error(`${fn}() requires finite samples; got ${sample}`);
+		}
+	}
+}
+
+/**
+ * A deterministic PRNG (mulberry32) seeded by hashing `seed`. The leaderboard is a COMMITTED
+ * artifact, so a `Math.random()`-driven bootstrap would rewrite every confidence bound on each
+ * regeneration and make the diff meaningless. Seeding from stable Run/Metric/provider identity keeps
+ * a given Run's leaderboard byte-identical across machines and reruns.
+ */
+export function seededRng(seed: string): () => number {
+	// An FNV-1a *variant*: it mixes UTF-16 code units, not UTF-8 bytes, because `charCodeAt` yields a
+	// 16-bit unit. For the ASCII seeds this is called with (`<runId>:<metricId>:<providerId>`) that is
+	// identical to textbook FNV-1a; above U+007F it diverges from the reference algorithm. We keep it
+	// rather than encoding to bytes first: nothing depends on interoperating with another FNV-1a
+	// implementation, only on being a stable, well-mixed 32-bit seed — and changing the hash would
+	// silently rewrite every confidence bound in the committed leaderboard.
+	let h = 2166136261;
+	for (let i = 0; i < seed.length; i++) {
+		h ^= seed.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	let state = h >>> 0;
+	return () => {
+		state = (state + 0x6d2b79f5) >>> 0;
+		let t = state;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+/** A bootstrapped interval around a Metric's median. */
+export interface MedianInterval {
+	/** The observed median (identical to `Aggregates.p50`). */
+	median: number;
+	/** Lower/upper bound of the percentile-bootstrap interval at {@link level}. */
+	lo: number;
+	hi: number;
+	/** Coverage, e.g. 0.95. */
+	level: number;
+	/** Resamples drawn. 0 when n === 1 (no interval is estimable; lo === hi === median). */
+	resamples: number;
+}
+
+/**
+ * Percentile bootstrap of the median: draw `resamples` resamples of size n with replacement, take each
+ * one's median, and report the empirical [α/2, 1−α/2] quantiles of that distribution.
+ *
+ * The median — not the mean — because a single stalled pass (STREAM under a noisy neighbour) drags a
+ * mean far more than it moves a median, and we want the provider's typical throughput, not its
+ * average-including-the-stall. The bootstrap — not a normal-theory `±1.96·stdev/√n` — because these
+ * Samples are neither normal nor independent of the host's scheduling, and a closed-form interval on
+ * the median would assume a symmetry the data plainly lacks (modal's Copy: 9.7k…65k MB/s).
+ *
+ * Note the interval narrows as PTS re-runs a noisy test (n grows), which is honest about the median's
+ * precision but says nothing about the underlying instability — read it alongside `Aggregates.stdev`.
+ */
+export function bootstrapMedianInterval(
+	samples: readonly number[],
+	options: { resamples?: number; level?: number; seed?: string } = {},
+): MedianInterval {
+	assertFiniteSamples("bootstrapMedianInterval", samples);
+	const level = options.level ?? 0.95;
+	if (!(level > 0 && level < 1)) {
+		throw new Error(`bootstrapMedianInterval() requires level in (0, 1); got ${level}`);
+	}
+	// Validate EVERY option before the n=1 early return, so a misconfigured call is rejected regardless
+	// of how many Samples it happens to carry. `0`/`NaN` would otherwise build an empty Float64Array,
+	// skip the resampling loop, and hand back NaN bounds — which serialize into the committed leaderboard
+	// as `null` rather than failing; a negative count throws a bare RangeError from the typed array,
+	// naming neither the caller nor the offending value. (Guarding after the early return would let
+	// `bootstrapMedianInterval([42], { resamples: -1 })` pass silently while `{ level: 0 }` threw.)
+	const resamples = options.resamples ?? DEFAULT_RESAMPLES;
+	if (!Number.isInteger(resamples) || resamples < 1) {
+		throw new Error(
+			`bootstrapMedianInterval() requires resamples to be a positive integer; got ${resamples}`,
+		);
+	}
+
+	const median = percentileOf(samples, 0.5);
+	// A single Sample carries no information about its own spread — degenerate to a point interval
+	// rather than fabricating a bound by resampling the one value n times (which would always give it).
+	// Reached only once the options above are known good.
+	if (samples.length === 1) return { median, lo: median, hi: median, level, resamples: 0 };
+
+	const rng = seededRng(options.seed ?? "sandbox-benchmarks");
+	const n = samples.length;
+	const medians = new Float64Array(resamples);
+	const draw = new Array<number>(n);
+	for (let b = 0; b < resamples; b++) {
+		for (let i = 0; i < n; i++) draw[i] = samples[Math.floor(rng() * n)] as number;
+		draw.sort((x, y) => x - y);
+		medians[b] = percentile(draw, 0.5);
+	}
+	const sorted = Array.from(medians).sort((a, b) => a - b);
+	const tail = (1 - level) / 2;
+	return {
+		median,
+		lo: percentile(sorted, tail),
+		hi: percentile(sorted, 1 - tail),
+		level,
+		resamples,
+	};
+}
+
+/** Standard normal CDF, via a rational approximation to erfc (Numerical Recipes `erfcc`,
+ *  |ε| < 1.2e-7 — far finer than any p-value we act on). */
+function normalCdf(z: number): number {
+	const x = Math.abs(z) / Math.SQRT2;
+	const t = 1 / (1 + 0.5 * x);
+	const tau =
+		t *
+		Math.exp(
+			-x * x -
+				1.26551223 +
+				t *
+					(1.00002368 +
+						t *
+							(0.37409196 +
+								t *
+									(0.09678418 +
+										t *
+											(-0.18628806 +
+												t *
+													(0.27886807 +
+														t *
+															(-1.13520398 +
+																t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))),
+		);
+	const erfc = z >= 0 ? tau : 2 - tau;
+	return 1 - erfc / 2;
+}
+
+/** Midranks of the pooled samples (ties share their average rank), plus Σ(t³−t) over tie groups. */
+function midranks(pooled: readonly number[]): { ranks: number[]; tieCorrection: number } {
+	const order = pooled.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+	const ranks = new Array<number>(pooled.length);
+	let tieCorrection = 0;
+	for (let i = 0; i < order.length; ) {
+		let j = i;
+		while (j + 1 < order.length && order[j + 1]?.value === order[i]?.value) j++;
+		// Ranks are 1-based; a tie group spanning [i, j] shares their mean rank.
+		const mean = (i + j + 2) / 2;
+		const t = j - i + 1;
+		tieCorrection += t ** 3 - t;
+		for (let k = i; k <= j; k++) ranks[(order[k] as { index: number }).index] = mean;
+		i = j + 1;
+	}
+	return { ranks, tieCorrection };
+}
+
+/** The outcome of a two-sample test on full distributions. */
+export interface DistributionTest {
+	/** The test statistic (U for Mann-Whitney, D for Kolmogorov-Smirnov). */
+	statistic: number;
+	/** Two-sided p-value: P(a difference this extreme | the two samples came from one distribution). */
+	pValue: number;
+	nA: number;
+	nB: number;
+}
+
+/**
+ * Mann-Whitney U (two-sided), normal approximation with tie and continuity corrections.
+ *
+ * The question it answers is exactly the one a leaderboard needs: are these two providers' Samples
+ * drawn from the same distribution, or does one genuinely tend to be faster? It's rank-based, so it
+ * assumes neither normality nor equal variance — both of which these Samples violate — and a single
+ * catastrophic pass moves a rank by one position instead of dragging a mean.
+ *
+ * The normal approximation is used at every n (exact enumeration is not implemented). At the n≈5 this
+ * suite produces, the smallest attainable two-sided p is ~0.008, so a genuine difference between two
+ * five-trial providers can be detected, but only a large one — treat a non-significant result at small
+ * n as "not enough evidence", never as "the providers are equal".
+ */
+export function mannWhitneyU(a: readonly number[], b: readonly number[]): DistributionTest {
+	if (a.length === 0 || b.length === 0) {
+		throw new Error("mannWhitneyU() requires a non-empty sample on both sides");
+	}
+	// A NaN silently corrupts the sort-based midranks and returns a plausible p-value.
+	assertFiniteSamples("mannWhitneyU", a);
+	assertFiniteSamples("mannWhitneyU", b);
+	const nA = a.length;
+	const nB = b.length;
+	const { ranks, tieCorrection } = midranks([...a, ...b]);
+	let rankSumA = 0;
+	for (let i = 0; i < nA; i++) rankSumA += ranks[i] as number;
+
+	const uA = rankSumA - (nA * (nA + 1)) / 2;
+	const uB = nA * nB - uA;
+	const statistic = Math.min(uA, uB);
+
+	const N = nA + nB;
+	const mu = (nA * nB) / 2;
+	// Tie-corrected variance; collapses to nA*nB*(N+1)/12 when there are no ties.
+	const variance = ((nA * nB) / 12) * (N + 1 - tieCorrection / (N * (N - 1)));
+	// Every pooled value identical → no variance, no evidence of any difference.
+	if (variance <= 0) return { statistic, pValue: 1, nA, nB };
+
+	// Continuity correction: |U − μ| is discrete, so shave half a step before the normal tail.
+	const z = Math.max(0, Math.abs(statistic - mu) - 0.5) / Math.sqrt(variance);
+	return { statistic, pValue: Math.min(1, 2 * (1 - normalCdf(z))), nA, nB };
+}
+
+/**
+ * Two-sample Kolmogorov-Smirnov (two-sided), asymptotic p-value.
+ *
+ * Complements Mann-Whitney: where U tests for a shift in central tendency, D is the largest gap
+ * between the two empirical CDFs, so it also catches providers whose medians coincide but whose
+ * *shapes* differ — a stable provider vs a bimodal one that alternates between fast and stalled
+ * passes. That bimodality is precisely what environmental noise looks like.
+ *
+ * The tail is the asymptotic (Numerical Recipes) approximation at every n; exact enumeration is not
+ * implemented. At the n≈5 this suite produces it is anti-conservative — e.g. `[1,2,3]` vs `[4,5,6]`
+ * returns p≈0.033 where the exact two-sided p is 2/C(6,3)=0.1 — so, as with {@link mannWhitneyU},
+ * treat a small-n result as directional evidence and never read a sub-α p at tiny n as hard proof.
+ */
+export function kolmogorovSmirnov(a: readonly number[], b: readonly number[]): DistributionTest {
+	if (a.length === 0 || b.length === 0) {
+		throw new Error("kolmogorovSmirnov() requires a non-empty sample on both sides");
+	}
+	// Critical: a NaN stalls the ECDF sweep below forever — `x <= y` and `y <= x` are both false, so
+	// neither index advances. Reject it here rather than hanging the leaderboard build.
+	assertFiniteSamples("kolmogorovSmirnov", a);
+	assertFiniteSamples("kolmogorovSmirnov", b);
+	const nA = a.length;
+	const nB = b.length;
+	const sortedA = [...a].sort((x, y) => x - y);
+	const sortedB = [...b].sort((x, y) => x - y);
+
+	// Sweep both ECDFs together, stepping whichever is behind; D is the largest gap seen.
+	let i = 0;
+	let j = 0;
+	let statistic = 0;
+	while (i < nA && j < nB) {
+		const x = sortedA[i] as number;
+		const y = sortedB[j] as number;
+		// Advance past every copy of the smaller value (both, when equal) before measuring the gap, so
+		// ties can't report a spurious step.
+		if (x <= y) while (i < nA && sortedA[i] === x) i++;
+		if (y <= x) while (j < nB && sortedB[j] === y) j++;
+		statistic = Math.max(statistic, Math.abs(i / nA - j / nB));
+	}
+
+	const en = Math.sqrt((nA * nB) / (nA + nB));
+	return { statistic, pValue: kolmogorovQ((en + 0.12 + 0.11 / en) * statistic), nA, nB };
+}
+
+/**
+ * Q_KS(λ) = 2 Σ_{j≥1} (−1)^{j−1} e^{−2j²λ²}, the asymptotic KS tail (Numerical Recipes `probks`).
+ *
+ * Summing a fixed number of terms is WRONG at small λ: the series alternates 1−1+1−1…, so a truncated
+ * sum collapses toward 0 and reports p≈0 — i.e. "certainly different" — for two IDENTICAL samples
+ * (λ = 0). Iterate until the terms actually converge, and treat non-convergence (only λ→0 does that)
+ * as p = 1, which is the limit.
+ */
+function kolmogorovQ(lambda: number): number {
+	const EPS1 = 1e-6;
+	const EPS2 = 1e-16;
+	const a2 = -2 * lambda * lambda;
+	let fac = 2;
+	let sum = 0;
+	let termPrev = 0;
+	for (let j = 1; j <= 100; j++) {
+		const term = fac * Math.exp(a2 * j * j);
+		sum += term;
+		if (Math.abs(term) <= EPS1 * termPrev || Math.abs(term) <= EPS2 * sum) {
+			return Math.max(0, Math.min(1, sum));
+		}
+		fac = -fac;
+		termPrev = Math.abs(term);
+	}
+	// Failed to converge — only happens as λ → 0, where the true value is 1 (no evidence of difference).
+	return 1;
+}
