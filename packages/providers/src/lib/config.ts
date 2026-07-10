@@ -15,6 +15,8 @@ const envSchema = type({
 	"DAYTONA_API_KEY?": "string >= 1",
 	"DAYTONA_TARGET?": "string >= 1",
 	"DAYTONA_SNAPSHOT?": "string >= 1",
+	"NOVITA_API_KEY?": "string >= 1",
+	"NOVITA_TEMPLATE?": "string >= 1",
 });
 
 const ENV_KEYS = [
@@ -23,18 +25,32 @@ const ENV_KEYS = [
 	"DAYTONA_API_KEY",
 	"DAYTONA_TARGET",
 	"DAYTONA_SNAPSHOT",
+	"NOVITA_API_KEY",
+	"NOVITA_TEMPLATE",
 ] as const;
 
 // 2. Startup gatekeeper — validate the environment once, fail fast with a clear message. Only the
-//    keys we declare are forwarded (process.env carries hundreds of unrelated ones).
+//    keys we declare are forwarded (process.env carries hundreds of unrelated ones). A set-but-EMPTY
+//    value is treated as unset, not a misconfiguration: GitHub Actions materializes an unconfigured
+//    secret as an empty-string env var (`FOO: ${{ secrets.MISSING }}` sets FOO=""), so throwing here
+//    would crash EVERY provider's bench job at module load the moment one optional secret is
+//    unsynced — the exact hazard the workflows' `DAYTONA_TARGET || 'us-west-2'` default papered
+//    over. Empty ⇒ unset keeps a missing credential what it is everywhere else in the harness
+//    (missingCreds treats "" as missing): a downstream skip decision, never an import-time crash.
 const rawEnv: Record<string, string> = {};
 for (const key of ENV_KEYS) {
 	const value = process.env[key];
-	if (value !== undefined) rawEnv[key] = value;
+	if (value !== undefined && value !== "") rawEnv[key] = value;
 }
 const env = envSchema(rawEnv);
 if (env instanceof type.errors) {
 	throw new Error(`Invalid configuration: ${env.summary}`);
+}
+
+/** The Novita account the novita adapter boots from (via the E2B-compatible API). */
+export interface NovitaConfig {
+	/** Novita API key (`nvta_…`), sent to Novita's E2B-compatible API at sandbox.novita.ai. */
+	apiKey?: string;
 }
 
 /** The daytona account/target the adapter boots from. Single-region: the base DAYTONA_* env vars. */
@@ -61,6 +77,10 @@ const e2bTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
 const e2bTemplateCandidate = `${e2bTemplateVersion}${CANDIDATE_SUFFIX}`;
 const daytonaSnapshotDefault = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
 const daytonaSnapshotCandidate = `${daytonaSnapshotDefault}${CANDIDATE_SUFFIX}`;
+// The novita template lives on Novita's E2B-compatible control plane (a separate namespace from
+// e2b.dev), so it reuses the same version-scoped artifact name as the e2b template.
+const novitaTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
+const novitaTemplateCandidate = `${novitaTemplateVersion}${CANDIDATE_SUFFIX}`;
 
 // 3. The single, fully-typed config object. Everything that needs config imports THIS.
 export const config = {
@@ -94,4 +114,15 @@ export const config = {
 		target: env.DAYTONA_TARGET,
 		snapshot: env.DAYTONA_SNAPSHOT ?? daytonaSnapshotDefault,
 	} satisfies DaytonaConfig,
+	/** The novita template the sandbox boots from (on Novita's control plane); `NOVITA_TEMPLATE`
+	 *  override, else the version-scoped public template. */
+	novitaTemplate: env.NOVITA_TEMPLATE ?? novitaTemplateVersion,
+	/** Public (version-scoped) novita template name; the promote target. */
+	novitaTemplateVersion,
+	/** Candidate novita template name the bake builds while iterating. */
+	novitaTemplateCandidate,
+	/** The Novita account the adapter and bake boot from (E2B-protocol-compatible control plane). */
+	novita: {
+		apiKey: env.NOVITA_API_KEY,
+	} satisfies NovitaConfig,
 } as const;

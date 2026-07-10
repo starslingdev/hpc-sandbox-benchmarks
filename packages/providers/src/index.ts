@@ -9,6 +9,9 @@ import type { ProviderConfig } from "./lib/types.ts";
 
 // The runtime configuration gatekeeper — the single validated config object consumers import.
 export { config } from "./lib/config.ts";
+// Novita's E2B-compat surface: the domain the bake pipeline points the e2b CLI at, and the compat
+// factory (exported for tests and for anyone driving Novita outside the harness join).
+export { NOVITA_E2B_DOMAIN, novitaCompute } from "./lib/novita.ts";
 export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/types.ts";
 
 /**

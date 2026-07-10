@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
-import { config, providers } from "./index.ts";
+import { config, novitaCompute, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
@@ -37,6 +37,34 @@ describe("@sandbox-benchmarks/providers", () => {
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		});
+	});
+
+	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
+		// Construction must accept an nvta_-prefixed key (the stock wrapper's create() rejects those)
+		// and still expose the universal manager surface the harness drives, with the mispointed
+		// snapshot/template managers removed (their every call would reconnect to e2b.dev). This also
+		// exercises the patch's runtime shape assertion, so a wrapper upgrade that moves the internal
+		// methods table fails here instead of mid-run.
+		const compute = novitaCompute("nvta_unit-test-key");
+		expect(typeof compute.sandbox.create).toBe("function");
+		expect(typeof compute.sandbox.destroy).toBe("function");
+		expect(typeof compute.sandbox.list).toBe("function");
+		expect(compute.snapshot).toBeUndefined();
+		// `template` is a runtime property of the generated provider (computesdk's type doesn't model
+		// it), so reach through a structural cast to pin its removal too.
+		expect((compute as { template?: unknown }).template).toBeUndefined();
+	});
+
+	it("boots novita from the configured template, erroring on use — not import — without a key", () => {
+		const novita = providers.find((p) => p.name === "novita");
+		expect(novita).toBeDefined();
+		expect(novita?.requiredEnvVars).toEqual(["NOVITA_API_KEY"]);
+		expect(novita?.createOptions?.snapshotId).toBe(config.novitaTemplate);
+		// The registry module must stay importable without credentials; the factory throws only when
+		// the harness actually selects the provider (after its requiredEnvVars gate).
+		if (!process.env.NOVITA_API_KEY) {
+			expect(() => novita?.createCompute()).toThrow(/NOVITA_API_KEY/);
+		}
 	});
 
 	it("boots e2b from the configured template and daytona from the configured snapshot", () => {

@@ -67,8 +67,17 @@ function writeE2bDockerfile(baseImage: string): void {
 }
 
 /** Build the e2b template `name` from `baseImage` (the candidate base while iterating, the published
- *  version base on promote — so the template provably derives from the validated bytes). */
-export async function bakeE2bTemplate(name: string, baseImage: string, log: Log): Promise<void> {
+ *  version base on promote — so the template provably derives from the validated bytes).
+ *
+ *  `envOverrides` re-points the CLI at an E2B-protocol-compatible control plane: the e2b CLI reads
+ *  E2B_API_KEY and E2B_DOMAIN from the environment, so the novita bake reuses this whole path (same
+ *  Dockerfile, same toml, same remote builder protocol) with only the credentials/domain swapped. */
+export async function bakeE2bTemplate(
+	name: string,
+	baseImage: string,
+	log: Log,
+	envOverrides: Record<string, string> = {},
+): Promise<void> {
 	// Keep the on-disk manifest's template_name in sync with the name we create, and pin the base.
 	writeFileSync(`${E2B_CONTEXT}/${E2B_TOML}`, e2bToml(name));
 	writeE2bDockerfile(baseImage);
@@ -90,7 +99,7 @@ export async function bakeE2bTemplate(name: string, baseImage: string, log: Log)
 			"--memory-mb",
 			String(config.targetSpec.memoryGb * 1024),
 		],
-		{ stdout: "inherit", stderr: "inherit", env: process.env },
+		{ stdout: "inherit", stderr: "inherit", env: { ...process.env, ...envOverrides } },
 	);
 	const code = await proc.exited;
 	if (code !== 0) throw new Error(`e2b template create exited ${code}`);

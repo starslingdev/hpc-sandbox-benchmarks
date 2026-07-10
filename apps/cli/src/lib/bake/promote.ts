@@ -27,6 +27,7 @@ import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
 import { imageExistsInRegistry, promoteImage } from "./image.ts";
+import { bakeNovitaTemplate } from "./novita.ts";
 import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
@@ -72,6 +73,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: config.toolchainImageCandidate,
 		daytonaTarget: config.daytona.target,
 	};
@@ -118,6 +120,13 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 					break;
 				case "blaxel":
 					log("    blaxel boots the stock base image — nothing to promote");
+					break;
+				case "novita":
+					await bakeNovitaTemplate(
+						config.novitaTemplateVersion,
+						config.toolchainImageCandidate,
+						(m) => log(`    ${m}`),
+					);
 					break;
 				default: {
 					// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).

@@ -10,6 +10,7 @@ import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
+import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
 
 // The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
@@ -71,5 +72,13 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		},
+	},
+	novita: {
+		// The e2b wrapper re-pointed at Novita's E2B-compatible control plane (sandbox.novita.ai) —
+		// see novita.ts for exactly what is swapped and why. Boots the pre-baked toolchain template
+		// the bake pipeline creates on Novita via the same e2b CLI (computesdk maps snapshotId → the
+		// template name); cpu/memory are pinned at template create, not per-sandbox.
+		createCompute: () => novitaCompute(config.novita.apiKey),
+		createOptions: { snapshotId: config.novitaTemplate },
 	},
 };

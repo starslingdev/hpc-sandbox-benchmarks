@@ -6,6 +6,8 @@ import type { ProviderId } from "@sandbox-benchmarks/schema";
 export interface CandidateRefs {
 	e2bTemplateCandidate: string;
 	daytonaSnapshotCandidate: string;
+	/** Candidate template on Novita's E2B-compatible control plane (its own namespace). */
+	novitaTemplateCandidate: string;
 	toolchainImageCandidate: string;
 	/** Daytona runner target for the active region (undefined → account default). */
 	daytonaTarget?: string;
@@ -30,5 +32,8 @@ export function candidateCreateOptions(
 		case "blaxel":
 			// Stock base image — no candidate artifact to point at.
 			return {};
+		case "novita":
+			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.
+			return { snapshotId: refs.novitaTemplateCandidate };
 	}
 }
