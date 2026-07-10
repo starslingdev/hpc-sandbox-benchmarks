@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
+    "@sandbox-benchmarks/results": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
     "typescript": "catalog:",

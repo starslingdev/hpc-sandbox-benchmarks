@@ -122,6 +122,7 @@
       "version": "0.0.0",
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
+        "@sandbox-benchmarks/results": "workspace:*",
         "@sandbox-benchmarks/schema": "workspace:*",
         "@types/bun": "catalog:",
         "arktype": "catalog:",

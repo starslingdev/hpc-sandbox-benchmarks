@@ -7,9 +7,24 @@
  * that produced it, ranked by the Metric's Direction (HIB → highest first, LIB → lowest first). A
  * Dimension with no headline Metric, or no provider value, is omitted. The representative value is the
  * Samples' p50 (median) — robust to a single slow pass.
+ *
+ * Ranking is INFERENTIAL, not a bare sort. A provider's Samples are repeated trials inside one sandbox,
+ * so their spread is environmental noise, and ordering on the median alone would let a lucky draw buy a
+ * position: a live run had modal's STREAM Copy span 9.7k–65k MB/s against daytona's 66.5k ±0.14%. Each
+ * row therefore carries a bootstrapped interval around its median, and two rows share a rank unless
+ * their full distributions separate under Mann-Whitney U (with Kolmogorov-Smirnov reported alongside,
+ * since a bimodal provider can match another's median while behaving nothing like it).
  */
-import type { Dimension, MetricDef, Run } from "@sandbox-benchmarks/schema";
-import { DIMENSIONS, getProvider, METRIC_CATALOG } from "@sandbox-benchmarks/schema";
+import type { Dimension, MedianInterval, MetricDef, Run } from "@sandbox-benchmarks/schema";
+import {
+	bootstrapMedianInterval,
+	DEFAULT_ALPHA,
+	DIMENSIONS,
+	getProvider,
+	kolmogorovSmirnov,
+	METRIC_CATALOG,
+	mannWhitneyU,
+} from "@sandbox-benchmarks/schema";
 
 /** One provider's standing on a Dimension's headline Metric. */
 export interface LeaderboardRow {
@@ -17,8 +32,26 @@ export interface LeaderboardRow {
 	displayName: string;
 	/** Representative value (Samples' p50) of the headline Metric for this provider. */
 	value: number;
-	/** 1-based rank by the Metric's Direction; equal values share neither rank (deterministic tie-break). */
+	/**
+	 * 1-based rank by the Metric's Direction. Providers whose Sample distributions are NOT
+	 * distinguishable (Mann-Whitney U, two-sided, α = {@link DEFAULT_ALPHA}) share a rank: a faster
+	 * median earned inside the noise is not a faster provider.
+	 */
 	rank: number;
+	/** Bootstrapped interval around {@link value} — the honest precision of the median. */
+	interval: MedianInterval;
+	/** Retained Sample count and their spread, so a wide/unstable row is legible at a glance. */
+	n: number;
+	stdev: number;
+	/**
+	 * Two-sided p-values against the row immediately above (`null` for rank 1, which has no predecessor).
+	 * `mannWhitney` tests a shift in central tendency and drives the tie grouping; `ks` compares the full
+	 * empirical CDFs, catching a provider whose median matches but whose distribution is bimodal — the
+	 * signature of environmental noise rather than a real difference.
+	 */
+	pVsPrevious: { mannWhitney: number; ks: number } | null;
+	/** Whether this row is statistically separable from the one above it. `null` for rank 1. */
+	separated: boolean | null;
 }
 
 /** One Dimension's ranked comparison on its headline Metric. */
@@ -49,33 +82,75 @@ export function buildLeaderboard(run: Run): Leaderboard {
 		);
 		if (!metric) continue;
 
-		const rows: LeaderboardRow[] = run.providers.flatMap((provider) => {
+		// Carry each provider's raw Samples alongside its row: the ranking needs the full distributions,
+		// not just their medians, to tell a real difference from environmental noise.
+		const candidates = run.providers.flatMap((provider) => {
 			const result = provider.metrics.find((m) => m.metricId === metric.id);
 			if (!result) return [];
-			return [
-				{
-					providerId: provider.providerId,
-					displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
-					value: result.aggregates.p50,
-					rank: 0, // assigned after sort
-				},
-			];
+			const row: LeaderboardRow = {
+				providerId: provider.providerId,
+				displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
+				value: result.aggregates.p50,
+				rank: 0, // assigned after sort
+				// Seed from stable identity so a committed leaderboard is byte-identical on every
+				// regeneration — a Math.random() bootstrap would churn the diff on every run.
+				interval: bootstrapMedianInterval(result.samples, {
+					seed: `${run.runId}:${metric.id}:${provider.providerId}`,
+				}),
+				n: result.aggregates.n,
+				stdev: result.aggregates.stdev,
+				pVsPrevious: null,
+				separated: null,
+			};
+			return [{ samples: result.samples, row }];
 		});
-		if (rows.length === 0) continue;
+		if (candidates.length === 0) continue;
 
-		// Rank by Direction; tie-break on providerId so the output is deterministic.
-		rows.sort((a, b) =>
-			a.value !== b.value
+		// Order by Direction; tie-break on providerId so the output is deterministic.
+		candidates.sort((a, b) =>
+			a.row.value !== b.row.value
 				? metric.direction === "HIB"
-					? b.value - a.value
-					: a.value - b.value
-				: a.providerId.localeCompare(b.providerId),
+					? b.row.value - a.row.value
+					: a.row.value - b.row.value
+				: a.row.providerId.localeCompare(b.row.providerId),
 		);
-		rows.forEach((row, i) => {
-			row.rank = i + 1;
+
+		// Competition ranking with STATISTICAL ties. Walk the ordered rows and test each against the one
+		// above: when Mann-Whitney can't separate them, they share a rank rather than letting a median
+		// won inside the noise buy a position. `separated` carries the verdict; `ks` is reported beside
+		// it because two providers can share a median while differing in distribution shape.
+		//
+		// Only ADJACENT rows are tested, which is deliberate: a leaderboard is a linear order, and the
+		// pairwise "which providers are mutually indistinguishable" relation is not transitive (A~B and
+		// B~C does not give A~C). Testing the chain keeps the table honest about the one comparison it
+		// actually renders — each row against the row above it — instead of implying a grouping the
+		// tests don't support. It also keeps this to k−1 tests, so no multiplicity correction is owed.
+		candidates.forEach((candidate, i) => {
+			const previous = candidates[i - 1];
+			if (!previous) {
+				candidate.row.rank = 1;
+				return;
+			}
+			// A single Sample is not a distribution: there is nothing to test, and the value is typically
+			// exact rather than measured (a Metric like `usd_per_hour` is a published price, not a trial).
+			// Rank such rows on the value and mark them untested, rather than declaring every provider
+			// "indistinguishable" because a one-trial comparison can never reach significance. Exactly
+			// equal values are a genuine tie, though, and must share a rank — otherwise two providers
+			// with an identical published price would be split by the providerId sort tie-break alone.
+			if (previous.samples.length < 2 || candidate.samples.length < 2) {
+				candidate.row.rank = candidate.row.value === previous.row.value ? previous.row.rank : i + 1;
+				return;
+			}
+			const mw = mannWhitneyU(previous.samples, candidate.samples);
+			const ks = kolmogorovSmirnov(previous.samples, candidate.samples);
+			const separated = mw.pValue < DEFAULT_ALPHA;
+			candidate.row.pVsPrevious = { mannWhitney: mw.pValue, ks: ks.pValue };
+			candidate.row.separated = separated;
+			// Not separable → inherit the rank above. Separable → this row's ordinal position.
+			candidate.row.rank = separated ? i + 1 : previous.row.rank;
 		});
 
-		dimensions.push({ dimension, metric, rows });
+		dimensions.push({ dimension, metric, rows: candidates.map((c) => c.row) });
 	}
 
 	return { runId: run.runId, sha: run.sha, generatedAt: run.generatedAt, dimensions };
@@ -86,6 +161,12 @@ function formatValue(value: number): string {
 	if (Number.isInteger(value)) return String(value);
 	// toPrecision(4) then strip trailing zeros / a trailing dot (e.g. 0.2304, 12.35, 1234).
 	return Number.parseFloat(value.toPrecision(4)).toString();
+}
+
+/** Format a p-value for the table: tiny values as a bound, never as a misleading `0`. */
+function formatPValue(p: number): string {
+	if (p < 0.001) return "<0.001";
+	return p.toPrecision(2);
 }
 
 /** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
@@ -111,12 +192,47 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			"",
 			`Headline: **${metric.label}** (${metric.unit}, ${better})`,
 			"",
-			`| Rank | Provider | ${metric.label} (${metric.unit}) |`,
-			"| ---: | --- | ---: |",
-			...rows.map((r) => `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} |`),
+			`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | p vs. above |`,
+			"| ---: | --- | ---: | ---: | ---: | ---: |",
+			...rows.map((r) => {
+				const ci =
+					r.interval.resamples === 0
+						? "—"
+						: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
+				// A tied rank is the interesting case: say so in the cell rather than leaving the reader
+				// to infer it from two rows sharing a number.
+				const p =
+					r.pVsPrevious === null
+						? "—"
+						: r.separated
+							? formatPValue(r.pVsPrevious.mannWhitney)
+							: `${formatPValue(r.pVsPrevious.mannWhitney)} (tied)`;
+				return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} | ${p} |`;
+			}),
 			"",
 		);
 	}
+
+	lines.push(
+		"---",
+		"",
+		"**Reading this table.** The value is the median (p50) of the retained per-trial Samples, not the",
+		"mean — a single stalled pass drags a mean far more than it moves a median. The 95% CI is a",
+		"percentile bootstrap of that median (10,000 resamples, seeded from the Run id so the table is",
+		"reproducible byte-for-byte), not a normal-theory interval: these Samples are neither normal nor",
+		"independent of the host's scheduling.",
+		"",
+		`Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = ${DEFAULT_ALPHA}).`,
+		"**Providers sharing a rank are statistically indistinguishable on this Metric** — a faster median",
+		"earned inside the noise is not a faster provider. Samples are repeated trials inside one sandbox,",
+		"so their spread is environmental (neighbours, host contention, virtualization), and a wide CI or a",
+		"large `n` (the harness re-runs a test that will not converge) is itself the signal that the",
+		"provider's performance is unstable, not that the measurement is imprecise.",
+		"",
+		"At the small `n` this suite produces, a non-significant result means *not enough evidence to",
+		"separate*, never *the providers are equal*.",
+		"",
+	);
 
 	return `${lines.join("\n")}\n`;
 }
