@@ -41,9 +41,12 @@ export function setupSteps(suite: Suite): SetupStep[] {
 		{
 			label: "install base packages",
 			// No-op on pre-baked images; fall back gracefully on images that already ship git/curl.
+			// Debian-family images install via apt; dnf covers rpm-family bases (Vercel's sandboxes run
+			// Amazon Linux 2023, which has no apt).
 			script:
 				"(command -v git && command -v curl && command -v python3) >/dev/null 2>&1 " +
 				"|| ($SUDO apt-get update -qq && $SUDO apt-get install -y -qq git curl ca-certificates tar gzip xz-utils unzip python3) " +
+				"|| ($SUDO dnf install -y -q git curl ca-certificates tar gzip xz unzip python3) " +
 				"|| (command -v git >/dev/null && command -v curl >/dev/null)",
 			timeoutMs: 10 * MIN,
 		},
@@ -87,17 +90,27 @@ export function setupSteps(suite: Suite): SetupStep[] {
 	}
 
 	if (suite.setupPts) {
+		// Debian-family images install the release .deb; rpm-family bases (Vercel's Amazon Linux 2023
+		// has no apt) install the same release from its generic tarball, with the PHP + build deps PTS
+		// profiles compile against pulled via dnf.
+		const debianPts = [
+			`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite_${PTS_VERSION}_all.deb" -o /tmp/phoronix-test-suite.deb`,
+			"$SUDO apt-get update -qq",
+			"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev",
+			"($SUDO dpkg -i /tmp/phoronix-test-suite.deb || $SUDO apt-get install -y -qq -f)",
+		].join(" && ");
+		const dnfPts = [
+			`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite-${PTS_VERSION}.tar.gz" -o /tmp/phoronix-test-suite.tar.gz`,
+			"$SUDO dnf install -y -q php-cli php-xml gcc gcc-c++ make patch flex bison bc elfutils-libelf-devel openssl-devel",
+			"tar -xzf /tmp/phoronix-test-suite.tar.gz -C /tmp",
+			"(cd /tmp/phoronix-test-suite && $SUDO ./install-sh)",
+		].join(" && ");
 		steps.push({
 			label: "setup phoronix-test-suite",
 			// No-op on pre-baked images.
 			script:
 				"command -v phoronix-test-suite >/dev/null 2>&1 || { " +
-				[
-					`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite_${PTS_VERSION}_all.deb" -o /tmp/phoronix-test-suite.deb`,
-					"$SUDO apt-get update -qq",
-					"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev",
-					"($SUDO dpkg -i /tmp/phoronix-test-suite.deb || $SUDO apt-get install -y -qq -f)",
-				].join(" && ") +
+				`if command -v apt-get >/dev/null 2>&1; then ${debianPts}; else ${dnfPts}; fi` +
 				"; }; phoronix-test-suite version",
 			timeoutMs: 15 * MIN,
 			retries: 2,

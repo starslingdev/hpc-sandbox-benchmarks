@@ -12,4 +12,6 @@ linker = "hoisted"
 # Refuse to install any npm release younger than 7 days, blunting compromised-release attacks.
 minimumReleaseAge = 604800
 # First-party / trusted toolchain packages we want at their latest regardless of age.
-minimumReleaseAgeExcludes = ["typescript", "@types/bun", "arktype", "computesdk", "dotenv", "@biomejs/biome"]
+# @computesdk/cloud-run rides the same trust as the computesdk core: Cloud Run sandbox support is
+# brand new upstream, so its wrapper is always younger than the 7-day gate.
+minimumReleaseAgeExcludes = ["typescript", "@types/bun", "arktype", "computesdk", "@computesdk/cloud-run", "dotenv", "@biomejs/biome"]

@@ -10,7 +10,7 @@ on:
         description: Provider to benchmark
         type: choice
         default: daytona
-        options: [daytona, e2b, modal, blaxel]
+        options: [daytona, e2b, modal, blaxel, vercel, cloudrun, novita]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
@@ -88,6 +88,14 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           BL_API_KEY: ${{ secrets.BL_API_KEY }}
           BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          # The pre-deployed Cloud Run gateway (npx @computesdk/cloud-run) the cloudrun adapter
+          # boots sandboxes through.
+          CLOUD_RUN_SANDBOX_URL: ${{ secrets.CLOUD_RUN_SANDBOX_URL }}
+          CLOUD_RUN_SANDBOX_SECRET: ${{ secrets.CLOUD_RUN_SANDBOX_SECRET }}
+          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results

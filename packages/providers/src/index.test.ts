@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
+import { novitaCompute } from "./lib/novita.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
 	it("wires every schema provider through to a computesdk factory", () => {
@@ -37,6 +38,38 @@ describe("@sandbox-benchmarks/providers", () => {
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		});
+	});
+
+	it("buys vercel's memory parity through the 2 GB/vCPU coupling", () => {
+		const vercel = providers.find((p) => p.name === "vercel");
+		expect(vercel).toBeDefined();
+		// RAM rides vCPUs at 2 GB each, so the 8 GiB memory target costs 4 vCPUs (CPU oversized,
+		// disclosed downstream via observed-specs) — pin the derivation so a TARGET_SPEC change
+		// re-derives it rather than orphaning a hardcoded 4.
+		expect(vercel?.createOptions).toMatchObject({
+			resources: { vcpus: TARGET_SPEC.memoryGb / 2 },
+		});
+	});
+
+	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
+		// Construction must accept an nvta_-prefixed key (the stock wrapper's create() rejects those)
+		// and still expose the universal manager surface the harness drives. This also exercises the
+		// patch's runtime shape assertion, so a wrapper upgrade that moves the internal methods table
+		// fails here instead of mid-run.
+		const compute = novitaCompute("nvta_unit-test-key");
+		expect(typeof compute.sandbox.create).toBe("function");
+		expect(typeof compute.sandbox.destroy).toBe("function");
+	});
+
+	it("constructs novita lazily so a missing key errors at use, not at import", () => {
+		const novita = providers.find((p) => p.name === "novita");
+		expect(novita).toBeDefined();
+		expect(novita?.requiredEnvVars).toEqual(["NOVITA_API_KEY"]);
+		// The registry module must stay importable without credentials; the factory throws only when
+		// the harness actually selects the provider (after its requiredEnvVars gate).
+		if (!process.env.NOVITA_API_KEY) {
+			expect(() => novita?.createCompute()).toThrow(/NOVITA_API_KEY/);
+		}
 	});
 
 	it("boots e2b from the configured template and daytona from the configured snapshot", () => {

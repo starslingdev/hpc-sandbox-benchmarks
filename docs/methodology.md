@@ -5,7 +5,8 @@ providers and over time.
 
 ## North star
 
-Compare sandbox **providers** (`e2b` / `daytona` / `modal`), not bare-metal hardware. Every provider
+Compare sandbox **providers** (the [`PROVIDERS`](../packages/schema/src/providers.ts) registry:
+`e2b` / `daytona` / `modal` / `blaxel` / `vercel` / `cloudrun` / `novita`), not bare-metal hardware. Every provider
 is asked to run the same workloads on the same pinned spec, and the results are normalized into one
 schema-validated dataset.
 

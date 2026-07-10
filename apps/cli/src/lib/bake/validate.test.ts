@@ -32,4 +32,12 @@ describe("candidateCreateOptions", () => {
 			templateId: "ghcr.io/o/tc:v1-candidate",
 		});
 	});
+
+	it("boots stock/default environments for providers with no candidate artifact", () => {
+		// blaxel/vercel boot stock base images, cloudrun executes inside the pre-deployed gateway, and
+		// novita boots its default template — none has a candidate artifact to point at.
+		for (const id of ["blaxel", "vercel", "cloudrun", "novita"] as const) {
+			expect(candidateCreateOptions(id, refs)).toEqual({});
+		}
+	});
 });

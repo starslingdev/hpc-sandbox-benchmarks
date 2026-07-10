@@ -4,13 +4,16 @@
 // nothing here re-wraps an SDK — these are pure config. Credentials are read from each provider's
 // env vars by its factory.
 import { blaxel } from "@computesdk/blaxel";
+import { cloudRun } from "@computesdk/cloud-run";
 import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
+import { vercel } from "@computesdk/vercel";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
-import type { ProviderAdapter } from "./types.ts";
+import { novitaCompute } from "./novita.ts";
+import type { DirectProvider, ProviderAdapter } from "./types.ts";
 
 // The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
 // `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.
@@ -18,6 +21,11 @@ const daytonaCfg = config.daytona;
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
+
+// Vercel provisions sandbox RAM at a fixed 2 GB per vCPU (vercel.com/docs/sandbox: "RAM is
+// provisioned at 2 GB per vCPU"), so memory is bought BY choosing vCPUs — the one source of that
+// coupling factor, mirroring VCPUS_PER_PHYSICAL_CORE for Modal.
+const VERCEL_GB_PER_VCPU = 2;
 
 /**
  * Harness adapters, keyed by the schema {@link ProviderId}. The `Record<ProviderId, …>` type is what
@@ -71,5 +79,40 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		},
+	},
+	vercel: {
+		// Credentials come from VERCEL_TOKEN/VERCEL_TEAM_ID/VERCEL_PROJECT_ID (the factory's env
+		// fallback). No custom base images — sandboxes boot Amazon Linux 2023 (dnf) and the setup
+		// steps run their fallback paths; no pre-baked toolchain snapshot yet. The cast bridges an
+		// upstream declaration gap: the wrapper's snapshot manager returns the raw @vercel/sandbox
+		// Snapshot (no id/provider fields), which fails computesdk's snapshot contract — a surface
+		// the harness never touches.
+		createCompute: () => vercel({}) as unknown as DirectProvider,
+		createOptions: {
+			// RAM rides vCPUs at a fixed 2 GB/vCPU, so the 2 vCPU / 8 GiB target spec is inexpressible.
+			// Buy memory parity (8 GB) and run the CPU oversized (4 vCPU) — the blaxel precedent — with
+			// the mismatch disclosed downstream via observed-specs (specMatched=false). `resources` rides
+			// the wrapper's create-options passthrough into `Sandbox.create`.
+			resources: { vcpus: TARGET_SPEC.memoryGb / VERCEL_GB_PER_VCPU },
+		},
+	},
+	cloudrun: {
+		// The gateway URL/secret must be passed as config — the @computesdk/cloud-run factory doesn't
+		// read its own env vars (the config gatekeeper does, like every other credential). Sandboxes
+		// execute inside the pre-deployed gateway service (remote mode), so there are no create-time
+		// spec knobs to pin here: CPU/memory are the gateway's deploy-time flags.
+		createCompute: () =>
+			cloudRun({
+				sandboxUrl: config.cloudRun.sandboxUrl,
+				sandboxSecret: config.cloudRun.sandboxSecret,
+			}),
+		createOptions: {},
+	},
+	novita: {
+		// The e2b wrapper re-pointed at Novita's E2B-compatible control plane (sandbox.novita.ai) —
+		// see novita.ts for exactly what is swapped and why. Boots Novita's default template: no
+		// pre-baked toolchain template on their control plane yet, so setup runs the fallback paths.
+		createCompute: () => novitaCompute(config.novita.apiKey),
+		createOptions: {},
 	},
 };

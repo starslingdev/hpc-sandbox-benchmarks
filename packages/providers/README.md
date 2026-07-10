@@ -7,8 +7,10 @@ assembled `providers` registry, and the toolchain image constants (`TOOLCHAIN_IM
 `TOOLCHAIN_VERSION`, `DAYTONA_SNAPSHOT_DEFAULT`).
 
 **Depends on:** `@sandbox-benchmarks/schema` (provider identity / `PROVIDERS`), `computesdk` and the
-`@computesdk/{e2b,daytona,modal}` wrappers (the unified provider runtime), plus the raw vendor SDK
-each wrapper peers on (`e2b`, `@daytonaio/sdk`, `modal`).
+`@computesdk/{e2b,daytona,modal,blaxel,vercel,cloud-run}` wrappers (the unified provider runtime),
+plus the raw vendor SDK each wrapper peers on (`e2b`, `@daytonaio/sdk`, `modal`, `@blaxel/core`,
+`@vercel/sandbox`). Novita has no wrapper of its own: its control plane is E2B-protocol-compatible,
+so `src/lib/novita.ts` re-points the `@computesdk/e2b` provider at `sandbox.novita.ai`.
 
 **What lives here:** _not_ SDK wrappers. The `@computesdk/*` packages already adapt each raw vendor
 SDK to computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem,

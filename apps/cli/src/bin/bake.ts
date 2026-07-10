@@ -31,6 +31,17 @@ const bakers: Record<ProviderId, (log: Log) => Promise<void>> = {
 	blaxel: async (log) => {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},
+	vercel: async (log) => {
+		log("vercel boots the stock Amazon Linux image — no candidate artifact to bake");
+	},
+	cloudrun: async (log) => {
+		log(
+			"cloudrun executes inside the pre-deployed gateway service — no candidate artifact to bake",
+		);
+	},
+	novita: async (log) => {
+		log("novita boots its default template — no candidate artifact to bake");
+	},
 };
 
 const candidateRefs = {

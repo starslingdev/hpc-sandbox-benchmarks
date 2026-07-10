@@ -94,6 +94,15 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 				case "blaxel":
 					log("    blaxel boots the stock base image — nothing to promote");
 					break;
+				case "vercel":
+					log("    vercel boots the stock Amazon Linux image — nothing to promote");
+					break;
+				case "cloudrun":
+					log("    cloudrun executes inside the pre-deployed gateway service — nothing to promote");
+					break;
+				case "novita":
+					log("    novita boots its default template — nothing to promote");
+					break;
 				default: {
 					// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
 					const unhandled: never = provider.name;

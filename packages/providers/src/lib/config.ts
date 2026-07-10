@@ -15,6 +15,9 @@ const envSchema = type({
 	"DAYTONA_API_KEY?": "string >= 1",
 	"DAYTONA_TARGET?": "string >= 1",
 	"DAYTONA_SNAPSHOT?": "string >= 1",
+	"CLOUD_RUN_SANDBOX_URL?": "string >= 1",
+	"CLOUD_RUN_SANDBOX_SECRET?": "string >= 1",
+	"NOVITA_API_KEY?": "string >= 1",
 });
 
 const ENV_KEYS = [
@@ -23,6 +26,9 @@ const ENV_KEYS = [
 	"DAYTONA_API_KEY",
 	"DAYTONA_TARGET",
 	"DAYTONA_SNAPSHOT",
+	"CLOUD_RUN_SANDBOX_URL",
+	"CLOUD_RUN_SANDBOX_SECRET",
+	"NOVITA_API_KEY",
 ] as const;
 
 // 2. Startup gatekeeper — validate the environment once, fail fast with a clear message. Only the
@@ -44,6 +50,22 @@ export interface DaytonaConfig {
 	target?: string;
 	/** Snapshot to boot from (the pre-baked toolchain snapshot). */
 	snapshot: string;
+}
+
+/** The pre-deployed Cloud Run gateway the cloudrun adapter talks to (remote mode). The
+ *  `@computesdk/cloud-run` factory does NOT read these env vars itself — they must be passed as
+ *  config, so they route through this gatekeeper like every other credential. */
+export interface CloudRunConfig {
+	/** URL of the gateway Cloud Run service (deployed via `npx @computesdk/cloud-run`). */
+	sandboxUrl?: string;
+	/** Bearer token protecting the gateway's sandbox endpoints. */
+	sandboxSecret?: string;
+}
+
+/** The Novita account the novita adapter boots from (E2B-protocol-compatible control plane). */
+export interface NovitaConfig {
+	/** Novita API key (`nvta_…`), sent to Novita's E2B-compatible API at sandbox.novita.ai. */
+	apiKey?: string;
 }
 
 // Candidate↔version naming. The public version (`:v1`, `…-v1`) is immutable and written only by
@@ -94,4 +116,13 @@ export const config = {
 		target: env.DAYTONA_TARGET,
 		snapshot: env.DAYTONA_SNAPSHOT ?? daytonaSnapshotDefault,
 	} satisfies DaytonaConfig,
+	/** The pre-deployed Cloud Run gateway the cloudrun adapter boots sandboxes through. */
+	cloudRun: {
+		sandboxUrl: env.CLOUD_RUN_SANDBOX_URL,
+		sandboxSecret: env.CLOUD_RUN_SANDBOX_SECRET,
+	} satisfies CloudRunConfig,
+	/** The Novita account the novita adapter boots from (via the E2B-compatible API). */
+	novita: {
+		apiKey: env.NOVITA_API_KEY,
+	} satisfies NovitaConfig,
 } as const;

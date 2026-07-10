@@ -30,5 +30,14 @@ export function candidateCreateOptions(
 		case "blaxel":
 			// Stock base image — no candidate artifact to point at.
 			return {};
+		case "vercel":
+			// Stock Amazon Linux image — no candidate artifact to point at.
+			return {};
+		case "cloudrun":
+			// Sandboxes execute inside the pre-deployed gateway service — no candidate artifact.
+			return {};
+		case "novita":
+			// Novita's default template — no candidate artifact to point at.
+			return {};
 	}
 }

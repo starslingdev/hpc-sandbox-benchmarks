@@ -11,7 +11,7 @@
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel";
+export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel" | "vercel" | "cloudrun" | "novita";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -274,6 +274,126 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// ENG-64 validates this end-to-end against a live multi-minute suite.
 			streaming: false,
 			syncCapMs: null,
+			detachedPoll: true,
+		},
+	},
+	vercel: {
+		displayName: "Vercel Sandbox",
+		website: "https://vercel.com/sandbox",
+		sdkPackage: "@computesdk/vercel",
+		requiredEnvVars: ["VERCEL_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID"],
+		isolation: {
+			technology: "Firecracker microVM",
+			notes:
+				"Amazon Linux 2023 base image (dnf, sudo); no custom base images. RAM is COUPLED to CPU at 2 GB/vCPU, so the 2 vCPU / 8 GiB target spec is inexpressible -- the adapter boots 4 vCPU / 8 GB for memory parity and relies on observed-specs disclosure (specMatched=false) downstream.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// Active CPU $0.128/vCPU-hr; provisioned memory $0.0212/GB-hr.
+			usdPerVcpuHour: 0.128,
+			usdPerGibHour: 0.0212,
+			notes:
+				"Published rates (exact): Active CPU $0.128/vCPU-hr (billed only while the CPU is busy, so wall-clock cost is an upper bound), provisioned memory $0.0212/GB-hr for the sandbox's full lifetime, plus $0.60 per 1K sandbox creations. The 2 GB/vCPU coupling means the harness boots 4 vCPU for the 8 GiB target, so its observed cost runs above this target-spec figure.",
+			sourceUrl: "https://vercel.com/docs/sandbox/pricing",
+		},
+		maturity: {
+			status: "ga",
+			notes:
+				"No pre-baked toolchain snapshot yet -- setup steps run their fallback paths (dnf on Amazon Linux 2023). Local e2e validation wiring; not yet a committed run.",
+		},
+		// vcpus IS settable at create(), but memory rides it at a fixed 2 GB/vCPU, so the shared target
+		// spec is unreachable -- "fixed" is the honest capability for cross-provider comparability.
+		specPinning: "fixed",
+		transport: {
+			// `@computesdk/vercel` buffers command output into local sinks (onStdout/onStderr are never
+			// forwarded) and a synchronous exec is bounded only by the create-time sandbox lifetime — no
+			// gateway cap observed (`syncCapMs: null`), so every step stays synchronous like Modal's.
+			// `detachedPoll` is false because the wrapper's `filesystem.exists` throws ("not supported"):
+			// the harness's done-file poll would spin blind until timeout, so there is no durable
+			// detached path through this adapter today.
+			streaming: false,
+			syncCapMs: null,
+			detachedPoll: false,
+		},
+	},
+	cloudrun: {
+		displayName: "Google Cloud Run",
+		website: "https://cloud.google.com/run",
+		sdkPackage: "@computesdk/cloud-run",
+		requiredEnvVars: ["CLOUD_RUN_SANDBOX_URL", "CLOUD_RUN_SANDBOX_SECRET"],
+		isolation: {
+			technology: "gVisor sandbox (Cloud Run)",
+			notes:
+				"Cloud Run Sandboxes (beta; the GCP project must be allow-listed). Commands execute through a pre-deployed gateway Cloud Run service running with --sandbox-launcher, so sandbox resources are the gateway service's deploy-time CPU/memory flags -- deploy the gateway at the target spec for parity.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// Instance-based billing, Tier 1: $0.000018/vCPU-s × 3600 = $0.0648/vCPU-hr;
+			// $0.000002/GiB-s × 3600 = $0.0072/GiB-hr.
+			usdPerVcpuHour: 0.0648,
+			usdPerGibHour: 0.0072,
+			notes:
+				"Cloud Run instance-based rates, Tier 1 regions (exact): $0.000018/vCPU-s, $0.000002/GiB-s. Instance-based applies because the gateway deploys with --no-cpu-throttling; Tier 2 regions price higher.",
+			sourceUrl: "https://cloud.google.com/run/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Requires an allow-listed GCP project and a pre-deployed gateway (npx @computesdk/cloud-run). No pre-baked toolchain image yet -- setup steps run their fallback paths (the gateway image is Debian-based). Whether a detached step survives across gateway execs is not yet validated end-to-end; not yet a committed run.",
+		},
+		// Resources are fixed at gateway deploy time (gcloud run deploy --cpu/--memory), not settable
+		// through the SDK's create() call.
+		specPinning: "fixed",
+		transport: {
+			// Every exec is one HTTP round trip to the gateway, which runs `sandbox do` server-side under
+			// its own request timeout (300s at the default deploy) — a multi-minute synchronous exec dies
+			// at that cap while the process keeps running, so apply the conservative 60s policy bound and
+			// route longer steps to detached+poll (nohup background + the gateway's readFile/exists
+			// endpoints). The wrapper only streams onStdout in direct (in-container) mode, not through the
+			// remote gateway the harness uses.
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
+	novita: {
+		displayName: "Novita",
+		website: "https://novita.ai/sandbox",
+		// Novita's control plane speaks the E2B protocol (E2B_DOMAIN=sandbox.novita.ai), so the harness
+		// drives it through the e2b wrapper — see the novita adapter in @sandbox-benchmarks/providers.
+		sdkPackage: "@computesdk/e2b",
+		requiredEnvVars: ["NOVITA_API_KEY"],
+		isolation: {
+			technology: "microVM",
+			notes:
+				"Dedicated microVM per sandbox; E2B-protocol-compatible control plane (sandbox.novita.ai) driven through @computesdk/e2b pointed at Novita's domain.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// $0.0000098/vCPU-s × 3600 = $0.03528/vCPU-hr; $0.0000032/GiB-s × 3600 = $0.01152/GiB-hr.
+			usdPerVcpuHour: 0.03528,
+			usdPerGibHour: 0.01152,
+			// Storage $0.00009/GB-hr with the first 60 GB free — the 20 GB target spec sits inside the
+			// free tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
+			usdPerGibDiskHour: 0,
+			notes:
+				"Published per-second rates (exact): $0.0000098/vCPU-s, $0.0000032/GiB-s. Storage $0.00009/GB-hr (first 60 GB free).",
+			sourceUrl: "https://novita.ai/sandbox",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"E2B-compatible API; boots Novita's default template (no pre-baked toolchain template yet -- setup steps run their fallback paths). Pay-as-you-go caps sandboxes at 8 vCPU / 8 GB RAM. Not yet a committed run.",
+		},
+		// E2B protocol: resources come from the template, not the create() call.
+		specPinning: "fixed",
+		transport: {
+			// Same wrapper (and therefore the same caps) as e2b: `sandbox.commands.run(cmd)` with no
+			// options applies the E2B SDK's default 60s command timeout, and onStdout/onStderr are never
+			// passed through. The compat API exposes the same filesystem + `background`, so detached+poll
+			// is the long-step path.
+			streaming: false,
+			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
 	},
