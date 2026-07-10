@@ -6,7 +6,7 @@
 // Iteration surface: a snapshot's region must match where sandboxes boot. We pass the region's
 // `target` to the client; if a beta region (ZEN5) also needs an explicit snapshot `regionId`, add it
 // to CreateSnapshotParams here.
-import { Daytona } from "@daytonaio/sdk";
+import { Daytona } from "@daytona/sdk";
 import { config } from "@sandbox-benchmarks/providers";
 import type { Log } from "./types.ts";
 
