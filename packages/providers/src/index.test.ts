@@ -27,11 +27,15 @@ describe("@sandbox-benchmarks/providers", () => {
 
 	it("pins modal's create-time spec from the shared TARGET_SPEC", () => {
 		const modal = providers.find((p) => p.name === "modal");
+		expect(modal).toBeDefined();
 		// Modal bills/provisions in physical cores, so the pinned vCPU count is halved for cpu/cpuLimit.
+		// `memoryLimitMiB` is the hard cap (memoryMiB alone is only a reservation, and the guest then
+		// still sees the host's RAM) — assert it, or the memory fix has no regression guard at all.
 		expect(modal?.createOptions).toMatchObject({
 			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
 			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
+			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		});
 	});
 

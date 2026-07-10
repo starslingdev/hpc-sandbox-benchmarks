@@ -59,10 +59,17 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createCompute: () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME }),
 		createOptions: {
 			templateId: config.toolchainImage,
-			// Modal's `cpu`/`cpuLimit` are physical cores, not vCPUs — convert from the pinned vCPU spec.
+			// Modal's `cpu`/`cpuLimit` are physical cores, not vCPUs ("Note that this value corresponds to
+			// physical cores, not vCPUs" — modal.com/docs/guide/resources; 1 core = 2 vCPUs), so convert
+			// from the pinned vCPU spec. Passing TARGET_SPEC.vcpus straight through would reserve 2
+			// physical cores = 4 vCPUs — double every other provider, not parity with them.
 			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
 			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
+			// `memoryMiB` is only a RESERVATION — on its own the guest still sees the host's RAM (a live
+			// sandbox reported 464 GB), and PTS sizes STREAM's arrays from that, so the memory suite never
+			// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report the target spec.
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
+			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		},
 	},
 };
