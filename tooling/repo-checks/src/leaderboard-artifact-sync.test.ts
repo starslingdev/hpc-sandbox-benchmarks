@@ -16,6 +16,13 @@ import { findRepoRoot } from "./lib/workspace.ts";
 
 const ROOT = findRepoRoot();
 const ARTIFACT = join(ROOT, "LEADERBOARD.md");
+/** The Run the artifact is rendered from must be the COMMITTED dataset (`data/dataset/runs/`), which
+ *  `promote` writes. `data/runs/` is a gitignored raw scratch tree: it exists on a dev machine, is
+ *  absent in CI, and can hold a stale/partial Run — rendering from it once silently dropped the whole
+ *  `economics` dimension from this file. */
+const runFile = (runId: string) => join(ROOT, "data", "dataset", "runs", `${runId}.json`);
+const regenCmd = (runId: string) =>
+	`bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/${runId}.json LEADERBOARD.md`;
 
 /** The Run id the committed artifact was generated from, read out of its own header line:
  *  "Run `<id>` · commit `<sha>` · generated <iso>". Parsed rather than hardcoded so regenerating the
@@ -30,9 +37,25 @@ function runIdOf(markdown: string): string {
 
 const committed = readFileSync(ARTIFACT, "utf8");
 const runId = runIdOf(committed);
-const run = parseRun(
-	JSON.parse(readFileSync(join(ROOT, "data", "dataset", "runs", `${runId}.json`), "utf8")),
-);
+const source = runFile(runId);
+
+/** Read and parse the source Run, translating a bare ENOENT into the diagnosis that matters here:
+ *  a named Run missing from the committed dataset means the artifact was rendered from the
+ *  gitignored raw tree. try/catch rather than an existsSync pre-check, so there is no TOCTOU gap. */
+function readCommittedRun(): ReturnType<typeof parseRun> {
+	try {
+		return parseRun(JSON.parse(readFileSync(source, "utf8")));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			throw new Error(
+				`LEADERBOARD.md names Run "${runId}", but ${source} is not committed. The artifact must be ` +
+					`rendered from the published dataset (data/dataset/runs/), not the gitignored data/runs/.`,
+			);
+		}
+		throw error;
+	}
+}
+const run = readCommittedRun();
 
 describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	it("is byte-identical to a fresh render of the Run it names", () => {
@@ -41,7 +64,7 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 			// Name the remedy in the failure, rather than leaving whoever hits this to work it out.
 			throw new Error(
 				`LEADERBOARD.md is stale — the renderer no longer produces the committed file.\n` +
-					`Regenerate it:\n  bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/${runId}.json LEADERBOARD.md`,
+					`Regenerate it:\n  ${regenCmd(runId)}`,
 			);
 		}
 		expect(committed).toBe(rendered);
