@@ -4,4 +4,9 @@
 // credentials from the environment). Deliberately free of any vendor SDK — those live in the
 // per-provider packages; this core depends only on the schema and the computesdk types.
 export { CANDIDATE_SUFFIX, readProviderEnv } from "./lib/env.ts";
+export {
+	toolchainImage,
+	toolchainImageCandidate,
+	toolchainImageVersion,
+} from "./lib/toolchain.ts";
 export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/types.ts";

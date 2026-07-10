@@ -5,18 +5,15 @@
 // env vars by its factory.
 import { blaxel } from "@computesdk/blaxel";
 import { cloudRun } from "@computesdk/cloud-run";
-import { modal } from "@computesdk/modal";
 import { vercel } from "@computesdk/vercel";
 import type { DirectProvider, ProviderAdapter } from "@sandbox-benchmarks/provider-core";
 import { daytonaAdapter } from "@sandbox-benchmarks/provider-daytona";
 import { e2bAdapter } from "@sandbox-benchmarks/provider-e2b";
+import { modalAdapter } from "@sandbox-benchmarks/provider-modal";
 import { novitaAdapter } from "@sandbox-benchmarks/provider-novita";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
-import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
+import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
-
-// This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
-const MODAL_APP_NAME = "sandbox-benchmarks";
 
 // Vercel provisions sandbox RAM at a fixed 2 GB per vCPU (vercel.com/docs/sandbox: "RAM is
 // provisioned at 2 GB per vCPU"), so memory is bought BY choosing vCPUs — the one source of that
@@ -45,26 +42,9 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			blaxel({ image: "blaxel/ts-app:latest", memory: 16384, region: "us-pdx-1" }),
 		createOptions: {},
 	},
-	modal: {
-		// Boot sandboxes under this project's own Modal app (auto-created via apps.fromName on first
-		// create), not the wrapper's generic `computesdk-modal` default — so this project's sandboxes
-		// are namespaced/attributable in the Modal dashboard, separate from any other computesdk usage.
-		createCompute: () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME }),
-		createOptions: {
-			templateId: config.toolchainImage,
-			// Modal's `cpu`/`cpuLimit` are physical cores, not vCPUs ("Note that this value corresponds to
-			// physical cores, not vCPUs" — modal.com/docs/guide/resources; 1 core = 2 vCPUs), so convert
-			// from the pinned vCPU spec. Passing TARGET_SPEC.vcpus straight through would reserve 2
-			// physical cores = 4 vCPUs — double every other provider, not parity with them.
-			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
-			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
-			// `memoryMiB` is only a RESERVATION — on its own the guest still sees the host's RAM (a live
-			// sandbox reported 464 GB), and PTS sizes STREAM's arrays from that, so the memory suite never
-			// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report the target spec.
-			memoryMiB: TARGET_SPEC.memoryGb * 1024,
-			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
-		},
-	},
+	// Boots the toolchain image straight from the registry with the spec pinned in Modal's units;
+	// owns its vendor dep — see @sandbox-benchmarks/provider-modal.
+	modal: modalAdapter,
 	vercel: {
 		// Credentials come from VERCEL_TOKEN/VERCEL_TEAM_ID/VERCEL_PROJECT_ID (the factory's env
 		// fallback). No custom base images — sandboxes boot Amazon Linux 2023 (dnf) and the setup
