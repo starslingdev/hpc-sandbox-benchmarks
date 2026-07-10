@@ -139,18 +139,32 @@
         "typescript": "catalog:",
       },
     },
+    "packages/provider-vercel": {
+      "name": "@sandbox-benchmarks/provider-vercel",
+      "version": "0.0.0",
+      "dependencies": {
+        "@computesdk/vercel": "catalog:computesdk",
+        "@sandbox-benchmarks/provider-core": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/providers": {
       "name": "@sandbox-benchmarks/providers",
       "version": "0.0.0",
       "dependencies": {
         "@computesdk/cloud-run": "catalog:computesdk",
-        "@computesdk/vercel": "catalog:computesdk",
         "@sandbox-benchmarks/provider-blaxel": "workspace:*",
         "@sandbox-benchmarks/provider-core": "workspace:*",
         "@sandbox-benchmarks/provider-daytona": "workspace:*",
         "@sandbox-benchmarks/provider-e2b": "workspace:*",
         "@sandbox-benchmarks/provider-modal": "workspace:*",
         "@sandbox-benchmarks/provider-novita": "workspace:*",
+        "@sandbox-benchmarks/provider-vercel": "workspace:*",
         "@sandbox-benchmarks/schema": "workspace:*",
         "computesdk": "catalog:computesdk",
       },
@@ -556,6 +570,8 @@
     "@sandbox-benchmarks/provider-modal": ["@sandbox-benchmarks/provider-modal@workspace:packages/provider-modal"],
 
     "@sandbox-benchmarks/provider-novita": ["@sandbox-benchmarks/provider-novita@workspace:packages/provider-novita"],
+
+    "@sandbox-benchmarks/provider-vercel": ["@sandbox-benchmarks/provider-vercel@workspace:packages/provider-vercel"],
 
     "@sandbox-benchmarks/providers": ["@sandbox-benchmarks/providers@workspace:packages/providers"],
 
