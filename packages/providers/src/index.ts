@@ -42,9 +42,8 @@ export const providers: ProviderConfig[] = PROVIDERS.map((meta) => {
 	return {
 		...adapter,
 		name: meta.id,
-		// The adapter may refine the required credentials at runtime (daytona's per-region key var);
-		// otherwise the schema ProviderMeta's static list stands.
-		requiredEnvVars: adapter.requiredEnvVars ?? meta.requiredEnvVars,
+		// Credentials are schema-owned identity; the join mirrors the ProviderMeta's static list.
+		requiredEnvVars: meta.requiredEnvVars,
 		// Transport capability is schema-owned (a static fact of the @computesdk/* integration), so it
 		// rides the same id-keyed join — the harness reads it to pick sync vs detached per step.
 		transport: meta.transport,

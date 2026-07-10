@@ -4,13 +4,9 @@
 // now reusable per package).
 import { type } from "arktype";
 
-/**
- * Candidate↔version artifact naming, shared by every provider that bakes a toolchain artifact. The
- * public version (`:v1`, `…-v1`) is immutable and written only by `promote`; iteration happens
- * against a mutable candidate (`:v1-candidate`, `…-v1-candidate`), reused every build so the public
- * registry never accumulates versions. One constant so the convention can't drift per provider.
- */
-export const CANDIDATE_SUFFIX = "-candidate";
+// One compiled validator for the whole process — every key shares the same rule, so there is no
+// per-call schema to build (readProviderEnv runs at module load in several packages).
+const nonEmptyString = type("string >= 1");
 
 /**
  * Read and validate a declared slice of the environment. Only the declared keys are forwarded
@@ -22,15 +18,15 @@ export function readProviderEnv<const K extends readonly string[]>(
 	keys: K,
 	env: Record<string, string | undefined> = process.env,
 ): { [P in K[number]]?: string } {
-	const schema = type(Object.fromEntries(keys.map((key) => [`${key}?`, "string >= 1"])));
-	const raw: Record<string, string> = {};
-	for (const key of keys) {
+	const out: Partial<Record<K[number], string>> = {};
+	for (const key of keys as readonly K[number][]) {
 		const value = env[key];
-		if (value !== undefined) raw[key] = value;
+		if (value === undefined) continue;
+		const parsed = nonEmptyString(value);
+		if (parsed instanceof type.errors) {
+			throw new Error(`Invalid configuration: ${key} ${parsed.summary}`);
+		}
+		out[key] = parsed;
 	}
-	const parsed = schema(raw);
-	if (parsed instanceof type.errors) {
-		throw new Error(`Invalid configuration: ${parsed.summary}`);
-	}
-	return parsed as { [P in K[number]]?: string };
+	return out;
 }

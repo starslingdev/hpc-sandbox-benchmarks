@@ -101,7 +101,6 @@
       "dependencies": {
         "@computesdk/daytona": "catalog:computesdk",
         "@sandbox-benchmarks/provider-core": "workspace:*",
-        "@sandbox-benchmarks/schema": "workspace:*",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -115,7 +114,6 @@
       "dependencies": {
         "@computesdk/e2b": "catalog:computesdk",
         "@sandbox-benchmarks/provider-core": "workspace:*",
-        "@sandbox-benchmarks/schema": "workspace:*",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -142,6 +140,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@computesdk/e2b": "catalog:computesdk",
+        "@computesdk/provider": "catalog:computesdk",
         "@sandbox-benchmarks/provider-core": "workspace:*",
         "computesdk": "catalog:computesdk",
         "e2b": "catalog:computesdk",
@@ -274,6 +273,7 @@
       "@computesdk/daytona": "1.7.31",
       "@computesdk/e2b": "1.7.51",
       "@computesdk/modal": "1.9.3",
+      "@computesdk/provider": "2.1.3",
       "@computesdk/vercel": "1.7.30",
       "@daytona/sdk": "0.192.0",
       "computesdk": "4.1.3",

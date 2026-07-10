@@ -4,8 +4,9 @@
 // (b) Every provider package depends on @sandbox-benchmarks/provider-core (the shared contract).
 // (c) The aggregator (@sandbox-benchmarks/providers) declares NO external runtime dependency:
 //     vendor SDKs (@computesdk/*, raw SDKs) live only in provider packages.
-// (d) @computesdk/* wrapper deps are declared ONLY by provider packages — the wrapper moving into
-//     any other workspace member is the exact regression this split exists to prevent.
+// (d) Vendor deps are declared ONLY by provider packages — the set is derived from what provider
+//     packages themselves declare (so raw SDKs like `e2b` are fenced too), with `@computesdk/*` as
+//     a floor. A vendor SDK moving into any other member is the regression this split prevents.
 import { describe, expect, it } from "bun:test";
 import { isProviderPackage, providerBoundaryViolations } from "./lib/provider-boundaries.ts";
 import { listMembers } from "./lib/workspace.ts";
@@ -64,6 +65,21 @@ describe("providerBoundaryViolations (rule spec on synthetic fixtures)", () => {
 		]);
 		expect(violations).toHaveLength(1);
 		expect(violations[0]).toContain("@computesdk/modal");
+	});
+
+	it("fences raw vendor SDKs by deriving the set from provider packages' own deps", () => {
+		// provider-a declares the raw `some-sdk` — that makes it vendor surface, so harness declaring
+		// it too is the exact re-coupling the split prevents, even though it isn't @computesdk/*.
+		const violations = providerBoundaryViolations([
+			member("@sandbox-benchmarks/provider-a", {
+				"@sandbox-benchmarks/provider-core": "workspace:*",
+				"some-sdk": "catalog:computesdk",
+			}),
+			member("@sandbox-benchmarks/harness", { "some-sdk": "catalog:computesdk" }),
+		]);
+		expect(violations).toHaveLength(1);
+		expect(violations[0]).toContain("some-sdk");
+		expect(violations[0]).toContain("harness");
 	});
 
 	it("accepts the intended shape (and computesdk core outside provider packages)", () => {

@@ -121,14 +121,6 @@ export interface ProviderMeta {
 export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 20 } as const;
 
 /**
- * Modal provisions and prices in physical CPU cores, where 1 physical core = 2 vCPU. This is the one
- * source of that factor: the Modal pricing entry below normalizes its per-physical-core rate to
- * per-vCPU by it, and the harness adapter divides {@link TARGET_SPEC}.vcpus by it to reserve the
- * matching number of cores (Modal's `SandboxCreateParams.cpu` is physical cores, not vCPUs).
- */
-export const VCPUS_PER_PHYSICAL_CORE = 2;
-
-/**
  * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
  * keys the *behavioural* half of a provider the same way. A keyed Record (rather than an array of
  * objects each repeating its `id`) buys three things for free: ids are unique by construction, the
@@ -254,7 +246,8 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 		pricing: {
 			model: "per_vcpu_hour",
-			// Sandbox non-preemptible rates. CPU: $0.00003942/physical-core-s ÷ VCPUS_PER_PHYSICAL_CORE × 3600 = $0.070956/vCPU-hr.
+			// Sandbox non-preemptible rates. CPU: $0.00003942/physical-core-s ÷ 2 vCPU-per-core × 3600 = $0.070956/vCPU-hr
+			// (the same cores↔vCPU factor provider-modal's adapter uses to reserve cores).
 			// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
 			usdPerVcpuHour: 0.070956,
 			usdPerGibHour: 0.024192,

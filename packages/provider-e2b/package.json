@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "@computesdk/e2b": "catalog:computesdk",
-    "@sandbox-benchmarks/provider-core": "workspace:*",
-    "@sandbox-benchmarks/schema": "workspace:*"
+    "@sandbox-benchmarks/provider-core": "workspace:*"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

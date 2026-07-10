@@ -14,6 +14,15 @@ describe("@sandbox-benchmarks/provider-novita", () => {
 		const compute = novitaCompute("nvta_unit-test-key");
 		expect(typeof compute.sandbox.create).toBe("function");
 		expect(typeof compute.sandbox.destroy).toBe("function");
+		expect(typeof compute.sandbox.list).toBe("function");
+	});
+
+	it("exposes no snapshot/template managers — their every call would reconnect without a domain", () => {
+		// Absent managers read downstream as a clean "provider exposes no snapshot operation" skip
+		// instead of a misleading failure against e2b.dev.
+		const compute = novitaCompute("nvta_unit-test-key");
+		expect(compute.snapshot).toBeUndefined();
+		expect(compute.template).toBeUndefined();
 	});
 
 	it("exports an adapter that boots Novita's default template (no candidate artifact)", () => {

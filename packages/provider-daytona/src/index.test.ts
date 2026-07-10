@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { CANDIDATE_SUFFIX } from "@sandbox-benchmarks/provider-core";
-import { TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
+import { CANDIDATE_SUFFIX, toolchainArtifactName } from "@sandbox-benchmarks/provider-core";
 import {
 	daytonaAdapter,
 	daytonaConfig,
@@ -9,8 +8,8 @@ import {
 } from "./index.ts";
 
 describe("@sandbox-benchmarks/provider-daytona", () => {
-	it("version-scopes the canonical snapshot name from the shared toolchain identity", () => {
-		expect(daytonaSnapshotDefault).toBe(`${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`);
+	it("names the canonical snapshot with the shared toolchain artifact name (e2b parity)", () => {
+		expect(daytonaSnapshotDefault).toBe(toolchainArtifactName);
 	});
 
 	it("derives the candidate name from the canonical one via the shared candidate convention", () => {

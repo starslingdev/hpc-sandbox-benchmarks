@@ -39,10 +39,21 @@ export interface LifecycleSandbox {
 	destroy(): Promise<unknown>;
 }
 
-/** The slice of a computesdk snapshot manager the driver times (its `ProviderSnapshotManager` satisfies this). */
+/** The slice of a computesdk snapshot manager the driver times (provider-core's `ProviderSnapshots`
+ *  satisfies this). `create`'s return stays `unknown` on purpose: wrappers disagree on the snapshot
+ *  shape (computesdk-conformant managers return `{ id }`; `@computesdk/vercel` returns the raw
+ *  vendor Snapshot carrying `snapshotId`), so the probe normalizes behind runtime guards. */
 export interface LifecycleSnapshots {
-	create(sandboxId: string, options?: { name?: string }): Promise<{ id: string }>;
+	create(sandboxId: string, options?: { name?: string }): Promise<unknown>;
 	delete(snapshotId: string): Promise<unknown>;
+}
+
+/** The created snapshot's identifier for cleanup, from whichever field the wrapper populates. */
+function snapshotIdOf(created: unknown): string | undefined {
+	const shape = created as { id?: unknown; snapshotId?: unknown } | null | undefined;
+	if (typeof shape?.id === "string") return shape.id;
+	if (typeof shape?.snapshotId === "string") return shape.snapshotId;
+	return undefined;
 }
 
 /** The slice of a computesdk provider the driver needs (its `DirectProvider` satisfies this). */
@@ -221,9 +232,18 @@ export async function measureLifecycle(
 				sample(HARNESS_METRIC_IDS.snapshot, snap.ms);
 				// Best-effort cleanup: a failed delete shouldn't fail the cycle, but it can leak a snapshot,
 				// so surface it (mirrors the destroy-failure warning) instead of swallowing it silently.
-				await snapshots.delete(snap.value.id).catch((err) => {
-					console.warn(`[lifecycle] snapshot cleanup failed (${snap.value.id}): ${reasonOf(err)}`);
-				});
+				// Normalize the id first — a wrapper returning a shape without one (see snapshotIdOf)
+				// would otherwise leak silently via delete(undefined).
+				const snapshotId = snapshotIdOf(snap.value);
+				if (snapshotId === undefined) {
+					console.warn(
+						"[lifecycle] snapshot cleanup skipped: created snapshot exposes no id/snapshotId",
+					);
+				} else {
+					await snapshots.delete(snapshotId).catch((err) => {
+						console.warn(`[lifecycle] snapshot cleanup failed (${snapshotId}): ${reasonOf(err)}`);
+					});
+				}
 			} catch (err) {
 				skip(HARNESS_METRIC_IDS.snapshot, reasonOf(err));
 			}

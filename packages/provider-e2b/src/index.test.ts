@@ -1,11 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { CANDIDATE_SUFFIX } from "@sandbox-benchmarks/provider-core";
-import { TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
+import { CANDIDATE_SUFFIX, toolchainArtifactName } from "@sandbox-benchmarks/provider-core";
 import { e2bAdapter, e2bTemplate, e2bTemplateCandidate, e2bTemplateVersion } from "./index.ts";
 
 describe("@sandbox-benchmarks/provider-e2b", () => {
-	it("version-scopes the public template name from the shared toolchain identity", () => {
-		expect(e2bTemplateVersion).toBe(`${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`);
+	it("names the public template with the shared toolchain artifact name (daytona parity)", () => {
+		expect(e2bTemplateVersion).toBe(toolchainArtifactName);
 	});
 
 	it("derives the candidate name from the version via the shared candidate convention", () => {

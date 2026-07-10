@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@computesdk/e2b": "catalog:computesdk",
+    "@computesdk/provider": "catalog:computesdk",
     "@sandbox-benchmarks/provider-core": "workspace:*",
     "computesdk": "catalog:computesdk",
     "e2b": "catalog:computesdk"

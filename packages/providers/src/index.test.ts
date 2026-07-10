@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { e2bTemplate } from "@sandbox-benchmarks/provider-e2b";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { config, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
@@ -28,10 +29,10 @@ describe("@sandbox-benchmarks/providers", () => {
 	it("joins each provider package's adapter under its schema id (policy lives in the packages)", () => {
 		// Create-time policy is specified in each @sandbox-benchmarks/provider-<id> package's own
 		// tests; here we pin only the JOIN — the aggregator binds the right package to the right id.
-		// The template/snapshot pins double as proof the composed config surface and the adapters
-		// agree, since both now come from the same provider-package source.
+		// The template/snapshot pins double as proof the join and the packages' exported names agree,
+		// since both come from the same provider-package source.
 		const e2b = providers.find((p) => p.name === "e2b");
-		expect(e2b?.createOptions?.snapshotId).toBe(config.e2bTemplate);
+		expect(e2b?.createOptions?.snapshotId).toBe(e2bTemplate);
 
 		const daytona = providers.find((p) => p.name === "daytona");
 		expect(daytona).toBeDefined();

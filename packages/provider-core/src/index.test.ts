@@ -4,6 +4,7 @@ import type { DirectProvider, ProviderAdapter, ProviderConfig } from "./index.ts
 import {
 	CANDIDATE_SUFFIX,
 	readProviderEnv,
+	toolchainArtifactName,
 	toolchainImage,
 	toolchainImageCandidate,
 	toolchainImageVersion,
@@ -16,11 +17,15 @@ type _Adapter = ProviderAdapter;
 type _Config = ProviderConfig;
 type _Provider = DirectProvider;
 
-describe("toolchain image identity", () => {
+describe("toolchain artifact identity", () => {
 	it("derives the immutable version ref from the schema's toolchain identity", () => {
 		expect(toolchainImageVersion).toBe(
 			`ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}:${TOOLCHAIN_VERSION}`,
 		);
+	});
+
+	it("version-scopes the shared baked-artifact base name (e2b template = daytona snapshot)", () => {
+		expect(toolchainArtifactName).toBe(`${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`);
 	});
 
 	it("derives the candidate ref via the shared candidate convention", () => {
@@ -34,7 +39,7 @@ describe("toolchain image identity", () => {
 
 describe("readProviderEnv", () => {
 	it("returns declared keys that are set and omits unset ones", () => {
-		const env = readProviderEnv(["FOO_KEY", "BAR_KEY"] as const, {
+		const env = readProviderEnv(["FOO_KEY", "BAR_KEY"], {
 			FOO_KEY: "abc",
 			UNRELATED: "zzz",
 		});
@@ -43,19 +48,19 @@ describe("readProviderEnv", () => {
 	});
 
 	it("forwards only declared keys (process.env carries hundreds of unrelated ones)", () => {
-		const env = readProviderEnv(["FOO_KEY"] as const, { FOO_KEY: "abc", SECRET: "leak" });
+		const env = readProviderEnv(["FOO_KEY"], { FOO_KEY: "abc", SECRET: "leak" });
 		expect(Object.keys(env)).toEqual(["FOO_KEY"]);
 	});
 
 	it("rejects an explicitly-set but empty value as a misconfiguration", () => {
-		expect(() => readProviderEnv(["FOO_KEY"] as const, { FOO_KEY: "" })).toThrow(
+		expect(() => readProviderEnv(["FOO_KEY"], { FOO_KEY: "" })).toThrow(
 			/Invalid configuration.*FOO_KEY/s,
 		);
 	});
 
 	it("reads process.env by default", () => {
 		// bun sets this for every test run, so the default source is observable without mutation.
-		const env = readProviderEnv(["NODE_ENV", "DEFINITELY_UNSET_BENCH_KEY"] as const);
+		const env = readProviderEnv(["NODE_ENV", "DEFINITELY_UNSET_BENCH_KEY"]);
 		expect(typeof env.NODE_ENV).toBe("string");
 		expect(env.DEFINITELY_UNSET_BENCH_KEY).toBeUndefined();
 	});

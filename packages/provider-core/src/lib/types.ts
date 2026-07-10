@@ -1,17 +1,42 @@
 // The harness-facing adapter contract. Identity (`name`, `requiredEnvVars`) is owned by the schema's
 // ProviderMeta; this module owns only how to construct a provider and the benchmark's create-time
-// policy. `index.ts` joins the two registries by id (PROVIDERS × adapters, both keyed by ProviderId).
+// policy. The aggregator (@sandbox-benchmarks/providers) joins the two registries by id
+// (PROVIDERS × adapters, both keyed by ProviderId).
 import type { ProviderId, ProviderTransport } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions, ExplicitComputeConfig } from "computesdk";
 
 /**
- * A configured computesdk provider, as returned by a @computesdk/* factory.
- *
- * computesdk 4.x doesn't export a `DirectProvider` type directly, but it does export
- * {@link ExplicitComputeConfig}, whose `provider` field IS one — so we recover the exact contract
- * structurally instead of falling back to `any`.
+ * The full provider shape computesdk models. computesdk 4.x doesn't export a `DirectProvider` type
+ * directly, but it does export {@link ExplicitComputeConfig}, whose `provider` field IS one — so we
+ * recover the exact contract structurally instead of falling back to `any`.
  */
-export type DirectProvider = NonNullable<ExplicitComputeConfig["provider"]>;
+type ComputeProvider = NonNullable<ExplicitComputeConfig["provider"]>;
+
+/**
+ * Snapshot manager surface as the harness probes it. Deliberately variant-tolerant on the returned
+ * snapshot shape: wrappers type `create` with their own vendor snapshot (`@computesdk/vercel`
+ * returns the raw `@vercel/sandbox` Snapshot, which carries `snapshotId` instead of computesdk's
+ * `id`), so a concrete return type here would force every such wrapper through an unknown-cast.
+ * The harness's lifecycle probe normalizes the returned shape behind runtime guards instead.
+ */
+export interface ProviderSnapshots {
+	create(sandboxId: string, options?: { name?: string }): Promise<unknown>;
+	delete(snapshotId: string): Promise<unknown>;
+}
+
+/**
+ * A configured computesdk provider, as returned by a @computesdk/* factory — the surface the
+ * harness actually drives. The `sandbox` manager keeps computesdk's full typing (it is the whole
+ * benchmark path); `snapshot`/`template` are optional probe/bake surfaces kept variant-tolerant,
+ * because wrappers instantiate them with vendor-specific generics that don't all satisfy
+ * computesdk's declared manager contract (see {@link ProviderSnapshots}).
+ */
+export type DirectProvider = Omit<ComputeProvider, "snapshot" | "template"> & {
+	/** Snapshot manager if the wrapper exposes one; probed by the lifecycle benchmark. */
+	snapshot?: ProviderSnapshots;
+	/** Template manager if the wrapper exposes one; unused by the harness. */
+	template?: unknown;
+};
 
 /**
  * What the harness needs to drive a provider that the framework can't infer:
@@ -28,16 +53,13 @@ export interface ProviderAdapter {
 	 *  image. Benchmark policy (ADR-0003), not a framework default; omitted when there is nothing to
 	 *  pin. */
 	createOptions?: CreateSandboxOptions;
-	/** Overrides the schema ProviderMeta's `requiredEnvVars` when the credential set is resolved at
-	 *  runtime (e.g. daytona's per-region API key var). Falls back to the schema default when absent. */
-	requiredEnvVars?: string[];
 }
 
 /** A provider as the harness consumes it: schema-owned identity joined with the harness adapter. */
 export interface ProviderConfig extends ProviderAdapter {
 	/** Provider id — the schema {@link ProviderId} this adapter is bound to. */
 	name: ProviderId;
-	/** Env vars that must all be set to run (mirrored from the schema ProviderMeta). */
+	/** Env vars that must all be set to run (the schema ProviderMeta's list; the join mirrors it). */
 	requiredEnvVars: string[];
 	/** Exec transport capability (schema-owned), from which the harness picks a per-step transport. */
 	transport: ProviderTransport;
