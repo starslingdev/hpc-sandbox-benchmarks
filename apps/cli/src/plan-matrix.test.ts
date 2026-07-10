@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import { HELP, planMatrixJson } from "./bin/plan-matrix.ts";
 import { handleDiscovery } from "./lib/discovery.ts";
+import { selectProviders } from "./lib/matrix.ts";
 
 describe("plan-matrix", () => {
 	it("emits a single line of compact JSON (the $GITHUB_OUTPUT contract)", () => {
@@ -40,5 +41,42 @@ describe("plan-matrix", () => {
 
 		// A bare invocation has no discovery flag, so the matrix path (the GITHUB_OUTPUT contract) runs.
 		expect(handleDiscovery([], HELP)).toBeNull();
+	});
+
+	it("narrows the matrix to the providers a dispatch names, still one line of JSON", () => {
+		const out = planMatrixJson("e2b,daytona");
+		expect(out).not.toContain("\n");
+
+		const parsed = JSON.parse(out) as { include: Array<{ provider: string }> };
+		expect(parsed.include.length).toBe(2 * SUITE_NAMES.length);
+		expect([...new Set(parsed.include.map((c) => c.provider))]).toEqual(["e2b", "daytona"]);
+	});
+});
+
+describe("selectProviders", () => {
+	const registered = PROVIDERS.map((p) => p.id);
+
+	it("defaults to every registered provider when unset or blank", () => {
+		// Blank is the workflow's "no filter" value (an empty dispatch input arrives as ""), so it must
+		// mean the full matrix — not an empty one, which would silently benchmark nothing.
+		expect(selectProviders(undefined)).toEqual(registered);
+		expect(selectProviders("")).toEqual(registered);
+		expect(selectProviders("  , ,")).toEqual(registered);
+	});
+
+	it("throws on an unregistered name rather than shrinking the matrix", () => {
+		// The failure this guards: `dayton` silently drops daytona's cells, and the published dataset
+		// then reads as "daytona produced no results" instead of "the dispatch was misspelled".
+		expect(() => selectProviders("e2b,dayton")).toThrow(/unknown provider\(s\): dayton/);
+		expect(() => selectProviders("e2b,dayton")).toThrow(/registered providers are/);
+	});
+
+	it("collapses duplicates and orders by the registry, not by the request", () => {
+		// Cells are a set: a dispatch can neither double-run one nor reorder the CI job list.
+		expect(selectProviders("modal,e2b,modal")).toEqual(["e2b", "modal"]);
+	});
+
+	it("tolerates whitespace and mixed casing around names, as a hand-typed dispatch input has", () => {
+		expect(selectProviders(" E2b , Modal ")).toEqual(["e2b", "modal"]);
 	});
 });
