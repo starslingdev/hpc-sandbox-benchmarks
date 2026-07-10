@@ -37,7 +37,7 @@ const candidateRefs = {
 	e2bTemplateCandidate: config.e2bTemplateCandidate,
 	daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 	toolchainImageCandidate: config.toolchainImageCandidate,
-	daytonaTarget: config.daytonaRegion.target,
+	daytonaTarget: config.daytona.target,
 };
 
 if (import.meta.main) {

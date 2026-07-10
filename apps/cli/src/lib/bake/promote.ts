@@ -52,7 +52,7 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		toolchainImageCandidate: config.toolchainImageCandidate,
-		daytonaTarget: config.daytonaRegion.target,
+		daytonaTarget: config.daytona.target,
 	};
 	log(`>>> re-validating candidate ${config.toolchainImageCandidate} before promote…`);
 	const validateRuns = await validateCandidates(candidateRefs, log);

@@ -1,11 +1,10 @@
 // Bake a daytona snapshot directly from a pushed toolchain image, via the raw Daytona SDK (the
 // @computesdk/daytona wrapper only snapshots a running sandbox). Idempotent: delete an existing
-// snapshot of that name, then recreate. Region-aware: the active region's API key + target come from
-// config.daytonaRegion (ZEN5 supported).
+// snapshot of that name, then recreate. The API key + runner target come from config.daytona
+// (single-region: DAYTONA_API_KEY + DAYTONA_TARGET, e.g. us-west-2).
 //
-// Iteration surface: a snapshot's region must match where sandboxes boot. We pass the region's
-// `target` to the client; if a beta region (ZEN5) also needs an explicit snapshot `regionId`, add it
-// to CreateSnapshotParams here.
+// Iteration surface: a snapshot's region must match where sandboxes boot. We pass the client `target`;
+// if the target also needs an explicit snapshot `regionId`, add it to CreateSnapshotParams here.
 import { Daytona } from "@daytona/sdk";
 import { config } from "@sandbox-benchmarks/providers";
 import type { Log } from "./types.ts";
@@ -29,10 +28,10 @@ function isNotFound(err: unknown): boolean {
 /** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote),
  *  in the active region. Idempotent: delete an existing snapshot of that name first. */
 export async function bakeDaytonaSnapshot(name: string, image: string, log: Log): Promise<void> {
-	const { daytonaRegion, targetSpec } = config;
+	const { daytona: daytonaCfg, targetSpec } = config;
 	const daytona = new Daytona({
-		apiKey: daytonaRegion.apiKey,
-		...(daytonaRegion.target ? { target: daytonaRegion.target } : {}),
+		apiKey: daytonaCfg.apiKey,
+		...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
 	});
 
 	try {
@@ -45,7 +44,7 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 		if (!isNotFound(err)) throw err;
 	}
 
-	log(`creating snapshot ${name} from ${image} (target ${daytonaRegion.target ?? "default"})`);
+	log(`creating snapshot ${name} from ${image} (target ${daytonaCfg.target ?? "default"})`);
 	await daytona.snapshot.create(
 		{
 			name,

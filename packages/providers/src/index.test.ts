@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config, providers } from "./index.ts";
-import { resolveDaytonaRegion } from "./lib/config.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
@@ -36,14 +35,20 @@ describe("@sandbox-benchmarks/providers", () => {
 		});
 	});
 
-	it("boots e2b from the configured template and daytona from the region snapshot", () => {
+	it("boots e2b from the configured template and daytona from the configured snapshot", () => {
 		const e2b = providers.find((p) => p.name === "e2b");
 		expect(e2b?.createOptions?.snapshotId).toBe(config.e2bTemplate);
 
 		const daytona = providers.find((p) => p.name === "daytona");
-		expect(daytona?.createOptions?.snapshotId).toBe(config.daytonaRegion.snapshot);
-		// requiredEnvVars tracks the active region's key var (the schema default for the default region).
-		expect(daytona?.requiredEnvVars).toEqual([config.daytonaRegion.apiKeyVar]);
+		expect(daytona).toBeDefined();
+		expect(daytona?.createOptions?.snapshotId).toBe(config.daytona.snapshot);
+
+		// No adapter override — requiredEnvVars falls back to the schema meta's static list. Pin the
+		// concrete value rather than only comparing the two lookups against each other: if both `find`s
+		// missed (provider renamed on one side), `undefined === undefined` would pass — a false green.
+		const daytonaMeta = PROVIDERS.find((m) => m.id === "daytona");
+		expect(daytonaMeta?.requiredEnvVars).toEqual(["DAYTONA_API_KEY"]);
+		expect(daytona?.requiredEnvVars).toEqual(daytonaMeta?.requiredEnvVars);
 	});
 });
 
@@ -86,49 +91,5 @@ describe("assertProviderJoin", () => {
 		})();
 		expect(err?.message).toContain("missing a harness adapter: ghost");
 		expect(err?.message).toContain("no schema PROVIDERS entry: modal");
-	});
-});
-
-describe("resolveDaytonaRegion", () => {
-	const SNAP = "sandbox-benchmarks-toolchain-v1";
-
-	it("defaults to the base env vars and the default snapshot", () => {
-		const r = resolveDaytonaRegion({ DAYTONA_API_KEY: "k", DAYTONA_TARGET: "us" }, SNAP);
-		expect(r).toEqual({
-			region: "default",
-			apiKeyVar: "DAYTONA_API_KEY",
-			apiKey: "k",
-			target: "us",
-			snapshot: SNAP,
-		});
-	});
-
-	it("maps the hyphenated ZEN5-VM region to its _ZEN5 suffixed key + target", () => {
-		// The region identifier (`ZEN5-VM`, with a hyphen) is decoupled from the env-var suffix
-		// (`ZEN5`), so the per-region vars resolve to valid names despite the illegal-in-env hyphen.
-		const r = resolveDaytonaRegion(
-			{
-				DAYTONA_REGION: "ZEN5-VM",
-				DAYTONA_API_KEY_ZEN5: "kz",
-				DAYTONA_TARGET_ZEN5: "zen5-rgn",
-				DAYTONA_SNAPSHOT_ZEN5: "zen5-snap",
-			},
-			SNAP,
-		);
-		// The suffix applies to every per-region var, including the snapshot — `DAYTONA_SNAPSHOT_ZEN5`
-		// wins over the default snapshot, so a regression that wrongly applied the suffix to the snapshot
-		// var (or fell back to SNAP) would be caught here.
-		expect(r).toEqual({
-			region: "ZEN5-VM",
-			apiKeyVar: "DAYTONA_API_KEY_ZEN5",
-			apiKey: "kz",
-			target: "zen5-rgn",
-			snapshot: "zen5-snap",
-		});
-	});
-
-	it("honors a per-region snapshot override and leaves a missing key undefined", () => {
-		expect(resolveDaytonaRegion({ DAYTONA_SNAPSHOT: "snap" }, SNAP).snapshot).toBe("snap");
-		expect(resolveDaytonaRegion({}, SNAP).apiKey).toBeUndefined();
 	});
 });

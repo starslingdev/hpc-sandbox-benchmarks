@@ -12,9 +12,9 @@ import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema
 import { config } from "./config.ts";
 import type { ProviderAdapter } from "./types.ts";
 
-// The active Daytona region profile (key/target/snapshot), resolved by the config gatekeeper from
-// DAYTONA_REGION. Never read process.env directly here.
-const { daytonaRegion } = config;
+// The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
+// `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.
+const daytonaCfg = config.daytona;
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
@@ -33,16 +33,15 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: { snapshotId: config.e2bTemplate },
 	},
 	daytona: {
-		// The region's API key (beta regions like ZEN5 use a separate key); the toolchain snapshot and
-		// runner target are pinned per-create. `target` rides the wrapper's create-options passthrough
-		// into Daytona's createParams. requiredEnvVars tracks the active region's key var so a missing
+		// The account API key; the toolchain snapshot and runner target are pinned per-create. `target`
+		// rides the wrapper's create-options passthrough into Daytona's createParams. No requiredEnvVars
+		// override needed — it falls back to the schema meta's static ["DAYTONA_API_KEY"], so a missing
 		// credential skips (not errors).
-		createCompute: () => daytona({ apiKey: daytonaRegion.apiKey }),
+		createCompute: () => daytona({ apiKey: daytonaCfg.apiKey }),
 		createOptions: {
-			snapshotId: daytonaRegion.snapshot,
-			...(daytonaRegion.target ? { target: daytonaRegion.target } : {}),
+			snapshotId: daytonaCfg.snapshot,
+			...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
 		},
-		requiredEnvVars: [daytonaRegion.apiKeyVar],
 	},
 	blaxel: {
 		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). The stock
