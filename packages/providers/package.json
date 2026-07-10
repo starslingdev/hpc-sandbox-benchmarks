@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@computesdk/blaxel": "catalog:computesdk",
     "@computesdk/cloud-run": "catalog:computesdk",
     "@computesdk/vercel": "catalog:computesdk",
+    "@sandbox-benchmarks/provider-blaxel": "workspace:*",
     "@sandbox-benchmarks/provider-core": "workspace:*",
     "@sandbox-benchmarks/provider-daytona": "workspace:*",
     "@sandbox-benchmarks/provider-e2b": "workspace:*",

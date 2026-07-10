@@ -3,9 +3,9 @@
 // computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem, destroy), so
 // nothing here re-wraps an SDK — these are pure config. Credentials are read from each provider's
 // env vars by its factory.
-import { blaxel } from "@computesdk/blaxel";
 import { cloudRun } from "@computesdk/cloud-run";
 import { vercel } from "@computesdk/vercel";
+import { blaxelAdapter } from "@sandbox-benchmarks/provider-blaxel";
 import type { DirectProvider, ProviderAdapter } from "@sandbox-benchmarks/provider-core";
 import { daytonaAdapter } from "@sandbox-benchmarks/provider-daytona";
 import { e2bAdapter } from "@sandbox-benchmarks/provider-e2b";
@@ -33,15 +33,9 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	// Boots the pre-baked toolchain snapshot; owns its own env slice (DAYTONA_*) and vendor dep —
 	// see @sandbox-benchmarks/provider-daytona.
 	daytona: daytonaAdapter,
-	blaxel: {
-		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). The stock
-		// base-image is Alpine (no apt — PTS uninstallable) and disk is a tmpfs overlay carved from VM
-		// RAM (~78%), so boot the Debian ts-app image and buy disk with memory: 16384 MB ≈ 12.5 GiB
-		// disk. No pre-baked toolchain snapshot yet — setup steps run their fallback paths.
-		createCompute: () =>
-			blaxel({ image: "blaxel/ts-app:latest", memory: 16384, region: "us-pdx-1" }),
-		createOptions: {},
-	},
+	// Boots the stock Debian image oversized for Blaxel's coupled spec dimensions; owns its vendor
+	// dep — see @sandbox-benchmarks/provider-blaxel.
+	blaxel: blaxelAdapter,
 	// Boots the toolchain image straight from the registry with the spec pinned in Modal's units;
 	// owns its vendor dep — see @sandbox-benchmarks/provider-modal.
 	modal: modalAdapter,

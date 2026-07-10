@@ -55,6 +55,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/provider-blaxel": {
+      "name": "@sandbox-benchmarks/provider-blaxel",
+      "version": "0.0.0",
+      "dependencies": {
+        "@computesdk/blaxel": "catalog:computesdk",
+        "@sandbox-benchmarks/provider-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/provider-core": {
       "name": "@sandbox-benchmarks/provider-core",
       "version": "0.0.0",
@@ -130,9 +143,9 @@
       "name": "@sandbox-benchmarks/providers",
       "version": "0.0.0",
       "dependencies": {
-        "@computesdk/blaxel": "catalog:computesdk",
         "@computesdk/cloud-run": "catalog:computesdk",
         "@computesdk/vercel": "catalog:computesdk",
+        "@sandbox-benchmarks/provider-blaxel": "workspace:*",
         "@sandbox-benchmarks/provider-core": "workspace:*",
         "@sandbox-benchmarks/provider-daytona": "workspace:*",
         "@sandbox-benchmarks/provider-e2b": "workspace:*",
@@ -531,6 +544,8 @@
     "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
 
     "@sandbox-benchmarks/harness": ["@sandbox-benchmarks/harness@workspace:packages/harness"],
+
+    "@sandbox-benchmarks/provider-blaxel": ["@sandbox-benchmarks/provider-blaxel@workspace:packages/provider-blaxel"],
 
     "@sandbox-benchmarks/provider-core": ["@sandbox-benchmarks/provider-core@workspace:packages/provider-core"],
 
