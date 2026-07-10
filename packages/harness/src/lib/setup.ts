@@ -125,7 +125,10 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"if [ -f /sys/fs/cgroup/memory.max ] && grep -qv max /sys/fs/cgroup/memory.max; then",
 	`  memory_gb=$(awk '{ printf "%.2f", $1 / 1073741824 }' /sys/fs/cgroup/memory.max) && limited=1`,
 	"fi",
-	`disk_gb=$(df -Pk / | awk 'NR==2 { printf "%.1f", $2 / 1048576 }')`,
+	// gVisor (Modal) reports / as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
+	// when df's answer is plausible for a sandbox (positive, < 100 TB); a sentinel, a failed df, or
+	// a non-numeric column all leave it unset as unknown.
+	`disk_gb=$(df -Pk / | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
 	`cpu_model=$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1 || true)`,
 	"kernel=$(uname -r)",
 	`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,
@@ -133,7 +136,8 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"user=$(id -un)",
 	String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
 	"{",
-	`  printf '{"vcpus":%s,"memoryGb":%s,"diskGb":%s' "$vcpus" "$memory_gb" "$disk_gb"`,
+	`  printf '{"vcpus":%s,"memoryGb":%s' "$vcpus" "$memory_gb"`,
+	`  if [ -n "$disk_gb" ]; then printf ',"diskGb":%s' "$disk_gb"; fi`,
 	`  if [ -n "$limited" ]; then printf ',"hostVcpus":%s,"hostMemoryGb":%s' "$host_vcpus" "$host_memory_gb"; fi`,
 	`  if [ -n "$cpu_model" ]; then printf ',"cpuModel":"%s"' "$(esc "$cpu_model")"; fi`,
 	String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$user")"`,
