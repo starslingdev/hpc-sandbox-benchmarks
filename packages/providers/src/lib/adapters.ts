@@ -10,10 +10,10 @@ import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import { vercel } from "@computesdk/vercel";
 import type { DirectProvider, ProviderAdapter } from "@sandbox-benchmarks/provider-core";
+import { novitaAdapter } from "@sandbox-benchmarks/provider-novita";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
-import { novitaCompute } from "./novita.ts";
 
 // The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
 // `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.
@@ -108,11 +108,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			}),
 		createOptions: {},
 	},
-	novita: {
-		// The e2b wrapper re-pointed at Novita's E2B-compatible control plane (sandbox.novita.ai) —
-		// see novita.ts for exactly what is swapped and why. Boots Novita's default template: no
-		// pre-baked toolchain template on their control plane yet, so setup runs the fallback paths.
-		createCompute: () => novitaCompute(config.novita.apiKey),
-		createOptions: {},
-	},
+	// The e2b wrapper re-pointed at Novita's E2B-compatible control plane; owns its own env slice
+	// (NOVITA_API_KEY) and vendor deps — see @sandbox-benchmarks/provider-novita.
+	novita: novitaAdapter,
 };

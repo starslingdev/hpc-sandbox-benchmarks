@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
-import { novitaCompute } from "./lib/novita.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
 	it("wires every schema provider through to a computesdk factory", () => {
@@ -51,25 +50,13 @@ describe("@sandbox-benchmarks/providers", () => {
 		});
 	});
 
-	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
-		// Construction must accept an nvta_-prefixed key (the stock wrapper's create() rejects those)
-		// and still expose the universal manager surface the harness drives. This also exercises the
-		// patch's runtime shape assertion, so a wrapper upgrade that moves the internal methods table
-		// fails here instead of mid-run.
-		const compute = novitaCompute("nvta_unit-test-key");
-		expect(typeof compute.sandbox.create).toBe("function");
-		expect(typeof compute.sandbox.destroy).toBe("function");
-	});
-
-	it("constructs novita lazily so a missing key errors at use, not at import", () => {
+	it("joins the extracted novita package's adapter under the schema's novita id", () => {
+		// The adapter itself is specified in @sandbox-benchmarks/provider-novita's own tests; here we
+		// only pin the join — the aggregator binds that package's adapter to the right id, with the
+		// schema meta's credential list riding along.
 		const novita = providers.find((p) => p.name === "novita");
 		expect(novita).toBeDefined();
 		expect(novita?.requiredEnvVars).toEqual(["NOVITA_API_KEY"]);
-		// The registry module must stay importable without credentials; the factory throws only when
-		// the harness actually selects the provider (after its requiredEnvVars gate).
-		if (!process.env.NOVITA_API_KEY) {
-			expect(() => novita?.createCompute()).toThrow(/NOVITA_API_KEY/);
-		}
 	});
 
 	it("boots e2b from the configured template and daytona from the configured snapshot", () => {

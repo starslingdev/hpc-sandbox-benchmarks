@@ -18,7 +18,6 @@ const env = readProviderEnv([
 	"DAYTONA_SNAPSHOT",
 	"CLOUD_RUN_SANDBOX_URL",
 	"CLOUD_RUN_SANDBOX_SECRET",
-	"NOVITA_API_KEY",
 ] as const);
 
 /** The daytona account/target the adapter boots from. Single-region: the base DAYTONA_* env vars. */
@@ -38,12 +37,6 @@ export interface CloudRunConfig {
 	sandboxUrl?: string;
 	/** Bearer token protecting the gateway's sandbox endpoints. */
 	sandboxSecret?: string;
-}
-
-/** The Novita account the novita adapter boots from (E2B-protocol-compatible control plane). */
-export interface NovitaConfig {
-	/** Novita API key (`nvta_…`), sent to Novita's E2B-compatible API at sandbox.novita.ai. */
-	apiKey?: string;
 }
 
 // Candidate↔version naming. The public version (`:v1`, `…-v1`) is immutable and written only by
@@ -99,8 +92,4 @@ export const config = {
 		sandboxUrl: env.CLOUD_RUN_SANDBOX_URL,
 		sandboxSecret: env.CLOUD_RUN_SANDBOX_SECRET,
 	} satisfies CloudRunConfig,
-	/** The Novita account the novita adapter boots from (via the E2B-compatible API). */
-	novita: {
-		apiKey: env.NOVITA_API_KEY,
-	} satisfies NovitaConfig,
 } as const;

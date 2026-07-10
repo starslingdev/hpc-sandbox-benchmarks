@@ -69,6 +69,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/provider-novita": {
+      "name": "@sandbox-benchmarks/provider-novita",
+      "version": "0.0.0",
+      "dependencies": {
+        "@computesdk/e2b": "catalog:computesdk",
+        "@sandbox-benchmarks/provider-core": "workspace:*",
+        "computesdk": "catalog:computesdk",
+        "e2b": "catalog:computesdk",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/providers": {
       "name": "@sandbox-benchmarks/providers",
       "version": "0.0.0",
@@ -80,9 +95,9 @@
         "@computesdk/modal": "catalog:computesdk",
         "@computesdk/vercel": "catalog:computesdk",
         "@sandbox-benchmarks/provider-core": "workspace:*",
+        "@sandbox-benchmarks/provider-novita": "workspace:*",
         "@sandbox-benchmarks/schema": "workspace:*",
         "computesdk": "catalog:computesdk",
-        "e2b": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -476,6 +491,8 @@
     "@sandbox-benchmarks/harness": ["@sandbox-benchmarks/harness@workspace:packages/harness"],
 
     "@sandbox-benchmarks/provider-core": ["@sandbox-benchmarks/provider-core@workspace:packages/provider-core"],
+
+    "@sandbox-benchmarks/provider-novita": ["@sandbox-benchmarks/provider-novita@workspace:packages/provider-novita"],
 
     "@sandbox-benchmarks/providers": ["@sandbox-benchmarks/providers@workspace:packages/providers"],
 
