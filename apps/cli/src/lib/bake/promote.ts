@@ -1,8 +1,10 @@
 // Promote the validated candidate to the immutable public version — the ONLY step that writes
 // public-facing artifacts. Run after `bake` validates the candidate.
 //
-// The order makes the immutable base tag the COMMIT POINT, so a mid-promote failure is always clean:
-//   1. Refuse if the public version tag already exists — it is immutable (no --force; bump to republish).
+// The order makes the immutable base tag the COMMIT POINT, so a mid-promote failure is clean — with one
+// documented exception under `--force`, called out at step 3 and in the step-3 abort:
+//   1. Refuse if the public version tag already exists — it is immutable; bump to republish (or pass
+//      `--force`, wired only to a manual force_republish dispatch, to deliberately regenerate in place).
 //   2. Re-validate the candidate (boot + smoke) right now, so the bytes we publish are verified again
 //      (the candidate tag is mutable and may have changed since `bake`). Abort on any failure.
 //   3. Build each provider's version-named artifact FROM the candidate base (the just-revalidated
@@ -13,7 +15,12 @@
 //   4. LAST: retag the candidate base → the public version (registry-side). Reached only when every
 //      prior step succeeded, so a failure never leaves a published version with missing/stale artifacts.
 // A rerun after a mid-promote failure is clean (the version tag was never written); once published it
-// is refused at step 1 — bump the version to publish again.
+// is refused at step 1 — bump the version, or force_republish, to publish again. Under `--force` the
+// version's artifacts already exist, and step 3 regenerates them in place: the image retag and e2b
+// `template create` publish a new artifact over the old name (the prior one stands until the new one
+// lands), but daytona has no snapshot overwrite — it deletes, then creates. So a forced republish whose
+// daytona create fails leaves that snapshot ABSENT, not stale. Recovery is a rerun with force_republish
+// (a plain rerun is refused at step 1, since the base image is still there).
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
@@ -24,26 +31,40 @@ import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
 
-export async function promoteAll(log: Log): Promise<BakeReport[]> {
+export async function promoteAll(log: Log, force = false): Promise<BakeReport[]> {
 	const reports: BakeReport[] = [];
 
 	// 1. Refuse to overwrite the immutable public version (D2b). Checked first, before any mutation, so
 	//    a refused promote leaves everything untouched. A registry error here (auth/network) is NOT
 	//    "not published" — refuse rather than risk overwriting an existing :v1 we couldn't see.
-	let alreadyPublished: boolean;
-	try {
-		alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
-	} catch (err) {
-		const reason = `could not verify whether ${config.toolchainImageVersion} is already published, so refusing to publish: ${err instanceof Error ? err.message : String(err)}`;
-		log(`<<< promote refused — ${reason}`);
-		reports.push({ provider: "image", status: "failed", reason });
-		return reports;
-	}
-	if (alreadyPublished) {
-		const reason = `${config.toolchainImageVersion} already exists — the public version is immutable; bump the version to publish again`;
-		log(`<<< promote refused — ${reason}`);
-		reports.push({ provider: "image", status: "failed", reason });
-		return reports;
+	//    `force` (manual dispatch only — see toolchain-image.yml) deliberately republishes over an
+	//    existing version for dev iteration; automated push-to-main never sets it, so the invariant
+	//    holds in production. The image retag and e2b `template create` overwrite by name, replacing
+	//    the artifact only once the new one is built. Daytona does NOT: it deletes the existing
+	//    snapshot before creating, so a forced republish drops the published snapshot for the length
+	//    of the rebuild, and leaves it absent if the rebuild fails. Forced republish is therefore a
+	//    destructive regenerate, and is why `force` is manual-dispatch-only.
+	if (force) {
+		log(
+			`>>> force-republish: regenerating ${config.toolchainImageVersion}, overwriting if present ` +
+				`(daytona: ${config.daytonaSnapshotDefault} is deleted and rebuilt, so it is briefly absent)`,
+		);
+	} else {
+		let alreadyPublished: boolean;
+		try {
+			alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
+		} catch (err) {
+			const reason = `could not verify whether ${config.toolchainImageVersion} is already published, so refusing to publish: ${err instanceof Error ? err.message : String(err)}`;
+			log(`<<< promote refused — ${reason}`);
+			reports.push({ provider: "image", status: "failed", reason });
+			return reports;
+		}
+		if (alreadyPublished) {
+			const reason = `${config.toolchainImageVersion} already exists — the public version is immutable; bump the version or dispatch with force_republish to publish again`;
+			log(`<<< promote refused — ${reason}`);
+			reports.push({ provider: "image", status: "failed", reason });
+			return reports;
+		}
 	}
 
 	// 2. Re-validate the candidate immediately before publishing, so the bytes we promote are verified
@@ -72,6 +93,10 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 	// 3. Build each provider's version-named artifact FROM the candidate base (the bytes we just
 	//    revalidated). Built BEFORE the base retag, so a failure here leaves the version base unwritten
 	//    and a rerun is clean. Shares the skip-vs-fail loop with bake.
+	//    Under `--force` these names already exist and are live. e2b/image replace on success; daytona
+	//    deletes first (no snapshot overwrite in the SDK), so a failed daytona create removes the
+	//    published snapshot — `bakeDaytonaSnapshot` says so in its error, which lands in the report's
+	//    `reason`. The base is still never written, so the version tag itself stays consistent.
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {
 			log(`>>> ${provider.name}: building version artifact from candidate…`);
@@ -119,12 +144,25 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 		});
 	}
 
+	// After a forced republish aborts, the previous version's base image is still tagged, so step 1 would
+	// refuse a plain rerun — recovery has to re-force. Shared by both pre-publish aborts below.
+	const rerunHint = force
+		? "Fix the cause and rerun with force_republish — a plain rerun is refused because the base image already exists."
+		: "Fix the cause and rerun `bake --promote`.";
+
 	// A provider artifact failed → do NOT publish the base. The version tag stays unwritten, so a rerun
-	// (after fixing the cause) reconciles cleanly — nothing public was half-written.
+	// (after fixing the cause) reconciles cleanly. Nothing public was half-written — EXCEPT under
+	// `--force`, where step 3 regenerates already-published artifacts in place and daytona's
+	// delete-then-create can leave its published snapshot absent (the report's `reason` says so).
 	if (reports.some((r) => r.status === "failed")) {
 		log(
 			`!!! promote aborted before publish: a ${config.toolchainImageVersion} provider artifact failed; ` +
-				"the public base was NOT written. Fix the cause and rerun `bake --promote`.",
+				"the public base was NOT written. " +
+				(force
+					? "This was a forced republish, so the failed provider's already-published artifact may have " +
+						"been regenerated — or, for daytona, deleted and not recreated (see its reason above). "
+					: "") +
+				rerunHint,
 		);
 		return reports;
 	}
@@ -140,9 +178,10 @@ export async function promoteAll(log: Log): Promise<BakeReport[]> {
 	const unmet = unmetRequirements(reports, required);
 	if (required.length > 0 && unmet.length > 0) {
 		const reason = `required providers did not promote: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`;
+		// A required provider that merely *skipped* never built anything, so unlike the artifact-failed
+		// abort above there is no half-regenerated artifact to warn about — only the rerun differs.
 		log(
-			`!!! promote aborted before publish: ${reason}; the public base was NOT written. ` +
-				"Fix the cause and rerun `bake --promote`.",
+			`!!! promote aborted before publish: ${reason}; the public base was NOT written. ${rerunHint}`,
 		);
 		// Push a structured failure (like the step-1 and step-4 aborts) so the emitted JSON is
 		// self-describing — a consumer sees the failed promote without re-deriving it from `--require`.

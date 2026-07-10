@@ -3,6 +3,13 @@
 // snapshot of that name, then recreate. The API key + runner target come from config.daytona
 // (single-region: DAYTONA_API_KEY + DAYTONA_TARGET, e.g. us-west-2).
 //
+// Delete-then-create is idempotent but NOT atomic: the SDK exposes no snapshot rename or overwrite,
+// so the name is unavoidably ABSENT between the delete and a successful create. Reruns converge, but
+// a create that fails leaves no snapshot of that name at all. That is harmless for the candidate
+// (nothing consumes it) and destructive for a name already in public use — see `promote --force`,
+// which is the only caller that hands us a published name. `bakeDaytonaSnapshot` therefore reports
+// which side of the delete it failed on, so callers never have to guess whether the name survived.
+//
 // Iteration surface: a snapshot's region must match where sandboxes boot. We pass the client `target`;
 // if the target also needs an explicit snapshot `regionId`, add it to CreateSnapshotParams here.
 //
@@ -54,8 +61,13 @@ async function listSnapshotsByName(
  *  asynchronous (active → `removing` → gone), and `create` rejects the name while ANY snapshot of it
  *  still exists — so returning right after issuing the delete races the not-yet-completed removal
  *  ("already exists for this organization"). Poll `list()` until no match remains, bounded by a
- *  deadline so a stuck removal fails loudly instead of hanging. */
-async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log): Promise<void> {
+ *  deadline so a stuck removal fails loudly instead of hanging.
+ *
+ *  Returns how many snapshots it removed. A non-zero return means the name is now free BECAUSE we
+ *  destroyed what held it: from here to a successful `create`, `name` does not resolve. Callers use
+ *  this to distinguish "create failed, nothing was there anyway" from "create failed and the
+ *  pre-existing snapshot is gone". Throwing leaves the name intact (the delete never completed). */
+async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log): Promise<number> {
 	const matches = await listSnapshotsByName(daytona, name);
 	for (const snap of matches) {
 		// A snapshot already mid-removal (a cancelled or concurrent bake) needs no second delete, and
@@ -74,7 +86,7 @@ async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log)
 			if (!isNotFound(err)) throw err;
 		}
 	}
-	if (matches.length === 0) return;
+	if (matches.length === 0) return 0;
 
 	const DEADLINE_MS = 180_000;
 	const POLL_MS = 3_000;
@@ -97,7 +109,7 @@ async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log)
 			continue;
 		}
 
-		if (remaining.length === 0) return;
+		if (remaining.length === 0) return matches.length;
 		if (performance.now() - start > DEADLINE_MS) {
 			throw new Error(
 				`daytona snapshot ${name} still present after ${DEADLINE_MS}ms (states: ${remaining
@@ -112,8 +124,26 @@ async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log)
 	}
 }
 
+/** The message for a create that failed after `deleted` (> 0) pre-existing snapshots of `name` were
+ *  removed to free the name: `name` now resolves to nothing. Stated plainly because the caller that
+ *  passes a published name (promote `--force`) surfaces this as the report's `reason`, where "failed"
+ *  otherwise reads as "nothing changed". Pure (strings in, string out) so it is unit-testable without
+ *  standing up the SDK. */
+export function snapshotDestroyedMessage(name: string, deleted: number, reason: string): string {
+	return (
+		`daytona snapshot ${name}: create failed after deleting ${deleted} pre-existing snapshot(s) of ` +
+		`that name — no snapshot named ${name} now exists; rerun the bake to recreate it: ${reason}`
+	);
+}
+
 /** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote).
- *  Idempotent: delete any existing snapshot of that name first. */
+ *  Idempotent: delete any existing snapshot of that name first.
+ *
+ *  If the create fails AFTER a pre-existing snapshot was deleted, the thrown error says so — `name`
+ *  now resolves to nothing, and for a published name (promote `--force`) that is a public artifact
+ *  the caller must report as destroyed rather than merely "not written". A create that fails with
+ *  nothing deleted, or a delete that fails outright, leaves the prior snapshot intact and rethrows
+ *  unchanged. */
 export async function bakeDaytonaSnapshot(name: string, image: string, log: Log): Promise<void> {
 	const { daytona: daytonaCfg, targetSpec } = config;
 	const daytona = new Daytona({
@@ -121,17 +151,25 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 		...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
 	});
 
-	await deleteExistingSnapshots(daytona, name, log);
+	const deleted = await deleteExistingSnapshots(daytona, name, log);
 
 	log(`creating snapshot ${name} from ${image} (target ${daytonaCfg.target ?? "default"})`);
-	await daytona.snapshot.create(
-		{
-			name,
-			image,
-			resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: targetSpec.diskGb },
-			// Pin to microVM runners (never the `container` default) — the fleet's hard constraint.
-			sandboxClass: SandboxClass.LINUX_VM,
-		},
-		{ onLogs: log },
-	);
+	try {
+		await daytona.snapshot.create(
+			{
+				name,
+				image,
+				resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: targetSpec.diskGb },
+				// Pin to microVM runners (never the `container` default) — the fleet's hard constraint.
+				sandboxClass: SandboxClass.LINUX_VM,
+			},
+			{ onLogs: log },
+		);
+	} catch (err) {
+		// Nothing was deleted → the name was already free, so the prior state (none) is intact: rethrow
+		// verbatim rather than dress up an ordinary create failure as a destroyed artifact.
+		if (deleted === 0) throw err;
+		const reason = err instanceof Error ? err.message : String(err);
+		throw new Error(snapshotDestroyedMessage(name, deleted, reason), { cause: err });
+	}
 }

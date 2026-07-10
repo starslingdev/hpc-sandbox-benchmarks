@@ -16,9 +16,11 @@ on:
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
         # new suite must be added here too. Still passed through the environment below (never
         # interpolated into the shell) as defense-in-depth.
+        # Defaults to `memory` (STREAM): the fastest suite in the registry — a couple of minutes of
+        # benchmark on top of setup — which makes it the cheapest end-to-end validation of the lane.
         description: Suite to run
         type: choice
-        default: cpu-node
+        default: memory
         options:
           [
             cpu-node,
@@ -79,6 +81,10 @@ jobs:
           # shell. `$GITHUB_RUN_ID` is built-in.
           BENCH_PROVIDER: ${{ inputs.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
+          # The point of a smoke run is to prove the lane end to end. Without this, a missing or
+          # misnamed provider secret is recorded as a skip and the job still exits 0 having
+          # benchmarked nothing — assert the dispatched provider actually reached "validated".
+          REQUIRE_PROVIDERS: ${{ inputs.provider }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           # Boot daytona sandboxes in the active region (us-west-2). Defaulted so an unsynced secret
           # can't fail the config gatekeeper at module load.

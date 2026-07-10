@@ -8,10 +8,16 @@ name: Toolchain image
 #     the immutable public :v1. Iteration never touches :v1; bump TOOLCHAIN_VERSION
 #     (packages/schema/src/toolchain.ts) to publish a new version.
 on:
-  # Manual re-trigger (e.g. after bumping TOOLCHAIN_VERSION). No inputs: the public version is
-  # immutable — there is no force/overwrite. To republish, bump TOOLCHAIN_VERSION; an already-published
-  # version is always skipped at the guard below.
+  # Manual re-trigger (e.g. after bumping TOOLCHAIN_VERSION). The public version is immutable on the
+  # automated push path; `force_republish` (manual dispatch only) deliberately regenerates it over an
+  # existing version for fast dev iteration. Normally, to republish you bump TOOLCHAIN_VERSION; an
+  # already-published version is skipped at the guard below unless force_republish is set.
   workflow_dispatch:
+    inputs:
+      force_republish:
+        description: "Regenerate the current version, overwriting it if already published (dev only)"
+        type: boolean
+        default: false
   push:
     branches: [main]
     # The publish lane runs `bake`/`promote`, which pull in the whole provider-run + smoke + harness
@@ -140,11 +146,17 @@ jobs:
       # Guard the immutable public version: skip the whole publish if :v1 already exists. The version is
       # immutable (promote refuses to overwrite it), so a published version is never re-promoted — bump
       # TOOLCHAIN_VERSION to publish a new one. The candidate is mutable and always rebuilt within a run.
+      # `force_republish` (manual dispatch only) overrides the skip to regenerate the version in place.
       - name: Check if version already published
         id: guard
+        env:
+          FORCE_REPUBLISH: ${{ inputs.force_republish }}
         run: |
-          if docker manifest inspect "${VERSION_REF}" >/dev/null 2>&1; then
-            echo "::notice::${VERSION_REF} already published — skipping (bump TOOLCHAIN_VERSION to publish a new version)."
+          if [ "${FORCE_REPUBLISH}" = "true" ]; then
+            echo "::notice::force_republish set — regenerating ${VERSION_REF} even though it may already exist."
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+          elif docker manifest inspect "${VERSION_REF}" >/dev/null 2>&1; then
+            echo "::notice::${VERSION_REF} already published — skipping (bump TOOLCHAIN_VERSION, or dispatch with force_republish, to publish again)."
             echo "skip=true" >> "${GITHUB_OUTPUT}"
           else
             echo "skip=false" >> "${GITHUB_OUTPUT}"
@@ -228,8 +240,14 @@ jobs:
           DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          FORCE_REPUBLISH: ${{ inputs.force_republish }}
         # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
         # public version is never published while a required provider's version artifact was silently
         # skipped. modal is required (validated via its fromRegistry boot); MODAL_TOKEN_* must be synced.
-        # (blaxel is excluded — its bake is a no-op.)
-        run: bun apps/cli/src/bin/bake.ts --promote --require e2b,daytona,modal
+        # (blaxel is excluded — its bake is a no-op.) `--force` (manual force_republish dispatch only)
+        # republishes over an existing immutable version; never set on the automated push path.
+        run: |
+          set -euo pipefail
+          args=(--promote --require "e2b,daytona,modal")
+          if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
+          bun apps/cli/src/bin/bake.ts "${args[@]}"

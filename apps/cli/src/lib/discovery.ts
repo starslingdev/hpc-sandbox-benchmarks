@@ -85,19 +85,31 @@ export interface DiscoveryResult {
  *   - `--list-suites`    → the registered suites
  *   - any other `-…`     → an "Unknown flag" error (`!ok`) so the caller exits non-zero, even when
  *                          paired with a valid action (the unknown flag is never silently dropped)
+ * A bin with its own value-taking flag (e.g. bench-suite's `--require <ids>`) declares it in
+ * `valueFlags` so the closed set stays closed for every other bin rather than growing a union of
+ * every bin's private vocabulary. Both `--flag <v>` and `--flag=<v>` spellings are accepted.
  * Centralising the dispatch keeps the flag vocabulary consistent and makes a bin's discovery output
  * unit-testable without spawning a process.
  */
 /** The closed set of flags any bin's discovery layer accepts; anything else `-…` is an error. */
 const RECOGNISED_FLAGS = new Set(["--help", "-h", "--list-providers", "--list-suites", "--json"]);
-export function handleDiscovery(argv: readonly string[], help: string): DiscoveryResult | null {
+export function handleDiscovery(
+	argv: readonly string[],
+	help: string,
+	valueFlags: readonly string[] = [],
+): DiscoveryResult | null {
 	// `--help` is the escape hatch: it wins even alongside other flags, so `--help --anything` prints
 	// usage rather than an error.
 	if (hasFlag(argv, "--help", "-h")) return { text: help, ok: true };
 	// Reject any unrecognized flag BEFORE dispatching an action, so a bogus flag paired with a valid
 	// action (e.g. `--list-providers --bogus`) is surfaced rather than silently ignored — matching the
 	// bare `--bogus` path. Positional args (no leading `-`) fall through to the bin's own parsing.
-	const unknown = argv.find((a) => a.startsWith("-") && !RECOGNISED_FLAGS.has(a));
+	const unknown = argv.find(
+		(a) =>
+			a.startsWith("-") &&
+			!RECOGNISED_FLAGS.has(a) &&
+			!valueFlags.some((f) => a === f || a.startsWith(`${f}=`)),
+	);
 	if (unknown) return { text: `Unknown flag: ${unknown}\n\n${help}`, ok: false };
 	const json = hasFlag(argv, "--json");
 	if (hasFlag(argv, "--list-providers")) return { text: renderProviders(json), ok: true };
