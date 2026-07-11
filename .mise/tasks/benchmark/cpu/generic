@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="Run generic CPU benchmarks (info, cache, PTS c-ray + compress-zstd)"
+# Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
+# (error-mode conventions: lib/bench.sh).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "========================================"
+echo "  CPU BENCHMARKS — GENERIC"
+echo "========================================"
+
+# The same provenance probes cpu-node records, so the two cpu suites' numbers stay attributable to
+# the same machine facts.
+run_task benchmark:cpu:info
+run_task benchmark:cpu:cache
+
+# One install/configure attempt for the PTS children; if PTS is still unavailable each skips fast via
+# its own `command -v` guard and writes a skip record.
+ensure_pts || true
+
+run_task benchmark:cpu:pts:c-ray
+run_task benchmark:cpu:pts:compress-zstd
+
+summary

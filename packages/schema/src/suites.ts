@@ -61,7 +61,7 @@ export const SUITES = {
 		commandTimeoutMinutes: 110,
 		timeoutMinutes: 120,
 		// cpu-node runs only `benchmark:cpu:node` (node-web-tooling); the catalog's c-ray entries belong
-		// to a future cpu-generic suite, so they are deliberately not declared here.
+		// to the cpu-generic suite below, so they are deliberately not declared here.
 		dimensions: ["cpu"],
 		metrics: ["node_web_tooling_runs_per_s"],
 		commands: ["mise run benchmark:cpu:node"],
@@ -85,16 +85,82 @@ export const SUITES = {
 		metrics: ["stream_type_copy", "stream_type_scale", "stream_type_add", "stream_type_triad"],
 		commands: ["mise run benchmark:memory:all"],
 	},
-	// The disk dimension: hardlink throughput (stress-ng --link), a repo-local PTS profile installed
-	// into PTS by the producer task. Needs a little free disk for the link storm.
+	// The disk dimension: pts/fio across four pinned scenarios (seq read/write 1MB, rand read/write
+	// 4KB; Engine Linux AIO, Job Count 1, Default Test Directory) plus hardlink throughput (stress-ng
+	// --link, a repo-local PTS profile). Each fio scenario posts a bandwidth AND an IOPS result —
+	// scale-pinned twin metrics. Direct is probed per sandbox (O_DIRECT fails on some sandbox
+	// filesystems), so every scenario declares an O_DIRECT and a buffered variant; each provider emits
+	// exactly one of the two and the mode travels in the metric identity (the contract allows declared-
+	// but-unrun combinations). Budgets cover the fio build + 4 timed 60s scenarios; fio writes 1 GiB
+	// test files, hence the raised disk floor.
 	disk: {
+		setupPts: true,
+		commandTimeoutMinutes: 60,
+		timeoutMinutes: 70,
+		minDiskGb: 4,
+		dimensions: ["disk"],
+		metrics: [
+			"hardlink_bogo_ops_per_s",
+			"fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+		],
+		commands: ["mise run benchmark:disk:all"],
+	},
+	// The network dimension: loopback TCP (10GB via nc) — self-contained, no external endpoint, so it
+	// isolates the sandbox's network stack from internet weather. The suite task also runs the
+	// latency/DNS/download probes (raw JSON provenance, no catalogued metrics).
+	network: {
 		setupPts: true,
 		commandTimeoutMinutes: 30,
 		timeoutMinutes: 40,
+		dimensions: ["network"],
+		metrics: ["network_loopback_seconds"],
+		commands: ["mise run benchmark:network:all"],
+	},
+	// The generic-compute dimension slice next to cpu-node: c-ray (float/thread scaling — the seam the
+	// catalog's c-ray entries have waited on) and Zstd compression across its level matrix. Budgets
+	// cover the zstd build + silesia download, 7 zstd levels × compress+decompress, and c-ray's three
+	// resolutions × 3 passes on a 2-vCPU target (the 5K pass alone runs several minutes per repeat).
+	"cpu-generic": {
+		setupPts: true,
+		commandTimeoutMinutes: 100,
+		timeoutMinutes: 115,
 		minDiskGb: 2,
-		dimensions: ["disk"],
-		metrics: ["hardlink_bogo_ops_per_s"],
-		commands: ["mise run benchmark:disk:all"],
+		dimensions: ["cpu"],
+		metrics: [
+			"c_ray_resolution_1080p_rays_per_pixel_16",
+			"c_ray_resolution_4k_rays_per_pixel_16",
+			"c_ray_resolution_5k_rays_per_pixel_16",
+			"compress_zstd_compression_level_3_compression_speed",
+			"compress_zstd_compression_level_3_decompression_speed",
+			"compress_zstd_compression_level_3_long_mode_compression_speed",
+			"compress_zstd_compression_level_3_long_mode_decompression_speed",
+			"compress_zstd_compression_level_8_compression_speed",
+			"compress_zstd_compression_level_8_decompression_speed",
+			"compress_zstd_compression_level_8_long_mode_compression_speed",
+			"compress_zstd_compression_level_8_long_mode_decompression_speed",
+			"compress_zstd_compression_level_12_compression_speed",
+			"compress_zstd_compression_level_12_decompression_speed",
+			"compress_zstd_compression_level_19_compression_speed",
+			"compress_zstd_compression_level_19_decompression_speed",
+			"compress_zstd_compression_level_19_long_mode_compression_speed",
+			"compress_zstd_compression_level_19_long_mode_decompression_speed",
+		],
+		commands: ["mise run benchmark:cpu:generic"],
 	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
 	// each a repo-local PTS profile with a Task option axis. Budgets are starting points (tuned from

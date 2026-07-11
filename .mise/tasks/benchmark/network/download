@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#MISE description="Download speed and connection timing against GitHub (curl probe)"
+# Tolerant probe: no -e — report whatever the sandbox exposes via try (error-mode conventions:
+# lib/bench.sh). The endpoint is GitHub deliberately: it is the one host every suite already depends
+# on (the harness clones this repo from it), so reachability is a given and the number reflects the
+# path real CI traffic takes.
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "=== Download Speed Test ==="
+echo "Downloading ~10MB test archive from GitHub..."
+
+try curl -sL --max-time 120 -o /dev/null -w "HTTP %{http_code} | %{size_download} bytes | %{time_total}s total | %{speed_download} bytes/sec\n" \
+	"https://github.com/anthropics/anthropic-sdk-python/archive/refs/heads/main.zip"
+
+# Structured output via curl's native JSON write-out.
+curl -sL --max-time 120 -o /dev/null -w '%{json}' \
+	"https://github.com/anthropics/anthropic-sdk-python/archive/refs/heads/main.zip" \
+	>"$(results_dir)/$(task_result_name "speed").json" 2>/dev/null || true
+
+echo ""
+echo "=== Connection Timing (github.com) ==="
+try curl -sL --max-time 30 -o /dev/null -w "DNS:        %{time_namelookup}s\nConnect:    %{time_connect}s\nTLS:        %{time_appconnect}s\nFirst byte: %{time_starttransfer}s\nTotal:      %{time_total}s\n" \
+	"https://github.com"
+
+# Structured timing output.
+curl -sL --max-time 30 -o /dev/null -w '%{json}' "https://github.com" \
+	>"$(results_dir)/$(task_result_name "timing").json" 2>/dev/null || true

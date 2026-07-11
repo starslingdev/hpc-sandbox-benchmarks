@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#MISE description="PTS: loopback TCP network performance (time to transfer 10GB via nc)"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_network-loopback"
+	exit 0
+fi
+# The profile's runner is `dd | nc` — netcat is its only real dependency (the toolchain image bakes
+# netcat-openbsd; stock images may lack it, and PTS's install.sh would "succeed" into a runner that
+# dies at measure time).
+if ! command -v nc &>/dev/null; then
+	skip_result "nc (netcat) not installed (apt-get install -y netcat-openbsd)" "pts_network-loopback"
+	exit 0
+fi
+
+# Version-pinned to the vendored profile so an upstream release can't drift under the catalog.
+run_pts_benchmark "pts/network-loopback-1.0.1" "pts_network-loopback"

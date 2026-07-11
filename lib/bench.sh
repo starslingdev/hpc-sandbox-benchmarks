@@ -185,7 +185,13 @@ _configure_pts_batch() {
 	fi
 	# batch-setup answers: SaveResults, OpenBrowser, UploadResults, PromptForTestIdentifier,
 	# PromptForTestDescription, PromptSaveName, RunAllTestCombinations.
-	printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup 2>/dev/null || true
+	#
+	# The last answer is overridable because PTS's batch runner consults PRESET_OPTIONS ONLY when
+	# RunAllTestCombinations is off (pts_test_run_manager::test_prompts_to_result_objects) — a
+	# pinned-scenario caller (run_fio_pts) exports PTS_RUN_ALL_TEST_COMBINATIONS=n around its run, and
+	# the next unpinned caller's reconfigure restores the run-all default the option-matrix suites
+	# (STREAM's Type axis, the realworld Task axis, compress-zstd's levels) rely on.
+	printf 'y\nn\nn\nn\nn\nn\n%s\n' "${PTS_RUN_ALL_TEST_COMBINATIONS:-y}" | phoronix-test-suite batch-setup 2>/dev/null || true
 }
 
 # Ensure phoronix-test-suite is available, configuring batch mode. The toolchain image bakes PTS, so
@@ -304,6 +310,60 @@ run_pts_benchmark() {
 		skip_result "PTS batch-run of ${test_name} produced no composite.xml" "$prefix"
 	fi
 	return 0
+}
+
+# Whether the filesystem PTS's fio writes its test files to supports O_DIRECT: echoes the fio
+# profile's Direct option NAME ("Yes"/"No"). Probed with dd against the PTS data dir (the same
+# filesystem installed-tests/.../fiofile lands on) because sandbox filesystems differ here — overlay
+# and gVisor gofer mounts can reject O_DIRECT outright, and a hard fio failure would void the whole
+# scenario. The chosen mode is part of the fio option matrix, so it travels in the metric identity
+# (each scenario has an O_DIRECT and a buffered catalog variant) instead of being silently mixed.
+fio_direct_choice() {
+	local dir probe
+	dir="$(pts_user_dir)"
+	mkdir -p "$dir"
+	probe="${dir}/.o-direct-probe"
+	if dd if=/dev/zero of="$probe" bs=512 count=1 oflag=direct >/dev/null 2>&1; then
+		rm -f "$probe"
+		echo "Yes"
+	else
+		rm -f "$probe"
+		echo "No"
+	fi
+}
+
+# Run ONE pinned pts/fio scenario. PRESET_OPTIONS pins every option axis so batch-run executes exactly
+# one (Type, Block Size) combination; Direct comes from fio_direct_choice above.
+#
+# RunAllTestCombinations MUST be off for the run: PTS's batch path only consults PRESET_OPTIONS on
+# that branch (pts_test_run_manager::test_prompts_to_result_objects) — with the repo's run-all default
+# it ignores the presets and fans out the full Type × Engine × Direct × Block Size × Job Count × Disk
+# Target matrix (hundreds of 60s fio runs). PTS_RUN_ALL_TEST_COMBINATIONS=n reaches batch-setup via
+# _configure_pts_batch INSIDE run_pts_benchmark (setting the config before the call would be undone by
+# that reconfigure); the next unpinned PTS child's reconfigure restores the run-all default.
+#
+# The axis values are the runtime option NAMES (PTS matches non-numeric presets by entry name), with
+# ONE exception: a NUMERIC preset is interpreted as a 0-based menu INDEX, never a name
+# (pts_test_option::is_valid_select_choice). "Job Count" is a numeric menu expanded from the machine's
+# core count at run time (cpu-threads: 1,2,…,N), so it must be pinned by INDEX 0 — the first entry,
+# name "1" on every machine ("cpu-threads=1" would select index 1 = "Job Count: 2"). "Disk Target" is
+# also runtime-expanded (auto-disk-mount-points) but pins cleanly by name: "Default Test Directory"
+# always exists. These are the same pins the catalog generator synthesizes descriptions for.
+# Usage: run_fio_pts <type-name> <block-size-name> <results-prefix>   (e.g. "Sequential Read" 1MB pts_fio-seq-read)
+run_fio_pts() {
+	local type_name="$1" bs_name="$2" prefix="$3"
+	local direct
+	direct="$(fio_direct_choice)"
+	echo "fio scenario: Type=${type_name} Block Size=${bs_name} Direct=${direct} (O_DIRECT probe)"
+
+	export PTS_RUN_ALL_TEST_COMBINATIONS=n
+	export PRESET_OPTIONS="fio.type=${type_name};fio.engine=Linux AIO;fio.direct=${direct};fio.size=${bs_name};fio.cpu-threads=0;fio.auto-disk-mount-points=Default Test Directory"
+	# Version-pinned (unlike the older versionless leaves): the catalog vendors fio-2.1.0's exact
+	# option matrix and PRESET_OPTIONS addresses its axes by identifier, so a versionless install
+	# resolving to a newer upstream fio would silently unmap every description. Keep in lockstep with
+	# packages/schema/src/pts-profiles/fio-2.1.0 (and the golden fixture) when bumping.
+	run_pts_benchmark "pts/fio-2.1.0" "$prefix"
+	unset PRESET_OPTIONS PTS_RUN_ALL_TEST_COMBINATIONS
 }
 
 # Run one realworld suite end to end: gate on the toolchain, install the repo-local profile with

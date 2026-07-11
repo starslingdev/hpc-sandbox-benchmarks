@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#MISE description="PTS: fio random read, 4KB blocks (Linux AIO, 1 job, O_DIRECT probed)"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark
+# (via run_fio_pts, which pins this scenario's option combination through PRESET_OPTIONS).
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_fio-rand-read"
+	exit 0
+fi
+
+run_fio_pts "Random Read" "4KB" "pts_fio-rand-read"

@@ -73,6 +73,8 @@ export const rawPins = {
 	// > Phoronix Test Suite release + self-computed sha256 of phoronix-test-suite_10.8.4_all.deb.
 	ptsVersion: "10.8.4",
 	ptsDebSha256: "be81f71fc0382a7725dc88f4a18f013d1c3f6939d440629231d392a11816feca",
-	// > Small node + python profiles pre-installed so sandbox wall time goes to benchmarks, not setup.
-	ptsInstallTests: "node-web-tooling pyperformance",
+	// > Small profiles pre-installed so sandbox wall time goes to benchmarks, not setup: the cpu-node
+	// > + system profiles, plus the cpu-generic (c-ray, compress-zstd), disk (fio) and network
+	// > (network-loopback) suites' profiles — fio and zstd are source builds worth paying at bake time.
+	ptsInstallTests: "node-web-tooling pyperformance c-ray compress-zstd fio network-loopback",
 } satisfies Record<keyof Pins, string>;

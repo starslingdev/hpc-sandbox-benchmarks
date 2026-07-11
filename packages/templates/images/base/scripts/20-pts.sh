@@ -20,11 +20,12 @@ dpkg -i /tmp/pts.deb || apt-get install -y --no-install-recommends -f
 rm -rf /tmp/pts.deb /var/lib/apt/lists/*
 phoronix-test-suite version
 
-# > Non-interactive batch config + offline download caches for the cpu-suite profiles. Build and
+# > Non-interactive batch config + offline download caches for the PTS-backed suites. Build and
 # > sandboxes both run as root, so PTS state under /var/lib/phoronix-test-suite lines up at runtime.
+# > (network-loopback has no downloads — its runner is a generated dd|nc script.)
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
 phoronix-test-suite make-download-cache \
-	build-linux-kernel build-nodejs compress-zstd git node-web-tooling pyperformance
+	build-linux-kernel build-nodejs c-ray compress-zstd fio git node-web-tooling pyperformance
 
 # > Pre-install the small profiles so every provider runs byte-identical harnesses. PTS_INSTALL_TESTS
 # > is a space-separated list, so split it into an array to pass each profile as its own argument.

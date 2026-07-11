@@ -21,6 +21,8 @@ describe("suite registry", () => {
 			"system",
 			"memory",
 			"disk",
+			"network",
+			"cpu-generic",
 			"realworld-mastra",
 			"realworld-better-auth",
 			"realworld-openclaw",
