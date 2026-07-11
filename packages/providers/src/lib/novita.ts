@@ -24,7 +24,7 @@ import type { CreateSandboxOptions } from "computesdk";
 // The raw e2b SDK, depended on directly: `@computesdk/e2b` re-exports it as `E2BSandbox` in its type
 // declarations only — the runtime ESM build ships just the factory — so the re-export can't be used.
 import type { SandboxConnectOpts, SandboxOpts } from "e2b";
-import { Sandbox as E2BSandbox } from "e2b";
+import { Sandbox as E2BSandbox, SandboxNotFoundError } from "e2b";
 import type { DirectProvider } from "./types.ts";
 
 /** Novita's E2B-compatible control-plane domain (what their docs set E2B_DOMAIN to). The bake
@@ -105,12 +105,14 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 			return { sandbox, sandboxId: sandbox.sandboxId };
 		},
 		getById: async (_config, sandboxId) => {
-			// "Not found" is a legitimate null; anything else (network, auth) propagates.
+			// Only a genuinely missing sandbox is the contract's `null`; anything else (auth, network)
+			// propagates — folding those into null would mask an invalid key or an outage as "not found".
 			try {
 				const sandbox = await E2BSandbox.connect(sandboxId, connection);
 				return { sandbox, sandboxId };
-			} catch {
-				return null;
+			} catch (error) {
+				if (error instanceof SandboxNotFoundError) return null;
+				throw error;
 			}
 		},
 		// One domain-aware DELETE via the SDK's static kill — no connect round-trip first (connect
