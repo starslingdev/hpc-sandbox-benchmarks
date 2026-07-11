@@ -53,9 +53,12 @@ export const metricDefSchema = type({
 	description: "string >= 1",
 	// For Metrics parsed from a PTS `<Result>`: the versionless test profile (e.g.
 	// "pts/node-web-tooling") and — for multi-result tests — the exact `<Description>` this Metric maps
-	// to. Each PTS `<Result>` maps to exactly one Metric. Both non-empty when present (an empty
-	// `test`/`description` would never match a real `<Result>`).
-	"pts?": { test: "string >= 1", "description?": "string >= 1" },
+	// to. Each PTS `<Result>` maps to exactly one Metric. All non-empty when present (an empty
+	// `test`/`description`/`scale` would never match a real `<Result>`). `scale` exists for tests whose
+	// parsers emit MULTIPLE `<Result>`s under one `<Description>` differing only in `<Scale>` (fio: the
+	// same run reports bandwidth in MB/s and IOPS) — it pins this Metric to the exact runtime `<Scale>`
+	// so the two results can't collapse onto one Metric. Absent when the description alone is unique.
+	"pts?": { test: "string >= 1", "description?": "string >= 1", "scale?": "string >= 1" },
 	// Primary-source definition (upstream PTS profile, methodology doc, …).
 	"sourceUrl?": "string",
 	// Economics Metrics derived from other Metrics + pricing, never parsed.

@@ -30,7 +30,84 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	stream_type_scale: { label: "STREAM Scale" },
 	stream_type_add: { label: "STREAM Add" },
 	// Disk dimension: Hardlink throughput (a repo-local PTS profile sourced from runner-benchmarking).
+	// Still the dimension's headline: the committed dataset carries only hardlink samples today, and
+	// the leaderboard omits a dimension whose headline has no samples — promote fio's 4K random-read
+	// IOPS once a matrix run publishes fio data.
 	hardlink_bogo_ops_per_s: { headline: true, label: "Hardlink throughput" },
+
+	// Disk dimension: pts/fio, pinned per scenario by the benchmark:disk:pts:fio-* producer tasks
+	// (Engine: Linux AIO, Job Count: 1, Disk Target: Default Test Directory; seq 1MB / rand 4KB). Only
+	// the 16 combinations those tasks can emit are curated — the generator's other fio entries keep
+	// their verbose draft labels and never receive samples. Direct is probed at run time (O_DIRECT
+	// fails on some sandbox filesystems), so each scenario has an O_DIRECT and a buffered variant —
+	// the mode travels in the metric identity rather than being silently mixed across providers.
+	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq read 1MB, O_DIRECT (MB/s)" },
+	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq read 1MB, O_DIRECT (IOPS)" },
+	fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq write 1MB, O_DIRECT (MB/s)" },
+	fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq write 1MB, O_DIRECT (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio rand read 4KB, O_DIRECT (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand read 4KB, O_DIRECT (MB/s)" },
+	fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio rand write 4KB, O_DIRECT (IOPS)" },
+	fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand write 4KB, O_DIRECT (MB/s)" },
+	fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq read 1MB, buffered (MB/s)" },
+	fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq read 1MB, buffered (IOPS)" },
+	fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq write 1MB, buffered (MB/s)" },
+	fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq write 1MB, buffered (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio rand read 4KB, buffered (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand read 4KB, buffered (MB/s)" },
+	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio rand write 4KB, buffered (IOPS)" },
+	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand write 4KB, buffered (MB/s)" },
+
+	// Network dimension: loopback TCP is its first (and headline) metric — a self-contained synthetic
+	// with no external endpoint, so it isolates the sandbox's network stack (virtio vs gVisor netstack
+	// vs host namespaces) from internet weather.
+	network_loopback_seconds: { headline: true, label: "Loopback TCP (10GB)" },
+
+	// Cpu dimension (cpu-generic suite): Zstd compression across its Compression Level matrix — the
+	// classic CPU-throughput synthetic, run over every level in batch mode. Two metrics per level
+	// (compress/decompress via AppendToArgumentsDescription). node-web-tooling keeps the cpu headline.
+	compress_zstd_compression_level_3_compression_speed: { label: "Zstd 3 compress" },
+	compress_zstd_compression_level_3_decompression_speed: { label: "Zstd 3 decompress" },
+	compress_zstd_compression_level_3_long_mode_compression_speed: {
+		label: "Zstd 3 (long) compress",
+	},
+	compress_zstd_compression_level_3_long_mode_decompression_speed: {
+		label: "Zstd 3 (long) decompress",
+	},
+	compress_zstd_compression_level_8_compression_speed: { label: "Zstd 8 compress" },
+	compress_zstd_compression_level_8_decompression_speed: { label: "Zstd 8 decompress" },
+	compress_zstd_compression_level_8_long_mode_compression_speed: {
+		label: "Zstd 8 (long) compress",
+	},
+	compress_zstd_compression_level_8_long_mode_decompression_speed: {
+		label: "Zstd 8 (long) decompress",
+	},
+	compress_zstd_compression_level_12_compression_speed: { label: "Zstd 12 compress" },
+	compress_zstd_compression_level_12_decompression_speed: { label: "Zstd 12 decompress" },
+	compress_zstd_compression_level_19_compression_speed: { label: "Zstd 19 compress" },
+	compress_zstd_compression_level_19_decompression_speed: { label: "Zstd 19 decompress" },
+	compress_zstd_compression_level_19_long_mode_compression_speed: {
+		label: "Zstd 19 (long) compress",
+	},
+	compress_zstd_compression_level_19_long_mode_decompression_speed: {
+		label: "Zstd 19 (long) decompress",
+	},
 
 	// Realworld dimension (ENG-135/137): mastra-ai/mastra run through its own CI tasks, a repo-local
 	// PTS profile with a Task option axis. TestType System's default dimension is corrected to

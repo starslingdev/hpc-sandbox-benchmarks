@@ -106,10 +106,34 @@ describe("metric catalog", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});
 
-	it("throws when a dimension has no headline metric", () => {
-		// `network` is the dimension still without any metrics (economics and realworld are now
-		// populated + headlined too).
-		expect(() => headlineMetric("network")).toThrow();
+	it("resolves the Loopback TCP headline for the network dimension (last unpopulated axis)", () => {
+		// network was the one dimension still without metrics; network-loopback populates it. With that,
+		// every Dimension is populated + headlined, so headlineMetric's no-headline throw is no longer
+		// reachable through the real catalog (it stays guarded by the one-headline load check).
+		const metric = headlineMetric("network");
+		expect(metric.id).toBe("network_loopback_seconds");
+		expect(metric.label).toBe("Loopback TCP (10GB)");
+		expect(metric.direction).toBe("LIB");
+		// Single-result wildcard: no pts.description (so the byte-match gate needs no recorded composite).
+		expect(metric.pts).toEqual({ test: "pts/network-loopback" });
+	});
+
+	it("resolves fio's scale-pinned twin metrics for one description (disk dimension)", () => {
+		const mbps = getMetric(
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+		);
+		const iops = getMetric(
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+		);
+		const description =
+			"Type: Random Read - Engine: Linux AIO - Direct: Yes - Block Size: 4KB - Job Count: 1 - Disk Target: Default Test Directory";
+		expect(mbps?.pts).toEqual({ test: "pts/fio", description, scale: "MB/s" });
+		expect(iops?.pts).toEqual({ test: "pts/fio", description, scale: "IOPS" });
+		expect(mbps?.unit).toBe("MB/s");
+		expect(iops?.unit).toBe("IOPS");
+		// Both HIB from the parser-level <ResultProportion> (fio has no profile-level <Proportion>).
+		expect(mbps?.direction).toBe("HIB");
+		expect(iops?.direction).toBe("HIB");
 	});
 });
 
@@ -158,6 +182,54 @@ describe("catalogSchema PTS-mapping invariant", () => {
 			catalogSchema.assert([
 				{ ...base, id: "a", pts: { test: "pts/a" } },
 				{ ...base, id: "b", pts: { test: "pts/a", description: "Foo" } },
+			]),
+		).toThrow();
+	});
+
+	it("accepts twin descriptions disambiguated by distinct pts.scale pins (fio)", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{
+					...base,
+					id: "b",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "IOPS" },
+				},
+			]),
+		).not.toThrow();
+	});
+
+	it("rejects twin descriptions when one lacks a pts.scale pin", () => {
+		// The description-only matcher arm would resolve a result to the unpinned twin arbitrarily.
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{ ...base, id: "b", pts: { test: "pts/fio", description: "Type: Random Read" } },
+			]),
+		).toThrow();
+	});
+
+	it("rejects twin descriptions carrying the SAME pts.scale pin", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{
+					...base,
+					id: "b",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
 			]),
 		).toThrow();
 	});

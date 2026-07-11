@@ -24,6 +24,7 @@ function serializeDef(def: MetricDef): string {
 		const pts = [`test: ${JSON.stringify(def.pts.test)}`];
 		if (def.pts.description !== undefined)
 			pts.push(`description: ${JSON.stringify(def.pts.description)}`);
+		if (def.pts.scale !== undefined) pts.push(`scale: ${JSON.stringify(def.pts.scale)}`);
 		parts.push(`pts: { ${pts.join(", ")} }`);
 	}
 	if (def.sourceUrl !== undefined) parts.push(`sourceUrl: ${JSON.stringify(def.sourceUrl)}`);

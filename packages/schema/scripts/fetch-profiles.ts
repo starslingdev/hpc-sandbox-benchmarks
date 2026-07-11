@@ -45,6 +45,19 @@ const PROFILES = [
 	// synthesized pts.description strings are byte-match-proven by a recorded composite golden fixture
 	// (sourced from runner-benchmarking's stream-1.3.5 run; versionless join is `pts/stream` either way).
 	"stream-1.3.4",
+	// Disk dimension — fio's option matrix (Type × Engine × Direct × Block Size × Job Count × Disk
+	// Target) is fully enumerated into the catalog; the disk suite's producer tasks pin one combination
+	// per scenario via PRESET_OPTIONS (unrun combinations simply never receive samples). Each
+	// combination emits TWO <Result>s under one <Description> (bandwidth MB/s + IOPS), disambiguated by
+	// the generator's `pts.scale` pins and proven by a recorded composite golden fixture.
+	"fio-2.1.0",
+	// Network dimension — single-result (sys.time monitor, no <Option> matrix), so it generates one
+	// description-less wildcard entry (zero byte-match risk).
+	"network-loopback-1.0.1",
+	// Cpu dimension — Zstd compression across its Compression Level matrix; two parsers per level
+	// (Compression/Decompression Speed via AppendToArgumentsDescription), byte-match-proven by a
+	// recorded composite golden fixture.
+	"compress-zstd-1.6.0",
 ] as const;
 
 // Only these definition files feed the generator; siblings (downloads.xml, install.sh) are ignored.

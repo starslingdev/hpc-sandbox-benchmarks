@@ -42,15 +42,20 @@ if (orphanedOverrides.length > 0) {
  * The Catalog schema: every entry's shape PLUS the PTS-mapping invariant the runtime relies on. The
  * `.narrow` makes the dangerous catalog shape UNCONSTRUCTABLE so `ptsResultToMetric`'s wildcard
  * fallback (pts.ts) is safe by construction rather than by reviewer vigilance — for any one PTS test:
- *   1. at most one description-less wildcard entry, and
- *   2. a wildcard never coexists with description-bearing entries.
- * Either would let a result's `<Description>` that matches no specific entry fall to the wildcard and
- * be misattributed; forbidding the shape at load (deterministic, CI-caught) removes that path.
+ *   1. at most one description-less wildcard entry,
+ *   2. a wildcard never coexists with description-bearing entries, and
+ *   3. entries sharing a `<Description>` are disambiguated by DISTINCT `pts.scale` pins on every one
+ *      of them (fio: the same run posts a bandwidth and an IOPS `<Result>` under one description) —
+ *      never a scale-less twin the description-first matcher would resolve arbitrarily.
+ * Any of these would let a `<Result>` be misattributed (fall to the wrong twin or the wildcard);
+ * forbidding the shape at load (deterministic, CI-caught) removes that path.
  * Exported so the invariant is unit-testable against crafted catalogs, independent of the singleton.
  */
 export const catalogSchema = metricDefSchema.array().narrow((cat, ctx) => {
 	const wildcardTests = new Set<string>();
 	const describedTests = new Set<string>();
+	// (test, description) -> the pts.scale pins seen for that description (undefined = no pin).
+	const scalesByDescription = new Map<string, (string | undefined)[]>();
 	for (const metric of cat) {
 		if (!metric.pts) continue;
 		if (metric.pts.description === undefined) {
@@ -62,12 +67,25 @@ export const catalogSchema = metricDefSchema.array().narrow((cat, ctx) => {
 			wildcardTests.add(metric.pts.test);
 		} else {
 			describedTests.add(metric.pts.test);
+			const key = JSON.stringify([metric.pts.test, metric.pts.description]);
+			const scales = scalesByDescription.get(key) ?? [];
+			scales.push(metric.pts.scale);
+			scalesByDescription.set(key, scales);
 		}
 	}
 	for (const test of wildcardTests) {
 		if (describedTests.has(test)) {
 			return ctx.mustBe(
 				`no description-bearing entries alongside the description-less wildcard for "${test}"`,
+			);
+		}
+	}
+	for (const [key, scales] of scalesByDescription) {
+		if (scales.length < 2) continue;
+		const defined = scales.filter((scale): scale is string => scale !== undefined);
+		if (defined.length < scales.length || new Set(defined).size !== scales.length) {
+			return ctx.mustBe(
+				`entries sharing a description disambiguated by distinct pts.scale pins on all of them (${key})`,
 			);
 		}
 	}

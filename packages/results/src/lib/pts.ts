@@ -76,7 +76,7 @@ for (const metric of METRIC_CATALOG) {
 
 /**
  * Map a parsed Result onto the Metric Catalog by its versionless test (and `<Description>` for
- * multi-result tests).
+ * multi-result tests, plus `<Scale>` where the catalog pins one).
  */
 export function ptsResultToMetric(result: PtsResult): PtsMapping {
 	const test = versionlessTest(result.Identifier);
@@ -87,8 +87,22 @@ export function ptsResultToMetric(result: PtsResult): PtsMapping {
 	// The catalog invariant (`catalogSchema` .narrow, catalog.ts) guarantees a wildcard never coexists
 	// with description-bearing entries for the same test, so the fallback can't misattribute a
 	// non-matching `<Description>`: if a wildcard matched, it is that test's only entry.
+	//
+	// Scale-pinned entries (fio: one run posts bandwidth AND IOPS `<Result>`s under one description)
+	// additionally require `<Scale>` to byte-match their pin. The same invariant guarantees a pinned
+	// description never coexists with an unpinned twin, so the description-only arm below can't steal
+	// a result that belongs to a pinned entry — and a pinned description whose `<Scale>` matches no
+	// pin falls through to `uncatalogued` (an honest straggler) rather than the nearest twin.
 	const def =
-		forTest.find((metric) => metric.pts?.description === description) ??
+		forTest.find(
+			(metric) =>
+				metric.pts?.description === description &&
+				metric.pts.scale !== undefined &&
+				metric.pts.scale === result.Scale,
+		) ??
+		forTest.find(
+			(metric) => metric.pts?.description === description && metric.pts?.scale === undefined,
+		) ??
 		forTest.find((metric) => metric.pts?.description === undefined);
 	return def
 		? { kind: "matched", def, samples: resultSamples(result) }
