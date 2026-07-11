@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+// The stock wrapper factory, imported so the novita test can prove the connection methods were
+// actually REPLACED (identity inequality against an unpatched instance's methods table).
+import { e2b } from "@computesdk/e2b";
 import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
 import { config, novitaCompute, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
@@ -40,15 +43,25 @@ describe("@sandbox-benchmarks/providers", () => {
 	});
 
 	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
-		// Construction must accept an nvta_-prefixed key (the stock wrapper's create() rejects those)
-		// and still expose the universal manager surface the harness drives, with the mispointed
-		// snapshot/template managers removed (their every call would reconnect to e2b.dev). This also
-		// exercises the patch's runtime shape assertion, so a wrapper upgrade that moves the internal
-		// methods table fails here instead of mid-run.
+		// Construction must accept an nvta_-prefixed key and still expose the universal manager surface
+		// the harness drives, with the mispointed snapshot/template managers removed (their every call
+		// would reconnect to e2b.dev). This also exercises the patch's runtime shape assertion, so a
+		// wrapper upgrade that moves the internal methods table fails here instead of mid-run.
 		const compute = novitaCompute("nvta_unit-test-key");
 		expect(typeof compute.sandbox.create).toBe("function");
 		expect(typeof compute.sandbox.destroy).toBe("function");
 		expect(typeof compute.sandbox.list).toBe("function");
+		// The stock wrapper's connection methods (whose create() enforces the e2b_ prefix and whose
+		// every call omits the domain) must have been REPLACED, not just still-callable — a stock
+		// `create` is also `typeof "function"`, so compare the internal methods table against an
+		// unpatched wrapper's by identity. Reaches the same internal seam the patch itself asserts.
+		const methodsOf = (p: unknown) =>
+			(p as { sandbox: { methods: Record<string, unknown> } }).sandbox.methods;
+		const stock = methodsOf(e2b({ apiKey: "e2b_unit-test-key" }));
+		const patched = methodsOf(compute);
+		for (const method of ["create", "getById", "destroy", "list"] as const) {
+			expect(patched[method]).not.toBe(stock[method]);
+		}
 		expect(compute.snapshot).toBeUndefined();
 		// `template` is a runtime property of the generated provider (computesdk's type doesn't model
 		// it), so reach through a structural cast to pin its removal too.

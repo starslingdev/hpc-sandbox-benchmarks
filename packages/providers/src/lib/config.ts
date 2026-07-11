@@ -78,8 +78,9 @@ const e2bTemplateCandidate = `${e2bTemplateVersion}${CANDIDATE_SUFFIX}`;
 const daytonaSnapshotDefault = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
 const daytonaSnapshotCandidate = `${daytonaSnapshotDefault}${CANDIDATE_SUFFIX}`;
 // The novita template lives on Novita's E2B-compatible control plane (a separate namespace from
-// e2b.dev), so it reuses the same version-scoped artifact name as the e2b template.
-const novitaTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
+// e2b.dev), so it reuses the same version-scoped artifact name as the e2b template — aliased, not
+// recomputed, so a change to the e2b naming formula can't silently break the shared-name invariant.
+const novitaTemplateVersion = e2bTemplateVersion;
 const novitaTemplateCandidate = `${novitaTemplateVersion}${CANDIDATE_SUFFIX}`;
 
 // 3. The single, fully-typed config object. Everything that needs config imports THIS.
