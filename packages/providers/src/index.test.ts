@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
+// The stock wrapper factory, imported so the novita test can prove the connection methods were
+// actually REPLACED (identity inequality against an unpatched instance's methods table).
+import { e2b } from "@computesdk/e2b";
 import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
-import { config, providers } from "./index.ts";
+import { config, NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
@@ -37,6 +40,58 @@ describe("@sandbox-benchmarks/providers", () => {
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		});
+	});
+
+	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
+		// Construction must accept an nvta_-prefixed key and still expose the universal manager surface
+		// the harness drives, with the mispointed snapshot/template managers removed (their every call
+		// would reconnect to e2b.dev). This also exercises the patch's runtime shape assertion, so a
+		// wrapper upgrade that moves the internal methods table fails here instead of mid-run.
+		const compute = novitaCompute("nvta_unit-test-key");
+		expect(typeof compute.sandbox.create).toBe("function");
+		expect(typeof compute.sandbox.destroy).toBe("function");
+		expect(typeof compute.sandbox.list).toBe("function");
+		// The stock wrapper's connection methods (whose create() enforces the e2b_ prefix and whose
+		// every call omits the domain) must have been REPLACED, not just still-callable — a stock
+		// `create` is also `typeof "function"`, so compare the internal methods table against an
+		// unpatched wrapper's by identity. Reaches the same internal seam the patch itself asserts.
+		const methodsOf = (p: unknown) =>
+			(p as { sandbox: { methods: Record<string, unknown> } }).sandbox.methods;
+		const stock = methodsOf(e2b({ apiKey: "e2b_unit-test-key" }));
+		const patched = methodsOf(compute);
+		for (const method of ["create", "getById", "destroy", "list"] as const) {
+			// Precondition that makes the inequality below meaningful: the wrapper hands every instance
+			// the SAME module-level methods object (defineProvider passes it by reference). If an upgrade
+			// switches to per-instance closures, this fails loudly instead of the patch check passing
+			// vacuously against a never-shared function.
+			expect(methodsOf(e2b({ apiKey: "e2b_unit-test-key" }))[method]).toBe(stock[method]);
+			expect(patched[method]).not.toBe(stock[method]);
+		}
+		expect(compute.snapshot).toBeUndefined();
+		// `template` is a runtime property of the generated provider (computesdk's type doesn't model
+		// it), so reach through a structural cast to pin its removal too.
+		expect((compute as { template?: unknown }).template).toBeUndefined();
+	});
+
+	it("refuses construction without a key, unconditionally", () => {
+		// The factory (not env state) owns the missing-credential error, so this holds even in an
+		// environment where NOVITA_API_KEY is set.
+		expect(() => novitaCompute(undefined)).toThrow(/NOVITA_API_KEY/);
+	});
+
+	it("keeps the account key in the SDK's apiKey channel — never in connection headers", () => {
+		// SECURITY PIN: the SDK replays connection `headers` into the envd RPC transport, so a
+		// credential riding `headers` is delivered to the daemon INSIDE the guest on every
+		// command/filesystem call — where TLS has already terminated and any root process (including
+		// a supply-chain-compromised benchmark suite) can read it. `apiKey` becomes an X-API-KEY
+		// header inside the control-plane ApiClient only. If a future revision reintroduces a headers
+		// override (e.g. to dodge a key-format guard again), this must fail.
+		const connection = novitaConnection("nvta_unit-test-key");
+		expect(connection).toEqual({
+			apiKey: "nvta_unit-test-key",
+			domain: NOVITA_E2B_DOMAIN,
+		});
+		expect(connection).not.toHaveProperty("headers");
 	});
 
 	it("boots e2b from the configured template and daytona from the configured snapshot", () => {

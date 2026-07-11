@@ -35,7 +35,7 @@
         "@sandbox-benchmarks/schema": "workspace:*",
         "@sandbox-benchmarks/templates": "workspace:*",
         "dotenv": "catalog:",
-        "e2b": "catalog:computesdk",
+        "novita-sandbox": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -68,7 +68,7 @@
         "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
         "computesdk": "catalog:computesdk",
-        "e2b": "catalog:computesdk",
+        "novita-sandbox": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -167,7 +167,7 @@
       "@computesdk/provider": "2.1.3",
       "@daytona/sdk": "0.192.0",
       "computesdk": "4.1.3",
-      "e2b": "2.27.1",
+      "novita-sandbox": "2.0.6",
     },
     "xml": {
       "@nodable/compact-builder": "1.0.9",
@@ -876,6 +876,8 @@
     "node-gyp-build-optional-packages": ["node-gyp-build-optional-packages@5.1.1", "", { "dependencies": { "detect-libc": "^2.0.1" }, "bin": { "node-gyp-build-optional-packages": "bin.js", "node-gyp-build-optional-packages-test": "build-test.js", "node-gyp-build-optional-packages-optional": "optional.js" } }, "sha512-+P72GAjVAbTxjjwUmwjVrqrdZROD4nf8KgpBoDxqXXTiYZZt/ud60dE5yvCSr9lRO8e8yv6kgJIC0K0PfZFVQw=="],
 
     "normalize-path": ["normalize-path@3.0.0", "", {}, "sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA=="],
+
+    "novita-sandbox": ["novita-sandbox@2.0.6", "", { "dependencies": { "@bufbuild/protobuf": "^2.6.2", "@connectrpc/connect": "2.0.0-rc.3", "@connectrpc/connect-web": "2.0.0-rc.3", "chalk": "^5.3.0", "compare-versions": "^6.1.0", "dockerfile-ast": "^0.7.1", "glob": "^11.1.0", "openapi-fetch": "^0.14.1", "platform": "^1.3.6", "tar": "^7.5.11" } }, "sha512-EkCHu4nvwCRUaYAtMas/uh+AiYLTFrk5lkbpSNmDp8+dHU/nGQ6SL6BY7VBUseUc37sVojU8rUjRKUAazq0yLA=="],
 
     "object-assign": ["object-assign@4.1.1", "", {}, "sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg=="],
 

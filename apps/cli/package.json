@@ -29,7 +29,7 @@
     "@sandbox-benchmarks/harness": "workspace:*",
     "@sandbox-benchmarks/results": "workspace:*",
     "@daytona/sdk": "catalog:computesdk",
-    "e2b": "catalog:computesdk",
+    "novita-sandbox": "catalog:computesdk",
     "dotenv": "catalog:"
   },
   "devDependencies": {

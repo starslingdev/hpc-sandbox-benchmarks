@@ -19,7 +19,7 @@
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
     "computesdk": "catalog:computesdk",
-    "e2b": "catalog:computesdk"
+    "novita-sandbox": "catalog:computesdk"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
