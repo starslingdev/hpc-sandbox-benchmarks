@@ -5,6 +5,8 @@ import { candidateCreateOptions } from "./validate.ts";
 const refs: CandidateRefs = {
 	e2bTemplateCandidate: "tc-v1-candidate",
 	daytonaSnapshotCandidate: "snap-v1-candidate",
+	// Distinct from the e2b value so the novita case fails if it ever reads the e2b field.
+	novitaTemplateCandidate: "tc-v1-novita-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
 	daytonaTarget: "zen5",
 };
@@ -24,6 +26,12 @@ describe("candidateCreateOptions", () => {
 	it("omits the daytona target when the region has none (account default)", () => {
 		expect(candidateCreateOptions("daytona", { ...refs, daytonaTarget: undefined })).toEqual({
 			snapshotId: "snap-v1-candidate",
+		});
+	});
+
+	it("points novita at its candidate template via snapshotId (e2b mapping, Novita's control plane)", () => {
+		expect(candidateCreateOptions("novita", refs)).toEqual({
+			snapshotId: "tc-v1-novita-candidate",
 		});
 	});
 

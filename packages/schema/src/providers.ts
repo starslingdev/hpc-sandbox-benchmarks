@@ -11,7 +11,7 @@
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel";
+export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel" | "novita";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -274,6 +274,49 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// ENG-64 validates this end-to-end against a live multi-minute suite.
 			streaming: false,
 			syncCapMs: null,
+			detachedPoll: true,
+		},
+	},
+	novita: {
+		displayName: "Novita",
+		website: "https://novita.ai/sandbox",
+		// Novita's control plane speaks the E2B protocol, so the harness drives it through the e2b
+		// wrapper with its connection methods backed by novita-sandbox (Novita's fork of the e2b SDK)
+		// — see the novita adapter's compat module.
+		sdkPackage: "@computesdk/e2b",
+		requiredEnvVars: ["NOVITA_API_KEY"],
+		isolation: {
+			technology: "microVM",
+			notes:
+				"Dedicated microVM per sandbox; E2B-protocol-compatible control plane (us-phx-1.sandbox.novita.ai) driven through @computesdk/e2b with novita-sandbox-backed connection methods.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// $0.0000098/vCPU-s × 3600 = $0.03528/vCPU-hr; $0.0000032/GiB-s × 3600 = $0.01152/GiB-hr.
+			usdPerVcpuHour: 0.03528,
+			usdPerGibHour: 0.01152,
+			// Storage $0.00009/GB-hr with the first 60 GB free — the 20 GB target spec sits inside the
+			// free tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
+			usdPerGibDiskHour: 0,
+			notes:
+				"Published per-second rates (exact): $0.0000098/vCPU-s, $0.0000032/GiB-s. Storage $0.00009/GB-hr (first 60 GB free).",
+			sourceUrl: "https://novita.ai/sandbox",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"E2B-compatible API; boots the pre-baked toolchain template created on Novita's control plane by the bake pipeline (novita-sandbox Template.build). Pay-as-you-go caps sandboxes at 8 vCPU / 8 GB RAM. Not yet a committed run.",
+		},
+		// E2B protocol: resources come from the template (cpu/memory pinned at template create), not
+		// the per-sandbox create() call.
+		specPinning: "fixed",
+		transport: {
+			// Same wrapper (and therefore the same caps) as e2b: `sandbox.commands.run(cmd)` with no
+			// options applies the E2B SDK's default 60s command timeout, and onStdout/onStderr are never
+			// passed through. The compat API exposes the same filesystem + `background`, so detached+poll
+			// is the long-step path.
+			streaming: false,
+			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
 	},

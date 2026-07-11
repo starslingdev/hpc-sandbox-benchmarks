@@ -10,7 +10,7 @@ on:
         description: Provider to benchmark
         type: choice
         default: daytona
-        options: [daytona, e2b, modal, blaxel]
+        options: [daytona, e2b, modal, blaxel, novita]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
@@ -94,6 +94,7 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           BL_API_KEY: ${{ secrets.BL_API_KEY }}
           BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
+          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results

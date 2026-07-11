@@ -21,7 +21,13 @@ describe("@sandbox-benchmarks/schema providers", () => {
 	it("pins the registered provider id set (the independent oracle downstream joins derive from)", () => {
 		// Deliberately hardcoded: downstream tests (e.g. results' normalizeResultsTree) assert their
 		// output against PROVIDERS, so this pin is what makes an accidental registry removal loud.
-		expect(PROVIDERS.map((p) => p.id).sort()).toEqual(["blaxel", "daytona", "e2b", "modal"]);
+		expect(PROVIDERS.map((p) => p.id).sort()).toEqual([
+			"blaxel",
+			"daytona",
+			"e2b",
+			"modal",
+			"novita",
+		]);
 	});
 
 	it("keeps the registry well-formed (unique ids, non-empty required env vars)", () => {
@@ -103,6 +109,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			modal: 0.070956 * TARGET_SPEC.vcpus + 0.024192 * TARGET_SPEC.memoryGb,
 			e2b: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * TARGET_SPEC.memoryGb,
 			daytona: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * Math.max(0, TARGET_SPEC.memoryGb - 5),
+			novita: 0.03528 * TARGET_SPEC.vcpus + 0.01152 * TARGET_SPEC.memoryGb,
 		};
 		for (const [id, cost] of Object.entries(expected)) {
 			const meta = getProvider(id);
@@ -120,6 +127,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		expect(diskRate("daytona")).toBeCloseTo(0.000108); // $0.00000003/GiB-s × 3600
 		expect(diskRate("modal")).toBe(0); // volumes free under the 1 TiB/mo tier
 		expect(diskRate("e2b")).toBeUndefined(); // no published overage rate
+		expect(diskRate("novita")).toBe(0); // 20 GB target spec inside the 60 GB free tier
 	});
 
 	it("returns null when a provider has no vetted rate", () => {
