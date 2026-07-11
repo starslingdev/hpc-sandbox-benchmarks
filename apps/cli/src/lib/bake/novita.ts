@@ -1,23 +1,45 @@
-// Bake the novita template: the e2b bake pointed at Novita's E2B-protocol-compatible control plane.
-// Novita's compatibility API accepts the stock e2b CLI (their docs: set E2B_DOMAIN=sandbox.novita.ai
-// and E2B_API_KEY=<Novita key>), so template creation is bakeE2bTemplate verbatim — same committed
-// Dockerfile, same generated e2b.toml, same remote-builder protocol — with only the domain and
-// credentials swapped for the spawned CLI. The template lands in Novita's namespace (independent of
-// e2b.dev), which is why it can reuse the same version-scoped artifact name.
-import { config, NOVITA_E2B_DOMAIN } from "@sandbox-benchmarks/providers";
-import { bakeE2bTemplate } from "./e2b.ts";
+// Bake the novita template: the e2b SDK's Template API pointed at Novita's E2B-protocol-compatible
+// control plane. The spawned-CLI path the e2b bake uses is a dead end for Novita twice over —
+// @e2b/cli ≥ 2.12 rejects `nvta_…` keys client-side before any request is made, and Novita's
+// control plane 404s the CLI's build route on the bare domain — so this bakes programmatically via
+// `Template.build` against the REGIONAL domain (see NOVITA_E2B_DOMAIN), which serves the full v2
+// build surface (verified 2026-07-11: 34s remote build). `fromImage(baseImage)` templates straight
+// from the pushed candidate base ref; the e2b variant Dockerfile's only deltas (validate-base +
+// OCI labels) don't ride along, which is acceptable because the template still provably derives
+// from the same validated, registry-pinned bytes. The template lands in Novita's namespace
+// (independent of e2b.dev), which is why it can reuse the same version-scoped artifact name.
+import { config, novitaConnection } from "@sandbox-benchmarks/providers";
+import { Template } from "e2b";
 import type { Log } from "./types.ts";
 
 /** Build the novita template `name` from `baseImage` on Novita's control plane. */
 export async function bakeNovitaTemplate(name: string, baseImage: string, log: Log): Promise<void> {
 	const apiKey = config.novita.apiKey;
 	// The bake loop gates on requiredEnvVars before calling this, so a missing key here means the
-	// loop's contract broke — fail loudly rather than let the CLI fall back to an e2b.dev session.
+	// loop's contract broke — fail loudly rather than let the SDK fall back to an e2b.dev session.
 	if (!apiKey) throw new Error("NOVITA_API_KEY is required to bake the novita template");
 
-	log(`novita template create ${name} via ${NOVITA_E2B_DOMAIN} (base ${baseImage})`);
-	await bakeE2bTemplate(name, baseImage, log, {
-		E2B_DOMAIN: NOVITA_E2B_DOMAIN,
-		E2B_API_KEY: apiKey,
+	const connection = novitaConnection(apiKey);
+	log(`novita Template.build ${name} via ${connection.domain} (base ${baseImage})`);
+	// Mask the PTS phoromatic units at template-build time, mirroring the base image's own mask
+	// (packages/templates/images/base/scripts/20-pts.sh). Novita boots the image with systemd as
+	// PID 1 exactly like e2b, and an unmasked phoromatic-client POWERS OFF the guest at t+300s
+	// (probed 2026-07-11 on a live Novita sandbox: dead at exactly 5:00; masked → survives).
+	// Redundant-but-idempotent once the base image ships the mask — kept so the novita template is
+	// protected even when it's rebuilt from a candidate base that predates the base-image fix.
+	const template = Template()
+		.fromImage(baseImage)
+		.runCmd(
+			"for unit in phoromatic-client phoromatic-server phoronix-result-server; do " +
+				'ln -sf /dev/null "/etc/systemd/system/$unit.service"; done',
+			// Build steps run as the template's default user; /etc needs root.
+			{ user: "root" },
+		);
+	const info = await Template.build(template, name, {
+		...connection,
+		cpuCount: config.targetSpec.vcpus,
+		memoryMB: config.targetSpec.memoryGb * 1024,
+		onBuildLogs: (entry) => log(String(entry)),
 	});
+	log(`novita template built: ${info.templateId} (build ${info.buildId})`);
 }

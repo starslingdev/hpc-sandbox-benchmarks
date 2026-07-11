@@ -35,6 +35,7 @@
         "@sandbox-benchmarks/schema": "workspace:*",
         "@sandbox-benchmarks/templates": "workspace:*",
         "dotenv": "catalog:",
+        "e2b": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",

@@ -4,8 +4,9 @@
 //
 // Two wrapper behaviours stand in the way, both confined to the config-taking connection methods:
 //
-//   1. `create()` rejects any key that doesn't start with `e2b_` (a client-side format guard), and
-//      Novita keys are `nvta_…`-prefixed.
+//   1. Both the wrapper's `create()` AND the raw e2b SDK's ApiClient reject any key that doesn't
+//      match `e2b_<hex>` (client-side format guards), and Novita keys are `nvta_…`-prefixed — see
+//      {@link novitaConnection} for the placeholder-plus-header-override that clears both.
 //   2. Every other connection method reaches the control plane via `{ apiKey }` with no `domain`,
 //      so it would hit e2b.dev instead of Novita (the e2b SDK only falls back to the E2B_DOMAIN env
 //      var, and mutating process-wide env from one provider's adapter would leak into a
@@ -27,9 +28,29 @@ import type { SandboxConnectOpts, SandboxOpts } from "e2b";
 import { Sandbox as E2BSandbox, SandboxNotFoundError } from "e2b";
 import type { DirectProvider } from "./types.ts";
 
-/** Novita's E2B-compatible control-plane domain (what their docs set E2B_DOMAIN to). The bake
- *  pipeline points the e2b CLI at the same domain to create the toolchain template there. */
-export const NOVITA_E2B_DOMAIN = "sandbox.novita.ai";
+/** Novita's E2B-compatible control-plane domain. REGIONAL, not the bare `sandbox.novita.ai` their
+ *  docs open with: the bare domain serves only a legacy slice of the API (template list works; the
+ *  v2 template-build routes 404 with "no matching operation was found"), while the regional domain
+ *  serves the full surface (probed 2026-07-11: an identical Template.build 404s on the bare domain
+ *  and succeeds on us-phx-1). Templates and sandboxes are region-scoped, so the bake and the
+ *  harness must agree on this value. */
+export const NOVITA_E2B_DOMAIN = "us-phx-1.sandbox.novita.ai";
+
+/** A dummy key matching the e2b SDK's client-side `e2b_<hex>` format check. The SDK validates
+ *  `apiKey`'s SHAPE before any request (ApiClient), so Novita's `nvta_…` keys throw locally — but
+ *  it spreads `headers` AFTER the `X-API-KEY` header it derives from `apiKey`, so the real Novita
+ *  credential rides a header override while this placeholder satisfies the format guard. */
+export const E2B_KEY_FORMAT_PLACEHOLDER = `e2b_${"0".repeat(40)}`;
+
+/** The connection options that authenticate against Novita despite the e2b SDK's key-shape guard:
+ *  placeholder `apiKey` for the client-side check, real key via the `X-API-KEY` header override. */
+export function novitaConnection(apiKey: string): SandboxConnectOpts {
+	return {
+		apiKey: E2B_KEY_FORMAT_PLACEHOLDER,
+		headers: { "X-API-KEY": apiKey },
+		domain: NOVITA_E2B_DOMAIN,
+	};
+}
 
 /** The connection-method half of the wrapper framework's sandbox method table — the exact slice
  *  this module replaces, typed by the framework so a wrapper upgrade that changes a signature is a
@@ -68,7 +89,7 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 	if (!apiKey) {
 		throw new Error("NOVITA_API_KEY is required to construct the novita provider");
 	}
-	const connection: SandboxConnectOpts = { apiKey, domain: NOVITA_E2B_DOMAIN };
+	const connection: SandboxConnectOpts = novitaConnection(apiKey);
 
 	const overrides: ConnectionMethods = {
 		// The wrapper's create minus the `e2b_` prefix guard, with Novita's domain pinned. Mirrors the
@@ -125,7 +146,10 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 		},
 		// The wrapper's list with the domain pinned — the harness's control-plane probe rides this.
 		// Deliberately NOT swallowing errors into [] (the stock wrapper does): a failed enumeration
-		// must surface as a probe skip, not publish a fast fake "success" sample.
+		// must surface as a probe skip, not publish a fast fake "success" sample. Single page on
+		// purpose, too: the lifecycle benchmark times ONE list round-trip as the control-plane-read
+		// metric — draining the paginator would time N requests and skew the sample (and nothing
+		// downstream enumerates sandboxes for cleanup; teardown works by id).
 		list: async (_config) => {
 			const paginator = E2BSandbox.list(connection);
 			const items = await paginator.nextItems();
