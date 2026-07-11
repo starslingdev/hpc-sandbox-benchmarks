@@ -15,9 +15,11 @@
     "@computesdk/daytona": "catalog:computesdk",
     "@computesdk/e2b": "catalog:computesdk",
     "@computesdk/modal": "catalog:computesdk",
+    "@computesdk/provider": "catalog:computesdk",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
-    "computesdk": "catalog:computesdk"
+    "computesdk": "catalog:computesdk",
+    "e2b": "catalog:computesdk"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
