@@ -120,6 +120,17 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:disk:all"],
 	},
+	// The network dimension: loopback TCP (10GB via nc) — self-contained, no external endpoint, so it
+	// isolates the sandbox's network stack from internet weather. The suite task also runs the
+	// latency/DNS/download probes (raw JSON provenance, no catalogued metrics).
+	network: {
+		setupPts: true,
+		commandTimeoutMinutes: 30,
+		timeoutMinutes: 40,
+		dimensions: ["network"],
+		metrics: ["network_loopback_seconds"],
+		commands: ["mise run benchmark:network:all"],
+	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
 	// each a repo-local PTS profile with a Task option axis. Budgets are starting points (tuned from
 	// smoke); mastra's task matrix is the narrowest (scoped to packages/core) but its monorepo has

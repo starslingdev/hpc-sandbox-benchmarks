@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#MISE description="DNS resolver identity and resolution timing for common registries"
+# Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
+# lib/bench.sh). Sandbox resolvers differ wildly (host stub vs provider DNS vs public), and slow
+# resolution taxes every clone/install a real CI job does.
+#
+# Each domain is resolved ONCE, with the structured record parsed from the same bytes the log shows —
+# a second dig for jc would measure a cache-warmed resolver query, systematically underreporting the
+# very number this probe exists to capture.
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "=== DNS Resolver ==="
+try cat /etc/resolv.conf
+
+echo ""
+echo "=== DNS Resolution ==="
+for domain in github.com registry.npmjs.org docker.io pypi.org rubygems.org; do
+	echo ""
+	echo "--- $domain ---"
+	if command -v dig &>/dev/null; then
+		out="$(dig "$domain" 2>/dev/null)" || out=""
+		if [ -z "$out" ]; then
+			echo "(dig failed)"
+			continue
+		fi
+		echo "$out"
+		# Structured output via jc (mise-managed in the toolchain image).
+		if command -v jc &>/dev/null; then
+			printf '%s\n' "$out" | jc --dig >"$(results_dir)/$(task_result_name "$domain").json" 2>/dev/null || true
+		fi
+	else
+		start=$(_now_ms)
+		getent hosts "$domain" >/dev/null 2>&1 || true
+		end=$(_now_ms)
+		echo "$domain: $((end - start))ms (getent)"
+	fi
+done

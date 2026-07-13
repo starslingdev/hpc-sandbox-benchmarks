@@ -27,6 +27,7 @@ on:
             system,
             memory,
             disk,
+            network,
             realworld-mastra,
             realworld-better-auth,
             realworld-openclaw,

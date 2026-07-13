@@ -24,6 +24,7 @@ describe("suite registry", () => {
 			"system",
 			"memory",
 			"disk",
+			"network",
 			"realworld-mastra",
 			"realworld-better-auth",
 			"realworld-openclaw",
@@ -42,6 +43,26 @@ describe("suite registry", () => {
 		} as const;
 		for (const [suiteName, ptsTest] of Object.entries(profileOf)) {
 			const fromCatalog = METRIC_CATALOG.filter((m) => m.pts?.test === ptsTest)
+				.map((m) => m.id)
+				.sort();
+			expect(fromCatalog.length).toBeGreaterThan(0);
+			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics];
+			expect(declared.sort()).toEqual(fromCatalog);
+		}
+	});
+
+	it("mirrors the full-matrix suites' metrics from the generated catalog (no hand-drift)", () => {
+		// network runs its profile's WHOLE option matrix in batch mode, so its declared list must
+		// equal the catalog's entries for the test — same both-directions pin as the realworld mirror
+		// above (a profile bump that adds/renames a combination fails here instead of silently
+		// stranding the list).
+		const profilesOf = {
+			network: ["pts/network-loopback"],
+		} as const;
+		for (const [suiteName, ptsTests] of Object.entries(profilesOf)) {
+			const fromCatalog = METRIC_CATALOG.filter(
+				(m) => m.pts && (ptsTests as readonly string[]).includes(m.pts.test),
+			)
 				.map((m) => m.id)
 				.sort();
 			expect(fromCatalog.length).toBeGreaterThan(0);
