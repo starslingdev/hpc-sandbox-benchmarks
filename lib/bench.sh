@@ -276,6 +276,15 @@ run_pts_benchmark() {
 		return 0
 	}
 
+	# Stamp the instant before the run: the composite search below must only accept output THIS
+	# batch-run wrote. Suites now run several PTS leaves in one sandbox (fio ×4 + hardlink; pybench +
+	# sqlite + pgbench ×2), so a bare "newest composite" would, when a later batch-run produces
+	# nothing, silently copy the PREVIOUS leaf's composite under this leaf's prefix — masking the
+	# failure AND suppressing the skip marker. (A merged-into result dir still matches: PTS rewrites
+	# composite.xml, updating its mtime past the stamp.)
+	local run_stamp
+	run_stamp="$(mktemp)"
+
 	bench_cmd "PTS: ${test_name}" "$prefix" phoronix-test-suite batch-run "$test_name"
 
 	# PTS saves results under <data-dir>/test-results/<name>/composite.xml. The name is set by
@@ -287,9 +296,12 @@ run_pts_benchmark() {
 		# `set -e`) and runs `ls -t` only when matches exist (so an empty match can't list `.` and copy a
 		# stray file). `ls -t` orders newest-first; head -1 takes it.
 		# Scope to benchmark-named result dirs (TEST_RESULTS_NAME=benchmark, plus PTS's -1/-2 suffixes)
-		# so a stray composite.xml under another result name can't be misattributed as suites accumulate.
-		xml_found=$(find "$pts_base" -path "*benchmark*/composite.xml" -exec ls -t {} + 2>/dev/null | head -1)
+		# so a stray composite.xml under another result name can't be misattributed as suites accumulate,
+		# and to files newer than the pre-run stamp so an earlier leaf's composite can't stand in for a
+		# failed run (see run_stamp above).
+		xml_found=$(find "$pts_base" -path "*benchmark*/composite.xml" -newer "$run_stamp" -exec ls -t {} + 2>/dev/null | head -1)
 	fi
+	rm -f "$run_stamp"
 	if [ -n "$xml_found" ] && [ -f "$xml_found" ]; then
 		cp "$xml_found" "$(results_dir)/${prefix}.xml" 2>/dev/null || true
 		echo "Structured result: ${prefix}.xml (from $(dirname "$xml_found"))"
@@ -329,7 +341,10 @@ fio_direct_choice() {
 	dir="$(pts_user_dir)"
 	mkdir -p "$dir"
 	probe="${dir}/.o-direct-probe"
-	if dd if=/dev/zero of="$probe" bs=512 count=1 oflag=direct >/dev/null 2>&1; then
+	# bs=4096, not 512: O_DIRECT requires logical-sector alignment, so a 512-byte write EINVALs on a
+	# 4Kn-sector filesystem even where the real scenarios' 4KB/1MB blocks would run fine. 4096 is
+	# aligned on both 512e and 4Kn and matches the smallest fio scenario block size.
+	if dd if=/dev/zero of="$probe" bs=4096 count=1 oflag=direct >/dev/null 2>&1; then
 		rm -f "$probe"
 		echo "Yes"
 	else

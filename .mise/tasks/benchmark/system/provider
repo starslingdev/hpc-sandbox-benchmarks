@@ -64,7 +64,9 @@ cymru_lookup() {
 	rev="$(printf '%s' "$ip" | awk -F. '{print $4"."$3"."$2"."$1}')"
 	origin="$(dig +short +time=2 +tries=1 "${rev}.origin.asn.cymru.com" TXT 2>/dev/null | tr -d '"' | head -1)"
 	[ -z "$origin" ] && return 1
-	asn="$(printf '%s' "$origin" | awk -F'|' '{gsub(/ /,"",$1); print $1}')"
+	# Field 1 lists SEVERAL space-separated origin ASNs for a MOAS prefix ("23028 23029 | …"); take
+	# the first — stripping the spaces instead would fabricate a nonexistent AS number.
+	asn="$(printf '%s' "$origin" | awk -F'|' '{split($1, parts, " "); print parts[1]}')"
 	[ -z "$asn" ] && return 1
 	PREFIX="$(printf '%s' "$origin" | awk -F'|' '{gsub(/^ +| +$/,"",$2); print $2}')"
 	# Field 5 of the AS record is "HANDLE - Org Name, CC"; take the org half.
