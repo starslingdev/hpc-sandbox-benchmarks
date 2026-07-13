@@ -73,15 +73,18 @@ describe("suite registry", () => {
 		}
 	});
 
-	it("pins the fio PINNED-subset suite to its curated override keys", () => {
-		// disk (fio) deliberately declares a SUBSET of its profile's catalogued combinations — the
-		// ones the producer tasks pin via PRESET_OPTIONS — so a catalog mirror can't gate it. Every
-		// declared subset id is also a curated pts-overrides key (only the producible combinations get
-		// short labels), so equality against the override keys catches a wrong-axis id here: with the
-		// full matrix catalogued, a typo'd engine or block size would otherwise pass the suite
-		// contract and just never receive samples.
+	it("pins the fio/pgbench PINNED-subset suites to their curated override keys", () => {
+		// disk (fio) and system (pgbench) deliberately declare a SUBSET of their profiles' catalogued
+		// combinations — the ones the producer tasks pin via PRESET_OPTIONS — so a catalog mirror
+		// can't gate them. Every declared subset id is also a curated pts-overrides key (only the
+		// producible combinations get short labels), so equality against the override keys catches a
+		// wrong-axis id here: with the full matrix catalogued, a typo'd engine or block size would
+		// otherwise pass the suite contract and just never receive samples.
 		const overrideKeys = Object.keys(ptsOverrides);
-		const subsets = [{ suite: "disk", prefix: "fio_" }] as const;
+		const subsets = [
+			{ suite: "disk", prefix: "fio_" },
+			{ suite: "system", prefix: "pgbench_" },
+		] as const;
 		for (const { suite, prefix } of subsets) {
 			const declared: string[] = SUITES[suite].metrics.filter((id) => id.startsWith(prefix)).sort();
 			const curated = overrideKeys.filter((id) => id.startsWith(prefix)).sort();
