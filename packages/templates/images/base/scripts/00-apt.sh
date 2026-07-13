@@ -22,13 +22,14 @@ apt-get update
 # > escalation, and shipping sudo would only widen the attack surface. --no-install-recommends keeps
 # > the set to exactly what the benchmark suites need.
 # > libaio-dev: fio's libaio engine (the disk suite's pinned scenarios) — needed at bake time, when
-# > 20-pts.sh pre-builds fio. dnsutils + jq: the benchmark:system:provider probe (Team Cymru DNS
-# > whois via dig, ipinfo JSON via jq). netcat-openbsd: the pts/network-loopback runner (`dd | nc`).
+# > 20-pts.sh pre-builds fio. libicu-dev: postgres's configure hard-requires ICU (pgbench pre-build).
+# > dnsutils + jq: the benchmark:system:provider probe (Team Cymru DNS whois via dig, ipinfo JSON via
+# > jq). netcat-openbsd: the pts/network-loopback runner (`dd | nc`).
 apt-get install -y --no-install-recommends \
 	curl git ca-certificates \
 	build-essential \
 	php-cli php-xml \
-	flex bison bc libelf-dev libssl-dev libaio-dev \
+	flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev \
 	dnsutils jq netcat-openbsd \
 	stress-ng tar gzip xz-utils unzip procps
 

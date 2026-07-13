@@ -3,7 +3,7 @@
 // fresh generator run. Curation (headline/label/dimension) is layered separately in pts-overrides.ts.
 import type { MetricDef } from "./metrics.ts";
 
-export const ptsGenerated: MetricDef[] = [
+const chunk1: MetricDef[] = [
 	{
 		id: "c_ray_resolution_1080p_rays_per_pixel_16",
 		dimension: "cpu",
@@ -4420,6 +4420,9 @@ export const ptsGenerated: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk2: MetricDef[] = [
 	{
 		id: "fio_type_random_read_engine_windows_aio_direct_yes_block_size_512kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -8920,6 +8923,9 @@ export const ptsGenerated: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk3: MetricDef[] = [
 	{
 		id: "fio_type_sequential_read_engine_io_uring_direct_no_block_size_16kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -13420,6 +13426,9 @@ export const ptsGenerated: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk4: MetricDef[] = [
 	{
 		id: "fio_type_sequential_write_engine_io_uring_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -17543,6 +17552,2386 @@ export const ptsGenerated: MetricDef[] = [
 		sourceUrl: "https://v8.github.io/web-tooling-benchmark/",
 	},
 	{
+		id: "pgbench_scaling_factor_10000_clients_1000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 1000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_1000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 1000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_1000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 1000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_1000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label:
+			"PostgreSQL - Scaling Factor: 10000 - Clients: 1000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_100_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 100 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 100 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_100_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 100 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 100 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_100_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 100 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 100 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_100_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 100 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 100 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_1_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 1 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_1_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 1 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_1_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 1 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_1_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 1 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 1 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_250_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 250 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 250 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_250_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 250 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 250 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_250_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 250 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 250 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_250_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 250 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 250 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_5000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 5000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 5000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_5000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 5000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 5000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_5000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 5000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 5000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_5000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label:
+			"PostgreSQL - Scaling Factor: 10000 - Clients: 5000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 5000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+];
+
+const chunk5: MetricDef[] = [
+	{
+		id: "pgbench_scaling_factor_10000_clients_500_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 500 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 500 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_500_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 500 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 500 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_500_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 500 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 500 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_500_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 500 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 500 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_50_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 50 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 50 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_50_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 50 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 50 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_50_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 50 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 50 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_50_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 50 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 50 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_800_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 800 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 800 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_800_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 800 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 800 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_800_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 800 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 800 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_10000_clients_800_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 10000 - Clients: 800 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 10000 - Clients: 800 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_100_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 100 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 100 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_100_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 100 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 100 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_100_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 100 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 100 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_100_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 100 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 100 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_1_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 1 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 1 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_250_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 250 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 250 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_250_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 250 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 250 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_250_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 250 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 250 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_250_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 250 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 250 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_5000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 5000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 5000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_5000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 5000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 5000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_5000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 5000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 5000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_5000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 5000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 5000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_500_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 500 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 500 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_500_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 500 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 500 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_500_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 500 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 500 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_500_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 500 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 500 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_50_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 50 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 50 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_50_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 50 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 50 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_50_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 50 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 50 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_50_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 50 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 50 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_800_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 800 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 800 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_800_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 800 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 800 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_800_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 800 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 800 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1000_clients_800_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1000 - Clients: 800 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1000 - Clients: 800 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 1000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 1000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 1000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 1000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_100_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 100 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 100 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_100_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 100 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 100 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_100_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 100 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 100 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_100_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 100 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 100 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 100 - Clients: 1 - Mode: Read Only" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 1 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 1 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_1_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 1 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 1 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_250_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 250 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 250 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_250_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 250 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 250 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_250_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 250 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 250 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_250_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 250 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 250 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_5000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 5000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 5000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_5000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 5000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 5000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_5000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 5000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 5000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_5000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 5000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 5000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_500_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 500 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 500 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_500_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 500 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 500 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_500_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 500 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 500 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_500_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 500 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 500 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_50_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 50 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 50 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 50 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 50 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_50_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 50 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 50 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 50 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 50 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_800_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 800 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 800 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_800_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 800 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 800 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_800_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 800 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 800 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_100_clients_800_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 100 - Clients: 800 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 800 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 1000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 1000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 1000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 1000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_100_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 100 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 100 - Mode: Read Only" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_100_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 100 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 100 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_100_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 100 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 100 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_100_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 100 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 100 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 1 - Mode: Read Only" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 1 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 1 - Mode: Read Write" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_1_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 1 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 1 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_250_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 250 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 250 - Mode: Read Only" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_250_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 250 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 250 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_250_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 250 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 250 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_250_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 250 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 250 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_5000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 5000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 5000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_5000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 5000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 5000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_5000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 5000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 5000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_5000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 5000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 5000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_500_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 500 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 500 - Mode: Read Only" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_500_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 500 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 500 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_500_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 500 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 500 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_500_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 500 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 500 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_50_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 50 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 50 - Mode: Read Only" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_50_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 50 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 50 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_50_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 50 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 50 - Mode: Read Write" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_50_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 50 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 50 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_800_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 800 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: { test: "pts/pgbench", description: "Scaling Factor: 1 - Clients: 800 - Mode: Read Only" },
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_800_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 800 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 800 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_800_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 800 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 800 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_1_clients_800_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 1 - Clients: 800 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 1 - Clients: 800 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 1000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 1000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 1000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label:
+			"PostgreSQL - Scaling Factor: 25000 - Clients: 1000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_100_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 100 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 100 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_100_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 100 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 100 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_100_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 100 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 100 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_100_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 100 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 100 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 1 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 1 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 1 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_1_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 1 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 1 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_250_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 250 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 250 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_250_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 250 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 250 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_250_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 250 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 250 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_250_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 250 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 250 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_5000_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 5000 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 5000 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_5000_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 5000 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 5000 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_5000_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 5000 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 5000 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_5000_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label:
+			"PostgreSQL - Scaling Factor: 25000 - Clients: 5000 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 5000 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_500_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 500 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 500 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_500_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 500 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 500 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_500_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 500 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 500 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_500_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 500 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 500 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_50_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 50 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 50 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_50_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 50 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 50 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_50_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 50 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 50 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_50_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 50 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 50 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_800_mode_read_only",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 800 - Mode: Read Only",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 800 - Mode: Read Only",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_800_mode_read_only_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 800 - Mode: Read Only - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 800 - Mode: Read Only - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_800_mode_read_write",
+		dimension: "system",
+		unit: "TPS",
+		direction: "HIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 800 - Mode: Read Write",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 800 - Mode: Read Write",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
+		id: "pgbench_scaling_factor_25000_clients_800_mode_read_write_average_latency",
+		dimension: "system",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "PostgreSQL - Scaling Factor: 25000 - Clients: 800 - Mode: Read Write - Average Latency",
+		description:
+			"This is a benchmark of PostgreSQL using the integrated pgbench for facilitating the database benchmarks.",
+		pts: {
+			test: "pts/pgbench",
+			description: "Scaling Factor: 25000 - Clients: 800 - Mode: Read Write - Average Latency",
+		},
+		sourceUrl: "https://www.postgresql.org/",
+	},
+	{
 		id: "pybench_milliseconds",
 		dimension: "system",
 		unit: "Milliseconds",
@@ -17887,3 +20276,5 @@ export const ptsGenerated: MetricDef[] = [
 		sourceUrl: "http://www.cs.virginia.edu/stream/",
 	},
 ];
+
+export const ptsGenerated: MetricDef[] = [...chunk1, ...chunk2, ...chunk3, ...chunk4, ...chunk5];

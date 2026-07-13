@@ -20,5 +20,6 @@ ensure_pts || true
 
 run_task benchmark:system:pts:pybench
 run_task benchmark:system:pts:sqlite-speedtest
+run_task benchmark:system:pts:pgbench
 
 summary

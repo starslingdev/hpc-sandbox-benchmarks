@@ -95,9 +95,10 @@ export function setupSteps(suite: Suite): SetupStep[] {
 				[
 					`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite_${PTS_VERSION}_all.deb" -o /tmp/phoronix-test-suite.deb`,
 					"$SUDO apt-get update -qq",
-					// libaio-dev: fio's libaio engine (disk suite). dnsutils+jq: the system provider probe.
-					// netcat-openbsd: network-loopback's dd|nc runner. All no-ops on the pre-baked image.
-					"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev libaio-dev dnsutils jq netcat-openbsd",
+					// libaio-dev: fio's libaio engine (disk suite). libicu-dev: postgres's configure hard-
+					// requires ICU (pgbench). dnsutils+jq: the system provider probe. netcat-openbsd:
+					// network-loopback's dd|nc runner. All no-ops on the pre-baked image.
+					"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd",
 					"($SUDO dpkg -i /tmp/phoronix-test-suite.deb || $SUDO apt-get install -y -qq -f)",
 				].join(" && ") +
 				"; }; phoronix-test-suite version",

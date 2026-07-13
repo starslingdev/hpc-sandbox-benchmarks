@@ -25,7 +25,7 @@ phoronix-test-suite version
 # > (network-loopback has no downloads — its runner is a generated dd|nc script.)
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
 phoronix-test-suite make-download-cache \
-	build-linux-kernel build-nodejs c-ray compress-zstd fio git node-web-tooling pyperformance
+	build-linux-kernel build-nodejs c-ray compress-zstd fio git node-web-tooling pgbench pyperformance
 
 # > Pre-install the small profiles so every provider runs byte-identical harnesses. PTS_INSTALL_TESTS
 # > is a space-separated list, so split it into an array to pass each profile as its own argument.

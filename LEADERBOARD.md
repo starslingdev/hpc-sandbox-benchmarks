@@ -13,16 +13,6 @@ Headline: **Node.js web tooling** (runs/s, higher is better)
 | 1 | Daytona | 19.16 | 18.77 – 19.56 | 15 | — | — |
 | 2 | Modal | 7.505 | 7.31 – 7.71 | 14 | <0.001 | <0.001 |
 
-## disk
-
-Headline: **Hardlink throughput** (bogo ops/s, higher is better)
-
-| Rank | Provider | Hardlink throughput (bogo ops/s) | 95% CI | n | p vs. above | p (KS) |
-| ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 26.16 | 25.89 – 26.29 | 3 | — | — |
-| 2 | Modal | 1.5 | 1.46 – 1.53 | 15 | 0.0088 | 0.0038 |
-| 2 | E2B | 1.46 | 1.46 – 1.5 | 3 | 0.40 (tied) | 0.70 |
-
 ## memory
 
 Headline: **STREAM Triad** (MB/s, higher is better)

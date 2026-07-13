@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite v10.8.4-->
+<!--
+  Recorded pts/pgbench-1.15.0 composite for the golden byte-match gate (design par. 3.7): the
+  read-only scenario the benchmark:system:pts:pgbench producer task pins via PRESET_OPTIONS
+  (Scaling Factor: 100, Clients: 50). One run posts a TPS and an Average Latency <Result> (the
+  profile's two parsers, distinct descriptions via AppendToArgumentsDescription).
+
+  REAL output of Phoronix Test Suite 10.8.4 building and running PostgreSQL 17.0 fully locally
+  (server + pgbench client in one machine - the same in-sandbox topology the suite measures),
+  recorded under FORCE_TIMES_TO_RUN=1 with RunAllTestCombinations off - the exact batch path
+  run_pinned_pts drives. The postgresql-17.0.tar.bz2 source was staged from the upstream git tag
+  (release host unreachable from the recording container) and is byte-identical to the canonical
+  release tarball (sha256 verified against the profile's downloads.xml pin). The <System>
+  host-fingerprint block was removed (recording-container identity, not result data); the <Result>
+  nodes are verbatim.
+-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>fixture-pgbench-ro</Title>
+    <LastModified>2026-07-13 03:51:17</LastModified>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+    <Description>docker testing on Ubuntu 24.04 via the Phoronix Test Suite.</Description>
+  </Generated>
+  <Result>
+    <Identifier>pts/pgbench-1.15.0</Identifier>
+    <Title>PostgreSQL</Title>
+    <AppVersion>17</AppVersion>
+    <Arguments>-s 100 -c 50 -S</Arguments>
+    <Description>Scaling Factor: 100 - Clients: 50 - Mode: Read Only</Description>
+    <Scale>TPS</Scale>
+    <Proportion>HIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>70329</Value>
+        <RawString>70329.161236</RawString>
+        <JSON>{"compiler-options":{"compiler-type":"CC","compiler":"gcc","compiler-options":"-fno-strict-aliasing -fwrapv -O2 -lpq -lpgcommon -lpgport -lm"},"test-run-times":"173.38"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>pts/pgbench-1.15.0</Identifier>
+    <Title>PostgreSQL</Title>
+    <AppVersion>17</AppVersion>
+    <Arguments>-s 100 -c 50 -S</Arguments>
+    <Description>Scaling Factor: 100 - Clients: 50 - Mode: Read Only - Average Latency</Description>
+    <Scale>ms</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>0.711</Value>
+        <RawString></RawString>
+        <JSON>{"compiler-options":{"compiler-type":"CC","compiler":"gcc","compiler-options":"-fno-strict-aliasing -fwrapv -O2 -lpq -lpgcommon -lpgport -lm"},"test-run-times":"173.38"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

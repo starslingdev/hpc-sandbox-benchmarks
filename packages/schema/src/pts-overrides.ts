@@ -23,6 +23,16 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// rounds it out. Both single-result wildcards, so curation only supplies labels + the one headline.
 	pybench_milliseconds: { headline: true, label: "PyBench" },
 	sqlite_speedtest_seconds: { label: "SQLite Speedtest" },
+	// System dimension: PostgreSQL via pgbench, pinned by the producer to scale 100 / 50 clients per
+	// mode (the generator's other 156 combination entries keep draft labels and never get samples).
+	pgbench_scaling_factor_100_clients_50_mode_read_only: { label: "pgbench RO (s100, 50c)" },
+	pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency: {
+		label: "pgbench RO latency (s100, 50c)",
+	},
+	pgbench_scaling_factor_100_clients_50_mode_read_write: { label: "pgbench RW (s100, 50c)" },
+	pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency: {
+		label: "pgbench RW latency (s100, 50c)",
+	},
 	// Memory dimension: STREAM Triad is the canonical headline (the fused multiply-add is the most
 	// representative memory-bandwidth figure); the other three operations round out the matrix.
 	stream_type_triad: { headline: true, label: "STREAM Triad" },
@@ -30,10 +40,7 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	stream_type_scale: { label: "STREAM Scale" },
 	stream_type_add: { label: "STREAM Add" },
 	// Disk dimension: Hardlink throughput (a repo-local PTS profile sourced from runner-benchmarking).
-	// Still the dimension's headline: the committed dataset carries only hardlink samples today, and
-	// the leaderboard omits a dimension whose headline has no samples — promote fio's 4K random-read
-	// IOPS once a matrix run publishes fio data.
-	hardlink_bogo_ops_per_s: { headline: true, label: "Hardlink throughput" },
+	hardlink_bogo_ops_per_s: { label: "Hardlink throughput" },
 
 	// Disk dimension: pts/fio, pinned per scenario by the benchmark:disk:pts:fio-* producer tasks
 	// (Engine: Linux AIO, Job Count: 1, Disk Target: Default Test Directory; seq 1MB / rand 4KB). Only
@@ -41,6 +48,8 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// their verbose draft labels and never receive samples. Direct is probed at run time (O_DIRECT
 	// fails on some sandbox filesystems), so each scenario has an O_DIRECT and a buffered variant —
 	// the mode travels in the metric identity rather than being silently mixed across providers.
+	// 4K random-read IOPS is the dimension's headline — the canonical disk figure. Until a matrix run
+	// publishes fio samples the leaderboard omits its disk row (headline with no samples).
 	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio seq read 1MB, O_DIRECT (MB/s)" },
 	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
@@ -50,7 +59,7 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
 		{ label: "fio seq write 1MB, O_DIRECT (IOPS)" },
 	fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
-		{ label: "fio rand read 4KB, O_DIRECT (IOPS)" },
+		{ headline: true, label: "fio rand read 4KB, O_DIRECT (IOPS)" },
 	fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio rand read 4KB, O_DIRECT (MB/s)" },
 	fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:

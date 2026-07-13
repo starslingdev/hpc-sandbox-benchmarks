@@ -58,6 +58,12 @@ const PROFILES = [
 	// (Compression/Decompression Speed via AppendToArgumentsDescription), byte-match-proven by a
 	// recorded composite golden fixture.
 	"compress-zstd-1.6.0",
+	// System dimension — PostgreSQL via its integrated pgbench, fully in-sandbox (the profile builds
+	// postgres 17.0 and runs server + client locally, so every provider measures the same topology).
+	// The producer pins one (Scaling Factor, Clients) point per mode via PRESET_OPTIONS; two parsers
+	// per combination (TPS + Average Latency, distinct descriptions), proven by a recorded fixture.
+	// 1.15.0 is the newest pgbench profile published upstream at REF.
+	"pgbench-1.15.0",
 ] as const;
 
 // Only these definition files feed the generator; siblings (downloads.xml, install.sh) are ignored.

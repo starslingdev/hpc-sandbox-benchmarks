@@ -75,6 +75,8 @@ export const rawPins = {
 	ptsDebSha256: "be81f71fc0382a7725dc88f4a18f013d1c3f6939d440629231d392a11816feca",
 	// > Small profiles pre-installed so sandbox wall time goes to benchmarks, not setup: the cpu-node
 	// > + system profiles, plus the cpu-generic (c-ray, compress-zstd), disk (fio) and network
-	// > (network-loopback) suites' profiles — fio and zstd are source builds worth paying at bake time.
-	ptsInstallTests: "node-web-tooling pyperformance c-ray compress-zstd fio network-loopback",
+	// > (network-loopback) suites' profiles — fio, zstd and especially postgres (pgbench) are source
+	// > builds worth paying at bake time.
+	ptsInstallTests:
+		"node-web-tooling pyperformance c-ray compress-zstd fio network-loopback pgbench",
 } satisfies Record<keyof Pins, string>;
