@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Run system benchmarks (PTS PyBench + SQLite Speedtest)"
+#MISE description="Run system benchmarks (provider identity probe + PTS PyBench, SQLite Speedtest, pgbench)"
 # Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
 # (error-mode conventions: lib/bench.sh).
 set -uo pipefail
@@ -11,10 +11,17 @@ echo "  SYSTEM BENCHMARKS"
 echo "========================================"
 
 # One install/configure attempt for the PTS children; each leaf skips fast via its own `command -v`
-# guard and writes a skip record if PTS is still unavailable.
+# guard and writes a skip record if PTS is still unavailable. Runs BEFORE the provider probe: on a
+# stock image its apt fallback is also what installs the probe's own tools (dig from dnsutils, jq),
+# so ordering the probe first would silently degrade the identity lookups to their fallbacks.
 ensure_pts || true
+
+# Who/where is this sandbox actually running? Egress ASN + geo + SMBIOS identity — provenance for
+# every number the PTS children below produce (a tolerant probe: it never fails the suite).
+run_task benchmark:system:provider
 
 run_task benchmark:system:pts:pybench
 run_task benchmark:system:pts:sqlite-speedtest
+run_task benchmark:system:pts:pgbench
 
 summary
