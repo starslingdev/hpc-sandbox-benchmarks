@@ -82,5 +82,22 @@ describe("golden composite byte-match (design §3.7)", () => {
 			});
 			expect(uncatalogued.filter((id) => !DROPPED_RESULTS.has(id))).toEqual([]);
 		});
+
+		it(`every matched <Result> in ${name} landed on the RIGHT metric (scale/description byte-match)`, () => {
+			// "kind === matched" alone is scale-blind: with scale-pinned twins (fio's MB/s + IOPS under
+			// one description), a routing bug that SWAPS the twins still reports matched for both and the
+			// disk headline would silently rank bandwidth numbers as IOPS. Assert the matched def's pins
+			// byte-equal the recorded result's fields, so twin misattribution turns this gate red.
+			for (const result of parsePtsComposite(xml).PhoronixTestSuite.Result) {
+				const mapping = ptsResultToMetric(result);
+				if (mapping.kind !== "matched") continue;
+				if (mapping.def.pts?.scale !== undefined) {
+					expect(result.Scale).toBe(mapping.def.pts.scale);
+				}
+				if (mapping.def.pts?.description !== undefined) {
+					expect(result.Description).toBe(mapping.def.pts.description);
+				}
+			}
+		});
 	}
 });

@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite v10.8.4-->
+<!--
+  Recorded pts/fio-2.1.0 composite for the golden byte-match gate (design par. 3.7): the sequential-write (1MB, O_DIRECT)
+  scenario the benchmark:disk:pts:fio-* producer tasks pin via PRESET_OPTIONS (Engine: Linux AIO,
+  Job Count: 1, Disk Target: Default Test Directory).
+
+  REAL output of Phoronix Test Suite 10.8.4 running fio 3.36 (both at the pinned upstream versions
+  this repo vendors), recorded under FORCE_TIMES_TO_RUN=1 with RunAllTestCombinations off - the exact
+  batch path run_fio_pts drives. One run posts TWO <Result>s under the SAME <Description>, split only
+  by <Scale> (MB/s bandwidth + IOPS) - the shape the catalog's pts.scale pins disambiguate; this
+  fixture proves both the synthesized description strings and that scale routing against reality.
+  The <System> host-fingerprint block was removed (recording-container identity, not result data);
+  the <Result> nodes are verbatim.
+-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>fixture-fio-seq-write</Title>
+    <LastModified>2026-07-11 22:34:06</LastModified>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+    <Description>docker testing on Ubuntu 24.04 via the Phoronix Test Suite.</Description>
+  </Generated>
+  <Result>
+    <Identifier>pts/fio-2.1.0</Identifier>
+    <Title>Flexible IO Tester</Title>
+    <AppVersion>3.36</AppVersion>
+    <Arguments>write libaio 1 1m 1</Arguments>
+    <Description>Type: Sequential Write - Engine: Linux AIO - Direct: Yes - Block Size: 1MB - Job Count: 1 - Disk Target: Default Test Directory</Description>
+    <Scale>MB/s</Scale>
+    <Proportion>HIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>953</Value>
+        <RawString></RawString>
+        <JSON>{"compiler-options":{"compiler-type":"CC","compiler":"gcc","compiler-options":"-rdynamic -lz -lm -laio -lpthread -ldl -std=gnu99 -ffast-math -include -O3 -fcommon -march=native"},"test-run-times":"85.76"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>pts/fio-2.1.0</Identifier>
+    <Title>Flexible IO Tester</Title>
+    <AppVersion>3.36</AppVersion>
+    <Arguments>write libaio 1 1m 1</Arguments>
+    <Description>Type: Sequential Write - Engine: Linux AIO - Direct: Yes - Block Size: 1MB - Job Count: 1 - Disk Target: Default Test Directory</Description>
+    <Scale>IOPS</Scale>
+    <Proportion>HIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>951</Value>
+        <RawString></RawString>
+        <JSON>{"compiler-options":{"compiler-type":"CC","compiler":"gcc","compiler-options":"-rdynamic -lz -lm -laio -lpthread -ldl -std=gnu99 -ffast-math -include -O3 -fcommon -march=native"},"test-run-times":"85.76"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

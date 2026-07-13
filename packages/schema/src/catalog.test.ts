@@ -93,13 +93,39 @@ describe("metric catalog", () => {
 		).toEqual(["stream_type_add", "stream_type_copy", "stream_type_scale", "stream_type_triad"]);
 	});
 
-	it("resolves the Hardlink headline for the disk dimension via a non-`pts/` (local) join key", () => {
+	it("resolves the fio 4K random-read IOPS headline for the disk dimension", () => {
 		const metric = headlineMetric("disk");
-		expect(metric.id).toBe("hardlink_bogo_ops_per_s");
-		expect(metric.label).toBe("Hardlink throughput");
+		expect(metric.id).toBe(
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+		);
+		expect(metric.label).toBe("fio rand read 4KB, O_DIRECT (IOPS)");
 		expect(metric.direction).toBe("HIB");
+	});
+
+	it("resolves hardlink via a non-`pts/` (local) join key", () => {
+		const metric = getMetric("hardlink_bogo_ops_per_s");
+		expect(metric?.label).toBe("Hardlink throughput");
+		expect(metric?.direction).toBe("HIB");
 		// Repo-local profile: the join prefix is `local/`, proving the generator is source-segment-aware.
-		expect(metric.pts).toEqual({ test: "local/hardlink" });
+		expect(metric?.pts).toEqual({ test: "local/hardlink" });
+	});
+
+	it("resolves fio's scale-pinned twin metrics for one description (disk dimension)", () => {
+		const mbps = getMetric(
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+		);
+		const iops = getMetric(
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+		);
+		const description =
+			"Type: Random Read - Engine: Linux AIO - Direct: Yes - Block Size: 4KB - Job Count: 1 - Disk Target: Default Test Directory";
+		expect(mbps?.pts).toEqual({ test: "pts/fio", description, scale: "MB/s" });
+		expect(iops?.pts).toEqual({ test: "pts/fio", description, scale: "IOPS" });
+		expect(mbps?.unit).toBe("MB/s");
+		expect(iops?.unit).toBe("IOPS");
+		// Both HIB from the parser-level <ResultProportion> (fio has no profile-level <Proportion>).
+		expect(mbps?.direction).toBe("HIB");
+		expect(iops?.direction).toBe("HIB");
 	});
 
 	it("returns undefined for an unknown metric id", () => {

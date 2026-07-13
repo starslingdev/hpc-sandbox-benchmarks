@@ -30,7 +30,52 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	stream_type_scale: { label: "STREAM Scale" },
 	stream_type_add: { label: "STREAM Add" },
 	// Disk dimension: Hardlink throughput (a repo-local PTS profile sourced from runner-benchmarking).
-	hardlink_bogo_ops_per_s: { headline: true, label: "Hardlink throughput" },
+	hardlink_bogo_ops_per_s: { label: "Hardlink throughput" },
+
+	// Disk dimension: pts/fio, pinned per scenario by the benchmark:disk:pts:fio-* producer tasks
+	// (Engine: Linux AIO, Job Count: 1, Disk Target: Default Test Directory; seq 1MB / rand 4KB). Only
+	// the 16 combinations those tasks can emit are curated — the generator's other fio entries keep
+	// their verbose draft labels and never receive samples. Direct is probed at run time (O_DIRECT
+	// fails on some sandbox filesystems), so each scenario has an O_DIRECT and a buffered variant —
+	// the mode travels in the metric identity rather than being silently mixed across providers.
+	// 4K random-read IOPS (O_DIRECT) is the dimension's headline — the canonical disk figure, and the
+	// honest one (buffered 4K reads measure the page cache). Two consequences of pinning the headline
+	// to the O_DIRECT variant: the leaderboard omits its disk row until a matrix run publishes fio
+	// samples, and a provider whose filesystem rejects O_DIRECT (the probe's buffered fallback) never
+	// appears in the disk ranking — its numbers land on the buffered variants, visible on the Run but
+	// deliberately not ranked against O_DIRECT results.
+	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq read 1MB, O_DIRECT (MB/s)" },
+	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq read 1MB, O_DIRECT (IOPS)" },
+	fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq write 1MB, O_DIRECT (MB/s)" },
+	fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq write 1MB, O_DIRECT (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ headline: true, label: "fio rand read 4KB, O_DIRECT (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand read 4KB, O_DIRECT (MB/s)" },
+	fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio rand write 4KB, O_DIRECT (IOPS)" },
+	fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand write 4KB, O_DIRECT (MB/s)" },
+	fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq read 1MB, buffered (MB/s)" },
+	fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq read 1MB, buffered (IOPS)" },
+	fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio seq write 1MB, buffered (MB/s)" },
+	fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio seq write 1MB, buffered (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio rand read 4KB, buffered (IOPS)" },
+	fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand read 4KB, buffered (MB/s)" },
+	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
+		{ label: "fio rand write 4KB, buffered (IOPS)" },
+	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
+		{ label: "fio rand write 4KB, buffered (MB/s)" },
 
 	// Realworld dimension (ENG-135/137): mastra-ai/mastra run through its own CI tasks, a repo-local
 	// PTS profile with a Task option axis. TestType System's default dimension is corrected to
