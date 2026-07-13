@@ -95,7 +95,14 @@ export function setupSteps(suite: Suite): SetupStep[] {
 				[
 					`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite_${PTS_VERSION}_all.deb" -o /tmp/phoronix-test-suite.deb`,
 					"$SUDO apt-get update -qq",
-					"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev",
+					// libaio-dev: fio's libaio engine (disk suite). libicu-dev: postgres's configure hard-
+					// requires ICU (pgbench). dnsutils+jq: the system provider probe. netcat-openbsd:
+					// network-loopback's dd|nc runner. stress-ng: the disk suite's hardlink leaf (its
+					// `command -v` guard would otherwise silently skip the metric on stock images while
+					// the fio metrics report). All no-ops on the pre-baked image.
+					// tcl: sqlite-speedtest builds SQLite from source and its Makefile shells out to `tclsh`
+					// to generate opcodes.h — without it the build dies with exit 127 and PTS still exits 0.
+					"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng",
 					"($SUDO dpkg -i /tmp/phoronix-test-suite.deb || $SUDO apt-get install -y -qq -f)",
 				].join(" && ") +
 				"; }; phoronix-test-suite version",
