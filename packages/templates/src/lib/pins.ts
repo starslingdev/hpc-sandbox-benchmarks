@@ -73,14 +73,14 @@ export const rawPins = {
 	// > Phoronix Test Suite release + self-computed sha256 of phoronix-test-suite_10.8.4_all.deb.
 	ptsVersion: "10.8.4",
 	ptsDebSha256: "be81f71fc0382a7725dc88f4a18f013d1c3f6939d440629231d392a11816feca",
-	// > Small profiles pre-installed so sandbox wall time goes to benchmarks, not setup: the cpu-node
-	// > + system profiles, plus the cpu-generic (c-ray, compress-zstd), disk (fio) and network
-	// > (network-loopback) suites' profiles — fio, zstd and especially postgres (pgbench) are source
-	// > builds worth paying at bake time. The five new profiles are VERSION-PINNED to exactly what
-	// > their leaves batch-run (and the catalog vendors): an unversioned name resolves to whatever
-	// > upstream's latest is at bake time, so a profile bump would silently void the pre-install and
-	// > push the source build (postgres!) into every sandbox. node-web-tooling/pyperformance leaves
-	// > are versionless, so their bake entries stay versionless to match.
+	// > Profiles pre-installed (and download-cached — 20-pts.sh derives its cache list from this) so
+	// > sandbox wall time goes to benchmarks, not setup: every PTS profile a registered suite runs —
+	// > fio, zstd and especially postgres (pgbench) are source builds worth paying at bake time. The
+	// > five new profiles are VERSION-PINNED to exactly what their leaves batch-run (and the catalog
+	// > vendors): an unversioned name resolves to whatever upstream's latest is at bake time, so a
+	// > profile bump would silently void the pre-install and push the source build (postgres!) into
+	// > every sandbox. node-web-tooling/pyperformance/pybench/sqlite-speedtest leaves are versionless,
+	// > so their bake entries stay versionless to match.
 	ptsInstallTests:
-		"node-web-tooling pyperformance c-ray-2.0.0 compress-zstd-1.6.0 fio-2.1.0 network-loopback-1.0.1 pgbench-1.15.0",
+		"node-web-tooling pybench pyperformance sqlite-speedtest c-ray-2.0.0 compress-zstd-1.6.0 fio-2.1.0 network-loopback-1.0.1 pgbench-1.15.0",
 } satisfies Record<keyof Pins, string>;

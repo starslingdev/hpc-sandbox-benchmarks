@@ -22,17 +22,17 @@ phoronix-test-suite version
 
 # > Non-interactive batch config + offline download caches for the PTS-backed suites. Build and
 # > sandboxes both run as root, so PTS state under /var/lib/phoronix-test-suite lines up at runtime.
-# > (network-loopback has no downloads — its runner is a generated dd|nc script.) The versioned names
-# > mirror what the leaves batch-run: an unversioned name caches whatever upstream's latest is at bake
-# > time, which stops matching the pinned runtime request the moment upstream bumps the profile.
+# > PTS_INSTALL_TESTS is a space-separated list, so split it into an array to pass each profile as
+# > its own argument.
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
-phoronix-test-suite make-download-cache \
-	build-linux-kernel build-nodejs c-ray-2.0.0 compress-zstd-1.6.0 fio-2.1.0 git node-web-tooling \
-	pgbench-1.15.0 pyperformance
-
-# > Pre-install the small profiles so every provider runs byte-identical harnesses. PTS_INSTALL_TESTS
-# > is a space-separated list, so split it into an array to pass each profile as its own argument.
 read -ra pts_tests <<< "${PTS_INSTALL_TESTS}"
+
+# > The cache list DERIVES from the install list (same versioned pins — caching a different version
+# > than the leaves batch-run would send the runtime back to the network), plus the build-* / git
+# > profiles that are cached-but-not-preinstalled (too big to bake; not yet wired to a suite).
+# > network-loopback has no downloads and no-ops here harmlessly.
+phoronix-test-suite make-download-cache \
+	build-linux-kernel build-nodejs git "${pts_tests[@]}"
 # > PTS exits 0 even when an install fails, so verify each requested profile actually reports installed.
 # > A versionless entry anchors on "<test>-<version>" (versions start with a digit); a version-pinned
 # > entry ("fio-2.1.0") already ends in its version, so it anchors on a following non-name character
