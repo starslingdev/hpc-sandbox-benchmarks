@@ -22,19 +22,24 @@ phoronix-test-suite version
 
 # > Non-interactive batch config + offline download caches for the PTS-backed suites. Build and
 # > sandboxes both run as root, so PTS state under /var/lib/phoronix-test-suite lines up at runtime.
-# > (network-loopback has no downloads — its runner is a generated dd|nc script.)
+# > (network-loopback has no downloads — its runner is a generated dd|nc script.) The versioned names
+# > mirror what the leaves batch-run: an unversioned name caches whatever upstream's latest is at bake
+# > time, which stops matching the pinned runtime request the moment upstream bumps the profile.
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
 phoronix-test-suite make-download-cache \
-	build-linux-kernel build-nodejs c-ray compress-zstd fio git node-web-tooling pgbench pyperformance
+	build-linux-kernel build-nodejs c-ray-2.0.0 compress-zstd-1.6.0 fio-2.1.0 git node-web-tooling \
+	pgbench-1.15.0 pyperformance
 
 # > Pre-install the small profiles so every provider runs byte-identical harnesses. PTS_INSTALL_TESTS
 # > is a space-separated list, so split it into an array to pass each profile as its own argument.
 read -ra pts_tests <<< "${PTS_INSTALL_TESTS}"
 # > PTS exits 0 even when an install fails, so verify each requested profile actually reports installed.
-# > Anchor on "<test>-<version>" (versions start with a digit) so a profile name that is a substring of
-# > another installed test can't mask its own install failure.
+# > A versionless entry anchors on "<test>-<version>" (versions start with a digit); a version-pinned
+# > entry ("fio-2.1.0") already ends in its version, so it anchors on a following non-name character
+# > instead. Both keep a profile name that is a substring of another installed test from masking its
+# > own install failure.
 phoronix-test-suite batch-install "${pts_tests[@]}"
 installed="$(phoronix-test-suite list-installed-tests)"
 for t in "${pts_tests[@]}"; do
-	echo "${installed}" | grep -qE "(^|/)${t}-[0-9]" || { echo "ERROR: pre-install of ${t} failed" >&2; exit 1; }
+	echo "${installed}" | grep -qE "(^|/)${t}(-[0-9]|[[:space:]]|$)" || { echo "ERROR: pre-install of ${t} failed" >&2; exit 1; }
 done

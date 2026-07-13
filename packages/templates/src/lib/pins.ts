@@ -76,7 +76,11 @@ export const rawPins = {
 	// > Small profiles pre-installed so sandbox wall time goes to benchmarks, not setup: the cpu-node
 	// > + system profiles, plus the cpu-generic (c-ray, compress-zstd), disk (fio) and network
 	// > (network-loopback) suites' profiles — fio, zstd and especially postgres (pgbench) are source
-	// > builds worth paying at bake time.
+	// > builds worth paying at bake time. The five new profiles are VERSION-PINNED to exactly what
+	// > their leaves batch-run (and the catalog vendors): an unversioned name resolves to whatever
+	// > upstream's latest is at bake time, so a profile bump would silently void the pre-install and
+	// > push the source build (postgres!) into every sandbox. node-web-tooling/pyperformance leaves
+	// > are versionless, so their bake entries stay versionless to match.
 	ptsInstallTests:
-		"node-web-tooling pyperformance c-ray compress-zstd fio network-loopback pgbench",
+		"node-web-tooling pyperformance c-ray-2.0.0 compress-zstd-1.6.0 fio-2.1.0 network-loopback-1.0.1 pgbench-1.15.0",
 } satisfies Record<keyof Pins, string>;

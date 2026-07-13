@@ -48,8 +48,12 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// their verbose draft labels and never receive samples. Direct is probed at run time (O_DIRECT
 	// fails on some sandbox filesystems), so each scenario has an O_DIRECT and a buffered variant —
 	// the mode travels in the metric identity rather than being silently mixed across providers.
-	// 4K random-read IOPS is the dimension's headline — the canonical disk figure. Until a matrix run
-	// publishes fio samples the leaderboard omits its disk row (headline with no samples).
+	// 4K random-read IOPS (O_DIRECT) is the dimension's headline — the canonical disk figure, and the
+	// honest one (buffered 4K reads measure the page cache). Two consequences of pinning the headline
+	// to the O_DIRECT variant: the leaderboard omits its disk row until a matrix run publishes fio
+	// samples, and a provider whose filesystem rejects O_DIRECT (the probe's buffered fallback) never
+	// appears in the disk ranking — its numbers land on the buffered variants, visible on the Run but
+	// deliberately not ranked against O_DIRECT results.
 	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio seq read 1MB, O_DIRECT (MB/s)" },
 	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:

@@ -320,6 +320,12 @@ run_pts_benchmark() {
 # (each scenario has an O_DIRECT and a buffered catalog variant) instead of being silently mixed.
 fio_direct_choice() {
 	local dir probe
+	# pts_init BEFORE pts_user_dir (the install_local_pts_profile precedent): this probe is the fio
+	# leaf's first PTS-dir touch, and on a stock image with no core.pt2so yet the detector would
+	# cache the $HOME fallback for the whole shell — batch-run then writes results under
+	# /var/lib/phoronix-test-suite while run_pts_benchmark's composite finder searches the stale
+	# cached dir and records a bogus "produced no composite.xml" skip for every scenario.
+	pts_init
 	dir="$(pts_user_dir)"
 	mkdir -p "$dir"
 	probe="${dir}/.o-direct-probe"
