@@ -109,6 +109,14 @@ export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
  * Did the sandbox honor the pinned target spec? vCPUs must match exactly; memory within ±10%
  * (kernels reserve some). Undefined when either observation is missing — we refuse to judge on
  * partial evidence.
+ *
+ * Deliberately covers the COMPARABILITY dimensions only — the two that decide whether two providers'
+ * numbers may be put side by side. {@link TARGET_SPEC}.diskGb is excluded even though it is part of
+ * the spec: disk is a gate on whether a suite can run at all, not an axis anyone is ranked on (it is
+ * excluded from `hourlyCostAtTargetSpec` for the same reason), and providers that cannot express disk
+ * would otherwise all report `specMatched: false` for a dimension that never touched their results.
+ * A disk shortfall is not silently absorbed here — it surfaces as a skip with an "Insufficient disk"
+ * reason and is rendered as an explicit leaderboard coverage gap.
  */
 export function computeSpecMatched(specs: ObservedSpecs): boolean | undefined {
 	if (specs.vcpus === undefined || specs.memoryGb === undefined) return undefined;

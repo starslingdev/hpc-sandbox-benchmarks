@@ -85,6 +85,10 @@ export async function bakeE2bTemplate(name: string, baseImage: string, log: Log)
 			E2B_CONTEXT,
 			"--dockerfile",
 			E2B_DOCKERFILE_GENERATED,
+			// No --disk-size-mb: @e2b/cli template create exposes only --cpu-count/--memory-mb (checked on
+			// the pinned 2.12.0), so e2b/novita disk is platform-fixed and can't be raised to
+			// TARGET_SPEC.diskGb the way Daytona's snapshot resources.disk is. The heavy realworld suites
+			// that need the disk therefore skip on e2b/novita — surfaced as a leaderboard coverage gap.
 			"--cpu-count",
 			String(config.targetSpec.vcpus),
 			"--memory-mb",

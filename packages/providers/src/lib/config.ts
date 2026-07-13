@@ -85,7 +85,7 @@ const novitaTemplateCandidate = e2bTemplateCandidate;
 
 // 3. The single, fully-typed config object. Everything that needs config imports THIS.
 export const config = {
-	/** Pinned cross-provider target spec (2 vCPU / 8 GiB / 20 GB). */
+	/** Pinned cross-provider target spec — see {@link TARGET_SPEC} for the dimensions and sizing rationale. */
 	targetSpec: TARGET_SPEC,
 	/** Immutable toolchain image version tag. */
 	toolchainVersion: TOOLCHAIN_VERSION,
