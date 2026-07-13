@@ -248,6 +248,80 @@ describe("StepRunner.runDetached", () => {
 		await expect(runner.runDetached("bench", "false", 60_000)).rejects.toThrow(/exit code 42/);
 	});
 
+	it("fails fast when the cat poll returns a non-zero exit — a wedged shell, not still-running", async () => {
+		// Regression: the `|| echo __RUNNING__` guard makes bash exit 0 for both a present and an absent
+		// done-file, so a non-zero exit means the shell itself couldn't run. runCommand RESOLVES with
+		// that code rather than rejecting, so it slipped past the throw-based fast-fail and read as
+		// "still running" — sitting on a wedged sandbox for the whole budget.
+		let launched = false;
+		const sandbox: SandboxHandle = {
+			runCommand: async (command) => {
+				if (!launched && command.includes("nohup")) {
+					launched = true;
+					return { exitCode: 0, stdout: "launched" };
+				}
+				return { exitCode: 137, stdout: "" }; // shell couldn't run: no reject, just a bad code
+			},
+			destroy: async () => undefined,
+		};
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		await expect(runner.runDetached("bench", "mise run benchmark", 60 * 60_000)).rejects.toThrow(
+			/lost its sandbox.*stopped responding/,
+		);
+	});
+
+	it("fails fast when every detached poll throws — a dead sandbox, not a quiet step", async () => {
+		// Regression: poll failures were swallowed as "not done yet", so a sandbox killed mid-step
+		// (e2b orchestrator-stops, 2026-07-10) looked like a quietly-running benchmark for the WHOLE
+		// command budget — CI cells sat on a corpse for 60+ minutes until the runner was reclaimed.
+		let launched = false;
+		const sandbox: SandboxHandle = {
+			runCommand: async (command) => {
+				if (!launched && command.includes("nohup")) {
+					launched = true;
+					return { exitCode: 0, stdout: "launched" };
+				}
+				throw new Error("sandbox is probably not running anymore");
+			},
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async () => {
+					throw new Error("sandbox is probably not running anymore");
+				},
+				readFile: async () => {
+					throw new Error("sandbox is probably not running anymore");
+				},
+			},
+		};
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		// Budget far above the poll-failure threshold: the fast-fail, not the deadline, must trip.
+		await expect(runner.runDetached("bench", "mise run benchmark", 60 * 60_000)).rejects.toThrow(
+			/lost its sandbox.*stopped responding/,
+		);
+	});
+
+	it("tolerates a transient poll blip when later polls succeed", async () => {
+		// One flaky poll must not kill an hour-long benchmark — only a consecutive run of failures may.
+		let polls = 0;
+		const sandbox: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: "launched" }),
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async (path) => {
+					if (!path.endsWith(".done")) return false;
+					polls++;
+					if (polls === 1) throw new Error("transient fs blip");
+					return polls >= 3;
+				},
+				readFile: async (path) => (path.endsWith(".done") ? "0" : "recovered fine"),
+			},
+		};
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("recovered fine");
+	});
+
 	it("distinguishes a wedged from a quiet sandbox on the no-filesystem path too", async () => {
 		// Regression: readLogTail read the log via catFile, which folds every failure into "". On a
 		// provider with no filesystem API the `.catch(() => null)` could therefore never fire, so a

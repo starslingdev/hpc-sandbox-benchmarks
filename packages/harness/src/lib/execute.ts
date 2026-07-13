@@ -36,6 +36,13 @@ export const MIN = 60_000;
 const POLL_START_MS = 1_500;
 const POLL_BACKOFF = 1.5;
 const POLL_CAP_MS = 10_000;
+/** Consecutive failed detached polls before concluding the sandbox itself is gone. One transient
+ *  blip must not kill an hour-long benchmark, but a sandbox that stops answering EVERY poll is dead
+ *  (e2b was observed orchestrator-stopping sandboxes ~4.5 min in, 2026-07-10), and treating that as
+ *  "still running" burned the full command budget — CI cells then sat on a corpse for 60+ minutes
+ *  until the runner itself was reclaimed. 12 failures ≈ 2–4 min of continuous unreachability at the
+ *  capped poll interval. */
+const MAX_CONSECUTIVE_POLL_FAILURES = 12;
 /** How much of a timed-out detached step's log to surface — enough to diagnose, not enough to flood. */
 const TIMEOUT_LOG_TAIL_LINES = 50;
 /** Done-file sentinel for the no-filesystem cat-poll fallback: printed while the file isn't there yet. */
@@ -300,10 +307,27 @@ export class StepRunner {
 			// Poll for the done-file, backing off adaptively so a quick step isn't over-charged for polls.
 			const deadline = started + timeoutMs;
 			let pollDelayMs = POLL_START_MS;
+			let consecutivePollFailures = 0;
 			for (;;) {
-				const exitCode = fs
-					? await this.pollDoneViaFs(fs, donePath)
-					: await this.pollDoneViaCat(donePath);
+				// A poll that THROWS is different from "not done yet": one blip is transient, but a run of
+				// them means the sandbox stopped answering — fail fast instead of sitting on a dead sandbox
+				// for the rest of the command budget (see MAX_CONSECUTIVE_POLL_FAILURES).
+				let exitCode: number | undefined;
+				try {
+					exitCode = fs
+						? await this.pollDoneViaFs(fs, donePath)
+						: await this.pollDoneViaCat(donePath);
+					consecutivePollFailures = 0;
+				} catch (err) {
+					consecutivePollFailures++;
+					if (consecutivePollFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+						const reason = err instanceof Error ? err.message : String(err);
+						throw new Error(
+							`Step "${label}" lost its sandbox: ${consecutivePollFailures} consecutive detached ` +
+								`polls failed (last: ${reason}) — the sandbox stopped responding, not a quiet long step`,
+						);
+					}
+				}
 				if (exitCode !== undefined) {
 					const stdout = fs
 						? await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read").catch(() => "")
@@ -344,37 +368,44 @@ export class StepRunner {
 		fs: SandboxFilesystem,
 		donePath: string,
 	): Promise<number | undefined> {
-		try {
-			// Bound both fs calls so a hung filesystem API (some adapters go over the network) can't
-			// stall the poll loop indefinitely — the outer deadline only advances between iterations.
-			if (!(await withTimeout(fs.exists(donePath), POLL_CAP_MS, "done-file fs exists"))) {
-				return undefined;
-			}
-			// The background script writes the done-file non-atomically (truncate, then echo the code),
-			// so an empty read means "created but not yet written" — still running, not exit 0.
-			const raw = (
-				await withTimeout(fs.readFile(donePath), POLL_CAP_MS, "done-file fs read")
-			).trim();
-			return raw === "" ? undefined : parseExitCode(raw);
-		} catch {
-			// A transient fs blip counts as not-yet-done; the caller's deadline bounds total retry time.
+		// Bound both fs calls so a hung filesystem API (some adapters go over the network) can't
+		// stall the poll loop indefinitely — the outer deadline only advances between iterations.
+		// A timeout or fs error THROWS to the poll loop, which tolerates a transient blip but fails
+		// fast on a run of them (a dead sandbox); swallowing errors here once made a killed sandbox
+		// indistinguishable from a quietly-running step for the entire command budget.
+		if (!(await withTimeout(fs.exists(donePath), POLL_CAP_MS, "done-file fs exists"))) {
 			return undefined;
 		}
+		// The background script writes the done-file non-atomically (truncate, then echo the code),
+		// so an empty read means "created but not yet written" — still running, not exit 0.
+		const raw = (await withTimeout(fs.readFile(donePath), POLL_CAP_MS, "done-file fs read")).trim();
+		return raw === "" ? undefined : parseExitCode(raw);
 	}
 
 	/** Poll fallback for providers whose adapter exposes no filesystem API: read the done-file with a
 	 *  `cat` exec, treating the {@link RUNNING_SENTINEL} (or empty output) as not-done-yet. */
 	private async pollDoneViaCat(donePath: string): Promise<number | undefined> {
-		// Bound the exec so a hung `cat` can't outlast the step budget, and treat any transient
-		// exec error as not-yet-done (the caller's deadline bounds total retry time).
+		// Bound the exec so a hung `cat` can't outlast the step budget. An exec failure or timeout
+		// THROWS to the poll loop (which tolerates transient blips but fails fast on a dead sandbox);
+		// an absent done-file is the RUNNING_SENTINEL, not an error.
 		const probe = await withTimeout(
 			this.sandbox.runCommand(
 				`bash -c ${shellQuote(`cat ${donePath} 2>/dev/null || echo ${RUNNING_SENTINEL}`)}`,
 			),
 			POLL_CAP_MS,
 			"done-file cat poll",
-		).catch(() => undefined);
-		const out = (probe?.stdout ?? "").trim();
+		);
+		// The `|| echo RUNNING_SENTINEL` guard makes bash exit 0 whether the done-file is present or
+		// absent, so a non-zero code means the shell itself couldn't run — a wedged sandbox, not a
+		// missing done-file. THROW so the poll loop's consecutive-failure fast-fail engages, matching
+		// pollDoneViaFs; swallowing it as "still running" would sit on a dead sandbox for the whole
+		// step budget — the exact failure this detached path exists to catch.
+		if (probe.exitCode !== 0) {
+			throw new Error(
+				`done-file cat poll returned exit ${probe.exitCode} — sandbox not responding`,
+			);
+		}
+		const out = (probe.stdout ?? "").trim();
 		if (out === "" || out === RUNNING_SENTINEL) return undefined;
 		return parseExitCode(out);
 	}
