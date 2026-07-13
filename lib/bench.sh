@@ -173,7 +173,10 @@ _configure_pts_batch() {
 	# test's option matrix — which would run build-dependent tasks before the measured `build`
 	# their unmeasured prep replays (correct either way, but the prep then pays a full rebuild).
 	export TEST_EXECUTION_SORT=none
-	export TEST_RESULTS_NAME=benchmark
+	# TEST_RESULTS_NAME is set per leaf by run_pts_benchmark (benchmark-<prefix>): PTS MERGES batch-runs
+	# that share a save name into one result dir and rewrites its composite.xml even when a run produced
+	# zero successful results (pts_test_run_manager::standard_run → post_execution_process), so a shared
+	# name would let a failed later leaf collect an earlier leaf's merged composite as its own.
 	export TEST_RESULTS_DESCRIPTION=ci
 	export TEST_RESULTS_IDENTIFIER=ci
 	# FORCE_TIMES_TO_RUN=1 pins every test to a single pass (fast, but no in-sandbox repeats to
@@ -185,7 +188,33 @@ _configure_pts_batch() {
 	fi
 	# batch-setup answers: SaveResults, OpenBrowser, UploadResults, PromptForTestIdentifier,
 	# PromptForTestDescription, PromptSaveName, RunAllTestCombinations.
-	printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup 2>/dev/null || true
+	#
+	# The last answer is overridable because PTS's batch runner consults PRESET_OPTIONS ONLY when
+	# RunAllTestCombinations is off (pts_test_run_manager::test_prompts_to_result_objects) — a
+	# pinned-scenario caller (run_pinned_pts) exports PTS_RUN_ALL_TEST_COMBINATIONS=n around its run,
+	# and the next unpinned caller's reconfigure restores the run-all default the option-matrix suites
+	# (STREAM's Type axis, the realworld Task axis, compress-zstd's levels) rely on.
+	printf 'y\nn\nn\nn\nn\nn\n%s\n' "${PTS_RUN_ALL_TEST_COMBINATIONS:-y}" | phoronix-test-suite batch-setup 2>/dev/null || true
+	# batch-setup's failure is swallowed above, so verify the on-disk config in BOTH directions — the
+	# flip is a state change either way. A PINNED caller depends on FALSE landing (PTS would otherwise
+	# ignore its presets and fan out the whole option matrix); an UNPINNED caller depends on TRUE being
+	# restored after a pinned leaf left FALSE behind (a persisted FALSE with no PRESET_OPTIONS drops
+	# PTS into its interactive option prompt, which loops on EOF stdin until the command timeout).
+	# The config lives at /etc/phoronix-test-suite.xml for root (the sandbox case) or under $HOME for
+	# unprivileged runs. Idempotent under retry: once any call has landed the wanted value on disk,
+	# later verifications pass even if their own batch-setup hiccuped.
+	local want cfg
+	if [ "${PTS_RUN_ALL_TEST_COMBINATIONS:-y}" = "n" ]; then
+		want="FALSE"
+	else
+		want="TRUE"
+	fi
+	for cfg in /etc/phoronix-test-suite.xml "${HOME}/.phoronix-test-suite/user-config.xml"; do
+		if [ -f "$cfg" ] && grep -q "<RunAllTestCombinations>${want}</RunAllTestCombinations>" "$cfg"; then
+			return 0
+		fi
+	done
+	return 1
 }
 
 # Ensure phoronix-test-suite is available, configuring batch mode. The toolchain image bakes PTS, so
@@ -201,9 +230,14 @@ ensure_pts() {
 			tmp_deb="$(mktemp /tmp/pts-XXXXXX.deb)"
 			# Group with `|| true` so a failed install can't abort a caller running under `set -e` —
 			# ensure_pts's contract is to return 1 gracefully so the caller can skip.
+			# The package list mirrors the harness setup fallback (packages/harness/src/lib/setup.ts):
+			# php for PTS itself, the build toolchain for the source-built profiles, libaio-dev (fio's
+			# Linux AIO engine), libicu-dev (postgres's configure hard-requires ICU), and the probe deps
+			# — without them the profiles install "successfully" and then burn their timed runs failing.
 			(curl -fsSL "$deb_url" -o "$tmp_deb" &&
 				${SUDO:-} apt-get update -qq &&
-				${SUDO:-} apt-get install -y -qq php-cli php-xml &&
+				${SUDO:-} apt-get install -y -qq php-cli php-xml build-essential flex bison bc \
+					libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping &&
 				${SUDO:-} dpkg -i "$tmp_deb") || true
 			rm -f "$tmp_deb"
 		fi
@@ -261,14 +295,53 @@ install_local_pts_profile() {
 # Usage: run_pts_benchmark <test-name> <results-prefix>
 run_pts_benchmark() {
 	local test_name="$1" prefix="$2"
-	_configure_pts_batch
-
-	echo "=== Installing PTS test: ${test_name} ==="
-	phoronix-test-suite batch-install "$test_name" 2>&1 || {
-		echo "WARNING: PTS install of ${test_name} failed"
-		skip_result "PTS install of ${test_name} failed" "$prefix"
+	if ! _configure_pts_batch; then
+		# batch-setup never landed a usable config (see _configure_pts_batch): batch-run would either
+		# error out or fall into an interactive prompt loop that burns the whole command budget.
+		skip_result "PTS batch mode could not be configured (batch-setup failed)" "$prefix"
 		return 0
-	}
+	fi
+
+	# Isolate this leaf's results under its own save name (see _configure_pts_batch on why sharing one
+	# name would let a failed leaf collect a predecessor's merged composite). Sanitized to the
+	# lowercase-alnum-dash alphabet PTS save names pass through unchanged, so the find below matches
+	# the directory PTS actually creates.
+	local save_name
+	save_name="benchmark-$(printf '%s' "$prefix" | tr -cs 'a-z0-9' '-')"
+	export TEST_RESULTS_NAME="$save_name"
+
+	# Skip the install for a version-pinned test that is already on disk (the toolchain image
+	# pre-installs every registered profile): batch-install would only no-op through several seconds
+	# of PHP. Probe the ONE data dir this PTS invocation will actually use (pts_init first, so
+	# pts_user_dir doesn't cache the $HOME fallback on a fresh machine — the fio_direct_choice
+	# precedent), and require the pts-install.xml manifest, not the bare directory: PTS only treats a
+	# test as installed once that manifest exists, so a batch-install killed mid-build would otherwise
+	# permanently disable both install and run. (Trade-off vs full batch-install: PTS's same-version
+	# reinstall triggers — installer checksum, system hash — are bypassed for baked profiles.)
+	local installed=""
+	pts_init
+	if [ -f "$(pts_user_dir)/installed-tests/${test_name}/pts-install.xml" ]; then
+		installed=1
+	fi
+	if [ -n "$installed" ]; then
+		echo "=== PTS test already installed (baked): ${test_name} ==="
+	else
+		echo "=== Installing PTS test: ${test_name} ==="
+		phoronix-test-suite batch-install "$test_name" 2>&1 || {
+			echo "WARNING: PTS install of ${test_name} failed"
+			skip_result "PTS install of ${test_name} failed" "$prefix"
+			return 0
+		}
+	fi
+
+	# Stamp the instant before the run: the composite search below must only accept output THIS
+	# batch-run wrote. Suites now run several PTS leaves in one sandbox (fio ×4 + hardlink; pybench +
+	# sqlite + pgbench ×2), so a bare "newest composite" would, when a later batch-run produces
+	# nothing, silently copy the PREVIOUS leaf's composite under this leaf's prefix — masking the
+	# failure AND suppressing the skip marker. (A merged-into result dir still matches: PTS rewrites
+	# composite.xml, updating its mtime past the stamp.)
+	local run_stamp
+	run_stamp="$(mktemp)"
 
 	bench_cmd "PTS: ${test_name}" "$prefix" phoronix-test-suite batch-run "$test_name"
 
@@ -280,10 +353,13 @@ run_pts_benchmark() {
 		# `find … -exec ls -t {} +` is portable (no GNU `-printf`, which crashes BSD/macOS `find` under
 		# `set -e`) and runs `ls -t` only when matches exist (so an empty match can't list `.` and copy a
 		# stray file). `ls -t` orders newest-first; head -1 takes it.
-		# Scope to benchmark-named result dirs (TEST_RESULTS_NAME=benchmark, plus PTS's -1/-2 suffixes)
-		# so a stray composite.xml under another result name can't be misattributed as suites accumulate.
-		xml_found=$(find "$pts_base" -path "*benchmark*/composite.xml" -exec ls -t {} + 2>/dev/null | head -1)
+		# Scope to THIS leaf's save name (TEST_RESULTS_NAME=benchmark-<prefix>, plus PTS's -1/-2
+		# suffixes) so another leaf's composite can never be misattributed to this one, and to files
+		# newer than the pre-run stamp so a stale dir from a previous run of the SAME leaf can't stand
+		# in for a failed run (see run_stamp above).
+		xml_found=$(find "$pts_base" -path "*${save_name}*/composite.xml" -newer "$run_stamp" -exec ls -t {} + 2>/dev/null | head -1)
 	fi
+	rm -f "$run_stamp"
 	if [ -n "$xml_found" ] && [ -f "$xml_found" ]; then
 		cp "$xml_found" "$(results_dir)/${prefix}.xml" 2>/dev/null || true
 		echo "Structured result: ${prefix}.xml (from $(dirname "$xml_found"))"
@@ -304,6 +380,114 @@ run_pts_benchmark() {
 		skip_result "PTS batch-run of ${test_name} produced no composite.xml" "$prefix"
 	fi
 	return 0
+}
+
+# Whether the filesystem PTS's fio writes its test files to supports O_DIRECT: echoes the fio
+# profile's Direct option NAME ("Yes"/"No"). Probed with dd against the PTS data dir (the same
+# filesystem installed-tests/.../fiofile lands on) because sandbox filesystems differ here — overlay
+# and gVisor gofer mounts can reject O_DIRECT outright, and a hard fio failure would void the whole
+# scenario. The chosen mode is part of the fio option matrix, so it travels in the metric identity
+# (each scenario has an O_DIRECT and a buffered catalog variant) instead of being silently mixed.
+fio_direct_choice() {
+	local dir probe cache choice
+	# Without PTS the answer is irrelevant (the leaf's availability guard skips before running fio) —
+	# return without probing OR caching, so a dep-less dry run can't persist a verdict probed against
+	# the wrong filesystem for a later, properly-provisioned run to reuse.
+	if ! command -v phoronix-test-suite >/dev/null 2>&1; then
+		echo "No"
+		return 0
+	fi
+	# Each mise leaf is a fresh process, so cache the answer for the suite run — the filesystem's
+	# O_DIRECT support cannot change between the four scenarios, and each probe otherwise pays a
+	# pts_init (a multi-second PTS PHP invocation) per leaf. Cached under /tmp (per-sandbox,
+	# ephemeral), NOT results_dir: the harness tars results_dir back verbatim into the curated raw
+	# tree, and a bash-internal dotfile must not ship as a dataset artifact.
+	cache="${TMPDIR:-/tmp}/.bench-fio-direct-choice"
+	if [ -f "$cache" ]; then
+		cat "$cache"
+		return 0
+	fi
+	# pts_init BEFORE pts_user_dir (the install_local_pts_profile precedent): this probe is the fio
+	# leaf's first PTS-dir touch, and on a stock image with no core.pt2so yet the detector would
+	# cache the $HOME fallback for the whole shell — batch-run then writes results under
+	# /var/lib/phoronix-test-suite while run_pts_benchmark's composite finder searches the stale
+	# cached dir and records a bogus "produced no composite.xml" skip for every scenario.
+	pts_init
+	dir="$(pts_user_dir)"
+	mkdir -p "$dir"
+	probe="${dir}/.o-direct-probe"
+	# bs=4096, not 512: O_DIRECT requires logical-sector alignment, so a 512-byte write EINVALs on a
+	# 4Kn-sector filesystem even where the real scenarios' 4KB/1MB blocks would run fine. 4096 is
+	# aligned on both 512e and 4Kn and matches the smallest fio scenario block size.
+	if dd if=/dev/zero of="$probe" bs=4096 count=1 oflag=direct >/dev/null 2>&1; then
+		choice="Yes"
+	else
+		choice="No"
+	fi
+	rm -f "$probe"
+	echo "$choice" >"$cache"
+	echo "$choice"
+}
+
+# Run ONE PTS test with a fully-pinned option combination. PRESET_OPTIONS pins every axis so
+# batch-run executes exactly one combination instead of the profile's whole matrix. Owns the
+# phoronix-test-suite availability guard (like run_realworld_pts), so pinned leaves don't replicate it.
+#
+# RunAllTestCombinations MUST be off for the run: PTS's batch path only consults PRESET_OPTIONS on
+# that branch (pts_test_run_manager::test_prompts_to_result_objects) — with the repo's run-all default
+# it ignores the presets and fans out the full option matrix (for fio, hundreds of 60s runs).
+# PTS_RUN_ALL_TEST_COMBINATIONS=n reaches batch-setup via _configure_pts_batch INSIDE
+# run_pts_benchmark (setting the config before the call would be undone by that reconfigure); the
+# next unpinned PTS child's reconfigure restores the run-all default the option-matrix suites rely on.
+# _configure_pts_batch itself verifies the flip landed on disk when pinning is requested (returning
+# non-zero on failure), so the pre-call below exists to catch that failure and skip honestly rather
+# than let a silently-ignored preset fan out the matrix until the suite timeout kills the cell.
+# run_pts_benchmark's own (idempotent) reconfigure re-verifies against the already-flipped config.
+#
+# Preset values are the runtime option NAMES (PTS matches non-numeric presets by entry name), with
+# ONE trap: a NUMERIC preset that is < the menu's entry count is interpreted as a 0-based menu INDEX,
+# never a name (pts_test_option::is_valid_select_choice) — pin small numeric menus by index, larger
+# numeric names (pgbench's "100"/"50") match by name because they exceed the entry count.
+# Usage: run_pinned_pts <versioned-test> <results-prefix> <preset-options>
+run_pinned_pts() {
+	local test_name="$1" prefix="$2" presets="$3"
+	if ! command -v phoronix-test-suite &>/dev/null; then
+		skip_result "phoronix-test-suite not installed" "$prefix"
+		return 0
+	fi
+
+	export PTS_RUN_ALL_TEST_COMBINATIONS=n
+	export PRESET_OPTIONS="$presets"
+	if ! _configure_pts_batch; then
+		skip_result "could not disable RunAllTestCombinations (batch-setup failed?) — refusing to fan out the full ${test_name} option matrix" "$prefix"
+		unset PRESET_OPTIONS PTS_RUN_ALL_TEST_COMBINATIONS
+		return 0
+	fi
+
+	run_pts_benchmark "$test_name" "$prefix"
+	unset PRESET_OPTIONS PTS_RUN_ALL_TEST_COMBINATIONS
+}
+
+# Run ONE pinned pts/fio scenario; Direct comes from fio_direct_choice above.
+#
+# Axis notes on top of run_pinned_pts's rules: "Job Count" is a numeric menu expanded from the
+# machine's core count at run time (cpu-threads: 1,2,…,N), so it must be pinned by INDEX 0 — the
+# first entry, name "1" on every machine ("cpu-threads=1" would select index 1 = "Job Count: 2").
+# "Disk Target" is also runtime-expanded (auto-disk-mount-points) but pins cleanly by name:
+# "Default Test Directory" always exists. These are the same pins the catalog generator synthesizes
+# descriptions for. Version-pinned (unlike the older versionless leaves): the catalog vendors
+# fio-2.1.0's exact option matrix and PRESET_OPTIONS addresses its axes by identifier, so a
+# versionless install resolving to a newer upstream fio would silently unmap every description. Keep
+# in lockstep with packages/schema/src/pts-profiles/fio-2.1.0 (and the golden fixture) when bumping.
+# Usage: run_fio_pts <type-name> <block-size-name> <results-prefix>   (e.g. "Sequential Read" 1MB pts_fio-seq-read)
+run_fio_pts() {
+	local type_name="$1" bs_name="$2" prefix="$3"
+	local direct
+	direct="$(fio_direct_choice)"
+	echo "fio scenario: Type=${type_name} Block Size=${bs_name} Direct=${direct} (O_DIRECT probe)"
+
+	run_pinned_pts "pts/fio-2.1.0" "$prefix" \
+		"fio.type=${type_name};fio.engine=Linux AIO;fio.direct=${direct};fio.size=${bs_name};fio.cpu-threads=0;fio.auto-disk-mount-points=Default Test Directory"
 }
 
 # Run one realworld suite end to end: gate on the toolchain, install the repo-local profile with
