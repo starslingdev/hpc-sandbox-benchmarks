@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #MISE description="PTS: PostgreSQL pgbench TPS + latency (scale 100, 50 clients, read-only + read-write)"
 # Measurement leaf: -e guards the scaffolding; the measured runs are isolated by run_pts_benchmark
-# (via run_pinned_pts, which pins each mode's option combination through PRESET_OPTIONS).
+# (via run_pinned_pts, which owns the PTS availability guard — one skip marker per prefix — and pins
+# each mode's option combination through PRESET_OPTIONS).
 #
 # Fully in-sandbox: the profile builds postgres 17.0 (root-check patched) and runs server + pgbench
 # client locally, so every provider measures the same topology — unlike the services-container shape
@@ -12,12 +13,6 @@
 set -euo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
-
-if ! command -v phoronix-test-suite &>/dev/null; then
-	skip_result "phoronix-test-suite not installed" "pts_pgbench-read-only"
-	skip_result "phoronix-test-suite not installed" "pts_pgbench-read-write"
-	exit 0
-fi
 
 # Version-pinned to the vendored profile (and its recorded fixture) so an upstream pgbench release
 # can't silently unmap the catalogued descriptions. "100"/"50" pin by NAME (they exceed the menus'

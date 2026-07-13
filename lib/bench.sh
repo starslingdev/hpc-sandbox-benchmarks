@@ -333,7 +333,8 @@ fio_direct_choice() {
 }
 
 # Run ONE PTS test with a fully-pinned option combination. PRESET_OPTIONS pins every axis so
-# batch-run executes exactly one combination instead of the profile's whole matrix.
+# batch-run executes exactly one combination instead of the profile's whole matrix. Owns the
+# phoronix-test-suite availability guard (like run_realworld_pts), so pinned leaves don't replicate it.
 #
 # RunAllTestCombinations MUST be off for the run: PTS's batch path only consults PRESET_OPTIONS on
 # that branch (pts_test_run_manager::test_prompts_to_result_objects) — with the repo's run-all default
@@ -341,6 +342,9 @@ fio_direct_choice() {
 # PTS_RUN_ALL_TEST_COMBINATIONS=n reaches batch-setup via _configure_pts_batch INSIDE
 # run_pts_benchmark (setting the config before the call would be undone by that reconfigure); the
 # next unpinned PTS child's reconfigure restores the run-all default the option-matrix suites rely on.
+# batch-setup's failure is swallowed elsewhere (harmless when the answers only re-assert the default),
+# but pinned semantics DEPEND on the flip landing on disk — so verify it and skip rather than let a
+# silently-ignored preset fan out the matrix until the suite timeout kills the cell.
 #
 # Preset values are the runtime option NAMES (PTS matches non-numeric presets by entry name), with
 # ONE trap: a NUMERIC preset that is < the menu's entry count is interpreted as a 0-based menu INDEX,
@@ -349,8 +353,30 @@ fio_direct_choice() {
 # Usage: run_pinned_pts <versioned-test> <results-prefix> <preset-options>
 run_pinned_pts() {
 	local test_name="$1" prefix="$2" presets="$3"
+	if ! command -v phoronix-test-suite &>/dev/null; then
+		skip_result "phoronix-test-suite not installed" "$prefix"
+		return 0
+	fi
+
 	export PTS_RUN_ALL_TEST_COMBINATIONS=n
 	export PRESET_OPTIONS="$presets"
+	_configure_pts_batch
+	# The user config lives at /etc/phoronix-test-suite.xml for root (the sandbox case) or under
+	# $HOME for unprivileged runs; check whichever exists. run_pts_benchmark re-runs the (idempotent)
+	# batch-setup, so verifying here covers the write it performs too.
+	local cfg verified=""
+	for cfg in /etc/phoronix-test-suite.xml "${HOME}/.phoronix-test-suite/user-config.xml"; do
+		if [ -f "$cfg" ] && grep -q "<RunAllTestCombinations>FALSE</RunAllTestCombinations>" "$cfg"; then
+			verified=1
+			break
+		fi
+	done
+	if [ -z "$verified" ]; then
+		skip_result "could not disable RunAllTestCombinations (batch-setup failed?) — refusing to fan out the full ${test_name} option matrix" "$prefix"
+		unset PRESET_OPTIONS PTS_RUN_ALL_TEST_COMBINATIONS
+		return 0
+	fi
+
 	run_pts_benchmark "$test_name" "$prefix"
 	unset PRESET_OPTIONS PTS_RUN_ALL_TEST_COMBINATIONS
 }

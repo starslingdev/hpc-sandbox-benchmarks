@@ -96,8 +96,14 @@ function describe(base: string, parser: PtsResultsParser): string | undefined {
 
 /**
  * The deduplicated, source-ordered predicted `<Result>`s a profile emits. Dedup is keyed on
- * (description, parser scale) — see the module doc — with `JSON.stringify` as the key encoding so a
- * description containing any delimiter literal can never collide with a (description, scale) pair.
+ * (description, EFFECTIVE scale) — the parser's `<ResultScale>` falling back to the profile-level
+ * one — so a parser that declares the profile's own scale explicitly still collapses with a sibling
+ * that inherits it (keying on the raw parser field would emit twins that later mint the same
+ * scale-suffixed id and abort generation). `JSON.stringify` is the key encoding so a description
+ * containing any delimiter literal can never collide with a different (description, scale) pair.
+ * Parsers that collapse onto one key must agree on their effective `<ResultProportion>`: direction
+ * is part of the metric contract, and letting source order pick a winner would silently invert a
+ * leaderboard ranking — so a conflict throws at generation instead.
  */
 export function synthesizeResults(profile: PtsProfile): SynthesizedMetric[] {
 	// An option whose <Menu> declares no <Entry> makes its cartesian group empty, collapsing the whole
@@ -119,7 +125,8 @@ export function synthesizeResults(profile: PtsProfile): SynthesizedMetric[] {
 		),
 	);
 
-	const seen = new Set<string>();
+	// key -> the effective proportion of the entry that claimed it (for the agreement check).
+	const seen = new Map<string, string | undefined>();
 	const results: SynthesizedMetric[] = [];
 	for (const combination of combinations) {
 		const base = combination
@@ -128,9 +135,18 @@ export function synthesizeResults(profile: PtsProfile): SynthesizedMetric[] {
 		const values = combination.map(({ entry }) => entry.Value);
 		for (const parser of candidateParsers(profile.parsers, values)) {
 			const description = describe(base, parser);
-			const key = JSON.stringify([description ?? null, parser.ResultScale ?? null]);
-			if (seen.has(key)) continue;
-			seen.add(key);
+			const effectiveScale = parser.ResultScale ?? profile.info.ResultScale;
+			const effectiveProportion = parser.ResultProportion ?? profile.info.Proportion;
+			const key = JSON.stringify([description ?? null, effectiveScale ?? null]);
+			if (seen.has(key)) {
+				if (seen.get(key) !== effectiveProportion) {
+					throw new Error(
+						`profile ${profile.dir}: parsers collapsing onto "${description ?? "(wildcard)"}" (${effectiveScale ?? "no scale"}) disagree on direction ("${seen.get(key) ?? "absent"}" vs "${effectiveProportion ?? "absent"}") — the metric's direction would depend on parser order`,
+					);
+				}
+				continue;
+			}
+			seen.set(key, effectiveProportion);
 			results.push({
 				description,
 				...(parser.ResultScale ? { scale: parser.ResultScale } : {}),

@@ -96,12 +96,11 @@ export function generateProfile(profile: PtsProfile): MetricDef[] {
 	// Descriptions that appear on MORE than one scale (fio: bandwidth + IOPS from one run). Those
 	// metrics get a scale-suffixed id and a `pts.scale` pin so the runtime mapping can tell the twin
 	// `<Result>`s apart; a description unique to one scale keeps today's id and description-only pin
-	// (byte-stability for every existing profile). Keyed with JSON.stringify so a crafted description
-	// can't collide with the wildcard sentinel.
-	const scalesPerDescription = new Map<string, number>();
+	// (byte-stability for every existing profile). `undefined` (the wildcard) is a perfectly good Map
+	// key, so the description keys directly.
+	const scalesPerDescription = new Map<string | undefined, number>();
 	for (const s of synthesized) {
-		const key = JSON.stringify(s.description ?? null);
-		scalesPerDescription.set(key, (scalesPerDescription.get(key) ?? 0) + 1);
+		scalesPerDescription.set(s.description, (scalesPerDescription.get(s.description) ?? 0) + 1);
 	}
 
 	const defs = synthesized.map((s): MetricDef => {
@@ -112,7 +111,7 @@ export function generateProfile(profile: PtsProfile): MetricDef[] {
 				`profile ${profile.dir}: no <ResultScale> in TestInformation and none on the parser for "${description ?? "(wildcard)"}" — the metric has no unit`,
 			);
 		}
-		const ambiguous = (scalesPerDescription.get(JSON.stringify(description ?? null)) ?? 0) > 1;
+		const ambiguous = (scalesPerDescription.get(description) ?? 0) > 1;
 		if (ambiguous && description === undefined) {
 			// Two wildcard entries for one test would violate the catalog's at-most-one-wildcard
 			// invariant, and the runtime has no description to tell them apart anyway.

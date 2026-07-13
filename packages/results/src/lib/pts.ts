@@ -62,16 +62,27 @@ export type PtsMapping =
 	| { kind: "matched"; def: MetricDef; samples: number[] }
 	| { kind: "uncatalogued"; test: string; description: string };
 
-// Index the catalog by versionless test once at module load. `ptsResultToMetric` runs per `<Result>`
-// — the golden gate alone calls it across every result of every recorded composite — so a per-call
-// linear `METRIC_CATALOG.filter` is O(results × catalog); the prebuilt map makes each lookup O(1).
-// Insertion order follows catalog order, so the wildcard-vs-description preference below is unchanged.
-const catalogByTest = new Map<string, MetricDef[]>();
+// Index the catalog by match precedence once at module load. `ptsResultToMetric` runs per `<Result>`
+// — the golden gate alone calls it across every result of every recorded composite — and a per-call
+// linear scan is O(results × per-test entries), which stopped being hypothetical when fio put 960
+// entries under one test key. Three maps, one per precedence arm, make each lookup O(1); on a key
+// collision the FIRST catalog entry wins, preserving catalog-order semantics (the catalogSchema
+// invariants make a collision impossible for pts-generated entries anyway).
+const byTestDescriptionScale = new Map<string, MetricDef>();
+const byTestDescription = new Map<string, MetricDef>();
+const byTestWildcard = new Map<string, MetricDef>();
 for (const metric of METRIC_CATALOG) {
 	if (!metric.pts) continue;
-	const forTest = catalogByTest.get(metric.pts.test);
-	if (forTest) forTest.push(metric);
-	else catalogByTest.set(metric.pts.test, [metric]);
+	const { test, description, scale } = metric.pts;
+	if (description === undefined) {
+		if (!byTestWildcard.has(test)) byTestWildcard.set(test, metric);
+	} else if (scale !== undefined) {
+		const key = JSON.stringify([test, description, scale]);
+		if (!byTestDescriptionScale.has(key)) byTestDescriptionScale.set(key, metric);
+	} else {
+		const key = JSON.stringify([test, description]);
+		if (!byTestDescription.has(key)) byTestDescription.set(key, metric);
+	}
 }
 
 /**
@@ -81,7 +92,6 @@ for (const metric of METRIC_CATALOG) {
 export function ptsResultToMetric(result: PtsResult): PtsMapping {
 	const test = versionlessTest(result.Identifier);
 	const description = result.Description ?? "";
-	const forTest = catalogByTest.get(test) ?? [];
 	// Prefer an exact `<Description>` match over the wildcard (description-less) entry, so a
 	// multi-result test's catalog ordering can't make the wildcard greedily shadow a specific metric.
 	// The catalog invariant (`catalogSchema` .narrow, catalog.ts) guarantees a wildcard never coexists
@@ -94,16 +104,9 @@ export function ptsResultToMetric(result: PtsResult): PtsMapping {
 	// a result that belongs to a pinned entry — and a pinned description whose `<Scale>` matches no
 	// pin falls through to `uncatalogued` (an honest straggler) rather than the nearest twin.
 	const def =
-		forTest.find(
-			(metric) =>
-				metric.pts?.description === description &&
-				metric.pts.scale !== undefined &&
-				metric.pts.scale === result.Scale,
-		) ??
-		forTest.find(
-			(metric) => metric.pts?.description === description && metric.pts?.scale === undefined,
-		) ??
-		forTest.find((metric) => metric.pts?.description === undefined);
+		byTestDescriptionScale.get(JSON.stringify([test, description, result.Scale])) ??
+		byTestDescription.get(JSON.stringify([test, description])) ??
+		byTestWildcard.get(test);
 	return def
 		? { kind: "matched", def, samples: resultSamples(result) }
 		: { kind: "uncatalogued", test, description };

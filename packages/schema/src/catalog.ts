@@ -82,8 +82,9 @@ export const catalogSchema = metricDefSchema.array().narrow((cat, ctx) => {
 	}
 	for (const [key, scales] of scalesByDescription) {
 		if (scales.length < 2) continue;
-		const defined = scales.filter((scale): scale is string => scale !== undefined);
-		if (defined.length < scales.length || new Set(defined).size !== scales.length) {
+		// Every twin must carry a pin, and no two pins may repeat — stated directly so there is no
+		// cross-array length arithmetic to mis-repair.
+		if (scales.includes(undefined) || new Set(scales).size !== scales.length) {
 			return ctx.mustBe(
 				`entries sharing a description disambiguated by distinct pts.scale pins on all of them (${key})`,
 			);
