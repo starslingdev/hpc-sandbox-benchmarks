@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite v10.8.4-->
+<!--
+  Recorded pts/network-loopback-1.0.1 composite for the golden byte-match gate (design par. 3.7):
+  the network suite's single (wildcard) metric. A single-result profile needs no description
+  byte-match, but network-loopback is MONITOR-based (its value comes from PTS's sys.time sensor
+  around a dd|nc transfer, not a ResultsParser) - this fixture proves that composite shape parses
+  and maps like any other.
+
+  REAL output of Phoronix Test Suite 10.8.4 under FORCE_TIMES_TO_RUN=1. The <System>
+  host-fingerprint block was removed (recording-container identity, not result data); the <Result>
+  nodes are verbatim.
+-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>fixture-network-loopback</Title>
+    <LastModified>2026-07-11 22:53:53</LastModified>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+    <Description>docker testing on Ubuntu 24.04 via the Phoronix Test Suite.</Description>
+  </Generated>
+  <Result>
+    <Identifier>pts/network-loopback-1.0.1</Identifier>
+    <Title>Loopback TCP Network Performance</Title>
+    <AppVersion></AppVersion>
+    <Arguments></Arguments>
+    <Description>Time To Transfer 10GB Via Loopback</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>17.655</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"17.65"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

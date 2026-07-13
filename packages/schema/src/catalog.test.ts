@@ -110,6 +110,22 @@ describe("metric catalog", () => {
 		expect(metric?.pts).toEqual({ test: "local/hardlink" });
 	});
 
+	it("returns undefined for an unknown metric id", () => {
+		expect(getMetric("not_a_metric")).toBeUndefined();
+	});
+
+	it("resolves the Loopback TCP headline for the network dimension (last unpopulated axis)", () => {
+		// network was the one dimension still without metrics; network-loopback populates it. With that,
+		// every Dimension is populated + headlined, so headlineMetric's no-headline throw is no longer
+		// reachable through the real catalog (it stays guarded by the one-headline load check).
+		const metric = headlineMetric("network");
+		expect(metric.id).toBe("network_loopback_seconds");
+		expect(metric.label).toBe("Loopback TCP (10GB)");
+		expect(metric.direction).toBe("LIB");
+		// Single-result wildcard: no pts.description (so the byte-match gate needs no recorded composite).
+		expect(metric.pts).toEqual({ test: "pts/network-loopback" });
+	});
+
 	it("resolves fio's scale-pinned twin metrics for one description (disk dimension)", () => {
 		const mbps = getMetric(
 			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
@@ -126,16 +142,6 @@ describe("metric catalog", () => {
 		// Both HIB from the parser-level <ResultProportion> (fio has no profile-level <Proportion>).
 		expect(mbps?.direction).toBe("HIB");
 		expect(iops?.direction).toBe("HIB");
-	});
-
-	it("returns undefined for an unknown metric id", () => {
-		expect(getMetric("not_a_metric")).toBeUndefined();
-	});
-
-	it("throws when a dimension has no headline metric", () => {
-		// `network` is the dimension still without any metrics (economics and realworld are now
-		// populated + headlined too).
-		expect(() => headlineMetric("network")).toThrow();
 	});
 });
 
