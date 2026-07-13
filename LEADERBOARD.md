@@ -1,6 +1,6 @@
 # Sandbox provider leaderboard
 
-Run `29061549181` · commit `9605098976fa81c1c14fc12c9329f1f719501bac` · generated 2026-07-10T01:35:36.576Z
+Run `29130741476` · commit `663be0904797890a24fdaf1cc6e3ea8d77b3b89c` · generated 2026-07-11T00:18:19.295Z
 
 Each table ranks the providers on that dimension's headline metric. Generated from the published Run dataset — do not edit by hand.
 
@@ -10,8 +10,8 @@ Headline: **Node.js web tooling** (runs/s, higher is better)
 
 | Rank | Provider | Node.js web tooling (runs/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 19.16 | 18.77 – 19.56 | 15 | — | — |
-| 2 | Modal | 7.505 | 7.31 – 7.71 | 14 | <0.001 | <0.001 |
+| 1 | Daytona | 19.72 | 19.63 – 19.96 | 3 | — | — |
+| 1 | Modal | 9.59 | 9.52 – 9.79 | 3 | 0.081 (tied) | 0.033 |
 
 ## disk
 
@@ -19,9 +19,8 @@ Headline: **Hardlink throughput** (bogo ops/s, higher is better)
 
 | Rank | Provider | Hardlink throughput (bogo ops/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 26.16 | 25.89 – 26.29 | 3 | — | — |
-| 2 | Modal | 1.5 | 1.46 – 1.53 | 15 | 0.0088 | 0.0038 |
-| 2 | E2B | 1.46 | 1.46 – 1.5 | 3 | 0.40 (tied) | 0.70 |
+| 1 | Daytona | 23.39 | 23.35 – 23.42 | 3 | — | — |
+| 2 | Modal | 3.25 | 3.18 – 3.34 | 15 | 0.0090 | 0.0038 |
 
 ## memory
 
@@ -29,7 +28,8 @@ Headline: **STREAM Triad** (MB/s, higher is better)
 
 | Rank | Provider | STREAM Triad (MB/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 53930 | 53420 – 79050 | 5 | — | — |
+| 1 | Daytona | 54530 | 54030 – 54590 | 5 | — | — |
+| 2 | Modal | 40510 | 38810 – 53440 | 5 | 0.012 | 0.0038 |
 
 ## economics
 
@@ -38,8 +38,7 @@ Headline: **Hourly cost** (USD/hr, lower is better)
 | Rank | Provider | Hourly cost (USD/hr) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | Daytona | 0.1494 | — | 1 | — | — |
-| 2 | E2B | 0.2304 | — | 1 | — | — |
-| 3 | Modal | 0.3354 | — | 1 | — | — |
+| 2 | Modal | 0.4774 | — | 1 | — | — |
 
 ---
 
