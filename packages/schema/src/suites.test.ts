@@ -25,6 +25,7 @@ describe("suite registry", () => {
 			"memory",
 			"disk",
 			"network",
+			"cpu-generic",
 			"realworld-mastra",
 			"realworld-better-auth",
 			"realworld-openclaw",
@@ -52,11 +53,12 @@ describe("suite registry", () => {
 	});
 
 	it("mirrors the full-matrix suites' metrics from the generated catalog (no hand-drift)", () => {
-		// network runs its profile's WHOLE option matrix in batch mode, so its declared list must
-		// equal the catalog's entries for the test — same both-directions pin as the realworld mirror
-		// above (a profile bump that adds/renames a combination fails here instead of silently
-		// stranding the list).
+		// cpu-generic and network run their profiles' WHOLE option matrices in batch mode, so their
+		// declared lists must equal the catalog's entries for those tests — same both-directions pin
+		// as the realworld mirror above (a profile bump that adds/renames a combination fails here
+		// instead of silently stranding the list).
 		const profilesOf = {
+			"cpu-generic": ["pts/c-ray", "pts/compress-zstd"],
 			network: ["pts/network-loopback"],
 		} as const;
 		for (const [suiteName, ptsTests] of Object.entries(profilesOf)) {

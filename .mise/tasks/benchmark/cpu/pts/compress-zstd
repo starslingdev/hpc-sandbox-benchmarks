@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="PTS: Zstd compression/decompression across its compression-level matrix"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark.
+# Batch mode runs the profile's full Compression Level matrix (RunAllTestCombinations); each level
+# posts a compress and a decompress metric (the two catalogued parsers).
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_compress-zstd"
+	exit 0
+fi
+
+# Version-pinned to the vendored profile (and its recorded fixture) so an upstream compress-zstd
+# release can't silently unmap the catalogued level descriptions.
+run_pts_benchmark "pts/compress-zstd-1.6.0" "pts_compress-zstd"

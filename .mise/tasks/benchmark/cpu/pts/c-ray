@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="PTS: C-Ray multi-threaded ray tracer (1080p/4K/5K at 16 rays per pixel)"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark.
+# Batch mode runs the profile's full Resolution matrix (RunAllTestCombinations) — the three catalogued
+# c_ray_* metrics.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_c-ray"
+	exit 0
+fi
+
+# Version-pinned to the vendored profile (and its recorded fixture) so an upstream c-ray release
+# can't silently unmap the catalogued descriptions.
+run_pts_benchmark "pts/c-ray-2.0.0" "pts_c-ray"
