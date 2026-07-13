@@ -55,7 +55,7 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 			it("declares a single Task option with no duplicate Values", () => {
 				const taskOptions = profile.settings.filter((option) => option.DisplayName === "Task");
 				expect(taskOptions).toHaveLength(1);
-				const values = taskOptions[0]?.Menu.Entry.map((entry) => entry.Value) ?? [];
+				const values = taskOptions[0]?.Menu?.Entry.map((entry) => entry.Value) ?? [];
 				expect(values.length).toBeGreaterThan(0);
 				expect(new Set(values).size).toBe(values.length);
 			});
@@ -64,7 +64,7 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 				const values = new Set(
 					profile.settings
 						.find((option) => option.DisplayName === "Task")
-						?.Menu.Entry.map((e) => e.Value) ?? [],
+						?.Menu?.Entry.map((e) => e.Value) ?? [],
 				);
 				const taskCmdKeys = new Set(
 					Object.keys(env)
@@ -84,7 +84,7 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 				const values = new Set(
 					profile.settings
 						.find((option) => option.DisplayName === "Task")
-						?.Menu.Entry.map((e) => e.Value) ?? [],
+						?.Menu?.Entry.map((e) => e.Value) ?? [],
 				);
 				const prepKeys = Object.keys(env)
 					.filter((key) => key.startsWith("TASK_PREP_"))

@@ -3,14 +3,15 @@
 // `dimension` — refined by the hand-authored override map (pts-overrides.ts) at import time; the
 // generator owns the XML-derived fields (`id`, `unit`, `direction`, `pts`) and id-uniqueness.
 //
-// Multi-result option matrices are predicted by {@link synthesizeDescriptions} (./synthesize.ts): the
+// Multi-result option matrices are predicted by {@link synthesizeResults} (./synthesize.ts): the
 // cartesian product of `<TestSettings>` × results-parser inverse matching, reproducing each runtime
-// `<Result>`'s `<Description>`. A single-metric profile collapses to one description-less wildcard.
+// `<Result>`'s `<Description>` (plus any per-parser scale/direction override). A single-metric
+// profile collapses to one description-less wildcard.
 import { type } from "arktype";
 import type { Dimension, Direction, MetricDef } from "../../src/metrics.ts";
 import { directionSchema } from "../../src/metrics.ts";
 import type { PtsProfile } from "./parse.ts";
-import { synthesizeDescriptions } from "./synthesize.ts";
+import { synthesizeResults } from "./synthesize.ts";
 
 /** Strip a trailing version: "node-web-tooling-1.0.1" → "node-web-tooling" (mirrors `versionlessTest`). */
 export function versionless(dir: string): string {
@@ -50,12 +51,18 @@ export function dimensionForTestType(testType: string | undefined): Dimension {
 	return dimension;
 }
 
-/** `<Proportion>` → Direction. Guards a missing/invalid value rather than assuming `HIB` (§7). */
-export function directionFor(profile: PtsProfile): Direction {
-	const out = directionSchema(profile.info.Proportion);
+/**
+ * `<Proportion>` → Direction, with a per-parser `<ResultProportion>` override taking precedence.
+ * Guards a missing/invalid value rather than assuming `HIB` (§7): fio declares NO profile-level
+ * Proportion at all — each of its parsers carries `ResultProportion` — so a metric whose parser also
+ * declares none has no direction anywhere and must be curated, not defaulted.
+ */
+export function directionFor(profile: PtsProfile, parserProportion?: string): Direction {
+	const source = parserProportion ?? profile.info.Proportion;
+	const out = directionSchema(source);
 	if (out instanceof type.errors) {
 		throw new Error(
-			`profile ${profile.dir}: missing/invalid <Proportion> ("${profile.info.Proportion ?? "absent"}") — curate the direction explicitly`,
+			`profile ${profile.dir}: missing/invalid <Proportion>/<ResultProportion> ("${source ?? "absent"}") — curate the direction explicitly`,
 		);
 	}
 	return out;
@@ -77,7 +84,6 @@ export function generateProfile(profile: PtsProfile): MetricDef[] {
 
 	const base = slug(name);
 	const dimension = dimensionForTestType(profile.profile.TestType);
-	const direction = directionFor(profile);
 	// `unit` is `<ResultScale>`, which is already the post-transform scale: the results-definition
 	// numeric transforms (DivideResultBy/MultiplyResultBy/StripResultPostfix) rescale the runtime
 	// value, not the unit, so they're deliberately not applied here (c-ray's template reads
@@ -85,23 +91,67 @@ export function generateProfile(profile: PtsProfile): MetricDef[] {
 	const { Title, SubTitle, Description, ResultScale } = profile.info;
 	const sourceUrl = profile.profile.ProjectURL;
 
-	const defs = synthesizeDescriptions(profile).map(
-		(description): MetricDef => ({
-			id: `${base}_${slug(description ?? ResultScale)}`,
+	const synthesized = synthesizeResults(profile);
+
+	// Descriptions that appear on MORE than one scale (fio: bandwidth + IOPS from one run). Those
+	// metrics get a scale-suffixed id and a `pts.scale` pin so the runtime mapping can tell the twin
+	// `<Result>`s apart; a description unique to one scale keeps today's id and description-only pin
+	// (byte-stability for every existing profile). `undefined` (the wildcard) is a perfectly good Map
+	// key, so the description keys directly.
+	const scalesPerDescription = new Map<string | undefined, number>();
+	for (const s of synthesized) {
+		scalesPerDescription.set(s.description, (scalesPerDescription.get(s.description) ?? 0) + 1);
+	}
+
+	const defs = synthesized.map((s): MetricDef => {
+		const { description } = s;
+		const unit = s.scale ?? ResultScale;
+		if (!unit) {
+			throw new Error(
+				`profile ${profile.dir}: no <ResultScale> in TestInformation and none on the parser for "${description ?? "(wildcard)"}" — the metric has no unit`,
+			);
+		}
+		const ambiguous = (scalesPerDescription.get(description) ?? 0) > 1;
+		if (ambiguous && description === undefined) {
+			// Two wildcard entries for one test would violate the catalog's at-most-one-wildcard
+			// invariant, and the runtime has no description to tell them apart anyway.
+			throw new Error(
+				`profile ${profile.dir}: multiple result scales on the description-less wildcard — vendor a results-definition that disambiguates the descriptions`,
+			);
+		}
+		if (ambiguous && slug(unit) === "") {
+			// A symbol-only scale ("%", "±") slugs to nothing: the suffixed id would end in a trailing
+			// underscore (a malformed stable id) and two such scales would silently collide. Fail with
+			// the offending scale named rather than baking the malformed id into the catalog.
+			throw new Error(
+				`profile ${profile.dir}: result scale "${unit}" on "${description}" slugs to an empty id suffix — curate a sluggable scale in the results-definition`,
+			);
+		}
+		return {
+			id: ambiguous
+				? `${base}_${slug(description ?? unit)}_${slug(unit)}`
+				: `${base}_${slug(description ?? unit)}`,
 			dimension,
-			unit: ResultScale,
-			direction,
+			unit,
+			direction: directionFor(profile, s.proportion),
 			headline: false,
 			label: description
-				? `${Title} - ${description}`
+				? ambiguous
+					? `${Title} - ${description} (${unit})`
+					: `${Title} - ${description}`
 				: SubTitle
 					? `${Title} - ${SubTitle}`
 					: Title,
 			description: Description,
-			pts: description === undefined ? { test: ptsTest } : { test: ptsTest, description },
+			pts:
+				description === undefined
+					? { test: ptsTest }
+					: ambiguous
+						? { test: ptsTest, description, scale: unit }
+						: { test: ptsTest, description },
 			...(sourceUrl ? { sourceUrl } : {}),
-		}),
-	);
+		};
+	});
 
 	if (new Set(defs.map((d) => d.id)).size !== defs.length) {
 		throw new Error(`profile ${profile.dir}: generated duplicate metric ids`);

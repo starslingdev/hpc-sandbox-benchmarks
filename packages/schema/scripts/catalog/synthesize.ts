@@ -1,7 +1,9 @@
 // Predict, deterministically and offline, the per-`<Result>` `<Description>` strings PTS emits at
 // runtime for a profile — the disambiguator the runtime maps a result onto the catalog by, so this
 // must byte-match (separators, `" - "` joins). The recipe (design §3.3):
-//   1. Cartesian product of every `<TestSettings>/<Option>/<Menu>/<Entry>` (source order).
+//   1. Cartesian product of every `<TestSettings>/<Option>/<Menu>/<Entry>` (source order). A
+//      menu-less virtual axis (fio's `auto-disk-mount-points`) contributes its deterministic runtime
+//      default entry — see {@link virtualEntries}.
 //   2. Candidate parsers per combination = each `<ResultsParser>` with no `MatchToTestArguments`
 //      (always applies) or whose `MatchToTestArguments` substring appears in the combination's
 //      `<Entry>/<Value>` set (the inverse link, e.g. john `--format=bcrypt`).
@@ -10,11 +12,27 @@
 //      `AppendToArgumentsDescription` *suffixes* it (two parsers → two metrics from one run).
 // `<Entry>/<Message>` is advisory and never emitted. A profile with no options and an unmodified
 // parser collapses to one description-less wildcard (`[undefined]`).
-import type { PtsOption, PtsProfile, PtsResultsParser } from "./parse.ts";
+//
+// Each synthesized metric also carries its parser's `<ResultScale>`/`<ResultProportion>` when
+// declared: fio's four parsers scrape ONE run into TWO scales (MB/s bandwidth + IOPS) under the SAME
+// description, so the scale is part of a metric's identity there. Dedup is therefore keyed on
+// (description, scale) — parsers that differ only in extraction details (fio's KiB/s- and MiB/s-unit
+// bandwidth variants both post as MB/s) still collapse to one metric.
+import type { PtsEntry, PtsOption, PtsProfile, PtsResultsParser } from "./parse.ts";
 
 interface Choice {
 	readonly option: PtsOption;
-	readonly entry: PtsOption["Menu"]["Entry"][number];
+	readonly entry: PtsEntry;
+}
+
+/** One predicted `<Result>`: its description plus any per-parser scale/direction overrides. */
+export interface SynthesizedMetric {
+	/** The runtime `<Description>` (`undefined` = the description-less wildcard). */
+	readonly description: string | undefined;
+	/** The producing parser's `<ResultScale>`, when it declares one (else the profile-level unit). */
+	readonly scale?: string;
+	/** The producing parser's `<ResultProportion>`, when it declares one. */
+	readonly proportion?: string;
 }
 
 /** Cartesian product preserving source order; `[]` groups yield the single empty combination `[[]]`. */
@@ -22,6 +40,23 @@ export function cartesian<T>(groups: readonly (readonly T[])[]): T[][] {
 	return groups.reduce<T[][]>(
 		(combos, group) => combos.flatMap((combo) => group.map((item) => [...combo, item])),
 		[[]],
+	);
+}
+
+/**
+ * The deterministic runtime default for a menu-less virtual axis. PTS expands these axes from the
+ * machine at run time (pts_test_run_options.php); the only entry that exists on EVERY machine — and
+ * the one our producer tasks pin via PRESET_OPTIONS — is the axis's default: `auto-disk-mount-points`
+ * always lists `Default Test Directory` (value ``) first. Any other menu-less identifier is
+ * machine-dependent with no stable default, so it throws rather than guessing (silently enumerating a
+ * host's mount points would generate machine-dependent catalog bytes and break the drift gate).
+ */
+function virtualEntries(option: PtsOption): readonly PtsEntry[] {
+	if (option.Identifier === "auto-disk-mount-points") {
+		return [{ Name: "Default Test Directory", Value: "" }];
+	}
+	throw new Error(
+		`option "${option.DisplayName}" has no <Menu> and no known runtime default (identifier "${option.Identifier ?? "(absent)"}") — teach virtualEntries its expansion`,
 	);
 }
 
@@ -59,12 +94,25 @@ function describe(base: string, parser: PtsResultsParser): string | undefined {
 	return base || undefined; // bare base, or the description-less wildcard when there are no options
 }
 
-/** The deduplicated, source-ordered `<Description>` strings a profile emits (`undefined` = wildcard). */
-export function synthesizeDescriptions(profile: PtsProfile): (string | undefined)[] {
-	// An option with no `<Entry>` makes its cartesian group empty, collapsing the whole product to `[]`
-	// — the profile would then contribute zero metrics and vanish from the catalog silently. The schema
-	// permits a zero-entry `<Menu>`, so guard it here and surface the malformed profile at generation.
-	const emptyOption = profile.settings.find((option) => option.Menu.Entry.length === 0);
+/**
+ * The deduplicated, source-ordered predicted `<Result>`s a profile emits. Dedup is keyed on
+ * (description, EFFECTIVE scale) — the parser's `<ResultScale>` falling back to the profile-level
+ * one — so a parser that declares the profile's own scale explicitly still collapses with a sibling
+ * that inherits it (keying on the raw parser field would emit twins that later mint the same
+ * scale-suffixed id and abort generation). `JSON.stringify` is the key encoding so a description
+ * containing any delimiter literal can never collide with a different (description, scale) pair.
+ * Parsers that collapse onto one key must agree on their effective `<ResultProportion>`: direction
+ * is part of the metric contract, and letting source order pick a winner would silently invert a
+ * leaderboard ranking — so a conflict throws at generation instead.
+ */
+export function synthesizeResults(profile: PtsProfile): SynthesizedMetric[] {
+	// An option whose <Menu> declares no <Entry> makes its cartesian group empty, collapsing the whole
+	// product to `[]` — the profile would then contribute zero metrics and vanish from the catalog
+	// silently. The schema permits a zero-entry <Menu>, so guard it here and surface the malformed
+	// profile at generation. (Menu-LESS options take the virtualEntries path instead.)
+	const emptyOption = profile.settings.find(
+		(option) => option.Menu && option.Menu.Entry.length === 0,
+	);
 	if (emptyOption) {
 		throw new Error(
 			`profile ${profile.dir}: option "${emptyOption.DisplayName}" has no <Entry> values — it would drop every metric`,
@@ -72,11 +120,14 @@ export function synthesizeDescriptions(profile: PtsProfile): (string | undefined
 	}
 
 	const combinations = cartesian(
-		profile.settings.map((option) => option.Menu.Entry.map((entry): Choice => ({ option, entry }))),
+		profile.settings.map((option) =>
+			(option.Menu?.Entry ?? virtualEntries(option)).map((entry): Choice => ({ option, entry })),
+		),
 	);
 
-	const seen = new Set<string | undefined>();
-	const descriptions: (string | undefined)[] = [];
+	// key -> the effective proportion of the entry that claimed it (for the agreement check).
+	const seen = new Map<string, string | undefined>();
+	const results: SynthesizedMetric[] = [];
 	for (const combination of combinations) {
 		const base = combination
 			.map(({ option, entry }) => `${option.DisplayName}: ${entry.Name}`)
@@ -84,10 +135,24 @@ export function synthesizeDescriptions(profile: PtsProfile): (string | undefined
 		const values = combination.map(({ entry }) => entry.Value);
 		for (const parser of candidateParsers(profile.parsers, values)) {
 			const description = describe(base, parser);
-			if (seen.has(description)) continue;
-			seen.add(description);
-			descriptions.push(description);
+			const effectiveScale = parser.ResultScale ?? profile.info.ResultScale;
+			const effectiveProportion = parser.ResultProportion ?? profile.info.Proportion;
+			const key = JSON.stringify([description ?? null, effectiveScale ?? null]);
+			if (seen.has(key)) {
+				if (seen.get(key) !== effectiveProportion) {
+					throw new Error(
+						`profile ${profile.dir}: parsers collapsing onto "${description ?? "(wildcard)"}" (${effectiveScale ?? "no scale"}) disagree on direction ("${seen.get(key) ?? "absent"}" vs "${effectiveProportion ?? "absent"}") — the metric's direction would depend on parser order`,
+					);
+				}
+				continue;
+			}
+			seen.set(key, effectiveProportion);
+			results.push({
+				description,
+				...(parser.ResultScale ? { scale: parser.ResultScale } : {}),
+				...(parser.ResultProportion ? { proportion: parser.ResultProportion } : {}),
+			});
 		}
 	}
-	return descriptions;
+	return results;
 }
