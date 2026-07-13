@@ -161,4 +161,83 @@ describe("catalogSchema PTS-mapping invariant", () => {
 			]),
 		).toThrow();
 	});
+
+	it("accepts twin descriptions disambiguated by distinct pts.scale pins (fio)", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{
+					...base,
+					id: "b",
+					unit: "IOPS",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "IOPS" },
+				},
+			]),
+		).not.toThrow();
+	});
+
+	it("rejects twin descriptions when one lacks a pts.scale pin", () => {
+		// The description-only matcher arm would resolve a result to the unpinned twin arbitrarily.
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{ ...base, id: "b", pts: { test: "pts/fio", description: "Type: Random Read" } },
+			]),
+		).toThrow();
+	});
+
+	it("rejects twin descriptions carrying the SAME pts.scale pin", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{
+					...base,
+					id: "b",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+			]),
+		).toThrow();
+	});
+
+	it("rejects a pts.scale pin on a description-less wildcard", () => {
+		// The wildcard matcher arm never compares <Scale>, so the pin would be silently ignored and a
+		// fio-style test posting two description-less results (MB/s + IOPS) would collapse both onto
+		// this one metric — the exact cross-scale misattribution pinning exists to prevent.
+		expect(() =>
+			catalogSchema.assert([
+				{ ...base, id: "a", unit: "IOPS", pts: { test: "pts/fio", scale: "IOPS" } },
+			]),
+		).toThrow();
+	});
+
+	it("rejects a pinned entry whose unit differs from its pts.scale (crossed pins)", () => {
+		// unit and pts.scale both name the runtime <Scale> string; crossed values would rank one
+		// scale's samples under the other's unit label.
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "IOPS" },
+				},
+			]),
+		).toThrow();
+	});
 });
