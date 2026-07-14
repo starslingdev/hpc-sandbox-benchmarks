@@ -1,17 +1,31 @@
 name: Toolchain image
 
-# Build, validate, and publish the sandbox-benchmarks toolchain. Two lanes:
+# Build, validate, and publish the sandbox-benchmarks toolchain — staged as a release pipeline rather
+# than one monolithic job. Two lanes:
 #   • Pull requests — build the base (no push) and run the docker smoke. Fast gate, no credentials.
-#   • Push to main / manual dispatch — build + push the mutable CANDIDATE (:v1-candidate), bake each
-#     provider's candidate artifact and validate it by booting a sandbox and running the shared smoke
-#     spec (behind each provider's secret; missing ones skip), then promote the validated candidate to
-#     the immutable public :v1. Iteration never touches :v1; bump TOOLCHAIN_VERSION
-#     (packages/schema/src/toolchain.ts) to publish a new version.
+#   • Push to main / manual dispatch — the release phases: PLAN → BUILD candidate → BAKE + verify each
+#     provider (a matrix, one cell per provider) → PROMOTE the validated candidate to the immutable
+#     public :v1. Iteration never touches :v1; bump TOOLCHAIN_VERSION (packages/schema/src/toolchain.ts)
+#     to publish a new version.
+#
+# Phase split (needs edges only where an artifact is required, so build/bake work runs in parallel and
+# the ONLY serialized section is the promote transaction):
+#
+#   plan ──> build ──> bake (matrix: provider × required) ──> promote
+#     │        │                                                  ▲
+#     └── emits release-plan.json; every downstream job consumes  │
+#         the plan (mode, refs, provider matrix, gates) rather    │
+#         than re-reading the raw workflow inputs. ───────────────┘
+#
+# Cross-cutting GitHub Actions mechanics live in .github/actions/* composites (setup, ghcr login,
+# input validation, package-visibility guard, summaries); provider bake/verify/promote logic lives in
+# the package scripts under apps/cli (thin YAML, fat scripts). There is no OIDC here — GHCR auth is the
+# job's GITHUB_TOKEN — so no job needs id-token: write.
 on:
   # Manual re-trigger (e.g. after bumping TOOLCHAIN_VERSION). The public version is immutable on the
   # automated push path; `force_republish` (manual dispatch only) deliberately regenerates it over an
   # existing version for fast dev iteration. Normally, to republish you bump TOOLCHAIN_VERSION; an
-  # already-published version is skipped at the guard below unless force_republish is set.
+  # already-published version is skipped by the plan phase unless force_republish is set.
   workflow_dispatch:
     inputs:
       force_republish:
@@ -20,8 +34,8 @@ on:
         default: false
   push:
     branches: [main]
-    # The publish lane runs `bake`/`promote`, which pull in the whole provider-run + smoke + harness
-    # surface (not just packages/templates and the bake libs). Trigger on every file that can change
+    # The release lane runs bake/promote, which pull in the whole provider-run + smoke + harness surface
+    # (not just packages/templates and the bake libs). Trigger on every file that can change
     # bake/validate/promote behavior so a relevant change to main can't ship a version untested by it.
     paths:
       - "packages/templates/**"
@@ -31,13 +45,17 @@ on:
       - "apps/cli/src/lib/providers-run.ts"
       - "apps/cli/src/lib/smoke-run.ts"
       - "apps/cli/src/bin/bake.ts"
+      - "apps/cli/src/bin/build-candidate.ts"
+      - "apps/cli/src/bin/release-plan.ts"
       - "packages/schema/src/toolchain.ts"
       - ".github/workflows/toolchain-image.yml"
+      - ".github/actions/**"
   pull_request:
     paths:
       - "packages/templates/**"
       - "packages/schema/src/toolchain.ts"
       - ".github/workflows/toolchain-image.yml"
+      - ".github/actions/**"
 
 # Serialize publishes by ref (NOT by event_name): a push to main and a manual workflow_dispatch on the
 # same ref must not publish concurrently and race on the version tag. PR runs key off their own head ref
@@ -47,19 +65,25 @@ concurrency:
   group: toolchain-image-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least privilege, global default: read-only. Only build and promote widen to packages: write; plan
+# widens to packages: read (the immutability probe + package-visibility guard); bake needs neither
+# (providers pull the public candidate anonymously).
 permissions:
   contents: read
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: starslingdev
+
 jobs:
+  # ── PR lane ──────────────────────────────────────────────────────────────────────────────────────
   # Fast PR gate: prove the base image still builds and the toolchain is complete, without pushing or
   # touching any provider. Uses the same shared smoke spec as the in-sandbox bake validation.
   #
   # Same-repo guard: this job checks out the PR head and runs scripts FROM that checkout (build.sh,
   # smoke.ts) on a self-hosted runner, so a fork PR could execute arbitrary code on the runner itself.
   # The repo is private (no untrusted forks today), but we gate on same-repo head as defense-in-depth
-  # against a compromised account / outside-collaborator fork. Branches pushed to this repo (the normal
-  # Graphite flow) satisfy it; a legitimate fork-based PR would skip the gate and need a maintainer to
-  # re-run it from an in-repo branch.
+  # against a compromised account / outside-collaborator fork.
   pr-gate:
     name: Build base + docker smoke
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -70,17 +94,10 @@ jobs:
         with:
           # Builds and smokes the image locally — no git push, so don't persist the job token.
           persist-credentials: false
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-toolchain
         with:
-          bun-version: 1.3.14
-          # This runner's setup-bun cache restores without a working ~/.bun/bin/bun, so a cache hit
-          # fails the "Set up Bun" step. Always download bun fresh instead of restoring the cache.
-          no-cache: true
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+          buildx: "true"
       - name: Build base (no push) + docker smoke
         run: |
           set -euo pipefail
@@ -91,169 +108,291 @@ jobs:
           # (not swallowed inside docker's command substitution, which would smoke an empty script).
           smoke_script="$(bun packages/templates/src/smoke.ts --bash)"
           docker run --rm "${name}:dev" bash -lc "$smoke_script"
+      - name: Release summary
+        if: always()
+        uses: ./.github/actions/release-summary
+        with:
+          phase: pr-gate
+          status: ${{ job.status }}
+          mode: pr-gate
+          source-ref: ${{ github.sha }}
+          verify: bash packages/templates/images/build.sh
 
-  # Publish lane: candidate → validate → promote. Thin wrapper over the bake bin (thin workflow, fat
-  # script). Provider steps are guarded by their secrets inside the bin (missing creds skip).
-  publish:
-    name: Bake, validate & promote toolchain
+  # ── Release lane ─────────────────────────────────────────────────────────────────────────────────
+  # PLAN: validate inputs/pins (credential-free), then resolve identity and emit ONE release plan that
+  # every downstream job consumes. The plan decides `skip` (immutable version already published and not
+  # force_republish) and the provider matrix. Emits release-plan.json as a diagnostic artifact.
+  plan:
+    name: Plan release
     if: github.event_name != 'pull_request'
     runs-on: starsling-ubuntu-24.04-2
     permissions:
       contents: read
-      packages: write
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_OWNER: starslingdev
+      packages: read
+    outputs:
+      skip: ${{ steps.plan.outputs.skip }}
+      mode: ${{ steps.plan.outputs.mode }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      required: ${{ steps.plan.outputs.required }}
+      size-tier: ${{ steps.plan.outputs.size-tier }}
+      image-candidate: ${{ steps.plan.outputs.image-candidate }}
+      image-version: ${{ steps.plan.outputs.image-version }}
+      toolchain-version: ${{ steps.plan.outputs.toolchain-version }}
+      publish-target: ${{ steps.plan.outputs.publish-target }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          # Publishes to GHCR via docker/login-action (the GITHUB_TOKEN below), never `git push`, so
-          # the checkout's own credentials aren't needed — don't persist the job token.
+          # Reads code and probes the registry via docker/login — never git push.
           persist-credentials: false
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-toolchain
+      # Fail-fast, credential-free: validate pins + the dispatch input BEFORE the registry login below.
+      - name: Validate release inputs
+        uses: ./.github/actions/release-validate-inputs
         with:
-          bun-version: 1.3.14
-          # This runner's setup-bun cache restores without a working ~/.bun/bin/bun, so a cache hit
-          # fails the "Set up Bun" step. Always download bun fresh instead of restoring the cache.
-          no-cache: true
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-      - name: Log in to the container registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+          force-republish: ${{ inputs.force_republish }}
+      # The one privileged step in plan: the immutability probe (`docker manifest inspect`) needs a
+      # GHCR session. GITHUB_TOKEN with packages: read suffices.
+      - name: GHCR session
+        uses: ./.github/actions/ghcr-login
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Resolve identity from the arktype-validated TS config; `bun pins.ts` also validates every pin
-      # and exits non-zero on any unfilled/invalid one (the early fail-fast gate).
-      - name: Resolve identity & validate pins
-        run: |
-          set -euo pipefail
-          pins="$(bun packages/templates/src/pins.ts)"
-          name="$(echo "${pins}" | sed -n 's/^IMAGE_NAME=//p')"
-          version="$(echo "${pins}" | sed -n 's/^IMAGE_VERSION=//p')"
-          {
-            echo "IMAGE_NAME=${name}"
-            echo "IMAGE_VERSION=${version}"
-            echo "VERSION_REF=${REGISTRY}/${IMAGE_OWNER}/${name}:${version}"
-          } >> "${GITHUB_ENV}"
-
-      # Guard the immutable public version: skip the whole publish if :v1 already exists. The version is
-      # immutable (promote refuses to overwrite it), so a published version is never re-promoted — bump
-      # TOOLCHAIN_VERSION to publish a new one. The candidate is mutable and always rebuilt within a run.
-      # `force_republish` (manual dispatch only) overrides the skip to regenerate the version in place.
-      - name: Check if version already published
-        id: guard
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve identity & build release plan
+        id: plan
         env:
           FORCE_REPUBLISH: ${{ inputs.force_republish }}
-        run: |
-          if [ "${FORCE_REPUBLISH}" = "true" ]; then
-            echo "::notice::force_republish set — regenerating ${VERSION_REF} even though it may already exist."
-            echo "skip=false" >> "${GITHUB_OUTPUT}"
-          elif docker manifest inspect "${VERSION_REF}" >/dev/null 2>&1; then
-            echo "::notice::${VERSION_REF} already published — skipping (bump TOOLCHAIN_VERSION, or dispatch with force_republish, to publish again)."
-            echo "skip=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "skip=false" >> "${GITHUB_OUTPUT}"
-          fi
-
-      # The candidate base image must be PUBLIC so providers can pull it anonymously: e2b builds the
-      # template on its REMOTE builder (FROM the ghcr candidate base) and daytona/modal pull it to
-      # snapshot/boot — none are handed ghcr pull credentials. GHCR packages are created PRIVATE on
-      # first push and GitHub exposes no API to flip visibility, so making it public is a one-time
-      # manual bootstrap (Org → Packages → this package → Package settings → Change visibility → Public,
-      # or link the package to this public repo). This guard fails fast with that instruction instead of
-      # letting an opaque provider "unauthorized/not found" pull error surface mid-bake.
+        # release-plan.ts validates pins again, probes whether :v1 is already published (best-effort —
+        # promote does the authoritative guard), writes release-plan.json, and prints the key=value
+        # outputs the downstream jobs read.
+        run: bun apps/cli/src/bin/release-plan.ts release-plan.json >> "$GITHUB_OUTPUT"
+      # Guard the candidate package visibility so providers can pull it anonymously (see the composite).
+      # Skipped when the release itself is skipped (version already published).
       - name: Ensure candidate package is public
-        if: steps.guard.outputs.skip != 'true'
-        run: |
-          set -euo pipefail
-          # > Capture the HTTP status separately so a real "absent" (404) is distinguished from auth/scope
-          # > failures (403 SSO/token gap) and transport errors — `curl -f ... || echo '{}'` would collapse
-          # > all of them into the same empty fallback and let the publish proceed on a false "not found".
-          api="https://api.github.com/orgs/${IMAGE_OWNER}/packages/container/${IMAGE_NAME}"
-          code="$(curl -sS -m 30 -o /tmp/ghcr-pkg.json -w '%{http_code}' \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            "${api}")" || { echo "::error::Could not reach the GHCR package API (network/transport error) — refusing to publish blind."; exit 1; }
-          case "${code}" in
-            200)
-              if grep -qE '"visibility"[[:space:]]*:[[:space:]]*"public"' /tmp/ghcr-pkg.json; then
-                echo "GHCR package ${IMAGE_OWNER}/${IMAGE_NAME} is public — providers can pull the candidate."
-              else
-                echo "::error::GHCR package ${IMAGE_OWNER}/${IMAGE_NAME} is not public. e2b/daytona/modal pull the candidate base anonymously, so set it Public once (org package settings or link it to this repo), then re-run."
-                exit 1
-              fi
-              ;;
-            404)
-              echo "::warning::GHCR package ${IMAGE_OWNER}/${IMAGE_NAME} not found yet — the push below creates it PRIVATE. After this run, set it Public once so the candidate validate and the providers can pull it; this run's validate will fail until then."
-              ;;
-            *)
-              echo "::error::GHCR package API returned HTTP ${code} (expected 200 or 404) — likely a token-scope gap or org SSO enforcement, not a missing package. Resolve and re-run instead of publishing blind."
-              exit 1
-              ;;
-          esac
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/ensure-package-public
+        with:
+          owner: ${{ env.IMAGE_OWNER }}
+          package: ${{ steps.plan.outputs.image-name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload release plan
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-plan-${{ github.run_id }}
+          path: release-plan.json
+          if-no-files-found: warn
+      - name: Release summary
+        if: always()
+        uses: ./.github/actions/release-summary
+        with:
+          phase: plan
+          status: ${{ job.status }}
+          mode: ${{ steps.plan.outputs.mode }}
+          source-ref: ${{ github.sha }}
+          image: ${{ steps.plan.outputs.image-candidate }}
+          size-tier: ${{ steps.plan.outputs.size-tier }}
+          published: ${{ steps.plan.outputs.publish-target }}
+          diagnostics: release-plan-${{ github.run_id }}
 
-      # Build + push the candidate, then bake each provider's candidate artifact and validate it by
-      # booting a sandbox (skip-on-missing-creds). Fails the job if any baked provider fails to validate.
-      - name: Bake + validate candidate
-        if: steps.guard.outputs.skip != 'true'
+  # BUILD: build the base image (+ variants) and push the mutable candidate base to GHCR ONCE, then
+  # record its immutable digest. The providers below all fan out from this single pushed candidate.
+  build:
+    name: Build + push candidate
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: starsling-ubuntu-24.04-2
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      candidate-digest-ref: ${{ steps.build.outputs.candidate-digest-ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Publishes to GHCR via docker/login-action, never git push — don't persist the job token.
+          persist-credentials: false
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-toolchain
+        with:
+          buildx: "true"
+      - name: GHCR session
+        uses: ./.github/actions/ghcr-login
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build + push candidate image
+        id: build
         env:
           BUILD_REF: ${{ github.sha }}
-          BUILD_VERSION: ${{ env.IMAGE_VERSION }}
-          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
-          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          # Bake/validate the daytona snapshot in the active region. Without a target the snapshot lands
-          # in the account's default region (which has no `container` runners) and the bake fails at
-          # snapshot creation. Defaulted to the active target so an unsynced secret can't break the
-          # publish at module load (parity with bench-matrix.yml / bench-smoke.yml).
-          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-          # Bake the novita template on Novita's E2B-compatible control plane. Optional: a missing
-          # secret skips the novita bake (it is not in --require) without failing the publish.
-          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          BUILD_VERSION: ${{ needs.plan.outputs.toolchain-version }}
         run: |
           set -euo pipefail
           # Declare then assign so the command substitution's exit status isn't masked (SC2155).
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           export BUILD_DATE
-          # --require fails the publish loudly if a required provider's secret is missing/misnamed, so a
-          # merge can't bless a candidate while a required provider was silently skipped (never built or
-          # validated). modal boots the toolchain image via fromRegistry under this project's Modal app
-          # and is validated the same as e2b/daytona, so it's required — MODAL_TOKEN_* must be synced.
-          # (blaxel is excluded — its bake is a no-op.)
-          bun apps/cli/src/bin/bake.ts --build-push --require e2b,daytona,modal
+          bun apps/cli/src/bin/build-candidate.ts build-metadata.json >> "$GITHUB_OUTPUT"
+      - name: Upload build metadata
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-metadata-${{ github.run_id }}
+          path: build-metadata.json
+          if-no-files-found: warn
+      - name: Release summary
+        if: always()
+        uses: ./.github/actions/release-summary
+        with:
+          phase: build
+          status: ${{ job.status }}
+          mode: ${{ needs.plan.outputs.mode }}
+          source-ref: ${{ github.sha }}
+          image: ${{ steps.build.outputs.candidate-digest-ref }}
+          size-tier: ${{ needs.plan.outputs.size-tier }}
+          verify: bun apps/cli/src/bin/build-candidate.ts
+          diagnostics: build-metadata-${{ github.run_id }}
 
-      # Promote the validated candidate to the immutable public version (+ version-named artifacts).
-      - name: Promote candidate → version
-        if: steps.guard.outputs.skip != 'true'
+  # BAKE + verify: one matrix cell per provider (from the plan). Each cell bakes its candidate artifact
+  # from the pushed candidate base and validates it by booting a sandbox and running the shared smoke
+  # spec. fail-fast: false so a flaky provider doesn't cancel the others' diagnostics — but ANY cell
+  # that RAN and failed still fails this job (and, being a `needs`, blocks promote). Required cells
+  # (plan `required`) additionally pass `--require`, so a missing/misnamed secret fails the cell instead
+  # of silently skipping a provider the release must ship.
+  bake:
+    name: Bake + verify (${{ matrix.provider }})
+    needs: [plan, build]
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: starsling-ubuntu-24.04-2
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Boots the just-baked candidate via provider SDKs — no git push, no ghcr push. Don't persist.
+          persist-credentials: false
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-toolchain
+      - name: Bake + verify candidate
+        id: bake
+        # The cell's provider + required flag reach the script through the environment, never
+        # interpolated into the shell, so a matrix value can't inject into the runner command. Provider
+        # creds are optional: a missing one SKIPS that provider (required cells fail instead — see
+        # --require below). blaxel gets no creds here (its bake is a no-op booting the stock base), so
+        # it skips, exactly as the previous monolithic lane did.
         env:
+          PROVIDER: ${{ matrix.provider }}
+          REQUIRED: ${{ matrix.required }}
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           # Bake/validate the daytona snapshot in the active region. Without a target the snapshot lands
           # in the account's default region (which has no `container` runners) and the bake fails at
-          # snapshot creation. Defaulted to the active target so an unsynced secret can't break the
-          # publish at module load (parity with bench-matrix.yml / bench-smoke.yml).
+          # snapshot creation. Defaulted so an unsynced secret can't break the release at module load.
           DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-          # Bake the novita template on Novita's E2B-compatible control plane. Optional: a missing
-          # secret skips the novita bake (it is not in --require) without failing the publish.
+          # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-          FORCE_REPUBLISH: ${{ inputs.force_republish }}
-        # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
-        # public version is never published while a required provider's version artifact was silently
-        # skipped. modal is required (validated via its fromRegistry boot); MODAL_TOKEN_* must be synced.
-        # (blaxel is excluded — its bake is a no-op.) `--force` (manual force_republish dispatch only)
-        # republishes over an existing immutable version; never set on the automated push path.
         run: |
           set -euo pipefail
-          args=(--promote --require "e2b,daytona,modal")
+          args=(--provider "${PROVIDER}")
+          # Required providers must not silently skip: --require fails the cell if this provider's
+          # secret is missing/misnamed or it fails to validate.
+          if [ "${REQUIRED}" = "true" ]; then args+=(--require "${PROVIDER}"); fi
+          # bake.ts prints the report JSON to stdout (progress goes to stderr, visible in the log), so
+          # capture it as this cell's diagnostic even when the bake exits non-zero.
+          bun apps/cli/src/bin/bake.ts "${args[@]}" > "bake-${PROVIDER}.json"
+      - name: Upload bake report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bake-${{ matrix.provider }}-${{ github.run_id }}
+          path: bake-${{ matrix.provider }}.json
+          if-no-files-found: warn
+      - name: Release summary
+        if: always()
+        uses: ./.github/actions/release-summary
+        with:
+          phase: ${{ matrix.provider }}/bake
+          status: ${{ job.status }}
+          mode: ${{ needs.plan.outputs.mode }}
+          source-ref: ${{ github.sha }}
+          image: ${{ needs.build.outputs.candidate-digest-ref }}
+          base-image: ${{ needs.plan.outputs.image-candidate }}
+          provider-target: ${{ matrix.provider }}
+          size-tier: ${{ needs.plan.outputs.size-tier }}
+          verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }}
+          diagnostics: bake-${{ matrix.provider }}-${{ github.run_id }}
+
+  # PROMOTE: the serialized publication barrier and the ONLY job that mutates the public :v1. Runs only
+  # after every bake cell converges (a failed required cell fails `bake` and blocks this via `needs`).
+  # promote re-validates the candidate (TOCTOU: the candidate tag is mutable), builds each provider's
+  # version-named artifact FROM the revalidated bytes, then retags the base → :v1 LAST as the commit
+  # point. `--require` (from the plan) fails the promote before publish if a required provider's version
+  # artifact was skipped/failed. `--force` (force_republish only) regenerates an existing version.
+  promote:
+    name: Promote candidate → version
+    needs: [plan, build, bake]
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: starsling-ubuntu-24.04-2
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Publishes to GHCR via docker/login-action, never git push — don't persist the job token.
+          persist-credentials: false
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-toolchain
+        with:
+          buildx: "true"
+      - name: GHCR session
+        uses: ./.github/actions/ghcr-login
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote candidate → version
+        id: promote
+        env:
+          REQUIRED: ${{ needs.plan.outputs.required }}
+          FORCE_REPUBLISH: ${{ inputs.force_republish }}
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+        run: |
+          set -euo pipefail
+          args=(--promote --require "${REQUIRED}")
+          # --force (manual force_republish dispatch only) republishes over an existing immutable
+          # version; never set on the automated push path.
           if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
-          bun apps/cli/src/bin/bake.ts "${args[@]}"
+          # bake.ts --promote prints the promote payload JSON to stdout — capture it as the diagnostic
+          # even when promote aborts (it prints the structured reports before exiting non-zero).
+          bun apps/cli/src/bin/bake.ts "${args[@]}" > promote-payload.json
+      - name: Upload promote payload
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: promote-payload-${{ github.run_id }}
+          path: promote-payload.json
+          if-no-files-found: warn
+      - name: Release summary
+        if: always()
+        uses: ./.github/actions/release-summary
+        with:
+          phase: publish
+          status: ${{ job.status }}
+          mode: ${{ needs.plan.outputs.mode }}
+          source-ref: ${{ github.sha }}
+          image: ${{ needs.build.outputs.candidate-digest-ref }}
+          base-image: ${{ needs.plan.outputs.image-candidate }}
+          size-tier: ${{ needs.plan.outputs.size-tier }}
+          verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }}
+          published: ${{ needs.plan.outputs.publish-target }}
+          diagnostics: promote-payload-${{ github.run_id }}

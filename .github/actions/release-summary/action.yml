@@ -1,0 +1,96 @@
+name: Release summary
+description: >-
+  Append a consistent, machine-checkable phase table to $GITHUB_STEP_SUMMARY. Every release job calls
+  this with the same field vocabulary (mode, image, base, provider target, size tier, verify command,
+  published pointer, diagnostics, elapsed) so an operator reads one shape across build/bake/promote and
+  can grep the summaries. Rows with an empty value are omitted, so each phase shows only its own facts.
+
+inputs:
+  phase:
+    description: 'Phase label, e.g. "e2b/bake" or "publish".'
+    required: true
+  status:
+    description: Phase status (ok / failed / skipped).
+    default: ""
+  mode:
+    description: Release mode (build / republish).
+    default: ""
+  source-ref:
+    description: The source ref the release is cut from (github.sha).
+    default: ""
+  image:
+    description: The image ref (repo@sha256:… when a digest is known, else the tag).
+    default: ""
+  base-image:
+    description: The base image the artifact derives from.
+    default: ""
+  provider-target:
+    description: The provider region / workspace / template the artifact targets.
+    default: ""
+  size-tier:
+    description: The cpu/memory/disk size tier.
+    default: ""
+  verify:
+    description: The exact verify command an operator can rerun locally.
+    default: ""
+  published:
+    description: The published pointer (tag / snapshot / template) this phase advanced.
+    default: ""
+  diagnostics:
+    description: A link (or name) of the uploaded diagnostics artifact for this phase.
+    default: ""
+  elapsed:
+    description: Elapsed wall time for the phase.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Append phase summary
+      shell: bash
+      env:
+        PHASE: ${{ inputs.phase }}
+        STATUS: ${{ inputs.status }}
+        MODE: ${{ inputs.mode }}
+        SOURCE_REF: ${{ inputs.source-ref }}
+        IMAGE: ${{ inputs.image }}
+        BASE_IMAGE: ${{ inputs.base-image }}
+        PROVIDER_TARGET: ${{ inputs.provider-target }}
+        SIZE_TIER: ${{ inputs.size-tier }}
+        VERIFY: ${{ inputs.verify }}
+        PUBLISHED: ${{ inputs.published }}
+        DIAGNOSTICS: ${{ inputs.diagnostics }}
+        ELAPSED: ${{ inputs.elapsed }}
+      run: |
+        set -euo pipefail
+        {
+          echo "### Image release: ${PHASE}"
+          echo ""
+          echo "| Field | Value |"
+          echo "| --- | --- |"
+          # Emit a row only when its value is non-empty. `code` wraps the value in backticks (refs,
+          # commands, pointers); `plain` leaves prose (status, mode) unquoted. A literal '|' in a value
+          # is escaped so it can't break the table.
+          row() { # $1=label $2=value $3=code|plain
+            local label="$1" value="$2" kind="${3:-plain}"
+            [ -n "${value}" ] || return 0
+            value="${value//|/\\|}"
+            if [ "${kind}" = "code" ]; then
+              echo "| ${label} | \`${value}\` |"
+            else
+              echo "| ${label} | ${value} |"
+            fi
+          }
+          row "Status"          "${STATUS}"          plain
+          row "Mode"            "${MODE}"            code
+          row "Source ref"      "${SOURCE_REF}"      code
+          row "Image"           "${IMAGE}"           code
+          row "Base image"      "${BASE_IMAGE}"      code
+          row "Provider target" "${PROVIDER_TARGET}" code
+          row "Size tier"       "${SIZE_TIER}"       plain
+          row "Verify command"  "${VERIFY}"          code
+          row "Published"       "${PUBLISHED}"       code
+          row "Elapsed"         "${ELAPSED}"         plain
+          row "Diagnostics"     "${DIAGNOSTICS}"     plain
+          echo ""
+        } >> "${GITHUB_STEP_SUMMARY}"

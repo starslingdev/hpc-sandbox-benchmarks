@@ -1,0 +1,37 @@
+name: Validate release inputs
+description: >-
+  The credential-free fail-fast gate: validate the toolchain pins and the dispatch inputs BEFORE any
+  registry or provider credential is introduced. Runs after setup-toolchain (needs Bun + deps) but
+  before ghcr-login, so a bad pin or a malformed input fails the release without ever touching creds.
+
+inputs:
+  force-republish:
+    description: The force_republish dispatch input (regenerate an already-published version in place).
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # `bun pins.ts` re-runs the arktype pin gatekeeper (hex sha256s, non-empty versions) and exits
+    # non-zero on any unfilled/invalid pin — the same gate build.sh uses, run here first so the release
+    # fails on a bad pin before it spends a build. Output discarded; we only want the exit code.
+    - name: Validate toolchain pins
+      shell: bash
+      run: bun packages/templates/src/pins.ts > /dev/null
+
+    # A dispatch input reaches the release as an env var (never interpolated into a command); still,
+    # reject anything but the two booleans so a hand-typed dispatch value can't slip through as a
+    # surprise "truthy" string downstream.
+    - name: Validate dispatch inputs
+      shell: bash
+      env:
+        FORCE_REPUBLISH: ${{ inputs.force-republish }}
+      run: |
+        set -euo pipefail
+        case "${FORCE_REPUBLISH}" in
+          true|false|"") ;;
+          *)
+            echo "::error::force_republish must be true or false (got '${FORCE_REPUBLISH}')."
+            exit 1
+            ;;
+        esac

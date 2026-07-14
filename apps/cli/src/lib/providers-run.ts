@@ -34,9 +34,27 @@ export interface ForEachProviderOptions<T> {
 	failureReason?: (value: T) => string;
 	/** Called right after each provider settles (ok/failed), so callers can log results in order. */
 	onComplete?: (run: ProviderRun<T>) => void;
+	/**
+	 * Restrict the loop to these provider ids — the CI fan-out passes one id per matrix cell so each
+	 * provider bakes/validates in its own job. Absent → every registered provider (the default, so the
+	 * local `bake` still drives them all). The registry order is preserved; ids not in `only` are simply
+	 * not visited (no report), so a cell reports only its own provider. Validate names against the
+	 * registry before calling — an unknown id here just yields zero runs, which the caller must reject.
+	 */
+	only?: readonly ProviderId[];
 }
 
 const noop = () => {};
+
+/**
+ * Of `requested` (e.g. a `--provider e2b,daytona` value), the ids that are not registered providers.
+ * The bake bin rejects a non-empty result so a typo'd `--provider dayton` fails the cell loudly rather
+ * than silently baking nothing (which `only` would otherwise treat as "no providers to visit").
+ */
+export function unknownProviderIds(requested: readonly string[]): string[] {
+	const registered = new Set<string>(providers.map((p) => p.name));
+	return requested.filter((id) => !registered.has(id));
+}
 
 /**
  * Run `body` against every provider whose credentials are present, in registry order, collecting a
@@ -50,7 +68,14 @@ export async function forEachProviderWithCreds<T>(
 	const log = options.log ?? noop;
 	const runs: ProviderRun<T>[] = [];
 
-	for (const provider of providers) {
+	// A CI matrix cell passes `only: [<its provider>]`; the local `bake` passes nothing and drives them
+	// all. `only` filters which registry entries are visited — order (and thus report order) is the
+	// registry's, never the request's, so a cell's report is a stable subset of the whole.
+	const selected = options.only
+		? providers.filter((p) => options.only?.includes(p.name))
+		: providers;
+
+	for (const provider of selected) {
 		const missing = missingCreds(provider, options.env);
 		if (missing.length > 0) {
 			log(`skip: ${provider.name} (missing ${missing.join(", ")})`);

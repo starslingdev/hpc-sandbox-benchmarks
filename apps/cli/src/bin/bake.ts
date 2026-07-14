@@ -20,7 +20,7 @@ import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
 import { candidateCreateOptions } from "../lib/bake/validate.ts";
-import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
+import { anyFailed, forEachProviderWithCreds, unknownProviderIds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
 
 // Each provider's candidate bake, bound to the candidate names + base ref from config.
@@ -43,6 +43,37 @@ const candidateRefs = {
 	toolchainImageCandidate: config.toolchainImageCandidate,
 	daytonaTarget: config.daytona.target,
 };
+
+/**
+ * The provider ids a `--provider <ids>` (or `--provider=<ids>`) flag restricts the bake+validate loop
+ * to — a comma-separated list, so the CI matrix passes one id per cell (`--provider e2b`) and each
+ * provider bakes in its own job. Absent → undefined (drive every registered provider, the local
+ * default). Parsed the same shape as `--require` (harness `requiredProviders`) for consistency. The
+ * flag applies only to the candidate bake loop; `--promote` is always all-providers (a transaction).
+ */
+function requestedProviders(argv: string[]): ProviderId[] | undefined {
+	let raw: string | undefined;
+	const eq = argv.find((a) => a.startsWith("--provider="));
+	if (eq) {
+		raw = eq.slice("--provider=".length);
+	} else {
+		const i = argv.indexOf("--provider");
+		const next = i === -1 ? undefined : argv[i + 1];
+		if (next !== undefined && !next.startsWith("-")) raw = next;
+	}
+	if (raw === undefined) return undefined;
+	const ids = raw
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+	const unknown = unknownProviderIds(ids);
+	if (unknown.length > 0) {
+		throw new Error(
+			`unknown --provider id(s): ${unknown.join(", ")} — registered providers are e2b, daytona, blaxel, modal, novita`,
+		);
+	}
+	return ids as ProviderId[];
+}
 
 if (import.meta.main) {
 	const log: Log = (m) => console.error(m);
@@ -76,6 +107,17 @@ if (import.meta.main) {
 		process.exit(promoted.some((r) => r.status === "failed") ? 1 : 0);
 	}
 
+	// Optional per-provider restriction for the CI matrix fan-out (one cell per provider). Parsed before
+	// any build so a typo'd id fails the cell fast (clean message, no stack), before the candidate is touched.
+	let only: ProviderId[] | undefined;
+	try {
+		only = requestedProviders(process.argv);
+	} catch (err) {
+		log(`error: ${err instanceof Error ? err.message : String(err)}`);
+		process.exit(2);
+	}
+	if (only) log(`>>> restricting bake+validate to: ${only.join(", ")}`);
+
 	if (process.argv.includes("--build-push")) {
 		log(">>> building + pushing candidate image…");
 		try {
@@ -104,6 +146,7 @@ if (import.meta.main) {
 		},
 		{
 			log,
+			only,
 			ok: smokeOk,
 			failureReason: smokeFailureReason,
 			onComplete: (run) => {

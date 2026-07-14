@@ -30,6 +30,28 @@ export function imagetoolsRetagCmd(from: string, to: string): string[] {
 	return ["docker", "buildx", "imagetools", "create", "-t", to, from];
 }
 
+/** Resolve a pushed `ref` to its immutable registry digest (`sha256:…`) via a registry-side inspect —
+ *  no pull. The release records this so every phase pins/records the exact bytes the candidate push
+ *  produced (provenance); the TOCTOU guard proper is promote's re-validation of the mutable candidate. */
+export async function resolveImageDigest(ref: string): Promise<string> {
+	const proc = Bun.spawn(
+		["docker", "buildx", "imagetools", "inspect", ref, "--format", "{{.Manifest.Digest}}"],
+		{ stdout: "pipe", stderr: "pipe", env: process.env },
+	);
+	const [code, stdout, stderr] = await Promise.all([
+		proc.exited,
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+	]);
+	const digest = stdout.trim();
+	if (code !== 0 || !/^sha256:[0-9a-f]{64}$/.test(digest)) {
+		throw new Error(
+			`could not resolve digest for ${ref} (exit ${code}): ${digest || stderr.trim() || "no digest"}`,
+		);
+	}
+	return digest;
+}
+
 /** Whether `ref` already exists in the registry — a successful `docker manifest inspect`. Queries the
  *  registry (not local images), so a locally-built `:v1` tag never reads as published. promote uses
  *  this to REFUSE overwriting the immutable public version.
