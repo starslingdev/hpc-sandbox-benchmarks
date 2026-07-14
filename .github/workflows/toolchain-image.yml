@@ -90,7 +90,7 @@ jobs:
     runs-on: starsling-ubuntu-24.04-2
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Builds and smokes the image locally — no git push, so don't persist the job token.
           persist-credentials: false
@@ -140,7 +140,7 @@ jobs:
       publish-target: ${{ steps.plan.outputs.publish-target }}
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Reads code and probes the registry via docker/login — never git push.
           persist-credentials: false
@@ -178,7 +178,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload release plan
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-plan-${{ github.run_id }}
           path: release-plan.json
@@ -211,7 +211,7 @@ jobs:
       candidate-digest-ref: ${{ steps.build.outputs.candidate-digest-ref }}
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Publishes to GHCR via docker/login-action, never git push — don't persist the job token.
           persist-credentials: false
@@ -239,7 +239,7 @@ jobs:
           bun apps/cli/src/bin/build-candidate.ts build-metadata.json
       - name: Upload build metadata
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-metadata-${{ github.run_id }}
           path: build-metadata.json
@@ -274,7 +274,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Boots the just-baked candidate via provider SDKs — no git push, no ghcr push. Don't persist.
           persist-credentials: false
@@ -313,7 +313,7 @@ jobs:
           bun apps/cli/src/bin/bake.ts "${args[@]}"
       - name: Upload bake report
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bake-${{ matrix.provider }}-${{ github.run_id }}
           path: bake-${{ matrix.provider }}.json
@@ -349,7 +349,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Publishes to GHCR via docker/login-action, never git push — don't persist the job token.
           persist-credentials: false
@@ -385,7 +385,7 @@ jobs:
           bun apps/cli/src/bin/bake.ts "${args[@]}"
       - name: Upload promote payload
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: promote-payload-${{ github.run_id }}
           path: promote-payload.json
