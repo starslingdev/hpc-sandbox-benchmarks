@@ -184,6 +184,15 @@ pts_config_file() {
 # Single source for the diagnostics below (pts_user_dir keeps its own inline probe order).
 _pts_data_dirs=("${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite)
 
+# Whether PTS considers <test> installed — asked of PTS itself (list-installed-tests), NOT by probing
+# for a manifest file. PTS's install-manifest filename is a version-dependent internal detail (v10.8.4
+# writes installed-tests/<test>/pts-install.json; older releases wrote pts-install.xml), so a hard-coded
+# filename probe reads a genuinely-installed test as "not installed" and skips every PTS suite. The bake
+# verifies the same way (20-pts.sh). Matches the fully-qualified id against the first column of each row.
+_pts_is_installed() {
+	phoronix-test-suite list-installed-tests 2>/dev/null | awk '{print $1}' | grep -qxF -- "$1"
+}
+
 _pts_install_diagnostics() {
 	local test_name="$1"
 	echo "--- PTS install diagnostics: ${test_name} ---"
@@ -377,20 +386,14 @@ run_pts_benchmark() {
 	save_name="benchmark-$(printf '%s' "$prefix" | tr -cs 'a-z0-9' '-')"
 	export TEST_RESULTS_NAME="$save_name"
 
-	# Skip the install for a version-pinned test that is already on disk (the toolchain image
-	# pre-installs every registered profile): batch-install would only no-op through several seconds
-	# of PHP. Probe the ONE data dir this PTS invocation will actually use (pts_init first, so
-	# pts_user_dir doesn't cache the $HOME fallback on a fresh machine — the fio_direct_choice
-	# precedent), and require the pts-install.xml manifest, not the bare directory: PTS only treats a
-	# test as installed once that manifest exists, so a batch-install killed mid-build would otherwise
-	# permanently disable both install and run. (Trade-off vs full batch-install: PTS's same-version
-	# reinstall triggers — installer checksum, system hash — are bypassed for baked profiles.)
-	local installed=""
+	# Skip the install for a test already on disk (the toolchain image pre-installs several profiles):
+	# batch-install would only no-op through several seconds of PHP. Ask PTS itself whether the test is
+	# installed (see _pts_is_installed) rather than probing a manifest path. pts_init first so pts_user_dir
+	# (the composite search below) resolves the real data dir on a fresh machine — the fio_direct_choice
+	# precedent. (Trade-off vs full batch-install: PTS's same-version reinstall triggers — installer
+	# checksum, system hash — are bypassed for an already-installed profile.)
 	pts_init
-	if [ -f "$(pts_user_dir)/installed-tests/${test_name}/pts-install.xml" ]; then
-		installed=1
-	fi
-	if [ -n "$installed" ]; then
+	if _pts_is_installed "$test_name"; then
 		echo "=== PTS test already installed (baked): ${test_name} ==="
 	else
 		echo "=== Installing PTS test: ${test_name} ==="
@@ -400,14 +403,13 @@ run_pts_benchmark() {
 			skip_result "PTS install of ${test_name} failed" "$prefix"
 			return 0
 		}
-		# PTS EXITS 0 EVEN WHEN AN INSTALL FAILS (it writes install-failed.log and moves on), so the
-		# `||` branch above is dead for the common failure — a missing build dependency. Without this
-		# the leaf proceeds to batch-run, burns its whole budget producing nothing, and lands on the
-		# generic "produced no composite.xml" skip that names the wrong cause. Re-probe the manifest.
-		if [ ! -f "$(pts_user_dir)/installed-tests/${test_name}/pts-install.xml" ]; then
-			echo "WARNING: PTS reported success but ${test_name} is not installed (see install-failed.log)"
+		# PTS EXITS 0 EVEN WHEN AN INSTALL FAILS (missing build dep, killed mid-build), so verify against
+		# PTS's own installed-tests list. Without this the leaf proceeds to batch-run, burns its whole
+		# budget producing nothing, and lands on the generic "no composite.xml" skip that names the wrong cause.
+		if ! _pts_is_installed "$test_name"; then
+			echo "WARNING: PTS reported success but ${test_name} is not installed"
 			( set +e; _pts_install_diagnostics "$test_name" ) || true
-			skip_result "PTS install of ${test_name} failed (exit 0, no pts-install.xml)" "$prefix"
+			skip_result "PTS install of ${test_name} failed (exit 0, not in list-installed-tests)" "$prefix"
 			return 0
 		fi
 	fi
