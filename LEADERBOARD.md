@@ -1,6 +1,6 @@
 # Sandbox provider leaderboard
 
-Run `29130741476` · commit `663be0904797890a24fdaf1cc6e3ea8d77b3b89c` · generated 2026-07-11T00:18:19.295Z
+Run `29304925497` · commit `de957636ad1e7229069de8b6fc5dca52bb4d2ab3` · generated 2026-07-14T05:32:37.562Z
 
 Each table ranks the providers on that dimension's headline metric. Generated from the published Run dataset — do not edit by hand.
 
@@ -10,8 +10,10 @@ Headline: **Node.js web tooling** (runs/s, higher is better)
 
 | Rank | Provider | Node.js web tooling (runs/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 19.72 | 19.63 – 19.96 | 3 | — | — |
-| 2 | Modal | 9.59 | 9.52 – 9.79 | 3 | 0.10 (n too small) | 0.033 |
+| 1 | Daytona | 19.27 | 18.61 – 19.53 | 3 | — | — |
+| 2 | Novita | 14.13 | 13.34 – 14.42 | 15 | 0.0098 | 0.0085 |
+| 3 | Blaxel | 13.29 | 13.21 – 13.44 | 12 | 0.0099 | <0.001 |
+| 4 | Modal | 9.22 | 8.845 – 9.685 | 12 | <0.001 | <0.001 |
 
 ## memory
 
@@ -19,8 +21,26 @@ Headline: **STREAM Triad** (MB/s, higher is better)
 
 | Rank | Provider | STREAM Triad (MB/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Daytona | 54530 | 54030 – 54590 | 5 | — | — |
-| 2 | Modal | 40510 | 38810 – 53440 | 5 | 0.0079 | 0.0038 |
+| 1 | Daytona | 100900 | 100200 – 101400 | 5 | — | — |
+| 2 | Blaxel | 71260 | 70890 – 71902 | 5 | 0.0079 | 0.0038 |
+| 3 | Novita | 51650 | 51620 – 51880 | 5 | 0.0079 | 0.0038 |
+| 3 | Modal | 50410 | 43500 – 54490 | 5 | 0.55 (tied) | 0.21 |
+
+## system
+
+Headline: **PyBench** (Milliseconds, lower is better)
+
+| Rank | Provider | PyBench (Milliseconds) | 95% CI | n | p vs. above | p (KS) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Blaxel | 840 | 835 – 842 | 3 | — | — |
+
+## realworld
+
+Headline: **Mastra: cold install** (Seconds, lower is better)
+
+| Rank | Provider | Mastra: cold install (Seconds) | 95% CI | n | p vs. above | p (KS) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Novita | 39.48 | 39.22 – 39.74 | 2 | — | — |
 
 ## economics
 
@@ -29,7 +49,9 @@ Headline: **Hourly cost** (USD/hr, lower is better)
 | Rank | Provider | Hourly cost (USD/hr) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | Daytona | 0.1494 | — | 1 | — | — |
-| 2 | Modal | 0.4774 | — | 1 | — | — |
+| 2 | Novita | 0.1627 | — | 1 | — | — |
+| 3 | E2B | 0.2304 | — | 1 | — | — |
+| 4 | Modal | 0.4774 | — | 1 | — | — |
 
 ## Coverage gaps
 
@@ -38,26 +60,25 @@ one — read it as the provider **failing to cover** that workload, never as a t
 
 | Provider | Benchmark | Outcome | Detail |
 | --- | --- | --- | --- |
+| Blaxel | realworld-mastra | ❌ **disk** (skipped) | Insufficient disk: 12.5 GiB free, suite needs 30 GiB |
+| Blaxel | realworld-openclaw | ❌ **disk** (skipped) | Insufficient disk: 12.5 GiB free, suite needs 25 GiB |
 | Daytona | realworld-mastra | ❌ **disk** (skipped) | Insufficient disk: 16.7 GiB free, suite needs 30 GiB |
 | Daytona | realworld-openclaw | ❌ **disk** (skipped) | Insufficient disk: 16.7 GiB free, suite needs 25 GiB |
-| Blaxel | cpu-node | **missing** | No result and no marker — the suite never reported for this provider. |
-| Blaxel | disk | **missing** | No result and no marker — the suite never reported for this provider. |
-| Blaxel | memory | **missing** | No result and no marker — the suite never reported for this provider. |
-| Blaxel | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
-| Blaxel | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
-| Blaxel | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
-| E2B | cpu-node | **missing** | No result and no marker — the suite never reported for this provider. |
-| E2B | disk | **missing** | No result and no marker — the suite never reported for this provider. |
-| E2B | memory | **missing** | No result and no marker — the suite never reported for this provider. |
-| E2B | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
-| E2B | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
-| E2B | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
+| E2B | realworld-mastra | ❌ **disk** (skipped) | Insufficient disk: 19.7 GiB free, suite needs 30 GiB |
+| E2B | realworld-openclaw | ❌ **disk** (skipped) | Insufficient disk: 19.7 GiB free, suite needs 25 GiB |
+| E2B | cpu-node | **failed** | Step "mise run benchmark:cpu:node" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step |
+| E2B | memory | **failed** | Step "mise run benchmark:memory:all" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step |
+| E2B | realworld-better-auth | **failed** | Step "mise run benchmark:realworld:pts:better-auth" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step |
+| E2B | system | **failed** | Step "mise run benchmark:system:all" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step |
+| Modal | realworld-mastra | **failed** | Step "mise run benchmark:realworld:pts:mastra" timed out after 5400s |
 | Modal | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
 
 **skipped** — a precondition said no before the benchmark was attempted. A ❌ **disk** skip is the
 loud one: the provider could not supply the disk the suite needs, so the workload does not run on
 its current allocation at all. That is a structural absence, not a slow result.
+
+**failed** — the benchmark was attempted and broke: it threw, timed out, or died with the sandbox.
+Unlike a skip, this is a reliability fact about the provider, not a decision made on its behalf.
 
 **missing** — nothing was reported at all: no result, and no marker explaining why. The suite ran
 elsewhere in this run, so it was part of the comparison, and this provider is simply absent from
@@ -76,6 +97,11 @@ Rows are separated only when their full Sample distributions differ (Mann-Whitne
 enumerated exactly over the permutation null rather than approximated — at these sample sizes the
 normal approximation can report a p the exact test cannot actually produce).
 
+**A shared rank always says why, in the `p vs. above` cell, and the reasons are not interchangeable.**
+`(tied)` — the test could have separated those providers and did not, so a faster median earned
+inside the noise is not a faster provider. This is the only one that claims two providers are
+statistically indistinguishable.
+
 Samples are repeated trials inside one sandbox, so their spread is environmental (neighbours, host
 contention, virtualization), and a wide CI or a large `n` (the harness re-runs a test that will not
 converge) is itself the signal that the provider's performance is unstable, not that the measurement
@@ -90,12 +116,4 @@ looks like, and it is the reason a median alone cannot rank these providers.
 
 At the small `n` this suite produces, a non-significant result means *not enough evidence to
 separate*, never *the providers are equal*.
-
-`n too small` is the extreme of that: Mann-Whitney's best attainable p already exceeds α for those
-Samples, so the test could not have separated the rows at any effect size (here 3 v 3 floors at p ≈ 0.10).
-Such rows are ranked on their observed medians and are **not** claimed to be tied — read the gap
-between the values, and treat the p-value as unable to settle them either way. Where such a row
-nevertheless shares the rank above it, the cell reads `equal medians`: the two values are simply
-identical, which is the ranking having nothing to order them by — never a finding that the
-providers are alike.
 
