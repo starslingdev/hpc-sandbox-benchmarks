@@ -128,14 +128,6 @@ export interface ProviderMeta {
 export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 40 } as const;
 
 /**
- * Modal provisions and prices in physical CPU cores, where 1 physical core = 2 vCPU. This is the one
- * source of that factor: the Modal pricing entry below normalizes its per-physical-core rate to
- * per-vCPU by it, and the harness adapter divides {@link TARGET_SPEC}.vcpus by it to reserve the
- * matching number of cores (Modal's `SandboxCreateParams.cpu` is physical cores, not vCPUs).
- */
-export const VCPUS_PER_PHYSICAL_CORE = 2;
-
-/**
  * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
  * keys the *behavioural* half of a provider the same way. A keyed Record (rather than an array of
  * objects each repeating its `id`) buys three things for free: ids are unique by construction, the
@@ -261,15 +253,17 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 		pricing: {
 			model: "per_vcpu_hour",
-			// Sandbox non-preemptible rates. CPU: $0.00003942/physical-core-s ÷ VCPUS_PER_PHYSICAL_CORE × 3600 = $0.070956/vCPU-hr.
+			// Sandbox non-preemptible rates. CPU: $0.00003942/requested-cpu-s × 3600 = $0.141912/vCPU-hr —
+			// a requested `cpu` unit delivers one schedulable vCPU (measured; see the harness adapter), so
+			// the docs' "physical core" rate is billed per vCPU-equivalent and gets no ÷2 normalization.
 			// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
-			usdPerVcpuHour: 0.070956,
+			usdPerVcpuHour: 0.141912,
 			usdPerGibHour: 0.024192,
 			// Volumes: 1 TiB/mo free, then $0.09/GiB/mo. The 40 GB target spec sits inside the free
 			// tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
 			usdPerGibDiskHour: 0,
 			notes:
-				"Sandbox non-preemptible rates (exact): CPU $0.00003942/physical-core-s (1 physical core = 2 vCPU), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
+				"Sandbox non-preemptible rates (exact): CPU $0.00003942/s per requested cpu unit (observed to deliver 1 schedulable vCPU each, despite the docs calling it a physical core), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
 			sourceUrl: "https://modal.com/pricing",
 		},
 		maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },

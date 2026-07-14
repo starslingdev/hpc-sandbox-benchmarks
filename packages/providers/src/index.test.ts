@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 // The stock wrapper factory, imported so the novita test can prove the connection methods were
 // actually REPLACED (identity inequality against an unpatched instance's methods table).
 import { e2b } from "@computesdk/e2b";
-import { PROVIDERS, TARGET_SPEC, VCPUS_PER_PHYSICAL_CORE } from "@sandbox-benchmarks/schema";
+import { PROVIDERS, TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config, NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection, providers } from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 
@@ -31,12 +31,14 @@ describe("@sandbox-benchmarks/providers", () => {
 	it("pins modal's create-time spec from the shared TARGET_SPEC", () => {
 		const modal = providers.find((p) => p.name === "modal");
 		expect(modal).toBeDefined();
-		// Modal bills/provisions in physical cores, so the pinned vCPU count is halved for cpu/cpuLimit.
+		// Modal's `cpu` unit delivers one schedulable vCPU (nproc tracks it 1:1 and throughput scales
+		// with it — measured 2026-07-10), so the pinned vCPU count passes through unhalved; halving it
+		// benchmarked Modal on half the CPU of every other provider.
 		// `memoryLimitMiB` is the hard cap (memoryMiB alone is only a reservation, and the guest then
 		// still sees the host's RAM) — assert it, or the memory fix has no regression guard at all.
 		expect(modal?.createOptions).toMatchObject({
-			cpu: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
-			cpuLimit: TARGET_SPEC.vcpus / VCPUS_PER_PHYSICAL_CORE,
+			cpu: TARGET_SPEC.vcpus,
+			cpuLimit: TARGET_SPEC.vcpus,
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
 		});

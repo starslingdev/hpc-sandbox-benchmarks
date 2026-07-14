@@ -106,7 +106,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		// Guards the economics constants against accidental regressions (PR #15 review). Daytona's
 		// first 5 GiB of memory are free; e2b bills all memory at the same vCPU/GiB rates.
 		const expected: Record<string, number> = {
-			modal: 0.070956 * TARGET_SPEC.vcpus + 0.024192 * TARGET_SPEC.memoryGb,
+			modal: 0.141912 * TARGET_SPEC.vcpus + 0.024192 * TARGET_SPEC.memoryGb,
 			e2b: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * TARGET_SPEC.memoryGb,
 			daytona: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * Math.max(0, TARGET_SPEC.memoryGb - 5),
 			novita: 0.03528 * TARGET_SPEC.vcpus + 0.01152 * TARGET_SPEC.memoryGb,
