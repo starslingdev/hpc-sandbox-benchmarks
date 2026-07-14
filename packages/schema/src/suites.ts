@@ -117,11 +117,17 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:realworld:pts:mastra"],
 	},
+	// Budgets from measured 2026-07-10 runs at the 2-vCPU spec: daytona ~18 min, modal ~67 min (gVisor
+	// syscall overhead on the per-run git-clean/install resets; measured via a complete local run —
+	// the old 60-min command budget killed modal at test 9/10). 90 covers modal plus variance without
+	// letting a wedged provider eat the whole runner. e2b currently never gets past ~4.5 min: its
+	// sandboxes from our template are orchestrator-stopped regardless of requested lifetime (platform
+	// issue, tracked separately) — no budget fixes that.
 	"realworld-better-auth": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 60,
-		timeoutMinutes: 75,
+		commandTimeoutMinutes: 90,
+		timeoutMinutes: 105,
 		minDiskGb: 10,
 		dimensions: ["realworld"],
 		metrics: [

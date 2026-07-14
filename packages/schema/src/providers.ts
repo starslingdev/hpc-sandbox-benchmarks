@@ -270,13 +270,14 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		specPinning: "settable",
 		transport: {
 			// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
-			// separate per-exec timeout — a synchronous exec is bounded only by the create-time sandbox
-			// lifetime, not a server gateway cap (`syncCapMs: null`). It still doesn't surface
-			// onStdout/onStderr (it reads the piped streams to completion), and `background` + filesystem
-			// are available, so detached+poll remains an option even though direct exec is the default.
-			// ENG-64 validates this end-to-end against a live multi-minute suite.
+			// separate per-exec timeout. There is no hard server gateway cap, but the exec stdio stream
+			// is not reliable over benchmark-length execs: a ~66-minute better-auth run completed
+			// in-sandbox (manifest exit_code 0) while the harness-side stream died with gRPC INTERNAL
+			// "Failed to read exec stdio stream" (ZEHA3277, 2026-07-10), losing the step result. Cap
+			// synchronous execs at 30 minutes so suite-length steps take the detached+poll path, which
+			// survives a dropped stream; short setup steps keep the cheaper direct exec.
 			streaming: false,
-			syncCapMs: null,
+			syncCapMs: 30 * 60_000,
 			detachedPoll: true,
 		},
 	},
