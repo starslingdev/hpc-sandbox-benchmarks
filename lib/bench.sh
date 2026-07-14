@@ -175,6 +175,41 @@ pts_config_file() {
 	echo "$(pts_user_dir)/user-config.xml"
 }
 
+# Dump the PTS on-disk layout and the most recent install-failed.log when an install did not land its
+# pts-install.xml. Distinguishes the two failure shapes that both surface as "not installed": a real
+# build failure (install-failed.log names the missing dependency / compiler error) versus a data-dir
+# mismatch (pts-install.xml exists, but under a directory pts_user_dir did not resolve to). Prints to
+# stdout so it lands in the CI job log; never fails the caller.
+_pts_install_diagnostics() {
+	local test_name="$1"
+	echo "--- PTS install diagnostics: ${test_name} ---"
+	echo "user=$(id -un 2>/dev/null) HOME=${HOME}"
+	echo "resolved pts_user_dir=$(pts_user_dir)"
+	echo "resolved pts_config_file=$(pts_config_file)"
+	local d
+	for d in "${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite; do
+		if [ -e "$d/core.pt2so" ]; then
+			echo "  core.pt2so present in: $d"
+		fi
+	done
+	# Where did PTS actually write this test's manifest, if anywhere? A hit outside pts_user_dir is the
+	# smoking gun for a data-dir mismatch.
+	echo "  pts-install.xml locations for ${test_name}:"
+	find "${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite \
+		-path "*installed-tests/${test_name}/pts-install.xml" 2>/dev/null | sed 's/^/    /' || true
+	# The newest install-failed.log across the candidate data dirs — its tail names the real cause.
+	local log
+	log=$(find "${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite \
+		-name install-failed.log 2>/dev/null -exec ls -t {} + 2>/dev/null | head -1)
+	if [ -n "$log" ] && [ -f "$log" ]; then
+		echo "  install-failed.log ($log), last 40 lines:"
+		tail -40 "$log" 2>/dev/null | sed 's/^/    /' || true
+	else
+		echo "  (no install-failed.log found under any candidate data dir)"
+	fi
+	echo "--- end diagnostics ---"
+}
+
 # Configure PTS batch mode in the current process. Must run before batch-run, since mise subtasks
 # don't inherit the parent's env.
 _configure_pts_batch() {
@@ -354,6 +389,7 @@ run_pts_benchmark() {
 		echo "=== Installing PTS test: ${test_name} ==="
 		phoronix-test-suite batch-install "$test_name" 2>&1 || {
 			echo "WARNING: PTS install of ${test_name} failed"
+			_pts_install_diagnostics "$test_name"
 			skip_result "PTS install of ${test_name} failed" "$prefix"
 			return 0
 		}
@@ -363,6 +399,7 @@ run_pts_benchmark() {
 		# generic "produced no composite.xml" skip that names the wrong cause. Re-probe the manifest.
 		if [ ! -f "$(pts_user_dir)/installed-tests/${test_name}/pts-install.xml" ]; then
 			echo "WARNING: PTS reported success but ${test_name} is not installed (see install-failed.log)"
+			_pts_install_diagnostics "$test_name"
 			skip_result "PTS install of ${test_name} failed (exit 0, no pts-install.xml)" "$prefix"
 			return 0
 		fi
