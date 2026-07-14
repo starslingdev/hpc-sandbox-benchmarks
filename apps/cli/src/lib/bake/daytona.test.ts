@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { snapshotDestroyedMessage } from "./daytona.ts";
+import { describeDaytonaError, snapshotDestroyedMessage } from "./daytona.ts";
 
 // The published snapshot name a `promote --force` regenerates in place — the case where a create that
 // fails after the delete leaves a *public* artifact absent rather than stale.
@@ -25,5 +25,31 @@ describe("snapshotDestroyedMessage", () => {
 		// listSnapshotsByName sweeps every snapshot of the name in any state (a failed mid-create leaves
 		// one `get` won't return), so the count is genuinely unbounded above 1 — don't hardcode "1".
 		expect(snapshotDestroyedMessage(PUBLISHED, 3, "boom")).toContain("deleting 3 pre-existing");
+	});
+});
+
+describe("describeDaytonaError", () => {
+	it("surfaces status code, error code, and response body from the opaque SDK error", () => {
+		const out = describeDaytonaError({
+			name: "DaytonaError",
+			statusCode: 500,
+			code: "INTERNAL",
+			response: { data: { message: "failed to inspect in registry" } },
+		});
+		expect(out).toContain("name=DaytonaError");
+		expect(out).toContain("status=500");
+		expect(out).toContain("code=INTERNAL");
+		expect(out).toContain("failed to inspect in registry");
+	});
+
+	it("includes the cause chain when present", () => {
+		expect(
+			describeDaytonaError({ message: "boom", cause: new Error("registry unreachable") }),
+		).toContain("cause=registry unreachable");
+	});
+
+	it("never throws on a non-object error, and says so", () => {
+		expect(describeDaytonaError("plain string")).toContain("plain string");
+		expect(describeDaytonaError(undefined)).toContain("non-object");
 	});
 });
