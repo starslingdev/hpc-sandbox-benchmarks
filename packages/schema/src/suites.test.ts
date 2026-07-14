@@ -24,6 +24,7 @@ describe("suite registry", () => {
 			"system",
 			"memory",
 			"disk",
+			"cpu-generic",
 			"realworld-mastra",
 			"realworld-better-auth",
 			"realworld-openclaw",
@@ -58,6 +59,7 @@ describe("suite registry", () => {
 		// <Option> axes at all, so the pin holds over their single wildcard result. The suites that
 		// arrive later (network, cpu-generic) add themselves here.
 		const profilesOf = {
+			"cpu-generic": ["pts/c-ray", "pts/compress-zstd"],
 			memory: ["pts/stream"],
 			system: ["pts/pybench", "pts/sqlite-speedtest"],
 		} as const;

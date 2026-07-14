@@ -27,6 +27,7 @@ on:
             system,
             memory,
             disk,
+            cpu-generic,
             realworld-mastra,
             realworld-better-auth,
             realworld-openclaw,

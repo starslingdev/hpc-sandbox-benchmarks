@@ -61,7 +61,7 @@ export const SUITES = {
 		commandTimeoutMinutes: 110,
 		timeoutMinutes: 120,
 		// cpu-node runs only `benchmark:cpu:node` (node-web-tooling); the catalog's c-ray entries belong
-		// to a future cpu-generic suite, so they are deliberately not declared here.
+		// to the cpu-generic suite below, so they are deliberately not declared here.
 		dimensions: ["cpu"],
 		metrics: ["node_web_tooling_runs_per_s"],
 		commands: ["mise run benchmark:cpu:node"],
@@ -119,6 +119,37 @@ export const SUITES = {
 			"fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
 		],
 		commands: ["mise run benchmark:disk:all"],
+	},
+	// The generic-compute dimension slice next to cpu-node: c-ray (float/thread scaling — the seam the
+	// catalog's c-ray entries have waited on) and Zstd compression across its level matrix. Budgets
+	// cover the zstd build + silesia download, 7 zstd levels × compress+decompress, and c-ray's three
+	// resolutions × 3 passes on a 2-vCPU target (the 5K pass alone runs several minutes per repeat).
+	"cpu-generic": {
+		setupPts: true,
+		commandTimeoutMinutes: 100,
+		timeoutMinutes: 115,
+		minDiskGb: 2,
+		dimensions: ["cpu"],
+		metrics: [
+			"c_ray_resolution_1080p_rays_per_pixel_16",
+			"c_ray_resolution_4k_rays_per_pixel_16",
+			"c_ray_resolution_5k_rays_per_pixel_16",
+			"compress_zstd_compression_level_3_compression_speed",
+			"compress_zstd_compression_level_3_decompression_speed",
+			"compress_zstd_compression_level_3_long_mode_compression_speed",
+			"compress_zstd_compression_level_3_long_mode_decompression_speed",
+			"compress_zstd_compression_level_8_compression_speed",
+			"compress_zstd_compression_level_8_decompression_speed",
+			"compress_zstd_compression_level_8_long_mode_compression_speed",
+			"compress_zstd_compression_level_8_long_mode_decompression_speed",
+			"compress_zstd_compression_level_12_compression_speed",
+			"compress_zstd_compression_level_12_decompression_speed",
+			"compress_zstd_compression_level_19_compression_speed",
+			"compress_zstd_compression_level_19_decompression_speed",
+			"compress_zstd_compression_level_19_long_mode_compression_speed",
+			"compress_zstd_compression_level_19_long_mode_decompression_speed",
+		],
+		commands: ["mise run benchmark:cpu:generic"],
 	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
 	// each a repo-local PTS profile with a Task option axis. Budgets are starting points (tuned from
