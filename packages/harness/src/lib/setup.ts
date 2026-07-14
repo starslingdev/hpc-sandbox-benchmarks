@@ -87,26 +87,48 @@ export function setupSteps(suite: Suite): SetupStep[] {
 	}
 
 	if (suite.setupPts) {
+		// Refresh the apt index and ensure PTS's build/runtime deps at runtime, UNCONDITIONALLY (not
+		// only on a stock image). PTS installs a test's external dependencies via the distro package
+		// manager at batch-install time; the baked image cleans /var/lib/apt/lists (00-apt.sh) and may be
+		// stale relative to the pinned profiles, so on a pre-baked-but-stale image that apt-get install
+		// finds no package index — every package reads "Unable to locate package" / "no installation
+		// candidate" — and the test install silently fails (PTS still exits 0 and writes no
+		// pts-install.xml). Populating the index and pre-installing the deps ourselves makes PTS's own
+		// install a no-op (deps already present) instead of a fetch off an empty index. Best-effort: a
+		// healthy baked image already has these, and a provider that cannot reach the distro mirror still
+		// falls through to whatever the image baked — never fail setup on the refresh itself.
+		//
+		// The set mirrors the bake's 00-apt.sh. libaio-dev: fio's libaio engine (disk suite). libicu-dev:
+		// postgres's configure hard-requires ICU (pgbench). dnsutils+jq: the system provider probe.
+		// netcat-openbsd: network-loopback's dd|nc runner. stress-ng: the disk suite's hardlink leaf. tcl:
+		// sqlite-speedtest builds SQLite from source and shells out to tclsh to generate opcodes.h.
+		// autoconf: PTS resolves it for the build-utilities external dependency of several profiles.
+		const ptsDeps =
+			"php-cli php-xml build-essential autoconf flex bison bc libelf-dev libssl-dev " +
+			"libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps";
+		steps.push({
+			label: "ensure PTS build deps + fresh apt index",
+			// Retry apt-get update a few times for a transient mirror hiccup (its failure inside `until`
+			// is exempt from `set -e`), then install the deps best-effort — a swallowed failure lets a
+			// good baked image proceed rather than failing an otherwise-runnable suite.
+			script:
+				"i=0; until $SUDO apt-get update -qq; do i=$((i+1)); [ $i -ge 3 ] && break; sleep 3; done; " +
+				`$SUDO apt-get install -y -qq ${ptsDeps} || echo "WARNING: apt dep refresh failed (best-effort); relying on the baked image"`,
+			timeoutMs: 15 * MIN,
+		});
 		steps.push({
 			label: "setup phoronix-test-suite",
-			// No-op on pre-baked images.
+			// No-op on pre-baked images; install from the pinned release .deb on a stock image. The apt
+			// index was refreshed by the step above, so the dpkg-then-`apt-get install -f` dep resolution
+			// finds its packages.
 			script:
 				"command -v phoronix-test-suite >/dev/null 2>&1 || { " +
 				[
 					`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite_${PTS_VERSION}_all.deb" -o /tmp/phoronix-test-suite.deb`,
-					"$SUDO apt-get update -qq",
-					// libaio-dev: fio's libaio engine (disk suite). libicu-dev: postgres's configure hard-
-					// requires ICU (pgbench). dnsutils+jq: the system provider probe. netcat-openbsd:
-					// network-loopback's dd|nc runner. stress-ng: the disk suite's hardlink leaf (its
-					// `command -v` guard would otherwise silently skip the metric on stock images while
-					// the fio metrics report). All no-ops on the pre-baked image.
-					// tcl: sqlite-speedtest builds SQLite from source and its Makefile shells out to `tclsh`
-					// to generate opcodes.h — without it the build dies with exit 127 and PTS still exits 0.
-					"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng",
 					"($SUDO dpkg -i /tmp/phoronix-test-suite.deb || $SUDO apt-get install -y -qq -f)",
 				].join(" && ") +
 				"; }; phoronix-test-suite version",
-			timeoutMs: 15 * MIN,
+			timeoutMs: 10 * MIN,
 			retries: 2,
 		});
 	}

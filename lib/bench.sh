@@ -389,7 +389,7 @@ run_pts_benchmark() {
 		echo "=== Installing PTS test: ${test_name} ==="
 		phoronix-test-suite batch-install "$test_name" 2>&1 || {
 			echo "WARNING: PTS install of ${test_name} failed"
-			_pts_install_diagnostics "$test_name"
+			( set +e; _pts_install_diagnostics "$test_name" ) || true
 			skip_result "PTS install of ${test_name} failed" "$prefix"
 			return 0
 		}
@@ -399,7 +399,7 @@ run_pts_benchmark() {
 		# generic "produced no composite.xml" skip that names the wrong cause. Re-probe the manifest.
 		if [ ! -f "$(pts_user_dir)/installed-tests/${test_name}/pts-install.xml" ]; then
 			echo "WARNING: PTS reported success but ${test_name} is not installed (see install-failed.log)"
-			_pts_install_diagnostics "$test_name"
+			( set +e; _pts_install_diagnostics "$test_name" ) || true
 			skip_result "PTS install of ${test_name} failed (exit 0, no pts-install.xml)" "$prefix"
 			return 0
 		fi

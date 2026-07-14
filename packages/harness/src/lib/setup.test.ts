@@ -12,8 +12,20 @@ describe("setupSteps", () => {
 			"install mise",
 			"trust mise config",
 			"setup node 22 + pnpm 10",
+			"ensure PTS build deps + fresh apt index",
 			"setup phoronix-test-suite",
 		]);
+	});
+
+	it("refreshes the apt index + build deps for a PTS suite regardless of a stale baked image", () => {
+		const ptsStep = setupSteps(SUITES["cpu-node"]).find(
+			(step) => step.label === "ensure PTS build deps + fresh apt index",
+		);
+		expect(ptsStep).toBeDefined();
+		// Unconditional apt refresh (not gated on `command -v phoronix-test-suite`), so a stale baked
+		// image whose apt index was cleaned still has one before PTS installs a test's external deps.
+		expect(ptsStep?.script).toContain("apt-get update");
+		expect(ptsStep?.script).not.toContain("command -v phoronix-test-suite");
 	});
 
 	it("does not install repository developer tools inside benchmark sandboxes", () => {
