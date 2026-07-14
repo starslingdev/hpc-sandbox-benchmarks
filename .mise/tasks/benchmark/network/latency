@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#MISE description="Network latency to common developer endpoints (ping probe)"
+# Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
+# lib/bench.sh). Some sandbox networks drop ICMP entirely; that answer is itself provenance.
+#
+# Each host is pinged ONCE, with the structured record parsed from the same bytes the log shows —
+# a second ping for jc would double the runtime and could disagree with the displayed run.
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "=== Ping Latency (3 packets each) ==="
+for host in github.com registry.npmjs.org google.com api.github.com; do
+	echo ""
+	echo "--- $host ---"
+	if ! out="$(ping -c 3 -W 5 "$host" 2>/dev/null)"; then
+		# Distinguish "no ping binary" from "host unreachable/ICMP dropped" like try() would.
+		if command -v ping &>/dev/null; then echo "(ping failed — ICMP dropped or unreachable)"; else echo "(ping not found)"; fi
+		# On total packet loss ping still prints its statistics block to stdout and exits 1: keep it, so
+		# the log separates "name resolved, every ICMP filtered" from "name never resolved".
+		[ -n "$out" ] && printf '%s\n' "$out"
+		continue
+	fi
+	echo "$out"
+	# Structured output via jc (mise-managed in the toolchain image; probes degrade to logs without it).
+	# Staged through a temp file: redirecting straight at the .json truncates it BEFORE jc runs, so a
+	# swallowed parse failure would leave a zero-byte file that the harness collects as real provenance.
+	if command -v jc &>/dev/null; then
+		json="$(results_dir)/$(task_result_name "$host").json"
+		tmp="$(mktemp)"
+		if printf '%s\n' "$out" | jc --ping >"$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+			mv "$tmp" "$json"
+		else
+			echo "(jc --ping produced no structured record)"
+			rm -f "$tmp"
+		fi
+	fi
+done

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#MISE description="DNS resolver identity and resolution timing for common registries"
+# Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
+# lib/bench.sh). Sandbox resolvers differ wildly (host stub vs provider DNS vs public), and slow
+# resolution taxes every clone/install a real CI job does.
+#
+# Each domain is resolved ONCE, with the structured record parsed from the same bytes the log shows —
+# a second dig for jc would measure a cache-warmed resolver query, systematically underreporting the
+# very number this probe exists to capture.
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "=== DNS Resolver ==="
+try cat /etc/resolv.conf
+
+echo ""
+echo "=== DNS Resolution ==="
+for domain in github.com registry.npmjs.org docker.io pypi.org rubygems.org; do
+	echo ""
+	echo "--- $domain ---"
+	if command -v dig &>/dev/null; then
+		rc=0
+		out="$(dig "$domain" 2>/dev/null)" || rc=$?
+		if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
+			echo "(dig failed — exit ${rc})"
+			# Keep dig's own diagnostic (";; connection timed out" vs NXDOMAIN vs REFUSED) — the resolver
+			# behaviour this probe exists to capture. Discarding it left only "(dig failed)".
+			[ -n "$out" ] && printf '%s\n' "$out"
+			continue
+		fi
+		echo "$out"
+		# Structured output via jc. Staged through a temp file: redirecting straight at the .json
+		# truncates it BEFORE jc runs, so a swallowed parse failure leaves a zero-byte file behind.
+		if command -v jc &>/dev/null; then
+			json="$(results_dir)/$(task_result_name "$domain").json"
+			tmp="$(mktemp)"
+			if printf '%s\n' "$out" | jc --dig >"$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+				mv "$tmp" "$json"
+			else
+				echo "(jc --dig produced no structured record)"
+				rm -f "$tmp"
+			fi
+		fi
+	else
+		start=$(_now_ms)
+		getent_rc=0
+		getent hosts "$domain" >/dev/null 2>&1 || getent_rc=$?
+		end=$(_now_ms)
+		if [ "$getent_rc" -eq 0 ]; then
+			echo "$domain: $((end - start))ms (getent)"
+		else
+			# A failed lookup printed a timing line indistinguishable from a successful one.
+			echo "$domain: (getent failed — exit ${getent_rc}, after $((end - start))ms)"
+		fi
+	fi
+done

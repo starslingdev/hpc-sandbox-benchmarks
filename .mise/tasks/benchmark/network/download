@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#MISE description="Download speed and connection timing against GitHub (curl probe)"
+# Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
+# lib/bench.sh). The endpoint is GitHub deliberately: it is the one host every suite already depends
+# on (the harness clones this repo from it), so reachability is a given and the number reflects the
+# path real CI traffic takes.
+#
+# Each probe runs curl ONCE, writing the native `%{json}` write-out as the structured result and
+# rendering the human-readable log lines from that JSON — a second curl for display would double the
+# ~10MB transfer (and the two could disagree on a flaky path, which is exactly when this probe matters).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+# Render selected write-out fields from a curl %{json} result file, tolerating a missing jq (the
+# toolchain image ships it; elsewhere the raw JSON line is still meaningful provenance).
+summarize() {
+	local file="$1" template="$2"
+	if [ ! -s "$file" ]; then
+		echo "(probe produced no result)"
+	elif command -v jq &>/dev/null; then
+		jq -r "$template" "$file" 2>/dev/null || cat "$file"
+	else
+		cat "$file"
+	fi
+}
+
+# Both probes ARE curl — without it there is nothing to measure. Guard before the redirects below:
+# `>"$SPEED_JSON"` creates the file whether or not curl exists, so an unguarded run on a curl-less
+# sandbox would leave zero-byte `.json` artifacts — provenance that reads as "the probe ran and
+# measured nothing" rather than "the tool was missing". Skip markers are the negative the normalizer
+# expects (see skip_result in lib/bench.sh), one per probe, matching the pts/loopback guard.
+if ! command -v curl &>/dev/null; then
+	skip_result "curl not installed" "$(task_result_name "speed")"
+	skip_result "curl not installed" "$(task_result_name "timing")"
+	exit 0
+fi
+
+echo "=== Download Speed Test ==="
+echo "Downloading ~10MB test archive from GitHub..."
+
+SPEED_JSON="$(results_dir)/$(task_result_name "speed").json"
+# -sS, and stderr NOT discarded: the %{json} write-out goes to stdout (captured in $SPEED_JSON), so
+# curl's diagnostic on stderr can't corrupt the result file — and it is the whole story when the probe
+# fails (DNS vs TLS vs proxy refusal), which is precisely what a network probe exists to record.
+curl -sSL --max-time 120 -o /dev/null -w '%{json}' \
+	"https://github.com/anthropics/anthropic-sdk-python/archive/refs/heads/main.zip" \
+	>"$SPEED_JSON" || echo "(download probe failed — curl exited non-zero)"
+summarize "$SPEED_JSON" \
+	'"HTTP \(.http_code) | \(.size_download) bytes | \(.time_total)s total | \(.speed_download) bytes/sec"'
+
+echo ""
+echo "=== Connection Timing (github.com) ==="
+TIMING_JSON="$(results_dir)/$(task_result_name "timing").json"
+curl -sSL --max-time 30 -o /dev/null -w '%{json}' "https://github.com" \
+	>"$TIMING_JSON" || echo "(timing probe failed — curl exited non-zero)"
+summarize "$TIMING_JSON" \
+	'"DNS:        \(.time_namelookup)s\nConnect:    \(.time_connect)s\nTLS:        \(.time_appconnect)s\nFirst byte: \(.time_starttransfer)s\nTotal:      \(.time_total)s"'
