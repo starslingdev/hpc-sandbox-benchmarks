@@ -7,20 +7,26 @@ function metric(metricId: string, samples: number[]): MetricResult {
 	return { metricId, samples, aggregates: aggregate(samples) };
 }
 
-function provider(providerId: string, metrics: MetricResult[]): ProviderRun {
+function provider(
+	providerId: string,
+	metrics: MetricResult[],
+	gaps: ProviderRun["gaps"] = [],
+	suitesCovered: ProviderRun["suitesCovered"] = [],
+): ProviderRun {
 	return {
 		providerId,
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
 		observedSpecs: {},
 		metrics,
-		skips: [],
+		suitesCovered,
+		gaps,
 		uncatalogued: [],
 	};
 }
 
 function run(providers: ProviderRun[]): Run {
 	return {
-		schemaVersion: "1",
+		schemaVersion: "2",
 		runId: "run-1",
 		sha: "abc123",
 		generatedAt: "2026-06-20T00:00:00.000Z",
@@ -271,5 +277,291 @@ describe("renderLeaderboardMarkdown statistics", () => {
 			),
 		);
 		expect(md).toContain("<0.001");
+	});
+});
+
+describe("coverage gaps", () => {
+	const HEADLINE = "node_web_tooling_runs_per_s";
+	const diskSkip = (needed: number): ProviderRun["gaps"][number] => ({
+		scope: "suite",
+		id: "realworld-mastra",
+		outcome: "skipped",
+		reason: `Insufficient disk: 16.7 GiB free, suite needs ${needed} GiB`,
+	});
+
+	it("collects each skip, flags disk gaps, and orders disk-first then by provider/suite", () => {
+		const board = buildLeaderboard(
+			run([
+				// daytona covers both exercised suites, so its only absence is the one e2b records — no
+				// derived `missing` gap enters the ordering under test.
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "realworld-mastra"]),
+				provider(
+					"e2b",
+					[],
+					[
+						{
+							scope: "suite",
+							id: "cpu-node",
+							outcome: "skipped",
+							reason: "Missing credentials: E2B_API_KEY",
+						},
+						diskSkip(30),
+					],
+				),
+			]),
+		);
+		expect(board.coverageGaps).toEqual([
+			// disk gap first, marked disk:true, carrying the verbatim free-vs-needed reason
+			{
+				providerId: "e2b",
+				displayName: "E2B",
+				scope: "suite",
+				id: "realworld-mastra",
+				outcome: "skipped",
+				reason: "Insufficient disk: 16.7 GiB free, suite needs 30 GiB",
+				disk: true,
+			},
+			{
+				providerId: "e2b",
+				displayName: "E2B",
+				scope: "suite",
+				id: "cpu-node",
+				outcome: "skipped",
+				reason: "Missing credentials: E2B_API_KEY",
+				disk: false,
+			},
+		]);
+	});
+
+	it("renders a Coverage gaps section that marks disk gaps ❌ and reads as a failure, not a tie", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider("daytona", [metric(HEADLINE, [10, 11])], [], ["realworld-mastra"]),
+					provider("e2b", [], [diskSkip(30)]),
+				]),
+			),
+		);
+		expect(md).toContain("## Coverage gaps");
+		expect(md).toContain("failing to cover");
+		// The disk row is marked and carries the free-vs-needed detail.
+		expect(md).toContain(
+			"| E2B | realworld-mastra | ❌ **disk** (skipped) | Insufficient disk: 16.7 GiB free, suite needs 30 GiB |",
+		);
+		// The disk explanation (platform-fixed providers can't close the gap) only appears with a disk gap.
+		expect(md).toContain("could not supply the disk the suite needs");
+	});
+
+	it("renders coverage gaps even when no dimension ranked (all-skipped run)", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(run([provider("e2b", [], [diskSkip(30)])])),
+		);
+		expect(md).toContain("_No ranked dimensions yet");
+		expect(md).toContain("## Coverage gaps");
+		expect(md).toContain("realworld-mastra");
+	});
+
+	it("omits the section and the disk note entirely when nothing was skipped", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(run([provider("daytona", [metric(HEADLINE, [10, 11])])])),
+		);
+		expect(md).not.toContain("## Coverage gaps");
+		expect(md).not.toContain("❌");
+	});
+
+	it("escapes pipes and newlines in the verbatim gap reason so the table stays intact", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider(
+						"e2b",
+						[],
+						[
+							{
+								scope: "suite",
+								id: "cpu-node",
+								outcome: "failed",
+								reason: "exit 1 | killed\nsee step log",
+							},
+						],
+					),
+				]),
+			),
+		);
+		expect(md).toContain("| E2B | cpu-node | **failed** | exit 1 \\| killed see step log |");
+	});
+});
+
+describe("coverage gaps: the holes nobody recorded", () => {
+	const HEADLINE = "node_web_tooling_runs_per_s";
+
+	it("derives a `missing` gap for a suite that ran elsewhere but never reported here", () => {
+		// The case the whole derivation exists for, and the one that was previously invisible: e2b produced
+		// no result AND left no marker, so it appears in no ranked table (no value) and in no recorded gap
+		// (no marker). Without deriving it, a provider that contributed nothing to the run reads as absent
+		// from the comparison rather than as failing to cover it.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk"]),
+				provider("e2b", []),
+			]),
+		);
+		expect(board.coverageGaps).toEqual([
+			{
+				providerId: "e2b",
+				displayName: "E2B",
+				scope: "suite",
+				id: "cpu-node",
+				outcome: "missing",
+				reason: "No result and no marker — the suite never reported for this provider.",
+				disk: false,
+			},
+			{
+				providerId: "e2b",
+				displayName: "E2B",
+				scope: "suite",
+				id: "disk",
+				outcome: "missing",
+				reason: "No result and no marker — the suite never reported for this provider.",
+				disk: false,
+			},
+		]);
+	});
+
+	it("never accuses a provider of missing a suite this run never exercised anywhere", () => {
+		// The denominator is the run's OWN evidence, not the suite registry. A run that only ever ran
+		// cpu-node has not "failed to cover" the other five suites, and reporting five phantom holes per
+		// provider would bury the real ones in noise the reader has to learn to ignore.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+				provider("e2b", [metric(HEADLINE, [12, 13])], [], ["cpu-node"]),
+			]),
+		);
+		expect(board.coverageGaps).toEqual([]);
+	});
+
+	it("does not derive a gap for a suite the provider actually covered", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+				provider("e2b", [metric(HEADLINE, [12, 13])], [], ["cpu-node", "disk"]),
+			]),
+		);
+		// daytona is missing `disk` (e2b ran it), but NOT `cpu-node`, which it covered.
+		expect(board.coverageGaps.map((g) => `${g.providerId}/${g.id}/${g.outcome}`)).toEqual([
+			"daytona/disk/missing",
+		]);
+	});
+
+	it("does not derive a `missing` gap on top of a recorded one — a marker accounts for the suite", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+				provider(
+					"e2b",
+					[],
+					[{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "PTS died" }],
+				),
+			]),
+		);
+		// One row, not two: the failure marker already explains cpu-node's absence on e2b.
+		expect(board.coverageGaps).toHaveLength(1);
+		expect(board.coverageGaps[0]).toMatchObject({ id: "cpu-node", outcome: "failed" });
+	});
+
+	it("never flags a FAILED gap as a ❌ disk gap, however its error message begins", () => {
+		// ❌ disk means "the provider cannot host this workload at all" — a precondition checked BEFORE the
+		// suite ran. A failure's reason is an error message, and one that happens to start with the same
+		// words is the workload running out of space mid-flight: a different fact, and not a structural one.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["realworld-mastra"]),
+				provider(
+					"e2b",
+					[],
+					[
+						{
+							scope: "suite",
+							id: "realworld-mastra",
+							outcome: "failed",
+							reason: "Insufficient disk space while extracting node_modules",
+						},
+					],
+				),
+			]),
+		);
+		expect(board.coverageGaps[0]).toMatchObject({ outcome: "failed", disk: false });
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).not.toContain("❌");
+		expect(md).toContain("| E2B | realworld-mastra | **failed** |");
+	});
+
+	it("renders an operation-scoped gap as a lifecycle op, not as a suite", () => {
+		const board = buildLeaderboard(
+			run([
+				provider(
+					"daytona",
+					[metric(HEADLINE, [10, 11])],
+					[
+						{
+							scope: "operation",
+							id: "lifecycle_snapshot_ms",
+							outcome: "skipped",
+							reason: "provider SDK exposes no snapshot operation",
+						},
+					],
+					["cpu-node"],
+				),
+			]),
+		);
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain(
+			"| Daytona | lifecycle_snapshot_ms _(lifecycle op)_ | **skipped** | provider SDK exposes no snapshot operation |",
+		);
+		// An operation is not a suite, so it must never enter the missing-suite denominator.
+		expect(board.coverageGaps.every((g) => g.outcome !== "missing")).toBe(true);
+	});
+
+	it("explains only the outcomes the table actually contains", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+					provider("e2b", []),
+				]),
+			),
+		);
+		expect(md).toContain("**missing** — nothing was reported at all");
+		// No skip and no failure in this run, so neither legend is emitted: the section never explains a
+		// category the reader cannot see.
+		expect(md).not.toContain("**skipped** — a precondition said no");
+		expect(md).not.toContain("**failed** — the benchmark was attempted and broke");
+	});
+
+	it("orders disk skips first, then failures, then the unexplained absences", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk", "memory"]),
+				provider(
+					"e2b",
+					[],
+					[
+						{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "PTS died" },
+						{
+							scope: "suite",
+							id: "disk",
+							outcome: "skipped",
+							reason: "Insufficient disk: 1 GiB free, suite needs 20 GiB",
+						},
+					],
+				),
+			]),
+		);
+		expect(board.coverageGaps.map((g) => `${g.id}/${g.outcome}`)).toEqual([
+			"disk/skipped", // ❌ disk leads: a structural absence
+			"cpu-node/failed", // then what broke
+			"memory/missing", // then what never said anything at all
+		]);
 	});
 });

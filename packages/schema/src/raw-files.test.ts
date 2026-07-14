@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
-	harnessSkipMarkerJson,
+	harnessGapMarkerJson,
 	isPtsForensicsFile,
 	isPtsResultFile,
 	isSkipMarkerFile,
+	parseGapMarker,
 	parseResultsArtifactName,
-	parseSkipMarker,
 	ptsForensicsFile,
 	resultsArtifactName,
 	sandboxSkipMarkerFile,
@@ -36,18 +36,23 @@ describe("raw-file naming", () => {
 		expect(isSkipMarkerFile(file)).toBe(true);
 	});
 
-	it("pins the exact harness skip-marker bytes (the producer/harness/normalizer contract)", () => {
-		// harnessSkipMarkerJson is the single source of truth for the on-disk skip-marker body. Pin the
+	it("pins the exact harness gap-marker bytes (the producer/harness/normalizer contract)", () => {
+		// harnessGapMarkerJson is the single source of truth for the on-disk gap-marker body. Pin the
 		// exact spelling — fixed key order, two-space indent, trailing newline — so a drift here can't
 		// silently break the producer↔harness↔normalizer round-trip.
-		const bytes = harnessSkipMarkerJson("daytona", "cpu-node", "Missing credentials");
+		const bytes = harnessGapMarkerJson("daytona", "cpu-node", "skipped", "Missing credentials");
 		expect(bytes).toBe(
-			'{\n  "provider": "daytona",\n  "suite": "cpu-node",\n  "skipped": true,\n  "reason": "Missing credentials"\n}\n',
+			'{\n  "provider": "daytona",\n  "suite": "cpu-node",\n  "outcome": "skipped",\n  "reason": "Missing credentials"\n}\n',
 		);
-		// And it round-trips through the reader to the suite + reason it encoded.
+		// And it round-trips through the reader to the suite + outcome + reason it encoded.
 		expect(
-			parseSkipMarker(sandboxSkipMarkerFile("daytona", "cpu-node"), JSON.parse(bytes), "daytona"),
-		).toEqual({ suite: "cpu-node", reason: "Missing credentials" });
+			parseGapMarker(sandboxSkipMarkerFile("daytona", "cpu-node"), JSON.parse(bytes), "daytona"),
+		).toEqual({
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "skipped",
+			reason: "Missing credentials",
+		});
 	});
 
 	it("round-trips a results artifact name, splitting on the first -sandbox-", () => {
@@ -67,18 +72,23 @@ describe("raw-file naming", () => {
 	});
 });
 
-describe("parseSkipMarker", () => {
+describe("parseGapMarker", () => {
 	it("reads the harness shape", () => {
-		const marker = parseSkipMarker(
+		const marker = parseGapMarker(
 			"sandbox-daytona-cpu-node--skipped.json",
 			{ provider: "daytona", suite: "cpu-node", skipped: true, reason: "insufficient disk" },
 			"daytona",
 		);
-		expect(marker).toEqual({ suite: "cpu-node", reason: "insufficient disk" });
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "skipped",
+			reason: "insufficient disk",
+		});
 	});
 
 	it("reads the bench.sh shape", () => {
-		const marker = parseSkipMarker(
+		const marker = parseGapMarker(
 			"pts_git--skipped.json",
 			{
 				schema_version: "1.0",
@@ -88,41 +98,74 @@ describe("parseSkipMarker", () => {
 			},
 			"daytona",
 		);
-		expect(marker).toEqual({ suite: "pts_git", reason: "PTS unavailable" });
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "pts_git",
+			outcome: "skipped",
+			reason: "PTS unavailable",
+		});
 	});
 
 	it("re-derives the suite from the filename when the body omits it", () => {
-		const marker = parseSkipMarker(
+		const marker = parseGapMarker(
 			"sandbox-daytona-cpu-node--skipped.json",
 			{ skipped: true },
 			"daytona",
 		);
-		expect(marker).toEqual({ suite: "cpu-node", reason: "unknown" });
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "skipped",
+			reason: "unknown",
+		});
 	});
 
 	it("treats an empty-string body suite as absent and re-derives from the filename", () => {
 		// suite is a downstream identifier; an explicit `suite: ""` must not slip through as an empty
 		// name — it falls through to the filename derivation just like a missing field does.
-		const marker = parseSkipMarker(
+		const marker = parseGapMarker(
 			"sandbox-daytona-cpu-node--skipped.json",
 			{ skipped: true, suite: "" },
 			"daytona",
 		);
-		expect(marker).toEqual({ suite: "cpu-node", reason: "unknown" });
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "skipped",
+			reason: "unknown",
+		});
 	});
 
 	it("falls back to the filename when the suite portion is empty", () => {
-		const marker = parseSkipMarker("sandbox-daytona---skipped.json", { skipped: true }, "daytona");
-		expect(marker).toEqual({ suite: "sandbox-daytona---skipped.json", reason: "unknown" });
+		const marker = parseGapMarker("sandbox-daytona---skipped.json", { skipped: true }, "daytona");
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "sandbox-daytona---skipped.json",
+			outcome: "skipped",
+			reason: "unknown",
+		});
 	});
 
-	it("rejects a marker-named file whose body isn't skipped (literal trap)", () => {
+	it("rejects a marker whose body outcome contradicts the filename suffix (literal trap)", () => {
+		// The two halves disagree, so the marker is corrupt: guessing which to believe is how a crashed
+		// suite gets published as a deliberate skip. Neither direction is resolved by precedence.
 		expect(
-			parseSkipMarker("sandbox-daytona-cpu-node--skipped.json", { skipped: false }, "daytona"),
+			parseGapMarker(
+				"sandbox-daytona-cpu-node--skipped.json",
+				{ suite: "cpu-node", outcome: "failed", reason: "exit code 1" },
+				"daytona",
+			),
+		).toBeUndefined();
+		expect(
+			parseGapMarker(
+				"sandbox-daytona-cpu-node--failed.json",
+				{ suite: "cpu-node", outcome: "skipped", reason: "insufficient disk" },
+				"daytona",
+			),
 		).toBeUndefined();
 	});
 
-	it("returns undefined when the filename is not a skip marker", () => {
-		expect(parseSkipMarker("results.json", { skipped: true }, "daytona")).toBeUndefined();
+	it("returns undefined when the filename is not a gap marker", () => {
+		expect(parseGapMarker("results.json", { skipped: true }, "daytona")).toBeUndefined();
 	});
 });

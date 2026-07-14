@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1",
+  "schemaVersion": "2",
   "runId": "29061549181",
   "sha": "9605098976fa81c1c14fc12c9329f1f719501bac",
   "generatedAt": "2026-07-10T01:35:36.576Z",
@@ -14,8 +14,9 @@
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": [],
+      "gaps": []
     },
     {
       "providerId": "daytona",
@@ -148,8 +149,9 @@
           }
         }
       ],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": ["cpu-node", "disk", "memory"],
+      "gaps": []
     },
     {
       "providerId": "e2b",
@@ -196,8 +198,9 @@
           }
         }
       ],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": ["disk"],
+      "gaps": []
     },
     {
       "providerId": "modal",
@@ -262,8 +265,9 @@
           }
         }
       ],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": ["cpu-node", "disk"],
+      "gaps": []
     }
   ]
 }

@@ -31,6 +31,39 @@ Headline: **Hourly cost** (USD/hr, lower is better)
 | 1 | Daytona | 0.1494 | — | 1 | — | — |
 | 2 | Modal | 0.4774 | — | 1 | — | — |
 
+## Coverage gaps
+
+Benchmarks that produced **no result** on a provider. A gap is a missing result, not a comparable
+one — read it as the provider **failing to cover** that workload, never as a tie or a zero.
+
+| Provider | Benchmark | Outcome | Detail |
+| --- | --- | --- | --- |
+| Daytona | realworld-mastra | ❌ **disk** (skipped) | Insufficient disk: 16.7 GiB free, suite needs 30 GiB |
+| Daytona | realworld-openclaw | ❌ **disk** (skipped) | Insufficient disk: 16.7 GiB free, suite needs 25 GiB |
+| Blaxel | cpu-node | **missing** | No result and no marker — the suite never reported for this provider. |
+| Blaxel | disk | **missing** | No result and no marker — the suite never reported for this provider. |
+| Blaxel | memory | **missing** | No result and no marker — the suite never reported for this provider. |
+| Blaxel | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
+| Blaxel | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
+| Blaxel | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
+| E2B | cpu-node | **missing** | No result and no marker — the suite never reported for this provider. |
+| E2B | disk | **missing** | No result and no marker — the suite never reported for this provider. |
+| E2B | memory | **missing** | No result and no marker — the suite never reported for this provider. |
+| E2B | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
+| E2B | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
+| E2B | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
+| Modal | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
+| Modal | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
+
+**skipped** — a precondition said no before the benchmark was attempted. A ❌ **disk** skip is the
+loud one: the provider could not supply the disk the suite needs, so the workload does not run on
+its current allocation at all. That is a structural absence, not a slow result.
+
+**missing** — nothing was reported at all: no result, and no marker explaining why. The suite ran
+elsewhere in this run, so it was part of the comparison, and this provider is simply absent from
+it — a dropped job, a lost artifact, or a sandbox that died before it could say anything. Treat it
+as unmeasured, never as a pass: the provider has not been shown to run this workload.
+
 ---
 
 **Reading this table.** The value is the median (p50) of the retained per-trial Samples, not the

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { parseRun, parseRunIndex } from "./index.ts";
 
 const validRun = {
-	schemaVersion: "1",
+	schemaVersion: "2",
 	runId: "run-1",
 	sha: "deadbeef",
 	generatedAt: "2026-06-20T00:00:00.000Z",
@@ -28,7 +28,8 @@ const validRun = {
 					sourceFile: "pts_node-web-tooling.xml",
 				},
 			],
-			skips: [],
+			suitesCovered: [],
+			gaps: [],
 			uncatalogued: [],
 		},
 	],
@@ -42,7 +43,7 @@ describe("Run schema", () => {
 	});
 
 	it("rejects an unknown schemaVersion", () => {
-		expect(() => parseRun({ ...validRun, schemaVersion: "2" })).toThrow();
+		expect(() => parseRun({ ...validRun, schemaVersion: "3" })).toThrow();
 	});
 
 	it("rejects a non-positive target spec", () => {

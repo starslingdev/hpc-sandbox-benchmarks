@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
-import { harnessSkipMarkerJson } from "@sandbox-benchmarks/schema";
-import { collectResults, writeSkipMarker } from "./collect.ts";
+import { harnessGapMarkerJson } from "@sandbox-benchmarks/schema";
+import { collectResults, writeGapMarker } from "./collect.ts";
 import type { SandboxHandle } from "./execute.ts";
 import { StepRunner } from "./execute.ts";
 
@@ -60,13 +60,27 @@ describe("collectResults", () => {
 		expect(existsSync(join(resultsDir, "pts_node-web-tooling--skipped.json"))).toBe(true);
 	});
 
-	it("throws when the collected tree has no PTS result or skip marker (silent data loss)", async () => {
+	it("accepts a results tree whose only signal is a FAILURE marker", async () => {
+		// The guard keys on the filename, so it has to recognise BOTH marker suffixes: a suite that ran and
+		// crashed reports a `--failed.json` and nothing else, and rejecting that as "no usable output" would
+		// throw away the one file that says what went wrong.
+		const resultsDir = join(work, "fail-only");
+		const failed = payloadSandbox({
+			"sandbox-daytona-cpu-node--failed.json":
+				'{"provider":"daytona","suite":"cpu-node","outcome":"failed","reason":"PTS died"}',
+			"manifest.ndjson": "{}\n",
+		});
+		await collectResults(new StepRunner(failed, UNCAPPED), resultsDir);
+		expect(existsSync(join(resultsDir, "sandbox-daytona-cpu-node--failed.json"))).toBe(true);
+	});
+
+	it("throws when the collected tree has no PTS result or gap marker (silent data loss)", async () => {
 		// A suite that produced only provenance/timing files and neither a result nor a marker must
 		// fail collection, not upload an empty-of-signal directory as a green run.
 		const empty = payloadSandbox({ "manifest.ndjson": "{}\n", "cpu-info.json": "{}" });
 		await expect(
 			collectResults(new StepRunner(empty, UNCAPPED), join(work, "no-signal")),
-		).rejects.toThrow(/no PTS result or skip marker/);
+		).rejects.toThrow(/no PTS result or gap marker/);
 	});
 
 	it("throws when the payload markers are missing", async () => {
@@ -80,15 +94,27 @@ describe("collectResults", () => {
 	});
 });
 
-describe("writeSkipMarker", () => {
+describe("writeGapMarker", () => {
 	it("writes the harness skip marker the normalizer reads", () => {
 		const dir = join(work, "skip");
-		writeSkipMarker(dir, "daytona", "cpu-node", "Missing credentials");
+		writeGapMarker(dir, "daytona", "cpu-node", "skipped", "Missing credentials");
 		// Pin the exact bytes, not just a shape: the producer/harness/normalizer share
-		// harnessSkipMarkerJson as the single source of truth, so a key-order or newline drift here
+		// harnessGapMarkerJson as the single source of truth, so a key-order or newline drift here
 		// would silently break the cross-package contract.
 		expect(readFileSync(join(dir, "sandbox-daytona-cpu-node--skipped.json"), "utf8")).toBe(
-			harnessSkipMarkerJson("daytona", "cpu-node", "Missing credentials"),
+			harnessGapMarkerJson("daytona", "cpu-node", "skipped", "Missing credentials"),
 		);
+	});
+
+	it("writes a FAILED marker to its own filename, so the outcome survives in the name alone", () => {
+		// The suffix is what the collector's "did this suite report anything?" guard and the extractor both
+		// key on, so a crash and a deliberate skip must not land in the same file. A failure recorded as a
+		// skip would publish an outage as a decision we made.
+		const dir = join(work, "fail");
+		writeGapMarker(dir, "daytona", "cpu-node", "failed", "PTS produced no pts_*.xml");
+		expect(readFileSync(join(dir, "sandbox-daytona-cpu-node--failed.json"), "utf8")).toBe(
+			harnessGapMarkerJson("daytona", "cpu-node", "failed", "PTS produced no pts_*.xml"),
+		);
+		expect(existsSync(join(dir, "sandbox-daytona-cpu-node--skipped.json"))).toBe(false);
 	});
 });

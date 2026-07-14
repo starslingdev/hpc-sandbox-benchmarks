@@ -163,7 +163,7 @@ Spike: the system fingerprint is **embedded in `composite.xml` `<System>`** (Har
 
 **This requires real schema + plumbing work, not just a read:**
 - `ptsCompositeSchema` (pts-schema.ts:40-45) has **no `<System>` node** — add it to the composite schema.
-- `extractProviderDir` returns `{contributions, uncatalogued, skips}` (extract.ts:20-24) — it has **no `observedSpecs`** slot. Host specs must be threaded into `ProviderRun.observedSpecs` at the **run-writer layer**, not in extract.ts. The `run.ts:50-63` citation is the *target* schema, not the wiring site.
+- `extractProviderDir` returns `{contributions, uncatalogued, gaps}` (extract.ts:20-24) — it has **no `observedSpecs`** slot. Host specs must be threaded into `ProviderRun.observedSpecs` at the **run-writer layer**, not in extract.ts. The `run.ts:50-63` citation is the *target* schema, not the wiring site.
 
 **Host leak is by design-fit:** in a container `<System>` reports the **host** (48-thread EPYC), not the 4-vCPU sandbox quota. Map `<System>` to the **host (observed) side** of the existing `ObservedSpecs` host-vs-effective split (run.ts:50-63: `hostVcpus`/`hostMemoryGb` = host disclosure; `vcpus`/`memoryGb` = cgroup-effective). **Never** treat `<System>` as the sandbox's effective specs.
 

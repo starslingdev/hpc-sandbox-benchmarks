@@ -64,7 +64,7 @@ if (import.meta.main) {
 					const metrics = summarizeLifecycleAggregates(run.value.aggregates);
 					metricsByProvider.set(run.provider, metrics);
 					for (const line of formatLifecycleLines(metrics)) log(line);
-					for (const skip of run.value.skips) log(`    [skip] ${skip.suite}: ${skip.reason}`);
+					for (const gap of run.value.gaps) log(`    [${gap.outcome}] ${gap.id}: ${gap.reason}`);
 				}
 				const time = run.durationMs ? `${run.durationMs.toFixed(0)}ms` : "";
 				const why = run.status === "failed" && run.reason ? ` — ${run.reason}` : "";
@@ -81,7 +81,7 @@ if (import.meta.main) {
 		...(run.value
 			? {
 					metrics: metricsByProvider.get(run.provider) ?? [],
-					skips: run.value.skips,
+					gaps: run.value.gaps,
 				}
 			: {}),
 	}));

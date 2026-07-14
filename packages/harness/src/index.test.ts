@@ -207,14 +207,14 @@ describe("@sandbox-benchmarks/harness", () => {
 		const info = result.aggregates.find((a) => a.metricId === "control_plane_info_ms");
 		expect(spawn?.aggregates.n).toBe(3);
 		expect(info?.aggregates.n).toBe(6);
-		expect(result.skips).toEqual([]);
+		expect(result.gaps).toEqual([]);
 	});
 
 	it("benchmarkLifecycle dedups a repeated unsupported-op skip across cycles", async () => {
 		const result = await benchmarkLifecycle(lifecycleConfig(), { iterations: 4 });
 		// No snapshot/list support → one skip each, not four, despite four cycles.
-		const snapshotSkips = result.skips.filter((s) => s.suite === "lifecycle_snapshot_ms");
-		const listSkips = result.skips.filter((s) => s.suite === "control_plane_list_ms");
+		const snapshotSkips = result.gaps.filter((g) => g.id === "lifecycle_snapshot_ms");
+		const listSkips = result.gaps.filter((g) => g.id === "control_plane_list_ms");
 		expect(snapshotSkips.length).toBe(1);
 		expect(listSkips.length).toBe(1);
 		// Cold-start Samples still accrue per cycle.
@@ -223,7 +223,7 @@ describe("@sandbox-benchmarks/harness", () => {
 		);
 	});
 
-	it("benchmarkLifecycle records a mid-run spawn failure as a skip and keeps the surviving cycles", async () => {
+	it("benchmarkLifecycle records a mid-run spawn failure as a failed gap and keeps the surviving cycles", async () => {
 		const result = await benchmarkLifecycle(lifecycleConfig({ failCreateOnCycle: 2 }), {
 			iterations: 3,
 		});
@@ -234,9 +234,11 @@ describe("@sandbox-benchmarks/harness", () => {
 		expect(
 			result.aggregates.find((a) => a.metricId === "lifecycle_teardown_ms")?.aggregates.n,
 		).toBe(2);
-		// The failure surfaces as a spawn skip carrying the create error.
-		const spawnSkip = result.skips.find((s) => s.suite === "lifecycle_spawn_ms");
-		expect(spawnSkip?.reason).toBe("spawn boom");
+		// The failure surfaces as a FAILED spawn gap carrying the create error — the provider was asked
+		// for a sandbox and did not produce one, which is an outage, not a decision.
+		const spawnGap = result.gaps.find((g) => g.id === "lifecycle_spawn_ms");
+		expect(spawnGap?.reason).toBe("spawn boom");
+		expect(spawnGap?.outcome).toBe("failed");
 	});
 
 	it("benchmarkLifecycle clamps a non-finite iterations to a single cycle", async () => {

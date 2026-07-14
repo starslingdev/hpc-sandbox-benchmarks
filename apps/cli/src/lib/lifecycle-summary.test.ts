@@ -49,16 +49,17 @@ describe("summarizeLifecycleAggregates", () => {
 	});
 });
 
-// A benchmark carrying just the operations/skips a case needs; unrelated fields stay minimal.
+// A benchmark carrying just the operations/gaps a case needs; unrelated fields stay minimal. A
+// lifecycle gap is operation-scoped, so it names the Metric id that produced no Sample in `id`.
 const bench = (
 	samples: Array<{ operation: string; durationMs: number }>,
-	skips: Array<{ suite: string; reason: string }> = [],
+	gaps: Array<{ id: string; outcome: "skipped" | "failed"; reason: string }> = [],
 ): LifecycleBenchmark =>
 	({
 		provider: "e2b",
 		samples: samples.map((s) => ({ provider: "e2b", ...s })),
 		aggregates: [],
-		skips,
+		gaps: gaps.map((g) => ({ scope: "operation", ...g })),
 	}) as unknown as LifecycleBenchmark;
 
 describe("lifecycleOk", () => {
@@ -68,40 +69,48 @@ describe("lifecycleOk", () => {
 		);
 	});
 
-	it("fails a run that spawned but never became ready (spawn/teardown sampled, cold start skipped)", () => {
+	it("fails a run that spawned but never became ready (spawn/teardown sampled, cold start failed)", () => {
 		const run = bench(
 			[
 				{ operation: HARNESS_METRIC_IDS.spawn, durationMs: 400 },
 				{ operation: HARNESS_METRIC_IDS.teardown, durationMs: 50 },
 			],
 			[
-				{ suite: HARNESS_METRIC_IDS.coldStart, reason: 'sandbox never ready: no "echo ok" in 40' },
-				{ suite: HARNESS_METRIC_IDS.firstExec, reason: 'sandbox never ready: no "echo ok" in 40' },
+				{
+					id: HARNESS_METRIC_IDS.coldStart,
+					outcome: "failed",
+					reason: 'sandbox never ready: no "echo ok" in 40',
+				},
+				{
+					id: HARNESS_METRIC_IDS.firstExec,
+					outcome: "failed",
+					reason: 'sandbox never ready: no "echo ok" in 40',
+				},
 			],
 		);
 		expect(lifecycleOk(run)).toBe(false);
 	});
 
 	it("fails a run with no samples at all (spawn threw every cycle)", () => {
-		expect(lifecycleOk(bench([], [{ suite: HARNESS_METRIC_IDS.spawn, reason: "boom" }]))).toBe(
-			false,
-		);
+		expect(
+			lifecycleOk(bench([], [{ id: HARNESS_METRIC_IDS.spawn, outcome: "failed", reason: "boom" }])),
+		).toBe(false);
 	});
 });
 
 describe("lifecycleFailureReason", () => {
-	it("surfaces the recorded cold-start skip reason", () => {
+	it("surfaces the recorded cold-start gap reason", () => {
 		const run = bench(
 			[{ operation: HARNESS_METRIC_IDS.spawn, durationMs: 400 }],
-			[{ suite: HARNESS_METRIC_IDS.coldStart, reason: "sandbox never ready" }],
+			[{ id: HARNESS_METRIC_IDS.coldStart, outcome: "failed", reason: "sandbox never ready" }],
 		);
 		expect(lifecycleFailureReason(run)).toBe(
 			`no ${HARNESS_METRIC_IDS.coldStart} sample captured (sandbox never ready)`,
 		);
 	});
 
-	it("falls back to a no-samples note when nothing skipped cold start (spawn threw)", () => {
-		const run = bench([], [{ suite: HARNESS_METRIC_IDS.spawn, reason: "boom" }]);
+	it("falls back to a no-samples note when no gap named cold start (spawn threw)", () => {
+		const run = bench([], [{ id: HARNESS_METRIC_IDS.spawn, outcome: "failed", reason: "boom" }]);
 		expect(lifecycleFailureReason(run)).toBe(
 			`no ${HARNESS_METRIC_IDS.coldStart} sample captured (no samples recorded)`,
 		);

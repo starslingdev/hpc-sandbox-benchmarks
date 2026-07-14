@@ -1,12 +1,12 @@
 /**
  * Walk one provider's raw result directory (`data/raw/<runId>/<provider>/`) and pull out catalogued
- * Metric samples, uncatalogued stragglers, and skip markers. SDK-free: the filesystem and the schema
+ * Metric samples, uncatalogued stragglers, and gap markers. SDK-free: the filesystem and the schema
  * contract only — never a provider SDK (enforced by the package boundary).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ObservedSpecs, SkipMarker, UncataloguedResult } from "@sandbox-benchmarks/schema";
-import { isPtsResultFile, isSkipMarkerFile, parseSkipMarker } from "@sandbox-benchmarks/schema";
+import type { ObservedSpecs, ResultGap, UncataloguedResult } from "@sandbox-benchmarks/schema";
+import { isGapMarkerFile, isPtsResultFile, parseGapMarker } from "@sandbox-benchmarks/schema";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 import { parseSystemHost } from "./system-specs.ts";
 
@@ -21,11 +21,12 @@ export interface SampleContribution {
 	arguments?: string;
 }
 
-/** Everything one provider directory yields: catalogued samples, stragglers, and skips. */
+/** Everything one provider directory yields: catalogued samples, stragglers, and gap markers. */
 export interface ProviderExtraction {
 	contributions: SampleContribution[];
 	uncatalogued: UncataloguedResult[];
-	skips: SkipMarker[];
+	/** Suite-scoped gaps read from `*--skipped.json` / `*--failed.json` markers. */
+	gaps: ResultGap[];
 	/**
 	 * HOST-side specs read from a composite's `<System>` fingerprint (the underlying machine, not the
 	 * sandbox quota), when any composite in this directory carried one. The first composite with a
@@ -35,7 +36,7 @@ export interface ProviderExtraction {
 	observedHost?: ObservedSpecs;
 }
 
-/** Parse JSON, returning undefined rather than throwing on a malformed skip marker. */
+/** Parse JSON, returning undefined rather than throwing on a malformed gap marker. */
 function readJson(text: string): unknown {
 	try {
 		return JSON.parse(text);
@@ -44,9 +45,9 @@ function readJson(text: string): unknown {
 	}
 }
 
-/** Extract every catalogued/uncatalogued result and skip marker from one provider's raw directory. */
+/** Extract every catalogued/uncatalogued result and gap marker from one provider's raw directory. */
 export function extractProviderDir(dir: string, providerId: string): ProviderExtraction {
-	const out: ProviderExtraction = { contributions: [], uncatalogued: [], skips: [] };
+	const out: ProviderExtraction = { contributions: [], uncatalogued: [], gaps: [] };
 
 	// `withFileTypes` so a subdirectory can't be fed to readFileSync (EISDIR); sort for determinism.
 	const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
@@ -110,13 +111,9 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 			continue;
 		}
 
-		if (isSkipMarkerFile(filename)) {
-			const marker = parseSkipMarker(
-				filename,
-				readJson(readFileSync(fullPath, "utf8")),
-				providerId,
-			);
-			if (marker) out.skips.push(marker);
+		if (isGapMarkerFile(filename)) {
+			const marker = parseGapMarker(filename, readJson(readFileSync(fullPath, "utf8")), providerId);
+			if (marker) out.gaps.push(marker);
 		}
 	}
 

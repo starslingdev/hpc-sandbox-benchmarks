@@ -20,8 +20,13 @@ describe("extractProviderDir", () => {
 	});
 
 	it("reads the bench.sh skip marker", () => {
-		expect(extraction.skips).toEqual([
-			{ suite: "pts_git", reason: "phoronix-test-suite not installed" },
+		expect(extraction.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "pts_git",
+				outcome: "skipped",
+				reason: "phoronix-test-suite not installed",
+			},
 		]);
 	});
 

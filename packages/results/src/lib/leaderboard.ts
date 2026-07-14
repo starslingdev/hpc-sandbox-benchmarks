@@ -15,7 +15,14 @@
  * their full distributions separate under Mann-Whitney U (with Kolmogorov-Smirnov reported alongside,
  * since a bimodal provider can match another's median while behaving nothing like it).
  */
-import type { Dimension, MedianInterval, MetricDef, Run } from "@sandbox-benchmarks/schema";
+import type {
+	Dimension,
+	GapOutcome,
+	GapScope,
+	MedianInterval,
+	MetricDef,
+	Run,
+} from "@sandbox-benchmarks/schema";
 import {
 	bootstrapMedianInterval,
 	DEFAULT_ALPHA,
@@ -64,12 +71,136 @@ export interface LeaderboardDimension {
 	rows: LeaderboardRow[];
 }
 
+/**
+ * How a benchmark came to produce no result for a provider — the leaderboard's outcome vocabulary.
+ * The first two are RECORDED by the producer ({@link GapOutcome}); `missing` is DERIVED here, and is
+ * the one a Run cannot state about itself:
+ *
+ *  - `skipped` — a precondition said no before anything ran (not enough disk for the suite).
+ *  - `failed`  — it ran and broke (the suite threw, the operation errored, the sandbox died).
+ *  - `missing` — nothing was ever reported: no result, and no marker either. The suite ran somewhere
+ *    else in this Run, so it was part of the comparison, but this provider is simply absent from it.
+ *    A dropped CI job, an artifact that never uploaded, a sandbox that died before it could write a
+ *    marker. Left underived, it is the ONE hole that shows up nowhere: not in the table (no value to
+ *    rank), and not in the gaps (no marker to read).
+ */
+export type CoverageOutcome = GapOutcome | "missing";
+
+/** One benchmark that produced no result for a provider — a hole in the comparison, surfaced not hidden. */
+export interface CoverageGap {
+	providerId: string;
+	displayName: string;
+	/** What did not run: a whole suite, or one harness lifecycle operation. */
+	scope: GapScope;
+	/** The suite name, or the harness Metric id — whichever {@link scope} names. */
+	id: string;
+	outcome: CoverageOutcome;
+	/** The producer's verbatim reason (a disk shortfall's numbers, an error message), or ours for `missing`. */
+	reason: string;
+	/**
+	 * True when the suite was skipped because the provider could not supply the disk it needs — the
+	 * case the leaderboard calls out loudly, since it means a provider is structurally unable to run a
+	 * whole class of workload, not that it ran and lost.
+	 */
+	disk: boolean;
+}
+
 /** The full comparison surface derived from one Run. */
 export interface Leaderboard {
 	runId: string;
 	sha: string;
 	generatedAt: string;
 	dimensions: LeaderboardDimension[];
+	/** Every benchmark that produced no result somewhere, disk gaps first. Empty when coverage is complete. */
+	coverageGaps: CoverageGap[];
+}
+
+/**
+ * Whether a skip reason is a disk-capacity gap — i.e. the harness wrote its "Insufficient disk: …"
+ * marker because the sandbox had less free disk than the suite's `minDiskGb`. Matched by prefix rather
+ * than importing the harness so `results` stays SDK-free; kept in lockstep with `runSuiteOnSandbox`'s
+ * reason string (the one place that phrasing is authored).
+ */
+function isDiskGap(reason: string): boolean {
+	return /^insufficient disk/i.test(reason.trim());
+}
+
+/** Rendering/sort precedence: the structural absences first, the merely-unreported last. */
+const OUTCOME_ORDER: Record<CoverageOutcome, number> = { skipped: 0, failed: 1, missing: 2 };
+
+/**
+ * The suites this Run actually exercised — every suite that produced a Metric for SOME provider, or
+ * that some provider left a marker for. This is the denominator the missing-suite gaps are derived
+ * against, and it is deliberately the Run's OWN evidence rather than the registry's `SUITE_NAMES`: a
+ * Run that only ever ran the disk suite has not "failed to cover" the other five, and accusing every
+ * provider of five holes would bury the one real gap in noise the reader must then learn to ignore.
+ */
+function suitesExercised(run: Run): string[] {
+	const suites = new Set<string>();
+	for (const provider of run.providers) {
+		for (const suite of provider.suitesCovered) suites.add(suite);
+		for (const gap of provider.gaps) if (gap.scope === "suite") suites.add(gap.id);
+	}
+	return [...suites].sort((a, b) => a.localeCompare(b, "en"));
+}
+
+/**
+ * Every hole in one Run's coverage: the gaps the providers RECORDED (skipped / failed), plus the ones
+ * only the whole Run can see — a suite that ran elsewhere but never reported here at all, with no
+ * result and no marker to explain itself.
+ *
+ * Deriving that last class is the difference between a coverage section that is honest and one that
+ * merely looks it: an unrecorded absence is exactly what a dropped CI job, a lost artifact, or a
+ * sandbox that died before writing its marker leaves behind, and it is invisible in every other view —
+ * the ranked tables can only show providers that produced a value.
+ */
+function coverageGapsOf(run: Run): CoverageGap[] {
+	const exercised = suitesExercised(run);
+
+	const gaps = run.providers.flatMap((provider): CoverageGap[] => {
+		const displayName = getProvider(provider.providerId)?.displayName ?? provider.providerId;
+		const accountedFor = new Set([
+			...provider.suitesCovered,
+			...provider.gaps.filter((g) => g.scope === "suite").map((g) => g.id),
+		]);
+		return [
+			...provider.gaps.map((gap) => ({
+				providerId: provider.providerId,
+				displayName,
+				scope: gap.scope,
+				id: gap.id,
+				outcome: gap.outcome satisfies GapOutcome as CoverageOutcome,
+				reason: gap.reason,
+				// Only a SKIP can be a disk gap: the reason is the harness's precondition message, written
+				// before the suite was attempted. A failure's reason is an error message, and one that merely
+				// happens to start with "insufficient disk" is the workload running out of space mid-flight —
+				// a different fact, and not the structural "cannot host this at all" the ❌ claims.
+				disk: gap.outcome === "skipped" && isDiskGap(gap.reason),
+			})),
+			...exercised
+				.filter((suite) => !accountedFor.has(suite))
+				.map((suite) => ({
+					providerId: provider.providerId,
+					displayName,
+					scope: "suite" as GapScope,
+					id: suite,
+					outcome: "missing" as CoverageOutcome,
+					reason: "No result and no marker — the suite never reported for this provider.",
+					disk: false,
+				})),
+		];
+	});
+
+	// Deterministically ordered so a committed leaderboard is byte-stable: disk gaps first (the headline
+	// — a provider that cannot fit the workload at all), then by outcome, then by provider and benchmark.
+	// Locale pinned to "en": bare localeCompare collates by whatever locale the runtime was built with.
+	return gaps.sort(
+		(a, b) =>
+			Number(b.disk) - Number(a.disk) ||
+			OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome] ||
+			a.displayName.localeCompare(b.displayName, "en") ||
+			a.id.localeCompare(b.id, "en"),
+	);
 }
 
 /** Build the structured leaderboard from a validated Run. Pure — Run in, ranking out. */
@@ -156,7 +287,21 @@ export function buildLeaderboard(run: Run): Leaderboard {
 		dimensions.push({ dimension, metric, rows: candidates.map((c) => c.row) });
 	}
 
-	return { runId: run.runId, sha: run.sha, generatedAt: run.generatedAt, dimensions };
+	return {
+		runId: run.runId,
+		sha: run.sha,
+		generatedAt: run.generatedAt,
+		dimensions,
+		coverageGaps: coverageGapsOf(run),
+	};
+}
+
+/**
+ * Make free-form text safe inside a Markdown table cell. Skip reasons are the harness's verbatim
+ * strings — a `|` would end the cell and a newline would end the row, silently corrupting the table.
+ */
+function escapeCell(text: string): string {
+	return text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 }
 
 /** Format a metric value compactly: integers as-is, otherwise up to 4 significant digits, trimmed. */
@@ -185,7 +330,6 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	if (board.dimensions.length === 0) {
 		lines.push("_No ranked dimensions yet (no provider produced a headline metric)._", "");
-		return `${lines.join("\n")}\n`;
 	}
 
 	for (const { dimension, metric, rows } of board.dimensions) {
@@ -219,6 +363,59 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			"",
 		);
 	}
+
+	// Coverage gaps: everything that did NOT produce a result somewhere. Rendered whether or not any
+	// dimension ranked, so an all-skipped run still says why. Disk gaps lead and are marked ❌ — a
+	// provider that cannot fit the workload is a structural absence, not a slow result, and must not
+	// read as "no data". Each row states its OUTCOME, because the three are not the same fact and a
+	// reader who cannot tell them apart will read a crash as a design decision.
+	if (board.coverageGaps.length > 0) {
+		const outcomes = new Set(board.coverageGaps.map((g) => g.outcome));
+		lines.push(
+			"## Coverage gaps",
+			"",
+			"Benchmarks that produced **no result** on a provider. A gap is a missing result, not a comparable",
+			"one — read it as the provider **failing to cover** that workload, never as a tie or a zero.",
+			"",
+			"| Provider | Benchmark | Outcome | Detail |",
+			"| --- | --- | --- | --- |",
+			...board.coverageGaps.map((g) => {
+				const what = g.scope === "operation" ? `${g.id} _(lifecycle op)_` : g.id;
+				const outcome = g.disk ? "❌ **disk** (skipped)" : `**${g.outcome}**`;
+				return `| ${g.displayName} | ${what} | ${outcome} | ${escapeCell(g.reason)} |`;
+			}),
+			"",
+		);
+		// Each legend line is emitted only when the table actually contains that outcome, so the section
+		// never explains a category the reader cannot see (and so an all-`missing` run reads as one clear
+		// statement instead of three paragraphs of hypotheticals).
+		if (outcomes.has("skipped")) {
+			lines.push(
+				"**skipped** — a precondition said no before the benchmark was attempted. A ❌ **disk** skip is the",
+				"loud one: the provider could not supply the disk the suite needs, so the workload does not run on",
+				"its current allocation at all. That is a structural absence, not a slow result.",
+				"",
+			);
+		}
+		if (outcomes.has("failed")) {
+			lines.push(
+				"**failed** — the benchmark was attempted and broke: it threw, timed out, or died with the sandbox.",
+				"Unlike a skip, this is a reliability fact about the provider, not a decision made on its behalf.",
+				"",
+			);
+		}
+		if (outcomes.has("missing")) {
+			lines.push(
+				"**missing** — nothing was reported at all: no result, and no marker explaining why. The suite ran",
+				"elsewhere in this run, so it was part of the comparison, and this provider is simply absent from",
+				"it — a dropped job, a lost artifact, or a sandbox that died before it could say anything. Treat it",
+				"as unmeasured, never as a pass: the provider has not been shown to run this workload.",
+				"",
+			);
+		}
+	}
+
+	if (board.dimensions.length === 0) return `${lines.join("\n")}\n`;
 
 	lines.push(
 		"---",

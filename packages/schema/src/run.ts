@@ -94,16 +94,50 @@ export const targetSpecSchema = type({
 });
 export type TargetSpec = typeof targetSpecSchema.infer;
 
-/** A benchmark that was deliberately not run, and why. */
-export const skipMarkerSchema = type({
-	suite: "string",
-	reason: "string",
-});
-export type SkipMarker = typeof skipMarkerSchema.infer;
+/**
+ * What a benchmark that produced no result was: a whole suite, or one harness lifecycle operation.
+ * The two are not interchangeable — a missing suite is a workload the provider never ran, a missing
+ * operation is a control-plane call that never returned — so the gap names which it is rather than
+ * overloading one identifier slot with both.
+ */
+export const gapScopeSchema = type("'suite' | 'operation'");
+export type GapScope = typeof gapScopeSchema.infer;
 
 /**
- * One provider's slice of a Run: its catalogued Metrics, observed specs, skips and stragglers. The
- * `.narrow` enforces the cross-field invariant documented on {@link validationStatusSchema}: a
+ * Why a benchmark produced no result. The distinction is the whole point of recording gaps at all:
+ *
+ *  - `skipped` — DELIBERATELY not run. A precondition said no before anything was attempted (the
+ *    sandbox has less free disk than the suite needs; the provider's SDK has no snapshot call). It
+ *    says something structural about the provider: it cannot host this workload as configured.
+ *  - `failed`  — ATTEMPTED and errored. The suite/operation ran and threw, timed out, or died with
+ *    the sandbox. It says something about reliability, and it is a different fact from a skip.
+ *
+ * Collapsing the two (recording a crash as a "skip") reports an outage as a design decision, so the
+ * producer picks the arm at the point it knows which happened, and never widens one into the other.
+ */
+export const gapOutcomeSchema = type("'skipped' | 'failed'");
+export type GapOutcome = typeof gapOutcomeSchema.infer;
+
+/**
+ * One benchmark that produced no result for a provider, and why — the recorded half of a coverage
+ * gap. The DERIVED half (a suite that ran elsewhere in the Run but never reported here at all, with
+ * no marker of any kind) cannot live on a ProviderRun: it is a cross-provider fact, so the
+ * leaderboard derives it from {@link ProviderRun.suitesCovered}. See `CoverageGap` in the results
+ * package, which unions the two into the surface a reader sees.
+ */
+export const resultGapSchema = type({
+	scope: gapScopeSchema,
+	/** The suite name (`scope: "suite"`) or the harness Metric id (`scope: "operation"`). */
+	id: "string",
+	outcome: gapOutcomeSchema,
+	/** The producer's verbatim explanation — a disk shortfall's numbers, or the error's message. */
+	reason: "string",
+});
+export type ResultGap = typeof resultGapSchema.infer;
+
+/**
+ * One provider's slice of a Run: its catalogued Metrics, observed specs, coverage gaps and stragglers.
+ * The `.narrow` enforces the cross-field invariant documented on {@link validationStatusSchema}: a
  * `validated` ProviderRun must carry at least one Metric, so `{ validationStatus: "validated",
  * metrics: [] }` is rejected at the boundary rather than reaching a consumer that branches on it.
  */
@@ -114,7 +148,16 @@ export const providerRunSchema = type({
 	"specMatched?": "boolean",
 	observedSpecs: observedSpecsSchema,
 	metrics: metricResultSchema.array(),
-	skips: skipMarkerSchema.array(),
+	/**
+	 * Every suite that produced at least one catalogued Metric here — the POSITIVE record of coverage,
+	 * without which a hole is indistinguishable from a suite this Run never ran at all. `metrics` alone
+	 * cannot supply it: a Metric knows its Dimension, and two suites can declare one Dimension, so
+	 * suite→metric is not invertible. Recorded by the producer, which is the only layer that saw the
+	 * raw tree. Sorted, so a re-normalized Run is byte-stable.
+	 */
+	suitesCovered: "string[]",
+	/** Benchmarks that reported no result here, each tagged with WHY (see {@link resultGapSchema}). */
+	gaps: resultGapSchema.array(),
 	uncatalogued: uncataloguedResultSchema.array(),
 }).narrow(
 	(run, ctx) =>
@@ -124,9 +167,17 @@ export const providerRunSchema = type({
 );
 export type ProviderRun = typeof providerRunSchema.infer;
 
-/** A full benchmark Run: every provider measured against one pinned target spec at one SHA. */
+/**
+ * A full benchmark Run: every provider measured against one pinned target spec at one SHA.
+ *
+ * `schemaVersion` is `"2"`: v1's `skips: { suite, reason }[]` could not say whether a benchmark was
+ * deliberately not run or had crashed, and carried no positive record of what DID run — so a suite
+ * that vanished (job died, artifact never uploaded) left no trace anywhere in the document. v2
+ * replaces it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. The committed dataset
+ * is migrated in place, not dual-read: one shape, validated at every boundary.
+ */
 export const runSchema = type({
-	schemaVersion: "'1'",
+	schemaVersion: "'2'",
 	runId: "string",
 	sha: "string",
 	// ISO-8601 timestamp the Run was generated at — validated so the RunIndex sort key can't be a

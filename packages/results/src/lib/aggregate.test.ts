@@ -19,14 +19,15 @@ function provider(providerId: string, metrics: MetricResult[]): ProviderRun {
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
 		observedSpecs: {},
 		metrics,
-		skips: [],
+		suitesCovered: [],
+		gaps: [],
 		uncatalogued: [],
 	};
 }
 
 function shard(providers: ProviderRun[], generatedAt = "2026-06-01T00:00:00.000Z"): Run {
 	return {
-		schemaVersion: "1",
+		schemaVersion: "2",
 		runId: "run-1",
 		sha: "abc123",
 		generatedAt,

@@ -90,10 +90,15 @@ export function writeNormalizedRun(input: WriteNormalizedRunInput): Run {
 
 /** One human-readable status line per provider, for CLI/CI logs. */
 export function summarizeRun(run: Run): string[] {
-	return run.providers.map(
-		(provider) =>
+	return run.providers.map((provider) => {
+		// Broken out rather than a single `gaps=` count: a run whose gaps are all deliberate skips and one
+		// whose gaps are all crashes are wildly different results, and a lone total says which is which.
+		const skipped = provider.gaps.filter((g) => g.outcome === "skipped").length;
+		const failed = provider.gaps.filter((g) => g.outcome === "failed").length;
+		return (
 			`${provider.providerId.padEnd(12)} ${provider.validationStatus.padEnd(10)} ` +
-			`metrics=${provider.metrics.length} skips=${provider.skips.length} ` +
-			`uncatalogued=${provider.uncatalogued.length}`,
-	);
+			`metrics=${provider.metrics.length} suites=${provider.suitesCovered.length} ` +
+			`skipped=${skipped} failed=${failed} uncatalogued=${provider.uncatalogued.length}`
+		);
+	});
 }

@@ -9,11 +9,12 @@ import { randomUUID } from "node:crypto";
 import { cpSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { GapOutcome } from "@sandbox-benchmarks/schema";
 import {
-	harnessSkipMarkerJson,
+	harnessGapMarkerJson,
+	isGapMarkerFile,
 	isPtsResultFile,
-	isSkipMarkerFile,
-	sandboxSkipMarkerFile,
+	sandboxGapMarkerFile,
 } from "@sandbox-benchmarks/schema";
 import type { StepRunner } from "./execute.ts";
 import { MIN } from "./execute.ts";
@@ -68,9 +69,9 @@ export async function collectResults(runner: StepRunner, resultsDir: string): Pr
 		// writing anything AND no marker was recorded — is silent data loss; fail loudly here rather
 		// than let an empty results directory upload and report as a green run.
 		const collected = readdirSync(target);
-		if (!collected.some((name) => isPtsResultFile(name) || isSkipMarkerFile(name))) {
+		if (!collected.some((name) => isPtsResultFile(name) || isGapMarkerFile(name))) {
 			throw new Error(
-				`Collected results for ${resultsDir} contain no PTS result or skip marker ` +
+				`Collected results for ${resultsDir} contain no PTS result or gap marker ` +
 					`(found: ${collected.join(", ") || "nothing"}); the suite produced no usable output`,
 			);
 		}
@@ -82,16 +83,24 @@ export async function collectResults(runner: StepRunner, resultsDir: string): Pr
 	}
 }
 
-/** Write a harness skip marker (whole suite × provider never ran) into the results directory. */
-export function writeSkipMarker(
+/**
+ * Record that a whole suite × provider produced no result, and WHY — `skipped` when a precondition
+ * refused it before anything ran, `failed` when it ran and broke.
+ *
+ * A failure that leaves no marker does not become a non-event: the suite is simply absent from the
+ * provider's slice of the Run, and the leaderboard reports it as a `missing` gap it can say nothing
+ * about. Writing the marker is what turns "we have no idea" into "it crashed, here is the error".
+ */
+export function writeGapMarker(
 	resultsDir: string,
 	provider: string,
 	suite: string,
+	outcome: GapOutcome,
 	reason: string,
 ): void {
 	mkdirSync(resultsDir, { recursive: true });
 	writeFileSync(
-		join(resultsDir, sandboxSkipMarkerFile(provider, suite)),
-		harnessSkipMarkerJson(provider, suite, reason),
+		join(resultsDir, sandboxGapMarkerFile(provider, suite, outcome)),
+		harnessGapMarkerJson(provider, suite, outcome, reason),
 	);
 }

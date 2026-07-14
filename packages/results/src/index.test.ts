@@ -16,7 +16,7 @@ describe("normalizeResultsTree", () => {
 	});
 
 	it("validates as a Run and includes every known provider", () => {
-		expect(run.schemaVersion).toBe("1");
+		expect(run.schemaVersion).toBe("2");
 		expect(run.providers.map((provider) => provider.providerId).sort()).toEqual(
 			PROVIDERS.map((provider) => provider.id).sort(),
 		);
@@ -34,8 +34,13 @@ describe("normalizeResultsTree", () => {
 
 	it("records the bench.sh skip and matches the pinned target spec", () => {
 		const daytona = run.providers.find((provider) => provider.providerId === "daytona");
-		expect(daytona?.skips).toEqual([
-			{ suite: "pts_git", reason: "phoronix-test-suite not installed" },
+		expect(daytona?.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "pts_git",
+				outcome: "skipped",
+				reason: "phoronix-test-suite not installed",
+			},
 		]);
 		expect(daytona?.specMatched).toBe(true);
 		expect(daytona?.observedSpecs.hostVcpus).toBe(48);

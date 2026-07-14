@@ -11,8 +11,8 @@ import type {
 	ObservedSpecs,
 	OffDimensionEmission,
 	ProviderRun,
+	ResultGap,
 	Run,
-	SkipMarker,
 	UncataloguedResult,
 } from "@sandbox-benchmarks/schema";
 import {
@@ -46,7 +46,7 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 		.map((meta) => normalizeProviderDir(input.rawRoot, meta.id));
 
 	const candidate = {
-		schemaVersion: "1" as const,
+		schemaVersion: "2" as const,
 		runId: input.runId,
 		sha: input.sha,
 		generatedAt: input.generatedAt,
@@ -92,12 +92,17 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		dirStat = undefined;
 	}
 	if (!dirStat?.isDirectory()) {
+		// No raw directory at all: the provider reported NOTHING — no result, not even a marker saying
+		// why. That is a real hole, but not one this layer can describe: only the whole Run knows which
+		// suites the other providers ran, and therefore which ones are missing here. Left as an empty
+		// slice; `buildLeaderboard` derives the missing-suite gaps across providers.
 		return {
 			providerId,
 			validationStatus: "pending",
 			observedSpecs: {},
 			metrics: [],
-			skips: [],
+			suitesCovered: [],
+			gaps: [],
 			uncatalogued: [],
 		};
 	}
@@ -126,7 +131,12 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 
 	const contributions: SampleContribution[] = [];
 	const rawUncatalogued: UncataloguedResult[] = [];
-	const skips: SkipMarker[] = [];
+	const gaps: ResultGap[] = [];
+	// The positive record of coverage: a suite lands here iff it produced at least one catalogued Metric
+	// for this provider. A suite directory that exists but yielded nothing (the run died mid-suite, or
+	// every <Result> was empty) is NOT coverage — it is a hole with no marker, and recording the
+	// directory instead of the metrics would hide exactly that case.
+	const suitesCovered = new Set<string>();
 	const offDimension: OffDimensionEmission[] = [];
 	// Host fingerprint from a composite's <System>, first non-empty across the read order (all suites of
 	// one provider ran on the same machine). Merged UNDER the spec probe below so the probe always wins.
@@ -148,7 +158,8 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 			contributions.push({ ...c, sourceFile: `${suite}/${c.sourceFile}` });
 		for (const u of ext.uncatalogued)
 			rawUncatalogued.push({ ...u, sourceFile: `${suite}/${u.sourceFile}` });
-		skips.push(...ext.skips);
+		if (ext.contributions.length > 0) suitesCovered.add(suite);
+		gaps.push(...ext.gaps);
 	}
 	// Reject at the boundary before any further work: a suite emitting a catalogued metric off its
 	// declared Dimensions is a producer/registry drift that would land a number under the wrong
@@ -161,11 +172,14 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		);
 	}
 
-	// Legacy flat files (no suite subdir): no suite to attribute to, so they can't be contract-checked.
+	// Legacy flat files (no suite subdir): no suite to attribute to, so they can't be contract-checked —
+	// and, for the same reason, they can't be credited to `suitesCovered`. A Run whose tree is entirely
+	// flat therefore claims no suite coverage, which correctly makes the derived missing-suite gaps
+	// empty (nothing is known to have run anywhere) rather than accusing every provider of a hole.
 	const flat = extractProviderDir(dir, providerId);
 	contributions.push(...flat.contributions);
 	rawUncatalogued.push(...flat.uncatalogued);
-	skips.push(...flat.skips);
+	gaps.push(...flat.gaps);
 	if (!systemHost && flat.observedHost) systemHost = flat.observedHost;
 
 	// De-dupe catalogued metrics by metricId across source files — keep the FIRST (deterministic file
@@ -267,7 +281,8 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		...(specMatched !== undefined ? { specMatched } : {}),
 		observedSpecs,
 		metrics,
-		skips,
+		suitesCovered: [...suitesCovered].sort((a, b) => a.localeCompare(b)),
+		gaps,
 		uncatalogued,
 	};
 }

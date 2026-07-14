@@ -14,11 +14,11 @@
  * start (`lifecycle_cold_start_ms`, t0→first success) and the readiness gap (`time_to_first_exec_ms`,
  * create→first success) — the latency `spawn` alone cannot see. Spawn is the bookend that must succeed
  * (a failure has nothing to tear down, so it rejects); every middle step is best-effort (a flaky
- * exec/probe records a skip, never losing the spawn/teardown samples); teardown always runs in `finally`
- * and never throws out of it. Repeat the cycle for a cold-start distribution — that is what
+ * exec/probe records a FAILED gap, never losing the spawn/teardown samples); teardown always runs in
+ * `finally` and never throws out of it. Repeat the cycle for a cold-start distribution — that is what
  * {@link benchmarkLifecycle} (in index.ts) does.
  */
-import type { Aggregates, HarnessMetricId, RawRun, SkipMarker } from "@sandbox-benchmarks/schema";
+import type { Aggregates, HarnessMetricId, RawRun, ResultGap } from "@sandbox-benchmarks/schema";
 import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import { now as defaultNow, time } from "./internal.ts";
 
@@ -65,7 +65,7 @@ export interface MeasureLifecycleOptions {
 	execCommand?: string;
 	/** How many times to probe each control-plane read within the one sandbox. Default `1`. */
 	controlPlaneSamples?: number;
-	/** Attempt a snapshot (recorded as a skip when the SDK exposes none, or when false). Default `true`. */
+	/** Attempt a snapshot (recorded as a skipped gap when the SDK exposes none, or when false). Default `true`. */
 	snapshot?: boolean;
 	/** Readiness probes (`echo ok`) per cold start before giving up. Default `40`. */
 	readinessMaxAttempts?: number;
@@ -79,10 +79,11 @@ export interface MeasureLifecycleOptions {
 	delay?: (ms: number) => Promise<void>;
 }
 
-/** One cold-start cycle's output: a timing Sample per measured op, a skip per op that couldn't run. */
+/** One cold-start cycle's output: a timing Sample per measured op, a gap per op that produced none. */
 export interface LifecycleMeasurement {
 	samples: RawRun[];
-	skips: SkipMarker[];
+	/** Operation-scoped gaps — `skipped` (not attempted) or `failed` (attempted, errored). */
+	gaps: ResultGap[];
 }
 
 /** A measured operation's distribution, keyed by the catalogued Metric id its Samples belong to. */
@@ -94,9 +95,10 @@ export interface LifecycleAggregate {
 const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
- * Measure one full lifecycle cycle against `compute`, returning a timing Sample per op and a skip per op
- * that was unsupported or failed. See the module header for the spawn-rejects / middle-best-effort /
- * teardown-always-runs contract.
+ * Measure one full lifecycle cycle against `compute`, returning a timing Sample per op and a gap per op
+ * that produced none — `skipped` when it was never attempted (disabled, or the SDK has no such call),
+ * `failed` when it was attempted and threw. See the module header for the spawn-rejects /
+ * middle-best-effort / teardown-always-runs contract.
  */
 export async function measureLifecycle(
 	compute: LifecycleCompute,
@@ -122,20 +124,29 @@ export async function measureLifecycle(
 	const delay = options.delay ?? realDelay;
 
 	const samples: RawRun[] = [];
-	const skips: SkipMarker[] = [];
+	const gaps: ResultGap[] = [];
 	const sample = (operation: HarnessMetricId, ms: number): void => {
 		samples.push({ provider, operation, durationMs: ms });
 	};
-	// Reuse SkipMarker's `suite` slot for the skipped op's Metric id — it identifies what didn't run.
+	// An operation-scoped gap: the Metric id names what produced no Sample, and `outcome` says why.
+	//
+	// The two arms are NOT interchangeable, and this is the layer that knows which is which. `skip` is a
+	// decision — the run turned the probe off, or the provider's SDK has no such call — and says nothing
+	// about reliability. `fail` is an outage: the call was made and it threw. Recording a throw as a skip
+	// (as this did while both shared one helper) publishes a provider's control-plane failure as though
+	// we had chosen not to measure it, which is precisely backwards.
 	const skip = (operation: HarnessMetricId, reason: string): void => {
-		skips.push({ suite: operation, reason });
+		gaps.push({ scope: "operation", id: operation, outcome: "skipped", reason });
 	};
-	// A timed step that records a Sample on success and a skip (never a throw) on failure.
+	const fail = (operation: HarnessMetricId, reason: string): void => {
+		gaps.push({ scope: "operation", id: operation, outcome: "failed", reason });
+	};
+	// A timed step that records a Sample on success and a FAILED gap (never a throw) on error.
 	const step = async (operation: HarnessMetricId, run: () => Promise<unknown>): Promise<void> => {
 		try {
 			sample(operation, (await time(run)).ms);
 		} catch (err) {
-			skip(operation, reasonOf(err));
+			fail(operation, reasonOf(err));
 		}
 	};
 
@@ -170,10 +181,13 @@ export async function measureLifecycle(
 			if (attempt < readinessMaxAttempts) await delay(readinessRetryDelayMs);
 		}
 		if (readyAt === undefined) {
-			// Never went ready: record both readiness Metrics as skips rather than fabricate a timing.
+			// Never went ready: record both readiness Metrics as FAILURES rather than fabricate a timing.
+			// The sandbox was spawned and probed to exhaustion and never came up — that is the loudest
+			// reliability signal this harness can produce, and calling it a "skip" would file it as a
+			// deliberate omission.
 			const reason = `sandbox never ready: no successful "${READINESS_CMD}" in ${readinessMaxAttempts} attempts`;
-			skip(HARNESS_METRIC_IDS.firstExec, reason);
-			skip(HARNESS_METRIC_IDS.coldStart, reason);
+			fail(HARNESS_METRIC_IDS.firstExec, reason);
+			fail(HARNESS_METRIC_IDS.coldStart, reason);
 		} else {
 			sample(HARNESS_METRIC_IDS.firstExec, floor(readyAt - createdAt));
 			sample(HARNESS_METRIC_IDS.coldStart, floor(readyAt - t0));
@@ -225,20 +239,21 @@ export async function measureLifecycle(
 					console.warn(`[lifecycle] snapshot cleanup failed (${snap.value.id}): ${reasonOf(err)}`);
 				});
 			} catch (err) {
-				skip(HARNESS_METRIC_IDS.snapshot, reasonOf(err));
+				fail(HARNESS_METRIC_IDS.snapshot, reasonOf(err));
 			}
 		}
 	} finally {
 		// Teardown: the closing bookend — always attempted. A throw out of `finally` would mask an
-		// in-flight error, so a failed destroy is a skip, not a throw; the leak is the caller's to notice.
+		// in-flight error, so a failed destroy is recorded as a failed gap, not rethrown; the leak is the
+		// caller's to notice.
 		try {
 			sample(HARNESS_METRIC_IDS.teardown, (await time(() => sandbox.destroy())).ms);
 		} catch (err) {
-			skip(HARNESS_METRIC_IDS.teardown, reasonOf(err));
+			fail(HARNESS_METRIC_IDS.teardown, reasonOf(err));
 		}
 	}
 
-	return { samples, skips };
+	return { samples, gaps };
 }
 
 /**

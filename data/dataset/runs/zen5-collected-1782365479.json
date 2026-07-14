@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1",
+  "schemaVersion": "2",
   "runId": "zen5-collected-1782365479",
   "sha": "zen5-ssh",
   "generatedAt": "2026-06-25T05:31:48.987Z",
@@ -54,24 +54,27 @@
           }
         }
       ],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": [],
+      "gaps": []
     },
     {
       "providerId": "e2b",
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": [],
+      "gaps": []
     },
     {
       "providerId": "modal",
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": [],
+      "gaps": []
     }
   ]
 }

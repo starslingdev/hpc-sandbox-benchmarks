@@ -11,22 +11,22 @@ const REQUIRED_METRIC = HARNESS_METRIC_IDS.coldStart;
 /**
  * A lifecycle run passed iff it captured the honest cold-start metric at least once. Spawn only times
  * create-resolve, so a provider that spawns but never becomes exec-ready still records spawn/teardown
- * Samples while every cycle skips {@link REQUIRED_METRIC} (a spawn that throws every cycle is recorded as
- * a skip too, leaving no Samples at all). Without this gate such a run reads `ok` and satisfies
- * `--require`, masking that the provider was never actually measured for the latency the benchmark
- * exists to report — this is `bench-lifecycle`'s analogue of {@link smokeOk}.
+ * Samples while every cycle records {@link REQUIRED_METRIC} as a failed gap (a spawn that throws every
+ * cycle leaves no Samples at all). Without this gate such a run reads `ok` and satisfies `--require`,
+ * masking that the provider was never actually measured for the latency the benchmark exists to report
+ * — this is `bench-lifecycle`'s analogue of {@link smokeOk}.
  */
 export function lifecycleOk(benchmark: LifecycleBenchmark): boolean {
 	return benchmark.samples.some((s) => s.operation === REQUIRED_METRIC);
 }
 
 /**
- * A human reason for a failed lifecycle run: the recorded cold-start skip reason(s) (e.g. "sandbox never
- * ready…" or a spawn error), else a generic no-samples note. Skips reuse `suite` for the skipped Metric
- * id (see the lifecycle driver), so a {@link REQUIRED_METRIC} skip is matched on `suite`.
+ * A human reason for a failed lifecycle run: the gap reason(s) recorded against the cold-start Metric
+ * ("sandbox never ready…", a spawn error), else a generic no-samples note. A lifecycle gap is
+ * operation-scoped, so it is matched on `id` — the Metric id that produced no Sample.
  */
 export function lifecycleFailureReason(benchmark: LifecycleBenchmark): string {
-	const reasons = benchmark.skips.filter((s) => s.suite === REQUIRED_METRIC).map((s) => s.reason);
+	const reasons = benchmark.gaps.filter((g) => g.id === REQUIRED_METRIC).map((g) => g.reason);
 	const detail = reasons.length > 0 ? reasons.join("; ") : "no samples recorded";
 	return `no ${REQUIRED_METRIC} sample captured (${detail})`;
 }

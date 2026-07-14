@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1",
+  "schemaVersion": "2",
   "runId": "29130741476",
   "sha": "663be0904797890a24fdaf1cc6e3ea8d77b3b89c",
   "generatedAt": "2026-07-11T00:18:19.295Z",
@@ -14,8 +14,9 @@
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": [],
+      "gaps": []
     },
     {
       "providerId": "daytona",
@@ -304,25 +305,31 @@
           }
         }
       ],
-      "skips": [
+      "uncatalogued": [],
+      "suitesCovered": ["cpu-node", "disk", "memory", "realworld-better-auth"],
+      "gaps": [
         {
-          "suite": "realworld-mastra",
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "skipped",
           "reason": "Insufficient disk: 16.7 GiB free, suite needs 30 GiB"
         },
         {
-          "suite": "realworld-openclaw",
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "skipped",
           "reason": "Insufficient disk: 16.7 GiB free, suite needs 25 GiB"
         }
-      ],
-      "uncatalogued": []
+      ]
     },
     {
       "providerId": "e2b",
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": [],
+      "gaps": []
     },
     {
       "providerId": "modal",
@@ -622,8 +629,9 @@
           }
         }
       ],
-      "skips": [],
-      "uncatalogued": []
+      "uncatalogued": [],
+      "suitesCovered": ["cpu-node", "disk", "memory", "realworld-better-auth"],
+      "gaps": []
     }
   ]
 }

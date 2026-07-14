@@ -105,6 +105,51 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		expect(run.observedSpecs.vcpus).toBe(4);
 	});
 
+	it("records suitesCovered from the metrics a suite produced, not from the directory existing", () => {
+		// The positive record of coverage has to mean "this suite produced a number here". A suite dir that
+		// exists but yielded nothing (the run died mid-suite, every <Result> empty) is a HOLE, and crediting
+		// the directory would launder it into coverage — hiding exactly the case the gaps exist to surface.
+		const covered = join(providerDir, "cpu-node");
+		mkdirSync(covered);
+		writeFileSync(join(covered, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
+		const barren = join(providerDir, "memory");
+		mkdirSync(barren);
+		writeFileSync(join(barren, "observed-specs.json"), JSON.stringify({ vcpus: 4 }));
+
+		const run = normalizeProviderDir(root, "daytona");
+		expect(run.suitesCovered).toEqual(["cpu-node"]);
+		// `memory` produced neither a metric nor a marker, so it is accounted for nowhere on this provider
+		// — the Run cannot describe it, and buildLeaderboard derives it as `missing` across the whole run.
+		expect(run.gaps).toEqual([]);
+	});
+
+	it("reads a suite's failure marker as a FAILED gap, not a skip", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "sandbox-daytona-cpu-node--failed.json"),
+			JSON.stringify({
+				provider: "daytona",
+				suite: "cpu-node",
+				outcome: "failed",
+				reason: "PTS produced no pts_*.xml",
+			}),
+		);
+
+		const run = normalizeProviderDir(root, "daytona");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "cpu-node",
+				outcome: "failed",
+				reason: "PTS produced no pts_*.xml",
+			},
+		]);
+		// It produced no metric, so it is not coverage — a crash is not a result.
+		expect(run.suitesCovered).toEqual([]);
+		expect(run.validationStatus).toBe("pending");
+	});
+
 	it("appends derived economics ($/hr) to a validated provider", () => {
 		const suiteDir = join(providerDir, "cpu-node");
 		mkdirSync(suiteDir);

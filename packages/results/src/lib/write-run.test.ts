@@ -39,7 +39,7 @@ describe("writeNormalizedRun", () => {
 
 describe("writeRunDocument (publish primitive)", () => {
 	const run: Run = {
-		schemaVersion: "1",
+		schemaVersion: "2",
 		runId: "pub-1",
 		sha: "deadbeef",
 		generatedAt: "2026-06-21T00:00:00.000Z",
@@ -50,7 +50,8 @@ describe("writeRunDocument (publish primitive)", () => {
 				validationStatus: "pending",
 				observedSpecs: {},
 				metrics: [],
-				skips: [],
+				suitesCovered: [],
+				gaps: [],
 				uncatalogued: [],
 			},
 		],

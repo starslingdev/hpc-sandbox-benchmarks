@@ -11,6 +11,7 @@ import {
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
 import { summarizeRun, writeNormalizedRun } from "@sandbox-benchmarks/results";
+import type { Run } from "@sandbox-benchmarks/schema";
 import { handleDiscovery } from "../lib/discovery.ts";
 
 /** Agent-facing usage; bare invocation keeps the daytona/cpu-node local-dev default. */
@@ -74,6 +75,12 @@ if (import.meta.main) {
 	const outFile = join("data", "runs", `${runId}.json`);
 	const indexFile = join("data", "runs", "index.json");
 
+	// A suite that RAN AND BROKE is a result — the harness has already written its `--failed.json` marker
+	// into the raw tree — so the error is held, not thrown. Normalizing anyway is what turns that marker
+	// into a recorded `failed` gap on this shard's Run document; rethrowing here would skip the write, the
+	// shard would contribute nothing for the aggregate to merge, and the only trace of the failure would
+	// die inside the CI artifact. The job still goes red at the bottom of this block.
+	let suiteError: unknown;
 	try {
 		await runSuite({
 			providerName: provider,
@@ -84,16 +91,33 @@ if (import.meta.main) {
 			resultsDir: join(rawRoot, provider, suite),
 		});
 	} catch (err) {
+		// A usage error (unknown provider/suite) produced no raw tree and no marker: there is nothing to
+		// normalize, and pretending otherwise would write an empty Run for a cell that never existed.
 		if (err instanceof SuiteUsageError) {
 			console.error(err.message);
 			process.exit(1);
 		}
-		throw err;
+		suiteError = err;
 	}
 
-	const run = writeNormalizedRun({ rawRoot, runId, sha, outFile, updateIndexFile: indexFile });
+	let run: Run;
+	try {
+		run = writeNormalizedRun({ rawRoot, runId, sha, outFile, updateIndexFile: indexFile });
+	} catch (normalizeErr) {
+		// Never let a normalization failure mask the benchmark failure that caused it.
+		if (suiteError) throw suiteError;
+		throw normalizeErr;
+	}
 	console.log(`\nNormalized Run ${runId} → ${outFile}`);
 	for (const line of summarizeRun(run)) console.log(line);
+
+	if (suiteError) {
+		console.error(
+			`\nSuite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ` +
+				`${suiteError instanceof Error ? suiteError.message : String(suiteError)}`,
+		);
+		process.exit(1);
+	}
 
 	// Missing credentials (and an unusable sandbox) are recorded as a skip, not a throw — the lenient
 	// local-dev default. That would make a smoke run whose secret is missing/misnamed exit 0 having
@@ -110,8 +134,11 @@ if (import.meta.main) {
 		const unmet = unmetRequirements(reports, required);
 		if (unmet.length > 0) {
 			for (const providerId of unmet) {
-				const skips = run.providers.find((p) => p.providerId === providerId)?.skips ?? [];
-				const detail = skips.map((s) => `${s.suite}: ${s.reason}`).join("; ");
+				// The gaps ARE the explanation for "no metrics", and their outcome is the important half of
+				// it: a required provider that skipped on a precondition is a configuration problem, one that
+				// failed is an outage, and the operator reading this line needs to know which they have.
+				const gaps = run.providers.find((p) => p.providerId === providerId)?.gaps ?? [];
+				const detail = gaps.map((g) => `${g.id} ${g.outcome}: ${g.reason}`).join("; ");
 				console.error(
 					`Required provider "${providerId}" produced no metrics${detail ? ` — ${detail}` : " and was absent from the Run"}`,
 				);

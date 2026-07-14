@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { RawRun } from "@sandbox-benchmarks/schema";
+import type { RawRun, ResultGap } from "@sandbox-benchmarks/schema";
 import { HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import type { LifecycleCompute, LifecycleSandbox } from "./lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lifecycle.ts";
@@ -97,13 +97,16 @@ function countByOp(samples: RawRun[]): Record<string, number> {
 	return counts;
 }
 
-const reasonFor = (skips: { suite: string; reason: string }[], op: string): string | undefined =>
-	skips.find((s) => s.suite === op)?.reason;
+// A lifecycle gap is operation-scoped: `id` is the Metric id that produced no Sample.
+const gapFor = (gaps: ResultGap[], op: string): ResultGap | undefined =>
+	gaps.find((g) => g.id === op);
+const reasonFor = (gaps: ResultGap[], op: string): string | undefined => gapFor(gaps, op)?.reason;
+const outcomeFor = (gaps: ResultGap[], op: string): string | undefined => gapFor(gaps, op)?.outcome;
 
 describe("measureLifecycle", () => {
 	it("times the full spawn→readiness→exec→payload→info→list→snapshot→teardown chain in order", async () => {
 		const { compute, calls } = fakeCompute({ withSnapshot: true, withList: true });
-		const { samples, skips } = await measureLifecycle(compute, {
+		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
 			controlPlaneSamples: 2,
 			now: fastClock(),
@@ -136,7 +139,7 @@ describe("measureLifecycle", () => {
 		});
 		// Every Sample carries the provider and a strictly-positive duration (the RawRun contract).
 		expect(samples.every((s) => s.provider === "e2b" && s.durationMs > 0)).toBe(true);
-		expect(skips).toEqual([]);
+		expect(gaps).toEqual([]);
 		// The measured snapshot is cleaned up, never leaked.
 		expect(calls.deletedSnapshots).toEqual(["snap-1"]);
 	});
@@ -145,7 +148,7 @@ describe("measureLifecycle", () => {
 		// Two not-ready probes (exitCode 1) then success: cold_start spans t0→3rd probe, first_exec
 		// create→3rd probe — both bigger than the create-resolve spawn delta alone.
 		const { compute, calls } = fakeCompute({ notReadyFor: 2 });
-		const { samples, skips } = await measureLifecycle(compute, {
+		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
 			now: fastClock(),
 			delay: noDelay,
@@ -164,15 +167,15 @@ describe("measureLifecycle", () => {
 		const cold = samples.find((s) => s.operation === HARNESS_METRIC_IDS.coldStart);
 		const first = samples.find((s) => s.operation === HARNESS_METRIC_IDS.firstExec);
 		expect(cold?.durationMs).toBeGreaterThan(first?.durationMs ?? 0);
-		// A recovered readiness is NOT a skip (only the unsupported snapshot/list ops on this bare fake).
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.coldStart)).toBeUndefined();
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.firstExec)).toBeUndefined();
+		// A recovered readiness is NOT a gap (only the unsupported snapshot/list ops on this bare fake).
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.coldStart)).toBeUndefined();
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.firstExec)).toBeUndefined();
 	});
 
-	it("skips both readiness Metrics when the sandbox never goes ready, capped at readinessMaxAttempts", async () => {
+	it("fails both readiness Metrics when the sandbox never goes ready, capped at readinessMaxAttempts", async () => {
 		// notReadyFor exceeds the attempt cap → never ready; the loop must stop at the cap, not spin.
 		const { compute, calls } = fakeCompute({ notReadyFor: 10 });
-		const { samples, skips } = await measureLifecycle(compute, {
+		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
 			readinessMaxAttempts: 3,
 			now: fastClock(),
@@ -181,8 +184,11 @@ describe("measureLifecycle", () => {
 		expect(calls.order.filter((c) => c === "exec:echo ok").length).toBe(3);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.coldStart]).toBeUndefined();
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.firstExec]).toBeUndefined();
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.coldStart)).toMatch(/never ready/);
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.firstExec)).toMatch(/never ready/);
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.coldStart)).toMatch(/never ready/);
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.firstExec)).toMatch(/never ready/);
+		// The sandbox was spawned and probed to exhaustion: an outage, never a deliberate omission.
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.coldStart)).toBe("failed");
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.firstExec)).toBe("failed");
 		// Spawn and teardown still measured around the unusable sandbox.
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.spawn]).toBe(1);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);
@@ -190,7 +196,7 @@ describe("measureLifecycle", () => {
 
 	it("records a skip when the 64KiB payload exec is disabled, without calling it", async () => {
 		const { compute, calls } = fakeCompute();
-		const { samples, skips } = await measureLifecycle(compute, {
+		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
 			payload: false,
 			now: fastClock(),
@@ -198,7 +204,9 @@ describe("measureLifecycle", () => {
 		});
 		expect(calls.order.some((c) => c.includes("/dev/zero | tr"))).toBe(false);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.execPayload64k]).toBeUndefined();
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.execPayload64k)).toMatch(/disabled/);
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.execPayload64k)).toMatch(/disabled/);
+		// Never attempted (the run turned it off) — a decision, not a reliability fact.
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.execPayload64k)).toBe("skipped");
 	});
 
 	it("honors a custom exec command", async () => {
@@ -214,7 +222,7 @@ describe("measureLifecycle", () => {
 
 	it("records a skip (not a sample) when the SDK exposes no snapshot or list operation", async () => {
 		const { compute } = fakeCompute(); // no snapshot manager, no list
-		const { samples, skips } = await measureLifecycle(compute, { provider: "modal" });
+		const { samples, gaps } = await measureLifecycle(compute, { provider: "modal" });
 
 		const ops = countByOp(samples);
 		expect(ops[HARNESS_METRIC_IDS.snapshot]).toBeUndefined();
@@ -222,52 +230,60 @@ describe("measureLifecycle", () => {
 		// Spawn/exec/info/teardown still measured.
 		expect(ops[HARNESS_METRIC_IDS.spawn]).toBe(1);
 		expect(ops[HARNESS_METRIC_IDS.teardown]).toBe(1);
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.snapshot)).toMatch(/no snapshot operation/);
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.controlPlaneList)).toMatch(
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.snapshot)).toMatch(/no snapshot operation/);
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.controlPlaneList)).toMatch(
 			/no sandbox list operation/,
 		);
+		// The SDK exposes no such call, so neither was ever attempted — a skip, not an outage.
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.snapshot)).toBe("skipped");
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.controlPlaneList)).toBe("skipped");
 	});
 
 	it("records a skip when snapshot measurement is disabled, without calling the SDK", async () => {
 		const { compute, calls } = fakeCompute({ withSnapshot: true });
-		const { samples, skips } = await measureLifecycle(compute, {
+		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
 			snapshot: false,
 		});
 		expect(calls.order.some((c) => c.startsWith("snapshot:"))).toBe(false);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.snapshot]).toBeUndefined();
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.snapshot)).toMatch(/disabled/);
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.snapshot)).toMatch(/disabled/);
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.snapshot)).toBe("skipped");
 	});
 
-	it("turns a mid-chain exec failure into a skip and still tears down", async () => {
+	it("turns a mid-chain exec failure into a failed gap and still tears down", async () => {
 		// A throwing runCommand also fails every readiness probe, so cap attempts + inject a no-op delay
 		// to keep the retry loop fast.
 		const { compute, calls } = fakeCompute({ failExec: true });
-		const { samples, skips } = await measureLifecycle(compute, {
+		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
 			readinessMaxAttempts: 2,
 			now: fastClock(),
 			delay: noDelay,
 		});
-		// exec failed → no exec sample, but a skip carrying the error message.
+		// exec was attempted and threw → no exec sample, but a FAILED gap carrying the error message.
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.exec]).toBeUndefined();
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.exec)).toBe("exec boom");
-		// A never-ready sandbox skips both readiness Metrics.
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.coldStart)).toMatch(/never ready/);
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("exec boom");
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("failed");
+		// A never-ready sandbox fails both readiness Metrics.
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.coldStart)).toMatch(/never ready/);
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.coldStart)).toBe("failed");
 		// Teardown still ran and was sampled.
 		expect(calls.order).toContain("destroy");
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);
 	});
 
-	it("skips every failed control-plane probe but keeps measuring", async () => {
+	it("fails every failed control-plane probe but keeps measuring", async () => {
 		const { compute } = fakeCompute({ failInfo: true });
-		const { samples, skips } = await measureLifecycle(compute, {
+		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
 			controlPlaneSamples: 3,
 		});
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.controlPlaneInfo]).toBeUndefined();
-		// Each failed probe records its own skip.
-		expect(skips.filter((s) => s.suite === HARNESS_METRIC_IDS.controlPlaneInfo).length).toBe(3);
+		// Each failed probe records its own failed gap.
+		const infoGaps = gaps.filter((g) => g.id === HARNESS_METRIC_IDS.controlPlaneInfo);
+		expect(infoGaps.length).toBe(3);
+		expect(infoGaps.every((g) => g.outcome === "failed")).toBe(true);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.spawn]).toBe(1);
 	});
 
@@ -277,19 +293,21 @@ describe("measureLifecycle", () => {
 		expect(calls.order).toEqual(["create"]);
 	});
 
-	it("records a teardown failure as a skip rather than throwing out of finally", async () => {
+	it("records a teardown failure as a failed gap rather than throwing out of finally", async () => {
 		const { compute } = fakeCompute({ failDestroy: true });
-		const { samples, skips } = await measureLifecycle(compute, { provider: "e2b" });
+		const { samples, gaps } = await measureLifecycle(compute, { provider: "e2b" });
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.spawn]).toBe(1);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBeUndefined();
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.teardown)).toBe("destroy boom");
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.teardown)).toBe("destroy boom");
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.teardown)).toBe("failed");
 	});
 
-	it("records a snapshot-create failure as a skip", async () => {
+	it("records a snapshot-create failure as a failed gap", async () => {
 		const { compute } = fakeCompute({ withSnapshot: true, failSnapshotCreate: true });
-		const { samples, skips } = await measureLifecycle(compute, { provider: "e2b" });
+		const { samples, gaps } = await measureLifecycle(compute, { provider: "e2b" });
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.snapshot]).toBeUndefined();
-		expect(reasonFor(skips, HARNESS_METRIC_IDS.snapshot)).toBe("snapshot boom");
+		expect(reasonFor(gaps, HARNESS_METRIC_IDS.snapshot)).toBe("snapshot boom");
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.snapshot)).toBe("failed");
 	});
 });
 

@@ -23,11 +23,12 @@ function run(providerId: string, metrics: MetricResult[]): Run {
 		validationStatus: "validated",
 		observedSpecs: {},
 		metrics,
-		skips: [],
+		suitesCovered: [],
+		gaps: [],
 		uncatalogued: [],
 	};
 	return {
-		schemaVersion: "1",
+		schemaVersion: "2",
 		runId: "r",
 		sha: "s",
 		generatedAt: "2026-06-20T00:00:00.000Z",
