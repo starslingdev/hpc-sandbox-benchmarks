@@ -180,6 +180,10 @@ pts_config_file() {
 # build failure (install-failed.log names the missing dependency / compiler error) versus a data-dir
 # mismatch (pts-install.xml exists, but under a directory pts_user_dir did not resolve to). Prints to
 # stdout so it lands in the CI job log; never fails the caller.
+# The directories PTS may keep its state under, depending on the run user (root vs unprivileged).
+# Single source for the diagnostics below (pts_user_dir keeps its own inline probe order).
+_pts_data_dirs=("${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite)
+
 _pts_install_diagnostics() {
 	local test_name="$1"
 	echo "--- PTS install diagnostics: ${test_name} ---"
@@ -187,20 +191,23 @@ _pts_install_diagnostics() {
 	echo "resolved pts_user_dir=$(pts_user_dir)"
 	echo "resolved pts_config_file=$(pts_config_file)"
 	local d
-	for d in "${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite; do
-		if [ -e "$d/core.pt2so" ]; then
-			echo "  core.pt2so present in: $d"
-		fi
+	for d in "${_pts_data_dirs[@]}"; do
+		[ -e "$d/core.pt2so" ] && echo "  core.pt2so present in: $d"
 	done
-	# Where did PTS actually write this test's manifest, if anywhere? A hit outside pts_user_dir is the
-	# smoking gun for a data-dir mismatch.
-	echo "  pts-install.xml locations for ${test_name}:"
-	find "${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite \
-		-path "*installed-tests/${test_name}/pts-install.xml" 2>/dev/null | sed 's/^/    /' || true
+	# PTS's own authority on what it installed, and under what identifier — the reliable answer to
+	# "did the install land?" that a hand-rolled path probe (which must guess the versioned vs
+	# unversioned installed-tests dir name) can get wrong.
+	echo "  phoronix-test-suite list-installed-tests:"
+	phoronix-test-suite list-installed-tests 2>/dev/null | sed 's/^/    /' || true
+	# EVERY pts-install.xml on disk (not just the versioned path we probe) — reveals a data-dir or a
+	# versioned-vs-unversioned directory-name mismatch between where PTS installs and where we look.
+	echo "  all pts-install.xml on disk:"
+	find "${_pts_data_dirs[@]}" -maxdepth 5 -name pts-install.xml 2>/dev/null | sed 's/^/    /' || true
+	echo "  installed-tests tree ($(pts_user_dir)/installed-tests):"
+	find "$(pts_user_dir)/installed-tests" -maxdepth 3 2>/dev/null | sed 's/^/    /' | head -40 || true
 	# The newest install-failed.log across the candidate data dirs — its tail names the real cause.
 	local log
-	log=$(find "${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite \
-		-name install-failed.log 2>/dev/null -exec ls -t {} + 2>/dev/null | head -1)
+	log=$(find "${_pts_data_dirs[@]}" -name install-failed.log 2>/dev/null -exec ls -t {} + 2>/dev/null | head -1)
 	if [ -n "$log" ] && [ -f "$log" ]; then
 		echo "  install-failed.log ($log), last 40 lines:"
 		tail -40 "$log" 2>/dev/null | sed 's/^/    /' || true
