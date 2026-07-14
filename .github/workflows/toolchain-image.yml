@@ -218,6 +218,9 @@ jobs:
           # Bake the novita template on Novita's E2B-compatible control plane. Optional: a missing
           # secret skips the novita bake (it is not in --require) without failing the publish.
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          # Namespace pulls the candidate image directly (no bake artifact). Optional, like novita: a
+          # missing secret skips its validate boot (it is not in --require) without failing the publish.
+          NSC_TOKEN: ${{ secrets.NSC_TOKEN }}
         run: |
           set -euo pipefail
           # Declare then assign so the command substitution's exit status isn't masked (SC2155).
@@ -246,6 +249,9 @@ jobs:
           # Bake the novita template on Novita's E2B-compatible control plane. Optional: a missing
           # secret skips the novita bake (it is not in --require) without failing the publish.
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          # Namespace pulls the candidate image directly (no bake artifact). Optional, like novita: a
+          # missing secret skips its validate boot (it is not in --require) without failing the publish.
+          NSC_TOKEN: ${{ secrets.NSC_TOKEN }}
           FORCE_REPUBLISH: ${{ inputs.force_republish }}
         # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
         # public version is never published while a required provider's version artifact was silently

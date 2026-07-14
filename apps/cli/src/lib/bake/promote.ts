@@ -128,6 +128,9 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 						(m) => log(`    ${m}`),
 					);
 					break;
+				case "namespace":
+					log("    namespace pulls the published version image — nothing to build");
+					break;
 				default: {
 					// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
 					const unhandled: never = provider.name;
