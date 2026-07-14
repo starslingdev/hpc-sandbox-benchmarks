@@ -36,7 +36,7 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Planning only reads code; don't persist the job token in .git/config.
           persist-credentials: false
@@ -72,7 +72,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # This cell only reads code (the sandbox clones via BENCH_REPO_TOKEN, not the checkout's
           # credentials), so don't persist the job token in .git/config.
@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload Run + raw results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Per-cell artifact name so every (provider, suite) shard uploads independently.
           name: bench-${{ matrix.suite }}-${{ matrix.provider }}-${{ github.run_id }}
@@ -145,7 +145,7 @@ jobs:
       # keeps the default persisted job token (contents: write above authorizes it). Don't add
       # persist-credentials: false here or the push at the end of the job loses its credentials.
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -155,7 +155,7 @@ jobs:
 
       # Pull every per-cell shard artifact into ./shards (each in its own subdir).
       - name: Download shard artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: shards
           pattern: bench-*-${{ github.run_id }}
