@@ -184,31 +184,31 @@ describe("readObservedSpecs: jc probe fallback (edge shapes)", () => {
 	});
 });
 
-describe("computeSpecMatched (target: 2 vCPU / 8 GB ±10%)", () => {
+describe("computeSpecMatched (target: 4 vCPU / 8 GB ±10%)", () => {
 	it("undefined when vcpus or memoryGb is unobserved — no judging partial evidence", () => {
 		expect(computeSpecMatched({})).toBeUndefined();
-		expect(computeSpecMatched({ vcpus: 2 })).toBeUndefined();
+		expect(computeSpecMatched({ vcpus: 4 })).toBeUndefined();
 		expect(computeSpecMatched({ memoryGb: 8 })).toBeUndefined();
 		// Other fields don't substitute for the required pair.
-		expect(computeSpecMatched({ hostVcpus: 2, hostMemoryGb: 8 })).toBeUndefined();
+		expect(computeSpecMatched({ hostVcpus: 4, hostMemoryGb: 8 })).toBeUndefined();
 	});
 
 	it("exact target matches", () => {
-		expect(computeSpecMatched({ vcpus: 2, memoryGb: 8 })).toBe(true);
+		expect(computeSpecMatched({ vcpus: 4, memoryGb: 8 })).toBe(true);
 	});
 
 	it("memory within ±10% still matches (kernels reserve some)", () => {
-		expect(computeSpecMatched({ vcpus: 2, memoryGb: 7.5 })).toBe(true);
-		expect(computeSpecMatched({ vcpus: 2, memoryGb: 8.5 })).toBe(true);
+		expect(computeSpecMatched({ vcpus: 4, memoryGb: 7.5 })).toBe(true);
+		expect(computeSpecMatched({ vcpus: 4, memoryGb: 8.5 })).toBe(true);
 	});
 
 	it("memory beyond the tolerance fails", () => {
-		expect(computeSpecMatched({ vcpus: 2, memoryGb: 4 })).toBe(false);
-		expect(computeSpecMatched({ vcpus: 2, memoryGb: 16 })).toBe(false);
+		expect(computeSpecMatched({ vcpus: 4, memoryGb: 4 })).toBe(false);
+		expect(computeSpecMatched({ vcpus: 4, memoryGb: 16 })).toBe(false);
 	});
 
 	it("vCPUs must match exactly", () => {
-		expect(computeSpecMatched({ vcpus: 4, memoryGb: 8 })).toBe(false);
-		expect(computeSpecMatched({ vcpus: 1, memoryGb: 8 })).toBe(false);
+		expect(computeSpecMatched({ vcpus: 2, memoryGb: 8 })).toBe(false);
+		expect(computeSpecMatched({ vcpus: 8, memoryGb: 8 })).toBe(false);
 	});
 });

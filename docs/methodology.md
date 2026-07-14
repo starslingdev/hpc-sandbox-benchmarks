@@ -11,10 +11,11 @@ schema-validated dataset.
 
 ## Target spec
 
-Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/providers.ts): **2 vCPU,
-8 GiB RAM, 20 GB disk**. It's sized to fit inside every provider's reproducible envelope (E2B caps
-sandbox RAM at 8 GiB), so anyone can rerun on the same shape. A provider that can't express a dimension
-runs with its actuals recorded and the mismatch disclosed (`specMatched`).
+Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/providers.ts): **4 vCPU,
+8 GiB RAM, 40 GB disk**. It's sized to fit inside every provider's reproducible envelope — RAM is the
+binding constraint at 8 GiB (E2B caps sandbox RAM at 8 GiB, Novita hard-caps it at 8 GiB), and every
+provider clears 4 vCPU — so anyone can rerun on the same shape. A provider that can't express a
+dimension runs with its actuals recorded and the mismatch disclosed (`specMatched`).
 
 ## Dimensions and metrics
 
@@ -58,7 +59,7 @@ enriches a provider that already produced ≥1 measured metric — it never prom
 - **Host** (`hostVcpus`/`hostMemoryGb`/`cpuModel`/…) — the underlying machine, parsed from the PTS
   composite's `<System>` block.
 
-In a container `<System>` discloses the **host** (e.g. a 48-thread EPYC), not the 2-vCPU sandbox quota.
+In a container `<System>` discloses the **host** (e.g. a 48-thread EPYC), not the 4-vCPU sandbox quota.
 The normalizer therefore maps `<System>` only to the host side and merges it **under** the spec probe,
 so a host disclosure can never masquerade as the sandbox's effective size. Forensic logs are captured as
 a `*--forensics.tar.gz` tarball (a tarball, not loose files, so nested `.xml` can't be misrouted).

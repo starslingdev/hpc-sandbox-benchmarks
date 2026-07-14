@@ -188,8 +188,8 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
   </Result>
 </PhoronixTestSuite>`,
 		);
-		// The in-sandbox probe reports the EFFECTIVE 2-vCPU cgroup quota.
-		writeFileSync(join(suiteDir, "observed-specs.json"), JSON.stringify({ vcpus: 2, memoryGb: 8 }));
+		// The in-sandbox probe reports the EFFECTIVE 4-vCPU cgroup quota.
+		writeFileSync(join(suiteDir, "observed-specs.json"), JSON.stringify({ vcpus: 4, memoryGb: 8 }));
 
 		const run = normalizeProviderDir(root, "daytona");
 		// Host disclosure from <System> lands on the host side…
@@ -199,7 +199,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		expect(run.observedSpecs.cpuMicroarch).toBe("Zen 4 (Genoa)");
 		expect(run.observedSpecs.os).toBe("Ubuntu 24.04");
 		// …while the probe still owns the effective fields (the host count never masquerades as effective).
-		expect(run.observedSpecs.vcpus).toBe(2);
+		expect(run.observedSpecs.vcpus).toBe(4);
 		expect(run.observedSpecs.memoryGb).toBe(8);
 	});
 

@@ -127,7 +127,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		expect(diskRate("daytona")).toBeCloseTo(0.000108); // $0.00000003/GiB-s × 3600
 		expect(diskRate("modal")).toBe(0); // volumes free under the 1 TiB/mo tier
 		expect(diskRate("e2b")).toBeUndefined(); // no published overage rate
-		expect(diskRate("novita")).toBe(0); // 20 GB target spec inside the 60 GB free tier
+		expect(diskRate("novita")).toBe(0); // 40 GB target spec inside the 60 GB free tier
 	});
 
 	it("returns null when a provider has no vetted rate", () => {

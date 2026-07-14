@@ -4,7 +4,7 @@
  * deliberately a set of tolerant regexes: anything that doesn't match is simply left unset.
  *
  * CRITICAL host-vs-effective rule: inside a container `<System>` reports the underlying machine (a
- * 48-thread EPYC), not the sandbox's 2-vCPU cgroup quota. So this only ever sets the HOST fields
+ * 48-thread EPYC), not the sandbox's 4-vCPU cgroup quota. So this only ever sets the HOST fields
  * (`hostVcpus`/`hostMemoryGb`/`cpuModel`/`cpuMhz`/`kernel`/`os`/`virtualization`/`user`) and NEVER the
  * effective `vcpus`/`memoryGb`/`diskGb` — those come solely from the in-sandbox spec probe.
  */
