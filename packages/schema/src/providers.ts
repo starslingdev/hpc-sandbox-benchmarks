@@ -119,11 +119,12 @@ export interface ProviderMeta {
  * axis and is excluded from {@link hourlyCostAtTargetSpec}, so a larger disk can't bias the ranking.
  *
  * Providers that expose a per-sandbox/snapshot disk get 40 GiB (Daytona, via the snapshot's
- * `resources.disk`); Modal has no disk knob but its gVisor root reports effectively unbounded disk,
- * so it clears the gate anyway. Providers that CANNOT express disk — e2b/novita (the `@e2b/cli`
- * `template create` takes only `--cpu-count`/`--memory-mb`) and blaxel (disk is a RAM-derived tmpfs)
- * — run with actuals recorded, and the heavy suites that need the disk skip there. Those skips are
- * surfaced as an explicit coverage gap in the leaderboard, never silently dropped.
+ * `resources.disk`; Blaxel, via a dedicated ephemeral overlay-on-/ volume — see the adapter and
+ * blaxel.ts, which mounts it at / so `df /` reports it); Modal has no disk knob but its gVisor root
+ * reports effectively unbounded disk, so it clears the gate anyway. Providers that CANNOT express
+ * disk — e2b/novita (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`) — run
+ * with actuals recorded, and the heavy suites that need the disk skip there. Those skips are surfaced
+ * as an explicit coverage gap in the leaderboard, never silently dropped.
  */
 export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 40 } as const;
 
@@ -218,7 +219,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		isolation: {
 			technology: "microVM",
 			notes:
-				"Blaxel sandboxes (sub-25ms boot claim). Spec dimensions are COUPLED: CPU cores = memory MB / 2048 and disk is a tmpfs overlay at ~78% of memory, so the 2 vCPU / 8 GiB / 40 GB target spec is inexpressible -- the adapter runs oversized (16 GiB => 8-core allocation, ~12.5 GiB disk) and relies on observed-specs disclosure (specMatched=false) downstream.",
+				"Blaxel sandboxes (sub-25ms boot claim). CPU/RAM are COUPLED: CPU cores = memory MB / 2048, so the 2 vCPU / 8 GiB target is inexpressible -- the adapter runs oversized (16 GiB => 8-core allocation) and relies on observed-specs disclosure (specMatched=false) downstream. Disk is decoupled: the stock root is a RAM-derived tmpfs, so the adapter attaches a dedicated ephemeral overlay-on-/ volume at TARGET_SPEC.diskGb (see blaxel.ts) to clear the realworld suites' disk gate.",
 		},
 		pricing: {
 			model: "unknown",

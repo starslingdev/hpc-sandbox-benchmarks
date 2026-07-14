@@ -7,6 +7,9 @@ import { adapters } from "./lib/adapters.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 import type { ProviderConfig } from "./lib/types.ts";
 
+// Blaxel's compat surface: the compute factory (which attaches the ephemeral overlay-on-/ volume) and
+// the pure spec builder, both exported for tests and for anyone driving Blaxel outside the harness join.
+export { blaxelCompute, buildRootOverlaySpec } from "./lib/blaxel.ts";
 // The runtime configuration gatekeeper — the single validated config object consumers import.
 export { config } from "./lib/config.ts";
 // Novita's E2B-compat surface: the pinned regional domain + connection the bake pipeline reuses,

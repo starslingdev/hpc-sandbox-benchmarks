@@ -1,9 +1,18 @@
 import { describe, expect, it } from "bun:test";
-// The stock wrapper factory, imported so the novita test can prove the connection methods were
-// actually REPLACED (identity inequality against an unpatched instance's methods table).
+// The stock wrapper factories, imported so the novita/blaxel tests can prove the connection methods
+// were actually REPLACED (identity inequality against an unpatched instance's methods table).
+import { blaxel as blaxelStock } from "@computesdk/blaxel";
 import { e2b } from "@computesdk/e2b";
 import { PROVIDERS, TARGET_SPEC } from "@sandbox-benchmarks/schema";
-import { config, NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection, providers } from "./index.ts";
+import {
+	blaxelCompute,
+	buildRootOverlaySpec,
+	config,
+	NOVITA_E2B_DOMAIN,
+	novitaCompute,
+	novitaConnection,
+	providers,
+} from "./index.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
@@ -79,6 +88,79 @@ describe("@sandbox-benchmarks/providers", () => {
 		// The factory (not env state) owns the missing-credential error, so this holds even in an
 		// environment where NOVITA_API_KEY is set.
 		expect(() => novitaCompute(undefined)).toThrow(/NOVITA_API_KEY/);
+	});
+
+	it("builds a blaxel spec that attaches a diskGb ephemeral overlay volume mounted at /", () => {
+		// THE core regression guard for this module: the realworld suites skipped on Blaxel because the
+		// RAM-derived tmpfs root was too small; the fix is a dedicated ephemeral overlay-on-/ volume.
+		// mountPath "/" is what makes `df /` (the harness disk gate + observed-specs probe) report it,
+		// and type/sizeMb are the ephemeral fields the wrapper's normalizeVolumes would strip — so pin
+		// all three, plus that size tracks the requested GiB.
+		const spec = buildRootOverlaySpec({
+			image: "blaxel/ts-app:latest",
+			memory: 16384,
+			region: "us-pdx-1",
+			diskGb: TARGET_SPEC.diskGb,
+			timeoutMs: 30 * 60_000,
+		}) as unknown as {
+			spec: {
+				region?: string;
+				runtime: { image?: string; memory?: number; generation?: string; ttl?: string };
+				volumes: Array<{ name: string; mountPath: string; type: string; sizeMb: number }>;
+			};
+			metadata?: unknown;
+		};
+		expect(spec.spec.volumes).toEqual([
+			{
+				name: "bench-root-overlay",
+				mountPath: "/",
+				type: "ephemeral",
+				sizeMb: TARGET_SPEC.diskGb * 1024,
+			},
+		]);
+		expect(spec.spec.runtime).toMatchObject({
+			image: "blaxel/ts-app:latest",
+			memory: 16384,
+			generation: "mk3",
+			ttl: "1800s",
+		});
+		expect(spec.spec.region).toBe("us-pdx-1");
+		// Metadata is omitted on purpose so the SDK generates the sandbox name (as the wrapper relies on).
+		expect(spec.metadata).toBeUndefined();
+	});
+
+	it("re-points the blaxel wrapper's create at the overlay-volume spec, keeping the rest of the surface", () => {
+		// Mirrors the novita patch guard: construction must expose the universal manager surface the
+		// harness drives, with ONLY `create` replaced (the other methods stay the stock wrapper's, by
+		// identity), and the runtime shape assertion must fire if the wrapper's method table moves.
+		const compute = blaxelCompute({
+			image: "blaxel/ts-app:latest",
+			memory: 16384,
+			region: "us-pdx-1",
+			diskGb: TARGET_SPEC.diskGb,
+		});
+		expect(typeof compute.sandbox.create).toBe("function");
+		expect(typeof compute.sandbox.destroy).toBe("function");
+		expect(typeof compute.sandbox.list).toBe("function");
+		const methodsOf = (p: unknown) =>
+			(p as { sandbox: { methods: Record<string, unknown> } }).sandbox.methods;
+		const stock = methodsOf(blaxelStock({ image: "blaxel/ts-app:latest", memory: 16384 }));
+		const patched = methodsOf(compute);
+		// create is replaced...
+		expect(patched.create).not.toBe(stock.create);
+		// ...but the instance methods the harness drives are the stock wrapper's, untouched.
+		for (const method of ["getById", "destroy", "list"] as const) {
+			expect(patched[method]).toBe(stock[method]);
+		}
+	});
+
+	it("boots the blaxel adapter from the target-spec disk, erroring only on env-less credentials at use", () => {
+		const blaxel = providers.find((p) => p.name === "blaxel");
+		expect(blaxel).toBeDefined();
+		expect(blaxel?.requiredEnvVars).toEqual(["BL_API_KEY", "BL_WORKSPACE"]);
+		// The registry module must stay importable without credentials; constructing the compute is also
+		// credential-free (the factory reads BL_* lazily, only when create actually runs).
+		expect(() => blaxel?.createCompute()).not.toThrow();
 	});
 
 	it("keeps the account key in the SDK's apiKey channel — never in connection headers", () => {

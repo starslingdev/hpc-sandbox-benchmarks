@@ -3,12 +3,12 @@
 // computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem, destroy), so
 // nothing here re-wraps an SDK — these are pure config. Credentials are read from each provider's
 // env vars by its factory.
-import { blaxel } from "@computesdk/blaxel";
 import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { blaxelCompute } from "./blaxel.ts";
 import { config } from "./config.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
@@ -46,11 +46,19 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	},
 	blaxel: {
 		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). The stock
-		// base-image is Alpine (no apt — PTS uninstallable) and disk is a tmpfs overlay carved from VM
-		// RAM (~78%), so boot the Debian ts-app image and buy disk with memory: 16384 MB ≈ 12.5 GiB
-		// disk. No pre-baked toolchain snapshot yet — setup steps run their fallback paths.
+		// base-image is Alpine (no apt — PTS uninstallable), so boot the Debian ts-app image. Disk is
+		// decoupled from RAM by a dedicated ephemeral overlay-on-/ volume sized to TARGET_SPEC.diskGb
+		// (see blaxel.ts) — mounting at / makes `df /` report it, so the realworld suites clear the
+		// harness disk gate instead of skipping. memory: 16384 MB is now a pure CPU/RAM knob (=> 8-core
+		// allocation, 16 GiB RAM); it no longer has to scrounge disk from the tmpfs. No pre-baked
+		// toolchain snapshot yet — setup steps run their fallback paths.
 		createCompute: () =>
-			blaxel({ image: "blaxel/ts-app:latest", memory: 16384, region: "us-pdx-1" }),
+			blaxelCompute({
+				image: "blaxel/ts-app:latest",
+				memory: 16384,
+				region: "us-pdx-1",
+				diskGb: TARGET_SPEC.diskGb,
+			}),
 		createOptions: {},
 	},
 	modal: {
