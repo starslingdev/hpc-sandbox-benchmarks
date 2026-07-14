@@ -11,7 +11,7 @@ Headline: **Node.js web tooling** (runs/s, higher is better)
 | Rank | Provider | Node.js web tooling (runs/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | Daytona | 19.72 | 19.63 – 19.96 | 3 | — | — |
-| 1 | Modal | 9.59 | 9.52 – 9.79 | 3 | 0.081 (tied) | 0.033 |
+| 2 | Modal | 9.59 | 9.52 – 9.79 | 3 | 0.10 (n too small) | 0.033 |
 
 ## memory
 
@@ -20,7 +20,7 @@ Headline: **STREAM Triad** (MB/s, higher is better)
 | Rank | Provider | STREAM Triad (MB/s) | 95% CI | n | p vs. above | p (KS) |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
 | 1 | Daytona | 54530 | 54030 – 54590 | 5 | — | — |
-| 2 | Modal | 40510 | 38810 – 53440 | 5 | 0.012 | 0.0038 |
+| 2 | Modal | 40510 | 38810 – 53440 | 5 | 0.0079 | 0.0038 |
 
 ## economics
 
@@ -72,12 +72,14 @@ percentile bootstrap of that median (10,000 resamples, seeded from the Run id so
 reproducible byte-for-byte), not a normal-theory interval: these Samples are neither normal nor
 independent of the host's scheduling.
 
-Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = 0.05).
-**Providers sharing a rank are statistically indistinguishable on this Metric** — a faster median
-earned inside the noise is not a faster provider. Samples are repeated trials inside one sandbox,
-so their spread is environmental (neighbours, host contention, virtualization), and a wide CI or a
-large `n` (the harness re-runs a test that will not converge) is itself the signal that the
-provider's performance is unstable, not that the measurement is imprecise.
+Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = 0.05,
+enumerated exactly over the permutation null rather than approximated — at these sample sizes the
+normal approximation can report a p the exact test cannot actually produce).
+
+Samples are repeated trials inside one sandbox, so their spread is environmental (neighbours, host
+contention, virtualization), and a wide CI or a large `n` (the harness re-runs a test that will not
+converge) is itself the signal that the provider's performance is unstable, not that the measurement
+is imprecise.
 
 `p (KS)` is a two-sample Kolmogorov-Smirnov test against the same row above. It does **not** drive
 the ranking — it compares the two empirical distributions' *shapes* rather than their central
@@ -88,4 +90,12 @@ looks like, and it is the reason a median alone cannot rank these providers.
 
 At the small `n` this suite produces, a non-significant result means *not enough evidence to
 separate*, never *the providers are equal*.
+
+`n too small` is the extreme of that: Mann-Whitney's best attainable p already exceeds α for those
+Samples, so the test could not have separated the rows at any effect size (here 3 v 3 floors at p ≈ 0.10).
+Such rows are ranked on their observed medians and are **not** claimed to be tied — read the gap
+between the values, and treat the p-value as unable to settle them either way. Where such a row
+nevertheless shares the rank above it, the cell reads `equal medians`: the two values are simply
+identical, which is the ranking having nothing to order them by — never a finding that the
+providers are alike.
 

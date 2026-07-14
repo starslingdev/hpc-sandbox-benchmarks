@@ -25,6 +25,7 @@ import type {
 } from "@sandbox-benchmarks/schema";
 import {
 	bootstrapMedianInterval,
+	canSeparate,
 	DEFAULT_ALPHA,
 	DIMENSIONS,
 	getProvider,
@@ -59,10 +60,37 @@ export interface LeaderboardRow {
 	 * Both are rendered: `mannWhitney` as `p vs. above`, `ks` as `p (KS)`. Only `mannWhitney` decides the
 	 * rank; `ks` is shown so a reader can see the two disagree.
 	 */
-	pVsPrevious: { mannWhitney: number; ks: number } | null;
-	/** Whether this row is statistically separable from the one above it. `null` for rank 1. */
-	separated: boolean | null;
+	pVsPrevious: { mannWhitney: number; ks: number; floor: number } | null;
+	/**
+	 * What the test said about this row and the one above it (`null` for rank 1, which has nothing above):
+	 *
+	 *  - `separated`    — the distributions differ (p < α). This row ranks strictly below the one above.
+	 *  - `tied`         — the test ran, could have separated them, and did not. A real statistical tie.
+	 *  - `underpowered` — the test COULD NOT have separated them at any effect size: its best attainable
+	 *    p already exceeds α. That is a fact about the trial count, not about the providers, and it is
+	 *    not a tie. See {@link tiedWithAbove} for what the rank then means.
+	 *  - `untested`     — fewer than 2 Samples on a side: no distribution to test at all.
+	 */
+	verdict: ComparisonVerdict | null;
+	/**
+	 * Why this row shares the rank above it — and `null` exactly when it does NOT share it. Every shared
+	 * rank states its reason, because "same rank" means two different things and conflating them is how a
+	 * table comes to claim a tie it never established:
+	 *
+	 *  - `statistical`    — the test ran and could not tell them apart. THIS is the statistical tie.
+	 *  - `identical-value` — their values are exactly equal, so the ranking has nothing to order them by.
+	 *    It says nothing about the distributions; it is what stops the providerId sort tie-break from
+	 *    silently deciding which of two identical published prices "wins". An `underpowered` row can share
+	 *    a rank on this basis, and when it does, the shared rank is NOT a claim that they are alike.
+	 */
+	tiedWithAbove: TieBasis | null;
 }
+
+/** What the pairwise Mann-Whitney test said about a row and the one above it. */
+export type ComparisonVerdict = "separated" | "tied" | "underpowered" | "untested";
+
+/** Why a row shares the rank above it. See {@link LeaderboardRow.tiedWithAbove}. */
+export type TieBasis = "statistical" | "identical-value";
 
 /** One Dimension's ranked comparison on its headline Metric. */
 export interface LeaderboardDimension {
@@ -234,7 +262,8 @@ export function buildLeaderboard(run: Run): Leaderboard {
 				n: result.aggregates.n,
 				stdev: result.aggregates.stdev,
 				pVsPrevious: null,
-				separated: null,
+				verdict: null,
+				tiedWithAbove: null,
 			};
 			return [{ samples: result.samples, row }];
 		});
@@ -265,23 +294,63 @@ export function buildLeaderboard(run: Run): Leaderboard {
 				candidate.row.rank = 1;
 				return;
 			}
+			// A row shares the rank above it EXACTLY when it has a reason to, and the reason is recorded.
+			// That invariant is the whole defence against the table claiming a tie it never established: a
+			// shared rank always answers "on what basis?", and the renderer prints the answer.
+			const settle = (basis: TieBasis | null): void => {
+				candidate.row.tiedWithAbove = basis;
+				candidate.row.rank = basis === null ? i + 1 : previous.row.rank;
+			};
+			// Exactly equal values cannot be ordered by a ranking that ranks on the value. Whenever no
+			// verdict is available to override that, they must share a rank — otherwise the providerId sort
+			// tie-break alone would split two providers with an identical published price.
+			const identical = candidate.row.value === previous.row.value;
+
 			// A single Sample is not a distribution: there is nothing to test, and the value is typically
 			// exact rather than measured (a Metric like `usd_per_hour` is a published price, not a trial).
 			// Rank such rows on the value and mark them untested, rather than declaring every provider
-			// "indistinguishable" because a one-trial comparison can never reach significance. Exactly
-			// equal values are a genuine tie, though, and must share a rank — otherwise two providers
-			// with an identical published price would be split by the providerId sort tie-break alone.
+			// "indistinguishable" because a one-trial comparison can never reach significance.
 			if (previous.samples.length < 2 || candidate.samples.length < 2) {
-				candidate.row.rank = candidate.row.value === previous.row.value ? previous.row.rank : i + 1;
+				candidate.row.verdict = "untested";
+				settle(identical ? "identical-value" : null);
 				return;
 			}
+
 			const mw = mannWhitneyU(previous.samples, candidate.samples);
 			const ks = kolmogorovSmirnov(previous.samples, candidate.samples);
-			const separated = mw.pValue < DEFAULT_ALPHA;
-			candidate.row.pVsPrevious = { mannWhitney: mw.pValue, ks: ks.pValue };
-			candidate.row.separated = separated;
-			// Not separable → inherit the rank above. Separable → this row's ordinal position.
-			candidate.row.rank = separated ? i + 1 : previous.row.rank;
+			candidate.row.pVsPrevious = {
+				mannWhitney: mw.pValue,
+				ks: ks.pValue,
+				floor: mw.minAttainablePValue,
+			};
+
+			// The same "a test that can never reach α is not evidence of sameness" rule as the n<2 case
+			// above, applied where it actually bites: Mann-Whitney's p has a FLOOR, and at 3 v 3 that floor
+			// (0.1) is already above α. Grouping those rows would print "statistically tied" for a provider
+			// running at half the speed of the one above it — a fact about the trial count masquerading as a
+			// fact about the providers. Claim no verdict, rank on the observed value, and let the rendering
+			// disclose that the comparison was untestable.
+			//
+			// The floor comes from the test itself (it depends on the tie pattern, not just the sample
+			// sizes), so the guard and the p-value it guards are answers about the same enumerated null and
+			// cannot disagree.
+			if (!canSeparate(mw)) {
+				candidate.row.verdict = "underpowered";
+				// An underpowered row can still share a rank — but only ever because the two values are
+				// identical, never because the test "found no difference". The basis says which, so the
+				// renderer and the footer can keep the two apart.
+				settle(identical ? "identical-value" : null);
+				return;
+			}
+
+			if (mw.pValue < DEFAULT_ALPHA) {
+				candidate.row.verdict = "separated";
+				settle(null);
+				return;
+			}
+			// The test could have separated them and did not: a real statistical tie.
+			candidate.row.verdict = "tied";
+			settle("statistical");
 		});
 
 		dimensions.push({ dimension, metric, rows: candidates.map((c) => c.row) });
@@ -294,6 +363,27 @@ export function buildLeaderboard(run: Run): Leaderboard {
 		dimensions,
 		coverageGaps: coverageGapsOf(run),
 	};
+}
+
+/**
+ * Describe every underpowered comparison the board actually contains, as `"3 v 3 floors at p ≈ 0.1"` —
+ * quoting the floor THE TEST REPORTED for that row, not one recomputed from the sample sizes here. The
+ * floor depends on the tie pattern as well as the sizes, so a footer that re-derived it from `n` alone
+ * could print a number the row's own test never produced. An underpowered row is always compared against
+ * the row above it, which is what supplies the other n. Deduplicated (several dimensions usually share
+ * one shape) and ordered so the committed markdown stays byte-stable.
+ */
+function underpoweredFloors(board: Leaderboard): string[] {
+	const seen = new Map<string, string>();
+	for (const { rows } of board.dimensions) {
+		rows.forEach((row, i) => {
+			const previous = rows[i - 1];
+			if (row.verdict !== "underpowered" || !previous || !row.pVsPrevious) return;
+			const key = `${previous.n} v ${row.n}`;
+			seen.set(key, `${key} floors at p ≈ ${formatPValue(row.pVsPrevious.floor)}`);
+		});
+	}
+	return [...seen.entries()].sort(([a], [b]) => a.localeCompare(b, "en")).map(([, text]) => text);
 }
 
 /**
@@ -346,14 +436,23 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 					r.interval.resamples === 0
 						? "—"
 						: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
-				// A tied rank is the interesting case: say so in the cell rather than leaving the reader
-				// to infer it from two rows sharing a number.
+				// Every shared rank says why, in the cell — a reader must never have to infer the reason from
+				// two rows carrying the same number. The three are distinct claims: `tied` is a verdict the
+				// test reached; `n too small` is the ABSENCE of one (it could not have separated them at any
+				// effect size, so it must not read as a tie); `equal medians` is arithmetic (the ranking sorts
+				// on the value, and it cannot order two values that are the same). The last can co-occur with
+				// `n too small`, and when it does, the shared rank is the equality speaking, not the test.
+				const equalValues = r.tiedWithAbove === "identical-value";
 				const p =
 					r.pVsPrevious === null
-						? "—"
-						: r.separated
-							? formatPValue(r.pVsPrevious.mannWhitney)
-							: `${formatPValue(r.pVsPrevious.mannWhitney)} (tied)`;
+						? equalValues
+							? "— (equal values)"
+							: "—"
+						: r.verdict === "underpowered"
+							? `${formatPValue(r.pVsPrevious.mannWhitney)} (n too small${equalValues ? ", equal medians" : ""})`
+							: r.verdict === "tied"
+								? `${formatPValue(r.pVsPrevious.mannWhitney)} (tied)`
+								: formatPValue(r.pVsPrevious.mannWhitney);
 				// KS is rendered, not just stored: it is the only column that exposes a provider whose
 				// median matches its neighbour's while its distribution is bimodal. A small `p (KS)` beside
 				// a large, tied `p vs. above` is exactly that case — same typical speed, different machine.
@@ -426,12 +525,44 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"reproducible byte-for-byte), not a normal-theory interval: these Samples are neither normal nor",
 		"independent of the host's scheduling.",
 		"",
-		`Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = ${DEFAULT_ALPHA}).`,
-		"**Providers sharing a rank are statistically indistinguishable on this Metric** — a faster median",
-		"earned inside the noise is not a faster provider. Samples are repeated trials inside one sandbox,",
-		"so their spread is environmental (neighbours, host contention, virtualization), and a wide CI or a",
-		"large `n` (the harness re-runs a test that will not converge) is itself the signal that the",
-		"provider's performance is unstable, not that the measurement is imprecise.",
+		`Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = ${DEFAULT_ALPHA},`,
+		"enumerated exactly over the permutation null rather than approximated — at these sample sizes the",
+		"normal approximation can report a p the exact test cannot actually produce).",
+		"",
+	);
+
+	// A shared rank means different things, and the footer must explain exactly the ones the table
+	// contains — no more (a legend for an absent case teaches the reader to skim) and no less (an
+	// unexplained shared rank is read as a tie, which is the misreading this whole section exists to
+	// prevent). Collected from the rows themselves, so the prose cannot drift from the table.
+	const rows = board.dimensions.flatMap((d) => d.rows);
+	const sharedRankReasons: string[] = [];
+	if (rows.some((r) => r.tiedWithAbove === "statistical")) {
+		sharedRankReasons.push(
+			"`(tied)` — the test could have separated those providers and did not, so a faster median earned",
+			"inside the noise is not a faster provider. This is the only one that claims two providers are",
+			"statistically indistinguishable.",
+		);
+	}
+	if (rows.some((r) => r.tiedWithAbove === "identical-value")) {
+		sharedRankReasons.push(
+			"`(equal medians)` / `(equal values)` — arithmetic, not a finding: the ranking sorts on the value,",
+			"and two identical values have no order between them. It says nothing about the distributions.",
+		);
+	}
+	if (sharedRankReasons.length > 0) {
+		lines.push(
+			"**A shared rank always says why, in the `p vs. above` cell, and the reasons are not interchangeable.**",
+			...sharedRankReasons,
+			"",
+		);
+	}
+
+	lines.push(
+		"Samples are repeated trials inside one sandbox, so their spread is environmental (neighbours, host",
+		"contention, virtualization), and a wide CI or a large `n` (the harness re-runs a test that will not",
+		"converge) is itself the signal that the provider's performance is unstable, not that the measurement",
+		"is imprecise.",
 		"",
 		"`p (KS)` is a two-sample Kolmogorov-Smirnov test against the same row above. It does **not** drive",
 		"the ranking — it compares the two empirical distributions' *shapes* rather than their central",
@@ -444,6 +575,23 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"separate*, never *the providers are equal*.",
 		"",
 	);
+
+	// `n too small` needs explaining only when the table actually contains one, and the floor it cites is
+	// the one those rows' own tests reported — a hardcoded example would misquote both the floor and the n
+	// the moment a run pairs, say, 3 trials against 4.
+	const floors = underpoweredFloors(board);
+	if (floors.length > 0) {
+		lines.push(
+			"`n too small` is the extreme of that: Mann-Whitney's best attainable p already exceeds α for those",
+			`Samples, so the test could not have separated the rows at any effect size (here ${floors.join("; ")}).`,
+			"Such rows are ranked on their observed medians and are **not** claimed to be tied — read the gap",
+			"between the values, and treat the p-value as unable to settle them either way. Where such a row",
+			"nevertheless shares the rank above it, the cell reads `equal medians`: the two values are simply",
+			"identical, which is the ranking having nothing to order them by — never a finding that the",
+			"providers are alike.",
+			"",
+		);
+	}
 
 	return `${lines.join("\n")}\n`;
 }

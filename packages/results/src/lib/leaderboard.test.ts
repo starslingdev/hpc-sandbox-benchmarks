@@ -150,7 +150,8 @@ describe("buildLeaderboard statistical ranking", () => {
 			[2, "modal"],
 		]);
 		const modal = rows[1];
-		expect(modal?.separated).toBe(true);
+		expect(modal?.verdict).toBe("separated");
+		expect(modal?.tiedWithAbove).toBeNull();
 		expect(modal?.pVsPrevious?.mannWhitney).toBeLessThan(0.05);
 		expect(modal?.pVsPrevious?.ks).toBeLessThan(0.05);
 	});
@@ -165,9 +166,10 @@ describe("buildLeaderboard statistical ranking", () => {
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
-		// e2b sorts first on the median, but cannot be separated → both hold rank 1.
+		// e2b sorts first on the median, but cannot be separated → both hold rank 1, on the test's verdict.
 		expect(rows.map((r) => r.rank)).toEqual([1, 1]);
-		expect(rows[1]?.separated).toBe(false);
+		expect(rows[1]?.verdict).toBe("tied");
+		expect(rows[1]?.tiedWithAbove).toBe("statistical");
 		expect(rows[1]?.pVsPrevious?.mannWhitney).toBeGreaterThan(0.05);
 	});
 
@@ -185,7 +187,7 @@ describe("buildLeaderboard statistical ranking", () => {
 			[1, "modal"],
 			[2, "daytona"],
 		]);
-		expect(rows[1]?.separated).toBeNull();
+		expect(rows[1]?.verdict).toBe("untested");
 		expect(rows[1]?.pVsPrevious).toBeNull();
 		expect(rows[0]?.interval.resamples).toBe(0);
 	});
@@ -277,6 +279,157 @@ describe("renderLeaderboardMarkdown statistics", () => {
 			),
 		);
 		expect(md).toContain("<0.001");
+	});
+});
+
+describe("underpowered comparisons", () => {
+	const HEADLINE = "node_web_tooling_runs_per_s";
+
+	it("does not claim a tie when the sample sizes make the test structurally powerless", () => {
+		// 3 v 3, completely separated and 2x apart: Mann-Whitney's best attainable p (0.1) is already above
+		// α, so the old code grouped these at rank 1 — reporting the trial count as a finding about the
+		// providers. Rank on value, return the `underpowered` verdict, and say so in the cell.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
+				provider("modal", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
+			]),
+		);
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
+		expect(rows.map((r) => [r.displayName, r.rank, r.verdict, r.tiedWithAbove])).toEqual([
+			["Daytona", 1, null, null],
+			["Modal", 2, "underpowered", null],
+		]);
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain("(n too small)");
+		expect(md).not.toContain("(tied)");
+	});
+
+	it("quotes each underpowered row's own floor, not one recomputed from its sample sizes", () => {
+		// A 4-v-3 comparison is still underpowered, but floors at 2/C(7,4) ≈ 0.057, not 3 v 3's 0.1. The
+		// footer must quote the shape the table actually contains, or it explains a number no row has.
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider("daytona", [metric(HEADLINE, [19.6, 19.7, 19.9, 20.1])]),
+					provider("modal", [metric(HEADLINE, [9.5, 9.6, 9.8])]),
+				]),
+			),
+		);
+		expect(md).toContain("(here 4 v 3 floors at p ≈ 0.057)");
+		expect(md).not.toContain("0.1)");
+	});
+
+	it("omits the n-too-small explanation entirely when no comparison was underpowered", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider("daytona", [metric(HEADLINE, [10, 11, 12, 13, 14])]),
+					provider("modal", [metric(HEADLINE, [1, 2, 3, 4, 5])]),
+				]),
+			),
+		);
+		expect(md).not.toContain("n too small");
+		expect(md).not.toContain("floors at p");
+	});
+
+	it("SHARES a rank between underpowered rows whose medians are exactly equal — on the VALUE, not a tie", () => {
+		// Ranking on the value cannot split rows that HAVE the same value: an underpowered comparison must
+		// not let the providerId sort tie-break decide who is faster. But the shared rank is the equality
+		// speaking, not the test — so the row records WHY it shares it, and the cell says so. The footer
+		// used to flatly assert underpowered rows are "not claimed to be tied" while this branch quietly
+		// gave them the same rank; now the two agree because the basis is a field, not a footnote.
+		const board = buildLeaderboard(
+			run([
+				provider("modal", [metric(HEADLINE, [9, 10, 11])]),
+				provider("daytona", [metric(HEADLINE, [8, 10, 12])]),
+			]),
+		);
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
+		expect(rows.map((r) => [r.providerId, r.value, r.rank])).toEqual([
+			["daytona", 10, 1],
+			["modal", 10, 1],
+		]);
+		expect(rows[1]?.verdict).toBe("underpowered");
+		expect(rows[1]?.tiedWithAbove).toBe("identical-value");
+		const md = renderLeaderboardMarkdown(board);
+		// The cell distinguishes the two reasons the rank is shared; it never reads as a statistical tie.
+		expect(md).toContain("(n too small, equal medians)");
+		expect(md).not.toContain("(tied)");
+	});
+
+	it("marks a shared rank between untested (n<2) rows with equal values as equal, not tied", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
+				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
+			]),
+		);
+		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
+		expect(rows.map((r) => [r.rank, r.verdict, r.tiedWithAbove])).toEqual([
+			[1, null, null],
+			[1, "untested", "identical-value"],
+		]);
+		expect(renderLeaderboardMarkdown(board)).toContain("— (equal values)");
+	});
+
+	it("never marks a row `tied` unless the test could have separated it", () => {
+		// The invariant behind the whole fix: `tied` is a verdict, and a verdict requires the power to have
+		// reached the opposite one. An underpowered comparison may share a rank, but never on that basis.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
+				provider("modal", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
+				provider("e2b", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
+			]),
+		);
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
+		for (const row of rows) {
+			if (row.verdict === "underpowered") expect(row.tiedWithAbove).not.toBe("statistical");
+			if (row.tiedWithAbove === "statistical") expect(row.verdict).toBe("tied");
+		}
+	});
+
+	it("still groups a genuine statistical tie when the test HAD the power to separate", () => {
+		// 8 v 8 near-identical samples: the test could have separated them (its floor is well under α) and
+		// did not, so this is a real tie and the rows must share a rank — the underpowered guard must not
+		// swallow the tie case it sits next to.
+		const near = [10, 10.1, 9.9, 10.2, 9.8, 10.05, 9.95, 10.15];
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, near)]),
+				provider("modal", [
+					metric(
+						HEADLINE,
+						near.map((v) => v - 0.01),
+					),
+				]),
+			]),
+		);
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
+		expect(rows.map((r) => [r.rank, r.verdict, r.tiedWithAbove])).toEqual([
+			[1, null, null],
+			[1, "tied", "statistical"],
+		]);
+		expect(renderLeaderboardMarkdown(board)).toContain("(tied)");
+	});
+
+	it("does not let the tie-corrected approximation crown a provider the exact test cannot separate", () => {
+		// The reported bug, end to end: mannWhitneyU([1,1,1],[2,2,2]) returned p = 0.047 under the normal
+		// approximation — below α, and below the 0.081 that was claimed as the 3-v-3 floor. Had the guard
+		// not (accidentally) blocked it first, that p would have SEPARATED these two providers on evidence
+		// the permutation null cannot produce. Exactly: p = 0.1, and 3 v 3 stays untestable.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(HEADLINE, [2, 2, 2])]),
+				provider("modal", [metric(HEADLINE, [1, 1, 1])]),
+			]),
+		);
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
+		expect(rows[1]?.pVsPrevious?.mannWhitney).toBeCloseTo(0.1, 12);
+		expect(rows[1]?.pVsPrevious?.floor).toBeCloseTo(0.1, 12);
+		expect(rows[1]?.verdict).toBe("underpowered");
+		expect(rows[1]?.verdict).not.toBe("separated");
 	});
 });
 

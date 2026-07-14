@@ -288,30 +288,187 @@ function midranks(pooled: readonly number[]): { ranks: number[]; tieCorrection: 
 	return { ranks, tieCorrection };
 }
 
+/** How a {@link DistributionTest}'s p-value was obtained — the two differ materially at small n. */
+export type PValueMethod = "exact" | "asymptotic";
+
 /** The outcome of a two-sample test on full distributions. */
 export interface DistributionTest {
 	/** The test statistic (U for Mann-Whitney, D for Kolmogorov-Smirnov). */
 	statistic: number;
 	/** Two-sided p-value: P(a difference this extreme | the two samples came from one distribution). */
 	pValue: number;
+	/**
+	 * `exact` — enumerated over the permutation null, so the p-value is the true tail probability for
+	 * THESE sample sizes and THIS tie pattern. `asymptotic` — a normal/limiting approximation, which at
+	 * small n can be anti-conservative (it can report a p the exact null cannot actually produce).
+	 */
+	method: PValueMethod;
 	nA: number;
 	nB: number;
 }
 
 /**
- * Mann-Whitney U (two-sided), normal approximation with tie and continuity corrections.
+ * A Mann-Whitney result, plus the thing a ranking has to know before it may believe one: the smallest
+ * p this comparison was CAPABLE of producing.
+ */
+export interface RankSumTest extends DistributionTest {
+	/**
+	 * The smallest two-sided p this comparison could have returned, at any effect size — the value the
+	 * test yields under COMPLETE separation, which is the most extreme evidence a rank statistic can
+	 * encode. A ranking must not believe a p the comparison was never capable of producing;
+	 * {@link canSeparate} is the guard that reads this.
+	 *
+	 * It is a property of the sample sizes AND THE TIE PATTERN — not, as it may look, of the sizes alone.
+	 * That distinction is load-bearing, and getting it wrong is unsafe in the direction that matters:
+	 *
+	 * Without ties, the rank multiset {1..N} is symmetric under r ↦ N+1−r, so the two extreme splits (one
+	 * side takes the lowest nA ranks, or the highest) both sit at maximal |U−μ| and the two-sided tail
+	 * collects both: the floor is 2/C(N, nA). Ties destroy that symmetry — midranks are no longer a mirror
+	 * of themselves — and a lone split can then stand at the maximum, halving the floor to 1/C(N, nA).
+	 * `[2]` vs `[1,1]` really does return p = 1/3 where an untied 1 v 2 floors at 2/3. So any size-only
+	 * formula is either wrong (if it assumes no ties) or needlessly pessimistic (if it assumes the worst).
+	 *
+	 * Enumerating the observed ranks sidesteps the whole question: this is the null's own mass at its most
+	 * extreme split, computed in the same pass as {@link DistributionTest.pValue}, so the two are answers
+	 * about one distribution and cannot contradict each other. At 3 v 3 it is 0.1 — above α — so no pair of
+	 * three-trial providers can be declared different however far apart their medians are, and a caller
+	 * that read that non-significant p as "statistically tied" would be reporting a fact about its trial
+	 * count as if it were a fact about the providers.
+	 */
+	minAttainablePValue: number;
+}
+
+/**
+ * The largest pooled sample the exact Mann-Whitney enumeration runs on.
+ *
+ * The bound is arithmetic, not performance: the enumeration counts subsets, and C(N, N/2) exceeds
+ * `Number.MAX_SAFE_INTEGER` around N = 57, past which the counts (and so the p-value) silently lose
+ * integer precision. 50 keeps a margin, and the DP costs O(nA · N²) ≈ 3M operations at the ceiling —
+ * microseconds, and far beyond the handful of trials this benchmark produces.
+ */
+const MAX_EXACT_N = 50;
+
+/** Exact C(n, k) for n ≤ {@link MAX_EXACT_N}, where the result is integer-exact in a double. */
+function choose(n: number, k: number): number {
+	if (k < 0 || k > n) return 0;
+	const j = Math.min(k, n - k);
+	let result = 1;
+	for (let i = 1; i <= j; i++) result = (result * (n - j + i)) / i;
+	return Math.round(result);
+}
+
+/**
+ * The exact two-sided Mann-Whitney null, evaluated at the observed split AND at the most extreme split
+ * these ranks admit: P(|U − μ| ≥ |U_obs − μ|) under the permutation null, where every C(N, nA) split of
+ * the pooled ranks is equally likely. Conditioning on the OBSERVED ranks makes this exact with ties,
+ * not merely without them — and it is why the floor falls out of the same pass as the p-value: both are
+ * tail masses of one enumerated distribution, so they cannot contradict each other.
+ *
+ * Counted by DP over rank sums rather than by enumerating splits: `counts[k][s]` is the number of
+ * size-k subsets whose rank sum is s. Midranks are half-integers when ties are present, so the DP runs
+ * on DOUBLED ranks, keeping every index an exact integer.
+ */
+function exactMannWhitney(
+	ranks: readonly number[],
+	nA: number,
+	nB: number,
+): { pValue: number; minAttainablePValue: number } {
+	const N = nA + nB;
+	const doubled = ranks.map((r) => Math.round(r * 2));
+	const total = doubled.reduce((sum, r) => sum + r, 0);
+
+	// counts[k][s] — subsets of size k with doubled-rank-sum s. Iterate k downward so each element is
+	// used at most once per subset (the 0/1-knapsack order).
+	const counts: number[][] = Array.from({ length: nA + 1 }, () =>
+		new Array<number>(total + 1).fill(0),
+	);
+	(counts[0] as number[])[0] = 1;
+	for (const rank of doubled) {
+		for (let k = Math.min(nA, N) - 1; k >= 0; k--) {
+			const from = counts[k] as number[];
+			const into = counts[k + 1] as number[];
+			for (let s = total - rank; s >= 0; s--) {
+				const c = from[s] as number;
+				if (c !== 0) into[s + rank] = (into[s + rank] as number) + c;
+			}
+		}
+	}
+
+	// U doubled: 2·(rankSumA − nA(nA+1)/2) = s − nA(nA+1). μ doubled: 2·(nA·nB/2) = nA·nB.
+	const offset = nA * (nA + 1);
+	const mu2 = nA * nB;
+	let rankSumA2 = 0;
+	for (let i = 0; i < nA; i++) rankSumA2 += doubled[i] as number;
+	const observedDeviation = Math.abs(rankSumA2 - offset - mu2);
+
+	// One sweep of the null: the mass at least as extreme as what we saw (the p-value), and the mass at
+	// least as extreme as the MOST extreme split available (the floor — the p the test would report if
+	// the two providers separated perfectly).
+	const row = counts[nA] as number[];
+	let maxDeviation = 0;
+	for (let s = 0; s <= total; s++) {
+		if ((row[s] as number) !== 0) {
+			maxDeviation = Math.max(maxDeviation, Math.abs(s - offset - mu2));
+		}
+	}
+	let atLeastAsExtreme = 0;
+	let atMostExtreme = 0;
+	for (let s = 0; s <= total; s++) {
+		const c = row[s] as number;
+		if (c === 0) continue;
+		const deviation = Math.abs(s - offset - mu2);
+		if (deviation >= observedDeviation) atLeastAsExtreme += c;
+		if (deviation >= maxDeviation) atMostExtreme += c;
+	}
+	const splits = choose(N, nA);
+	return {
+		pValue: Math.min(1, atLeastAsExtreme / splits),
+		minAttainablePValue: Math.min(1, atMostExtreme / splits),
+	};
+}
+
+/**
+ * Could {@link mannWhitneyU} have reached significance at all for this comparison? False means the test
+ * is structurally powerless here — not merely low-powered — so a caller must NOT read its
+ * non-significant p as evidence that the two sides are alike. Rank on the observed values instead and
+ * disclose that the comparison was untestable.
+ *
+ * Takes the TEST, not the two sample sizes. The floor it reads
+ * ({@link RankSumTest.minAttainablePValue}) depends on the tie pattern as well as the sizes, so
+ * re-deriving it from `nA`/`nB` is exactly the shortcut that lets a guard disagree with the test it is
+ * guarding — which is precisely how the old size-only floor came to claim 0.081 for a 3 v 3 that the
+ * test then answered with 0.047.
+ */
+export function canSeparate(test: RankSumTest, alpha: number = DEFAULT_ALPHA): boolean {
+	return test.minAttainablePValue < alpha;
+}
+
+/**
+ * Mann-Whitney U (two-sided) — EXACT at the sample sizes this benchmark produces, falling back to the
+ * tie- and continuity-corrected normal approximation only past {@link MAX_EXACT_N}.
  *
  * The question it answers is exactly the one a leaderboard needs: are these two providers' Samples
  * drawn from the same distribution, or does one genuinely tend to be faster? It's rank-based, so it
  * assumes neither normality nor equal variance — both of which these Samples violate — and a single
  * catastrophic pass moves a rank by one position instead of dragging a mean.
  *
- * The normal approximation is used at every n (exact enumeration is not implemented). At the n≈5 this
- * suite produces, the smallest attainable two-sided p is ~0.008, so a genuine difference between two
- * five-trial providers can be detected, but only a large one — treat a non-significant result at small
- * n as "not enough evidence", never as "the providers are equal".
+ * It is exact BECAUSE n is small, not despite it. The normal approximation is anti-conservative here,
+ * and the failure is not a rounding error — it is a wrong verdict:
+ *
+ *     mannWhitneyU([1,1,1], [2,2,2])   approximation: p = 0.047  → "separated" at α = 0.05
+ *                                      exact:         p = 0.100  → the null cannot go below 0.1 at 3 v 3
+ *
+ * The tie correction shrinks the approximation's variance, inflating z, and three-of-a-kind on each side
+ * shrinks it hard. So the approximation returned a p BELOW the floor the exact null imposes on 3 trials
+ * a side — and would have crowned a provider on evidence the test cannot actually supply. Enumerating
+ * the permutation null removes the failure mode rather than documenting it.
+ *
+ * At n≈5 a side the smallest attainable two-sided p is 2/C(10,5) ≈ 0.008, so a genuine difference
+ * between two five-trial providers can still be detected, but only a large one — treat a non-significant
+ * result at small n as "not enough evidence", never as "the providers are equal". Below that the test
+ * runs out of power entirely ({@link canSeparate}); callers that rank on it must branch, not silently tie.
  */
-export function mannWhitneyU(a: readonly number[], b: readonly number[]): DistributionTest {
+export function mannWhitneyU(a: readonly number[], b: readonly number[]): RankSumTest {
 	if (a.length === 0 || b.length === 0) {
 		throw new Error("mannWhitneyU() requires a non-empty sample on both sides");
 	}
@@ -329,15 +486,32 @@ export function mannWhitneyU(a: readonly number[], b: readonly number[]): Distri
 	const statistic = Math.min(uA, uB);
 
 	const N = nA + nB;
+	if (N <= MAX_EXACT_N) {
+		return { statistic, ...exactMannWhitney(ranks, nA, nB), method: "exact", nA, nB };
+	}
+
 	const mu = (nA * nB) / 2;
 	// Tie-corrected variance; collapses to nA*nB*(N+1)/12 when there are no ties.
 	const variance = ((nA * nB) / 12) * (N + 1 - tieCorrection / (N * (N - 1)));
 	// Every pooled value identical → no variance, no evidence of any difference.
-	if (variance <= 0) return { statistic, pValue: 1, nA, nB };
+	if (variance <= 0) {
+		return { statistic, pValue: 1, minAttainablePValue: 1, method: "asymptotic", nA, nB };
+	}
 
 	// Continuity correction: |U − μ| is discrete, so shave half a step before the normal tail.
-	const z = Math.max(0, Math.abs(statistic - mu) - 0.5) / Math.sqrt(variance);
-	return { statistic, pValue: Math.min(1, 2 * (1 - normalCdf(z))), nA, nB };
+	const z = (dev: number): number => Math.max(0, dev - 0.5) / Math.sqrt(variance);
+	const tail = (dev: number): number => Math.min(1, 2 * (1 - normalCdf(z(dev))));
+	// The floor mirrors the p-value through the SAME variance (this rank multiset's, ties and all), at
+	// the most extreme statistic the test admits: complete separation, U = 0. Deriving it any other way
+	// is what lets a floor disagree with the test it bounds.
+	return {
+		statistic,
+		pValue: tail(Math.abs(statistic - mu)),
+		minAttainablePValue: tail(mu),
+		method: "asymptotic",
+		nA,
+		nB,
+	};
 }
 
 /**
@@ -349,9 +523,11 @@ export function mannWhitneyU(a: readonly number[], b: readonly number[]): Distri
  * passes. That bimodality is precisely what environmental noise looks like.
  *
  * The tail is the asymptotic (Numerical Recipes) approximation at every n; exact enumeration is not
- * implemented. At the n≈5 this suite produces it is anti-conservative — e.g. `[1,2,3]` vs `[4,5,6]`
- * returns p≈0.033 where the exact two-sided p is 2/C(6,3)=0.1 — so, as with {@link mannWhitneyU},
- * treat a small-n result as directional evidence and never read a sub-α p at tiny n as hard proof.
+ * implemented, and — unlike {@link mannWhitneyU}, which now enumerates — that is a deliberate limit,
+ * because KS does NOT drive the ranking. It is reported beside the rank as a shape diagnostic, never as
+ * the verdict, so its small-n anti-conservatism cannot buy a provider a position. It is real, though:
+ * `[1,2,3]` vs `[4,5,6]` returns p≈0.033 where the exact two-sided p is 2/C(6,3)=0.1. Read a small-n
+ * `p (KS)` as directional evidence about distribution shape, never as hard proof.
  */
 export function kolmogorovSmirnov(a: readonly number[], b: readonly number[]): DistributionTest {
 	if (a.length === 0 || b.length === 0) {
@@ -381,7 +557,13 @@ export function kolmogorovSmirnov(a: readonly number[], b: readonly number[]): D
 	}
 
 	const en = Math.sqrt((nA * nB) / (nA + nB));
-	return { statistic, pValue: kolmogorovQ((en + 0.12 + 0.11 / en) * statistic), nA, nB };
+	return {
+		statistic,
+		pValue: kolmogorovQ((en + 0.12 + 0.11 / en) * statistic),
+		method: "asymptotic",
+		nA,
+		nB,
+	};
 }
 
 /**

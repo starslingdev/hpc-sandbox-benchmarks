@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
 	aggregate,
 	bootstrapMedianInterval,
+	canSeparate,
+	DEFAULT_ALPHA,
 	kolmogorovSmirnov,
 	mannWhitneyU,
 	percentileOf,
@@ -186,14 +188,14 @@ describe("bootstrapMedianInterval", () => {
 });
 
 describe("mannWhitneyU", () => {
-	// Values cross-checked against an independent implementation of the same normal approximation
-	// (tie- and continuity-corrected) and against exact enumeration of the permutation null.
-	it("separates disjoint samples (exact p = 0.0079; the normal approximation is conservative)", () => {
+	// Values cross-checked against exact enumeration of the permutation null (every C(N,nA) split), which
+	// is what the implementation now does at these sizes rather than approximating it.
+	it("separates disjoint samples (exact p = 2/C(10,5) = 0.0079)", () => {
 		const r = mannWhitneyU([1, 2, 3, 4, 5], [6, 7, 8, 9, 10]);
 		expect(r.statistic).toBe(0);
-		expect(r.pValue).toBeCloseTo(0.012186, 5);
-		// Conservative: the approximation never claims MORE significance than exact enumeration.
-		expect(r.pValue).toBeGreaterThan(0.007937);
+		// Complete separation: 2 of the 252 splits are this extreme. The normal approximation reported
+		// 0.0122 here — close, but it is the same machinery that reported an IMPOSSIBLE 0.047 at 3 v 3.
+		expect(r.pValue).toBeCloseTo(2 / 252, 12);
 		expect(r.pValue).toBeLessThan(0.05);
 	});
 
@@ -201,10 +203,12 @@ describe("mannWhitneyU", () => {
 		expect(mannWhitneyU([5, 5, 5, 5, 5], [5, 5, 5, 5, 5]).pValue).toBe(1);
 	});
 
-	it("applies the tie correction", () => {
+	it("handles ties exactly, by conditioning on the observed midranks", () => {
+		// The exact test conditions on the rank multiset, so ties need no variance correction — they are
+		// already in the null it enumerates. (48 of the 252 splits are at least this extreme.)
 		const r = mannWhitneyU([1, 2, 2, 3, 3], [2, 3, 3, 4, 5]);
 		expect(r.statistic).toBe(5);
-		expect(r.pValue).toBeCloseTo(0.126379, 5);
+		expect(r.pValue).toBeCloseTo(48 / 252, 12);
 	});
 
 	it("is symmetric in its arguments (U is the min of the two rank sums)", () => {
@@ -292,5 +296,99 @@ describe("kolmogorovSmirnov", () => {
 		// reason the guard exists, not a style check. (Verified: the pre-guard call had to be killed.)
 		expect(() => kolmogorovSmirnov([Number.NaN, 1], [1, 2])).toThrow(/finite samples/);
 		expect(() => kolmogorovSmirnov([1, 2], [Number.NaN])).toThrow(/finite samples/);
+	});
+});
+
+describe("the attainable p-floor / canSeparate", () => {
+	it("reports the floor as the p the test itself yields under complete separation", () => {
+		// The floor must be the SAME number the test yields under complete separation — otherwise the guard
+		// and the test disagree and rows get grouped on a threshold nothing enforces.
+		const separated = mannWhitneyU([1, 2, 3], [4, 5, 6]);
+		expect(separated.pValue).toBeCloseTo(0.1, 12); // 2 / C(6,3)
+		expect(separated.minAttainablePValue).toBeCloseTo(separated.pValue, 12);
+		// The floor is a property of the comparison, not of the data's effect size: a middling 3 v 3 quotes
+		// the same floor as a perfectly-separated one.
+		expect(mannWhitneyU([1, 4, 5], [2, 3, 6]).minAttainablePValue).toBeCloseTo(0.1, 12);
+	});
+
+	it("is a floor no data of that shape can dip below — including tied data", () => {
+		// The bug this guards: the normal approximation's tie correction shrinks the variance, so
+		// [1,1,1] v [2,2,2] returned p = 0.047 — under α, and under the 0.081 that was claimed as the 3-v-3
+		// floor. The exact null cannot produce anything below 0.1 at 3 v 3, tied or not.
+		const tied = mannWhitneyU([1, 1, 1], [2, 2, 2]);
+		expect(tied.pValue).toBeCloseTo(0.1, 12);
+		expect(tied.pValue).toBeGreaterThanOrEqual(tied.minAttainablePValue);
+		expect(canSeparate(tied)).toBe(false);
+	});
+
+	it("takes the floor from the tie pattern, not from the sample sizes alone", () => {
+		// Ties break the permutation null's mirror symmetry, so a lone split can stand at the extreme and
+		// halve the floor: 1 v 2 floors at 2/3 untied, but at 1/3 when the pair is tied. A size-only floor
+		// is therefore either wrong or needlessly pessimistic — this one is neither.
+		expect(mannWhitneyU([2], [1, 3]).minAttainablePValue).toBeCloseTo(2 / 3, 12);
+		expect(mannWhitneyU([2], [1, 1]).minAttainablePValue).toBeCloseTo(1 / 3, 12);
+	});
+
+	it("says 3 v 3 cannot separate at α=0.05 however extreme the data", () => {
+		// The whole point: at 3 trials a side the best possible p is already above α, so a non-significant
+		// result there is a fact about the trial count, not about the providers.
+		const extreme = mannWhitneyU([1, 2, 3], [100, 200, 300]);
+		expect(canSeparate(extreme)).toBe(false);
+		expect(extreme.pValue).toBeGreaterThan(0.05);
+	});
+
+	it("says 5 v 5 can separate — the floor drops under α", () => {
+		const separated = mannWhitneyU([1, 2, 3, 4, 5], [10, 20, 30, 40, 50]);
+		expect(canSeparate(separated)).toBe(true);
+		expect(separated.minAttainablePValue).toBeLessThan(0.05); // 2 / C(10,5) ≈ 0.0079
+		expect(separated.pValue).toBeLessThan(0.05);
+	});
+
+	it("honours a caller-supplied alpha", () => {
+		// 3 v 3 becomes testable only if you loosen α past its floor.
+		expect(canSeparate(mannWhitneyU([1, 2, 3], [4, 5, 6]), 0.1)).toBe(false); // floor is 0.1, not < 0.1
+		expect(canSeparate(mannWhitneyU([1, 2, 3], [4, 5, 6]), 0.2)).toBe(true);
+	});
+});
+
+describe("mannWhitneyU exactness", () => {
+	it("enumerates the permutation null instead of approximating it at these sample sizes", () => {
+		const test = mannWhitneyU([1, 2, 3], [4, 5, 6]);
+		expect(test.method).toBe("exact");
+		// Complete separation of 3 v 3: exactly 2 of the C(6,3)=20 splits are this extreme.
+		expect(test.pValue).toBeCloseTo(2 / 20, 12);
+	});
+
+	it("never returns a p below its own floor, however the ties fall", () => {
+		// The invariant the ranking leans on: `underpowered` (floor ≥ α) must imply "not significant". If a
+		// p could slip under its floor, the guard would be denying a separation the test had just made.
+		const shapes: Array<[number[], number[]]> = [
+			[
+				[1, 1, 1],
+				[2, 2, 2],
+			],
+			[
+				[1, 1],
+				[1, 2, 2],
+			],
+			[[5], [5, 5]],
+			[
+				[1, 2, 2, 3],
+				[2, 3, 3],
+			],
+			[
+				[7, 7, 7, 7],
+				[7, 7, 7, 7],
+			],
+		];
+		for (const [a, b] of shapes) {
+			const test = mannWhitneyU(a, b);
+			expect(test.pValue).toBeGreaterThanOrEqual(test.minAttainablePValue - 1e-12);
+			if (!canSeparate(test)) expect(test.pValue).toBeGreaterThanOrEqual(DEFAULT_ALPHA);
+		}
+	});
+
+	it("returns p = 1 when every pooled value is identical — no evidence of any difference", () => {
+		expect(mannWhitneyU([5, 5, 5], [5, 5, 5]).pValue).toBe(1);
 	});
 });
