@@ -20,6 +20,19 @@ dpkg -i /tmp/pts.deb || apt-get install -y --no-install-recommends -f
 rm -rf /tmp/pts.deb /var/lib/apt/lists/*
 phoronix-test-suite version
 
+# > The PTS deb ships phoromatic + result-viewer systemd units, and its postinst ENABLES them via
+# > deb-systemd-helper (no running systemd needed). Providers that boot this image with systemd as
+# > PID 1 (e2b microVMs — e2b's template build injects systemd; daytona/modal never run it) then
+# > start phoromatic-client at boot, and a phoromatic client with no server POWERS OFF the guest
+# > ~5 min in — every e2b sandbox died at exactly t+300s until this mask (probed 2026-07-10:
+# > masked → survives; unmasked → dead at 5:00, guest healthy, orchestrator logs a bare "Sandbox
+# > stopped"). Mask by symlinking the unit names to /dev/null — exactly what `systemctl mask`
+# > writes, done by hand because this slim build stage has no systemctl binary; a mask (vs
+# > removing the wants/ symlinks) also defeats the deb's enable-on-upgrade.
+for unit in phoromatic-client phoromatic-server phoronix-result-server; do
+	ln -sf /dev/null "/etc/systemd/system/${unit}.service"
+done
+
 # > Non-interactive batch config + offline download caches for the cpu-suite profiles. Build and
 # > sandboxes both run as root, so PTS state under /var/lib/phoronix-test-suite lines up at runtime.
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
