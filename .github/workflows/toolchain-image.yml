@@ -136,7 +136,6 @@ jobs:
       required: ${{ steps.plan.outputs.required }}
       size-tier: ${{ steps.plan.outputs.size-tier }}
       image-candidate: ${{ steps.plan.outputs.image-candidate }}
-      image-version: ${{ steps.plan.outputs.image-version }}
       toolchain-version: ${{ steps.plan.outputs.toolchain-version }}
       publish-target: ${{ steps.plan.outputs.publish-target }}
     steps:

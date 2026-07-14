@@ -1,15 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { forEachProviderWithCreds, unknownProviderIds } from "./providers-run.ts";
-
-describe("unknownProviderIds", () => {
-	test("returns the ids that are not registered providers", () => {
-		expect(unknownProviderIds(["e2b", "dayton", "nope"])).toEqual(["dayton", "nope"]);
-	});
-
-	test("is empty when every id is registered", () => {
-		expect(unknownProviderIds(["e2b", "daytona", "modal"])).toEqual([]);
-	});
-});
+import { forEachProviderWithCreds } from "./providers-run.ts";
 
 describe("forEachProviderWithCreds `only`", () => {
 	test("visits only the requested provider (a matrix cell reports just its own)", async () => {

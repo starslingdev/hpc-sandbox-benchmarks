@@ -21,7 +21,8 @@ import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
 import { candidateCreateOptions } from "../lib/bake/validate.ts";
-import { anyFailed, forEachProviderWithCreds, unknownProviderIds } from "../lib/providers-run.ts";
+import { selectProviders } from "../lib/matrix.ts";
+import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
 
 // Each provider's candidate bake, bound to the candidate names + base ref from config.
@@ -62,8 +63,10 @@ function writeReport(report: unknown): void {
  * The provider ids a `--provider <ids>` (or `--provider=<ids>`) flag restricts the bake+validate loop
  * to — a comma-separated list, so the CI matrix passes one id per cell (`--provider e2b`) and each
  * provider bakes in its own job. Absent → undefined (drive every registered provider, the local
- * default). Parsed the same shape as `--require` (harness `requiredProviders`) for consistency. The
- * flag applies only to the candidate bake loop; `--promote` is always all-providers (a transaction).
+ * default). The argv scan mirrors `--require` (harness `requiredProviders`); the CSV is split and
+ * validated against the registry by the shared {@link selectProviders} (which dedups, is
+ * case-insensitive, returns registry order, and throws a registry-derived message on an unknown id).
+ * The flag applies only to the candidate bake loop; `--promote` is always all-providers (a transaction).
  */
 function requestedProviders(argv: string[]): ProviderId[] | undefined {
 	let raw: string | undefined;
@@ -75,18 +78,7 @@ function requestedProviders(argv: string[]): ProviderId[] | undefined {
 		const next = i === -1 ? undefined : argv[i + 1];
 		if (next !== undefined && !next.startsWith("-")) raw = next;
 	}
-	if (raw === undefined) return undefined;
-	const ids = raw
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean);
-	const unknown = unknownProviderIds(ids);
-	if (unknown.length > 0) {
-		throw new Error(
-			`unknown --provider id(s): ${unknown.join(", ")} — registered providers are e2b, daytona, blaxel, modal, novita`,
-		);
-	}
-	return ids as ProviderId[];
+	return raw === undefined ? undefined : selectProviders(raw);
 }
 
 if (import.meta.main) {

@@ -5,9 +5,10 @@
 // refs and gates from the raw workflow inputs (the "make the plan an artifact" contract).
 //
 // Two outputs, one invocation:
-//   • the full plan as pretty JSON, written to the path in argv[2] (uploaded as the release-plan.json
+//   • the full plan as pretty JSON, written to the path in argv[1] (uploaded as the release-plan.json
 //     diagnostic artifact), and
-//   • flat `key=value` lines on stdout for `>> "$GITHUB_OUTPUT"` (skip, mode, matrix, refs, …).
+//   • the consumed `key=value` lines written straight to $GITHUB_OUTPUT (skip, mode, matrix, refs, …)
+//     via emitStepOutputs — never a stdout redirect, so no subprocess chatter can corrupt them.
 //
 // Credential posture: importing `config`/`validatedPins` validates env + pins with NO cloud creds
 // (the fail-fast gate). The one privileged call is the immutability probe (`imageExistsInRegistry`,
@@ -16,6 +17,7 @@
 // REFUSES on an uncertain check), so an inconclusive probe here proceeds rather than blocks.
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
+import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
 import { imageExistsInRegistry } from "../lib/bake/image.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
@@ -30,8 +32,11 @@ import { emitStepOutputs } from "../lib/gha-output.ts";
  */
 export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = ["e2b", "daytona", "modal"];
 
-/** Registry order (matches the provider registry) — the order the matrix cells are listed in. */
-const RELEASE_PROVIDERS: readonly ProviderId[] = ["e2b", "daytona", "blaxel", "modal", "novita"];
+/** Every provider the release fans out over, derived from the registry (never a hand-maintained
+ *  literal) so adding a provider grows the matrix automatically — in registry order, matching the
+ *  matrix cell order. `providerArtifact` below is exhaustive over `ProviderId`, so a new provider is a
+ *  compile error there until it's handled. */
+const RELEASE_PROVIDERS: readonly ProviderId[] = PROVIDERS.map((p) => p.id);
 
 /** Per-provider baked artifact name (what a cell produces), or a note for the providers that bake none. */
 function providerArtifact(id: ProviderId): string {
@@ -138,15 +143,14 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	};
 }
 
-/** The flat `key=value` lines a downstream job reads via `steps.<id>.outputs.*` (one per line). */
+/** The flat `key=value` lines a downstream job reads via `steps.<id>.outputs.*` (one per line). Only
+ *  the outputs the workflow actually consumes are emitted; the full plan (repo, version, gates, …)
+ *  lives in the release-plan.json artifact for diagnostics. */
 export function planOutputs(plan: ReleasePlan): string {
 	return [
 		`mode=${plan.mode}`,
 		`skip=${plan.skip}`,
-		`already-published=${plan.gates.alreadyPublished}`,
-		`image-repo=${plan.image.repo}`,
 		`image-name=${plan.image.name}`,
-		`image-version=${plan.image.version}`,
 		`image-candidate=${plan.image.candidate}`,
 		`toolchain-version=${plan.image.toolchainVersion}`,
 		`size-tier=${plan.sizeTier}`,

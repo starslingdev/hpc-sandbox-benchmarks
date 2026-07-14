@@ -174,6 +174,39 @@ export function snapshotDestroyedMessage(name: string, deleted: number, reason: 
 	);
 }
 
+/** Create attempts — a small resilient retry that self-heals a transient registry-inspect blip; a
+ *  persistent failure is characterized across every attempt by {@link logCreateFailure}. */
+const CREATE_ATTEMPTS = 5;
+
+/** Log the diagnostics for a failed create attempt: the structured SDK error, plus where the snapshot
+ *  landed — "absent" vs an `error`-state snapshot (with its richer `errorReason`) distinguishes a failed
+ *  registry inspect from a failed build. Best-effort: never throws (it runs on an error path). */
+async function logCreateFailure(
+	daytona: Daytona,
+	name: string,
+	err: unknown,
+	log: Log,
+): Promise<void> {
+	log(`    message: ${err instanceof Error ? err.message : String(err)}`);
+	log(`    detail:  ${describeDaytonaError(err)}`);
+	try {
+		const landed = await listSnapshotsByName(daytona, name);
+		if (landed.length === 0) {
+			log(`    post-failure: no snapshot named ${name} exists (create never landed one)`);
+		}
+		for (const snap of landed) {
+			const errorReason = (snap as { errorReason?: unknown }).errorReason;
+			log(
+				`    post-failure snapshot: state=${snap.state}${errorReason ? ` errorReason=${String(errorReason)}` : ""}`,
+			);
+		}
+	} catch (listErr) {
+		log(
+			`    post-failure: could not list ${name} — ${listErr instanceof Error ? listErr.message : String(listErr)}`,
+		);
+	}
+}
+
 /** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote).
  *  Idempotent: delete any existing snapshot of that name first.
  *
@@ -202,12 +235,10 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 	// Daytona's create inspects `image` in the registry on a build runner, and that inspect can fail with
 	// an opaque, often-transient "internal error" (a different runner/registry blip each time). Retry with
 	// backoff — self-healing when it's genuinely transient — and on every failed attempt capture rich
-	// diagnostics (structured error + where the snapshot landed + Daytona's streamed build log via onLogs)
-	// so a PERSISTENT failure is precisely characterized rather than reported once and lost. Attempt count
-	// is tunable (DAYTONA_CREATE_ATTEMPTS) for deeper investigation; default is a small resilient retry.
-	const attempts = Number.parseInt(process.env.DAYTONA_CREATE_ATTEMPTS ?? "5", 10) || 5;
+	// diagnostics (see logCreateFailure) so a PERSISTENT failure is precisely characterized rather than
+	// reported once and lost.
 	let lastErr: unknown;
-	for (let attempt = 1; attempt <= attempts; attempt++) {
+	for (let attempt = 1; attempt <= CREATE_ATTEMPTS; attempt++) {
 		// A failed create can leave the name held by an error-state snapshot; sweep it before retrying so
 		// the next attempt isn't rejected with "already exists". (The initial `deleted` count above is
 		// what the destroyed-message reports — these are our own failed remnants, not a pre-existing one.)
@@ -221,41 +252,22 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 			}
 		}
 		log(
-			`>>> daytona snapshot create attempt ${attempt}/${attempts}: ${name} from ${image} (target ${daytonaCfg.target ?? "default"})`,
+			`>>> daytona snapshot create attempt ${attempt}/${CREATE_ATTEMPTS}: ${name} from ${image} (target ${daytonaCfg.target ?? "default"})`,
 		);
 		const startMs = performance.now();
 		try {
 			await daytona.snapshot.create(params, { onLogs: log });
 			log(
-				`<<< daytona snapshot create succeeded on attempt ${attempt}/${attempts} (${(performance.now() - startMs).toFixed(0)}ms)`,
+				`<<< daytona snapshot create succeeded on attempt ${attempt}/${CREATE_ATTEMPTS} (${(performance.now() - startMs).toFixed(0)}ms)`,
 			);
 			return;
 		} catch (err) {
 			lastErr = err;
 			log(
-				`!!! daytona create attempt ${attempt}/${attempts} failed after ${(performance.now() - startMs).toFixed(0)}ms`,
+				`!!! daytona create attempt ${attempt}/${CREATE_ATTEMPTS} failed after ${(performance.now() - startMs).toFixed(0)}ms`,
 			);
-			log(`    message: ${err instanceof Error ? err.message : String(err)}`);
-			log(`    detail:  ${describeDaytonaError(err)}`);
-			// Where did the snapshot land? An error-state snapshot often carries a richer errorReason than
-			// the thrown message, and "absent" vs "error-state" distinguishes a failed inspect from a failed build.
-			try {
-				const landed = await listSnapshotsByName(daytona, name);
-				if (landed.length === 0) {
-					log(`    post-failure: no snapshot named ${name} exists (create never landed one)`);
-				}
-				for (const snap of landed) {
-					const errorReason = (snap as { errorReason?: unknown }).errorReason;
-					log(
-						`    post-failure snapshot: state=${snap.state}${errorReason ? ` errorReason=${String(errorReason)}` : ""}`,
-					);
-				}
-			} catch (listErr) {
-				log(
-					`    post-failure: could not list ${name} — ${listErr instanceof Error ? listErr.message : String(listErr)}`,
-				);
-			}
-			if (attempt < attempts) {
+			await logCreateFailure(daytona, name, err, log);
+			if (attempt < CREATE_ATTEMPTS) {
 				const backoffMs = Math.min(attempt * 5000, 20000);
 				log(`    backing off ${backoffMs}ms before retry…`);
 				await new Promise((resolve) => setTimeout(resolve, backoffMs));

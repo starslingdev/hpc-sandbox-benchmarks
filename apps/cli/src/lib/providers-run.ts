@@ -47,16 +47,6 @@ export interface ForEachProviderOptions<T> {
 const noop = () => {};
 
 /**
- * Of `requested` (e.g. a `--provider e2b,daytona` value), the ids that are not registered providers.
- * The bake bin rejects a non-empty result so a typo'd `--provider dayton` fails the cell loudly rather
- * than silently baking nothing (which `only` would otherwise treat as "no providers to visit").
- */
-export function unknownProviderIds(requested: readonly string[]): string[] {
-	const registered = new Set<string>(providers.map((p) => p.name));
-	return requested.filter((id) => !registered.has(id));
-}
-
-/**
  * Run `body` against every provider whose credentials are present, in registry order, collecting a
  * {@link ProviderRun} per provider. Never throws: a body that throws becomes a `failed` run carrying
  * the coerced error message; a provider with missing creds becomes a `skipped` run.
