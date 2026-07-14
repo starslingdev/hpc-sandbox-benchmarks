@@ -8,6 +8,7 @@
 //
 // The provider loop + skip-vs-fail contract is shared with bench-smoke/promote (providers-run.ts);
 // the boot+smoke lifecycle (probe results captured before teardown) is shared too (smoke-run.ts).
+import { writeFileSync } from "node:fs";
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import { config } from "@sandbox-benchmarks/providers";
@@ -43,6 +44,19 @@ const candidateRefs = {
 	toolchainImageCandidate: config.toolchainImageCandidate,
 	daytonaTarget: config.daytona.target,
 };
+
+/**
+ * Emit the bake/promote report JSON. To `$BAKE_REPORT_FILE` when set — the provider CLIs (e2b) and
+ * docker inherit stdout, so a `bun bake.ts … > report.json` redirect would splice their chatter into
+ * the report and corrupt the diagnostic. Writing the JSON to a file keeps the captured artifact clean
+ * regardless. Falls back to stdout locally (no env var) so the bin stays runnable by hand.
+ */
+function writeReport(report: unknown): void {
+	const json = `${JSON.stringify(report, null, 2)}\n`;
+	const file = process.env.BAKE_REPORT_FILE;
+	if (file) writeFileSync(file, json);
+	else process.stdout.write(json);
+}
 
 /**
  * The provider ids a `--provider <ids>` (or `--provider=<ids>`) flag restricts the bake+validate loop
@@ -83,21 +97,15 @@ if (import.meta.main) {
 		// `--force` republishes over an existing (immutable) version — dev regeneration, set only by a
 		// manual toolchain-image.yml dispatch. Automated pushes never pass it, so :v1 stays immutable there.
 		const promoted = await promoteAll(log, process.argv.includes("--force"));
-		console.log(
-			JSON.stringify(
-				{
-					version: {
-						image: config.toolchainImageVersion,
-						e2bTemplate: config.e2bTemplateVersion,
-						daytonaSnapshot: config.daytonaSnapshotDefault,
-						novitaTemplate: config.novitaTemplateVersion,
-					},
-					reports: promoted,
-				},
-				null,
-				2,
-			),
-		);
+		writeReport({
+			version: {
+				image: config.toolchainImageVersion,
+				e2bTemplate: config.e2bTemplateVersion,
+				daytonaSnapshot: config.daytonaSnapshotDefault,
+				novitaTemplate: config.novitaTemplateVersion,
+			},
+			reports: promoted,
+		});
 		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona,modal`)
 		// runs INSIDE promoteAll before the immutable base is written, and every abort path (version already
 		// published, candidate re-validation failed, artifact failed, unmet requirements) pushes a structured
@@ -171,21 +179,15 @@ if (import.meta.main) {
 		...(run.value && run.value.checks.length > 0 ? { checks: run.value.checks } : {}),
 	}));
 
-	console.log(
-		JSON.stringify(
-			{
-				candidate: {
-					image: config.toolchainImageCandidate,
-					e2bTemplate: config.e2bTemplateCandidate,
-					daytonaSnapshot: config.daytonaSnapshotCandidate,
-					novitaTemplate: config.novitaTemplateCandidate,
-				},
-				reports,
-			},
-			null,
-			2,
-		),
-	);
+	writeReport({
+		candidate: {
+			image: config.toolchainImageCandidate,
+			e2bTemplate: config.e2bTemplateCandidate,
+			daytonaSnapshot: config.daytonaSnapshotCandidate,
+			novitaTemplate: config.novitaTemplateCandidate,
+		},
+		reports,
+	});
 
 	if (anyFailed(runs)) process.exit(1);
 

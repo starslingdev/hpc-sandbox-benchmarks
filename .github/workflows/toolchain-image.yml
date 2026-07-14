@@ -165,7 +165,9 @@ jobs:
         # release-plan.ts validates pins again, probes whether :v1 is already published (best-effort —
         # promote does the authoritative guard), writes release-plan.json, and prints the key=value
         # outputs the downstream jobs read.
-        run: bun apps/cli/src/bin/release-plan.ts release-plan.json >> "$GITHUB_OUTPUT"
+        # release-plan.ts writes the key=value outputs straight to $GITHUB_OUTPUT (not via a stdout
+        # redirect), so a child process's stdout can never corrupt the outputs file.
+        run: bun apps/cli/src/bin/release-plan.ts release-plan.json
       # Guard the candidate package visibility so providers can pull it anonymously (see the composite).
       # Skipped when the release itself is skipped (version already published).
       - name: Ensure candidate package is public
@@ -232,7 +234,10 @@ jobs:
           # Declare then assign so the command substitution's exit status isn't masked (SC2155).
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           export BUILD_DATE
-          bun apps/cli/src/bin/build-candidate.ts build-metadata.json >> "$GITHUB_OUTPUT"
+          # No `>> "$GITHUB_OUTPUT"` redirect: build.sh runs with inherited stdout, so redirecting this
+          # command's stdout would splice its build log into the outputs file (GitHub would reject it).
+          # build-candidate.ts writes the digest outputs straight to $GITHUB_OUTPUT itself.
+          bun apps/cli/src/bin/build-candidate.ts build-metadata.json
       - name: Upload build metadata
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -302,9 +307,11 @@ jobs:
           # Required providers must not silently skip: --require fails the cell if this provider's
           # secret is missing/misnamed or it fails to validate.
           if [ "${REQUIRED}" = "true" ]; then args+=(--require "${PROVIDER}"); fi
-          # bake.ts prints the report JSON to stdout (progress goes to stderr, visible in the log), so
-          # capture it as this cell's diagnostic even when the bake exits non-zero.
-          bun apps/cli/src/bin/bake.ts "${args[@]}" > "bake-${PROVIDER}.json"
+          # Route the report JSON to a file via env (not a `> file` redirect): the provider CLIs inherit
+          # stdout, so a redirect would splice their chatter into the report. bake.ts writes the file
+          # even when it exits non-zero, so it's a clean diagnostic on failure too.
+          export BAKE_REPORT_FILE="bake-${PROVIDER}.json"
+          bun apps/cli/src/bin/bake.ts "${args[@]}"
       - name: Upload bake report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -360,6 +367,10 @@ jobs:
         env:
           REQUIRED: ${{ needs.plan.outputs.required }}
           FORCE_REPUBLISH: ${{ inputs.force_republish }}
+          # Route the promote payload JSON to a file via env (not a `> file` redirect): the provider
+          # CLIs inherit stdout, so a redirect would splice their chatter into the payload. bake.ts
+          # writes the file even when promote aborts (it records the structured reports before exiting).
+          BAKE_REPORT_FILE: promote-payload.json
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
@@ -372,9 +383,7 @@ jobs:
           # --force (manual force_republish dispatch only) republishes over an existing immutable
           # version; never set on the automated push path.
           if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
-          # bake.ts --promote prints the promote payload JSON to stdout — capture it as the diagnostic
-          # even when promote aborts (it prints the structured reports before exiting non-zero).
-          bun apps/cli/src/bin/bake.ts "${args[@]}" > promote-payload.json
+          bun apps/cli/src/bin/bake.ts "${args[@]}"
       - name: Upload promote payload
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

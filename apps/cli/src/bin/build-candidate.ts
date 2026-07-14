@@ -6,11 +6,15 @@
 // `bake --build-push` (which build-pushes AND bakes in one process); CI splits the two.
 //
 // Emits, in one invocation:
-//   • stdout: `key=value` lines for `>> "$GITHUB_OUTPUT"` (the candidate digest + digest-pinned ref), and
-//   • argv[2] (optional): a build-metadata.json diagnostic artifact with the same facts.
+//   • the `key=value` step outputs (candidate digest + digest-pinned ref) straight to $GITHUB_OUTPUT
+//     via emitStepOutputs — NOT to stdout: build.sh runs with inherited stdout, so a
+//     `bun … >> "$GITHUB_OUTPUT"` redirect would splice build.sh's progress into the outputs file and
+//     GitHub would reject it. stdout is left to carry the (inherited) build log, and
+//   • argv[1] (optional): a build-metadata.json diagnostic artifact with the same facts.
 import { config } from "@sandbox-benchmarks/providers";
 import { buildAndPushCandidate, resolveImageDigest } from "../lib/bake/image.ts";
 import type { Log } from "../lib/bake/types.ts";
+import { emitStepOutputs } from "../lib/gha-output.ts";
 
 if (import.meta.main) {
 	const log: Log = (m) => console.error(m);
@@ -43,7 +47,6 @@ if (import.meta.main) {
 	if (metaPath) await Bun.write(metaPath, `${JSON.stringify(metadata, null, 2)}\n`);
 
 	log(`<<< candidate pushed: ${digestRef}`);
-	// stdout is the $GITHUB_OUTPUT contract — `key=value` lines only.
-	console.log(`digest=${digest}`);
-	console.log(`candidate-digest-ref=${digestRef}`);
+	// Straight to $GITHUB_OUTPUT (not stdout) — build.sh's inherited stdout must not reach the outputs.
+	emitStepOutputs([`digest=${digest}`, `candidate-digest-ref=${digestRef}`].join("\n"));
 }

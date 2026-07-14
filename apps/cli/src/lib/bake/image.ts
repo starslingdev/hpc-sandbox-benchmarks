@@ -34,22 +34,27 @@ export function imagetoolsRetagCmd(from: string, to: string): string[] {
  *  no pull. The release records this so every phase pins/records the exact bytes the candidate push
  *  produced (provenance); the TOCTOU guard proper is promote's re-validation of the mutable candidate. */
 export async function resolveImageDigest(ref: string): Promise<string> {
-	const proc = Bun.spawn(
-		["docker", "buildx", "imagetools", "inspect", ref, "--format", "{{.Manifest.Digest}}"],
-		{ stdout: "pipe", stderr: "pipe", env: process.env },
-	);
+	// Parse the `Digest:` line from the default `imagetools inspect` output rather than a
+	// `--format '{{.Manifest.Digest}}'` template: on the runner's buildx that template prints the whole
+	// default descriptor block, so parsing the labelled line is the portable read. The first match is
+	// the top-level manifest/index digest (the ref's digest); per-platform sub-digests, if any, follow.
+	const proc = Bun.spawn(["docker", "buildx", "imagetools", "inspect", ref], {
+		stdout: "pipe",
+		stderr: "pipe",
+		env: process.env,
+	});
 	const [code, stdout, stderr] = await Promise.all([
 		proc.exited,
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
 	]);
-	const digest = stdout.trim();
-	if (code !== 0 || !/^sha256:[0-9a-f]{64}$/.test(digest)) {
+	const match = stdout.match(/\bDigest:\s*(sha256:[0-9a-f]{64})\b/);
+	if (code !== 0 || !match) {
 		throw new Error(
-			`could not resolve digest for ${ref} (exit ${code}): ${digest || stderr.trim() || "no digest"}`,
+			`could not resolve digest for ${ref} (exit ${code}): ${stderr.trim() || stdout.trim() || "no digest"}`,
 		);
 	}
-	return digest;
+	return match[1] as string;
 }
 
 /** Whether `ref` already exists in the registry — a successful `docker manifest inspect`. Queries the

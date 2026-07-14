@@ -18,6 +18,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
 import { imageExistsInRegistry } from "../lib/bake/image.ts";
+import { emitStepOutputs } from "../lib/gha-output.ts";
 
 /**
  * Providers the release is REQUIRED to bake + validate before the public version is published — the
@@ -183,6 +184,7 @@ if (import.meta.main) {
 	const planPath = process.argv.slice(2).find((a) => !a.startsWith("-"));
 	if (planPath) await Bun.write(planPath, `${JSON.stringify(plan, null, 2)}\n`);
 
-	// stdout is the $GITHUB_OUTPUT contract — keep it to `key=value` lines only.
-	console.log(planOutputs(plan));
+	// Write the `key=value` outputs straight to $GITHUB_OUTPUT (never via a stdout redirect), so nothing
+	// a child process prints can corrupt them.
+	emitStepOutputs(planOutputs(plan));
 }
