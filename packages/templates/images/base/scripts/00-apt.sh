@@ -31,7 +31,7 @@ apt-get update
 # > 0 there, so the failure only surfaces in 20-pts.sh's post-install verification.
 apt-get install -y --no-install-recommends \
 	curl git ca-certificates \
-	build-essential \
+	build-essential autoconf \
 	php-cli php-xml \
 	flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev \
 	dnsutils jq netcat-openbsd iputils-ping \

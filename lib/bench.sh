@@ -305,15 +305,18 @@ ensure_pts() {
 			local tmp_deb
 			tmp_deb="$(mktemp /tmp/pts-XXXXXX.deb)"
 			# Group with `|| true` so a failed install can't abort a caller running under `set -e` —
-			# ensure_pts's contract is to return 1 gracefully so the caller can skip.
-			# The package list mirrors the harness setup fallback (packages/harness/src/lib/setup.ts):
+			# ensure_pts's contract is to return 1 gracefully so the caller can skip. This is the
+			# last-resort stock-image path (the harness setup step normally installs PTS + these deps
+			# first); the package set is kept in lockstep with the bake's 00-apt.sh so all three agree:
 			# php for PTS itself, the build toolchain for the source-built profiles, libaio-dev (fio's
-			# Linux AIO engine), libicu-dev (postgres's configure hard-requires ICU), and the probe deps
-			# — without them the profiles install "successfully" and then burn their timed runs failing.
+			# Linux AIO engine), libicu-dev (postgres's configure hard-requires ICU), tcl (sqlite-speedtest
+			# shells out to tclsh), stress-ng (the hardlink leaf), and the probe deps — without them the
+			# profiles install "successfully" and then burn their timed runs failing.
 			(curl -fsSL "$deb_url" -o "$tmp_deb" &&
-				${SUDO:-} apt-get update -qq &&
-				${SUDO:-} apt-get install -y -qq php-cli php-xml build-essential flex bison bc \
-					libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping &&
+				${SUDO:-} apt-get -o Acquire::Retries=3 update -qq &&
+				${SUDO:-} apt-get install -y -qq php-cli php-xml build-essential autoconf flex bison bc \
+					libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping \
+					tcl stress-ng unzip procps &&
 				${SUDO:-} dpkg -i "$tmp_deb") || true
 			rm -f "$tmp_deb"
 		fi

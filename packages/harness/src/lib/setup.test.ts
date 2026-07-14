@@ -24,7 +24,7 @@ describe("setupSteps", () => {
 		expect(ptsStep).toBeDefined();
 		// Unconditional apt refresh (not gated on `command -v phoronix-test-suite`), so a stale baked
 		// image whose apt index was cleaned still has one before PTS installs a test's external deps.
-		expect(ptsStep?.script).toContain("apt-get update");
+		expect(ptsStep?.script).toMatch(/apt-get.*update/);
 		expect(ptsStep?.script).not.toContain("command -v phoronix-test-suite");
 	});
 

@@ -103,16 +103,19 @@ export function setupSteps(suite: Suite): SetupStep[] {
 		// netcat-openbsd: network-loopback's dd|nc runner. stress-ng: the disk suite's hardlink leaf. tcl:
 		// sqlite-speedtest builds SQLite from source and shells out to tclsh to generate opcodes.h.
 		// autoconf: PTS resolves it for the build-utilities external dependency of several profiles.
+		// The exact set the bake pre-installs (packages/templates/images/base/scripts/00-apt.sh), minus
+		// the base utils installed by "install base packages" above (curl/git/ca-certificates/tar/…).
+		// Kept in lockstep with 00-apt.sh so bake and runtime install the same deps.
 		const ptsDeps =
 			"php-cli php-xml build-essential autoconf flex bison bc libelf-dev libssl-dev " +
 			"libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps";
 		steps.push({
 			label: "ensure PTS build deps + fresh apt index",
-			// Retry apt-get update a few times for a transient mirror hiccup (its failure inside `until`
-			// is exempt from `set -e`), then install the deps best-effort — a swallowed failure lets a
-			// good baked image proceed rather than failing an otherwise-runnable suite.
+			// `Acquire::Retries` rides out a transient mirror hiccup on the fetch; both halves are
+			// best-effort (`|| true` / swallowed) so a healthy baked image, or a provider that cannot
+			// reach the mirror, proceeds on what the image baked rather than failing a runnable suite.
 			script:
-				"i=0; until $SUDO apt-get update -qq; do i=$((i+1)); [ $i -ge 3 ] && break; sleep 3; done; " +
+				"$SUDO apt-get -o Acquire::Retries=3 update -qq || true; " +
 				`$SUDO apt-get install -y -qq ${ptsDeps} || echo "WARNING: apt dep refresh failed (best-effort); relying on the baked image"`,
 			timeoutMs: 15 * MIN,
 		});
