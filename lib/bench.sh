@@ -178,8 +178,9 @@ _configure_pts_batch() {
 	export TEST_RESULTS_IDENTIFIER=ci
 	# FORCE_TIMES_TO_RUN=1 pins every test to a single pass (fast, but no in-sandbox repeats to
 	# aggregate). The sandbox harness sets PTS_RESPECT_TIMES_TO_RUN=1 to opt out, so PTS honours each
-	# profile's TimesToRun (3 by default) and writes the repeated samples our normalizer reads from
-	# RawString — the statistical confidence we want there.
+	# profile's TimesToRun (our profiles pin 2 — the floor; PTS re-runs beyond it when a test's
+	# stddev stays high) and writes the repeated samples our normalizer reads from RawString — the
+	# statistical confidence we want there.
 	if [ -z "${PTS_RESPECT_TIMES_TO_RUN:-}" ]; then
 		export FORCE_TIMES_TO_RUN=1
 	fi

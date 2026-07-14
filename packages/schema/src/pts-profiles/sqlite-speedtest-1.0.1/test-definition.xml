@@ -8,7 +8,7 @@
     <ResultScale>Seconds</ResultScale>
     <Proportion>LIB</Proportion>
     <SubTitle>Timed Time - Size 1,000</SubTitle>
-    <TimesToRun>3</TimesToRun>
+    <TimesToRun>2</TimesToRun>
   </TestInformation>
   <TestProfile>
     <Version>1.0.1</Version>

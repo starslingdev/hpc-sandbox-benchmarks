@@ -8,7 +8,7 @@
     <ResultScale>Milliseconds</ResultScale>
     <Proportion>LIB</Proportion>
     <SubTitle>Total For Average Test Times</SubTitle>
-    <TimesToRun>3</TimesToRun>
+    <TimesToRun>2</TimesToRun>
   </TestInformation>
   <TestProfile>
     <Version>1.1.3</Version>

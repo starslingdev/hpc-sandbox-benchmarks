@@ -175,7 +175,8 @@ export const PREAMBLE = [
 	// Honour each PTS profile's TimesToRun (lib/bench.sh otherwise forces a single pass). The sandbox
 	// is the statistical-confidence path: the in-sandbox repeats give p50/stdev per Metric.
 	// BENCH_PASSES=1 (host env) opts a run out for fast contract-verification iteration -- one pass
-	// per task, ~3x faster on multi-pass suites; never set it for a run whose numbers you publish.
+	// per task, ~2x faster on multi-pass suites (profiles pin TimesToRun=2); never set it for a run
+	// whose numbers you publish.
 	...(process.env.BENCH_PASSES === "1" ? [] : ["export PTS_RESPECT_TIMES_TO_RUN=1"]),
 	'if [ "$(id -u)" = 0 ]; then SUDO=""; elif command -v sudo >/dev/null 2>&1; then SUDO="sudo -E"; else SUDO=""; fi',
 ].join("; ");

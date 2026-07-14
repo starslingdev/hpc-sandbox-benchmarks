@@ -7,7 +7,7 @@
     <Description>Measures hardlink() syscall throughput using the stress-ng --link stressor. Mirrors the per-syscall pattern that pnpm install hits when materialising thousands of node_modules entries from a content-addressable store. Reports bogo ops/sec (real time) — one bogo op = one create+unlink hardlink cycle.</Description>
     <ResultScale>bogo ops/s</ResultScale>
     <Proportion>HIB</Proportion>
-    <TimesToRun>3</TimesToRun>
+    <TimesToRun>2</TimesToRun>
   </TestInformation>
   <TestProfile>
     <Version>1.0.0</Version>

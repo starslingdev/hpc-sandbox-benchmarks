@@ -8,7 +8,7 @@
     <ResultScale>Seconds</ResultScale>
     <Proportion>LIB</Proportion>
     <SubTitle>Total Time - 4K, 16 Rays Per Pixel</SubTitle>
-    <TimesToRun>3</TimesToRun>
+    <TimesToRun>2</TimesToRun>
   </TestInformation>
   <TestProfile>
     <Version>2.0.0</Version>
