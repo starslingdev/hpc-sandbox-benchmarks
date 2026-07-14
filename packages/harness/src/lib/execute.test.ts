@@ -36,6 +36,12 @@ describe("selectTransport", () => {
 	});
 });
 
+describe("sandbox preamble", () => {
+	it("does not auto-install repository developer tools when running benchmark tasks", () => {
+		expect(PREAMBLE).toContain("MISE_TASK_RUN_AUTO_INSTALL=0");
+	});
+});
+
 describe("shellQuote", () => {
 	it("wraps in single quotes and escapes embedded quotes", () => {
 		expect(shellQuote("echo hi")).toBe("'echo hi'");

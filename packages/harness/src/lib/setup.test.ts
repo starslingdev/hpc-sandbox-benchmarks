@@ -10,10 +10,14 @@ describe("setupSteps", () => {
 			"install base packages",
 			"clone repo",
 			"install mise",
-			"mise install",
+			"trust mise config",
 			"setup node 22 + pnpm 10",
 			"setup phoronix-test-suite",
 		]);
+	});
+
+	it("does not install repository developer tools inside benchmark sandboxes", () => {
+		expect(labels).not.toContain("mise install");
 	});
 
 	it("clones this repo by default, so the in-sandbox producer matches the harness", () => {

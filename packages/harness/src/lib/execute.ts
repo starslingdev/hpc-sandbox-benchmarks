@@ -167,6 +167,12 @@ export const PREAMBLE = [
 	'if [ -d /mise ]; then export MISE_DATA_DIR=/mise MISE_CONFIG_DIR=/mise MISE_CACHE_DIR=/mise/cache PATH="/mise/shims:$PATH"; fi',
 	// Some sandbox networks reset connections to *.jdx.dev — fetch versions/tools from GitHub instead.
 	"export MISE_USE_VERSIONS_HOST=0",
+	// Repository mise.toml contains developer-only linters (typos, shellcheck, hadolint, actionlint,
+	// zizmor), none of which a benchmark task uses. Never auto-install them when `mise run` resolves a
+	// task: stock-image providers fan the matrix out behind one egress IP, and seven concurrent aqua
+	// lookups exhaust GitHub's anonymous API quota before a benchmark starts. Suite runtime tools are
+	// installed explicitly by setupSteps (node/pnpm/PTS) or by the base-package fallback instead.
+	"export MISE_TASK_RUN_AUTO_INSTALL=0",
 	// The precompiled-python index is jdx.dev-only (no GitHub fallback) — use the distro python3.
 	"export MISE_DISABLE_TOOLS=python",
 	// Distro pythons are PEP 668 externally-managed, but PTS profiles pip-install their harness —

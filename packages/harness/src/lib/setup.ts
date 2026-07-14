@@ -70,10 +70,10 @@ export function setupSteps(suite: Suite): SetupStep[] {
 			retries: 2,
 		},
 		{
-			label: "mise install",
-			script: `cd ${DIR} && mise trust --yes && mise install --yes`,
-			timeoutMs: 20 * MIN,
-			retries: 2,
+			label: "trust mise config",
+			// Trust the cloned task definitions without installing the repository's developer-only tools.
+			script: `cd ${DIR} && mise trust --yes`,
+			timeoutMs: MIN,
 		},
 	];
 

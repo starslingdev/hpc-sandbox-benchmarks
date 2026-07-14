@@ -18,16 +18,30 @@ async function run(cmd: string[], log: Log): Promise<void> {
 }
 
 /** build.sh (base + variants, tagged `:dev` and `:v1`) → retag base `:v1`→`:v1-candidate` → push the
- *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run. */
+ *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run.
+ *
+ *  A plain `docker push` publishes a bare image manifest, while promote's `imagetools create` writes
+ *  the public version as a one-platform manifest list. Daytona's snapshot registry inspector accepts
+ *  the latter but returns an internal inspection error for the former (E2B/Modal/Novita accept both),
+ *  so normalize the candidate to the same manifest-list shape before any provider consumes it. The
+ *  source and target tag are identical: buildx resolves the just-pushed image digest, then replaces
+ *  only the tag's envelope; the image config and layers are unchanged. */
 export async function buildAndPushCandidate(log: Log): Promise<void> {
 	await run(["bash", BUILD_SH], log);
 	await run(["docker", "tag", config.toolchainImageVersion, config.toolchainImageCandidate], log);
 	await run(["docker", "push", config.toolchainImageCandidate], log);
+	await run(imagetoolsNormalizeCmd(config.toolchainImageCandidate), log);
 }
 
 /** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */
 export function imagetoolsRetagCmd(from: string, to: string): string[] {
 	return ["docker", "buildx", "imagetools", "create", "-t", to, from];
+}
+
+/** Wrap one pushed image manifest in the one-platform manifest-list envelope provider registry
+ *  inspectors consistently accept. Source and target intentionally name the same mutable tag. */
+export function imagetoolsNormalizeCmd(ref: string): string[] {
+	return imagetoolsRetagCmd(ref, ref);
 }
 
 /** Whether `ref` already exists in the registry — a successful `docker manifest inspect`. Queries the
