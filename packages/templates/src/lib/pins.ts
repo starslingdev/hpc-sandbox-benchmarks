@@ -73,6 +73,19 @@ export const rawPins = {
 	// > Phoronix Test Suite release + self-computed sha256 of phoronix-test-suite_10.8.4_all.deb.
 	ptsVersion: "10.8.4",
 	ptsDebSha256: "be81f71fc0382a7725dc88f4a18f013d1c3f6939d440629231d392a11816feca",
-	// > Small node + python profiles pre-installed so sandbox wall time goes to benchmarks, not setup.
-	ptsInstallTests: "node-web-tooling pyperformance",
+	// > Profiles pre-installed (and download-cached — 20-pts.sh derives its cache list from this) so
+	// > sandbox wall time goes to benchmarks, not setup: every PTS profile a registered suite runs —
+	// > fio, zstd and especially postgres (pgbench) are source builds worth paying at bake time
+	// > (stream covers the memory suite, so no registered suite pays a runtime install). The
+	// > six new profiles are VERSION-PINNED to exactly what their leaves batch-run (and the catalog
+	// > vendors): an unversioned name resolves to whatever upstream's latest is at bake time, so a
+	// > profile bump would silently void the pre-install and push the source build (postgres!) into
+	// > every sandbox. ALL entries are pinned — node-web-tooling/pybench/sqlite-speedtest included, with
+	// > their leaves pinned to match: a versionless name resolves past the vendored option matrix at both
+	// > bake AND run time (uncatalogued results), and the drift gate skips versionless names by
+	// > construction, so they were the one hole in it. The catalog joins on a versionless key, so pinning
+	// > the leaf changes nothing downstream. (pyperformance was dropped: no registered suite or mise task
+	// > runs it, and its pip-driven install inflated every bake for nothing.)
+	ptsInstallTests:
+		"node-web-tooling-1.0.1 pybench-1.1.3 sqlite-speedtest-1.0.1 c-ray-2.0.0 compress-zstd-1.6.0 fio-2.1.0 network-loopback-1.0.1 pgbench-1.15.0 stream-1.3.4",
 } satisfies Record<keyof Pins, string>;

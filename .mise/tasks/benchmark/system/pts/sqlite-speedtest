@@ -10,4 +10,4 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 	exit 0
 fi
 
-run_pts_benchmark "pts/sqlite-speedtest" "pts_sqlite-speedtest"
+run_pts_benchmark "pts/sqlite-speedtest-1.0.1" "pts_sqlite-speedtest"
