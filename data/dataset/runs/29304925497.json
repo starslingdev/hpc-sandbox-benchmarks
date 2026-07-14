@@ -1,0 +1,1897 @@
+{
+  "schemaVersion": "2",
+  "runId": "29304925497",
+  "sha": "de957636ad1e7229069de8b6fc5dca52bb4d2ab3",
+  "generatedAt": "2026-07-14T05:32:37.562Z",
+  "targetSpec": {
+    "vcpus": 2,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "providers": [
+    {
+      "providerId": "blaxel",
+      "validationStatus": "validated",
+      "specMatched": false,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.90GHz",
+        "hostVcpus": 6,
+        "hostMemoryGb": 16,
+        "os": "Debian GNU/Linux 12 (bookworm)",
+        "kernel": "6.12.75+",
+        "user": "root",
+        "vcpus": 6,
+        "virtualization": "unknown",
+        "memoryGb": 15.63,
+        "diskGb": 12.5
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [
+            11.83,
+            11.89
+          ],
+          "aggregates": {
+            "p50": 11.86,
+            "p95": 11.887,
+            "mean": 11.86,
+            "stdev": 0.04242640687119383,
+            "min": 11.83,
+            "max": 11.89,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            11.17,
+            13.4,
+            13.28,
+            13.41,
+            13.52,
+            13.51,
+            13.21,
+            13.14,
+            13.2,
+            13.46,
+            13.29,
+            13.3
+          ],
+          "aggregates": {
+            "p50": 13.295,
+            "p95": 13.5145,
+            "mean": 13.1575,
+            "stdev": 0.6380100455179512,
+            "min": 11.17,
+            "max": 13.52,
+            "n": 12
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "pybench_milliseconds",
+          "samples": [
+            842,
+            840,
+            835
+          ],
+          "aggregates": {
+            "p50": 840,
+            "p95": 841.8,
+            "mean": 839,
+            "stdev": 3.605551275463989,
+            "min": 835,
+            "max": 842,
+            "n": 3
+          },
+          "sourceFile": "system/pts_pybench.xml",
+          "appVersion": "2018-02-16"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [
+            10.022,
+            9.632,
+            10.076
+          ],
+          "aggregates": {
+            "p50": 10.022,
+            "p95": 10.0706,
+            "mean": 9.91,
+            "stdev": 0.24226431846229482,
+            "min": 9.632,
+            "max": 10.076,
+            "n": 3
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [
+            15.762,
+            16.21
+          ],
+          "aggregates": {
+            "p50": 15.986,
+            "p95": 16.1876,
+            "mean": 15.986,
+            "stdev": 0.31678383797157356,
+            "min": 15.762,
+            "max": 16.21,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [
+            1.334,
+            1.181,
+            1.206,
+            1.559,
+            1.571,
+            1.549,
+            1.192,
+            1.173
+          ],
+          "aggregates": {
+            "p50": 1.27,
+            "p95": 1.5668,
+            "mean": 1.345625,
+            "stdev": 0.1843195497731356,
+            "min": 1.173,
+            "max": 1.571,
+            "n": 8
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [
+            3.256,
+            3.767,
+            3.527,
+            3.393,
+            3.353,
+            3.337,
+            3.407,
+            3.307
+          ],
+          "aggregates": {
+            "p50": 3.373,
+            "p95": 3.683,
+            "mean": 3.418375,
+            "stdev": 0.16203080615382096,
+            "min": 3.256,
+            "max": 3.767,
+            "n": 8
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [
+            15.142,
+            15.171
+          ],
+          "aggregates": {
+            "p50": 15.1565,
+            "p95": 15.16955,
+            "mean": 15.1565,
+            "stdev": 0.02050609665440982,
+            "min": 15.142,
+            "max": 15.171,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [
+            4.419,
+            4.497
+          ],
+          "aggregates": {
+            "p50": 4.458,
+            "p95": 4.4931,
+            "mean": 4.458,
+            "stdev": 0.0551543289325506,
+            "min": 4.419,
+            "max": 4.497,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [
+            2.762,
+            2.86
+          ],
+          "aggregates": {
+            "p50": 2.811,
+            "p95": 2.8550999999999997,
+            "mean": 2.811,
+            "stdev": 0.06929646455628156,
+            "min": 2.762,
+            "max": 2.86,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [
+            11.237,
+            10.982
+          ],
+          "aggregates": {
+            "p50": 11.1095,
+            "p95": 11.22425,
+            "mean": 11.1095,
+            "stdev": 0.18031222920256954,
+            "min": 10.982,
+            "max": 11.237,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [
+            30.456,
+            30.536
+          ],
+          "aggregates": {
+            "p50": 30.496000000000002,
+            "p95": 30.532,
+            "mean": 30.496000000000002,
+            "stdev": 0.05656854249492385,
+            "min": 30.456,
+            "max": 30.536,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [
+            1.722,
+            1.787,
+            1.742
+          ],
+          "aggregates": {
+            "p50": 1.742,
+            "p95": 1.7825,
+            "mean": 1.7503333333333333,
+            "stdev": 0.033291640592396934,
+            "min": 1.722,
+            "max": 1.787,
+            "n": 3
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [
+            70.357,
+            69.139,
+            68.049
+          ],
+          "aggregates": {
+            "p50": 69.139,
+            "p95": 70.23519999999999,
+            "mean": 69.18166666666666,
+            "stdev": 1.1545914140220088,
+            "min": 68.049,
+            "max": 70.357,
+            "n": 3
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [
+            71333.7,
+            71130.8,
+            70873,
+            71329.7,
+            70549.5
+          ],
+          "aggregates": {
+            "p50": 71130.8,
+            "p95": 71332.9,
+            "mean": 71043.34,
+            "stdev": 334.2356548903761,
+            "min": 70549.5,
+            "max": 71333.7,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [
+            110967.8,
+            111333.5,
+            108357.8,
+            111379.1,
+            111080.4
+          ],
+          "aggregates": {
+            "p50": 111080.4,
+            "p95": 111369.98000000001,
+            "mean": 110623.72,
+            "stdev": 1278.2534674312449,
+            "min": 108357.8,
+            "max": 111379.1,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [
+            61176,
+            60915.4,
+            60493,
+            61259,
+            61024
+          ],
+          "aggregates": {
+            "p50": 61024,
+            "p95": 61242.4,
+            "mean": 60973.479999999996,
+            "stdev": 299.71762043630656,
+            "min": 60493,
+            "max": 61259,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [
+            71275.8,
+            71257.3,
+            71212.3,
+            71902,
+            70891.3
+          ],
+          "aggregates": {
+            "p50": 71257.3,
+            "p95": 71776.76,
+            "mean": 71307.74,
+            "stdev": 367.1649397750262,
+            "min": 70891.3,
+            "max": 71902,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        }
+      ],
+      "suitesCovered": [
+        "cpu-node",
+        "disk",
+        "memory",
+        "realworld-better-auth",
+        "system"
+      ],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 12.5 GiB free, suite needs 30 GiB"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 12.5 GiB free, suite needs 25 GiB"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD EPYC",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.19.14",
+        "virtualization": "kvm",
+        "user": "root",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 19.5
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [
+            23.33,
+            23.42
+          ],
+          "aggregates": {
+            "p50": 23.375,
+            "p95": 23.4155,
+            "mean": 23.375,
+            "stdev": 0.06363961030679169,
+            "min": 23.33,
+            "max": 23.42,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            18.61,
+            19.53,
+            19.27
+          ],
+          "aggregates": {
+            "p50": 19.27,
+            "p95": 19.504,
+            "mean": 19.136666666666667,
+            "stdev": 0.47427137098219935,
+            "min": 18.61,
+            "max": 19.53,
+            "n": 3
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [
+            11.413,
+            11.366
+          ],
+          "aggregates": {
+            "p50": 11.3895,
+            "p95": 11.41065,
+            "mean": 11.3895,
+            "stdev": 0.03323401871576816,
+            "min": 11.366,
+            "max": 11.413,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [
+            10.426,
+            10.059,
+            10.131
+          ],
+          "aggregates": {
+            "p50": 10.131,
+            "p95": 10.3965,
+            "mean": 10.205333333333332,
+            "stdev": 0.1944642212164844,
+            "min": 10.059,
+            "max": 10.426,
+            "n": 3
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [
+            1.988,
+            1.398,
+            1.324,
+            1.712,
+            1.844,
+            1.808,
+            4.151,
+            1.228
+          ],
+          "aggregates": {
+            "p50": 1.76,
+            "p95": 3.3939499999999985,
+            "mean": 1.931625,
+            "stdev": 0.937249156917656,
+            "min": 1.228,
+            "max": 4.151,
+            "n": 8
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [
+            4.478,
+            4.472
+          ],
+          "aggregates": {
+            "p50": 4.475,
+            "p95": 4.4777,
+            "mean": 4.475,
+            "stdev": 0.004242640687119132,
+            "min": 4.472,
+            "max": 4.478,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [
+            10.576,
+            10.504
+          ],
+          "aggregates": {
+            "p50": 10.54,
+            "p95": 10.5724,
+            "mean": 10.54,
+            "stdev": 0.05091168824543272,
+            "min": 10.504,
+            "max": 10.576,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [
+            2.624,
+            2.695
+          ],
+          "aggregates": {
+            "p50": 2.6595,
+            "p95": 2.6914499999999997,
+            "mean": 2.6595,
+            "stdev": 0.05020458146424468,
+            "min": 2.624,
+            "max": 2.695,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [
+            3.705,
+            3.753
+          ],
+          "aggregates": {
+            "p50": 3.729,
+            "p95": 3.7506,
+            "mean": 3.729,
+            "stdev": 0.033941125496954314,
+            "min": 3.705,
+            "max": 3.753,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [
+            6.738,
+            6.815
+          ],
+          "aggregates": {
+            "p50": 6.7765,
+            "p95": 6.8111500000000005,
+            "mean": 6.7765,
+            "stdev": 0.054447222151364126,
+            "min": 6.738,
+            "max": 6.815,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [
+            46.341,
+            46.046
+          ],
+          "aggregates": {
+            "p50": 46.1935,
+            "p95": 46.32625,
+            "mean": 46.1935,
+            "stdev": 0.20859650045003272,
+            "min": 46.046,
+            "max": 46.341,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [
+            1.4,
+            1.388
+          ],
+          "aggregates": {
+            "p50": 1.394,
+            "p95": 1.3994,
+            "mean": 1.394,
+            "stdev": 0.008485281374238578,
+            "min": 1.388,
+            "max": 1.4,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [
+            34.08,
+            33.928,
+            33.672
+          ],
+          "aggregates": {
+            "p50": 33.928,
+            "p95": 34.0648,
+            "mean": 33.89333333333333,
+            "stdev": 0.20619731650371587,
+            "min": 33.672,
+            "max": 34.08,
+            "n": 3
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [
+            100854.2,
+            101340.2,
+            101140.7,
+            100348.9,
+            100119.3
+          ],
+          "aggregates": {
+            "p50": 100854.2,
+            "p95": 101300.3,
+            "mean": 100760.65999999999,
+            "stdev": 517.188479183362,
+            "min": 100119.3,
+            "max": 101340.2,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [
+            135143.9,
+            136333.6,
+            134003.3,
+            134966.3,
+            132706.6
+          ],
+          "aggregates": {
+            "p50": 134966.3,
+            "p95": 136095.66,
+            "mean": 134630.74000000002,
+            "stdev": 1357.5401994047706,
+            "min": 132706.6,
+            "max": 136333.6,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [
+            97923.4,
+            99059.5,
+            98834.9,
+            99292.1,
+            97402.3
+          ],
+          "aggregates": {
+            "p50": 98834.9,
+            "p95": 99245.58,
+            "mean": 98502.44,
+            "stdev": 804.6744298161765,
+            "min": 97402.3,
+            "max": 99292.1,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [
+            100698.9,
+            101443.1,
+            101191.5,
+            100899.4,
+            100186.4
+          ],
+          "aggregates": {
+            "p50": 100899.4,
+            "p95": 101392.78,
+            "mean": 100883.85999999999,
+            "stdev": 481.74004712085986,
+            "min": 100186.4,
+            "max": 101443.1,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [
+            0.1494
+          ],
+          "aggregates": {
+            "p50": 0.1494,
+            "p95": 0.1494,
+            "mean": 0.1494,
+            "stdev": 0,
+            "min": 0.1494,
+            "max": 0.1494,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": [
+        "cpu-node",
+        "disk",
+        "memory",
+        "realworld-better-auth",
+        "system"
+      ],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 16.7 GiB free, suite needs 30 GiB"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 16.7 GiB free, suite needs 25 GiB"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.1.158+",
+        "virtualization": "kvm",
+        "user": "user",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 22.6
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [
+            1.46,
+            1.46
+          ],
+          "aggregates": {
+            "p50": 1.46,
+            "p95": 1.46,
+            "mean": 1.46,
+            "stdev": 0,
+            "min": 1.46,
+            "max": 1.46,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [
+            0.2304
+          ],
+          "aggregates": {
+            "p50": 0.2304,
+            "p95": 0.2304,
+            "mean": 0.2304,
+            "stdev": 0,
+            "min": 0.2304,
+            "max": 0.2304,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": [
+        "disk"
+      ],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "cpu-node",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:cpu:node\" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step"
+        },
+        {
+          "scope": "suite",
+          "id": "memory",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:memory:all\" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-better-auth",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:realworld:pts:better-auth\" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 19.7 GiB free, suite needs 30 GiB"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 19.7 GiB free, suite needs 25 GiB"
+        },
+        {
+          "scope": "suite",
+          "id": "system",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:system:all\" lost its sandbox: 12 consecutive detached polls failed (last: [unavailable] The sandbox was not found: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.) — the sandbox stopped responding, not a quiet long step"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "unknown",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "4.19.0-gvisor",
+        "user": "root",
+        "vcpus": 2,
+        "virtualization": "unknown",
+        "memoryGb": 8
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [
+            5.52,
+            5.51
+          ],
+          "aggregates": {
+            "p50": 5.515,
+            "p95": 5.5195,
+            "mean": 5.515,
+            "stdev": 0.007071067811865324,
+            "min": 5.51,
+            "max": 5.52,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            10.29,
+            9.7,
+            10.11,
+            8.58,
+            9.37,
+            9.07,
+            8.9,
+            8.73,
+            8.85,
+            8.84,
+            9.67,
+            9.45
+          ],
+          "aggregates": {
+            "p50": 9.219999999999999,
+            "p95": 10.190999999999999,
+            "mean": 9.296666666666665,
+            "stdev": 0.558461088956776,
+            "min": 8.58,
+            "max": 10.29,
+            "n": 12
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [
+            39.717,
+            40.216
+          ],
+          "aggregates": {
+            "p50": 39.966499999999996,
+            "p95": 40.191050000000004,
+            "mean": 39.966499999999996,
+            "stdev": 0.3528462838120914,
+            "min": 39.717,
+            "max": 40.216,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [
+            30.379,
+            29.318,
+            31.221,
+            30.43,
+            28.963,
+            30.202,
+            29.93
+          ],
+          "aggregates": {
+            "p50": 30.202,
+            "p95": 30.9837,
+            "mean": 30.063285714285715,
+            "stdev": 0.7502825499516184,
+            "min": 28.963,
+            "max": 31.221,
+            "n": 7
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [
+            3.021,
+            2.304,
+            3.004,
+            2.553,
+            2.581,
+            2.372,
+            2.504,
+            2.394,
+            2.437,
+            2.653
+          ],
+          "aggregates": {
+            "p50": 2.5285,
+            "p95": 3.01335,
+            "mean": 2.5823,
+            "stdev": 0.2495605248342684,
+            "min": 2.304,
+            "max": 3.021,
+            "n": 10
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [
+            16.265,
+            15.797
+          ],
+          "aggregates": {
+            "p50": 16.031,
+            "p95": 16.241600000000002,
+            "mean": 16.031,
+            "stdev": 0.33092597359530546,
+            "min": 15.797,
+            "max": 16.265,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [
+            27.633,
+            28.745,
+            28.652
+          ],
+          "aggregates": {
+            "p50": 28.652,
+            "p95": 28.7357,
+            "mean": 28.343333333333334,
+            "stdev": 0.6169216589919144,
+            "min": 27.633,
+            "max": 28.745,
+            "n": 3
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [
+            6.604,
+            6.032,
+            6.418,
+            6.134,
+            6.681,
+            6.436,
+            6.476,
+            6.035,
+            6.505,
+            5.873
+          ],
+          "aggregates": {
+            "p50": 6.427,
+            "p95": 6.64635,
+            "mean": 6.319400000000001,
+            "stdev": 0.2771217943231615,
+            "min": 5.873,
+            "max": 6.681,
+            "n": 10
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [
+            14.354,
+            14.837
+          ],
+          "aggregates": {
+            "p50": 14.5955,
+            "p95": 14.81285,
+            "mean": 14.5955,
+            "stdev": 0.3415325753131028,
+            "min": 14.354,
+            "max": 14.837,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [
+            15.096,
+            15.422
+          ],
+          "aggregates": {
+            "p50": 15.259,
+            "p95": 15.405700000000001,
+            "mean": 15.259,
+            "stdev": 0.23051681066681484,
+            "min": 15.096,
+            "max": 15.422,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [
+            172.008,
+            166.599
+          ],
+          "aggregates": {
+            "p50": 169.30349999999999,
+            "p95": 171.73755,
+            "mean": 169.30349999999999,
+            "stdev": 3.82474057943806,
+            "min": 166.599,
+            "max": 172.008,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [
+            3.223,
+            3.343,
+            3.363
+          ],
+          "aggregates": {
+            "p50": 3.343,
+            "p95": 3.3609999999999998,
+            "mean": 3.3096666666666668,
+            "stdev": 0.07571877794400368,
+            "min": 3.223,
+            "max": 3.363,
+            "n": 3
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [
+            521.465,
+            499.981,
+            511.867
+          ],
+          "aggregates": {
+            "p50": 511.867,
+            "p95": 520.5052000000001,
+            "mean": 511.10433333333333,
+            "stdev": 10.762286436131227,
+            "min": 499.981,
+            "max": 521.465,
+            "n": 3
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [
+            45752,
+            44615.8,
+            50128.1,
+            51445.4,
+            53091.9
+          ],
+          "aggregates": {
+            "p50": 50128.1,
+            "p95": 52762.6,
+            "mean": 49006.64,
+            "stdev": 3666.290003941315,
+            "min": 44615.8,
+            "max": 53091.9,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [
+            62248.9,
+            58985.4,
+            69629.5,
+            71227.2,
+            76284.9,
+            61412.3,
+            71678.1,
+            74671.1,
+            72402.4,
+            81755,
+            76955,
+            76302.3,
+            63390,
+            62383.1,
+            70447.1,
+            76355.5,
+            69549.1,
+            65276.3,
+            73959.5,
+            68345,
+            64938.6,
+            73392.2,
+            71049.8,
+            61967.6,
+            61025.1
+          ],
+          "aggregates": {
+            "p50": 70447.1,
+            "p95": 76835.09999999999,
+            "mean": 69425.24,
+            "stdev": 6161.851236370989,
+            "min": 58985.4,
+            "max": 81755,
+            "n": 25
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [
+            34342.6,
+            34886.3,
+            38190.5,
+            41968.9,
+            42646.9
+          ],
+          "aggregates": {
+            "p50": 38190.5,
+            "p95": 42511.3,
+            "mean": 38407.04,
+            "stdev": 3860.8752800369,
+            "min": 34342.6,
+            "max": 42646.9,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [
+            43601.5,
+            43498.7,
+            50410.3,
+            54494.3,
+            51762
+          ],
+          "aggregates": {
+            "p50": 50410.3,
+            "p95": 53947.840000000004,
+            "mean": 48753.36,
+            "stdev": 4972.646932771319,
+            "min": 43498.7,
+            "max": 54494.3,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [
+            0.47736
+          ],
+          "aggregates": {
+            "p50": 0.47736,
+            "p95": 0.47736,
+            "mean": 0.47736,
+            "stdev": 0,
+            "min": 0.47736,
+            "max": 0.47736,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": [
+        "cpu-node",
+        "disk",
+        "memory",
+        "realworld-better-auth",
+        "system"
+      ],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:realworld:pts:mastra\" timed out after 5400s"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "novita",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD EPYC",
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.1.158+",
+        "virtualization": "kvm",
+        "user": "user",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 102.3
+      },
+      "metrics": [
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [
+            17.65,
+            17.79
+          ],
+          "aggregates": {
+            "p50": 17.72,
+            "p95": 17.782999999999998,
+            "mean": 17.72,
+            "stdev": 0.09899494936611705,
+            "min": 17.65,
+            "max": 17.79,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            19.3,
+            15.64,
+            12.77,
+            12.94,
+            13.34,
+            13.76,
+            14.14,
+            14.13,
+            12.89,
+            13.8,
+            14.43,
+            13.98,
+            14.14,
+            14.49,
+            14.42
+          ],
+          "aggregates": {
+            "p50": 14.13,
+            "p95": 16.737999999999996,
+            "mean": 14.278,
+            "stdev": 1.5738950772798403,
+            "min": 12.77,
+            "max": 19.3,
+            "n": 15
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [
+            14.248,
+            14.216
+          ],
+          "aggregates": {
+            "p50": 14.232,
+            "p95": 14.2464,
+            "mean": 14.232,
+            "stdev": 0.02262741699796954,
+            "min": 14.216,
+            "max": 14.248,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [
+            11.399,
+            11.41
+          ],
+          "aggregates": {
+            "p50": 11.404499999999999,
+            "p95": 11.40945,
+            "mean": 11.404499999999999,
+            "stdev": 0.007778174593053365,
+            "min": 11.399,
+            "max": 11.41,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [
+            2.291,
+            1.789,
+            2.191,
+            1.767,
+            1.818,
+            1.927,
+            1.89,
+            1.625,
+            2.145,
+            2.242
+          ],
+          "aggregates": {
+            "p50": 1.9085,
+            "p95": 2.26895,
+            "mean": 1.9685000000000001,
+            "stdev": 0.23113644359026447,
+            "min": 1.625,
+            "max": 2.291,
+            "n": 10
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [
+            5.354,
+            5.359
+          ],
+          "aggregates": {
+            "p50": 5.3565000000000005,
+            "p95": 5.35875,
+            "mean": 5.3565000000000005,
+            "stdev": 0.0035355339059323482,
+            "min": 5.354,
+            "max": 5.359,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [
+            11.488,
+            11.566
+          ],
+          "aggregates": {
+            "p50": 11.527000000000001,
+            "p95": 11.562100000000001,
+            "mean": 11.527000000000001,
+            "stdev": 0.055154328932550914,
+            "min": 11.488,
+            "max": 11.566,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [
+            2.907,
+            3.058,
+            2.884,
+            3.052,
+            2.954,
+            3.1,
+            3.075,
+            3.033,
+            3.063,
+            3.062
+          ],
+          "aggregates": {
+            "p50": 3.0549999999999997,
+            "p95": 3.08875,
+            "mean": 3.0188,
+            "stdev": 0.07548480347431222,
+            "min": 2.884,
+            "max": 3.1,
+            "n": 10
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [
+            4.539,
+            4.622
+          ],
+          "aggregates": {
+            "p50": 4.5805,
+            "p95": 4.61785,
+            "mean": 4.5805,
+            "stdev": 0.05868986283848358,
+            "min": 4.539,
+            "max": 4.622,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [
+            7.871,
+            7.564,
+            7.403,
+            7.699,
+            7.437,
+            7.655
+          ],
+          "aggregates": {
+            "p50": 7.609500000000001,
+            "p95": 7.828,
+            "mean": 7.604833333333334,
+            "stdev": 0.17481466376327431,
+            "min": 7.403,
+            "max": 7.871,
+            "n": 6
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [
+            59.605,
+            58.776
+          ],
+          "aggregates": {
+            "p50": 59.1905,
+            "p95": 59.56355,
+            "mean": 59.1905,
+            "stdev": 0.5861915216036433,
+            "min": 58.776,
+            "max": 59.605,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [
+            1.468,
+            1.439
+          ],
+          "aggregates": {
+            "p50": 1.4535,
+            "p95": 1.46655,
+            "mean": 1.4535,
+            "stdev": 0.02050609665440982,
+            "min": 1.439,
+            "max": 1.468,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "realworld_mastra_task_build_core",
+          "samples": [
+            120.151,
+            119.555
+          ],
+          "aggregates": {
+            "p50": 119.85300000000001,
+            "p95": 120.1212,
+            "mean": 119.85300000000001,
+            "stdev": 0.42143564158716984,
+            "min": 119.555,
+            "max": 120.151,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "build_core"
+        },
+        {
+          "metricId": "realworld_mastra_task_cold_install",
+          "samples": [
+            39.219,
+            39.736
+          ],
+          "aggregates": {
+            "p50": 39.4775,
+            "p95": 39.71015,
+            "mean": 39.4775,
+            "stdev": 0.3655742058734422,
+            "min": 39.219,
+            "max": 39.736,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_mastra_task_git_clone",
+          "samples": [
+            6.78,
+            6.652
+          ],
+          "aggregates": {
+            "p50": 6.716,
+            "p95": 6.7736,
+            "mean": 6.716,
+            "stdev": 0.09050966799187816,
+            "min": 6.652,
+            "max": 6.78,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_mastra_task_lint_format",
+          "samples": [
+            116.891,
+            116.862
+          ],
+          "aggregates": {
+            "p50": 116.8765,
+            "p95": 116.88955,
+            "mean": 116.8765,
+            "stdev": 0.02050609665442238,
+            "min": 116.862,
+            "max": 116.891,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_openclaw_task_cold_install",
+          "samples": [
+            6.896,
+            6.688
+          ],
+          "aggregates": {
+            "p50": 6.792,
+            "p95": 6.8856,
+            "mean": 6.792,
+            "stdev": 0.14707821048680203,
+            "min": 6.688,
+            "max": 6.896,
+            "n": 2
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_openclaw_task_git_clone",
+          "samples": [
+            10.158,
+            10.265
+          ],
+          "aggregates": {
+            "p50": 10.211500000000001,
+            "p95": 10.25965,
+            "mean": 10.211500000000001,
+            "stdev": 0.07566042558696073,
+            "min": 10.158,
+            "max": 10.265,
+            "n": 2
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_openclaw_task_typecheck",
+          "samples": [
+            48.213,
+            51.269,
+            50.577,
+            49.692,
+            49.551
+          ],
+          "aggregates": {
+            "p50": 49.692,
+            "p95": 51.1306,
+            "mean": 49.860400000000006,
+            "stdev": 1.1549548908940082,
+            "min": 48.213,
+            "max": 51.269,
+            "n": 5
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [
+            42.699,
+            42.87,
+            42.629
+          ],
+          "aggregates": {
+            "p50": 42.699,
+            "p95": 42.8529,
+            "mean": 42.73266666666667,
+            "stdev": 0.1239771484320101,
+            "min": 42.629,
+            "max": 42.87,
+            "n": 3
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [
+            51714.5,
+            51727.2,
+            51774.1,
+            51716.6,
+            51640.2
+          ],
+          "aggregates": {
+            "p50": 51716.6,
+            "p95": 51764.72,
+            "mean": 51714.52,
+            "stdev": 48.058162678154766,
+            "min": 51640.2,
+            "max": 51774.1,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [
+            56819.6,
+            56881.6,
+            56908.6,
+            56853,
+            56559.7
+          ],
+          "aggregates": {
+            "p50": 56853,
+            "p95": 56903.2,
+            "mean": 56804.5,
+            "stdev": 140.79108636558104,
+            "min": 56559.7,
+            "max": 56908.6,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [
+            49635,
+            49742.9,
+            49853.6,
+            49789.4,
+            49782.3
+          ],
+          "aggregates": {
+            "p50": 49782.3,
+            "p95": 49840.76,
+            "mean": 49760.64,
+            "stdev": 80.68142908997248,
+            "min": 49635,
+            "max": 49853.6,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [
+            51676.6,
+            51635.1,
+            51882.2,
+            51617.3,
+            51651.3
+          ],
+          "aggregates": {
+            "p50": 51651.3,
+            "p95": 51841.079999999994,
+            "mean": 51692.5,
+            "stdev": 108.26603807288731,
+            "min": 51617.3,
+            "max": 51882.2,
+            "n": 5
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [
+            0.16272
+          ],
+          "aggregates": {
+            "p50": 0.16272,
+            "p95": 0.16272,
+            "mean": 0.16272,
+            "stdev": 0,
+            "min": 0.16272,
+            "max": 0.16272,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": [
+        "cpu-node",
+        "disk",
+        "memory",
+        "realworld-better-auth",
+        "realworld-mastra",
+        "realworld-openclaw",
+        "system"
+      ],
+      "gaps": [],
+      "uncatalogued": []
+    }
+  ]
+}
