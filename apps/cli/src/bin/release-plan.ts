@@ -178,8 +178,9 @@ if (import.meta.main) {
 
 	const plan = buildReleasePlan({ sourceRef, forceRepublish, alreadyPublished });
 
-	// argv[2] (optional): write the full plan JSON here for the release-plan.json diagnostic artifact.
-	const planPath = process.argv[2];
+	// Optional first positional (flags filtered out): write the full plan JSON here for the
+	// release-plan.json diagnostic artifact.
+	const planPath = process.argv.slice(2).find((a) => !a.startsWith("-"));
 	if (planPath) await Bun.write(planPath, `${JSON.stringify(plan, null, 2)}\n`);
 
 	// stdout is the $GITHUB_OUTPUT contract — keep it to `key=value` lines only.

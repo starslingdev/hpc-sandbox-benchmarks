@@ -74,7 +74,10 @@ runs:
           row() { # $1=label $2=value $3=code|plain
             local label="$1" value="$2" kind="${3:-plain}"
             [ -n "${value}" ] || return 0
+            # Escape pipes and collapse CR/LF so a value with either can't break the table layout.
             value="${value//|/\\|}"
+            value="${value//$'\r'/ }"
+            value="${value//$'\n'/ }"
             if [ "${kind}" = "code" ]; then
               echo "| ${label} | \`${value}\` |"
             else

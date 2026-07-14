@@ -38,7 +38,8 @@ if (import.meta.main) {
 		version: config.toolchainVersion,
 		buildRef: process.env.GITHUB_SHA ?? null,
 	};
-	const metaPath = process.argv[2];
+	// Optional first positional (flags filtered out).
+	const metaPath = process.argv.slice(2).find((a) => !a.startsWith("-"));
 	if (metaPath) await Bun.write(metaPath, `${JSON.stringify(metadata, null, 2)}\n`);
 
 	log(`<<< candidate pushed: ${digestRef}`);
