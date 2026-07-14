@@ -29,6 +29,9 @@ Metrics come from three sources:
 - **PTS-derived** — generated from vendored Phoronix Test Suite profiles (see the
   [ADR-0003](./adr/0003-generated-pts-catalog-and-drift-gate.md)). The generator owns the
   XML-derived fields and id-uniqueness; a hand-authored override map supplies editorial fields.
+  A `<Result>` maps onto the catalog by its versionless test + `<Description>`; profiles whose
+  parsers post several scales under one description (fio: bandwidth + IOPS from a single run) get
+  one metric per scale, disambiguated by a `pts.scale` pin the mapping also matches on.
 - **Harness-measured** — lifecycle (spawn/exec/snapshot/teardown) and control-plane (info/list)
   timings PTS can't see, measured directly around the provider SDK calls.
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).

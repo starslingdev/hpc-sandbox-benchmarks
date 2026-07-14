@@ -62,4 +62,23 @@ describe("serializeCatalog", () => {
 		expect(serializeCatalog([a])).toContain('pts: { test: "pts/a" }');
 		expect(serializeCatalog([b])).toContain('pts: { test: "pts/b", description: "Mode: X" }');
 	});
+
+	test("chunks past the literal ceiling and spreads every chunk back, in order", () => {
+		// The multi-chunk path had zero coverage: CHUNK_SIZE is 250 and every fixture here holds ≤2
+		// entries, so no test ever produced a chunk2 — and the drift gate structurally cannot catch a
+		// boundary bug, since it compares the committed bytes against a fresh run of the SAME
+		// serializer. 251 entries is one past the boundary, where an off-by-one drops an entry.
+		const defs: MetricDef[] = Array.from({ length: 251 }, (_, i) => ({
+			...a,
+			id: `m_${String(i).padStart(3, "0")}`,
+		}));
+		const src = serializeCatalog(defs);
+		expect(src).toContain("const chunk1: MetricDef[] = [");
+		expect(src).toContain("const chunk2: MetricDef[] = [");
+		expect(src).not.toContain("chunk3");
+		expect(src).toContain("export const ptsGenerated: MetricDef[] = [...chunk1, ...chunk2];");
+		// Every entry survives exactly once, in input order.
+		expect(src.match(/\bid: "m_\d{3}"/g)).toHaveLength(251);
+		expect(src.indexOf('"m_249"')).toBeLessThan(src.indexOf('"m_250"'));
+	});
 });

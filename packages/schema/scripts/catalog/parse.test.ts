@@ -30,7 +30,7 @@ describe("parseProfile", () => {
 		expect(p.info.SubTitle).toBe("Total Time - 4K, 16 Rays Per Pixel");
 		// Two <Option> axes; the first (Resolution) has a three-<Entry> menu — both kept as arrays.
 		expect(p.settings.map((o) => o.DisplayName)).toEqual(["Resolution", "Rays Per Pixel"]);
-		expect(p.settings[0]?.Menu.Entry.map((e) => e.Name)).toEqual(["1080p", "4K", "5K"]);
+		expect(p.settings[0]?.Menu?.Entry.map((e) => e.Name)).toEqual(["1080p", "4K", "5K"]);
 		expect(p.parsers[0]?.DivideResultBy).toBe("1000");
 	});
 

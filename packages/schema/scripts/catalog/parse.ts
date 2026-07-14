@@ -28,7 +28,11 @@ export const optionSchema = type({
 	DisplayName: "string",
 	"Identifier?": "string",
 	"ArgumentPrefix?": "string",
-	Menu: { Entry: entrySchema.array() },
+	// Optional: PTS's virtual axes (fio's `auto-disk-mount-points` Disk Target) ship NO <Menu> in the
+	// profile XML — the runtime expands the entries from the machine. The synthesizer substitutes the
+	// deterministic runtime default for the identifiers it supports and throws on any other menu-less
+	// option, so an unhandled virtual axis fails generation instead of silently dropping every metric.
+	"Menu?": { Entry: entrySchema.array() },
 });
 export type PtsOption = typeof optionSchema.infer;
 
@@ -41,7 +45,9 @@ export const testInformationSchema = type({
 	"SubTitle?": "string",
 	Description: "string >= 1",
 	// Post-transform unit (matches the numeric transforms in results-definition), not the raw template.
-	ResultScale: "string >= 1",
+	// Optional: fio declares NO profile-level scale — each <ResultsParser> carries its own
+	// <ResultScale> (MB/s vs IOPS from one run). ./generate.ts requires one of the two per metric.
+	"ResultScale?": "string >= 1",
 	// `HIB`/`LIB`; may be absent (PTS defaults apply) — ./generate.ts guards rather than assuming.
 	"Proportion?": "string",
 });
@@ -65,6 +71,13 @@ export const resultsParserSchema = type({
 	"DivideResultBy?": "string",
 	"MultiplyResultBy?": "string",
 	"StripResultPostfix?": "string",
+	// Per-parser scale/direction overrides (fio: bandwidth and IOPS parsers on one profile). When
+	// present they win over the profile-level <TestInformation> values for the metrics they produce.
+	// Both `>= 1`: an empty <ResultProportion/> would otherwise parse to "" and split the consumers —
+	// the synthesizer's ??-based agreement check treats "" as a declared direction while the
+	// truthiness-based emission drops it (spurious aborts, or a silently swallowed invalid override).
+	"ResultScale?": "string >= 1",
+	"ResultProportion?": "string >= 1",
 });
 export type PtsResultsParser = typeof resultsParserSchema.infer;
 

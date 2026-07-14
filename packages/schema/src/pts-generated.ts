@@ -3,7 +3,7 @@
 // fresh generator run. Curation (headline/label/dimension) is layered separately in pts-overrides.ts.
 import type { MetricDef } from "./metrics.ts";
 
-export const ptsGenerated: MetricDef[] = [
+const chunk1: MetricDef[] = [
 	{
 		id: "c_ray_resolution_1080p_rays_per_pixel_16",
 		dimension: "cpu",
@@ -409,3 +409,5 @@ export const ptsGenerated: MetricDef[] = [
 		sourceUrl: "http://www.cs.virginia.edu/stream/",
 	},
 ];
+
+export const ptsGenerated: MetricDef[] = [...chunk1];

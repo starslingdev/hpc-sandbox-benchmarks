@@ -131,7 +131,7 @@ Hard requirements (so it slots in without touching the guard at catalog.ts:38-44
 - Every entry satisfies all 7 required fields (`.assert` fail-fast on shape).
 - For PTS entries: `pts.test` = **`"<repo>/" + versionless(dir)`** — the prefix mirrors the profile's source segment (`pts/` upstream, `local/` repo-local), **not** hardcoded `pts/` (asserted, §3.2); `pts.description` = exact synthesized `<Description>` (≤1 wildcard per test).
 - **Unique `id` across the merged catalog** or the import-time `byId.size !== length` guard throws — the generator owns id uniqueness (the schema does not).
-- `direction` mirrors `Proportion`; `unit` mirrors `ResultScale`.
+- `direction` mirrors `Proportion` and `unit` mirrors `ResultScale` — unless a `<ResultsParser>` declares its own `<ResultProportion>`/`<ResultScale>` (fio does), which then wins for the metrics that parser produces.
 
 `pts-generated.ts` is **committed**, not generated at build time — keeps the hermetic build trivial and the catalog diff reviewable.
 
@@ -273,7 +273,7 @@ selected `<Entry>/<Value>` as `$1` and must pipe its own stdout/stderr to `$LOG_
 
 **One trap this pattern must avoid:** PTS truncates a Menu `<Entry>/<Name>` at its first `(`
 character when building the runtime `<Description>` — dropping the parenthetical *and everything
-after it* — but the offline description predictor (`synthesizeDescriptions`, §3.3) has no way to
+after it* — but the offline description predictor (`synthesizeResults`, §3.3) has no way to
 know this and predicts the literal Name. A parenthesized Entry Name (`"Lint (Biome)"`) therefore
 byte-mismatches at runtime (`"Task: Lint"` vs. the predicted `"Task: Lint (Biome)"`), routing that
 task to `uncatalogued` in production despite the golden gate (§3.7) looking clean against a

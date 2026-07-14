@@ -24,14 +24,34 @@ function serializeDef(def: MetricDef): string {
 		const pts = [`test: ${JSON.stringify(def.pts.test)}`];
 		if (def.pts.description !== undefined)
 			pts.push(`description: ${JSON.stringify(def.pts.description)}`);
+		if (def.pts.scale !== undefined) pts.push(`scale: ${JSON.stringify(def.pts.scale)}`);
 		parts.push(`pts: { ${pts.join(", ")} }`);
 	}
 	if (def.sourceUrl !== undefined) parts.push(`sourceUrl: ${JSON.stringify(def.sourceUrl)}`);
 	return `{ ${parts.join(", ")} }`;
 }
 
+/**
+ * Entries per emitted `const chunkN: MetricDef[]` literal. One flat literal stopped compiling once
+ * the catalog crossed ~1000 entries — TypeScript computes the array expression's fresh literal type
+ * before assignability and hits its union-complexity ceiling (TS2590). Fixed-size chunks keep each
+ * literal comfortably below it (a ~1000-entry literal still compiled), and the exported spread
+ * concatenation preserves the stable id order byte-reproducibly.
+ */
+const CHUNK_SIZE = 250;
+
 /** The full `pts-generated.ts` source for a draft catalog (pre-Biome; the script formats it). */
 export function serializeCatalog(defs: readonly MetricDef[]): string {
-	const body = defs.map((def) => `\t${serializeDef(def)},`).join("\n");
-	return `${HEADER}\nimport type { MetricDef } from "./metrics.ts";\n\nexport const ptsGenerated: MetricDef[] = [\n${body}\n];\n`;
+	const chunks: string[] = [];
+	for (let start = 0; start < defs.length; start += CHUNK_SIZE) {
+		const body = defs
+			.slice(start, start + CHUNK_SIZE)
+			.map((def) => `\t${serializeDef(def)},`)
+			.join("\n");
+		chunks.push(`const chunk${chunks.length + 1}: MetricDef[] = [\n${body}\n];`);
+	}
+	// An empty catalog still needs one (empty) chunk so the export below has something to spread.
+	if (chunks.length === 0) chunks.push("const chunk1: MetricDef[] = [];");
+	const spreads = chunks.map((_, i) => `...chunk${i + 1}`).join(", ");
+	return `${HEADER}\nimport type { MetricDef } from "./metrics.ts";\n\n${chunks.join("\n\n")}\n\nexport const ptsGenerated: MetricDef[] = [${spreads}];\n`;
 }
