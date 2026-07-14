@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { METRIC_CATALOG, paddedSuiteToken, padSuiteList, SUITE_NAMES, SUITES } from "./index.ts";
+// Not part of the public surface (curation is an implementation detail of the catalog merge); this
+// PR's pinned-subset test reaches in directly to compare its suite's declarations against curated keys.
+import { ptsOverrides } from "./pts-overrides.ts";
 
 describe("suite registry", () => {
 	it("registers cpu-node as a PTS- and Node-backed suite", () => {
@@ -67,6 +70,23 @@ describe("suite registry", () => {
 			expect(fromCatalog.length).toBeGreaterThan(0);
 			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics];
 			expect(declared.sort()).toEqual(fromCatalog);
+		}
+	});
+
+	it("pins the fio PINNED-subset suite to its curated override keys", () => {
+		// disk (fio) deliberately declares a SUBSET of its profile's catalogued
+		// combinations — the ones the producer tasks pin via PRESET_OPTIONS — so a catalog mirror
+		// can't gate them. Every declared subset id is also a curated pts-overrides key (only the
+		// producible combinations get short labels), so equality against the override keys catches a
+		// wrong-axis id here: with the full matrix catalogued, a typo'd engine or block size would
+		// otherwise pass the suite contract and just never receive samples.
+		const overrideKeys = Object.keys(ptsOverrides);
+		const subsets = [{ suite: "disk", prefix: "fio_" }] as const;
+		for (const { suite, prefix } of subsets) {
+			const declared: string[] = SUITES[suite].metrics.filter((id) => id.startsWith(prefix)).sort();
+			const curated = overrideKeys.filter((id) => id.startsWith(prefix)).sort();
+			expect(declared.length).toBeGreaterThan(0);
+			expect(declared).toEqual(curated);
 		}
 	});
 

@@ -416,6 +416,53 @@ run_pts_benchmark() {
 	return 0
 }
 
+# Whether the filesystem PTS's fio writes its test files to supports O_DIRECT: echoes the fio
+# profile's Direct option NAME ("Yes"/"No"). Probed with dd against the PTS data dir (the same
+# filesystem installed-tests/.../fiofile lands on) because sandbox filesystems differ here — overlay
+# and gVisor gofer mounts can reject O_DIRECT outright, and a hard fio failure would void the whole
+# scenario. The chosen mode is part of the fio option matrix, so it travels in the metric identity
+# (each scenario has an O_DIRECT and a buffered catalog variant) instead of being silently mixed.
+fio_direct_choice() {
+	local dir probe cache choice
+	# Without PTS the answer is irrelevant (the leaf's availability guard skips before running fio) —
+	# return without probing OR caching, so a dep-less dry run can't persist a verdict probed against
+	# the wrong filesystem for a later, properly-provisioned run to reuse.
+	if ! command -v phoronix-test-suite >/dev/null 2>&1; then
+		echo "No"
+		return 0
+	fi
+	# Each mise leaf is a fresh process, so cache the answer for the suite run — the filesystem's
+	# O_DIRECT support cannot change between the four scenarios, and each probe otherwise pays a
+	# pts_init (a multi-second PTS PHP invocation) per leaf. Cached under /tmp (per-sandbox,
+	# ephemeral), NOT results_dir: the harness tars results_dir back verbatim into the curated raw
+	# tree, and a bash-internal dotfile must not ship as a dataset artifact.
+	cache="${TMPDIR:-/tmp}/.bench-fio-direct-choice"
+	if [ -f "$cache" ]; then
+		cat "$cache"
+		return 0
+	fi
+	# pts_init BEFORE pts_user_dir (the install_local_pts_profile precedent): this probe is the fio
+	# leaf's first PTS-dir touch, and on a stock image with no core.pt2so yet the detector would
+	# cache the $HOME fallback for the whole shell — batch-run then writes results under
+	# /var/lib/phoronix-test-suite while run_pts_benchmark's composite finder searches the stale
+	# cached dir and records a bogus "produced no composite.xml" skip for every scenario.
+	pts_init
+	dir="$(pts_user_dir)"
+	mkdir -p "$dir"
+	probe="${dir}/.o-direct-probe"
+	# bs=4096, not 512: O_DIRECT requires logical-sector alignment, so a 512-byte write EINVALs on a
+	# 4Kn-sector filesystem even where the real scenarios' 4KB/1MB blocks would run fine. 4096 is
+	# aligned on both 512e and 4Kn and matches the smallest fio scenario block size.
+	if dd if=/dev/zero of="$probe" bs=4096 count=1 oflag=direct >/dev/null 2>&1; then
+		choice="Yes"
+	else
+		choice="No"
+	fi
+	rm -f "$probe"
+	echo "$choice" >"$cache"
+	echo "$choice"
+}
+
 # Run ONE PTS test with a fully-pinned option combination. PRESET_OPTIONS pins every axis so
 # batch-run executes exactly one combination instead of the profile's whole matrix. Owns the
 # phoronix-test-suite availability guard (like run_realworld_pts), so pinned leaves don't replicate it.
@@ -453,6 +500,28 @@ run_pinned_pts() {
 
 	run_pts_benchmark "$test_name" "$prefix"
 	unset PRESET_OPTIONS PTS_RUN_ALL_TEST_COMBINATIONS
+}
+
+# Run ONE pinned pts/fio scenario; Direct comes from fio_direct_choice above.
+#
+# Axis notes on top of run_pinned_pts's rules: "Job Count" is a numeric menu expanded from the
+# machine's core count at run time (cpu-threads: 1,2,…,N), so it must be pinned by INDEX 0 — the
+# first entry, name "1" on every machine ("cpu-threads=1" would select index 1 = "Job Count: 2").
+# "Disk Target" is also runtime-expanded (auto-disk-mount-points) but pins cleanly by name:
+# "Default Test Directory" always exists. These are the same pins the catalog generator synthesizes
+# descriptions for. Version-pinned (unlike the older versionless leaves): the catalog vendors
+# fio-2.1.0's exact option matrix and PRESET_OPTIONS addresses its axes by identifier, so a
+# versionless install resolving to a newer upstream fio would silently unmap every description. Keep
+# in lockstep with packages/schema/src/pts-profiles/fio-2.1.0 (and the golden fixture) when bumping.
+# Usage: run_fio_pts <type-name> <block-size-name> <results-prefix>   (e.g. "Sequential Read" 1MB pts_fio-seq-read)
+run_fio_pts() {
+	local type_name="$1" bs_name="$2" prefix="$3"
+	local direct
+	direct="$(fio_direct_choice)"
+	echo "fio scenario: Type=${type_name} Block Size=${bs_name} Direct=${direct} (O_DIRECT probe)"
+
+	run_pinned_pts "pts/fio-2.1.0" "$prefix" \
+		"fio.type=${type_name};fio.engine=Linux AIO;fio.direct=${direct};fio.size=${bs_name};fio.cpu-threads=0;fio.auto-disk-mount-points=Default Test Directory"
 }
 
 # Run one realworld suite end to end: gate on the toolchain, install the repo-local profile with

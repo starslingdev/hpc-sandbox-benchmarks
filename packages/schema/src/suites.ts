@@ -85,15 +85,39 @@ export const SUITES = {
 		metrics: ["stream_type_copy", "stream_type_scale", "stream_type_add", "stream_type_triad"],
 		commands: ["mise run benchmark:memory:all"],
 	},
-	// The disk dimension: hardlink throughput (stress-ng --link), a repo-local PTS profile installed
-	// into PTS by the producer task. Needs a little free disk for the link storm.
+	// The disk dimension: pts/fio across four pinned scenarios (seq read/write 1MB, rand read/write
+	// 4KB; Engine Linux AIO, Job Count 1, Default Test Directory) plus hardlink throughput (stress-ng
+	// --link, a repo-local PTS profile). Each fio scenario posts a bandwidth AND an IOPS result —
+	// scale-pinned twin metrics. Direct is probed per sandbox (O_DIRECT fails on some sandbox
+	// filesystems), so every scenario declares an O_DIRECT and a buffered variant; each provider emits
+	// exactly one of the two and the mode travels in the metric identity (the contract allows declared-
+	// but-unrun combinations). Budgets cover the fio build + 4 timed 60s scenarios; fio writes 1 GiB
+	// test files, hence the raised disk floor.
 	disk: {
 		setupPts: true,
-		commandTimeoutMinutes: 30,
-		timeoutMinutes: 40,
-		minDiskGb: 2,
+		commandTimeoutMinutes: 60,
+		timeoutMinutes: 70,
+		minDiskGb: 4,
 		dimensions: ["disk"],
-		metrics: ["hardlink_bogo_ops_per_s"],
+		metrics: [
+			"hardlink_bogo_ops_per_s",
+			"fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+			"fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+		],
 		commands: ["mise run benchmark:disk:all"],
 	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,

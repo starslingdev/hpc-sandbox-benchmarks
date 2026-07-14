@@ -8,7 +8,7 @@
 import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isPtsResultFile, ptsOverrides } from "@sandbox-benchmarks/schema";
+import { isPtsResultFile, ptsOverrides, SUITES } from "@sandbox-benchmarks/schema";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 
 const FIXTURES_DIR = join(import.meta.dir, "__fixtures__");
@@ -112,4 +112,28 @@ describe("golden composite byte-match (design §3.7)", () => {
 			}
 		});
 	}
+});
+
+describe("recorded fio fixtures pin the DECLARED disk-suite subset", () => {
+	// With fio's full 960-combination matrix catalogued, "resolves to a catalogued Metric" cannot
+	// falsify the combination SELECTION: a fixture re-recorded under drifted presets (a different
+	// engine or block size) — or a preset drift in run_fio_pts's PRESET_OPTIONS — would still resolve
+	// against some catalogued draft entry and stay green while the 16 declared metrics (disk headline
+	// included) silently never receive samples. The fixtures were recorded through the real producer
+	// path, so requiring every resolved fio id to be a DECLARED SUITES.disk metric transitively pins
+	// the bash presets, the curated ids, and the scale routing in one place.
+	it("every fio fixture <Result> resolves to a metric the disk suite declares", () => {
+		const declared = new Set<string>(SUITES.disk.metrics.filter((id) => id.startsWith("fio_")));
+		expect(declared.size).toBeGreaterThan(0);
+		const fioComposites = composites.filter(([name]) => name.includes("fio"));
+		expect(fioComposites.length).toBeGreaterThan(0);
+		const offenders = fioComposites.flatMap(([name, xml]) =>
+			parsePtsComposite(xml).PhoronixTestSuite.Result.flatMap((result) => {
+				const mapping = ptsResultToMetric(result);
+				if (mapping.kind !== "matched") return [`${name}: uncatalogued "${result.Description}"`];
+				return declared.has(mapping.def.id) ? [] : [`${name}: undeclared ${mapping.def.id}`];
+			}),
+		);
+		expect(offenders).toEqual([]);
+	});
 });

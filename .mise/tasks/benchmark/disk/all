@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Run disk benchmarks (PTS hardlink throughput)"
+#MISE description="Run disk benchmarks (PTS fio scenarios + hardlink throughput)"
 # Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
 # (error-mode conventions: lib/bench.sh).
 set -uo pipefail
@@ -12,6 +12,13 @@ echo "========================================"
 
 ensure_pts || true
 
+# The four Bench-Global-shaped fio scenarios (sequential 1MB + random 4KB, read + write) first, then
+# the hardlink metadata storm — streaming bandwidth/IOPS and create/link throughput are different
+# failure modes and a slow one must not shadow the other.
+run_task benchmark:disk:pts:fio-seq-read
+run_task benchmark:disk:pts:fio-seq-write
+run_task benchmark:disk:pts:fio-rand-read
+run_task benchmark:disk:pts:fio-rand-write
 run_task benchmark:disk:pts:hardlink
 
 summary
