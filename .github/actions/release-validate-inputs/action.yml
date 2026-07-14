@@ -1,8 +1,9 @@
 name: Validate release inputs
 description: >-
-  The credential-free fail-fast gate: validate the toolchain pins and the dispatch inputs BEFORE any
-  registry or provider credential is introduced. Runs after setup-toolchain (needs Bun + deps) but
-  before ghcr-login, so a bad pin or a malformed input fails the release without ever touching creds.
+  The credential-free fail-fast gate (release-validate.ts): validate the toolchain pins and the dispatch
+  inputs BEFORE any registry/provider credential is introduced, reporting failures as @actions/core
+  annotations (a pin failure is annotated ON the pins source file). Runs after setup-toolchain (needs
+  Bun + deps) but before ghcr-login, so a bad pin or a malformed input fails the release without creds.
 
 inputs:
   force-republish:
@@ -12,26 +13,9 @@ inputs:
 runs:
   using: composite
   steps:
-    # `bun pins.ts` re-runs the arktype pin gatekeeper (hex sha256s, non-empty versions) and exits
-    # non-zero on any unfilled/invalid pin — the same gate build.sh uses, run here first so the release
-    # fails on a bad pin before it spends a build. Output discarded; we only want the exit code.
-    - name: Validate toolchain pins
+    - name: Validate pins and dispatch inputs
       shell: bash
-      run: bun packages/templates/src/pins.ts > /dev/null
-
-    # A dispatch input reaches the release as an env var (never interpolated into a command); still,
-    # reject anything but the two booleans so a hand-typed dispatch value can't slip through as a
-    # surprise "truthy" string downstream.
-    - name: Validate dispatch inputs
-      shell: bash
+      # Input reaches the script as env (a composite `run` step gets no INPUT_* vars).
       env:
         FORCE_REPUBLISH: ${{ inputs.force-republish }}
-      run: |
-        set -euo pipefail
-        case "${FORCE_REPUBLISH}" in
-          true|false|"") ;;
-          *)
-            echo "::error::force_republish must be true or false (got '${FORCE_REPUBLISH}')."
-            exit 1
-            ;;
-        esac
+      run: bun apps/cli/src/bin/release-validate.ts

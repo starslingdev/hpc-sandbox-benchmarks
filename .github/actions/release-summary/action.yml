@@ -1,16 +1,17 @@
 name: Release summary
 description: >-
-  Append a consistent, machine-checkable phase table to $GITHUB_STEP_SUMMARY. Every release job calls
-  this with the same field vocabulary (mode, image, base, provider target, size tier, verify command,
-  published pointer, diagnostics, elapsed) so an operator reads one shape across build/bake/promote and
-  can grep the summaries. Rows with an empty value are omitted, so each phase shows only its own facts.
+  Append a consistent, machine-checkable phase table to the job summary and surface the phase result as
+  a run annotation, via @actions/core (release-summary.ts). Every release job calls this with the same
+  field vocabulary (mode, image, base, provider target, size tier, verify command, published pointer,
+  diagnostics, elapsed) so an operator reads one shape across build/bake/promote. Rows with an empty
+  value are omitted, so each phase shows only its own facts.
 
 inputs:
   phase:
     description: 'Phase label, e.g. "e2b/bake" or "publish".'
     required: true
   status:
-    description: Phase status (ok / failed / skipped).
+    description: Phase status (ok / failed / skipped / success / failure).
     default: ""
   mode:
     description: Release mode (build / republish).
@@ -37,7 +38,7 @@ inputs:
     description: The published pointer (tag / snapshot / template) this phase advanced.
     default: ""
   diagnostics:
-    description: A link (or name) of the uploaded diagnostics artifact for this phase.
+    description: The name of the uploaded diagnostics artifact for this phase.
     default: ""
   elapsed:
     description: Elapsed wall time for the phase.
@@ -48,6 +49,8 @@ runs:
   steps:
     - name: Append phase summary
       shell: bash
+      # Inputs reach the script as env (a composite `run` step gets no INPUT_* vars); the script owns the
+      # core.summary table + run annotation. RUN_URL links the diagnostics artifact to this run.
       env:
         PHASE: ${{ inputs.phase }}
         STATUS: ${{ inputs.status }}
@@ -61,39 +64,5 @@ runs:
         PUBLISHED: ${{ inputs.published }}
         DIAGNOSTICS: ${{ inputs.diagnostics }}
         ELAPSED: ${{ inputs.elapsed }}
-      run: |
-        set -euo pipefail
-        {
-          echo "### Image release: ${PHASE}"
-          echo ""
-          echo "| Field | Value |"
-          echo "| --- | --- |"
-          # Emit a row only when its value is non-empty. `code` wraps the value in backticks (refs,
-          # commands, pointers); `plain` leaves prose (status, mode) unquoted. A literal '|' in a value
-          # is escaped so it can't break the table.
-          row() { # $1=label $2=value $3=code|plain
-            local label="$1" value="$2" kind="${3:-plain}"
-            [ -n "${value}" ] || return 0
-            # Escape pipes and collapse CR/LF so a value with either can't break the table layout.
-            value="${value//|/\\|}"
-            value="${value//$'\r'/ }"
-            value="${value//$'\n'/ }"
-            if [ "${kind}" = "code" ]; then
-              echo "| ${label} | \`${value}\` |"
-            else
-              echo "| ${label} | ${value} |"
-            fi
-          }
-          row "Status"          "${STATUS}"          plain
-          row "Mode"            "${MODE}"            code
-          row "Source ref"      "${SOURCE_REF}"      code
-          row "Image"           "${IMAGE}"           code
-          row "Base image"      "${BASE_IMAGE}"      code
-          row "Provider target" "${PROVIDER_TARGET}" code
-          row "Size tier"       "${SIZE_TIER}"       plain
-          row "Verify command"  "${VERIFY}"          code
-          row "Published"       "${PUBLISHED}"       code
-          row "Elapsed"         "${ELAPSED}"         plain
-          row "Diagnostics"     "${DIAGNOSTICS}"     plain
-          echo ""
-        } >> "${GITHUB_STEP_SUMMARY}"
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bun apps/cli/src/bin/release-summary.ts

@@ -1,10 +1,11 @@
 name: Ensure GHCR package is public
 description: >-
-  Fail fast if the candidate base package is not public. e2b builds its template on E2B's REMOTE
-  builder (FROM the ghcr candidate base) and daytona/modal/novita pull it to snapshot/boot — none are
-  handed ghcr pull credentials, so the candidate package MUST be public. GHCR packages are created
-  PRIVATE on first push with no API to flip visibility, so making it public is a one-time manual
-  bootstrap; this guard surfaces that plainly instead of an opaque provider "unauthorized" pull error.
+  Fail fast (with @actions/core annotations, via release-ensure-public.ts) if the candidate base package
+  is not public. e2b builds its template on E2B's REMOTE builder (FROM the ghcr candidate base) and
+  daytona/modal/novita pull it to snapshot/boot — none are handed ghcr pull credentials, so the candidate
+  package MUST be public. GHCR packages are created PRIVATE on first push with no API to flip visibility,
+  so making it public is a one-time manual bootstrap; this guard surfaces that plainly instead of an
+  opaque provider "unauthorized" pull error.
 
 inputs:
   owner:
@@ -22,41 +23,10 @@ runs:
   steps:
     - name: Ensure candidate package is public
       shell: bash
+      # Inputs reach the script as env (a composite `run` step gets no INPUT_* vars). The script does a
+      # real fetch + JSON parse and reports via core.setFailed/warning so the outcome is a run annotation.
       env:
-        IMAGE_OWNER: ${{ inputs.owner }}
-        IMAGE_NAME: ${{ inputs.package }}
+        OWNER: ${{ inputs.owner }}
+        PACKAGE: ${{ inputs.package }}
         GH_TOKEN: ${{ inputs.token }}
-      run: |
-        set -euo pipefail
-        # Capture the HTTP status separately so a real "absent" (404) is distinguished from auth/scope
-        # failures (403 SSO/token gap) and transport errors — `curl -f ... || echo '{}'` would collapse
-        # all of them into the same empty fallback and let the release proceed on a false "not found".
-        # A unique mktemp file (not a hardcoded /tmp path) avoids collisions/symlink races on the
-        # shared self-hosted runner; an `if !` block keeps `set -e` active around the curl (a `|| { }`
-        # group would suspend it).
-        api="https://api.github.com/orgs/${IMAGE_OWNER}/packages/container/${IMAGE_NAME}"
-        pkg_json="$(mktemp)"
-        if ! code="$(curl -sS -m 30 -o "${pkg_json}" -w '%{http_code}' \
-          -H "Authorization: Bearer ${GH_TOKEN}" \
-          -H "Accept: application/vnd.github+json" \
-          "${api}")"; then
-          echo "::error::Could not reach the GHCR package API (network/transport error) — refusing to publish blind."
-          exit 1
-        fi
-        case "${code}" in
-          200)
-            if grep -qE '"visibility"[[:space:]]*:[[:space:]]*"public"' "${pkg_json}"; then
-              echo "GHCR package ${IMAGE_OWNER}/${IMAGE_NAME} is public — providers can pull the candidate."
-            else
-              echo "::error::GHCR package ${IMAGE_OWNER}/${IMAGE_NAME} is not public. e2b/daytona/modal/novita pull the candidate base anonymously, so set it Public once (org package settings or link it to this repo), then re-run."
-              exit 1
-            fi
-            ;;
-          404)
-            echo "::warning::GHCR package ${IMAGE_OWNER}/${IMAGE_NAME} not found yet — the build below creates it PRIVATE. After this run, set it Public once so the candidate validate and the providers can pull it; this run's bake will fail until then."
-            ;;
-          *)
-            echo "::error::GHCR package API returned HTTP ${code} (expected 200 or 404) — likely a token-scope gap or org SSO enforcement, not a missing package. Resolve and re-run instead of publishing blind."
-            exit 1
-            ;;
-        esac
+      run: bun apps/cli/src/bin/release-ensure-public.ts
