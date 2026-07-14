@@ -10,4 +10,4 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 	exit 0
 fi
 
-run_pts_benchmark "pts/node-web-tooling" "pts_node-web-tooling"
+run_pts_benchmark "pts/node-web-tooling-1.0.1" "pts_node-web-tooling"

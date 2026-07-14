@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="PTS: PostgreSQL pgbench TPS + latency (scale 100, 50 clients, read-only + read-write)"
+# Measurement leaf: -e guards the scaffolding; the measured runs are isolated by run_pts_benchmark
+# (via run_pinned_pts, which owns the PTS availability guard — one skip marker per prefix — and pins
+# each mode's option combination through PRESET_OPTIONS).
+#
+# Fully in-sandbox: the profile builds postgres 17.0 (root-check patched) and runs server + pgbench
+# client locally, so every provider measures the same topology — unlike the services-container shape
+# runs-on Bench Global uses, which no sandbox can reproduce. One (Scaling Factor, Clients) point per
+# mode: scale 100 (~1.5 GB dataset — large enough to be a realistic working set, small enough not to
+# blow the 8 GiB target spec; note it FITS IN PAGE CACHE there, so read-only TPS measures memory/CPU
+# and the write path is what actually touches disk) and 50 clients (a standard concurrent load; the
+# profile pins -j to the core count).
+# Each mode posts a TPS and an Average Latency result (two catalogued metrics per mode).
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+# Version-pinned to the vendored profile (and its recorded fixture) so an upstream pgbench release
+# can't silently unmap the catalogued descriptions. "100"/"50" pin by NAME (they exceed the menus'
+# entry counts, so the numeric-index trap in run_pinned_pts's contract doesn't bite).
+run_pinned_pts "pts/pgbench-1.15.0" "pts_pgbench-read-only" \
+	"pgbench.scaling-factor=100;pgbench.clients=50;pgbench.run-mode=Read Only"
+run_pinned_pts "pts/pgbench-1.15.0" "pts_pgbench-read-write" \
+	"pgbench.scaling-factor=100;pgbench.clients=50;pgbench.run-mode=Read Write"

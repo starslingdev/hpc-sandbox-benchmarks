@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { METRIC_CATALOG, paddedSuiteToken, padSuiteList, SUITE_NAMES, SUITES } from "./index.ts";
+// Not part of the public surface (curation is an implementation detail of the catalog merge); this
+// PR's pinned-subset test reaches in directly to compare its suite's declarations against curated keys.
+import { ptsOverrides } from "./pts-overrides.ts";
 
 describe("suite registry", () => {
 	it("registers cpu-node as a PTS- and Node-backed suite", () => {
@@ -54,6 +57,11 @@ describe("suite registry", () => {
 		// list). stream's Type axis is the real matrix case; pybench and sqlite-speedtest declare no
 		// <Option> axes at all, so the pin holds over their single wildcard result. The suites that
 		// arrive later (network, cpu-generic) add themselves here.
+		// `system` is MIXED: pybench + sqlite-speedtest are unpinned wildcards (mirrored here), while
+		// pgbench is preset-pinned and declares a 4-of-160 subset — pinned to its curated override keys
+		// by the subset test below. Subtracting the pinned prefix keeps this a both-directions mirror
+		// over the unpinned half instead of dropping the suite from the gate entirely.
+		const PINNED_PREFIXES = ["pgbench_"];
 		const profilesOf = {
 			memory: ["pts/stream"],
 			system: ["pts/pybench", "pts/sqlite-speedtest"],
@@ -65,9 +73,26 @@ describe("suite registry", () => {
 				.map((m) => m.id)
 				.sort();
 			expect(fromCatalog.length).toBeGreaterThan(0);
-			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics];
+			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics].filter(
+				(id) => !PINNED_PREFIXES.some((prefix) => id.startsWith(prefix)),
+			);
 			expect(declared.sort()).toEqual(fromCatalog);
 		}
+	});
+
+	it("pins the pgbench PINNED-subset suite to its curated override keys", () => {
+		// system (pgbench) deliberately declares a SUBSET of its profile's catalogued combinations — the
+		// one (scale, clients) point per mode the producer pins via PRESET_OPTIONS — so a catalog mirror
+		// can't gate it. Every declared subset id is also a curated pts-overrides key, so equality against
+		// the override keys catches a wrong-axis id: with all 160 combinations catalogued, a typo'd scale
+		// would otherwise pass the suite contract and just never receive samples.
+		const overrideKeys = Object.keys(ptsOverrides);
+		const declared: string[] = [...SUITES.system.metrics]
+			.filter((id) => id.startsWith("pgbench_"))
+			.sort();
+		const curated = overrideKeys.filter((id) => id.startsWith("pgbench_")).sort();
+		expect(declared.length).toBeGreaterThan(0);
+		expect(declared).toEqual(curated);
 	});
 
 	it("keeps command timeouts within the requested sandbox lifetime", () => {
