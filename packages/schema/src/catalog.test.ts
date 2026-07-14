@@ -41,10 +41,15 @@ describe("metric catalog", () => {
 		}
 	});
 
-	it("has at most one headline metric per dimension", () => {
+	it("gives every dimension EXACTLY one headline metric", () => {
+		// Both directions matter and neither is checked at load: the catalog's load check rejects a
+		// SECOND headline but never a MISSING one, and headlineMetric reads the METRIC_CATALOG singleton
+		// (it takes no catalog parameter), so its no-headline throw is unreachable from a crafted
+		// catalog. This test IS the zero-headline guard — dropping `headline: true` from any dimension's
+		// metric turns it red here rather than at runtime inside headlineMetric().
 		for (const dimension of DIMENSIONS) {
 			const headlines = metricsForDimension(dimension).filter((metric) => metric.headline);
-			expect(headlines.length).toBeLessThanOrEqual(1);
+			expect(headlines.length).toBe(1);
 		}
 	});
 
@@ -110,6 +115,23 @@ describe("metric catalog", () => {
 		expect(metric?.pts).toEqual({ test: "local/hardlink" });
 	});
 
+	it("returns undefined for an unknown metric id", () => {
+		expect(getMetric("not_a_metric")).toBeUndefined();
+	});
+
+	it("resolves the Loopback TCP headline for the network dimension (last unpopulated axis)", () => {
+		// network was the one dimension still without metrics; network-loopback populates it. With that,
+		// every Dimension is populated + headlined, so headlineMetric's no-headline throw is no longer
+		// reachable through the real catalog — the "exactly one headline per dimension" test above keeps
+		// it that way. NOT the load check, which only ever rejects a SECOND headline.
+		const metric = headlineMetric("network");
+		expect(metric.id).toBe("network_loopback_seconds");
+		expect(metric.label).toBe("Loopback TCP (10GB)");
+		expect(metric.direction).toBe("LIB");
+		// Single-result wildcard: no pts.description (so the byte-match gate needs no recorded composite).
+		expect(metric.pts).toEqual({ test: "pts/network-loopback" });
+	});
+
 	it("resolves fio's scale-pinned twin metrics for one description (disk dimension)", () => {
 		const mbps = getMetric(
 			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
@@ -135,16 +157,6 @@ describe("metric catalog", () => {
 		// silently drops the twins for some engines would stay green everywhere. This pins the arithmetic.
 		const fio = METRIC_CATALOG.filter((metric) => metric.pts?.test === "pts/fio");
 		expect(fio.length).toBe(960);
-	});
-
-	it("returns undefined for an unknown metric id", () => {
-		expect(getMetric("not_a_metric")).toBeUndefined();
-	});
-
-	it("throws when a dimension has no headline metric", () => {
-		// `network` is the dimension still without any metrics (economics and realworld are now
-		// populated + headlined too).
-		expect(() => headlineMetric("network")).toThrow();
 	});
 });
 

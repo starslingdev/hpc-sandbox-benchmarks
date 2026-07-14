@@ -23,8 +23,6 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// rounds it out. Both single-result wildcards, so curation only supplies labels + the one headline.
 	pybench_milliseconds: { headline: true, label: "PyBench" },
 	sqlite_speedtest_seconds: { label: "SQLite Speedtest" },
-	// Memory dimension: STREAM Triad is the canonical headline (the fused multiply-add is the most
-	// representative memory-bandwidth figure); the other three operations round out the matrix.
 	stream_type_triad: { headline: true, label: "STREAM Triad" },
 	stream_type_copy: { label: "STREAM Copy" },
 	stream_type_scale: { label: "STREAM Scale" },
@@ -77,6 +75,11 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 		{ label: "fio rand write 4KB, buffered (IOPS)" },
 	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio rand write 4KB, buffered (MB/s)" },
+
+	// Network dimension: loopback TCP is its first (and headline) metric — a self-contained synthetic
+	// with no external endpoint, so it isolates the sandbox's network stack (virtio vs gVisor netstack
+	// vs host namespaces) from internet weather.
+	network_loopback_seconds: { headline: true, label: "Loopback TCP (10GB)" },
 
 	// Realworld dimension (ENG-135/137): mastra-ai/mastra run through its own CI tasks, a repo-local
 	// PTS profile with a Task option axis. TestType System's default dimension is corrected to
