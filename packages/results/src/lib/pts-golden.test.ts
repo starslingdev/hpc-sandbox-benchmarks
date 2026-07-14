@@ -8,7 +8,7 @@
 import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isPtsResultFile } from "@sandbox-benchmarks/schema";
+import { isPtsResultFile, ptsOverrides } from "@sandbox-benchmarks/schema";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 
 const FIXTURES_DIR = join(import.meta.dir, "__fixtures__");
@@ -50,10 +50,15 @@ function discoverComposites(): [string, string][] {
 const composites = discoverComposites();
 
 /**
- * Tasks deliberately removed from a profile AFTER its composite was recorded. Recorded fixtures are
- * never hand-edited (they prove the byte-match against real PTS output), so a dropped task's
- * `<Result>` now legitimately routes to `uncatalogued`. Every entry documents a deliberate drop;
- * anything not listed here must still resolve.
+ * Tasks deliberately removed from a profile AFTER its composite was recorded. Recorded fixtures'
+ * `<Result>` nodes are never hand-edited (they prove the byte-match against real PTS output), so a
+ * dropped task's `<Result>` now legitimately routes to `uncatalogued`. Every entry documents a
+ * deliberate drop; anything not listed here must still resolve.
+ *
+ * The ONE sanctioned post-recording edit is redacting the whole `<System>` block — the recording
+ * host's fingerprint, never result data — and only with a provenance note in the fixture's header
+ * (the fio composites). No other edit is permitted: a fixture that needs different `<Result>` data
+ * gets re-recorded, not tidied.
  */
 const DROPPED_RESULTS = new Set([
 	// better-auth's `test` needs docker-compose DB services (postgres, mongodb) no provider sandbox
@@ -81,6 +86,30 @@ describe("golden composite byte-match (design §3.7)", () => {
 					: [];
 			});
 			expect(uncatalogued.filter((id) => !DROPPED_RESULTS.has(id))).toEqual([]);
+		});
+
+		it(`every matched <Result> in ${name} landed on the RIGHT metric (scale/description byte-match)`, () => {
+			// "kind === matched" alone is scale-blind: with scale-pinned twins (fio's MB/s + IOPS under
+			// one description), a routing bug that SWAPS the twins still reports matched for both and the
+			// disk headline would silently rank bandwidth numbers as IOPS. Assert the matched def's pins
+			// byte-equal the recorded result's fields, so twin misattribution turns this gate red.
+			for (const result of parsePtsComposite(xml).PhoronixTestSuite.Result) {
+				const mapping = ptsResultToMetric(result);
+				if (mapping.kind !== "matched") continue;
+				if (mapping.def.pts?.scale !== undefined) {
+					expect(result.Scale).toBe(mapping.def.pts.scale);
+				}
+				// With all 960 fio combinations catalogued, "matched" is cheap: a fixture recorded under
+				// drifted presets lands on an UNCURATED draft entry and stays green, quietly voiding the
+				// byte-match proof for the 16 combinations the producer tasks actually emit. Require the
+				// resolved fio id to carry a curation key.
+				if (mapping.def.pts?.test === "pts/fio") {
+					expect(Object.keys(ptsOverrides)).toContain(mapping.def.id);
+				}
+				if (mapping.def.pts?.description !== undefined) {
+					expect(result.Description).toBe(mapping.def.pts.description);
+				}
+			}
 		});
 	}
 });

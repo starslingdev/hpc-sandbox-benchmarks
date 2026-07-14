@@ -146,6 +146,51 @@ describe("ptsResultToMetric", () => {
 			scale: "Seconds",
 		});
 	});
+
+	it("routes a scale-pinned description by <Scale>, and strands an unknown scale", () => {
+		// fio's twin results share one description and differ only in <Scale> — the catalog pins each
+		// twin with pts.scale. An unknown scale (a parser/profile drift) must fall to uncatalogued, not
+		// to the nearest twin.
+		const description =
+			"Type: Random Read - Engine: Linux AIO - Direct: Yes - Block Size: 4KB - Job Count: 1 - Disk Target: Default Test Directory";
+		const fioResult = (scale: string) =>
+			parsePtsComposite(`<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Generated><TestClient>phoronix-test-suite/10.8.4</TestClient></Generated>
+  <Result>
+    <Identifier>pts/fio-2.1.0</Identifier>
+    <Title>Flexible IO Tester</Title>
+    <Description>${description}</Description>
+    <Scale>${scale}</Scale>
+    <Proportion>HIB</Proportion>
+    <Data><Entry><Value>91400</Value></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`).PhoronixTestSuite.Result[0];
+
+		const routedId = (scale: string): string => {
+			const result = fioResult(scale);
+			const mapped = result && ptsResultToMetric(result);
+			if (mapped?.kind !== "matched") throw new Error(`expected <Scale>${scale}</Scale> to match`);
+			return mapped.def.id;
+		};
+
+		// BOTH twins must land on their OWN entry. Asserting only the IOPS arm leaves the symmetric
+		// half — the one a twin SWAP actually breaks — unproven against the real catalog.
+		expect(routedId("IOPS")).toBe(
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+		);
+		expect(routedId("MB/s")).toBe(
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+		);
+
+		const unknownScale = fioResult("GB/s");
+		expect(unknownScale && ptsResultToMetric(unknownScale)).toEqual({
+			kind: "uncatalogued",
+			test: "pts/fio",
+			description,
+			scale: "GB/s",
+		});
+	});
 });
 
 // The scale-pinned arm has no coverage through the real catalog: no METRIC_CATALOG entry carries a

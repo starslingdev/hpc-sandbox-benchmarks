@@ -16,6 +16,8 @@ export * from "./harness-metrics.ts";
 export * from "./metrics.ts";
 // Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).
 export * from "./providers.ts";
+// The hand-authored curation layer over the generated PTS catalog (label/headline/dimension).
+export * from "./pts-overrides.ts";
 // The raw-file naming contract shared by the producers and the results extractor.
 export * from "./raw-files.ts";
 // The canonical Run dataset model (Run/ProviderRun/MetricResult/…) and its validators.
