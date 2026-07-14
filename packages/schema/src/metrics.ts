@@ -31,6 +31,28 @@ export const dimensionSchema = type.enumerated(...DIMENSIONS);
 export type Dimension = typeof dimensionSchema.infer;
 
 /**
+ * The PTS provenance pin on a catalogued Metric. `onUndeclaredKey("reject")` because arktype keeps
+ * undeclared keys by default: a typo'd pin (`scael: "MB/s"`) would otherwise validate, keep the junk
+ * key, and silently degrade the entry to UNPINNED — which the matcher then resolves by description
+ * alone, i.e. arbitrarily between a scale twin pair. A rejected key is a loud generator/authoring bug.
+ */
+const ptsSourceSchema = type({
+	test: "string >= 1",
+	"description?": "string >= 1",
+	"scale?": "string >= 1",
+}).onUndeclaredKey("reject");
+
+/**
+ * The PTS match key. The index build and lookup (results/pts.ts) and the catalog invariant
+ * (catalog.ts) must spell key equality IDENTICALLY — the invariant is only sound because it groups
+ * entries the same way the matcher indexes them, so a divergence would bless catalogs the matcher
+ * still collides on. One definition, three call sites.
+ */
+export function ptsKey(test: string, description?: string, scale?: string): string {
+	return JSON.stringify([test, description, scale]);
+}
+
+/**
  * One Metric's definition: its stable id, the Dimension it belongs to, unit, Direction, and whether
  * it headlines that Dimension on the leaderboard. PTS-derived Metrics also carry the `pts` provenance
  * the results normalizer uses to map a parsed `<Result>` onto the Catalog.
@@ -53,9 +75,12 @@ export const metricDefSchema = type({
 	description: "string >= 1",
 	// For Metrics parsed from a PTS `<Result>`: the versionless test profile (e.g.
 	// "pts/node-web-tooling") and — for multi-result tests — the exact `<Description>` this Metric maps
-	// to. Each PTS `<Result>` maps to exactly one Metric. Both non-empty when present (an empty
-	// `test`/`description` would never match a real `<Result>`).
-	"pts?": { test: "string >= 1", "description?": "string >= 1" },
+	// to. Each PTS `<Result>` maps to exactly one Metric. All non-empty when present (an empty
+	// `test`/`description`/`scale` would never match a real `<Result>`). `scale` exists for tests whose
+	// parsers emit MULTIPLE `<Result>`s under one `<Description>` differing only in `<Scale>` (fio: the
+	// same run reports bandwidth in MB/s and IOPS) — it pins this Metric to the exact runtime `<Scale>`
+	// so the two results can't collapse onto one Metric. Absent when the description alone is unique.
+	"pts?": ptsSourceSchema,
 	// Primary-source definition (upstream PTS profile, methodology doc, …).
 	"sourceUrl?": "string",
 	// Economics Metrics derived from other Metrics + pricing, never parsed.

@@ -65,7 +65,7 @@ describe("extractProviderDir", () => {
 		// DB services no sandbox provides); its measured <Result> now routes to `uncatalogued` -- the
 		// designed straggler path, pinned here so an ACCIDENTAL catalog miss can't hide behind it.
 		expect(extraction.uncatalogued.map((u) => u.id)).toEqual([
-			"local/realworld-better-auth::Task: Test",
+			"local/realworld-better-auth::Task: Test::Seconds",
 		]);
 		expect(extraction.contributions.map((c) => c.metricId).sort()).toEqual(
 			[

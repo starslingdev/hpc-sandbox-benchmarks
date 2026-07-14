@@ -142,6 +142,35 @@ describe("catalogSchema PTS-mapping invariant", () => {
 		).not.toThrow();
 	});
 
+	it("scopes the twin-description invariant PER TEST (same description, different tests)", () => {
+		// The invariant keys on (test, description), not description alone. Nothing else pins that
+		// scoping: every other twin case here uses one test, so re-keying the narrow by description
+		// only would still pass them — and would then reject this legal catalog, where two unrelated
+		// profiles happen to share a <Description> string.
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Task: X", scale: "MB/s" },
+				},
+				{ ...base, id: "b", pts: { test: "pts/other", description: "Task: X" } },
+			]),
+		).not.toThrow();
+	});
+
+	it("rejects an undeclared key inside the pts pin (a typo'd pin silently unpins the entry)", () => {
+		// arktype keeps undeclared keys by default, so `scael` would validate, survive, and degrade the
+		// entry to UNPINNED — which the matcher then resolves by description alone, i.e. arbitrarily
+		// between a twin pair. onUndeclaredKey("reject") makes it a loud generator/authoring bug.
+		expect(() =>
+			catalogSchema.assert([
+				{ ...base, id: "a", pts: { test: "pts/a", description: "Foo", scael: "MB/s" } },
+			]),
+		).toThrow();
+	});
+
 	it("rejects two description-less wildcards for the same test", () => {
 		expect(() =>
 			catalogSchema.assert([
@@ -158,6 +187,85 @@ describe("catalogSchema PTS-mapping invariant", () => {
 			catalogSchema.assert([
 				{ ...base, id: "a", pts: { test: "pts/a" } },
 				{ ...base, id: "b", pts: { test: "pts/a", description: "Foo" } },
+			]),
+		).toThrow();
+	});
+
+	it("accepts twin descriptions disambiguated by distinct pts.scale pins (fio)", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{
+					...base,
+					id: "b",
+					unit: "IOPS",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "IOPS" },
+				},
+			]),
+		).not.toThrow();
+	});
+
+	it("rejects twin descriptions when one lacks a pts.scale pin", () => {
+		// The description-only matcher arm would resolve a result to the unpinned twin arbitrarily.
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{ ...base, id: "b", pts: { test: "pts/fio", description: "Type: Random Read" } },
+			]),
+		).toThrow();
+	});
+
+	it("rejects twin descriptions carrying the SAME pts.scale pin", () => {
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+				{
+					...base,
+					id: "b",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "MB/s" },
+				},
+			]),
+		).toThrow();
+	});
+
+	it("rejects a pts.scale pin on a description-less wildcard", () => {
+		// The wildcard matcher arm never compares <Scale>, so the pin would be silently ignored and a
+		// fio-style test posting two description-less results (MB/s + IOPS) would collapse both onto
+		// this one metric — the exact cross-scale misattribution pinning exists to prevent.
+		expect(() =>
+			catalogSchema.assert([
+				{ ...base, id: "a", unit: "IOPS", pts: { test: "pts/fio", scale: "IOPS" } },
+			]),
+		).toThrow();
+	});
+
+	it("rejects a pinned entry whose unit differs from its pts.scale (crossed pins)", () => {
+		// unit and pts.scale both name the runtime <Scale> string; crossed values would rank one
+		// scale's samples under the other's unit label.
+		expect(() =>
+			catalogSchema.assert([
+				{
+					...base,
+					id: "a",
+					unit: "MB/s",
+					pts: { test: "pts/fio", description: "Type: Random Read", scale: "IOPS" },
+				},
 			]),
 		).toThrow();
 	});

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parsePtsComposite, ptsResultToMetric, resultSamples, versionlessTest } from "./pts.ts";
+import type { MetricDef } from "@sandbox-benchmarks/schema";
+import {
+	buildPtsIndex,
+	parsePtsComposite,
+	ptsResultToMetric,
+	resultSamples,
+	versionlessTest,
+} from "./pts.ts";
+import type { PtsResult } from "./pts-schema.ts";
 
 const realFixture = readFileSync(
 	join(import.meta.dir, "__fixtures__/daytona/pts_node-web-tooling.xml"),
@@ -135,7 +143,78 @@ describe("ptsResultToMetric", () => {
 			kind: "uncatalogued",
 			test: "pts/git",
 			description: "",
+			scale: "Seconds",
 		});
+	});
+});
+
+// The scale-pinned arm has no coverage through the real catalog: no METRIC_CATALOG entry carries a
+// `pts.scale` pin until fio is vendored two branches up, so the precedence order and — critically —
+// the BUILD/LOOKUP key-shape agreement would ship unexecuted. `buildPtsIndex` is the same seam
+// `catalogSchema` already offers: drive it with a crafted catalog rather than waiting for the pins.
+describe("buildPtsIndex scale-pinned routing", () => {
+	const base = {
+		dimension: "disk",
+		direction: "HIB",
+		headline: false,
+		label: "l",
+		description: "d",
+	} as const;
+	const catalog: MetricDef[] = [
+		{
+			...base,
+			id: "twin_mb_per_s",
+			unit: "MB/s",
+			pts: { test: "pts/fio", description: "4K", scale: "MB/s" },
+		},
+		{
+			...base,
+			id: "twin_iops",
+			unit: "IOPS",
+			pts: { test: "pts/fio", description: "4K", scale: "IOPS" },
+		},
+		{ ...base, id: "described", unit: "s", pts: { test: "pts/other", description: "Only" } },
+		{ ...base, id: "wild", unit: "s", pts: { test: "pts/wild" } },
+	];
+	const match = buildPtsIndex(catalog);
+	const result = (identifier: string, description: string, scale: string): PtsResult =>
+		({
+			Identifier: identifier,
+			Description: description,
+			Scale: scale,
+			Data: { Entry: [{ Value: 1 }] },
+		}) as PtsResult;
+
+	it("routes each scale twin to ITS OWN entry (a swap is what this catches)", () => {
+		const mb = match(result("pts/fio-2.1.0", "4K", "MB/s"));
+		const iops = match(result("pts/fio-2.1.0", "4K", "IOPS"));
+		if (mb.kind !== "matched" || iops.kind !== "matched") throw new Error("expected matches");
+		expect(mb.def.id).toBe("twin_mb_per_s");
+		expect(iops.def.id).toBe("twin_iops");
+	});
+
+	it("falls to uncatalogued (never the nearest twin) when <Scale> matches no pin", () => {
+		expect(match(result("pts/fio-2.1.0", "4K", "GB/s"))).toEqual({
+			kind: "uncatalogued",
+			test: "pts/fio",
+			description: "4K",
+			scale: "GB/s",
+		});
+	});
+
+	it("still matches an unpinned description, and the wildcard, on any scale", () => {
+		const described = match(result("pts/other-1.0.0", "Only", "anything"));
+		const wild = match(result("pts/wild-1.0.0", "whatever", "anything"));
+		if (described.kind !== "matched" || wild.kind !== "matched")
+			throw new Error("expected matches");
+		expect(described.def.id).toBe("described");
+		expect(wild.def.id).toBe("wild");
+	});
+
+	it("throws at build on a key collision (the catalogSchema invariants regressed)", () => {
+		expect(() => buildPtsIndex([catalog[0] as MetricDef, catalog[0] as MetricDef])).toThrow(
+			/collide on PTS match key/,
+		);
 	});
 });
 

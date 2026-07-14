@@ -87,7 +87,11 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 						break;
 					case "uncatalogued":
 						out.uncatalogued.push({
-							id: `${mapped.test}::${mapped.description || "default"}`,
+							// Scale is part of the id: scale-pinned twins (fio posts MB/s and IOPS under one
+							// description) share a test+description, so without it two stragglers whose
+							// `<Scale>` matched no pin collapse onto one id and the dedupe downstream
+							// (normalize-tree) silently drops the second measurement.
+							id: `${mapped.test}::${mapped.description || "default"}::${mapped.scale}`,
 							// Entry[0].Value is a guaranteed number — the schema parses it and we skipped the
 							// entry-less results above.
 							value: headEntry.Value,

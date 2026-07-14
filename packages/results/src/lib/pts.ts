@@ -7,7 +7,7 @@
 import { CompactBuilderFactory } from "@nodable/compact-builder";
 import XMLParser, { type X2jOptions } from "@nodable/flexible-xml-parser";
 import type { MetricDef } from "@sandbox-benchmarks/schema";
-import { METRIC_CATALOG } from "@sandbox-benchmarks/schema";
+import { METRIC_CATALOG, ptsKey } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import type { PtsComposite, PtsResult } from "./pts-schema.ts";
 import { ptsCompositeSchema } from "./pts-schema.ts";
@@ -60,37 +60,81 @@ export function resultSamples(result: PtsResult): number[] {
  */
 export type PtsMapping =
 	| { kind: "matched"; def: MetricDef; samples: number[] }
-	| { kind: "uncatalogued"; test: string; description: string };
+	| { kind: "uncatalogued"; test: string; description: string; scale: string };
 
-// Index the catalog by versionless test once at module load. `ptsResultToMetric` runs per `<Result>`
-// — the golden gate alone calls it across every result of every recorded composite — so a per-call
-// linear `METRIC_CATALOG.filter` is O(results × catalog); the prebuilt map makes each lookup O(1).
-// Insertion order follows catalog order, so the wildcard-vs-description preference below is unchanged.
-const catalogByTest = new Map<string, MetricDef[]>();
-for (const metric of METRIC_CATALOG) {
-	if (!metric.pts) continue;
-	const forTest = catalogByTest.get(metric.pts.test);
-	if (forTest) forTest.push(metric);
-	else catalogByTest.set(metric.pts.test, [metric]);
+/**
+ * Index a catalog by match precedence and return the per-`<Result>` matcher over it.
+ *
+ * A factory, not three module-scope maps: the singleton below is one instance, but the scale-pinned
+ * arm and the build/lookup key-shape agreement are otherwise unexercisable until real pins land in
+ * the generated catalog — the exact drift a routing bug would hide behind. Tests build crafted
+ * catalogs through the same seam `catalogSchema` already offers.
+ *
+ * Indexing once matters: the matcher runs per `<Result>` — the golden gate alone calls it across
+ * every result of every recorded composite — and a per-call linear scan is O(results × per-test
+ * entries), which stopped being hypothetical when fio put 960 entries under one test key. Three
+ * maps, one per precedence arm, make each lookup O(1). The catalogSchema invariants (catalog.ts)
+ * make a key collision unconstructable; a collision here means those invariants regressed, so it
+ * throws at build — matching every other catalog-integrity breach (duplicate ids, duplicate
+ * headlines) — rather than silently letting first-wins route every result for the shadowed metric
+ * onto the wrong entry.
+ */
+export function buildPtsIndex(catalog: readonly MetricDef[]): (result: PtsResult) => PtsMapping {
+	const byTestDescriptionScale = new Map<string, MetricDef>();
+	const byTestDescription = new Map<string, MetricDef>();
+	const byTestWildcard = new Map<string, MetricDef>();
+	const indexInto = (map: Map<string, MetricDef>, key: string, metric: MetricDef): void => {
+		const existing = map.get(key);
+		if (existing) {
+			throw new Error(
+				`catalog integrity: "${metric.id}" and "${existing.id}" collide on PTS match key ${key} — the catalogSchema invariants should have rejected this at load`,
+			);
+		}
+		map.set(key, metric);
+	};
+	for (const metric of catalog) {
+		if (!metric.pts) continue;
+		const { test, description, scale } = metric.pts;
+		if (description === undefined) {
+			indexInto(byTestWildcard, ptsKey(test), metric);
+		} else if (scale !== undefined) {
+			indexInto(byTestDescriptionScale, ptsKey(test, description, scale), metric);
+		} else {
+			indexInto(byTestDescription, ptsKey(test, description), metric);
+		}
+	}
+
+	return (result: PtsResult): PtsMapping => {
+		const test = versionlessTest(result.Identifier);
+		const description = result.Description ?? "";
+		// Prefer an exact `<Description>` match over the wildcard (description-less) entry, so a
+		// multi-result test's catalog ordering can't make the wildcard greedily shadow a specific
+		// metric. The catalog invariant (`catalogSchema` .narrow, catalog.ts) guarantees a wildcard
+		// never coexists with description-bearing entries for the same test, so the fallback can't
+		// misattribute a non-matching `<Description>`: if a wildcard matched, it is that test's only
+		// entry.
+		//
+		// Scale-pinned entries (fio: one run posts bandwidth AND IOPS `<Result>`s under one
+		// description) additionally require `<Scale>` to byte-match their pin. The same invariant
+		// guarantees a pinned description never coexists with an unpinned twin, so the
+		// description-only arm below can't steal a result that belongs to a pinned entry — and a
+		// pinned description whose `<Scale>` matches no pin falls through to `uncatalogued` (an
+		// honest straggler) rather than the nearest twin.
+		const def =
+			byTestDescriptionScale.get(ptsKey(test, description, result.Scale)) ??
+			byTestDescription.get(ptsKey(test, description)) ??
+			byTestWildcard.get(ptsKey(test));
+		return def
+			? { kind: "matched", def, samples: resultSamples(result) }
+			: // `scale` rides along: scale-pinned twins share a description, so (test, description)
+				// alone no longer identifies a straggler — two twins whose `<Scale>` matched no pin
+				// would collapse onto one id downstream, silently dropping one measurement.
+				{ kind: "uncatalogued", test, description, scale: result.Scale };
+	};
 }
 
 /**
  * Map a parsed Result onto the Metric Catalog by its versionless test (and `<Description>` for
- * multi-result tests).
+ * multi-result tests, plus `<Scale>` where the catalog pins one).
  */
-export function ptsResultToMetric(result: PtsResult): PtsMapping {
-	const test = versionlessTest(result.Identifier);
-	const description = result.Description ?? "";
-	const forTest = catalogByTest.get(test) ?? [];
-	// Prefer an exact `<Description>` match over the wildcard (description-less) entry, so a
-	// multi-result test's catalog ordering can't make the wildcard greedily shadow a specific metric.
-	// The catalog invariant (`catalogSchema` .narrow, catalog.ts) guarantees a wildcard never coexists
-	// with description-bearing entries for the same test, so the fallback can't misattribute a
-	// non-matching `<Description>`: if a wildcard matched, it is that test's only entry.
-	const def =
-		forTest.find((metric) => metric.pts?.description === description) ??
-		forTest.find((metric) => metric.pts?.description === undefined);
-	return def
-		? { kind: "matched", def, samples: resultSamples(result) }
-		: { kind: "uncatalogued", test, description };
-}
+export const ptsResultToMetric = buildPtsIndex(METRIC_CATALOG);
