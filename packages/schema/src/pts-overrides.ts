@@ -23,6 +23,18 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// rounds it out. Both single-result wildcards, so curation only supplies labels + the one headline.
 	pybench_milliseconds: { headline: true, label: "PyBench" },
 	sqlite_speedtest_seconds: { label: "SQLite Speedtest" },
+	// System dimension: PostgreSQL via pgbench, pinned by the producer to scale 100 / 50 clients per
+	// mode (the generator's other 156 combination entries keep draft labels and never get samples).
+	pgbench_scaling_factor_100_clients_50_mode_read_only: { label: "pgbench RO (s100, 50c)" },
+	pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency: {
+		label: "pgbench RO latency (s100, 50c)",
+	},
+	pgbench_scaling_factor_100_clients_50_mode_read_write: { label: "pgbench RW (s100, 50c)" },
+	pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency: {
+		label: "pgbench RW latency (s100, 50c)",
+	},
+	// Memory dimension: STREAM Triad is the canonical headline (the fused multiply-add is the most
+	// representative memory-bandwidth figure); the other three operations round out the matrix.
 	stream_type_triad: { headline: true, label: "STREAM Triad" },
 	stream_type_copy: { label: "STREAM Copy" },
 	stream_type_scale: { label: "STREAM Scale" },
@@ -80,6 +92,36 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// with no external endpoint, so it isolates the sandbox's network stack (virtio vs gVisor netstack
 	// vs host namespaces) from internet weather.
 	network_loopback_seconds: { headline: true, label: "Loopback TCP (10GB)" },
+
+	// Cpu dimension (cpu-generic suite): Zstd compression across its Compression Level matrix — the
+	// classic CPU-throughput synthetic, run over every level in batch mode. Two metrics per level
+	// (compress/decompress via AppendToArgumentsDescription). node-web-tooling keeps the cpu headline.
+	compress_zstd_compression_level_3_compression_speed: { label: "Zstd 3 compress" },
+	compress_zstd_compression_level_3_decompression_speed: { label: "Zstd 3 decompress" },
+	compress_zstd_compression_level_3_long_mode_compression_speed: {
+		label: "Zstd 3 (long) compress",
+	},
+	compress_zstd_compression_level_3_long_mode_decompression_speed: {
+		label: "Zstd 3 (long) decompress",
+	},
+	compress_zstd_compression_level_8_compression_speed: { label: "Zstd 8 compress" },
+	compress_zstd_compression_level_8_decompression_speed: { label: "Zstd 8 decompress" },
+	compress_zstd_compression_level_8_long_mode_compression_speed: {
+		label: "Zstd 8 (long) compress",
+	},
+	compress_zstd_compression_level_8_long_mode_decompression_speed: {
+		label: "Zstd 8 (long) decompress",
+	},
+	compress_zstd_compression_level_12_compression_speed: { label: "Zstd 12 compress" },
+	compress_zstd_compression_level_12_decompression_speed: { label: "Zstd 12 decompress" },
+	compress_zstd_compression_level_19_compression_speed: { label: "Zstd 19 compress" },
+	compress_zstd_compression_level_19_decompression_speed: { label: "Zstd 19 decompress" },
+	compress_zstd_compression_level_19_long_mode_compression_speed: {
+		label: "Zstd 19 (long) compress",
+	},
+	compress_zstd_compression_level_19_long_mode_decompression_speed: {
+		label: "Zstd 19 (long) decompress",
+	},
 
 	// Realworld dimension (ENG-135/137): mastra-ai/mastra run through its own CI tasks, a repo-local
 	// PTS profile with a Task option axis. TestType System's default dimension is corrected to

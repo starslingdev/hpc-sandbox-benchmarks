@@ -47,6 +47,29 @@ describe("suite registry", () => {
 		}
 	});
 
+	it("mirrors the unpinned suites' metrics from the generated catalog (no hand-drift)", () => {
+		// These suites batch-run their profiles WITHOUT PRESET_OPTIONS, so whatever the catalog lists for
+		// the test is exactly what the suite emits — pin the declared list to it in BOTH directions (a
+		// profile bump that adds/renames a combination fails here instead of silently stranding the
+		// list). stream's Type axis is the real matrix case; pybench and sqlite-speedtest declare no
+		// <Option> axes at all, so the pin holds over their single wildcard result. The suites that
+		// arrive later (network, cpu-generic) add themselves here.
+		const profilesOf = {
+			memory: ["pts/stream"],
+			system: ["pts/pybench", "pts/sqlite-speedtest"],
+		} as const;
+		for (const [suiteName, ptsTests] of Object.entries(profilesOf)) {
+			const fromCatalog = METRIC_CATALOG.filter(
+				(m) => m.pts && (ptsTests as readonly string[]).includes(m.pts.test),
+			)
+				.map((m) => m.id)
+				.sort();
+			expect(fromCatalog.length).toBeGreaterThan(0);
+			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics];
+			expect(declared.sort()).toEqual(fromCatalog);
+		}
+	});
+
 	it("keeps command timeouts within the requested sandbox lifetime", () => {
 		for (const suite of Object.values(SUITES)) {
 			expect(suite.commandTimeoutMinutes).toBeLessThanOrEqual(suite.timeoutMinutes);
