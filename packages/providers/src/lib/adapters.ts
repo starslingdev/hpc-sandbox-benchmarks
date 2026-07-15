@@ -10,6 +10,7 @@ import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
+import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
 
@@ -28,19 +29,23 @@ const MODAL_APP_NAME = "sandbox-benchmarks";
  */
 export const adapters: Record<ProviderId, ProviderAdapter> = {
 	// Boot the e2b template built from the toolchain image (computesdk maps snapshotId → the e2b
-	// template id/name). cpu/memory are pinned in the template's e2b.toml, not per-create.
+	// template id/name). cpu/memory are pinned in the template's e2b.toml, not per-create. The raw
+	// E2B SDK's root user keeps apt fallbacks, PTS config, and the root-baked registry on one runtime
+	// identity; ComputeSDK does not expose that native command option, so patch this instance.
 	e2b: {
-		createCompute: () => e2b({}),
+		createCompute: () => e2bCommandsAsRoot(e2b({})),
 		createOptions: { snapshotId: config.e2bTemplate },
 	},
 	daytona: {
 		// The account API key; the toolchain snapshot and runner target are pinned per-create. `target`
-		// rides the wrapper's create-options passthrough into Daytona's createParams. No requiredEnvVars
-		// override needed — it falls back to the schema meta's static ["DAYTONA_API_KEY"], so a missing
-		// credential skips (not errors).
+		// and autoStopInterval ride the wrapper's provider-options passthrough into Daytona's native
+		// createParams. The universal `timeout` is only the Daytona SDK create-call deadline — it does
+		// not extend sandbox lifetime — so disable native auto-stop and rely on the harness's guaranteed
+		// teardown. No requiredEnvVars override needed: the schema meta owns DAYTONA_API_KEY.
 		createCompute: () => daytona({ apiKey: daytonaCfg.apiKey }),
 		createOptions: {
 			snapshotId: daytonaCfg.snapshot,
+			autoStopInterval: 0,
 			...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
 		},
 	},

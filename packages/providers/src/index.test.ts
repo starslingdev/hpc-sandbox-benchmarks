@@ -4,6 +4,7 @@ import { describe, expect, it } from "bun:test";
 import { e2b } from "@computesdk/e2b";
 import { PROVIDERS, TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config, NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection, providers } from "./index.ts";
+import { runE2bCommandAsRoot } from "./lib/e2b-root.ts";
 import { assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
@@ -69,6 +70,8 @@ describe("@sandbox-benchmarks/providers", () => {
 			expect(methodsOf(e2b({ apiKey: "e2b_unit-test-key" }))[method]).toBe(stock[method]);
 			expect(patched[method]).not.toBe(stock[method]);
 		}
+		expect(patched.runCommand).toBe(runE2bCommandAsRoot);
+		expect(patched.runCommand).not.toBe(stock.runCommand);
 		expect(compute.snapshot).toBeUndefined();
 		// `template` is a runtime property of the generated provider (computesdk's type doesn't model
 		// it), so reach through a structural cast to pin its removal too.
@@ -108,13 +111,21 @@ describe("@sandbox-benchmarks/providers", () => {
 		}
 	});
 
-	it("boots e2b from the configured template and daytona from the configured snapshot", () => {
-		const e2b = providers.find((p) => p.name === "e2b");
-		expect(e2b?.createOptions?.snapshotId).toBe(config.e2bTemplate);
+	it("boots e2b from the configured template and keeps Daytona alive for long suites", () => {
+		const e2bAdapter = providers.find((p) => p.name === "e2b");
+		expect(e2bAdapter?.createOptions?.snapshotId).toBe(config.e2bTemplate);
+		const compute = e2bAdapter?.createCompute();
+		const methods = (compute as unknown as { sandbox: { methods: Record<string, unknown> } })
+			.sandbox.methods;
+		expect(methods.runCommand).toBe(runE2bCommandAsRoot);
 
 		const daytona = providers.find((p) => p.name === "daytona");
 		expect(daytona).toBeDefined();
 		expect(daytona?.createOptions?.snapshotId).toBe(config.daytona.snapshot);
+		// ComputeSDK maps its universal timeout to the Daytona SDK's create-operation timeout, not the
+		// sandbox lifetime. Pass the native option through so an 8+ minute detached suite is not stopped
+		// underneath the harness; runSuite's finally block remains the cleanup authority.
+		expect(daytona?.createOptions?.autoStopInterval).toBe(0);
 
 		// No adapter override — requiredEnvVars falls back to the schema meta's static list. Pin the
 		// concrete value rather than only comparing the two lookups against each other: if both `find`s
@@ -122,6 +133,80 @@ describe("@sandbox-benchmarks/providers", () => {
 		const daytonaMeta = PROVIDERS.find((m) => m.id === "daytona");
 		expect(daytonaMeta?.requiredEnvVars).toEqual(["DAYTONA_API_KEY"]);
 		expect(daytona?.requiredEnvVars).toEqual(daytonaMeta?.requiredEnvVars);
+	});
+
+	it("passes E2B-compatible cwd and env options through envd's structured root channel", async () => {
+		const calls: Array<{ command: string; options?: Record<string, unknown> }> = [];
+		const sandbox = {
+			commands: {
+				run: async (command: string, options?: Record<string, unknown>) => {
+					calls.push({ command, options });
+					return { stdout: "ok", stderr: "", exitCode: 0 };
+				},
+			},
+		};
+		const result = await runE2bCommandAsRoot(sandbox as never, "echo hi", {
+			cwd: "/work dir",
+			env: { TOKEN: "not a shell; value" },
+			timeout: 1234,
+		});
+
+		expect(result).toMatchObject({ stdout: "ok", stderr: "", exitCode: 0 });
+		expect(calls).toHaveLength(1);
+		expect(calls[0]).toEqual({
+			command: "echo hi",
+			options: {
+				user: "root",
+				cwd: "/work dir",
+				envs: { TOKEN: "not a shell; value" },
+				timeoutMs: 1234,
+				background: false,
+			},
+		});
+	});
+
+	it("translates a native background handle into ComputeSDK's completed launch result", async () => {
+		const calls: Array<{ command: string; options?: Record<string, unknown> }> = [];
+		const sandbox = {
+			commands: {
+				run: async (command: string, options?: Record<string, unknown>) => {
+					calls.push({ command, options });
+					return { pid: 42 };
+				},
+			},
+		};
+		const result = await runE2bCommandAsRoot(sandbox as never, "long command", {
+			background: true,
+		});
+
+		expect(result).toMatchObject({ stdout: "", stderr: "", exitCode: 0 });
+		expect(calls).toEqual([
+			{ command: "long command", options: { user: "root", background: true } },
+		]);
+	});
+
+	it("recovers a failed command's structured result when the SDK throws it", async () => {
+		const sandbox = {
+			commands: {
+				run: async () => {
+					throw { result: { stdout: "partial", stderr: "boom", exitCode: 2 } };
+				},
+			},
+		};
+		const result = await runE2bCommandAsRoot(sandbox as never, "false", {});
+		expect(result).toMatchObject({ stdout: "partial", stderr: "boom", exitCode: 2 });
+	});
+
+	it("defaults a thrown result's missing fields rather than crashing", async () => {
+		const sandbox = {
+			commands: {
+				run: async () => {
+					throw { result: {} };
+				},
+			},
+		};
+		const result = await runE2bCommandAsRoot(sandbox as never, "false", {});
+		expect(result).toMatchObject({ stdout: "", stderr: "", exitCode: 1 });
 	});
 });
 

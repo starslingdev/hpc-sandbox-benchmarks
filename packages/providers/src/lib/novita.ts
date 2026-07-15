@@ -33,6 +33,7 @@ import type {
 	SandboxConnectOpts,
 	SandboxOpts,
 } from "novita-sandbox";
+import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import type { DirectProvider } from "./types.ts";
 
 // Loaded through the package's `require` (CJS) build, NOT an import: `@computesdk/e2b` is CJS and
@@ -184,5 +185,8 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 	// reconnect without a domain, i.e. against the wrong control plane.
 	(compute as { snapshot?: unknown }).snapshot = undefined;
 	(compute as { template?: unknown }).template = undefined;
-	return compute;
+	// Novita imports the same image through an E2B-compatible builder and injects the same
+	// unprivileged default user. Use envd's native root identity for the benchmark lane so setup and
+	// baked PTS state share one identity (the stock ComputeSDK wrapper omits the SDK's user option).
+	return e2bCommandsAsRoot(compute);
 }
