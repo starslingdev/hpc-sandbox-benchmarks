@@ -19,11 +19,10 @@ on:
         default: e2b,daytona,modal
 
 # Least privilege: jobs only read the checked-out code and upload artifacts. `id-token: write` is
-# only for Namespace: it federates via GitHub's OIDC identity (no stored secret), which requires the
-# job to be able to request an OIDC token from GitHub's endpoint.
+# granted per-job (only `bench` needs it, for Namespace's GitHub OIDC federation), not here — zizmor
+# flags a workflow-level id-token: write as overly broad since `plan` and `publish` never touch it.
 permissions:
   contents: read
-  id-token: write
 
 # Serialize matrix runs on a ref so concurrent dispatches don't contend for provider quota.
 concurrency:
@@ -69,6 +68,11 @@ jobs:
     needs: plan
     runs-on: starsling-ubuntu-24.04-2
     timeout-minutes: 150
+    # Only this job needs id-token: write (Namespace's GitHub OIDC federation) — scoped here, not at
+    # the workflow level, per zizmor's excessive-permissions audit.
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
       fail-fast: false
