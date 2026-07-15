@@ -1,6 +1,9 @@
 # Design Doc: Scaling the PTS Catalog + Analysis Layer
 
-Status: Draft for implementation
+> **Historical design notes.** Prefer [methodology](./methodology.md) and the ADRs for current truth.
+> Kept for provenance of the catalog/analysis work; line numbers and branch names below may be stale.
+
+Status: Historical (implemented in stages; not the living source of truth)
 Branch base: `harness-live-suite` (PTS stack tops out at PR #38)
 Audience: repo owner → stacked PR series
 

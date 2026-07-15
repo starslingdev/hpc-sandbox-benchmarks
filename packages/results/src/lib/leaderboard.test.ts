@@ -171,6 +171,9 @@ describe("buildLeaderboard statistical ranking", () => {
 		expect(rows[1]?.verdict).toBe("tied");
 		expect(rows[1]?.tiedWithAbove).toBe("statistical");
 		expect(rows[1]?.pVsPrevious?.mannWhitney).toBeGreaterThan(0.05);
+		// Takeaway must not claim a sole provider when the top cohort is a statistical tie.
+		expect(renderLeaderboardMarkdown(board)).toContain("share the top on this headline");
+		expect(renderLeaderboardMarkdown(board)).not.toContain("is the only ranked provider");
 	});
 
 	it("leaves a single-Sample Metric untested and ranked on its exact value", () => {
@@ -209,7 +212,7 @@ describe("buildLeaderboard statistical ranking", () => {
 describe("renderLeaderboardMarkdown statistics", () => {
 	const HEADLINE = "node_web_tooling_runs_per_s";
 
-	it("renders CI, n and the p-value, and marks a statistical tie", () => {
+	it("renders CI, n and a Note for a statistical tie", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
@@ -219,14 +222,14 @@ describe("renderLeaderboardMarkdown statistics", () => {
 			),
 		);
 		expect(md).toContain("95% CI");
-		expect(md).toContain("p vs. above");
-		expect(md).toContain("(tied)");
+		expect(md).toContain("| Note |");
+		expect(md).toContain("| tied |");
 		// The reader must be told what a shared rank means, not left to infer it.
 		expect(md).toContain("statistically indistinguishable");
 		expect(md).toContain("Mann-Whitney");
 	});
 
-	it("surfaces the KS p-value in the table, not only on the row object", () => {
+	it("surfaces the KS p-value in the details section, not only on the row object", () => {
 		// Regression: `ks` was computed and stored on every LeaderboardRow, documented as the way to spot
 		// a bimodal provider, and then never rendered — so no reader of LEADERBOARD.md could ever see it.
 		const board = buildLeaderboard(
@@ -238,23 +241,21 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		const md = renderLeaderboardMarkdown(board);
 
 		expect(md).toContain("p (KS)");
-		// The note must explain the column, since a second p-value is otherwise cryptic.
 		expect(md).toContain("Kolmogorov-Smirnov");
 
-		// The second row carries both p-values (rank 1 has no predecessor, so both cells are em-dashes).
 		expect(board.dimensions[0]?.rows[1]?.pVsPrevious).not.toBeNull();
 
-		// Assert the SHAPE of the rendered rows, not a re-derived format string: duplicating
-		// `formatPValue`'s rule here would let the test agree with itself and drift from the renderer
-		// (`toPrecision(2)` keeps a trailing zero — "0.0080" — which a `Number(...)` round-trip drops).
-		const rows = md.split("\n").filter((l) => /^\| \d+ \| (Daytona|E2B) \|/.test(l));
-		expect(rows).toHaveLength(2);
-		for (const row of rows) {
-			// 7 columns: rank, provider, value, CI, n, p vs. above, p (KS).
-			expect(row.split("|").filter((c) => c.trim() !== "")).toHaveLength(7);
+		// Main ranking table stays slim (Note column because of the tie); KS lives in the details table.
+		const mainRows = md.split("\n").filter((l) => /^\| \d+ \| (Daytona|E2B) \|/.test(l));
+		expect(mainRows).toHaveLength(2);
+		for (const row of mainRows) {
+			expect(row.split("|").filter((c) => c.trim() !== "").length).toBe(6);
 		}
-		const [first, second] = rows as [string, string];
-		expect(first.trimEnd().endsWith("| — |")).toBe(true); // no predecessor → no KS
+
+		const detailRows = md.split("\n").filter((l) => /^\| cpu \| (Daytona|E2B) \|/.test(l));
+		expect(detailRows).toHaveLength(2);
+		const [first, second] = detailRows as [string, string];
+		expect(first).toContain("| — |");
 		const secondKs = second.trimEnd().split("|").at(-2)?.trim() as string;
 		expect(secondKs).not.toBe("—");
 		expect(secondKs).toMatch(/^(<0\.001|\d+(\.\d+)?(e[+-]?\d+)?)$/);
@@ -264,9 +265,8 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(run([provider("daytona", [metric(HEADLINE, [10])])])),
 		);
-		// n=1 → em-dash for the CI and BOTH p-values, never a fabricated bound. Anchored to the row end so
-		// a future column can't be silently dropped from the assertion.
-		expect(md).toMatch(/\| 1 \| Daytona \| 10 \| — \| 1 \| — \| — \|\n/);
+		// n=1 → em-dash for the CI; no Note column when nothing needs calling out.
+		expect(md).toMatch(/\| 1 \| Daytona \| 10 \| — \| 1 \|\n/);
 	});
 
 	it("never prints a p-value as a misleading 0", () => {
@@ -301,7 +301,8 @@ describe("underpowered comparisons", () => {
 			["Modal", 2, "underpowered", null],
 		]);
 		const md = renderLeaderboardMarkdown(board);
-		expect(md).toContain("(n too small)");
+		expect(md).toContain("n too small");
+		expect(md).not.toMatch(/\| tied \|/);
 		expect(md).not.toContain("(tied)");
 	});
 
@@ -354,7 +355,8 @@ describe("underpowered comparisons", () => {
 		expect(rows[1]?.tiedWithAbove).toBe("identical-value");
 		const md = renderLeaderboardMarkdown(board);
 		// The cell distinguishes the two reasons the rank is shared; it never reads as a statistical tie.
-		expect(md).toContain("(n too small, equal medians)");
+		expect(md).toContain("n too small, equal medians");
+		expect(md).not.toMatch(/\| tied \|/);
 		expect(md).not.toContain("(tied)");
 	});
 
@@ -370,7 +372,7 @@ describe("underpowered comparisons", () => {
 			[1, null, null],
 			[1, "untested", "identical-value"],
 		]);
-		expect(renderLeaderboardMarkdown(board)).toContain("— (equal values)");
+		expect(renderLeaderboardMarkdown(board)).toContain("equal values");
 	});
 
 	it("never marks a row `tied` unless the test could have separated it", () => {
@@ -411,7 +413,7 @@ describe("underpowered comparisons", () => {
 			[1, null, null],
 			[1, "tied", "statistical"],
 		]);
-		expect(renderLeaderboardMarkdown(board)).toContain("(tied)");
+		expect(renderLeaderboardMarkdown(board)).toContain("| tied |");
 	});
 
 	it("does not let the tie-corrected approximation crown a provider the exact test cannot separate", () => {
