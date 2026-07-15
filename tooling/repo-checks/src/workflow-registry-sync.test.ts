@@ -14,7 +14,9 @@ import {
 	checkCredentialEnv,
 	checkProviderInput,
 	checkSuiteInput,
+	checkWorkflowTimeouts,
 	dispatchInput,
+	jobTimeoutMinutes,
 	MATRIX_JOB,
 	MATRIX_WORKFLOW,
 	RUN_STEP,
@@ -24,6 +26,7 @@ import {
 	SMOKE_JOB,
 	SMOKE_WORKFLOW,
 	stepEnv,
+	WORKFLOW_TIMEOUT_MARGIN_MINUTES,
 } from "./lib/workflow-sync.ts";
 
 const smoke = readWorkflow(SMOKE_WORKFLOW);
@@ -53,6 +56,11 @@ describe("parsers against the real workflow files", () => {
 		expect(Object.keys(smokeEnv).length).toBeGreaterThanOrEqual(8);
 	});
 
+	test("both live-run jobs reserve host margin beyond the longest suite", () => {
+		expect(jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW)).toBe(180);
+		expect(jobTimeoutMinutes(matrix, MATRIX_JOB, MATRIX_WORKFLOW)).toBe(180);
+	});
+
 	test("dispatchInput throws on a missing input instead of passing vacuously", () => {
 		expect(() => dispatchInput(smoke, "no-such-input", SMOKE_WORKFLOW)).toThrow(
 			'input "no-such-input" not found',
@@ -70,6 +78,19 @@ describe("parsers against the real workflow files", () => {
 		expect(() => stepEnv(Bun.YAML.parse(yaml), "j", "bare", "synthetic.yml")).toThrow(
 			"has no env mapping",
 		);
+	});
+});
+
+describe("checkWorkflowTimeouts", () => {
+	test("passes timeouts with the required host margin", () => {
+		expect(checkWorkflowTimeouts({ smoke: 180, matrix: 180 })).toEqual([]);
+	});
+
+	test("flags a job cap that cannot outlast the longest suite", () => {
+		const errors = checkWorkflowTimeouts({ smoke: 155 });
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("smoke");
+		expect(errors[0]).toContain(`${WORKFLOW_TIMEOUT_MARGIN_MINUTES}-minute host margin`);
 	});
 });
 

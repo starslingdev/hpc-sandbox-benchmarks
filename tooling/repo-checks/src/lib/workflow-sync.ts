@@ -13,11 +13,13 @@
 //      into both the smoke lane and the matrix lane, or the live run silently skips it.
 //   4. A credential key shared across the two workflows maps to the same value expression — both
 //      lanes must hand the suite the same secret, not plan one and run the other.
+//   5. Both live-run jobs outlast the longest registered sandbox lifetime by a fixed margin, so a
+//      suite budget increase cannot leave an otherwise healthy job to be killed by Actions first.
 //
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency), so the parse stays dependency-light.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
+import { PROVIDERS, SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { findRepoRoot } from "./workspace.ts";
 
@@ -27,6 +29,8 @@ export const MATRIX_WORKFLOW = ".github/workflows/bench-matrix.yml";
 export const RUN_STEP = "Run suite and normalize";
 export const SMOKE_JOB = "smoke";
 export const MATRIX_JOB = "bench";
+/** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. */
+export const WORKFLOW_TIMEOUT_MARGIN_MINUTES = 15;
 
 // Single source of truth: this schema drives BOTH the runtime parse (coercions live in the morphs)
 // and the exported DispatchInput type (inferred below) — there is no hand-written interface or
@@ -89,6 +93,18 @@ function asRecord(value: unknown, message: string): Record<string, unknown> {
 		throw new Error(message);
 	}
 	return value as Record<string, unknown>;
+}
+
+/** Parse a job's literal positive integer `timeout-minutes`; expressions cannot satisfy this gate. */
+export function jobTimeoutMinutes(doc: unknown, jobId: string, label: string): number {
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	const job = asRecord(jobs[jobId], `${label}: job "${jobId}" not found`);
+	const timeout = job["timeout-minutes"];
+	if (typeof timeout !== "number" || !Number.isInteger(timeout) || timeout <= 0) {
+		throw new Error(`${label}: job "${jobId}" timeout-minutes must be a positive integer literal`);
+	}
+	return timeout;
 }
 
 /**
@@ -249,6 +265,19 @@ export function checkCredentialEnv(
 	return errors;
 }
 
+/** Invariant 5: every live-run job has margin beyond the longest registered sandbox lifetime. */
+export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>): string[] {
+	const longestSuite = Math.max(...Object.values(SUITES).map((suite) => suite.timeoutMinutes));
+	const minimum = longestSuite + WORKFLOW_TIMEOUT_MARGIN_MINUTES;
+	return Object.entries(timeoutByWorkflow)
+		.filter(([, timeout]) => timeout < minimum)
+		.map(
+			([workflow, timeout]) =>
+				`${workflow}: job timeout-minutes ${timeout} is below the required ${minimum} ` +
+				`(${longestSuite}-minute longest suite + ${WORKFLOW_TIMEOUT_MARGIN_MINUTES}-minute host margin)`,
+		);
+}
+
 /**
  * The whole gate against the real workflow files under `root` — the single owner of which files feed
  * the gate, used by the real-file test in workflow-registry-sync.test.ts.
@@ -262,6 +291,10 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 		...checkCredentialEnv({
 			[SMOKE_WORKFLOW]: stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW),
 			[MATRIX_WORKFLOW]: stepEnv(matrix, MATRIX_JOB, RUN_STEP, MATRIX_WORKFLOW),
+		}),
+		...checkWorkflowTimeouts({
+			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),
+			[MATRIX_WORKFLOW]: jobTimeoutMinutes(matrix, MATRIX_JOB, MATRIX_WORKFLOW),
 		}),
 	];
 }

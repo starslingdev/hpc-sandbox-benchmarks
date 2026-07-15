@@ -64,8 +64,12 @@ jobs:
   bench:
     name: ${{ matrix.suite }} on ${{ matrix.provider }}
     needs: plan
-    runs-on: starsling-ubuntu-24.04-2
-    timeout-minutes: 150
+    # The ephemeral self-hosted label is reaped after 70 minutes even while a step is healthy. The
+    # full CPU-generic and real-world matrices legitimately exceed that on slower providers, leaving
+    # the step stuck `in_progress` with no logs/artifact. Hosted runners honor timeout-minutes below;
+    # 180 minutes also leaves teardown/artifact margin around the longest 155-minute suite budget.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
     strategy:
       # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
       fail-fast: false
@@ -78,19 +82,10 @@ jobs:
           # credentials), so don't persist the job token in .git/config.
           persist-credentials: false
 
-      # `no-cache` is REQUIRED on this label, unlike the hosted-runner jobs above/below. Two runner
-      # images answer to `starsling-ubuntu-24.04-2` and they root the workspace at different depths
-      # (`/home/runner/_work/…` vs `/home/runner/actions-runner/_work/…`), yet setup-bun keys its cache
-      # only on the bun version. The cached `~/.bun` is stored relative to the save-time workspace and
-      # extracted with `-C <workspace>`, so an entry saved on one image unpacks to
-      # `/home/runner/actions-runner/.bun` on the other — the cache reports "restored successfully" and
-      # the next line dies with "Unable to locate executable file: /home/runner/.bun/bin/bun". Downloading
-      # bun (~32 MB) costs a couple of seconds; restoring a cache built for the other image costs the cell.
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14
-          no-cache: true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts

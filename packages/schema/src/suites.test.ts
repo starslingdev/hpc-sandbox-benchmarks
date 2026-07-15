@@ -24,8 +24,8 @@ describe("suite registry", () => {
 			"system",
 			"memory",
 			"disk",
-			"cpu-generic",
 			"network",
+			"cpu-generic",
 			"realworld-mastra",
 			"realworld-better-auth",
 			"realworld-openclaw",
@@ -57,16 +57,15 @@ describe("suite registry", () => {
 		// the test is exactly what the suite emits — pin the declared list to it in BOTH directions (a
 		// profile bump that adds/renames a combination fails here instead of silently stranding the
 		// list). stream's Type axis is the real matrix case; pybench and sqlite-speedtest declare no
-		// <Option> axes at all, so the pin holds over their single wildcard result. The suites that
-		// arrive later (network, cpu-generic) add themselves here.
+		// <Option> axes at all, so the pin holds over their single wildcard result.
 		// `system` is MIXED: pybench + sqlite-speedtest are unpinned wildcards (mirrored here), while
 		// pgbench is preset-pinned and declares a 4-of-160 subset — pinned to its curated override keys
 		// by the subset test below. Subtracting the pinned prefix keeps this a both-directions mirror
 		// over the unpinned half instead of dropping the suite from the gate entirely.
 		const PINNED_PREFIXES = ["pgbench_"];
 		const profilesOf = {
-			"cpu-generic": ["pts/c-ray", "pts/compress-zstd"],
 			network: ["pts/network-loopback"],
+			"cpu-generic": ["pts/c-ray", "pts/compress-zstd"],
 			memory: ["pts/stream"],
 			system: ["pts/pybench", "pts/sqlite-speedtest"],
 		} as const;

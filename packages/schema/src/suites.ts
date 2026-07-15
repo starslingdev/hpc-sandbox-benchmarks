@@ -69,15 +69,14 @@ export const SUITES = {
 	// The system dimension: PyBench (Python interpreter) + SQLite Speedtest (single-result PTS
 	// profiles) + PostgreSQL via pgbench, pinned to one (scale 100, 50 clients) point per mode —
 	// each mode posts a TPS and an Average Latency metric. pgbench runs server + client fully
-	// in-sandbox (same topology on every provider). Budget: the harness sets PTS_RESPECT_TIMES_TO_RUN,
-	// so the profile's TimesToRun=3 makes SIX timed passes (3 per mode), each with its own scale-100
-	// `pgbench -i` — not the two the budgets were once described against. That and the ~1.5 GB dataset
-	// set the budgets and the disk floor. Requires the baked image (postgres pre-built, libicu-dev
-	// present); on a stock image the from-source postgres build lands inside this budget too.
+	// in-sandbox (same topology on every provider). The harness fixes two trials per case, so pgbench
+	// makes four timed passes (two per mode), each with its own scale-100 `pgbench -i`. That and the
+	// ~1.5 GB dataset set the budgets and disk floor. Requires the baked image (postgres pre-built,
+	// libicu-dev present); on a stock image the from-source postgres build lands inside this budget too.
 	system: {
 		setupPts: true,
-		commandTimeoutMinutes: 80,
-		timeoutMinutes: 95,
+		commandTimeoutMinutes: 120,
+		timeoutMinutes: 135,
 		minDiskGb: 5,
 		dimensions: ["system"],
 		metrics: [
@@ -105,12 +104,12 @@ export const SUITES = {
 	// scale-pinned twin metrics. Direct is probed per sandbox (O_DIRECT fails on some sandbox
 	// filesystems), so every scenario declares an O_DIRECT and a buffered variant; each provider emits
 	// exactly one of the two and the mode travels in the metric identity (the contract allows declared-
-	// but-unrun combinations). Budgets cover the fio build + 4 timed 60s scenarios; fio writes 1 GiB
-	// test files, hence the raised disk floor.
+	// but-unrun combinations). Budgets cover five fixed trials of each of the four timed 60s scenarios
+	// plus the hardlink profile; fio writes 1 GiB test files, hence the raised disk floor.
 	disk: {
 		setupPts: true,
-		commandTimeoutMinutes: 60,
-		timeoutMinutes: 70,
+		commandTimeoutMinutes: 75,
+		timeoutMinutes: 90,
 		minDiskGb: 4,
 		dimensions: ["disk"],
 		metrics: [
@@ -134,14 +133,26 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:disk:all"],
 	},
+	// The network dimension: loopback TCP (10GB via nc) — self-contained, no external endpoint, so it
+	// isolates the sandbox's network stack from internet weather. The suite task also runs the
+	// latency/DNS/download probes (raw JSON provenance, no catalogued metrics).
+	network: {
+		setupPts: true,
+		commandTimeoutMinutes: 30,
+		timeoutMinutes: 40,
+		dimensions: ["network"],
+		metrics: ["network_loopback_seconds"],
+		commands: ["mise run benchmark:network:all"],
+	},
 	// The generic-compute dimension slice next to cpu-node: c-ray (float/thread scaling — the seam the
 	// catalog's c-ray entries have waited on) and Zstd compression across its level matrix. Budgets
 	// cover the zstd build + silesia download, 7 zstd levels × compress+decompress, and c-ray's three
-	// resolutions × 3 passes on a 2-vCPU target (the 5K pass alone runs several minutes per repeat).
+	// resolutions × 5 fixed passes on a 2-vCPU target (the 5K pass alone runs several minutes per
+	// repeat). Fixed counts bound noisy hosts while giving every provider equal statistical weight.
 	"cpu-generic": {
 		setupPts: true,
-		commandTimeoutMinutes: 100,
-		timeoutMinutes: 115,
+		commandTimeoutMinutes: 130,
+		timeoutMinutes: 145,
 		minDiskGb: 2,
 		dimensions: ["cpu"],
 		metrics: [
@@ -165,17 +176,6 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:cpu:generic"],
 	},
-	// The network dimension: loopback TCP (10GB via nc) — self-contained, no external endpoint, so it
-	// isolates the sandbox's network stack from internet weather. The suite task also runs the
-	// latency/DNS/download probes (raw JSON provenance, no catalogued metrics).
-	network: {
-		setupPts: true,
-		commandTimeoutMinutes: 30,
-		timeoutMinutes: 40,
-		dimensions: ["network"],
-		metrics: ["network_loopback_seconds"],
-		commands: ["mise run benchmark:network:all"],
-	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
 	// each a repo-local PTS profile with a Task option axis. Budgets are starting points (tuned from
 	// smoke); mastra's task matrix is the narrowest (scoped to packages/core) but its monorepo has
@@ -184,8 +184,8 @@ export const SUITES = {
 	"realworld-mastra": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 90,
-		timeoutMinutes: 105,
+		commandTimeoutMinutes: 140,
+		timeoutMinutes: 155,
 		minDiskGb: 30,
 		dimensions: ["realworld"],
 		metrics: [
@@ -197,17 +197,15 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:realworld:pts:mastra"],
 	},
-	// Budgets from measured 2026-07-10 runs at the 2-vCPU spec: daytona ~18 min, modal ~67 min (gVisor
-	// syscall overhead on the per-run git-clean/install resets; measured via a complete local run —
-	// the old 60-min command budget killed modal at test 9/10). 90 covers modal plus variance without
-	// letting a wedged provider eat the whole runner. e2b currently never gets past ~4.5 min: its
-	// sandboxes from our template are orchestrator-stopped regardless of requested lifetime (platform
-	// issue, tracked separately) — no budget fixes that.
+	// The five fixed trials multiply every task case, including the per-run git-clean/install resets;
+	// the 140-minute command budget covers slower virtualized filesystems while the 155-minute sandbox
+	// lifetime leaves setup and collection headroom. The workflow timeout gate independently reserves
+	// host-job margin beyond the longest sandbox lifetime.
 	"realworld-better-auth": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 90,
-		timeoutMinutes: 105,
+		commandTimeoutMinutes: 140,
+		timeoutMinutes: 155,
 		minDiskGb: 10,
 		dimensions: ["realworld"],
 		metrics: [
@@ -227,8 +225,8 @@ export const SUITES = {
 	"realworld-openclaw": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 90,
-		timeoutMinutes: 105,
+		commandTimeoutMinutes: 140,
+		timeoutMinutes: 155,
 		minDiskGb: 25,
 		dimensions: ["realworld"],
 		metrics: [
