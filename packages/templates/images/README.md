@@ -40,7 +40,7 @@ The base image is built in layers, one install script per concern:
   apt, whose mise repo is rolling and serves only the latest, which would break the pin.
 - `10-mise.sh` — the mise-managed language/CLI toolchain, installed system-wide from the generated
   `mise.toml`. (This is why node/python/etc. are *not* apt packages — mise owns them.)
-- `20-pts.sh` — the Phoronix Test Suite + offline caches.
+- `20-pts.sh` — the Phoronix Test Suite + pre-installed profiles for offline runs.
 - `99-manifest.sh` — a verification manifest that fails the build on any drift.
 
 > **TODO-pin status.** The pins ship as `__TODO__` placeholders — the reference image they come from
@@ -63,8 +63,9 @@ the freshly built base. Variants share `_shared/validate-base.sh`, so their buil
 
 ## Conventions every Dockerfile / script follows
 
-- **Thin Dockerfile, fat scripts** — the Dockerfile's only `RUN` is the orchestrator; logic lives in
-  small, single-concern, `shellcheck`-clean scripts run via `bash <script>`.
+- **Thin Dockerfile, fat scripts** — Docker layers only dispatch logical groups through the
+  orchestrator; logic lives in small, single-concern, `shellcheck`-clean scripts run via
+  `bash <script>`. The groups bound compressed layer size for provider registries.
 - **Script hygiene** — `set -Eeuxo pipefail`; downloads use `curl --retry … && sha256sum -c`; `/tmp`
   is cleaned up.
 - **Variants validate their base** — `_shared/validate-base.sh` fails with a "rebuild the base first"

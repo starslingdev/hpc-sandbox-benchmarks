@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install the Phoronix Test Suite, pre-seed its offline download caches, and pre-install the small
-# profiles so sandbox wall time goes to benchmarks, not setup. Pins arrive as environment variables
+# Install the Phoronix Test Suite and pre-install the benchmark profiles for offline execution, so
+# sandbox wall time goes to benchmarks, not setup. Pins arrive as environment variables
 # (from the arktype-validated packages/templates/src/pins.ts via build-args). Runs after 10-mise so
 # pyperformance's pip-install targets the mise-managed python on PATH.
 set -Eeuxo pipefail
@@ -33,19 +33,18 @@ for unit in phoromatic-client phoromatic-server phoronix-result-server; do
 	ln -sf /dev/null "/etc/systemd/system/${unit}.service"
 done
 
-# > Non-interactive batch config + offline download caches for the PTS-backed suites. Build and
+# > Non-interactive batch config + staged downloads for the PTS-backed suites. Build and
 # > sandboxes both run as root, so PTS state under /var/lib/phoronix-test-suite lines up at runtime.
 # > PTS_INSTALL_TESTS is a space-separated list, so split it into an array to pass each profile as
 # > its own argument.
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
 read -ra pts_tests <<< "${PTS_INSTALL_TESTS}"
 
-# > The cache list DERIVES from the install list (same versioned pins — caching a different version
-# > than the leaves batch-run would send the runtime back to the network), plus the build-* / git
-# > profiles that are cached-but-not-preinstalled (too big to bake; not yet wired to a suite).
+# > The staging list DERIVES from the install list (same versioned pins — caching a different version
+# > than the leaves batch-run would send the installer back to the network). Do not cache unwired
+# > future profiles: provider snapshot registries must import the complete compressed image.
 # > network-loopback has no downloads and no-ops here harmlessly.
-phoronix-test-suite make-download-cache \
-	build-linux-kernel build-nodejs git "${pts_tests[@]}"
+phoronix-test-suite make-download-cache "${pts_tests[@]}"
 # > PTS exits 0 even when an install fails, so verify each requested profile actually reports installed.
 # > A versionless entry anchors on "<test>-<version>" (versions start with a digit); a version-pinned
 # > entry ("fio-2.1.0") already ends in its version, so it anchors on a following non-name character
@@ -56,3 +55,29 @@ installed="$(phoronix-test-suite list-installed-tests)"
 for t in "${pts_tests[@]}"; do
 	echo "${installed}" | grep -qE "(^|/)${t}(-[0-9]|[[:space:]]|$)" || { echo "ERROR: pre-install of ${t} failed" >&2; exit 1; }
 done
+
+# > batch-install copies each staged archive into its installed-test tree. Keeping the byte-identical
+# > source in download-cache pays for it twice in every provider snapshot (silesia.tar alone is
+# > ~212 MiB). Runtime leaves explicitly detect pts-install.json and skip reinstall, so the installed
+# > copy is the offline source of truth. Remove only files proven identical; retain PTS's small cache
+# > index and any non-duplicated payload defensively.
+cache_dir=/var/lib/phoronix-test-suite/download-cache
+installed_dir=/var/lib/phoronix-test-suite/installed-tests
+if [ -d "${cache_dir}" ] && [ -d "${installed_dir}" ]; then
+	find "${cache_dir}" -maxdepth 1 -type f ! -name pts-download-cache.json -print0 |
+		while IFS= read -r -d '' cached; do
+			name="$(basename "${cached}")"
+			duplicate="$(find "${installed_dir}" -type f -name "${name}" -print -quit)"
+			if [ -n "${duplicate}" ] && cmp -s "${cached}" "${duplicate}"; then
+				echo "::: pruning duplicate PTS download: ${name}"
+				rm -f "${cached}"
+			fi
+		done
+fi
+
+# > E2B and Novita inject an unprivileged runtime user after importing this image. PTS otherwise
+# > switches from the root bake's /var/lib state to $HOME/.phoronix-test-suite, making every baked
+# > profile invisible. The image ENV pins PTS_USER_PATH_OVERRIDE to this existing directory; make the
+# > ephemeral benchmark state writable so that user can create batch config and result XML beside the
+# > read-mostly installed profiles. Provider isolation is the outer security boundary for this image.
+chmod -R a+rwX /var/lib/phoronix-test-suite

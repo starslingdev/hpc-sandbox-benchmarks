@@ -4,8 +4,8 @@
 # (images/{e2b,daytona,modal}) composes on top via `ARG BASE_IMAGE` and adds only its delta, so the
 # toolchain layers stay byte-identical across providers via registry dedupe.
 #
-# > Thin Dockerfile, fat scripts: the only RUN is the orchestrator, which runs each numbered install
-# > script (base/scripts/NN-*.sh) in order. Scripts are shellcheck-linted outside Docker.
+# > Thin Dockerfile, fat scripts: RUN instructions only dispatch numbered install scripts
+# > (base/scripts/NN-*.sh) through the orchestrator. Scripts are shellcheck-linted outside Docker.
 #
 # > Pins are NOT read from a file. The single source of truth is the arktype-validated TypeScript
 # > config (packages/templates/src/pins.ts); build.sh validates it, passes the image/PTS pins as
@@ -45,7 +45,7 @@ ARG PTS_INSTALL_TESTS
 
 # > The description is what anonymous visitors see on the public ghcr package page.
 LABEL org.opencontainers.image.title="sandbox-benchmarks-toolchain" \
-      org.opencontainers.image.description="Pre-baked toolchain for ComputeSDK sandbox benchmarks: mise-managed tools (node, python, pnpm, hyperfine, warp, jc, quarto) and the Phoronix Test Suite with offline caches, so sandbox wall time goes to benchmarks, not setup." \
+      org.opencontainers.image.description="Pre-baked toolchain for ComputeSDK sandbox benchmarks: mise-managed tools (node, python, pnpm, hyperfine, warp, jc, quarto) and pre-installed Phoronix Test Suite profiles for offline runs, so sandbox wall time goes to benchmarks, not setup." \
       org.opencontainers.image.source="https://github.com/starslingdev/sandbox-benchmarks" \
       org.opencontainers.image.base.name="${BASE_IMAGE}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
@@ -54,7 +54,7 @@ LABEL org.opencontainers.image.title="sandbox-benchmarks-toolchain" \
 
 # > Build-only: DEBIAN_FRONTEND is an ARG, not ENV, so it isn't baked into this image or the variants
 # > built FROM it (a persistent ENV would silently suppress interactive prompts in derived images).
-# > It's handed to the orchestrator RUN below, scoped to the build.
+# > It's handed to the orchestrator RUNs below, scoped to the build.
 ARG DEBIAN_FRONTEND=noninteractive
 
 # > mise lives system-wide: one shared toolchain for every sandbox user, on PATH via its shims dir.
@@ -62,6 +62,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # > These MUST persist at runtime, so they stay ENV.
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_CONFIG_DIR=/etc/mise \
+    PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ \
     PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # > Login bash with pipefail so a failure anywhere in a piped RUN (and inside the scripts) aborts
@@ -76,22 +77,31 @@ COPY mise.toml /etc/mise/config.toml
 # > shipped as-is — 99-manifest.sh confirms it landed; the smoke spec verifies the runtime matches it.
 COPY toolchain-manifest.json /toolchain-manifest.json
 
-# > orchestrator.sh runs each NN-*.sh install script in order; the manifest step fails the build on
-# > any drift. Pins are passed to the orchestrator as env (from the ARGs above) for this RUN only, so
-# > versions are not baked into the final image's environment.
+# > Split the install into bounded layers. The expanded PTS profile matrix made the former single
+# > compressed layer exceed 1 GiB; Daytona's snapshot registry rejects that layer with an opaque
+# > inspection error. Grouping apt+mise, PTS, and verification separately keeps each layer portable
+# > without moving install logic out of the shellcheck-linted scripts. Pins remain RUN-scoped and are
+# > not baked into the final image's environment.
 COPY scripts /tmp/build/scripts
 RUN DEBIAN_FRONTEND="${DEBIAN_FRONTEND}" \
-    IMAGE_NAME="${IMAGE_NAME}" IMAGE_VERSION="${IMAGE_VERSION}" BASE_IMAGE="${BASE_IMAGE}" \
     MISE_VERSION="${MISE_VERSION}" MISE_SHA256_X64="${MISE_SHA256_X64}" MISE_SHA256_ARM64="${MISE_SHA256_ARM64}" \
+    bash /tmp/build/scripts/orchestrator.sh 00-apt.sh 10-mise.sh
+# Separate layer is the provider portability constraint documented above.
+# hadolint ignore=DL3059
+RUN DEBIAN_FRONTEND="${DEBIAN_FRONTEND}" \
     PTS_VERSION="${PTS_VERSION}" PTS_DEB_SHA256="${PTS_DEB_SHA256}" PTS_INSTALL_TESTS="${PTS_INSTALL_TESTS}" \
-    bash /tmp/build/scripts/orchestrator.sh \
+    bash /tmp/build/scripts/orchestrator.sh 20-pts.sh
+# Keep verification/cleanup out of the already bounded install layers.
+# hadolint ignore=DL3059
+RUN IMAGE_NAME="${IMAGE_NAME}" IMAGE_VERSION="${IMAGE_VERSION}" BASE_IMAGE="${BASE_IMAGE}" \
+    bash /tmp/build/scripts/orchestrator.sh 99-manifest.sh \
     && rm -rf /tmp/build
 
-# > Security note: this image intentionally runs as root. Sandbox providers manage their own user
-# > namespace/isolation around it, and the PTS suites + their root-owned state under
-# > /var/lib/phoronix-test-suite assume root at runtime. Hardening is therefore done by minimizing the
-# > image (digest-pinned base, no sudo, --no-install-recommends, pruned apt lists) rather than dropping
-# > privileges. Any setuid binary added later should be justified here.
+# > Security note: the generic image defaults to root, while E2B-compatible template builders inject
+# > an unprivileged runtime user. PTS_USER_PATH_OVERRIDE keeps both identities on the same pre-baked
+# > state under /var/lib/phoronix-test-suite; 20-pts.sh grants sandbox users write access because PTS
+# > writes per-run config and results there. Isolation remains the provider's outer VM/container
+# > boundary. Any setuid binary added later should be justified here.
 #
 # > Plain `docker build` yields the generic toolchain image. Provider glue lives in the variant
 # > Dockerfiles (FROM this image) — never here — so these layers stay shared across providers.

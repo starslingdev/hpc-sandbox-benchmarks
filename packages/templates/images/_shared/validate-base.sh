@@ -17,9 +17,10 @@ command -v mise >/dev/null 2>&1 || fail "mise not found on PATH"
 [[ -x /usr/local/bin/bench-node ]] || fail "stable node symlink /usr/local/bin/bench-node missing"
 bench-node --version >/dev/null 2>&1 || fail "/usr/local/bin/bench-node is not runnable"
 
-# > Phoronix Test Suite + its pre-seeded offline caches (the whole point of baking the base).
+# > Phoronix Test Suite + at least one completely pre-installed profile for offline execution.
 command -v phoronix-test-suite >/dev/null 2>&1 || fail "phoronix-test-suite not found on PATH"
-[[ -d /var/lib/phoronix-test-suite/download-cache ]] || fail "PTS download cache missing"
+pts_installed="$(find /var/lib/phoronix-test-suite/installed-tests -name pts-install.json -type f -print -quit 2>/dev/null)"
+[[ -n "${pts_installed}" ]] || fail "pre-installed PTS profiles missing"
 
 # > The base's enforced manifest — present iff the base build's verification step ran.
 [[ -f /toolchain-manifest.json ]] || fail "/toolchain-manifest.json missing"

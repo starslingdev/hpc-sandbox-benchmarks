@@ -37,6 +37,35 @@ export interface SmokeExecResult {
 }
 export type SmokeExec = (cmd: string) => Promise<SmokeExecResult>;
 
+const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
+
+/** Build the PTS smoke probe from an install list. Exported so edge cases stay executable tests. */
+export function ptsInstalledTestsSmokeCheck(installTests: string): SmokeCheck {
+	const expectedProfiles = installTests.split(/\s+/).filter(Boolean);
+	const expectedCount = expectedProfiles.length;
+	const tests = expectedProfiles.map(shellQuote).join(" ");
+	const verifyExpected =
+		expectedCount === 0
+			? ""
+			: `for test in ${tests}; do ` +
+				`if printf '%s\\n' "$profiles" | grep -qxF -- "pts/$test"; then continue; fi; ` +
+				`prefix="pts/$test-"; ` +
+				`if printf '%s\\n' "$profiles" | awk -v prefix="$prefix" 'index($0, prefix) == 1 { suffix = substr($0, length(prefix) + 1); if (suffix ~ /^[0-9]/) found = 1 } END { exit !found }'; then continue; fi; ` +
+				`printf 'missing pts/%s\\n%s\\n' "$test" "$installed"; exit 1; ` +
+				`done; `;
+	return {
+		name: "pts-installed-tests",
+		cmd:
+			'installed="$(PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ phoronix-test-suite list-installed-tests 2>/dev/null)"; ' +
+			`profiles="$(printf '%s\\n' "$installed" | awk '$1 ~ /^pts\\// { print $1 }')"; ` +
+			verifyExpected +
+			`actual="$(printf '%s\\n' "$profiles" | awk 'NF { count++ } END { print count + 0 }')"; ` +
+			`[ "$actual" -eq ${expectedCount} ] || { printf 'expected ${expectedCount} PTS profiles, found %s\\n%s\\n' "$actual" "$installed"; exit 1; }; ` +
+			`echo "pts-profile-count=$actual"`,
+		expect: `pts-profile-count=${expectedCount}`,
+	};
+}
+
 /**
  * The probes, in run order. Expects are pinned to the same pins.ts that built the image, so this
  * asserts the *exact* toolchain is present — not merely that "a" node/python exists.
@@ -55,16 +84,10 @@ export const smokeChecks: readonly SmokeCheck[] = [
 	{ name: "jc", cmd: "jc --version", expect: pins.jcVersion },
 	{ name: "quarto", cmd: "quarto --version", expect: pins.quartoVersion },
 	{ name: "warp", cmd: "warp --version", expect: pins.warpVersion },
-	// PTS offline caches were pre-seeded (the whole point of baking the base). `find … -type f` lists
-	// the cached files; the trailing-slash expect matches a real file path (…/download-cache/<file>)
-	// but NOT find's missing-dir error (…/download-cache'), so this proves the cache is NON-EMPTY —
-	// not merely that the directory exists. A single command with no shell operators, so it behaves
-	// the same whether the executor runs it through a shell or via exec.
-	{
-		name: "pts-download-cache",
-		cmd: "find /var/lib/phoronix-test-suite/download-cache -type f",
-		expect: "download-cache/",
-	},
+	// Every pinned PTS profile was pre-installed for offline runs (the whole point of baking the base).
+	// Exact count is deliberate: a mutable-tag cache once made E2B/Novita validate an old two-profile
+	// image while the current candidate held nine. The sentinel also avoids substring false positives.
+	ptsInstalledTestsSmokeCheck(pins.ptsInstallTests),
 	// The enforced verification manifest is present (proves the base build's 99-manifest step ran)…
 	{ name: "manifest", cmd: "cat /toolchain-manifest.json", expect: TOOLCHAIN_IMAGE_NAME },
 	// …and declares the expected toolchain version, so a stale/wrong-version manifest fails loudly.
