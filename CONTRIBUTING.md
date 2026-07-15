@@ -1,8 +1,23 @@
 # Contributing
 
+Thanks for helping improve sandbox provider comparisons. Read the
+[methodology](./docs/methodology.md) for how a measurement is produced before extending the matrix.
+
 This repo is a Bun workspace monorepo with a strict, enforced dependency DAG (see the
-[README](./README.md)) and a source-first, no-build layout. Read the [methodology](./docs/methodology.md)
-for how a measurement is produced before extending the matrix.
+[README](./README.md)) and a source-first, no-build layout.
+
+## Pull requests from forks
+
+1. Fork, branch, and open a PR against `main`.
+2. Hosted CI (`ci.yml` / `ci-lint.yml`) runs the command contract on your PR — no provider secrets.
+3. Self-hosted Docker toolchain smoke and live provider benches **do not** run on fork PRs (by
+   design: untrusted code must not execute on org runners or spend provider quota).
+4. Live benches, dataset publish, and GHCR toolchain releases are maintainer-only:
+   `workflow_dispatch` on `main` behind Environment `privileged`. See [CI & secrets](./docs/ci-secrets.md).
+
+For local benches, copy [`.env.example`](./.env.example) to a gitignored `.env`. Never commit API
+keys or paste them into issues/PRs — the repo-checks secret-hygiene gate fails CI if a credential
+file or secret token is tracked ([SECURITY.md](./SECURITY.md)).
 
 ## Local checks (the gate)
 

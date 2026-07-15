@@ -11,7 +11,10 @@
 - `plan-matrix` — print the **provider × suite** benchmark matrix as **single-line compact JSON** for `$GITHUB_OUTPUT` (the `bench-matrix` workflow's fan-out contract).
 - `build-template` — build a provider's sandbox template.
 - `normalize` — turn raw runs into normalized run documents.
+- `aggregate` — merge shard Runs into one candidate.
 - `promote` — promote normalized results to the published dataset.
+- `leaderboard` — render a Run as Markdown (`LEADERBOARD.md`); used by the dataset publish job.
+- `bake` / `bench-smoke` / `stability` — toolchain bake, single-cell smoke, cross-run stability gate.
 
 **Depends on:** all five packages (`workspace:*`) + `dotenv` (`catalog:`).
 
