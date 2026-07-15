@@ -12,7 +12,7 @@ schema-validated dataset.
 ## Target spec
 
 Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/providers.ts): **2 vCPU,
-8 GiB RAM, 20 GB disk**. It's sized to fit inside every provider's reproducible envelope (E2B caps
+8 GiB RAM, 40 GB disk**. It's sized to fit inside every provider's reproducible envelope (E2B caps
 sandbox RAM at 8 GiB), so anyone can rerun on the same shape. A provider that can't express a dimension
 runs with its actuals recorded and the mismatch disclosed (`specMatched`). Its measurements remain in
 the dataset for auditability, but the leaderboard excludes them from rankings and lists the provider in
