@@ -253,10 +253,6 @@ describe("checkToolchainDispatchOnly", () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("must not trigger on `push`");
 	});
-
-	test("ignores non-toolchain workflows", () => {
-		expect(checkToolchainDispatchOnly({ on: { push: {} } }, "ci.yml")).toEqual([]);
-	});
 });
 
 describe("the gate itself", () => {

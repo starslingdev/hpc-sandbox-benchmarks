@@ -293,13 +293,13 @@ export function checkPrivilegedEnvironment(
 
 /**
  * Invariant 4: toolchain-image.yml publishes only via workflow_dispatch — a push/merge must never
- * start a GHCR release. PR triggers are fine (secret-free pr-gate).
+ * start a GHCR release. PR triggers are fine (secret-free pr-gate). Call only with that workflow's
+ * document; {@link runHardeningCheck} does the file selection.
  */
 export function checkToolchainDispatchOnly(
 	doc: unknown,
 	file: string = TOOLCHAIN_WORKFLOW,
 ): string[] {
-	if (file !== TOOLCHAIN_WORKFLOW) return [];
 	const errors: string[] = [];
 	const root = asRecord(doc, `${file}: not a YAML mapping`);
 	// Bun.YAML keeps the GHA `on:` key as the string "on" (see workflow-sync.ts).
@@ -326,17 +326,26 @@ export function checkToolchainDispatchOnly(
 /** The whole gate against the real .github files under `root`. */
 export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 	const files = listWorkflowFiles(root);
-	const steps = files.flatMap((file) =>
-		checkoutSteps(readWorkflow(`${WORKFLOWS_DIR}/${file}`, root), file),
+	const docs = new Map(
+		files.map((file) => [file, readWorkflow(`${WORKFLOWS_DIR}/${file}`, root)] as const),
 	);
+	const steps = files.flatMap((file) => checkoutSteps(docs.get(file), file));
+	const ciLintFile = CI_LINT_WORKFLOW.slice(`${WORKFLOWS_DIR}/`.length);
+	const ciLintDoc = docs.get(ciLintFile);
 	const errors = [
 		...checkPersistCredentials(steps),
-		...checkCiLintGate(readWorkflow(CI_LINT_WORKFLOW, root)),
+		...(ciLintDoc === undefined
+			? [`${CI_LINT_WORKFLOW}: missing from ${WORKFLOWS_DIR}`]
+			: checkCiLintGate(ciLintDoc)),
 	];
 	for (const file of files) {
-		const doc = readWorkflow(`${WORKFLOWS_DIR}/${file}`, root);
-		errors.push(...checkPrivilegedEnvironment(doc, file));
-		errors.push(...checkToolchainDispatchOnly(doc, file));
+		errors.push(...checkPrivilegedEnvironment(docs.get(file), file));
+	}
+	const toolchainDoc = docs.get(TOOLCHAIN_WORKFLOW);
+	if (toolchainDoc === undefined) {
+		errors.push(`${TOOLCHAIN_WORKFLOW}: missing from ${WORKFLOWS_DIR}`);
+	} else {
+		errors.push(...checkToolchainDispatchOnly(toolchainDoc, TOOLCHAIN_WORKFLOW));
 	}
 	return errors;
 }

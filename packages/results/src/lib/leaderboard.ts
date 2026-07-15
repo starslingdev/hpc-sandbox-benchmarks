@@ -421,6 +421,20 @@ function rowNote(r: LeaderboardRow): string {
 	return "";
 }
 
+/** Mann-Whitney cell in the pairwise details table — reuses {@link rowNote} for the verdict suffix. */
+function formatPairwiseP(r: LeaderboardRow): string {
+	const note = rowNote(r);
+	if (r.pVsPrevious === null) return note ? `— (${note})` : "—";
+	const p = formatPValue(r.pVsPrevious.mannWhitney);
+	return note ? `${p} (${note})` : p;
+}
+
+function formatInterval(r: LeaderboardRow): string {
+	return r.interval.resamples === 0
+		? "—"
+		: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
+}
+
 /** One-line takeaway above each dimension table (leader vs next, or sole provider). */
 function dimensionTakeaway(
 	dimension: Dimension,
@@ -439,15 +453,11 @@ function dimensionTakeaway(
 		if (Number.isFinite(ratio) && ratio >= 1.05) {
 			return `${leader.displayName} leads · ~${ratio.toFixed(1)}× ${next.displayName} on median (${better}).`;
 		}
-	} else if (dimension === "economics") {
-		const ratio = next.value / leader.value;
-		if (Number.isFinite(ratio) && ratio >= 1.05) {
-			return `${leader.displayName} is cheapest · ~${ratio.toFixed(1)}× lower than ${next.displayName} (${better}).`;
-		}
 	} else {
 		const ratio = next.value / leader.value;
 		if (Number.isFinite(ratio) && ratio >= 1.05) {
-			return `${leader.displayName} leads · ~${ratio.toFixed(1)}× lower than ${next.displayName} (${better}).`;
+			const verb = dimension === "economics" ? "is cheapest" : "leads";
+			return `${leader.displayName} ${verb} · ~${ratio.toFixed(1)}× lower than ${next.displayName} (${better}).`;
 		}
 	}
 	if (next.tiedWithAbove === "statistical" || next.rank === leader.rank) {
@@ -457,7 +467,7 @@ function dimensionTakeaway(
 }
 
 /** Summary line for coverage gaps by provider — keeps the main board scannable. */
-function coverageSummary(gaps: CoverageGap[]): string[] {
+function coverageSummary(gaps: CoverageGap[]): string {
 	const byProvider = new Map<string, number>();
 	for (const g of gaps) {
 		byProvider.set(g.displayName, (byProvider.get(g.displayName) ?? 0) + 1);
@@ -465,9 +475,7 @@ function coverageSummary(gaps: CoverageGap[]): string[] {
 	const parts = [...byProvider.entries()]
 		.sort(([a], [b]) => a.localeCompare(b, "en"))
 		.map(([name, n]) => `${name} ${n}`);
-	return [
-		`${gaps.length} uncovered result${gaps.length === 1 ? "" : "s"} across ${byProvider.size} provider${byProvider.size === 1 ? "" : "s"} (${parts.join(", ")}). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.`,
-	];
+	return `${gaps.length} uncovered result${gaps.length === 1 ? "" : "s"} across ${byProvider.size} provider${byProvider.size === 1 ? "" : "s"} (${parts.join(", ")}). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.`;
 }
 
 /** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
@@ -493,7 +501,8 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	for (const { dimension, metric, rows } of board.dimensions) {
 		const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
-		const hasNotes = rows.some((r) => rowNote(r) !== "");
+		const notes = rows.map(rowNote);
+		const hasNotes = notes.some((n) => n !== "");
 		lines.push(
 			`## ${dimension}`,
 			"",
@@ -501,35 +510,18 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			"",
 			`_${dimensionTakeaway(dimension, metric, rows)}_`,
 			"",
+			hasNotes
+				? `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | Note |`
+				: `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n |`,
+			hasNotes
+				? "| ---: | --- | ---: | ---: | ---: | --- |"
+				: "| ---: | --- | ---: | ---: | ---: |",
+			...rows.map((r, i) => {
+				const base = `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${formatInterval(r)} | ${r.n} |`;
+				return hasNotes ? `${base} ${notes[i] || "—"} |` : base;
+			}),
+			"",
 		);
-		if (hasNotes) {
-			lines.push(
-				`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | Note |`,
-				"| ---: | --- | ---: | ---: | ---: | --- |",
-				...rows.map((r) => {
-					const ci =
-						r.interval.resamples === 0
-							? "—"
-							: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
-					const note = rowNote(r);
-					return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} | ${note || "—"} |`;
-				}),
-				"",
-			);
-		} else {
-			lines.push(
-				`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n |`,
-				"| ---: | --- | ---: | ---: | ---: |",
-				...rows.map((r) => {
-					const ci =
-						r.interval.resamples === 0
-							? "—"
-							: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
-					return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} |`;
-				}),
-				"",
-			);
-		}
 	}
 
 	// Coverage gaps: summary first; full table + legends inside <details> so unfinished providers
@@ -539,7 +531,7 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		lines.push(
 			"## Coverage gaps",
 			"",
-			...coverageSummary(board.coverageGaps),
+			coverageSummary(board.coverageGaps),
 			"",
 			"<details>",
 			"<summary>Full coverage table</summary>",
@@ -647,8 +639,7 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 	}
 
 	// Detail table with p vs. above + KS for readers who want distribution shape.
-	const anyCompared = rows.some((r) => r.pVsPrevious !== null);
-	if (anyCompared) {
+	if (rows.some((r) => r.pVsPrevious !== null)) {
 		lines.push(
 			"### Pairwise tests (vs. row above)",
 			"",
@@ -661,19 +652,8 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		);
 		for (const { dimension, rows: dimRows } of board.dimensions) {
 			for (const r of dimRows) {
-				const equalValues = r.tiedWithAbove === "identical-value";
-				const p =
-					r.pVsPrevious === null
-						? equalValues
-							? "— (equal values)"
-							: "—"
-						: r.verdict === "underpowered"
-							? `${formatPValue(r.pVsPrevious.mannWhitney)} (n too small${equalValues ? ", equal medians" : ""})`
-							: r.verdict === "tied"
-								? `${formatPValue(r.pVsPrevious.mannWhitney)} (tied)`
-								: formatPValue(r.pVsPrevious.mannWhitney);
 				const ks = r.pVsPrevious === null ? "—" : formatPValue(r.pVsPrevious.ks);
-				lines.push(`| ${dimension} | ${r.displayName} | ${p} | ${ks} |`);
+				lines.push(`| ${dimension} | ${r.displayName} | ${formatPairwiseP(r)} | ${ks} |`);
 			}
 		}
 		lines.push("");
