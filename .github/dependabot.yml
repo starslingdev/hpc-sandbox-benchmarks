@@ -16,6 +16,9 @@ updates:
     # One grouped PR for routine action bumps keeps review noise low; a major bump still opens its own.
     groups:
       github-actions:
+        # A group must name at least one matcher; `*` groups every action bump into the one PR.
+        patterns:
+          - "*"
         update-types: [minor, patch]
     commit-message:
       prefix: "chore(ci)"

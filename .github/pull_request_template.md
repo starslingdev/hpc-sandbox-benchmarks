@@ -18,6 +18,6 @@ PR runs only the hosted CI gate — see CONTRIBUTING.md and docs/ci-secrets.md.
 ## Checklist
 
 - [ ] `bun run lint`, `bun run typecheck`, and `bun run test` pass locally (the same gate CI runs)
-- [ ] `bun run spell` passes (via `mise`), if text changed
+- [ ] `bun run spell` passes (via `mise`)
 - [ ] For PTS-catalog changes: regenerated and `bun run check:catalog-drift` is clean
 - [ ] No secrets, `.env` files, or credentials are committed (SECURITY.md)
