@@ -77,10 +77,11 @@ jobs:
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
 
-      # TEMPORARY diagnostic: resource_type "instance" is valid (confirmed live — a wrong type would
-      # have errored differently), but the wildcard action ("instance:*") is rejected as "not allowed
-      # in revokable tokens". Trying explicit CRUD verbs next, matching the Compute API's
-      # CreateInstance/DescribeInstance/ListInstances/DestroyInstance methods.
+      # TEMPORARY diagnostic: resource_type "instance" is valid. Of ["create","read","list","delete"],
+      # the CLI rejected only "read" and "delete" (the error names exactly which entries are bad),
+      # meaning "create" and "list" ARE real verbs here. Trying the RPC-shaped alternatives — "get"
+      # (DescribeInstance) and "destroy" (DestroyInstance) — plus "exec" for RunCommandSync, since the
+      # error enumerates precisely what's wrong each time.
       - name: Mint a portable Namespace token
         if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
         continue-on-error: true
@@ -88,7 +89,7 @@ jobs:
         run: |
           nsc token create \
             --name "sandbox-benchmarks-smoke-${{ github.run_id }}" \
-            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","read","list","delete"]}' \
+            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
             --token_file "${{ runner.temp }}/nsc-token.json"
 
       - name: Set up Bun
