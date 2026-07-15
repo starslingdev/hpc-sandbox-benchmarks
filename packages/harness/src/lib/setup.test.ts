@@ -10,10 +10,47 @@ describe("setupSteps", () => {
 			"install base packages",
 			"clone repo",
 			"install mise",
-			"mise install",
+			"trust mise config",
 			"setup node 22 + pnpm 10",
+			"ensure PTS build deps + fresh apt index",
 			"setup phoronix-test-suite",
 		]);
+	});
+
+	it("refreshes apt + build deps for every PTS suite, including a stale baked image", () => {
+		const ptsStep = setupSteps(SUITES["cpu-node"]).find(
+			(step) => step.label === "ensure PTS build deps + fresh apt index",
+		);
+		expect(ptsStep?.script).toMatch(/apt-get.*update/);
+		expect(ptsStep?.script).toContain("autoconf");
+		expect(ptsStep?.script).not.toContain("command -v phoronix-test-suite");
+	});
+
+	it("does not install repository developer tools inside benchmark sandboxes", () => {
+		expect(labels).not.toContain("mise install");
+		const nodeStep = setupSteps(SUITES["cpu-node"]).find(
+			(step) => step.label === "setup node 22 + pnpm 10",
+		);
+		expect(nodeStep?.script).toContain('cd "$HOME"');
+		expect(nodeStep?.script).toContain("mise use --global");
+		expect(nodeStep?.script).toContain("node@22.22.3");
+		expect(nodeStep?.script).toContain('npm install --global --prefix "$HOME/.local" pnpm@10.34.3');
+		expect(nodeStep?.script).not.toMatch(/mise use[^&]*pnpm/);
+		expect(nodeStep?.script).not.toContain(`cd "$HOME/sandbox-benchmarks" && mise use`);
+	});
+
+	it("checksum-verifies the pinned mise fallback without executing a remote installer", () => {
+		const miseStep = setupSteps(SUITES["cpu-node"]).find((step) => step.label === "install mise");
+		expect(miseStep?.script).toContain("sha256sum -c -");
+		expect(miseStep?.script).toContain("mise-v2026.5.16-linux-$a");
+		expect(miseStep?.script).not.toContain("mise.run");
+	});
+
+	it("emits syntactically valid shell for every setup step", () => {
+		for (const step of setupSteps(SUITES["cpu-node"])) {
+			const result = Bun.spawnSync(["bash", "-n", "-c", step.script]);
+			expect(result.exitCode, `${step.label}: ${result.stderr.toString()}`).toBe(0);
+		}
 	});
 
 	it("clones this repo by default, so the in-sandbox producer matches the harness", () => {

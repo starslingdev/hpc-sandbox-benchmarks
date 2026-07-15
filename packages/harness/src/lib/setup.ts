@@ -23,9 +23,14 @@ const CLONE_URL = REPO_TOKEN
 // Resolved in-sandbox: images differ on user (root vs daytona), so the checkout lives under $HOME.
 export const DIR = '"$HOME/sandbox-benchmarks"';
 
-// mise/PTS versions for the runtime-setup fallback path (no-ops on the baked image, which already
-// ships them). Kept as best-effort constants rather than a pins import to keep the harness decoupled.
+// Runtime versions for the stock-image fallback path (no-ops on the baked image, which already
+// ships them). Keep node/pnpm aligned with packages/templates/images/base/mise.toml. These stay as
+// local constants rather than a templates-package import so the harness remains decoupled.
 const MISE_VERSION = "v2026.5.16";
+const MISE_SHA256_X64 = "fb2d7bf1a3751398a5c336a3565cd3c60af9b41952abe6fd62e2f2f0d5f06b60";
+const MISE_SHA256_ARM64 = "a068f29d8821ab0707f1a006721b5ab0baa80acaafc5a7b71e04371287108b92";
+const NODE_VERSION = "22.22.3";
+const PNPM_VERSION = "10.34.3";
 const PTS_VERSION = "10.8.4";
 
 export interface SetupStep {
@@ -56,57 +61,79 @@ export function setupSteps(suite: Suite): SetupStep[] {
 		},
 		{
 			label: "install mise",
-			// No-op on pre-baked images. mise.run can be unreachable from some sandbox networks — fall
-			// back to the static binary from GitHub releases (GitHub is reachable: we clone from it).
+			// No-op on pre-baked images. Install the same pinned, checksum-verified static binary as the
+			// toolchain image; GitHub is already required for the repository clone immediately above.
 			script: [
 				"command -v mise >/dev/null 2>&1 || {",
 				'mkdir -p "$HOME/.local/bin";',
-				"(curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 https://mise.run | sh)",
-				'|| { arch=$(uname -m); case "$arch" in aarch64|arm64) a=arm64;; *) a=x64;; esac;',
-				`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$HOME/.local/bin/mise" "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-$a" && chmod +x "$HOME/.local/bin/mise"; }; };`,
+				'arch=$(uname -m); case "$arch" in',
+				`aarch64|arm64) a=arm64; sha=${MISE_SHA256_ARM64};;`,
+				`x86_64|amd64) a=x64; sha=${MISE_SHA256_X64};;`,
+				'*) echo "Unsupported architecture for mise: $arch" >&2; exit 1;; esac;',
+				"tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT;",
+				`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$tmp" "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-$a"`,
+				'&& printf "%s  %s\\n" "$sha" "$tmp" | sha256sum -c -',
+				'&& chmod +x "$tmp" && mv "$tmp" "$HOME/.local/bin/mise"; };',
 				"mise --version",
 			].join(" "),
 			timeoutMs: 5 * MIN,
 			retries: 2,
 		},
 		{
-			label: "mise install",
-			script: `cd ${DIR} && mise trust --yes && mise install --yes`,
-			timeoutMs: 20 * MIN,
-			retries: 2,
+			label: "trust mise config",
+			// Trust the cloned task definitions without installing the repository's developer-only tools.
+			script: `cd ${DIR} && mise trust --yes`,
+			timeoutMs: MIN,
 		},
 	];
 
 	if (suite.setupNode) {
 		steps.push({
 			label: "setup node 22 + pnpm 10",
-			script: `cd ${DIR} && mise use --yes node@22 pnpm@10 && node -v && pnpm -v`,
+			// Activate only the benchmark runtimes from outside the checkout. Exact Node avoids version
+			// discovery, and pnpm comes from npm rather than mise's GitHub-API-backed aqua plugin. Blaxel
+			// matrix cells share one unauthenticated egress IP, so even the one pnpm API lookup can hit an
+			// exhausted 60-request quota. Later `mise run` commands inherit the global Node config while
+			// task auto-install stays off. The pinned baked image takes the fast path for both checks.
+			script: [
+				`cd "$HOME"`,
+				`(node -e 'process.exit(process.versions.node === "${NODE_VERSION}" ? 0 : 1)' 2>/dev/null || mise use --global --yes node@${NODE_VERSION})`,
+				`if command -v pnpm >/dev/null 2>&1 && [ "$(pnpm -v)" = "${PNPM_VERSION}" ]; then :; else npm install --global --prefix "$HOME/.local" pnpm@${PNPM_VERSION}; fi`,
+				"node -v && pnpm -v",
+			].join(" && "),
 			timeoutMs: 10 * MIN,
 			retries: 2,
 		});
 	}
 
 	if (suite.setupPts) {
+		// Refresh the apt index and ensure PTS's build/runtime deps at runtime unconditionally. A baked
+		// image deliberately cleans /var/lib/apt/lists, while a stock-image provider must compile every
+		// profile locally; in either case PTS's own dependency install needs a usable package index.
+		// Best-effort lets a healthy baked image proceed when a provider cannot reach its distro mirror.
+		// Keep this set aligned with packages/templates/images/base/scripts/00-apt.sh.
+		const ptsDeps =
+			"php-cli php-xml build-essential autoconf flex bison bc libelf-dev libssl-dev " +
+			"libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps";
+		steps.push({
+			label: "ensure PTS build deps + fresh apt index",
+			script:
+				"$SUDO apt-get -o Acquire::Retries=3 update -qq || true; " +
+				`$SUDO apt-get install -y -qq ${ptsDeps} || echo "WARNING: apt dep refresh failed (best-effort); relying on the baked image"`,
+			timeoutMs: 15 * MIN,
+		});
 		steps.push({
 			label: "setup phoronix-test-suite",
-			// No-op on pre-baked images.
+			// No-op on pre-baked images; on stock images the step above already populated apt's index and
+			// installed the profile build dependencies.
 			script:
 				"command -v phoronix-test-suite >/dev/null 2>&1 || { " +
 				[
 					`curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite_${PTS_VERSION}_all.deb" -o /tmp/phoronix-test-suite.deb`,
-					"$SUDO apt-get update -qq",
-					// libaio-dev: fio's libaio engine (disk suite). libicu-dev: postgres's configure hard-
-					// requires ICU (pgbench). dnsutils+jq: the system provider probe. netcat-openbsd:
-					// network-loopback's dd|nc runner. stress-ng: the disk suite's hardlink leaf (its
-					// `command -v` guard would otherwise silently skip the metric on stock images while
-					// the fio metrics report). All no-ops on the pre-baked image.
-					// tcl: sqlite-speedtest builds SQLite from source and its Makefile shells out to `tclsh`
-					// to generate opcodes.h — without it the build dies with exit 127 and PTS still exits 0.
-					"$SUDO apt-get install -y -qq php-cli php-xml build-essential flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng",
 					"($SUDO dpkg -i /tmp/phoronix-test-suite.deb || $SUDO apt-get install -y -qq -f)",
 				].join(" && ") +
 				"; }; phoronix-test-suite version",
-			timeoutMs: 15 * MIN,
+			timeoutMs: 10 * MIN,
 			retries: 2,
 		});
 	}

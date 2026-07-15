@@ -135,9 +135,16 @@ bench_cmd() {
 
 # --- Phoronix Test Suite (PTS) helpers ---
 
-# Locate PTS's data directory. PTS uses $HOME/.phoronix-test-suite for an unprivileged user but
-# /var/lib/phoronix-test-suite for root (the case on sandbox runners). Detected by core.pt2so, which
-# pts_init guarantees exists. Cached for the shell.
+# The toolchain bakes profiles as root under /var/lib, but E2B-compatible providers inject an
+# unprivileged runtime user. PTS 10.8.4 supports this official override when the directory exists.
+# Set it here as a fallback in case an image importer strips the Docker ENV; the harness preamble does
+# the same before setup/smoke commands, so all PTS call sites see one registry.
+if [ -d /var/lib/phoronix-test-suite ]; then
+	export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/
+fi
+
+# Locate PTS's effective data directory. Prefer its supported override, then probe legacy root/user
+# locations by core.pt2so, which pts_init guarantees exists. Cached for the shell.
 _pts_user_dir_cached=""
 pts_init() {
 	# system-info is cheap and writes core.pt2so on first run; swallow all output.
@@ -148,8 +155,9 @@ pts_user_dir() {
 		echo "$_pts_user_dir_cached"
 		return 0
 	fi
-	local cand dir="${HOME}/.phoronix-test-suite"
-	for cand in "${HOME}/.phoronix-test-suite" "/var/lib/phoronix-test-suite" "/root/.phoronix-test-suite"; do
+	local cand dir="${PTS_USER_PATH_OVERRIDE:-${HOME}/.phoronix-test-suite}"
+	for cand in "${PTS_USER_PATH_OVERRIDE:-}" "${HOME}/.phoronix-test-suite" "/var/lib/phoronix-test-suite" "/root/.phoronix-test-suite"; do
+		[ -n "$cand" ] || continue
 		if [ -e "${cand}/core.pt2so" ]; then
 			dir="$cand"
 			break
@@ -164,15 +172,80 @@ pts_user_dir() {
 # PTS_IS_DAEMONIZED_SERVER_PROCESS whenever /var/lib AND /etc are both writable — i.e. whenever it
 # runs as root, which is every sandbox provider here — and in that mode it uses
 # /etc/phoronix-test-suite.xml UNCONDITIONALLY, without so much as probing the user dir. So under
-# root, user-config.xml is the file PTS never touches, and /etc is the live config. Only an
-# unprivileged run falls through to ${PTS_USER_PATH}/user-config.xml — and even then a writable
-# /etc/phoronix-test-suite.xml, if one exists, still wins.
+# root, user-config.xml is the file PTS never touches, and /etc is the live config. An unprivileged
+# run falls through to ${PTS_USER_PATH}/user-config.xml (the baked override here) — and even then a
+# writable /etc/phoronix-test-suite.xml, if one exists, still wins.
 pts_config_file() {
 	if { [ -w /var/lib ] && [ -w /etc ]; } || [ -w /etc/phoronix-test-suite.xml ]; then
 		echo /etc/phoronix-test-suite.xml
 		return 0
 	fi
 	echo "$(pts_user_dir)/user-config.xml"
+}
+
+# Ask PTS whether the fully-qualified profile is installed. The on-disk manifest name is an internal,
+# version-dependent detail (10.8.4 writes pts-install.json; older releases wrote .xml), while this is
+# the same public command the image bake uses to verify every preinstalled profile.
+_pts_is_installed() {
+	phoronix-test-suite list-installed-tests 2>/dev/null | awk '{print $1}' | grep -qxF -- "$1"
+}
+
+# Installation failures are otherwise opaque because PTS can exit 0 after a compiler/dependency
+# failure. Emit its own installed list, candidate data roots, and the newest install-failed.log. This
+# is diagnostic-only and callers run it best-effort, so it cannot turn an honest skip into a crash.
+_pts_install_diagnostics() {
+	local test_name="$1"
+	# Build this list at call time: provider preambles can change HOME or the supported PTS override
+	# after bench.sh is sourced. Normalize trailing slashes and deduplicate before handing the roots to
+	# find, otherwise the baked /var/lib override is traversed twice and every diagnostic is repeated.
+	local d existing seen pts_dir
+	local -a data_dirs=()
+	for d in "${PTS_USER_PATH_OVERRIDE:-${HOME}/.phoronix-test-suite}" "${HOME}/.phoronix-test-suite" /var/lib/phoronix-test-suite /root/.phoronix-test-suite; do
+		[ -n "$d" ] || continue
+		[ "$d" = "/" ] || d="${d%/}"
+		seen=0
+		for existing in "${data_dirs[@]}"; do
+			if [ "$existing" = "$d" ]; then
+				seen=1
+				break
+			fi
+		done
+		[ "$seen" -eq 1 ] || data_dirs+=("$d")
+	done
+
+	# Initialize before the first pts_user_dir lookup so its process-lifetime cache records the data
+	# directory PTS actually selected, rather than a pre-initialization fallback.
+	pts_init
+	pts_dir="$(pts_user_dir)"
+	echo "--- PTS install diagnostics: ${test_name} ---"
+	echo "user=$(id -un 2>/dev/null) HOME=${HOME}"
+	echo "resolved pts_user_dir=${pts_dir}"
+	echo "resolved pts_config_file=$(pts_config_file)"
+	for d in "${data_dirs[@]}"; do
+		[ -e "$d/core.pt2so" ] && echo "  core.pt2so present in: $d"
+	done
+	echo "  phoronix-test-suite list-installed-tests:"
+	phoronix-test-suite list-installed-tests 2>/dev/null | sed 's/^/    /' || true
+	echo "  install manifests on disk:"
+	find "${data_dirs[@]}" -maxdepth 5 \( -name pts-install.json -o -name pts-install.xml \) \
+		2>/dev/null | sed 's/^/    /' || true
+	echo "  installed-tests tree (${pts_dir}/installed-tests):"
+	find "${pts_dir}/installed-tests" -maxdepth 3 2>/dev/null | sed 's/^/    /' | head -40 || true
+	local log
+	log=$(find "${data_dirs[@]}" -name install-failed.log -exec ls -t {} + 2>/dev/null | head -1)
+	if [ -n "$log" ] && [ -f "$log" ]; then
+		echo "  install-failed.log ($log), last 40 lines:"
+		tail -40 "$log" 2>/dev/null | sed 's/^/    /' || true
+	else
+		echo "  (no install-failed.log found under any candidate data dir)"
+	fi
+	echo "--- end diagnostics ---"
+}
+
+# Profile names become both source and destructive destination paths below. Restrict them to one
+# ordinary path segment before either function reaches rm -rf.
+_pts_profile_name_is_safe() {
+	[[ "$1" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
 }
 
 # Configure PTS batch mode in the current process. Must run before batch-run, since mise subtasks
@@ -195,11 +268,11 @@ _configure_pts_batch() {
 	# name would let a failed later leaf collect an earlier leaf's merged composite as its own.
 	export TEST_RESULTS_DESCRIPTION=ci
 	export TEST_RESULTS_IDENTIFIER=ci
-	# FORCE_TIMES_TO_RUN=1 pins every test to a single pass (fast, but no in-sandbox repeats to
-	# aggregate). The sandbox harness sets PTS_RESPECT_TIMES_TO_RUN=1 to opt out, so PTS honours each
-	# profile's TimesToRun (our profiles pin 2 — the floor; PTS re-runs beyond it when a test's
-	# stddev stays high) and writes the repeated samples our normalizer reads from RawString — the
-	# statistical confidence we want there.
+	# FORCE_TIMES_TO_RUN=1 pins contract-verification runs to a single pass. Published sandbox runs
+	# export PTS_RESPECT_TIMES_TO_RUN=1 plus FORCE_TIMES_TO_RUN=2 in the harness preamble: two balanced
+	# trials are the pinned count (see the preamble on why more trials aren't bought), while disabling
+	# PTS's adaptive variance policy (which otherwise expanded noisy fio cases to 20-40 runs and
+	# exhausted the suite).
 	if [ -z "${PTS_RESPECT_TIMES_TO_RUN:-}" ]; then
 		export FORCE_TIMES_TO_RUN=1
 	fi
@@ -254,15 +327,15 @@ ensure_pts() {
 			local tmp_deb
 			tmp_deb="$(mktemp /tmp/pts-XXXXXX.deb)"
 			# Group with `|| true` so a failed install can't abort a caller running under `set -e` —
-			# ensure_pts's contract is to return 1 gracefully so the caller can skip.
-			# The package list mirrors the harness setup fallback (packages/harness/src/lib/setup.ts):
+			# ensure_pts's contract is to return 1 gracefully so the caller can skip. This is the
+			# last-resort stock-image path; keep the package set aligned with setup.ts and 00-apt.sh.
 			# php for PTS itself, the build toolchain for the source-built profiles, libaio-dev (fio's
-			# Linux AIO engine), libicu-dev (postgres's configure hard-requires ICU), and the probe deps
-			# — without them the profiles install "successfully" and then burn their timed runs failing.
+			# Linux AIO engine), libicu-dev (postgres), tcl (sqlite), stress-ng (hardlink), and probes.
 			(curl -fsSL "$deb_url" -o "$tmp_deb" &&
-				${SUDO:-} apt-get update -qq &&
-				${SUDO:-} apt-get install -y -qq php-cli php-xml build-essential flex bison bc \
-					libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping &&
+				${SUDO:-} apt-get -o Acquire::Retries=3 update -qq &&
+				${SUDO:-} apt-get install -y -qq php-cli php-xml build-essential autoconf flex bison bc \
+					libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping \
+					tcl stress-ng unzip procps &&
 				${SUDO:-} dpkg -i "$tmp_deb") || true
 			rm -f "$tmp_deb"
 		fi
@@ -290,6 +363,10 @@ install_local_pts_profile() {
 		echo "ERROR: install_local_pts_profile requires a profile name" >&2
 		return 1
 	fi
+	if ! _pts_profile_name_is_safe "$name"; then
+		echo "ERROR: install_local_pts_profile: invalid profile name: ${name}" >&2
+		return 1
+	fi
 	shift
 	local src="${REPO_ROOT}/packages/schema/src/pts-profiles/local/${name}"
 	# Fail before the rm -rf below: a missing source (typo'd name, wrong REPO_ROOT) must not delete
@@ -315,6 +392,42 @@ install_local_pts_profile() {
 	echo "Installed local PTS profile: ${dst} (PTS data dir: ${pts_dir})"
 }
 
+# Stage a vendored override for one pinned upstream `pts/` profile and discard the baked installed
+# copy so run_pts_benchmark verifies and installs the override. This preserves the upstream
+# `pts/<name>` identifier (and therefore the catalog join key) while letting us repair a broken
+# runner reproducibly instead of depending on a mutable OpenBenchmarking copy.
+# Usage: install_vendored_pts_profile <name-version>
+install_vendored_pts_profile() {
+	local name="${1:-}"
+	if [ -z "$name" ]; then
+		echo "ERROR: install_vendored_pts_profile requires a profile name" >&2
+		return 1
+	fi
+	if ! _pts_profile_name_is_safe "$name"; then
+		echo "ERROR: install_vendored_pts_profile: invalid profile name: ${name}" >&2
+		return 1
+	fi
+	local src="${REPO_ROOT}/packages/schema/src/pts-profiles/${name}"
+	if [ ! -d "$src" ]; then
+		echo "ERROR: install_vendored_pts_profile: source profile not found: ${src}" >&2
+		return 1
+	fi
+
+	pts_init
+	local pts_dir profile_dst installed_dst
+	pts_dir="$(pts_user_dir)"
+	profile_dst="${pts_dir}/test-profiles/pts/${name}"
+	installed_dst="${pts_dir}/installed-tests/pts/${name}"
+	mkdir -p "$(dirname "$profile_dst")"
+	rm -rf "$profile_dst"
+	cp -r "$src" "$profile_dst"
+	# The image bakes the upstream profile. Removing only this pinned install makes the ordinary
+	# run_pts_benchmark path reinstall our staged source and retain all of its exit/registry checks.
+	rm -rf "$installed_dst"
+
+	echo "Staged vendored PTS override: ${profile_dst} (removed ${installed_dst})"
+}
+
 # Install and run one PTS test, capturing timing via bench_cmd and copying the result XML to
 # benchmark-results/<prefix>.xml (the contract the results extractor reads).
 # Usage: run_pts_benchmark <test-name> <results-prefix>
@@ -335,35 +448,24 @@ run_pts_benchmark() {
 	save_name="benchmark-$(printf '%s' "$prefix" | tr -cs 'a-z0-9' '-')"
 	export TEST_RESULTS_NAME="$save_name"
 
-	# Skip the install for a version-pinned test that is already on disk (the toolchain image
-	# pre-installs every registered profile): batch-install would only no-op through several seconds
-	# of PHP. Probe the ONE data dir this PTS invocation will actually use (pts_init first, so
-	# pts_user_dir doesn't cache the $HOME fallback on a fresh machine — the fio_direct_choice
-	# precedent), and require the pts-install.xml manifest, not the bare directory: PTS only treats a
-	# test as installed once that manifest exists, so a batch-install killed mid-build would otherwise
-	# permanently disable both install and run. (Trade-off vs full batch-install: PTS's same-version
-	# reinstall triggers — installer checksum, system hash — are bypassed for baked profiles.)
-	local installed=""
+	# Skip the install for a profile PTS itself reports installed. Do not infer this from an internal
+	# manifest filename; `_pts_is_installed` is version-agnostic and matches the bake verification.
 	pts_init
-	if [ -f "$(pts_user_dir)/installed-tests/${test_name}/pts-install.xml" ]; then
-		installed=1
-	fi
-	if [ -n "$installed" ]; then
+	if _pts_is_installed "$test_name"; then
 		echo "=== PTS test already installed (baked): ${test_name} ==="
 	else
 		echo "=== Installing PTS test: ${test_name} ==="
 		phoronix-test-suite batch-install "$test_name" 2>&1 || {
 			echo "WARNING: PTS install of ${test_name} failed"
+			( set +e; _pts_install_diagnostics "$test_name" ) || true
 			skip_result "PTS install of ${test_name} failed" "$prefix"
 			return 0
 		}
-		# PTS EXITS 0 EVEN WHEN AN INSTALL FAILS (it writes install-failed.log and moves on), so the
-		# `||` branch above is dead for the common failure — a missing build dependency. Without this
-		# the leaf proceeds to batch-run, burns its whole budget producing nothing, and lands on the
-		# generic "produced no composite.xml" skip that names the wrong cause. Re-probe the manifest.
-		if [ ! -f "$(pts_user_dir)/installed-tests/${test_name}/pts-install.xml" ]; then
-			echo "WARNING: PTS reported success but ${test_name} is not installed (see install-failed.log)"
-			skip_result "PTS install of ${test_name} failed (exit 0, no pts-install.xml)" "$prefix"
+		# PTS can exit 0 even when compilation failed, so verify through its installed-test registry.
+		if ! _pts_is_installed "$test_name"; then
+			echo "WARNING: PTS reported success but ${test_name} is not installed"
+			( set +e; _pts_install_diagnostics "$test_name" ) || true
+			skip_result "PTS install of ${test_name} failed (exit 0, not in list-installed-tests)" "$prefix"
 			return 0
 		fi
 	fi

@@ -36,6 +36,21 @@ describe("selectTransport", () => {
 	});
 });
 
+describe("sandbox preamble", () => {
+	it("does not auto-install repository developer tools when running benchmark tasks", () => {
+		expect(PREAMBLE).toContain("MISE_TASK_RUN_AUTO_INSTALL=0");
+	});
+
+	it("reuses the baked PTS registry for an injected unprivileged runtime user", () => {
+		expect(PREAMBLE).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
+	});
+
+	it("uses two fixed PTS trials for a publishable comparison", () => {
+		expect(PREAMBLE).toContain("PTS_RESPECT_TIMES_TO_RUN=1");
+		expect(PREAMBLE).toContain("FORCE_TIMES_TO_RUN=2");
+	});
+});
+
 describe("shellQuote", () => {
 	it("wraps in single quotes and escapes embedded quotes", () => {
 		expect(shellQuote("echo hi")).toBe("'echo hi'");

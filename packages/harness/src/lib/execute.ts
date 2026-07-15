@@ -167,17 +167,29 @@ export const PREAMBLE = [
 	'if [ -d /mise ]; then export MISE_DATA_DIR=/mise MISE_CONFIG_DIR=/mise MISE_CACHE_DIR=/mise/cache PATH="/mise/shims:$PATH"; fi',
 	// Some sandbox networks reset connections to *.jdx.dev — fetch versions/tools from GitHub instead.
 	"export MISE_USE_VERSIONS_HOST=0",
+	// Repository mise.toml contains developer-only linters (typos, shellcheck, hadolint, actionlint,
+	// zizmor), none of which a benchmark task uses. Never auto-install them when `mise run` resolves a
+	// task: stock-image providers fan the matrix out behind one egress IP, and seven concurrent aqua
+	// lookups exhaust GitHub's anonymous API quota before a benchmark starts. Suite runtime tools are
+	// installed explicitly by setupSteps (node/pnpm/PTS) or by the base-package fallback instead.
+	"export MISE_TASK_RUN_AUTO_INSTALL=0",
 	// The precompiled-python index is jdx.dev-only (no GitHub fallback) — use the distro python3.
 	"export MISE_DISABLE_TOOLS=python",
 	// Distro pythons are PEP 668 externally-managed, but PTS profiles pip-install their harness —
 	// fine in a throwaway sandbox; the baked image sets the same.
 	"export PIP_BREAK_SYSTEM_PACKAGES=1",
-	// Honour each PTS profile's TimesToRun (lib/bench.sh otherwise forces a single pass). The sandbox
-	// is the statistical-confidence path: the in-sandbox repeats give p50/stdev per Metric.
-	// BENCH_PASSES=1 (host env) opts a run out for fast contract-verification iteration -- one pass
-	// per task, ~2x faster on multi-pass suites (profiles pin TimesToRun=2); never set it for a run
-	// whose numbers you publish.
-	...(process.env.BENCH_PASSES === "1" ? [] : ["export PTS_RESPECT_TIMES_TO_RUN=1"]),
+	// E2B-compatible builders inject an unprivileged runtime user. Point PTS at the root-baked profile
+	// registry explicitly even if a provider strips the Docker ENV while importing the image.
+	"if [ -d /var/lib/phoronix-test-suite ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/; fi",
+	// Published comparisons use exactly two trials per PTS case — the balanced count the suites pin
+	// (PR #129 lowered it from three). Five overran the command and sandbox lifetimes (a two-repeat run
+	// already took ~67 min), and chasing significance with more trials is a non-goal: the leaderboard
+	// LABELS underpowered comparisons rather than buying statistical power with extra runs. Fixing the
+	// count also prevents PTS's variance-driven policy from giving noisy providers 20-40 trials until the
+	// suite times out. BENCH_PASSES=1 keeps contract-verification runs at one pass via lib/bench.sh.
+	...(process.env.BENCH_PASSES === "1"
+		? []
+		: ["export PTS_RESPECT_TIMES_TO_RUN=1", "export FORCE_TIMES_TO_RUN=2"]),
 	'if [ "$(id -u)" = 0 ]; then SUDO=""; elif command -v sudo >/dev/null 2>&1; then SUDO="sudo -E"; else SUDO=""; fi',
 ].join("; ");
 
