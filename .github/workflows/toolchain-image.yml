@@ -130,6 +130,13 @@ jobs:
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
 
+      # `nsc token create` mints a scoped, revocable token from the CLI session above and writes it as
+      # a {"bearer_token": "..."} JSON file @computesdk/namespace can read via NSC_TOKEN_FILE. The
+      # grant below is the minimal permission set the harness needs against the Compute API's
+      # instance resource: create (CreateInstance), list (ListInstances), get (DescribeInstance),
+      # destroy (DestroyInstance), and exec (RunCommandSync) — found by live trial: a wildcard action
+      # is rejected outright ("not allowed in revokable tokens"), and each wrong verb name (e.g.
+      # "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error.
       - name: Mint a portable Namespace token
         if: steps.nsc-setup.outcome == 'success'
         continue-on-error: true
@@ -137,6 +144,7 @@ jobs:
         run: |
           nsc token create \
             --name "sandbox-benchmarks-toolchain-${{ github.run_id }}" \
+            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
             --token_file "${{ runner.temp }}/nsc-token.json"
 
       - name: Set up Bun

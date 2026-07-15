@@ -77,11 +77,13 @@ jobs:
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
 
-      # TEMPORARY diagnostic: resource_type "instance" is valid. Of ["create","read","list","delete"],
-      # the CLI rejected only "read" and "delete" (the error names exactly which entries are bad),
-      # meaning "create" and "list" ARE real verbs here. Trying the RPC-shaped alternatives — "get"
-      # (DescribeInstance) and "destroy" (DestroyInstance) — plus "exec" for RunCommandSync, since the
-      # error enumerates precisely what's wrong each time.
+      # `nsc token create` mints a scoped, revocable token from the CLI session above and writes it as
+      # a {"bearer_token": "..."} JSON file @computesdk/namespace can read via NSC_TOKEN_FILE. The
+      # grant below is the minimal permission set the harness needs against the Compute API's
+      # instance resource: create (CreateInstance), list (ListInstances), get (DescribeInstance),
+      # destroy (DestroyInstance), and exec (RunCommandSync) — found by live trial: a wildcard action
+      # is rejected outright ("not allowed in revokable tokens"), and each wrong verb name (e.g.
+      # "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error.
       - name: Mint a portable Namespace token
         if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
         continue-on-error: true
