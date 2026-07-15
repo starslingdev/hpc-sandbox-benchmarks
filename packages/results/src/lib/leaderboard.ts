@@ -32,6 +32,7 @@ import {
 	kolmogorovSmirnov,
 	METRIC_CATALOG,
 	mannWhitneyU,
+	TARGET_SPEC,
 } from "@sandbox-benchmarks/schema";
 
 /** One provider's standing on a Dimension's headline Metric. */
@@ -407,14 +408,82 @@ function formatPValue(p: number): string {
 	return p.toPrecision(2);
 }
 
+/** Compact note for the main table's Note column — empty when nothing needs calling out. */
+function rowNote(r: LeaderboardRow): string {
+	const equalValues = r.tiedWithAbove === "identical-value";
+	if (r.pVsPrevious === null) {
+		return equalValues ? "equal values" : "";
+	}
+	if (r.verdict === "underpowered") {
+		return equalValues ? "n too small, equal medians" : "n too small";
+	}
+	if (r.verdict === "tied") return "tied";
+	return "";
+}
+
+/** One-line takeaway above each dimension table (leader vs next, or sole provider). */
+function dimensionTakeaway(
+	dimension: Dimension,
+	metric: MetricDef,
+	rows: LeaderboardRow[],
+): string {
+	const leader = rows[0];
+	if (!leader) return "";
+	const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
+	const next = rows.find((r) => r.rank > leader.rank);
+	if (!next) {
+		return `${leader.displayName} is the only ranked provider (${formatValue(leader.value)} ${metric.unit}; ${better}).`;
+	}
+	if (metric.direction === "HIB") {
+		const ratio = leader.value / next.value;
+		if (Number.isFinite(ratio) && ratio >= 1.05) {
+			return `${leader.displayName} leads · ~${ratio.toFixed(1)}× ${next.displayName} on median (${better}).`;
+		}
+	} else if (dimension === "economics") {
+		const ratio = next.value / leader.value;
+		if (Number.isFinite(ratio) && ratio >= 1.05) {
+			return `${leader.displayName} is cheapest · ~${ratio.toFixed(1)}× lower than ${next.displayName} (${better}).`;
+		}
+	} else {
+		const ratio = next.value / leader.value;
+		if (Number.isFinite(ratio) && ratio >= 1.05) {
+			return `${leader.displayName} leads · ~${ratio.toFixed(1)}× lower than ${next.displayName} (${better}).`;
+		}
+	}
+	if (next.tiedWithAbove === "statistical" || next.rank === leader.rank) {
+		return `${leader.displayName} and ${next.displayName} share the top on this headline (${better}).`;
+	}
+	return `${leader.displayName} leads on median (${better}); see notes for how ranks are decided.`;
+}
+
+/** Summary line for coverage gaps by provider — keeps the main board scannable. */
+function coverageSummary(gaps: CoverageGap[]): string[] {
+	const byProvider = new Map<string, number>();
+	for (const g of gaps) {
+		byProvider.set(g.displayName, (byProvider.get(g.displayName) ?? 0) + 1);
+	}
+	const parts = [...byProvider.entries()]
+		.sort(([a], [b]) => a.localeCompare(b, "en"))
+		.map(([name, n]) => `${name} ${n}`);
+	return [
+		`${gaps.length} uncovered result${gaps.length === 1 ? "" : "s"} across ${byProvider.size} provider${byProvider.size === 1 ? "" : "s"} (${parts.join(", ")}). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.`,
+	];
+}
+
 /** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
 export function renderLeaderboardMarkdown(board: Leaderboard): string {
+	const spec = `${TARGET_SPEC.vcpus} vCPU · ${TARGET_SPEC.memoryGb} GiB RAM · ${TARGET_SPEC.diskGb} GB disk`;
 	const lines: string[] = [
 		"# Sandbox provider leaderboard",
 		"",
 		`Run \`${board.runId}\` · commit \`${board.sha}\` · generated ${board.generatedAt}`,
 		"",
-		"Each table ranks the providers on that dimension's headline metric. Generated from the published Run dataset — do not edit by hand.",
+		`Same pinned target for every provider (**${spec}**). Each table ranks providers on that`,
+		"dimension's headline metric (median of retained trials). Generated from the published Run",
+		"dataset — do not edit by hand. Methodology: [`docs/methodology.md`](docs/methodology.md).",
+		"",
+		"**How to read:** value = median (p50) · 95% CI = bootstrap around that median · ranks split only",
+		"when distributions differ (see details below) · a coverage gap means unmeasured, never a score of zero.",
 		"",
 	];
 
@@ -424,57 +493,56 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	for (const { dimension, metric, rows } of board.dimensions) {
 		const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
+		const hasNotes = rows.some((r) => rowNote(r) !== "");
 		lines.push(
 			`## ${dimension}`,
 			"",
 			`Headline: **${metric.label}** (${metric.unit}, ${better})`,
 			"",
-			`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | p vs. above | p (KS) |`,
-			"| ---: | --- | ---: | ---: | ---: | ---: | ---: |",
-			...rows.map((r) => {
-				const ci =
-					r.interval.resamples === 0
-						? "—"
-						: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
-				// Every shared rank says why, in the cell — a reader must never have to infer the reason from
-				// two rows carrying the same number. The three are distinct claims: `tied` is a verdict the
-				// test reached; `n too small` is the ABSENCE of one (it could not have separated them at any
-				// effect size, so it must not read as a tie); `equal medians` is arithmetic (the ranking sorts
-				// on the value, and it cannot order two values that are the same). The last can co-occur with
-				// `n too small`, and when it does, the shared rank is the equality speaking, not the test.
-				const equalValues = r.tiedWithAbove === "identical-value";
-				const p =
-					r.pVsPrevious === null
-						? equalValues
-							? "— (equal values)"
-							: "—"
-						: r.verdict === "underpowered"
-							? `${formatPValue(r.pVsPrevious.mannWhitney)} (n too small${equalValues ? ", equal medians" : ""})`
-							: r.verdict === "tied"
-								? `${formatPValue(r.pVsPrevious.mannWhitney)} (tied)`
-								: formatPValue(r.pVsPrevious.mannWhitney);
-				// KS is rendered, not just stored: it is the only column that exposes a provider whose
-				// median matches its neighbour's while its distribution is bimodal. A small `p (KS)` beside
-				// a large, tied `p vs. above` is exactly that case — same typical speed, different machine.
-				const ks = r.pVsPrevious === null ? "—" : formatPValue(r.pVsPrevious.ks);
-				return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} | ${p} | ${ks} |`;
-			}),
+			`_${dimensionTakeaway(dimension, metric, rows)}_`,
 			"",
 		);
+		if (hasNotes) {
+			lines.push(
+				`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | Note |`,
+				"| ---: | --- | ---: | ---: | ---: | --- |",
+				...rows.map((r) => {
+					const ci =
+						r.interval.resamples === 0
+							? "—"
+							: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
+					const note = rowNote(r);
+					return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} | ${note || "—"} |`;
+				}),
+				"",
+			);
+		} else {
+			lines.push(
+				`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n |`,
+				"| ---: | --- | ---: | ---: | ---: |",
+				...rows.map((r) => {
+					const ci =
+						r.interval.resamples === 0
+							? "—"
+							: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
+					return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} |`;
+				}),
+				"",
+			);
+		}
 	}
 
-	// Coverage gaps: everything that did NOT produce a result somewhere. Rendered whether or not any
-	// dimension ranked, so an all-skipped run still says why. Disk gaps lead and are marked ❌ — a
-	// provider that cannot fit the workload is a structural absence, not a slow result, and must not
-	// read as "no data". Each row states its OUTCOME, because the three are not the same fact and a
-	// reader who cannot tell them apart will read a crash as a design decision.
+	// Coverage gaps: summary first; full table + legends inside <details> so unfinished providers
+	// don't bury the rankings.
 	if (board.coverageGaps.length > 0) {
 		const outcomes = new Set(board.coverageGaps.map((g) => g.outcome));
 		lines.push(
 			"## Coverage gaps",
 			"",
-			"Benchmarks that produced **no result** on a provider. A gap is a missing result, not a comparable",
-			"one — read it as the provider **failing to cover** that workload, never as a tie or a zero.",
+			...coverageSummary(board.coverageGaps),
+			"",
+			"<details>",
+			"<summary>Full coverage table</summary>",
 			"",
 			"| Provider | Benchmark | Outcome | Detail |",
 			"| --- | --- | --- | --- |",
@@ -485,9 +553,6 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			}),
 			"",
 		);
-		// Each legend line is emitted only when the table actually contains that outcome, so the section
-		// never explains a category the reader cannot see (and so an all-`missing` run reads as one clear
-		// statement instead of three paragraphs of hypotheticals).
 		if (outcomes.has("skipped")) {
 			lines.push(
 				"**skipped** — a precondition said no before the benchmark was attempted. A ❌ **disk** skip is the",
@@ -512,18 +577,20 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 				"",
 			);
 		}
+		lines.push("</details>", "");
 	}
 
 	if (board.dimensions.length === 0) return `${lines.join("\n")}\n`;
 
+	// Statistics essay + optional p-value / KS detail table for readers who want the receipts.
 	lines.push(
-		"---",
+		"<details>",
+		"<summary>How rankings are decided</summary>",
 		"",
-		"**Reading this table.** The value is the median (p50) of the retained per-trial Samples, not the",
-		"mean — a single stalled pass drags a mean far more than it moves a median. The 95% CI is a",
-		"percentile bootstrap of that median (10,000 resamples, seeded from the Run id so the table is",
-		"reproducible byte-for-byte), not a normal-theory interval: these Samples are neither normal nor",
-		"independent of the host's scheduling.",
+		"The value is the median (p50) of the retained per-trial Samples, not the mean — a single stalled",
+		"pass drags a mean far more than it moves a median. The 95% CI is a percentile bootstrap of that",
+		"median (10,000 resamples, seeded from the Run id so the table is reproducible byte-for-byte), not",
+		"a normal-theory interval: these Samples are neither normal nor independent of the host's scheduling.",
 		"",
 		`Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = ${DEFAULT_ALPHA},`,
 		"enumerated exactly over the permutation null rather than approximated — at these sample sizes the",
@@ -531,28 +598,24 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"",
 	);
 
-	// A shared rank means different things, and the footer must explain exactly the ones the table
-	// contains — no more (a legend for an absent case teaches the reader to skim) and no less (an
-	// unexplained shared rank is read as a tie, which is the misreading this whole section exists to
-	// prevent). Collected from the rows themselves, so the prose cannot drift from the table.
 	const rows = board.dimensions.flatMap((d) => d.rows);
 	const sharedRankReasons: string[] = [];
 	if (rows.some((r) => r.tiedWithAbove === "statistical")) {
 		sharedRankReasons.push(
-			"`(tied)` — the test could have separated those providers and did not, so a faster median earned",
-			"inside the noise is not a faster provider. This is the only one that claims two providers are",
+			"`tied` — the test could have separated those providers and did not, so a faster median earned",
+			"inside the noise is not a faster provider. This is the only note that claims two providers are",
 			"statistically indistinguishable.",
 		);
 	}
 	if (rows.some((r) => r.tiedWithAbove === "identical-value")) {
 		sharedRankReasons.push(
-			"`(equal medians)` / `(equal values)` — arithmetic, not a finding: the ranking sorts on the value,",
+			"`equal medians` / `equal values` — arithmetic, not a finding: the ranking sorts on the value,",
 			"and two identical values have no order between them. It says nothing about the distributions.",
 		);
 	}
 	if (sharedRankReasons.length > 0) {
 		lines.push(
-			"**A shared rank always says why, in the `p vs. above` cell, and the reasons are not interchangeable.**",
+			"**A Note cell always says why a rank is shared, and the reasons are not interchangeable.**",
 			...sharedRankReasons,
 			"",
 		);
@@ -564,21 +627,11 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"converge) is itself the signal that the provider's performance is unstable, not that the measurement",
 		"is imprecise.",
 		"",
-		"`p (KS)` is a two-sample Kolmogorov-Smirnov test against the same row above. It does **not** drive",
-		"the ranking — it compares the two empirical distributions' *shapes* rather than their central",
-		"tendency. Read it where it disagrees with `p vs. above`: a tied rank (large Mann-Whitney p) beside a",
-		"small `p (KS)` means two providers with the same typical speed but different behaviour — usually one",
-		"of them alternating between fast and stalled passes. That bimodality is what environmental noise",
-		"looks like, and it is the reason a median alone cannot rank these providers.",
-		"",
 		"At the small `n` this suite produces, a non-significant result means *not enough evidence to",
 		"separate*, never *the providers are equal*.",
 		"",
 	);
 
-	// `n too small` needs explaining only when the table actually contains one, and the floor it cites is
-	// the one those rows' own tests reported — a hardcoded example would misquote both the floor and the n
-	// the moment a run pairs, say, 3 trials against 4.
 	const floors = underpoweredFloors(board);
 	if (floors.length > 0) {
 		lines.push(
@@ -586,12 +639,47 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			`Samples, so the test could not have separated the rows at any effect size (here ${floors.join("; ")}).`,
 			"Such rows are ranked on their observed medians and are **not** claimed to be tied — read the gap",
 			"between the values, and treat the p-value as unable to settle them either way. Where such a row",
-			"nevertheless shares the rank above it, the cell reads `equal medians`: the two values are simply",
+			"nevertheless shares the rank above it, the note reads `equal medians`: the two values are simply",
 			"identical, which is the ranking having nothing to order them by — never a finding that the",
 			"providers are alike.",
 			"",
 		);
 	}
+
+	// Detail table with p vs. above + KS for readers who want distribution shape.
+	const anyCompared = rows.some((r) => r.pVsPrevious !== null);
+	if (anyCompared) {
+		lines.push(
+			"### Pairwise tests (vs. row above)",
+			"",
+			"`p vs. above` is Mann-Whitney (drives rank). `p (KS)` is Kolmogorov-Smirnov on distribution",
+			"*shape* — it does not drive the ranking. A tied Mann-Whitney beside a small KS often means the",
+			"same typical speed with different behaviour (e.g. bimodal stalls).",
+			"",
+			"| Dimension | Provider | p vs. above | p (KS) |",
+			"| --- | --- | ---: | ---: |",
+		);
+		for (const { dimension, rows: dimRows } of board.dimensions) {
+			for (const r of dimRows) {
+				const equalValues = r.tiedWithAbove === "identical-value";
+				const p =
+					r.pVsPrevious === null
+						? equalValues
+							? "— (equal values)"
+							: "—"
+						: r.verdict === "underpowered"
+							? `${formatPValue(r.pVsPrevious.mannWhitney)} (n too small${equalValues ? ", equal medians" : ""})`
+							: r.verdict === "tied"
+								? `${formatPValue(r.pVsPrevious.mannWhitney)} (tied)`
+								: formatPValue(r.pVsPrevious.mannWhitney);
+				const ks = r.pVsPrevious === null ? "—" : formatPValue(r.pVsPrevious.ks);
+				lines.push(`| ${dimension} | ${r.displayName} | ${p} | ${ks} |`);
+			}
+		}
+		lines.push("");
+	}
+
+	lines.push("</details>", "");
 
 	return `${lines.join("\n")}\n`;
 }

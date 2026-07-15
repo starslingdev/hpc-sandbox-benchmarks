@@ -1,9 +1,10 @@
 // Invariant: the GitHub Actions layer stays hardened. (1) every actions/checkout opts out of
-// credential persistence unless it is an allowlisted pushing checkout, and (2) ci-lint.yml runs
-// actionlint + zizmor at the agreed gate threshold. The runHardeningCheck() test against the real
-// .github files IS the gate's CI enforcement point (same precedent as workflow-registry-sync.test.ts);
-// the rest is unit coverage of the pure checks on synthetic drift so a regression names the offender.
-// See ./lib/workflow-hardening.ts.
+// credential persistence unless it is an allowlisted pushing checkout, (2) ci-lint.yml runs
+// actionlint + zizmor at the agreed gate threshold, (3) custom-secret / write jobs declare
+// environment: privileged, and (4) toolchain publish is workflow_dispatch-only. The
+// runHardeningCheck() test against the real .github files IS the gate's CI enforcement point
+// (same precedent as workflow-registry-sync.test.ts); the rest is unit coverage of the pure checks
+// on synthetic drift so a regression names the offender. See ./lib/workflow-hardening.ts.
 import { describe, expect, test } from "bun:test";
 import type { CheckoutStep } from "./lib/workflow-hardening.ts";
 import {
@@ -12,9 +13,14 @@ import {
 	checkCiLintGate,
 	checkoutSteps,
 	checkPersistCredentials,
+	checkPrivilegedEnvironment,
+	checkToolchainDispatchOnly,
+	customSecretsIn,
 	listWorkflowFiles,
+	PRIVILEGED_ENVIRONMENT,
 	readWorkflow,
 	runHardeningCheck,
+	TOOLCHAIN_WORKFLOW,
 	WORKFLOWS_DIR,
 } from "./lib/workflow-hardening.ts";
 
@@ -135,6 +141,121 @@ describe("checkCiLintGate", () => {
 		const errors = checkCiLintGate(loosened);
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("--min-confidence high");
+	});
+});
+
+describe("customSecretsIn", () => {
+	test("ignores GITHUB_TOKEN and extracts provider secrets", () => {
+		expect(
+			customSecretsIn(
+				// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+				"${{ secrets.GITHUB_TOKEN }} ${{ secrets.E2B_API_KEY }} ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}",
+			),
+		).toEqual(["E2B_API_KEY", "DAYTONA_TARGET"]);
+	});
+});
+
+describe("checkPrivilegedEnvironment", () => {
+	test("passes the real privileged workflows", () => {
+		for (const file of ["bench-matrix.yml", "bench-smoke.yml", "toolchain-image.yml"]) {
+			expect(checkPrivilegedEnvironment(readWorkflow(`${WORKFLOWS_DIR}/${file}`), file)).toEqual(
+				[],
+			);
+		}
+	});
+
+	test("passes jobs that only use GITHUB_TOKEN without an environment", () => {
+		const doc = {
+			jobs: {
+				clone: {
+					steps: [
+						{
+							name: "Run",
+							// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+							env: { TOKEN: "${{ secrets.GITHUB_TOKEN }}" },
+							run: "true",
+						},
+					],
+				},
+			},
+		};
+		expect(checkPrivilegedEnvironment(doc, "safe.yml")).toEqual([]);
+	});
+
+	test("flags a custom secret without environment: privileged", () => {
+		const doc = {
+			jobs: {
+				bench: {
+					steps: [
+						{
+							name: "Run",
+							// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+							env: { E2B_API_KEY: "${{ secrets.E2B_API_KEY }}" },
+							run: "true",
+						},
+					],
+				},
+			},
+		};
+		const errors = checkPrivilegedEnvironment(doc, "leak.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("leak.yml::bench");
+		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
+		expect(errors[0]).toContain("E2B_API_KEY");
+	});
+
+	test("flags packages: write without the privileged environment", () => {
+		const doc = {
+			jobs: {
+				publish: {
+					permissions: { packages: "write" },
+					steps: [{ run: "true" }],
+				},
+			},
+		};
+		const errors = checkPrivilegedEnvironment(doc, "ghcr.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("packages: write");
+	});
+
+	test("accepts a write job that declares environment: privileged", () => {
+		const doc = {
+			jobs: {
+				publish: {
+					environment: PRIVILEGED_ENVIRONMENT,
+					permissions: { contents: "write" },
+					steps: [{ run: "true" }],
+				},
+			},
+		};
+		expect(checkPrivilegedEnvironment(doc, "ok.yml")).toEqual([]);
+	});
+});
+
+describe("checkToolchainDispatchOnly", () => {
+	test("passes the real toolchain-image.yml", () => {
+		expect(
+			checkToolchainDispatchOnly(
+				readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`),
+				TOOLCHAIN_WORKFLOW,
+			),
+		).toEqual([]);
+	});
+
+	test("flags a push trigger on the toolchain workflow", () => {
+		const doc = {
+			on: {
+				workflow_dispatch: {},
+				push: { branches: ["main"] },
+			},
+		};
+		const errors = checkToolchainDispatchOnly(doc, TOOLCHAIN_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("must not trigger on `push`");
+	});
+
+	test("ignores non-toolchain workflows", () => {
+		expect(checkToolchainDispatchOnly({ on: { push: {} } }, "ci.yml")).toEqual([]);
 	});
 });
 
