@@ -1,5 +1,5 @@
-// Drift gate: the security posture of the GitHub Actions layer. Two invariants the .github/ files
-// must hold, neither of which the type system can enforce (GHA is YAML):
+// Drift gate: the security posture of the GitHub Actions layer. Invariants the .github/ files must
+// hold, none of which the type system can enforce (GHA is YAML):
 //
 //   1. persist-credentials hygiene — every `actions/checkout` step sets `persist-credentials: false`
 //      UNLESS it is one of the few jobs that later `git push`es (it needs the persisted job token).
@@ -9,8 +9,11 @@
 //   2. The ci-lint workflow actually runs the two linters at the agreed gate threshold — an actionlint
 //      job and a zizmor job invoked with `--min-severity medium --min-confidence high`. A renamed job
 //      or a loosened threshold (e.g. someone dropping --min-confidence) must fail this gate.
+//   3. Privileged-environment gate — every job that reads a custom secret (anything other than
+//      GITHUB_TOKEN / github.token) OR elevates to contents:write / packages:write must declare
+//      `environment: privileged`, so secrets and releases stay behind Environment protection rules.
+//   4. Toolchain publish is dispatch-only — toolchain-image.yml must not fire a release on push/merge.
 //
-// Mirrors runner-benchmarking's ci-lint.yml + zizmor.yml hardening, adapted to this repo's workflows.
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +22,10 @@ import { findRepoRoot } from "./workspace.ts";
 
 export const WORKFLOWS_DIR = ".github/workflows";
 export const CI_LINT_WORKFLOW = ".github/workflows/ci-lint.yml";
+export const TOOLCHAIN_WORKFLOW = "toolchain-image.yml";
+
+/** GitHub Environment name that holds provider secrets and gates releases. See docs/ci-secrets.md. */
+export const PRIVILEGED_ENVIRONMENT = "privileged";
 
 /** Checkout steps that intentionally keep the persisted job token, keyed "<file>::<jobId>", with the
  *  reason they push. Every other `actions/checkout` must set persist-credentials: false. */
@@ -27,6 +34,14 @@ export const CREDENTIALED_CHECKOUTS: Readonly<Record<string, string>> = {
 	// branch (it grants `contents: write` for exactly this), so it must keep the persisted token.
 	"bench-matrix.yml::publish": "commits + pushes the promoted dataset back to the branch",
 };
+
+/** Built-in / non-environment tokens that may appear as `${{ secrets.* }}` without requiring the
+ *  privileged Environment. Provider API keys and other org secrets must NOT be listed here. */
+const BUILTIN_SECRET_NAMES = new Set(["GITHUB_TOKEN"]);
+
+/** Matches `${{ secrets.NAME }}`, `${{ secrets['NAME'] }}`, or `${{ secrets["NAME"] }}`
+ *  (with optional `|| …` after the access). Bracket form is rarer but a real bypass if ignored. */
+const SECRET_EXPR = /\$\{\{\s*secrets(?:\.([A-Za-z0-9_]+)|\s*\[\s*['"]([A-Za-z0-9_]+)['"]\s*\])/g;
 
 function asRecord(value: unknown, message: string): Record<string, unknown> {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -168,13 +183,213 @@ export function checkCiLintGate(doc: unknown, label: string = CI_LINT_WORKFLOW):
 	return errors;
 }
 
+/** Collect string leaves from an `env:` mapping (job- or step-level). */
+function envStrings(envValue: unknown): string[] {
+	if (envValue === undefined || envValue === null) return [];
+	const env = asRecord(envValue, "env is not a mapping");
+	return Object.values(env).filter((v): v is string => typeof v === "string");
+}
+
+/** Custom secret names referenced in a string (excludes GITHUB_TOKEN). */
+export function customSecretsIn(text: string): string[] {
+	const found: string[] = [];
+	for (const match of text.matchAll(SECRET_EXPR)) {
+		const name = match[1] || match[2];
+		if (name && !BUILTIN_SECRET_NAMES.has(name)) found.push(name);
+	}
+	return found;
+}
+
+/** Effective write scopes for a job: job permissions override top-level when the job sets any. */
+function effectiveWriteScopes(
+	workflowPerms: Record<string, unknown> | undefined,
+	jobPerms: Record<string, unknown> | undefined,
+): { contentsWrite: boolean; packagesWrite: boolean } {
+	const scopes = jobPerms !== undefined ? jobPerms : (workflowPerms ?? {});
+	return {
+		contentsWrite: scopes.contents === "write",
+		packagesWrite: scopes.packages === "write",
+	};
+}
+
+/** Resolve a job's `environment` name (string form or `{ name: … }` mapping). */
+export function jobEnvironmentName(job: Record<string, unknown>): string | undefined {
+	const env = job.environment;
+	if (typeof env === "string") return env;
+	if (env !== null && typeof env === "object" && !Array.isArray(env)) {
+		const name = (env as Record<string, unknown>).name;
+		return typeof name === "string" ? name : undefined;
+	}
+	return undefined;
+}
+
+/**
+ * Invariant 3: jobs that touch custom secrets or elevate write permissions must sit behind the
+ * `privileged` GitHub Environment so Environment secrets + required reviewers apply.
+ */
+export function checkPrivilegedEnvironment(
+	doc: unknown,
+	file: string,
+	privileged: string = PRIVILEGED_ENVIRONMENT,
+): string[] {
+	const errors: string[] = [];
+	const root = asRecord(doc, `${file}: not a YAML mapping`);
+	const workflowPerms =
+		root.permissions === undefined || root.permissions === null
+			? undefined
+			: asRecord(root.permissions, `${file}: malformed permissions`);
+	// Workflow-level `env` is inherited by every job/step — secrets there must not bypass the gate.
+	const workflowSecrets = new Set(envStrings(root.env).flatMap((text) => customSecretsIn(text)));
+	const jobs = asRecord(root.jobs, `${file}: no jobs mapping`);
+
+	for (const [jobId, jobValue] of Object.entries(jobs)) {
+		const job = asRecord(jobValue, `${file}: job "${jobId}" is not a mapping`);
+		const key = `${file}::${jobId}`;
+		const secrets = new Set(workflowSecrets);
+
+		if (typeof job.if === "string") {
+			for (const name of customSecretsIn(job.if)) secrets.add(name);
+		}
+		for (const text of envStrings(job.env)) {
+			for (const name of customSecretsIn(text)) secrets.add(name);
+		}
+		const steps = Array.isArray(job.steps) ? job.steps : [];
+		for (const stepValue of steps) {
+			const step = asRecord(stepValue, `${file}: job "${jobId}" has a malformed step`);
+			if (typeof step.if === "string") {
+				for (const name of customSecretsIn(step.if)) secrets.add(name);
+			}
+			for (const text of envStrings(step.env)) {
+				for (const name of customSecretsIn(text)) secrets.add(name);
+			}
+			// Inline secrets in `with:` (e.g. docker/login-action password) — only flag custom ones.
+			if (step.with !== undefined && step.with !== null) {
+				const withBlock = asRecord(step.with, `${file}: malformed with`);
+				for (const value of Object.values(withBlock)) {
+					if (typeof value !== "string") continue;
+					for (const name of customSecretsIn(value)) secrets.add(name);
+				}
+			}
+			if (typeof step.run === "string") {
+				for (const name of customSecretsIn(step.run)) secrets.add(name);
+			}
+		}
+
+		const jobPerms =
+			job.permissions === undefined || job.permissions === null
+				? undefined
+				: asRecord(job.permissions, `${file}: job "${jobId}" malformed permissions`);
+		const { contentsWrite, packagesWrite } = effectiveWriteScopes(workflowPerms, jobPerms);
+		const needsPrivileged = secrets.size > 0 || contentsWrite || packagesWrite;
+		if (!needsPrivileged) continue;
+
+		const envName = jobEnvironmentName(job);
+		if (envName !== privileged) {
+			const reasons: string[] = [];
+			if (secrets.size > 0) {
+				reasons.push(`custom secrets (${[...secrets].sort().join(", ")})`);
+			}
+			if (contentsWrite) reasons.push("contents: write");
+			if (packagesWrite) reasons.push("packages: write");
+			errors.push(
+				`${key}: must set \`environment: ${privileged}\` because it uses ${reasons.join(" and ")} — ` +
+					`see docs/ci-secrets.md`,
+			);
+		}
+	}
+	return errors;
+}
+
+/**
+ * Invariant 4: toolchain-image.yml publishes only via workflow_dispatch — a push/merge must never
+ * start a GHCR release. Allowed top-level triggers are exactly `workflow_dispatch` + `pull_request`
+ * (the secret-free PR gate). Call only with that workflow's document; {@link runHardeningCheck}
+ * does the file selection.
+ */
+export function checkToolchainDispatchOnly(
+	doc: unknown,
+	file: string = TOOLCHAIN_WORKFLOW,
+): string[] {
+	const errors: string[] = [];
+	const root = asRecord(doc, `${file}: not a YAML mapping`);
+	// Bun.YAML keeps the GHA `on:` key as the string "on" (see workflow-sync.ts).
+	const on = root.on;
+	if (on === null || typeof on !== "object" || Array.isArray(on)) {
+		errors.push(`${file}: missing or malformed \`on:\` trigger map`);
+		return errors;
+	}
+	const triggers = on as Record<string, unknown>;
+	const allowed = new Set(["workflow_dispatch", "pull_request"]);
+	const triggerKeys = Object.keys(triggers);
+	for (const key of triggerKeys) {
+		if (!allowed.has(key)) {
+			errors.push(
+				`${file}: trigger \`${key}\` is not allowed — toolchain publish is workflow_dispatch-only ` +
+					`(plus pull_request for the secret-free PR gate); see docs/ci-secrets.md`,
+			);
+		}
+	}
+	if (!("workflow_dispatch" in triggers)) {
+		errors.push(
+			`${file}: must declare \`workflow_dispatch\` — that is the only path that reaches the publish job`,
+		);
+	}
+	if (!("pull_request" in triggers)) {
+		errors.push(
+			`${file}: must declare \`pull_request\` — the secret-free PR docker smoke gate must stay on the PR path`,
+		);
+	}
+
+	const jobs = asRecord(root.jobs, `${file}: no jobs mapping`);
+	if (!("publish" in jobs)) {
+		errors.push(`${file}: missing the "publish" job — that is the GHCR release lane`);
+		return errors;
+	}
+	const publish = asRecord(jobs.publish, `${file}: publish job is not a mapping`);
+	if (jobEnvironmentName(publish) !== PRIVILEGED_ENVIRONMENT) {
+		errors.push(
+			`${file}::publish: must set \`environment: ${PRIVILEGED_ENVIRONMENT}\` — GHCR promote is a release`,
+		);
+	}
+	const publishIf = typeof publish.if === "string" ? publish.if : "";
+	for (const needle of [
+		"workflow_dispatch",
+		"refs/heads/main",
+		"starslingdev/sandbox-benchmarks",
+	] as const) {
+		if (!publishIf.includes(needle)) {
+			errors.push(
+				`${file}::publish: \`if:\` must confine the release to workflow_dispatch on main of ` +
+					`starslingdev/sandbox-benchmarks (missing "${needle}")`,
+			);
+		}
+	}
+	return errors;
+}
+
 /** The whole gate against the real .github files under `root`. */
 export function runHardeningCheck(root: string = findRepoRoot()): string[] {
-	const steps = listWorkflowFiles(root).flatMap((file) =>
-		checkoutSteps(readWorkflow(`${WORKFLOWS_DIR}/${file}`, root), file),
+	const files = listWorkflowFiles(root);
+	const docs = new Map(
+		files.map((file) => [file, readWorkflow(`${WORKFLOWS_DIR}/${file}`, root)] as const),
 	);
-	return [
+	const steps = files.flatMap((file) => checkoutSteps(docs.get(file), file));
+	const ciLintFile = CI_LINT_WORKFLOW.slice(`${WORKFLOWS_DIR}/`.length);
+	const ciLintDoc = docs.get(ciLintFile);
+	const errors = [
 		...checkPersistCredentials(steps),
-		...checkCiLintGate(readWorkflow(CI_LINT_WORKFLOW, root)),
+		...(ciLintDoc === undefined
+			? [`${CI_LINT_WORKFLOW}: missing from ${WORKFLOWS_DIR}`]
+			: checkCiLintGate(ciLintDoc)),
 	];
+	for (const file of files) {
+		errors.push(...checkPrivilegedEnvironment(docs.get(file), file));
+	}
+	const toolchainDoc = docs.get(TOOLCHAIN_WORKFLOW);
+	if (toolchainDoc === undefined) {
+		errors.push(`${TOOLCHAIN_WORKFLOW}: missing from ${WORKFLOWS_DIR}`);
+	} else {
+		errors.push(...checkToolchainDispatchOnly(toolchainDoc, TOOLCHAIN_WORKFLOW));
+	}
+	return errors;
 }

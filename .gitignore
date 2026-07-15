@@ -79,7 +79,12 @@ typings/
 
 # dotenv environment variables file
 .env
-.env.test
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+credentials.json
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

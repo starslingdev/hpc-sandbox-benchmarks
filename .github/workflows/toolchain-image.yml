@@ -2,15 +2,17 @@ name: Toolchain image
 
 # Build, validate, and publish the sandbox-benchmarks toolchain. Two lanes:
 #   • Pull requests — build the base (no push) and run the docker smoke. Fast gate, no credentials.
-#   • Push to main / manual dispatch — build + push the mutable CANDIDATE (:v1-candidate), bake each
-#     provider's candidate artifact and validate it by booting a sandbox and running the shared smoke
-#     spec (behind each provider's secret; missing ones skip), then promote the validated candidate to
-#     the immutable public :v1. Iteration never touches :v1; bump TOOLCHAIN_VERSION
-#     (packages/schema/src/toolchain.ts) to publish a new version.
+#   • Manual dispatch on main (GitHub Environment `privileged`) — build + push the mutable
+#     CANDIDATE (:v1-candidate), bake each provider's candidate artifact and validate it by booting a
+#     sandbox and running the shared smoke spec (behind each provider's secret; missing ones skip),
+#     then promote the validated candidate to the immutable public :v1. Iteration never touches :v1;
+#     bump TOOLCHAIN_VERSION (packages/schema/src/toolchain.ts) to publish a new version.
+#
+# Releases never fire on push/merge: only workflow_dispatch reaches the publish job, and that job
+# requires Environment `privileged` approval so the public cannot complete a release.
 on:
-  # Manual re-trigger (e.g. after bumping TOOLCHAIN_VERSION). The public version is immutable on the
-  # automated push path; `force_republish` (manual dispatch only) deliberately regenerates it over an
-  # existing version for fast dev iteration. Normally, to republish you bump TOOLCHAIN_VERSION; an
+  # Manual publish (e.g. after bumping TOOLCHAIN_VERSION). `force_republish` deliberately regenerates
+  # an existing version for fast iteration. Normally, to republish you bump TOOLCHAIN_VERSION; an
   # already-published version is skipped at the guard below unless force_republish is set.
   workflow_dispatch:
     inputs:
@@ -18,31 +20,15 @@ on:
         description: "Regenerate the current version, overwriting it if already published (dev only)"
         type: boolean
         default: false
-  push:
-    branches: [main]
-    # The publish lane runs `bake`/`promote`, which pull in the whole provider-run + smoke + harness
-    # surface (not just packages/templates and the bake libs). Trigger on every file that can change
-    # bake/validate/promote behavior so a relevant change to main can't ship a version untested by it.
-    paths:
-      - "packages/templates/**"
-      - "packages/providers/**"
-      - "packages/harness/**"
-      - "apps/cli/src/lib/bake/**"
-      - "apps/cli/src/lib/providers-run.ts"
-      - "apps/cli/src/lib/smoke-run.ts"
-      - "apps/cli/src/bin/bake.ts"
-      - "packages/schema/src/toolchain.ts"
-      - ".github/workflows/toolchain-image.yml"
   pull_request:
     paths:
       - "packages/templates/**"
       - "packages/schema/src/toolchain.ts"
       - ".github/workflows/toolchain-image.yml"
 
-# Serialize publishes by ref (NOT by event_name): a push to main and a manual workflow_dispatch on the
-# same ref must not publish concurrently and race on the version tag. PR runs key off their own head ref
-# (separate group) and may cancel superseded runs; a publish is never cancelled (a half-published
-# version is worse than a slow one).
+# Serialize publishes by ref: concurrent dispatches on the same ref must not race on the version tag.
+# PR runs key off their own head ref (separate group) and may cancel superseded runs; a publish is
+# never cancelled (a half-published version is worse than a slow one).
 concurrency:
   group: toolchain-image-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -56,10 +42,8 @@ jobs:
   #
   # Same-repo guard: this job checks out the PR head and runs scripts FROM that checkout (build.sh,
   # smoke.ts) on a self-hosted runner, so a fork PR could execute arbitrary code on the runner itself.
-  # The repo is private (no untrusted forks today), but we gate on same-repo head as defense-in-depth
-  # against a compromised account / outside-collaborator fork. Branches pushed to this repo (the normal
-  # Graphite flow) satisfy it; a legitimate fork-based PR would skip the gate and need a maintainer to
-  # re-run it from an in-repo branch.
+  # Gate on same-repo head as defense-in-depth. Branches pushed to this repo satisfy it; a fork-based
+  # PR skips the gate and needs a maintainer to re-run from an in-repo branch.
   pr-gate:
     name: Build base + docker smoke
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -94,10 +78,16 @@ jobs:
 
   # Publish lane: candidate → validate → promote. Thin wrapper over the bake bin (thin workflow, fat
   # script). Provider steps are guarded by their secrets inside the bin (missing creds skip).
+  # Environment `privileged` holds provider secrets and requires reviewer approval on main only —
+  # see docs/ci-secrets.md.
   publish:
     name: Bake, validate & promote toolchain
-    if: github.event_name != 'pull_request'
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/sandbox-benchmarks'
     runs-on: starsling-ubuntu-24.04-2
+    environment: privileged
     permissions:
       contents: read
       packages: write
@@ -146,7 +136,7 @@ jobs:
       # Guard the immutable public version: skip the whole publish if :v1 already exists. The version is
       # immutable (promote refuses to overwrite it), so a published version is never re-promoted — bump
       # TOOLCHAIN_VERSION to publish a new one. The candidate is mutable and always rebuilt within a run.
-      # `force_republish` (manual dispatch only) overrides the skip to regenerate the version in place.
+      # `force_republish` overrides the skip to regenerate the version in place.
       - name: Check if version already published
         id: guard
         env:
@@ -224,7 +214,7 @@ jobs:
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           export BUILD_DATE
           # --require fails the publish loudly if a required provider's secret is missing/misnamed, so a
-          # merge can't bless a candidate while a required provider was silently skipped (never built or
+          # release can't bless a candidate while a required provider was silently skipped (never built or
           # validated). modal boots the toolchain image via fromRegistry under this project's Modal app
           # and is validated the same as e2b/daytona, so it's required — MODAL_TOKEN_* must be synced.
           # (blaxel is excluded — its bake is a no-op.)
@@ -250,8 +240,8 @@ jobs:
         # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
         # public version is never published while a required provider's version artifact was silently
         # skipped. modal is required (validated via its fromRegistry boot); MODAL_TOKEN_* must be synced.
-        # (blaxel is excluded — its bake is a no-op.) `--force` (manual force_republish dispatch only)
-        # republishes over an existing immutable version; never set on the automated push path.
+        # (blaxel is excluded — its bake is a no-op.) `--force` (force_republish dispatch only)
+        # republishes over an existing immutable version.
         run: |
           set -euo pipefail
           args=(--promote --require "e2b,daytona,modal")

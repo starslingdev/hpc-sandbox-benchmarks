@@ -2,7 +2,8 @@ name: Bench smoke
 
 # Manually-dispatched live benchmark: spins up a real provider sandbox, runs one suite, normalizes
 # the result into a Run document, and uploads it as an artifact. Off the PR path (it costs real
-# sandbox time and needs provider credentials) — run it on demand to validate the end-to-end lane.
+# sandbox time and needs provider credentials) — run it on demand from main only, gated by
+# Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md).
 on:
   workflow_dispatch:
     inputs:
@@ -45,7 +46,11 @@ concurrency:
 jobs:
   smoke:
     name: ${{ inputs.suite }} on ${{ inputs.provider }}
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/sandbox-benchmarks'
     runs-on: starsling-ubuntu-24.04-2
+    environment: privileged
     # The suite itself runs for many minutes inside the sandbox; give the host job ample headroom.
     timeout-minutes: 150
     steps:
@@ -54,8 +59,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # The job only reads code (the sandbox clones via BENCH_REPO_TOKEN, not the checkout's
-          # credentials), so don't persist the job token in .git/config.
+          # The job only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
+          # checkout's credentials), so don't persist the job token in .git/config.
           persist-credentials: false
 
       - name: Set up Bun
@@ -75,7 +80,8 @@ jobs:
       - name: Run suite and normalize
         env:
           BENCH_REPO_REF: ${{ github.sha }}
-          # The sandbox clones this private repo at the run's SHA; the short-lived job token authorizes it.
+          # Optional once the repo is public (anonymous clone works). Still passed so private forks and
+          # rate-limited clones keep working via the short-lived job token.
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Pass the dispatch inputs through the environment, never interpolated into the `run` script.
           # `provider` and `suite` are both constrained choices, but env passthrough is kept as
