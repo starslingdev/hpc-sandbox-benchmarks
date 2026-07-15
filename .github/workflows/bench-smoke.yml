@@ -77,6 +77,14 @@ jobs:
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
 
+      # TEMPORARY diagnostic: `nsc token create` requires --grant and the exact resource_type/actions
+      # vocabulary isn't documented anywhere reachable from here — print --help to read it straight
+      # from this exact CLI build before guessing at the JSON shape.
+      - name: Probe nsc token create --help
+        if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
+        continue-on-error: true
+        run: nsc token create --help
+
       - name: Mint a portable Namespace token
         if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
         continue-on-error: true
