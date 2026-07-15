@@ -10,7 +10,7 @@
 | [Security](../SECURITY.md) | Vulnerability reporting |
 | [Code of Conduct](../CODE_OF_CONDUCT.md) | Community norms |
 
-### Historical / design notes
+## Historical / design notes
 
 - [PTS catalog and analysis design](./pts-catalog-and-analysis-design.md) — early design notes (historical; prefer ADRs + methodology for current truth)
 - [Evidence: Daytona exec transport](./evidence/daytona-exec-transport.md) — research notes on Daytona exec limits

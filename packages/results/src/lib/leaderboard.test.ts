@@ -171,6 +171,9 @@ describe("buildLeaderboard statistical ranking", () => {
 		expect(rows[1]?.verdict).toBe("tied");
 		expect(rows[1]?.tiedWithAbove).toBe("statistical");
 		expect(rows[1]?.pVsPrevious?.mannWhitney).toBeGreaterThan(0.05);
+		// Takeaway must not claim a sole provider when the top cohort is a statistical tie.
+		expect(renderLeaderboardMarkdown(board)).toContain("share the top on this headline");
+		expect(renderLeaderboardMarkdown(board)).not.toContain("is the only ranked provider");
 	});
 
 	it("leaves a single-Sample Metric untested and ranked on its exact value", () => {

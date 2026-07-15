@@ -41,7 +41,7 @@ _Blaxel leads · ~2.3× Daytona on median (higher is better)._
 
 Headline: **STREAM Triad** (MB/s, higher is better)
 
-_Daytona leads · ~1.3× Modal on median (higher is better)._
+_Daytona and Blaxel share the top on this headline (higher is better)._
 
 | Rank | Provider | STREAM Triad (MB/s) | 95% CI | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
@@ -79,7 +79,7 @@ _Blaxel is the only ranked provider (841 Milliseconds; lower is better)._
 
 Headline: **Mastra: cold install** (Seconds, lower is better)
 
-_Daytona is the only ranked provider (31.68 Seconds; lower is better)._
+_Daytona and Novita share the top on this headline (lower is better)._
 
 | Rank | Provider | Mastra: cold install (Seconds) | 95% CI | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
@@ -138,9 +138,10 @@ pass drags a mean far more than it moves a median. The 95% CI is a percentile bo
 median (10,000 resamples, seeded from the Run id so the table is reproducible byte-for-byte), not
 a normal-theory interval: these Samples are neither normal nor independent of the host's scheduling.
 
-Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = 0.05,
-enumerated exactly over the permutation null rather than approximated — at these sample sizes the
-normal approximation can report a p the exact test cannot actually produce).
+Rows are separated only when Mann-Whitney U (two-sided, α = 0.05, enumerated exactly
+over the permutation null rather than approximated) finds a shift in central tendency — at these
+sample sizes the normal approximation can report a p the exact test cannot actually produce. KS is
+reported separately for distribution *shape* and does not drive the ranking.
 
 **A Note cell always says why a rank is shared, and the reasons are not interchangeable.**
 `tied` — the test could have separated those providers and did not, so a faster median earned

@@ -228,6 +228,20 @@ describe("checkPrivilegedEnvironment", () => {
 		expect(errors[0]).toContain("STEP_SECRET");
 	});
 
+	test("flags custom secrets in workflow-level env inherited by every job", () => {
+		const doc = {
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			env: { E2B_API_KEY: "${{ secrets.E2B_API_KEY }}" },
+			jobs: {
+				plan: { steps: [{ run: "true" }] },
+			},
+		};
+		const errors = checkPrivilegedEnvironment(doc, "leak-root-env.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("leak-root-env.yml::plan");
+		expect(errors[0]).toContain("E2B_API_KEY");
+	});
+
 	test("flags packages: write without the privileged environment", () => {
 		const doc = {
 			jobs: {
@@ -270,12 +284,36 @@ describe("checkToolchainDispatchOnly", () => {
 		const doc = {
 			on: {
 				workflow_dispatch: {},
+				pull_request: {},
 				push: { branches: ["main"] },
+			},
+			jobs: {
+				publish: {
+					environment: PRIVILEGED_ENVIRONMENT,
+					if: "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'starslingdev/sandbox-benchmarks'",
+					steps: [{ run: "true" }],
+				},
 			},
 		};
 		const errors = checkToolchainDispatchOnly(doc, TOOLCHAIN_WORKFLOW);
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("must not trigger on `push`");
+		expect(errors[0]).toContain("trigger `push` is not allowed");
+	});
+
+	test("flags a publish job missing the main-only dispatch gate", () => {
+		const doc = {
+			on: { workflow_dispatch: {}, pull_request: {} },
+			jobs: {
+				publish: {
+					environment: PRIVILEGED_ENVIRONMENT,
+					if: "true",
+					steps: [{ run: "true" }],
+				},
+			},
+		};
+		const errors = checkToolchainDispatchOnly(doc, TOOLCHAIN_WORKFLOW);
+		expect(errors.some((e) => e.includes('missing "workflow_dispatch"'))).toBe(true);
+		expect(errors.some((e) => e.includes('missing "refs/heads/main"'))).toBe(true);
 	});
 });
 

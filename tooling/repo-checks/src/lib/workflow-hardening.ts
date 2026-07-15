@@ -238,12 +238,14 @@ export function checkPrivilegedEnvironment(
 		root.permissions === undefined || root.permissions === null
 			? undefined
 			: asRecord(root.permissions, `${file}: malformed permissions`);
+	// Workflow-level `env` is inherited by every job/step — secrets there must not bypass the gate.
+	const workflowSecrets = new Set(envStrings(root.env).flatMap((text) => customSecretsIn(text)));
 	const jobs = asRecord(root.jobs, `${file}: no jobs mapping`);
 
 	for (const [jobId, jobValue] of Object.entries(jobs)) {
 		const job = asRecord(jobValue, `${file}: job "${jobId}" is not a mapping`);
 		const key = `${file}::${jobId}`;
-		const secrets = new Set<string>();
+		const secrets = new Set(workflowSecrets);
 
 		if (typeof job.if === "string") {
 			for (const name of customSecretsIn(job.if)) secrets.add(name);
@@ -300,8 +302,9 @@ export function checkPrivilegedEnvironment(
 
 /**
  * Invariant 4: toolchain-image.yml publishes only via workflow_dispatch — a push/merge must never
- * start a GHCR release. PR triggers are fine (secret-free pr-gate). Call only with that workflow's
- * document; {@link runHardeningCheck} does the file selection.
+ * start a GHCR release. Allowed top-level triggers are exactly `workflow_dispatch` + `pull_request`
+ * (the secret-free PR gate). Call only with that workflow's document; {@link runHardeningCheck}
+ * does the file selection.
  */
 export function checkToolchainDispatchOnly(
 	doc: unknown,
@@ -316,16 +319,50 @@ export function checkToolchainDispatchOnly(
 		return errors;
 	}
 	const triggers = on as Record<string, unknown>;
-	if ("push" in triggers) {
-		errors.push(
-			`${file}: must not trigger on \`push\` — toolchain publish is workflow_dispatch-only so a ` +
-				`merge cannot start a release (see docs/ci-secrets.md)`,
-		);
+	const allowed = new Set(["workflow_dispatch", "pull_request"]);
+	const triggerKeys = Object.keys(triggers);
+	for (const key of triggerKeys) {
+		if (!allowed.has(key)) {
+			errors.push(
+				`${file}: trigger \`${key}\` is not allowed — toolchain publish is workflow_dispatch-only ` +
+					`(plus pull_request for the secret-free PR gate); see docs/ci-secrets.md`,
+			);
+		}
 	}
 	if (!("workflow_dispatch" in triggers)) {
 		errors.push(
 			`${file}: must declare \`workflow_dispatch\` — that is the only path that reaches the publish job`,
 		);
+	}
+	if (!("pull_request" in triggers)) {
+		errors.push(
+			`${file}: must declare \`pull_request\` — the secret-free PR docker smoke gate must stay on the PR path`,
+		);
+	}
+
+	const jobs = asRecord(root.jobs, `${file}: no jobs mapping`);
+	if (!("publish" in jobs)) {
+		errors.push(`${file}: missing the "publish" job — that is the GHCR release lane`);
+		return errors;
+	}
+	const publish = asRecord(jobs.publish, `${file}: publish job is not a mapping`);
+	if (jobEnvironmentName(publish) !== PRIVILEGED_ENVIRONMENT) {
+		errors.push(
+			`${file}::publish: must set \`environment: ${PRIVILEGED_ENVIRONMENT}\` — GHCR promote is a release`,
+		);
+	}
+	const publishIf = typeof publish.if === "string" ? publish.if : "";
+	for (const needle of [
+		"workflow_dispatch",
+		"refs/heads/main",
+		"starslingdev/sandbox-benchmarks",
+	] as const) {
+		if (!publishIf.includes(needle)) {
+			errors.push(
+				`${file}::publish: \`if:\` must confine the release to workflow_dispatch on main of ` +
+					`starslingdev/sandbox-benchmarks (missing "${needle}")`,
+			);
+		}
 	}
 	return errors;
 }

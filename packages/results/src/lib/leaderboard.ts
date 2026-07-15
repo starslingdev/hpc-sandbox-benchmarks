@@ -444,9 +444,14 @@ function dimensionTakeaway(
 	const leader = rows[0];
 	if (!leader) return "";
 	const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
-	const next = rows.find((r) => r.rank > leader.rank);
+	// Immediate neighbor — not the next distinct rank — so a top-of-board statistical tie is not
+	// misread as "only one provider ranked".
+	const next = rows[1];
 	if (!next) {
 		return `${leader.displayName} is the only ranked provider (${formatValue(leader.value)} ${metric.unit}; ${better}).`;
+	}
+	if (next.tiedWithAbove === "statistical" || next.rank === leader.rank) {
+		return `${leader.displayName} and ${next.displayName} share the top on this headline (${better}).`;
 	}
 	if (metric.direction === "HIB") {
 		const ratio = leader.value / next.value;
@@ -459,9 +464,6 @@ function dimensionTakeaway(
 			const verb = dimension === "economics" ? "is cheapest" : "leads";
 			return `${leader.displayName} ${verb} · ~${ratio.toFixed(1)}× lower than ${next.displayName} (${better}).`;
 		}
-	}
-	if (next.tiedWithAbove === "statistical" || next.rank === leader.rank) {
-		return `${leader.displayName} and ${next.displayName} share the top on this headline (${better}).`;
 	}
 	return `${leader.displayName} leads on median (${better}); see notes for how ranks are decided.`;
 }
@@ -584,9 +586,10 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"median (10,000 resamples, seeded from the Run id so the table is reproducible byte-for-byte), not",
 		"a normal-theory interval: these Samples are neither normal nor independent of the host's scheduling.",
 		"",
-		`Rows are separated only when their full Sample distributions differ (Mann-Whitney U, two-sided, α = ${DEFAULT_ALPHA},`,
-		"enumerated exactly over the permutation null rather than approximated — at these sample sizes the",
-		"normal approximation can report a p the exact test cannot actually produce).",
+		`Rows are separated only when Mann-Whitney U (two-sided, α = ${DEFAULT_ALPHA}, enumerated exactly`,
+		"over the permutation null rather than approximated) finds a shift in central tendency — at these",
+		"sample sizes the normal approximation can report a p the exact test cannot actually produce. KS is",
+		"reported separately for distribution *shape* and does not drive the ranking.",
 		"",
 	);
 
