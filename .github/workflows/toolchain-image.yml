@@ -116,17 +116,28 @@ jobs:
           persist-credentials: false
 
       # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write
-      # above), minting a fresh token for this job (`nsc auth exchange-github-token` under the hood,
-      # cached at the CLI's standard /var/run/nsc/token.json — the same path every namespacelabs/*
-      # action checks). Requires a trust relationship (this repo -> the Namespace tenant) registered
-      # once on the Namespace side — continue-on-error so a not-yet-registered trust relationship (or
-      # any transient failure) degrades to the same "missing credentials" skip every other provider
-      # gets from an absent secret (bake/validate/promote loop over providers independently), rather
-      # than failing the whole job.
+      # above), logging the `nsc` CLI into the workspace via `nsc auth exchange-github-token` under
+      # the hood. That login lives in the CLI's own local session store, not a discoverable file —
+      # /var/run/nsc/token.json is only pre-populated on Namespace-hosted runners (confirmed by a
+      # live smoke run: ENOENT on a regular GitHub-hosted runner) — so the next step mints a portable
+      # token file from that session for @computesdk/namespace to read. Requires a trust relationship
+      # (this repo -> the Namespace tenant) registered once on the Namespace side — continue-on-error
+      # so a not-yet-registered trust relationship (or any transient failure) degrades to the same
+      # "missing credentials" skip every other provider gets from an absent secret (bake/validate/
+      # promote loop over providers independently), rather than failing the whole job.
       - name: Set up Namespace CLI
         continue-on-error: true
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+
+      - name: Mint a portable Namespace token
+        if: steps.nsc-setup.outcome == 'success'
+        continue-on-error: true
+        id: nsc-token
+        run: |
+          nsc token create \
+            --name "sandbox-benchmarks-toolchain-${{ github.run_id }}" \
+            --token_file "${{ runner.temp }}/nsc-token.json"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -236,9 +247,9 @@ jobs:
           # secret skips the novita bake (it is not in --require) without failing the publish.
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
           # Namespace pulls the candidate image directly (no bake artifact). OIDC-federated per-run
-          # token, cached by the CLI step above at its standard path — optional, like novita: a
-          # skipped/failed exchange (not in --require) skips its validate boot without failing the publish.
-          NSC_TOKEN_FILE: ${{ steps.nsc-setup.outcome == 'success' && '/var/run/nsc/token.json' || '' }}
+          # token file (see the Namespace CLI steps above) — optional, like novita: a skipped/failed
+          # exchange/mint (not in --require) skips its validate boot without failing the publish.
+          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
         run: |
           set -euo pipefail
           # Declare then assign so the command substitution's exit status isn't masked (SC2155).
@@ -268,9 +279,9 @@ jobs:
           # secret skips the novita bake (it is not in --require) without failing the publish.
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
           # Namespace pulls the candidate image directly (no bake artifact). OIDC-federated per-run
-          # token, cached by the CLI step above at its standard path — optional, like novita: a
-          # skipped/failed exchange (not in --require) skips its validate boot without failing the publish.
-          NSC_TOKEN_FILE: ${{ steps.nsc-setup.outcome == 'success' && '/var/run/nsc/token.json' || '' }}
+          # token file (see the Namespace CLI steps above) — optional, like novita: a skipped/failed
+          # exchange/mint (not in --require) skips its validate boot without failing the publish.
+          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
           FORCE_REPUBLISH: ${{ inputs.force_republish }}
         # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
         # public version is never published while a required provider's version artifact was silently

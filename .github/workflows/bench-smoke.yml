@@ -62,17 +62,29 @@ jobs:
           persist-credentials: false
 
       # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write
-      # above), minting a fresh token per run (`nsc auth exchange-github-token` under the hood,
-      # cached at the CLI's standard /var/run/nsc/token.json — the same path every namespacelabs/*
-      # action checks). Requires a trust relationship (this repo -> the Namespace tenant) registered
-      # once on the Namespace side — continue-on-error so a not-yet-registered trust relationship (or
-      # any transient failure) degrades to the same "missing credentials" skip every other provider
-      # gets from an absent secret, rather than failing the whole job.
+      # above), logging the `nsc` CLI into the workspace via `nsc auth exchange-github-token` under
+      # the hood. That login lives in the CLI's own local session store, not a discoverable file —
+      # /var/run/nsc/token.json is only pre-populated on Namespace-hosted runners (confirmed by a
+      # live smoke run: ENOENT on a regular GitHub-hosted runner) — so the next step mints a portable
+      # token file from that session for @computesdk/namespace to read. Requires a trust relationship
+      # (this repo -> the Namespace tenant) registered once on the Namespace side — continue-on-error
+      # so a not-yet-registered trust relationship (or any transient failure) degrades to the same
+      # "missing credentials" skip every other provider gets from an absent secret, rather than
+      # failing the whole job.
       - name: Set up Namespace CLI
         if: inputs.provider == 'namespace'
         continue-on-error: true
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+
+      - name: Mint a portable Namespace token
+        if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
+        continue-on-error: true
+        id: nsc-token
+        run: |
+          nsc token create \
+            --name "sandbox-benchmarks-smoke-${{ github.run_id }}" \
+            --token_file "${{ runner.temp }}/nsc-token.json"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -113,10 +125,10 @@ jobs:
           BL_API_KEY: ${{ secrets.BL_API_KEY }}
           BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-          # OIDC-federated per-run token, cached by the CLI step above at its standard path — empty
-          # when a different provider was dispatched or the exchange was skipped/failed, which the
+          # OIDC-federated per-run token file (see the Namespace CLI steps above) — empty when a
+          # different provider was dispatched or the exchange/mint was skipped/failed, which the
           # harness reads as the standard missing-credentials skip, never a stored secret.
-          NSC_TOKEN_FILE: ${{ steps.nsc-setup.outcome == 'success' && '/var/run/nsc/token.json' || '' }}
+          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results
