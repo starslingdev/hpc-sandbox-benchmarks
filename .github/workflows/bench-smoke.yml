@@ -34,12 +34,9 @@ on:
             realworld-openclaw,
           ]
 
-# Least privilege: the job only reads the checked-out code and uploads an artifact. `id-token: write`
-# is only for Namespace: it federates via GitHub's OIDC identity (no stored secret), which requires
-# the job to be able to request an OIDC token from GitHub's endpoint.
+# Least privilege: the job only reads the checked-out code and uploads an artifact.
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: bench-smoke-${{ github.ref }}-${{ inputs.provider }}-${{ inputs.suite }}
@@ -51,6 +48,13 @@ jobs:
     runs-on: starsling-ubuntu-24.04-2
     # The suite itself runs for many minutes inside the sandbox; give the host job ample headroom.
     timeout-minutes: 150
+    # `id-token: write` is scoped to this job (not the workflow, which only has this one job today),
+    # matching bench-matrix.yml/toolchain-image.yml: a job added later must opt in explicitly rather
+    # than silently inheriting the ability to request OIDC tokens. Only Namespace uses it (GitHub
+    # OIDC federation, no stored secret).
+    permissions:
+      contents: read
+      id-token: write
     steps:
       # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
       # moved/compromised tag can't silently change what runs.
