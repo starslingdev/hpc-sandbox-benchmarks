@@ -8,7 +8,6 @@
 | [Contributing](../CONTRIBUTING.md) | Local gate; adding a provider, suite, or metric |
 | [CI & secrets](./ci-secrets.md) | GitHub Environment `privileged`, release gates, operator setup |
 | [Security](../SECURITY.md) | Vulnerability reporting |
-| [Code of Conduct](../CODE_OF_CONDUCT.md) | Community norms |
 
 ## Historical / design notes
 

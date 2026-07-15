@@ -123,5 +123,4 @@ either. Lint and formatting are root-only via a single `biome.json`.
 ## Community
 
 - [Contributing](./CONTRIBUTING.md) — local gate; how to add a provider, suite, or metric
-- [Code of Conduct](./CODE_OF_CONDUCT.md)
 - [Security](./SECURITY.md) — vulnerability reporting; never paste secrets into issues or PRs

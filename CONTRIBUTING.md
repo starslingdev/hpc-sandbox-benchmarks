@@ -1,8 +1,7 @@
 # Contributing
 
-Thanks for helping improve sandbox provider comparisons. Please follow the
-[Code of Conduct](./CODE_OF_CONDUCT.md). Read the [methodology](./docs/methodology.md) for how a
-measurement is produced before extending the matrix.
+Thanks for helping improve sandbox provider comparisons. Read the
+[methodology](./docs/methodology.md) for how a measurement is produced before extending the matrix.
 
 This repo is a Bun workspace monorepo with a strict, enforced dependency DAG (see the
 [README](./README.md)) and a source-first, no-build layout.
