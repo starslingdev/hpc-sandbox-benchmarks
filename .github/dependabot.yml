@@ -1,0 +1,24 @@
+# Dependabot — scoped to GitHub Actions only.
+#
+# Third-party actions are SHA-pinned (the tag comment is for humans; see SECURITY.md), which is
+# secure but goes stale silently — a pin never moves on its own. Dependabot opens a PR to bump each
+# pinned SHA (and its tag comment) when a new release lands, so the pins stay current AND pinned.
+#
+# npm/Bun dependencies are deliberately NOT managed here: the repo installs with Bun's
+# `minimumReleaseAge = 604800` supply-chain delay (bunfig.toml) and a frozen `bun.lock`, and updates
+# them by hand through that gate. A Dependabot npm updater would fight that posture, so it is omitted.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # One grouped PR for routine action bumps keeps review noise low; a major bump still opens its own.
+    groups:
+      github-actions:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - dependencies
+      - github-actions

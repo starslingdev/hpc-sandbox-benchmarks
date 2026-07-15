@@ -1,11 +1,20 @@
 # sandbox-benchmarks
 
-Compare top sandbox providers' performance for real developer and CI/CD tasks.
+Compare top sandbox providers on the same pinned machine shape for real developer and CI/CD workloads — not bare-metal hardware benches.
 
-> **Docs:** [Methodology](./docs/methodology.md) — how a measurement is produced (target spec,
-> dimensions, economics, host-vs-effective specs, transport model, the dataset pipeline). ·
-> [ADRs](./docs/adr/README.md) — the load-bearing architecture decisions and why. ·
-> [Contributing](./CONTRIBUTING.md) — the local gate and how to add a provider, suite, or metric.
+**Same target everywhere:** 2 vCPU · 8 GiB RAM · 40 GB disk. One headline metric per dimension, ranked with honest statistics.
+
+## Start here
+
+| | |
+| --- | --- |
+| **[Leaderboard](./LEADERBOARD.md)** | Provider rankings from the latest published run |
+| **[Methodology](./docs/methodology.md)** | How a measurement is produced |
+| **[Docs hub](./docs/README.md)** | ADRs, CI secrets, security, contributing |
+
+Live provider benches and toolchain releases are **maintainer-only** (GitHub Environment `privileged`). Pull requests never receive provider secrets — see [CI & secrets](./docs/ci-secrets.md).
+
+---
 
 This repo is a **Bun workspace monorepo** with a strict, enforced dependency DAG and a uniform
 package shape. The guiding rule: *"can I import this?"* is answered by the path alone, and
@@ -85,6 +94,9 @@ npm republisher and no install-time postinstall.
 [mise](https://mise.jdx.dev)). The same checks run locally, so green-on-your-machine means
 green-in-CI.
 
+Fork PRs get the hosted CI gate only. Self-hosted jobs and anything that needs provider credentials
+run only from this repository, on `main`, behind Environment [`privileged`](./docs/ci-secrets.md).
+
 ## Git hooks (pre-commit)
 
 [Lefthook](https://lefthook.dev) runs a fast local mirror of CI on every commit, configured in
@@ -107,3 +119,9 @@ compromised — releases are not installed, and **no third-party lifecycle scrip
 `trustedDependencies`). The git hooks above are wired by the project's own first-party `prepare`
 script, not a dependency's postinstall, and CI installs with `--ignore-scripts` so it runs none
 either. Lint and formatting are root-only via a single `biome.json`.
+
+## Community
+
+- [Contributing](./CONTRIBUTING.md) — local gate; how to add a provider, suite, or metric
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [Security](./SECURITY.md) — vulnerability reporting; never paste secrets into issues or PRs
