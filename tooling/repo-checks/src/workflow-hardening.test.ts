@@ -145,13 +145,13 @@ describe("checkCiLintGate", () => {
 });
 
 describe("customSecretsIn", () => {
-	test("ignores GITHUB_TOKEN and extracts provider secrets", () => {
+	test("ignores GITHUB_TOKEN and extracts provider secrets in dot and bracket notation", () => {
 		expect(
 			customSecretsIn(
 				// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
-				"${{ secrets.GITHUB_TOKEN }} ${{ secrets.E2B_API_KEY }} ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}",
+				"${{ secrets.GITHUB_TOKEN }} ${{ secrets.E2B_API_KEY }} ${{ secrets.DAYTONA_TARGET || 'us-west-2' }} ${{ secrets['NOVITA_API_KEY'] }} ${{ secrets[\"BL_API_KEY\"] }}",
 			),
-		).toEqual(["E2B_API_KEY", "DAYTONA_TARGET"]);
+		).toEqual(["E2B_API_KEY", "DAYTONA_TARGET", "NOVITA_API_KEY", "BL_API_KEY"]);
 	});
 });
 
@@ -202,6 +202,30 @@ describe("checkPrivilegedEnvironment", () => {
 		expect(errors[0]).toContain("leak.yml::bench");
 		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
 		expect(errors[0]).toContain("E2B_API_KEY");
+	});
+
+	test("flags custom secrets in job or step if conditions without environment: privileged", () => {
+		const doc = {
+			jobs: {
+				bench: {
+					// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+					if: "${{ secrets.JOB_SECRET != '' }}",
+					steps: [
+						{
+							name: "Run",
+							// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+							if: "${{ secrets.STEP_SECRET != '' }}",
+							run: "true",
+						},
+					],
+				},
+			},
+		};
+		const errors = checkPrivilegedEnvironment(doc, "leak-if.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("leak-if.yml::bench");
+		expect(errors[0]).toContain("JOB_SECRET");
+		expect(errors[0]).toContain("STEP_SECRET");
 	});
 
 	test("flags packages: write without the privileged environment", () => {

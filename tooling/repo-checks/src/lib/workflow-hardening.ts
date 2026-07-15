@@ -39,8 +39,9 @@ export const CREDENTIALED_CHECKOUTS: Readonly<Record<string, string>> = {
  *  privileged Environment. Provider API keys and other org secrets must NOT be listed here. */
 const BUILTIN_SECRET_NAMES = new Set(["GITHUB_TOKEN"]);
 
-/** Matches `${{ secrets.NAME }}` / `${{ secrets.NAME || '…' }}` in workflow expression strings. */
-const SECRET_EXPR = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)/g;
+/** Matches `${{ secrets.NAME }}`, `${{ secrets['NAME'] }}`, or `${{ secrets["NAME"] }}`
+ *  (with optional `|| …` after the access). Bracket form is rarer but a real bypass if ignored. */
+const SECRET_EXPR = /\$\{\{\s*secrets(?:\.([A-Za-z0-9_]+)|\s*\[\s*['"]([A-Za-z0-9_]+)['"]\s*\])/g;
 
 function asRecord(value: unknown, message: string): Record<string, unknown> {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -193,7 +194,7 @@ function envStrings(envValue: unknown): string[] {
 export function customSecretsIn(text: string): string[] {
 	const found: string[] = [];
 	for (const match of text.matchAll(SECRET_EXPR)) {
-		const name = match[1];
+		const name = match[1] || match[2];
 		if (name && !BUILTIN_SECRET_NAMES.has(name)) found.push(name);
 	}
 	return found;
@@ -244,12 +245,18 @@ export function checkPrivilegedEnvironment(
 		const key = `${file}::${jobId}`;
 		const secrets = new Set<string>();
 
+		if (typeof job.if === "string") {
+			for (const name of customSecretsIn(job.if)) secrets.add(name);
+		}
 		for (const text of envStrings(job.env)) {
 			for (const name of customSecretsIn(text)) secrets.add(name);
 		}
 		const steps = Array.isArray(job.steps) ? job.steps : [];
 		for (const stepValue of steps) {
 			const step = asRecord(stepValue, `${file}: job "${jobId}" has a malformed step`);
+			if (typeof step.if === "string") {
+				for (const name of customSecretsIn(step.if)) secrets.add(name);
+			}
 			for (const text of envStrings(step.env)) {
 				for (const name of customSecretsIn(text)) secrets.add(name);
 			}
