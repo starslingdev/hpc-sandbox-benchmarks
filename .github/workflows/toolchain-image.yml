@@ -23,8 +23,10 @@ name: Toolchain image
 #
 # Cross-cutting GitHub Actions mechanics live in .github/actions/* composites (setup, ghcr login,
 # input validation, package-visibility guard, summaries); provider bake/verify/promote logic lives in
-# the package scripts under apps/cli (thin YAML, fat scripts). There is no OIDC here — GHCR auth is the
-# job's GITHUB_TOKEN — so no job needs id-token: write.
+# the package scripts under apps/cli (thin YAML, fat scripts). GHCR auth is the job's GITHUB_TOKEN; the
+# only OIDC here is Namespace's GitHub federation (it has no stored secret), so the two jobs that boot a
+# Namespace instance — `bake` (its namespace matrix cell) and `publish` (promote's re-validation) —
+# each scope `id-token: write` to themselves. No other job requests an OIDC token.
 on:
   # Manual publish (e.g. after bumping TOOLCHAIN_VERSION). The public version is immutable;
   # `force_republish` deliberately regenerates it over an existing version for fast dev iteration.
@@ -50,9 +52,10 @@ concurrency:
   group: toolchain-image-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Least privilege, global default: read-only. Only build and promote widen to packages: write; plan
-# widens to packages: read (the immutability probe + package-visibility guard); bake needs neither
-# (providers pull the public candidate anonymously).
+# Least privilege, global default: read-only. build and promote widen to packages: write; plan widens
+# to packages: read (the immutability probe + package-visibility guard). bake needs no package scope
+# (providers pull the public candidate anonymously) but, like publish, widens to id-token: write for
+# Namespace's OIDC federation — scoped per-job, never at the workflow level (zizmor: excessive perms).
 permissions:
   contents: read
 
@@ -294,6 +297,13 @@ jobs:
     # behind Environment `privileged` like the rest of the release lane.
     environment: privileged
     timeout-minutes: 60
+    # Only the namespace cell uses id-token (Namespace's GitHub OIDC federation, no stored secret), but
+    # GHA permissions are per-job, not per-cell — so it is scoped to the whole bake job and the other
+    # cells simply never request a token. contents: read is the workflow default, re-declared so this
+    # block widens rather than replaces. No packages scope: providers pull the public candidate anon.
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -305,6 +315,35 @@ jobs:
           persist-credentials: false
       - name: Set up toolchain
         uses: ./.github/actions/setup-toolchain
+      # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write on this
+      # job), logging the `nsc` CLI into the workspace via `nsc auth exchange-github-token` under the
+      # hood. That login lives in the CLI's own local session store, not a discoverable file — so the
+      # next step mints a portable token file from that session for @computesdk/namespace to read.
+      # Only the namespace cell runs it (the job's `if:` already skips the whole bake when the release is
+      # skipped, so no extra guard is needed). Requires a trust relationship (this repo -> the Namespace
+      # tenant) registered once on the Namespace side — continue-on-error so a not-yet-registered trust
+      # relationship (or any transient failure) degrades to the same "missing credentials" skip that a
+      # namespace validate boot with no token already gets (namespace is best-effort, not in --require).
+      - name: Set up Namespace CLI
+        if: matrix.provider == 'namespace'
+        continue-on-error: true
+        id: nsc-setup
+        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+      # `nsc token create` mints a scoped, revocable token from the CLI session above and writes it as a
+      # {"bearer_token": "..."} JSON file @computesdk/namespace reads via NSC_TOKEN_FILE. The grant is
+      # the minimal permission set the harness needs against the Compute API's instance resource: create
+      # (CreateInstance), list (ListInstances), get (DescribeInstance), destroy (DestroyInstance), and
+      # exec (RunCommandSync) — found by live trial: a wildcard action is rejected outright ("not allowed
+      # in revokable tokens"), and each wrong verb name is named individually in the CLI's error.
+      - name: Mint a portable Namespace token
+        if: matrix.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
+        continue-on-error: true
+        id: nsc-token
+        run: |
+          nsc token create \
+            --name "sandbox-benchmarks-toolchain-bake-${{ github.run_id }}" \
+            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
+            --token_file "${{ runner.temp }}/nsc-token.json"
       - name: Bake + verify candidate
         id: bake
         # The cell's provider + required flag reach the script through the environment, never
@@ -331,6 +370,12 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
           # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          # Namespace pulls the candidate image directly (no bake artifact) — its validate boot reads
+          # this OIDC-federated token file (see the Namespace CLI steps above). Not a stored secret:
+          # empty unless THIS is the namespace cell AND the mint succeeded, which the harness reads as
+          # the standard missing-credentials skip on every other cell. Best-effort like novita: namespace
+          # is not in --require, so a skipped/failed mint skips its validate boot without failing publish.
+          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
         run: |
           set -euo pipefail
           args=(--provider "${PROVIDER}")
@@ -386,12 +431,15 @@ jobs:
       github.repository == 'starslingdev/sandbox-benchmarks'
     runs-on: starsling-ubuntu-24.04-2
     environment: privileged
-    # Re-validates the candidate and promotes across all five providers SERIALLY (it is a transaction,
+    # Re-validates the candidate and promotes across all six providers SERIALLY (it is a transaction,
     # not a fan-out), so it is the longest-running credentialed job.
     timeout-minutes: 60
+    # packages: write retags the base → public :v1. id-token: write is Namespace's OIDC federation for
+    # the re-validation boot (no stored secret) — scoped here, not at the workflow level (zizmor).
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -406,6 +454,28 @@ jobs:
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      # Namespace federates via GitHub's OIDC identity (id-token: write on this job), so promote's
+      # re-validation boot can reach the Compute API with no stored secret. Unlike the bake matrix there
+      # is no per-provider cell here (promote is a serial transaction over all providers), so the mint
+      # runs unconditionally — continue-on-error keeps a not-yet-registered trust relationship (or any
+      # transient failure) from failing the release: namespace is best-effort (not in --require), so its
+      # re-validation simply skips when the token is absent, exactly like a missing optional secret.
+      - name: Set up Namespace CLI
+        continue-on-error: true
+        id: nsc-setup
+        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+      # Mint a scoped, revocable token file (grant: the minimal instance verbs the harness needs —
+      # create/list/get/destroy/exec; a wildcard action is rejected in revokable tokens). Named apart
+      # from the bake cell's token so both can coexist within one workflow run.
+      - name: Mint a portable Namespace token
+        if: steps.nsc-setup.outcome == 'success'
+        continue-on-error: true
+        id: nsc-token
+        run: |
+          nsc token create \
+            --name "sandbox-benchmarks-toolchain-promote-${{ github.run_id }}" \
+            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
+            --token_file "${{ runner.temp }}/nsc-token.json"
       - name: Promote candidate → version
         id: promote
         env:
@@ -421,6 +491,10 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          # Namespace's re-validation boot reads this OIDC-federated token file (see the Namespace CLI
+          # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
+          # skips namespace's re-validation without failing the promote (namespace is not in --require).
+          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
         run: |
           set -euo pipefail
           args=(--promote --require "${REQUIRED}")
