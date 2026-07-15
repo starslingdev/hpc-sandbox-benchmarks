@@ -7,6 +7,7 @@ import { blaxel } from "@computesdk/blaxel";
 import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
+import { namespace } from "@computesdk/namespace";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
@@ -87,5 +88,21 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// template name); cpu/memory are pinned at template create, not per-sandbox.
 		createCompute: () => novitaCompute(config.novita.apiKey),
 		createOptions: { snapshotId: config.novitaTemplate },
+	},
+	namespace: {
+		// The token rides the factory's own NSC_TOKEN_FILE env fallback (getAndValidateCredentials) —
+		// CI's OIDC federation (nscloud-setup) lands the token there, not in NSC_TOKEN — never read
+		// here, same as blaxel's BL_API_KEY. virtualCpu/memoryMegabytes are per-instance knobs on this
+		// factory config (not per-create options), so the target spec is pinned once, at construction,
+		// like blaxel's/modal's cpu/memory.
+		createCompute: () =>
+			namespace({
+				virtualCpu: TARGET_SPEC.vcpus,
+				memoryMegabytes: TARGET_SPEC.memoryGb * 1024,
+			}),
+		// Namespace has no template/snapshot system — `create()` pulls an arbitrary OCI ref straight
+		// from `options.image` (computesdk's open CreateSandboxOptions passthrough), so, like modal's
+		// fromRegistry boot, this points directly at the published toolchain image; nothing to bake.
+		createOptions: { image: config.toolchainImage },
 	},
 };

@@ -26,6 +26,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"daytona",
 			"e2b",
 			"modal",
+			"namespace",
 			"novita",
 		]);
 	});

@@ -40,4 +40,10 @@ describe("candidateCreateOptions", () => {
 			templateId: "ghcr.io/o/tc:v1-candidate",
 		});
 	});
+
+	it("points namespace directly at the candidate image", () => {
+		expect(candidateCreateOptions("namespace", refs)).toEqual({
+			image: "ghcr.io/o/tc:v1-candidate",
+		});
+	});
 });

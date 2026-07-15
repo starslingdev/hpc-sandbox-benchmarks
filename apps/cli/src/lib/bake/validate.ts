@@ -35,5 +35,8 @@ export function candidateCreateOptions(
 		case "novita":
 			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.
 			return { snapshotId: refs.novitaTemplateCandidate };
+		case "namespace":
+			// No template/snapshot system — points create() at the candidate image directly, same as modal.
+			return { image: refs.toolchainImageCandidate };
 	}
 }
