@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "@sandbox-benchmarks/providers";
 import { e2bToml } from "@sandbox-benchmarks/templates/pins";
+import { resolveImageDigestRef } from "./image.ts";
 import type { Log } from "./types.ts";
 
 /** Pinned so the build is reproducible (every other tool in the toolchain is version-pinned). */
@@ -69,11 +70,12 @@ function writeE2bDockerfile(baseImage: string): void {
 /** Build the e2b template `name` from `baseImage` (the candidate base while iterating, the published
  *  version base on promote — so the template provably derives from the validated bytes). */
 export async function bakeE2bTemplate(name: string, baseImage: string, log: Log): Promise<void> {
+	const pinnedBaseImage = await resolveImageDigestRef(baseImage);
 	// Keep the on-disk manifest's template_name in sync with the name we create, and pin the base.
 	writeFileSync(`${E2B_CONTEXT}/${E2B_TOML}`, e2bToml(name));
-	writeE2bDockerfile(baseImage);
+	writeE2bDockerfile(pinnedBaseImage);
 
-	log(`e2b template create ${name} (base ${baseImage})`);
+	log(`e2b template create ${name} (base ${pinnedBaseImage})`);
 	const proc = Bun.spawn(
 		[
 			"bunx",

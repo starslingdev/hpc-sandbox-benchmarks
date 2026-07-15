@@ -28,6 +28,7 @@
     "@sandbox-benchmarks/templates": "workspace:*",
     "@sandbox-benchmarks/harness": "workspace:*",
     "@sandbox-benchmarks/results": "workspace:*",
+    "@daytona/api-client": "catalog:computesdk",
     "@daytona/sdk": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk",
     "dotenv": "catalog:"

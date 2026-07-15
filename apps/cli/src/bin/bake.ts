@@ -14,7 +14,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { bakeDaytonaSnapshot } from "../lib/bake/daytona.ts";
 import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
-import { buildAndPushCandidate } from "../lib/bake/image.ts";
+import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
 import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
@@ -23,25 +23,16 @@ import { candidateCreateOptions } from "../lib/bake/validate.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
 
-// Each provider's candidate bake, bound to the candidate names + base ref from config.
-const bakers: Record<ProviderId, (log: Log) => Promise<void>> = {
-	e2b: (log) => bakeE2bTemplate(config.e2bTemplateCandidate, config.toolchainImageCandidate, log),
-	daytona: (log) =>
-		bakeDaytonaSnapshot(config.daytonaSnapshotCandidate, config.toolchainImageCandidate, log),
+// Each provider's candidate bake, bound to the candidate artifact name but NOT the mutable image
+// tag. The caller resolves that tag once and passes the same immutable digest to every baker.
+const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
+	e2b: (image, log) => bakeE2bTemplate(config.e2bTemplateCandidate, image, log),
+	daytona: (image, log) => bakeDaytonaSnapshot(config.daytonaSnapshotCandidate, image, log),
 	modal: bakeModalImage,
-	blaxel: async (log) => {
+	blaxel: async (_image, log) => {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},
-	novita: (log) =>
-		bakeNovitaTemplate(config.novitaTemplateCandidate, config.toolchainImageCandidate, log),
-};
-
-const candidateRefs = {
-	e2bTemplateCandidate: config.e2bTemplateCandidate,
-	daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
-	novitaTemplateCandidate: config.novitaTemplateCandidate,
-	toolchainImageCandidate: config.toolchainImageCandidate,
-	daytonaTarget: config.daytona.target,
+	novita: (image, log) => bakeNovitaTemplate(config.novitaTemplateCandidate, image, log),
 };
 
 if (import.meta.main) {
@@ -86,10 +77,31 @@ if (import.meta.main) {
 		}
 	}
 
+	// Modal's registry importer, like the remote E2B-compatible builders, may cache a mutable tag.
+	// Resolve once after the push and validate the exact candidate bytes by immutable digest. This also
+	// makes a tag change between provider bakes unable to redirect Modal's validation to different bytes.
+	let pinnedCandidateImage: string;
+	try {
+		pinnedCandidateImage = await resolveImageDigestRef(config.toolchainImageCandidate);
+		log(`>>> candidate image pinned for validation: ${pinnedCandidateImage}`);
+	} catch (err) {
+		log(
+			`<<< could not resolve candidate image digest — ${err instanceof Error ? err.message : String(err)}`,
+		);
+		process.exit(1);
+	}
+	const candidateRefs = {
+		e2bTemplateCandidate: config.e2bTemplateCandidate,
+		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		novitaTemplateCandidate: config.novitaTemplateCandidate,
+		toolchainImageCandidate: pinnedCandidateImage,
+		daytonaTarget: config.daytona.target,
+	};
+
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {
 			log(`>>> ${provider.name}: baking candidate…`);
-			await bakers[provider.name]((m) => log(`    ${m}`));
+			await bakers[provider.name](pinnedCandidateImage, (m) => log(`    ${m}`));
 
 			log(`>>> ${provider.name}: validating (boot + smoke)…`);
 			// Boot the just-baked candidate (override the registry adapter's version create-options).
@@ -132,7 +144,7 @@ if (import.meta.main) {
 		JSON.stringify(
 			{
 				candidate: {
-					image: config.toolchainImageCandidate,
+					image: pinnedCandidateImage,
 					e2bTemplate: config.e2bTemplateCandidate,
 					daytonaSnapshot: config.daytonaSnapshotCandidate,
 					novitaTemplate: config.novitaTemplateCandidate,

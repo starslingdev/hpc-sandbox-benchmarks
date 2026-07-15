@@ -12,6 +12,7 @@
 // (independent of e2b.dev), which is why it can reuse the same version-scoped artifact name.
 import { createRequire } from "node:module";
 import { config, novitaConnection } from "@sandbox-benchmarks/providers";
+import { resolveImageDigestRef } from "./image.ts";
 import type { Log } from "./types.ts";
 
 // CJS build on purpose — same chalk dual-format race the compat module documents
@@ -28,7 +29,8 @@ export async function bakeNovitaTemplate(name: string, baseImage: string, log: L
 	if (!apiKey) throw new Error("NOVITA_API_KEY is required to bake the novita template");
 
 	const connection = novitaConnection(apiKey);
-	log(`novita Template.build ${name} via ${connection.domain} (base ${baseImage})`);
+	const pinnedBaseImage = await resolveImageDigestRef(baseImage);
+	log(`novita Template.build ${name} via ${connection.domain} (base ${pinnedBaseImage})`);
 	// Mask the PTS phoromatic units at template-build time, mirroring the base image's own mask
 	// (packages/templates/images/base/scripts/20-pts.sh). Novita boots the image with systemd as
 	// PID 1 exactly like e2b, and an unmasked phoromatic-client POWERS OFF the guest at t+300s
@@ -36,7 +38,7 @@ export async function bakeNovitaTemplate(name: string, baseImage: string, log: L
 	// Redundant-but-idempotent once the base image ships the mask — kept so the novita template is
 	// protected even when it's rebuilt from a candidate base that predates the base-image fix.
 	const template = Template()
-		.fromImage(baseImage)
+		.fromImage(pinnedBaseImage)
 		.runCmd(
 			// `set -e` so any failed mask fails the BUILD: without it the loop's exit status is the
 			// last ln's, and an unmasked phoromatic-client means every sandbox booted from this

@@ -26,7 +26,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
-import { imageExistsInRegistry, promoteImage } from "./image.ts";
+import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
 import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
@@ -70,14 +70,23 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 
 	// 2. Re-validate the candidate immediately before publishing, so the bytes we promote are verified
 	//    again (the candidate tag is mutable). Abort the whole promote if any provider fails to validate.
+	let pinnedCandidateImage: string;
+	try {
+		pinnedCandidateImage = await resolveImageDigestRef(config.toolchainImageCandidate);
+	} catch (err) {
+		const reason = `could not resolve immutable digest for ${config.toolchainImageCandidate}: ${err instanceof Error ? err.message : String(err)}`;
+		log(`<<< promote aborted — ${reason} (nothing published)`);
+		reports.push({ provider: "image", status: "failed", reason });
+		return reports;
+	}
 	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		toolchainImageCandidate: config.toolchainImageCandidate,
+		toolchainImageCandidate: pinnedCandidateImage,
 		daytonaTarget: config.daytona.target,
 	};
-	log(`>>> re-validating candidate ${config.toolchainImageCandidate} before promote…`);
+	log(`>>> re-validating candidate ${pinnedCandidateImage} before promote…`);
 	const validateRuns = await validateCandidates(candidateRefs, log);
 	if (validateRuns.some((r) => r.status === "failed")) {
 		log("<<< promote aborted — candidate re-validation failed (nothing published)");
@@ -104,15 +113,13 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 			log(`>>> ${provider.name}: building version artifact from candidate…`);
 			switch (provider.name) {
 				case "e2b":
-					await bakeE2bTemplate(config.e2bTemplateVersion, config.toolchainImageCandidate, (m) =>
+					await bakeE2bTemplate(config.e2bTemplateVersion, pinnedCandidateImage, (m) =>
 						log(`    ${m}`),
 					);
 					break;
 				case "daytona":
-					await bakeDaytonaSnapshot(
-						config.daytonaSnapshotDefault,
-						config.toolchainImageCandidate,
-						(m) => log(`    ${m}`),
+					await bakeDaytonaSnapshot(config.daytonaSnapshotDefault, pinnedCandidateImage, (m) =>
+						log(`    ${m}`),
 					);
 					break;
 				case "modal":
@@ -122,10 +129,8 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 					log("    blaxel boots the stock base image — nothing to promote");
 					break;
 				case "novita":
-					await bakeNovitaTemplate(
-						config.novitaTemplateVersion,
-						config.toolchainImageCandidate,
-						(m) => log(`    ${m}`),
+					await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedCandidateImage, (m) =>
+						log(`    ${m}`),
 					);
 					break;
 				default: {
@@ -199,10 +204,10 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	}
 
 	// 4. LAST: publish the candidate base as the immutable public version — the commit point.
-	log(`>>> promoting image ${config.toolchainImageCandidate} → ${config.toolchainImageVersion}…`);
+	log(`>>> promoting image ${pinnedCandidateImage} → ${config.toolchainImageVersion}…`);
 	const imageStart = performance.now();
 	try {
-		await promoteImage(log);
+		await promoteImage(log, pinnedCandidateImage);
 		reports.push({ provider: "image", status: "ok", durationMs: performance.now() - imageStart });
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : String(err);

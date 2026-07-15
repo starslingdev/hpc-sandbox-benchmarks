@@ -1,7 +1,12 @@
-// Bake a daytona snapshot directly from a pushed toolchain image, via the raw Daytona SDK (the
-// @computesdk/daytona wrapper only snapshots a running sandbox). Idempotent: delete an existing
-// snapshot of that name, then recreate. The API key + runner target come from config.daytona
-// (single-region: DAYTONA_API_KEY + DAYTONA_TARGET, e.g. us-west-2).
+// Bake a Daytona Linux-VM snapshot by uploading the already-built local Docker image to Daytona's
+// transient registry, then registering that private image through the SDK. Both public-GHCR paths are
+// broken for this valid image: the direct importer returns an opaque inspection error, while the
+// declarative builder cannot authenticate its FROM pull. Daytona's CLI local-image path successfully
+// uploads the same layers, but hardcodes the `container` sandbox class; our active region is Linux VM
+// only. This implements the same documented transient-registry push and explicitly registers
+// `SandboxClass.LINUX_VM`. Idempotent: upload first, then delete an existing snapshot of that name and
+// recreate it. The API key + runner target come from config.daytona (single-region:
+// DAYTONA_API_KEY + DAYTONA_TARGET, e.g. us-west-2).
 //
 // Delete-then-create is idempotent but NOT atomic: the SDK exposes no snapshot rename or overwrite,
 // so the name is unavoidably ABSENT between the delete and a successful create. Reruns converge, but
@@ -13,11 +18,10 @@
 // Iteration surface: a snapshot's region must match where sandboxes boot. We pass the client `target`;
 // if the target also needs an explicit snapshot `regionId`, add it to CreateSnapshotParams here.
 //
-// microVM-only: the fleet is Firecracker microVMs, never containers. We pin the snapshot's
-// `sandboxClass` to LINUX_VM so its create — and every sandbox booted from it — routes to microVM
-// runners. Without it Daytona defaults to the `container` class, which fails on a region that only has
-// microVM runners with "No runners are configured … for sandbox class 'container'". (Needs
-// @daytona/sdk ≥ 0.192, which first exposed the selector.)
+// microVM-only: the fleet is Linux VMs. Snapshot registration pins that class rather than relying on
+// the transient-push API's container default.
+import type { RegistryPushAccessDto } from "@daytona/api-client";
+import { Configuration, DockerRegistryApi } from "@daytona/api-client";
 import { Daytona, SandboxClass } from "@daytona/sdk";
 import { config } from "@sandbox-benchmarks/providers";
 import type { Log } from "./types.ts";
@@ -136,6 +140,112 @@ export function snapshotDestroyedMessage(name: string, deleted: number, reason: 
 	);
 }
 
+/** Daytona's transient registry preserves the source repository path and replaces its source tag or
+ *  digest with a unique upload tag. Pure so the security-sensitive path construction is unit-testable. */
+export function daytonaTransientRef(
+	access: Pick<RegistryPushAccessDto, "registryUrl" | "project">,
+	image: string,
+	tag: string,
+): string {
+	const registry = access.registryUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+	const project = access.project.replace(/^\/+|\/+$/g, "");
+	const digest = image.indexOf("@");
+	const imageWithoutDigest = digest === -1 ? image : image.slice(0, digest);
+	const lastSlash = imageWithoutDigest.lastIndexOf("/");
+	const lastColon = imageWithoutDigest.lastIndexOf(":");
+	const repository =
+		lastColon > lastSlash ? imageWithoutDigest.slice(0, lastColon) : imageWithoutDigest;
+	if (!(registry && project && repository && tag)) {
+		throw new Error("Daytona transient registry returned an incomplete upload destination");
+	}
+	return `${registry}/${project}/${repository}:${tag}`;
+}
+
+/** Commands required to copy a buildx-pushed source into Daytona's transient registry. The explicit
+ *  pull is required because `docker buildx build --push` does not load the image into the daemon. */
+export function daytonaTransientPushCommands(image: string, transientRef: string): string[][] {
+	return [
+		["docker", "pull", image],
+		["docker", "tag", image, transientRef],
+		["docker", "push", transientRef],
+	];
+}
+
+/** Run a non-secret Docker command and fail with the exact executable/exit status. */
+async function runDocker(cmd: string[], log: Log): Promise<void> {
+	log(`$ ${cmd.join(" ")}`);
+	const proc = Bun.spawn(cmd, { stdout: "inherit", stderr: "inherit", env: process.env });
+	const code = await proc.exited;
+	if (code !== 0) throw new Error(`${cmd.slice(0, 2).join(" ")} exited ${code}`);
+}
+
+/** Authenticate Docker to Daytona's short-lived registry without putting the secret in argv/logs. */
+async function dockerLogin(access: RegistryPushAccessDto, log: Log): Promise<string> {
+	const registry = access.registryUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+	log(`authenticating Docker to Daytona transient registry ${registry}`);
+	const proc = Bun.spawn(
+		["docker", "login", registry, "--username", access.username, "--password-stdin"],
+		{ stdin: "pipe", stdout: "inherit", stderr: "inherit", env: process.env },
+	);
+	proc.stdin.write(access.secret);
+	// Bun's FileSink.end() returns a Promise; await it so the write-end of the pipe is closed before we
+	// wait on exit, otherwise `docker login --password-stdin` can block on an unflushed EOF.
+	await proc.stdin.end();
+	const code = await proc.exited;
+	if (code !== 0) throw new Error(`docker login ${registry} exited ${code}`);
+	return registry;
+}
+
+/** Run cleanup after an operation without letting a cleanup failure hide the primary failure. */
+export async function withCleanupPreservingPrimaryError<T>(
+	operation: () => Promise<T>,
+	cleanup: () => Promise<void>,
+	onSuppressedCleanupError: (err: unknown) => void,
+): Promise<T> {
+	let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+	try {
+		outcome = { ok: true, value: await operation() };
+	} catch (error) {
+		outcome = { ok: false, error };
+	}
+
+	try {
+		await cleanup();
+	} catch (cleanupError) {
+		if (outcome.ok) throw cleanupError;
+		onSuppressedCleanupError(cleanupError);
+	}
+
+	if (!outcome.ok) throw outcome.error;
+	return outcome.value;
+}
+
+/** Remove the short-lived registry credential and fail if Docker did not remove it. */
+async function dockerLogout(registry: string, log: Log): Promise<void> {
+	log(`removing Docker credentials for Daytona transient registry ${registry}`);
+	const proc = Bun.spawn(["docker", "logout", registry], {
+		stdout: "inherit",
+		stderr: "inherit",
+		env: process.env,
+	});
+	const code = await proc.exited;
+	if (code !== 0) throw new Error(`docker logout ${registry} exited ${code}`);
+}
+
+async function transientPushAccess(
+	apiKey: string,
+	region?: string,
+): Promise<RegistryPushAccessDto> {
+	const registryApi = new DockerRegistryApi(
+		new Configuration({
+			accessToken: apiKey,
+			basePath: "https://app.daytona.io/api",
+			baseOptions: { headers: { "X-Daytona-Source": "sandbox-benchmarks" } },
+		}),
+	);
+	return (await registryApi.getTransientPushAccess(undefined, region)).data;
+}
+
 /** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote).
  *  Idempotent: delete any existing snapshot of that name first.
  *
@@ -146,24 +256,56 @@ export function snapshotDestroyedMessage(name: string, deleted: number, reason: 
  *  unchanged. */
 export async function bakeDaytonaSnapshot(name: string, image: string, log: Log): Promise<void> {
 	const { daytona: daytonaCfg, targetSpec } = config;
+	const apiKey = daytonaCfg.apiKey;
+	if (!apiKey) throw new Error("DAYTONA_API_KEY is required to bake a Daytona snapshot");
 	const daytona = new Daytona({
-		apiKey: daytonaCfg.apiKey,
+		apiKey,
 		...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
 	});
 
-	const deleted = await deleteExistingSnapshots(daytona, name, log);
+	// The buildx publish lane does not load the pushed image into the runner's Docker daemon. Pull the
+	// immutable digest explicitly before tagging it for Daytona's transient registry.
+	// Upload fully before the destructive delete. A registry/auth/network failure therefore leaves an
+	// existing published snapshot intact and the delete→create outage is as short as the API permits.
+	const access = await transientPushAccess(apiKey, daytonaCfg.target);
+	const registry = await dockerLogin(access, log);
+	const transientRef = await withCleanupPreservingPrimaryError(
+		async () => {
+			// Construct the destination only after login so every post-login failure is inside the cleanup
+			// boundary. In particular, malformed registry metadata must not leave credentials behind.
+			const tag = new Date().toISOString().replace(/\D/g, "");
+			const destination = daytonaTransientRef(access, image, tag);
+			for (const command of daytonaTransientPushCommands(image, destination)) {
+				await runDocker(command, log);
+			}
+			return destination;
+		},
+		() => dockerLogout(registry, log),
+		(cleanupError) => {
+			log(
+				`warning: could not remove Daytona transient registry credentials after upload failure — ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+			);
+		},
+	);
 
-	log(`creating snapshot ${name} from ${image} (target ${daytonaCfg.target ?? "default"})`);
+	const deleted = await deleteExistingSnapshots(daytona, name, log);
+	log(
+		`creating Linux-VM snapshot ${name} from uploaded image (target ${daytonaCfg.target ?? "default"})`,
+	);
 	try {
 		await daytona.snapshot.create(
 			{
 				name,
-				image,
-				resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: targetSpec.diskGb },
-				// Pin to microVM runners (never the `container` default) — the fleet's hard constraint.
+				image: transientRef,
+				resources: {
+					cpu: targetSpec.vcpus,
+					memory: targetSpec.memoryGb,
+					disk: targetSpec.diskGb,
+				},
+				...(daytonaCfg.target ? { regionId: daytonaCfg.target } : {}),
 				sandboxClass: SandboxClass.LINUX_VM,
 			},
-			{ onLogs: log },
+			{ onLogs: (chunk) => log(chunk) },
 		);
 	} catch (err) {
 		// Nothing was deleted → the name was already free, so the prior state (none) is intact: rethrow

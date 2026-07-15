@@ -1,6 +1,6 @@
 // Build the toolchain images and push the *candidate* base to GHCR. daytona (snapshot source) and
-// modal (Image.fromRegistry) boot the base image by ref, so the candidate base must be pushed;
-// e2b builds its template from the local `:dev` base that build.sh produces, so it needs no push.
+// modal (Image.fromRegistry) boot the base image by ref, and e2b/novita build remotely from its
+// digest-pinned registry ref, so the candidate base must be pushed before any provider bake.
 // The public `:v1` is never pushed here — that is promote's job.
 import { join } from "node:path";
 import { config } from "@sandbox-benchmarks/providers";
@@ -18,16 +18,81 @@ async function run(cmd: string[], log: Log): Promise<void> {
 }
 
 /** build.sh (base + variants, tagged `:dev` and `:v1`) → retag base `:v1`→`:v1-candidate` → push the
- *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run. */
+ *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run.
+ *
+ *  A plain `docker push` publishes a bare image manifest, while the public version is a one-platform
+ *  image index produced by `imagetools create`. Daytona's registry importer rejects the bare
+ *  candidate with an opaque inspection error even when its total compressed size is below the
+ *  accepted public image. Normalize the mutable candidate to the same envelope before providers
+ *  consume it; the config and layers stay byte-identical. */
 export async function buildAndPushCandidate(log: Log): Promise<void> {
 	await run(["bash", BUILD_SH], log);
 	await run(["docker", "tag", config.toolchainImageVersion, config.toolchainImageCandidate], log);
 	await run(["docker", "push", config.toolchainImageCandidate], log);
+	await run(imagetoolsNormalizeCmd(config.toolchainImageCandidate), log);
 }
 
 /** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */
 export function imagetoolsRetagCmd(from: string, to: string): string[] {
 	return ["docker", "buildx", "imagetools", "create", "-t", to, from];
+}
+
+/** Wrap one pushed image manifest in a one-platform image-index envelope. Source and target
+ * intentionally name the same mutable candidate tag. */
+export function imagetoolsNormalizeCmd(ref: string): string[] {
+	return imagetoolsRetagCmd(ref, ref);
+}
+
+/** Pin a mutable registry ref to the digest returned by `imagetools inspect`. Remote template
+ * builders cache FROM/fromImage by the literal tag, so reusing `:v1-candidate` can silently rebuild
+ * from yesterday's bytes. The outer image-index digest is the immutable identity providers resolve. */
+export function digestPinnedRef(ref: string, inspectJson: string): string {
+	let parsed: { manifest?: { digest?: unknown } };
+	try {
+		parsed = JSON.parse(inspectJson);
+	} catch (err) {
+		throw new Error(`invalid imagetools inspect JSON for ${ref}`, { cause: err });
+	}
+	const digest = parsed.manifest?.digest;
+	if (typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(digest)) {
+		throw new Error(`imagetools inspect returned no valid manifest digest for ${ref}`);
+	}
+	const withoutDigest = ref.split("@", 1)[0] ?? ref;
+	const lastSlash = withoutDigest.lastIndexOf("/");
+	const lastColon = withoutDigest.lastIndexOf(":");
+	const repository = lastColon > lastSlash ? withoutDigest.slice(0, lastColon) : withoutDigest;
+	return `${repository}@${digest}`;
+}
+
+/** Resolve a registry ref to its immutable outer-manifest digest for remote provider builders. */
+export async function resolveImageDigestRef(ref: string): Promise<string> {
+	// Callers pass the once-resolved digest through several provider-specific helpers. Preserve that
+	// identity instead of inspecting the registry again: a second lookup is unnecessary and could
+	// accidentally select a platform manifest rather than the outer index on a CLI behavior change.
+	if (/@sha256:[a-f0-9]{64}$/.test(ref)) return ref;
+
+	const proc = Bun.spawn(
+		["docker", "buildx", "imagetools", "inspect", ref, "--format", "{{json .}}"],
+		{ stdout: "pipe", stderr: "pipe", env: process.env },
+	);
+	const [code, stdout, stderr] = await Promise.all([
+		proc.exited,
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+	]);
+	if (code !== 0) {
+		throw new Error(
+			`docker buildx imagetools inspect ${ref} exited ${code}: ${stderr.trim() || "unknown error"}`,
+		);
+	}
+	return digestPinnedRef(ref, stdout);
+}
+
+/** Whether Docker's registry response specifically says the manifest is absent. Keep this narrower
+ * than a generic "not found": credential helpers and executables can also be "not found", and
+ * treating those failures as an absent image would bypass the immutable-version guard. */
+export function registryManifestAbsent(stderr: string): boolean {
+	return /no such manifest|manifest unknown|name[_ ]unknown/i.test(stderr);
 }
 
 /** Whether `ref` already exists in the registry — a successful `docker manifest inspect`. Queries the
@@ -46,7 +111,7 @@ export async function imageExistsInRegistry(ref: string): Promise<boolean> {
 	});
 	const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
 	if (code === 0) return true;
-	if (/no such manifest|manifest unknown|not found/i.test(stderr)) return false;
+	if (registryManifestAbsent(stderr)) return false;
 	throw new Error(
 		`docker manifest inspect ${ref} failed (exit ${code}): ${stderr.trim() || "unknown error"}`,
 	);
@@ -54,6 +119,9 @@ export async function imageExistsInRegistry(ref: string): Promise<boolean> {
 
 /** Publish the validated candidate base as the immutable public version — a registry-side retag of
  *  the exact validated bytes, so `:v1` is the same image the candidate validate booted. */
-export async function promoteImage(log: Log): Promise<void> {
-	await run(imagetoolsRetagCmd(config.toolchainImageCandidate, config.toolchainImageVersion), log);
+export async function promoteImage(
+	log: Log,
+	source: string = config.toolchainImageCandidate,
+): Promise<void> {
+	await run(imagetoolsRetagCmd(source, config.toolchainImageVersion), log);
 }
