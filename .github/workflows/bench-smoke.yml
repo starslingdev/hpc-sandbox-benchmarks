@@ -77,14 +77,10 @@ jobs:
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
 
-      # TEMPORARY diagnostic: `nsc token create` requires --grant and the exact resource_type/actions
-      # vocabulary isn't documented anywhere reachable from here — print --help to read it straight
-      # from this exact CLI build before guessing at the JSON shape.
-      - name: Probe nsc token create --help
-        if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
-        continue-on-error: true
-        run: nsc token create --help
-
+      # TEMPORARY diagnostic: --help only repeats the JSON shape, not the resource_type/actions
+      # vocabulary, and namespace.so is unreachable from here — try a best guess (resource_type
+      # "instance", matching the Compute API's CreateInstance/DescribeInstance/etc.) and let a wrong
+      # value's error message (which enumerated the missing flag helpfully) reveal the real one.
       - name: Mint a portable Namespace token
         if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
         continue-on-error: true
@@ -92,6 +88,7 @@ jobs:
         run: |
           nsc token create \
             --name "sandbox-benchmarks-smoke-${{ github.run_id }}" \
+            --grant '{"resource_type":"instance","resource_id":"*","actions":["*"]}' \
             --token_file "${{ runner.temp }}/nsc-token.json"
 
       - name: Set up Bun
