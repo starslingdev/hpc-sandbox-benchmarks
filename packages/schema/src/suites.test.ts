@@ -57,7 +57,13 @@ describe("suite registry", () => {
 		// the test is exactly what the suite emits — pin the declared list to it in BOTH directions (a
 		// profile bump that adds/renames a combination fails here instead of silently stranding the
 		// list). stream's Type axis is the real matrix case; pybench and sqlite-speedtest declare no
-		// <Option> axes at all, so the pin holds over their single wildcard result.
+		// <Option> axes at all, so the pin holds over their single wildcard result. The suites that
+		// arrive later (network, cpu-generic) add themselves here.
+		// `system` is MIXED: pybench + sqlite-speedtest are unpinned wildcards (mirrored here), while
+		// pgbench is preset-pinned and declares a 4-of-160 subset — pinned to its curated override keys
+		// by the subset test below. Subtracting the pinned prefix keeps this a both-directions mirror
+		// over the unpinned half instead of dropping the suite from the gate entirely.
+		const PINNED_PREFIXES = ["pgbench_"];
 		const profilesOf = {
 			"cpu-generic": ["pts/c-ray", "pts/compress-zstd"],
 			network: ["pts/network-loopback"],
@@ -71,20 +77,25 @@ describe("suite registry", () => {
 				.map((m) => m.id)
 				.sort();
 			expect(fromCatalog.length).toBeGreaterThan(0);
-			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics];
+			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics].filter(
+				(id) => !PINNED_PREFIXES.some((prefix) => id.startsWith(prefix)),
+			);
 			expect(declared.sort()).toEqual(fromCatalog);
 		}
 	});
 
-	it("pins the fio PINNED-subset suite to its curated override keys", () => {
-		// disk (fio) deliberately declares a SUBSET of its profile's catalogued
+	it("pins the PINNED-subset suites to their curated override keys", () => {
+		// disk (fio) and system (pgbench) deliberately declare a SUBSET of their profile's catalogued
 		// combinations — the ones the producer tasks pin via PRESET_OPTIONS — so a catalog mirror
 		// can't gate them. Every declared subset id is also a curated pts-overrides key (only the
 		// producible combinations get short labels), so equality against the override keys catches a
-		// wrong-axis id here: with the full matrix catalogued, a typo'd engine or block size would
-		// otherwise pass the suite contract and just never receive samples.
+		// wrong-axis id here: with the full matrix catalogued, a typo'd engine, block size or scale
+		// would otherwise pass the suite contract and just never receive samples.
 		const overrideKeys = Object.keys(ptsOverrides);
-		const subsets = [{ suite: "disk", prefix: "fio_" }] as const;
+		const subsets = [
+			{ suite: "disk", prefix: "fio_" },
+			{ suite: "system", prefix: "pgbench_" },
+		] as const;
 		for (const { suite, prefix } of subsets) {
 			const declared: string[] = SUITES[suite].metrics.filter((id) => id.startsWith(prefix)).sort();
 			const curated = overrideKeys.filter((id) => id.startsWith(prefix)).sort();

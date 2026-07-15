@@ -66,14 +66,28 @@ export const SUITES = {
 		metrics: ["node_web_tooling_runs_per_s"],
 		commands: ["mise run benchmark:cpu:node"],
 	},
-	// The system dimension: PyBench (Python interpreter) + SQLite Speedtest, both single-result PTS
-	// profiles. Lighter than cpu-node (no Node toolchain, shorter runtime), so smaller budgets.
+	// The system dimension: PyBench (Python interpreter) + SQLite Speedtest (single-result PTS
+	// profiles) + PostgreSQL via pgbench, pinned to one (scale 100, 50 clients) point per mode —
+	// each mode posts a TPS and an Average Latency metric. pgbench runs server + client fully
+	// in-sandbox (same topology on every provider). Budget: the harness sets PTS_RESPECT_TIMES_TO_RUN,
+	// so the profile's TimesToRun=3 makes SIX timed passes (3 per mode), each with its own scale-100
+	// `pgbench -i` — not the two the budgets were once described against. That and the ~1.5 GB dataset
+	// set the budgets and the disk floor. Requires the baked image (postgres pre-built, libicu-dev
+	// present); on a stock image the from-source postgres build lands inside this budget too.
 	system: {
 		setupPts: true,
-		commandTimeoutMinutes: 40,
-		timeoutMinutes: 50,
+		commandTimeoutMinutes: 80,
+		timeoutMinutes: 95,
+		minDiskGb: 5,
 		dimensions: ["system"],
-		metrics: ["pybench_milliseconds", "sqlite_speedtest_seconds"],
+		metrics: [
+			"pybench_milliseconds",
+			"sqlite_speedtest_seconds",
+			"pgbench_scaling_factor_100_clients_50_mode_read_only",
+			"pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+			"pgbench_scaling_factor_100_clients_50_mode_read_write",
+			"pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency",
+		],
 		commands: ["mise run benchmark:system:all"],
 	},
 	// The memory dimension: STREAM (Copy/Scale/Add/Triad). Short — STREAM runs in a couple of minutes.
