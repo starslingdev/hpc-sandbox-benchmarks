@@ -61,5 +61,9 @@ Optional bootstrap (creates the empty environment; reviewers/secrets still need 
 
 ## Local credentials
 
-Copy provider keys into a gitignored `.env` for local benches. Never commit them; never paste them
-into issues or pull requests. See [SECURITY.md](../SECURITY.md).
+Copy [`.env.example`](../.env.example) to a gitignored `.env` and fill in the providers you have
+(Bun auto-loads `.env` when you run a bin). A missing credential is a skip, not a failure. Never
+commit them; never paste them into issues or pull requests. See [SECURITY.md](../SECURITY.md).
+
+The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
+credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.

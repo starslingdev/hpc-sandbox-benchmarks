@@ -11,8 +11,11 @@ expose credentials, allow remote code execution in CI, or leak provider API keys
 
 ## Secrets
 
-- Never commit API keys, tokens, or `.env` files. Broader `.env*` patterns are gitignored.
+- Never commit API keys, tokens, or `.env` files. Broader `.env*` patterns are gitignored, and the
+  `tooling/repo-checks` **secret-hygiene gate** fails CI if a credential file or high-signal secret
+  token is ever tracked — so this is enforced, not just convention.
 - Never paste secrets into issues, pull request bodies, or comments.
+- For local benches, copy [`.env.example`](./.env.example) to a gitignored `.env`.
 - Provider credentials for CI live only in the GitHub Environment **`privileged`** — not as
   repository secrets. See [docs/ci-secrets.md](./docs/ci-secrets.md).
 - Pull requests (including forks) do not receive those secrets. Live benches and toolchain

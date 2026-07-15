@@ -16,7 +16,9 @@ This repo is a Bun workspace monorepo with a strict, enforced dependency DAG (se
 4. Live benches, dataset publish, and GHCR toolchain releases are maintainer-only:
    `workflow_dispatch` on `main` behind Environment `privileged`. See [CI & secrets](./docs/ci-secrets.md).
 
-Never commit API keys or paste them into issues/PRs ([SECURITY.md](./SECURITY.md)).
+For local benches, copy [`.env.example`](./.env.example) to a gitignored `.env`. Never commit API
+keys or paste them into issues/PRs — the repo-checks secret-hygiene gate fails CI if a credential
+file or secret token is tracked ([SECURITY.md](./SECURITY.md)).
 
 ## Local checks (the gate)
 
