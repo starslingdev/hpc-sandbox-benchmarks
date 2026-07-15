@@ -332,6 +332,10 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		// NSC_TOKEN_FILE, not NSC_TOKEN: CI federates via GitHub's OIDC identity (nscloud-setup +
 		// `nsc auth exchange-github-token`, no stored secret), which lands the token at the CLI's
 		// standard cache path, wired to NSC_TOKEN_FILE — never a bare bearer string in the environment.
+		// This gate is a strict AND (missingCreds has no OR-group concept), so a local run with a bare
+		// NSC_TOKEN alone still skips even though @computesdk/namespace's own fallback chain would
+		// accept it — for local dev, mint a file instead (`nsc token create --token_file <path>` after
+		// `nsc auth login`) and point NSC_TOKEN_FILE at it, mirroring what CI does.
 		requiredEnvVars: ["NSC_TOKEN_FILE"],
 		isolation: {
 			technology: "microVM (dedicated instance)",

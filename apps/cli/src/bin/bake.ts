@@ -16,7 +16,6 @@ import { bakeDaytonaSnapshot } from "../lib/bake/daytona.ts";
 import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
 import { buildAndPushCandidate } from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
-import { bakeNamespaceImage } from "../lib/bake/namespace.ts";
 import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
@@ -35,7 +34,12 @@ const bakers: Record<ProviderId, (log: Log) => Promise<void>> = {
 	},
 	novita: (log) =>
 		bakeNovitaTemplate(config.novitaTemplateCandidate, config.toolchainImageCandidate, log),
-	namespace: bakeNamespaceImage,
+	// Same shape as blaxel: namespace pulls the toolchain image straight into a container instance at
+	// create time (no template/snapshot system), so there's no candidate artifact to bake — the
+	// validate boot right after this proves reachability.
+	namespace: async (log) => {
+		log("namespace boots the candidate image directly — no candidate artifact to bake");
+	},
 };
 
 const candidateRefs = {
