@@ -21,7 +21,10 @@ import type {
 	GapScope,
 	MedianInterval,
 	MetricDef,
+	ObservedSpecs,
 	Run,
+	TargetSpec,
+	ValidationStatus,
 } from "@sandbox-benchmarks/schema";
 import {
 	bootstrapMedianInterval,
@@ -133,12 +136,27 @@ export interface CoverageGap {
 	disk: boolean;
 }
 
+/** Why a provider with measured results was kept out of the comparative rankings. */
+export type RankingExclusionReason = "validation-incomplete" | "spec-mismatch" | "spec-unverified";
+
+/** A measured provider that is visible in the report but not comparable enough to rank. */
+export interface RankingExclusion {
+	providerId: string;
+	displayName: string;
+	reason: RankingExclusionReason;
+	validationStatus: ValidationStatus;
+	observedSpecs: ObservedSpecs;
+}
+
 /** The full comparison surface derived from one Run. */
 export interface Leaderboard {
 	runId: string;
 	sha: string;
 	generatedAt: string;
+	targetSpec: TargetSpec;
 	dimensions: LeaderboardDimension[];
+	/** Measured providers excluded from rankings, retained here so exclusion can never become invisibility. */
+	rankingExclusions: RankingExclusion[];
 	/** Every benchmark that produced no result somewhere, disk gaps first. Empty when coverage is complete. */
 	coverageGaps: CoverageGap[];
 }
@@ -231,6 +249,36 @@ function coverageGapsOf(run: Run): CoverageGap[] {
 	);
 }
 
+/**
+ * Measured results that cannot enter a like-for-like ranking. A provider is rankable only after the
+ * producer validated its results AND positively established that the effective sandbox matched the
+ * target. Treating an absent `specMatched` as success would let an old or incomplete probe silently
+ * weaken the comparison contract.
+ */
+function rankingExclusionsOf(run: Run): RankingExclusion[] {
+	return run.providers
+		.filter(
+			(provider) =>
+				provider.metrics.length > 0 &&
+				(provider.validationStatus !== "validated" || provider.specMatched !== true),
+		)
+		.map(
+			(provider): RankingExclusion => ({
+				providerId: provider.providerId,
+				displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
+				reason:
+					provider.validationStatus !== "validated"
+						? "validation-incomplete"
+						: provider.specMatched === false
+							? "spec-mismatch"
+							: "spec-unverified",
+				validationStatus: provider.validationStatus,
+				observedSpecs: provider.observedSpecs,
+			}),
+		)
+		.sort((a, b) => a.displayName.localeCompare(b.displayName, "en"));
+}
+
 /** Build the structured leaderboard from a validated Run. Pure — Run in, ranking out. */
 export function buildLeaderboard(run: Run): Leaderboard {
 	const dimensions: LeaderboardDimension[] = [];
@@ -247,6 +295,9 @@ export function buildLeaderboard(run: Run): Leaderboard {
 		// Carry each provider's raw Samples alongside its row: the ranking needs the full distributions,
 		// not just their medians, to tell a real difference from environmental noise.
 		const candidates = run.providers.flatMap((provider) => {
+			// Rankings compare like with like. Results remain in the Run and are disclosed below, but an
+			// unvalidated or non-matching sandbox must never win a target-spec provider table.
+			if (provider.validationStatus !== "validated" || provider.specMatched !== true) return [];
 			const result = provider.metrics.find((m) => m.metricId === metric.id);
 			if (!result) return [];
 			const row: LeaderboardRow = {
@@ -360,7 +411,9 @@ export function buildLeaderboard(run: Run): Leaderboard {
 		runId: run.runId,
 		sha: run.sha,
 		generatedAt: run.generatedAt,
+		targetSpec: run.targetSpec,
 		dimensions,
+		rankingExclusions: rankingExclusionsOf(run),
 		coverageGaps: coverageGapsOf(run),
 	};
 }
@@ -407,6 +460,17 @@ function formatPValue(p: number): string {
 	return p.toPrecision(2);
 }
 
+/** Render the effective, comparable part of a target or observed sandbox shape. */
+function formatSpec(spec: Partial<TargetSpec & ObservedSpecs>): string {
+	const value = (n: number | undefined, unit: string): string =>
+		n === undefined ? `unknown ${unit}` : `${formatValue(n)} ${unit}`;
+	return [
+		value(spec.vcpus, "vCPU"),
+		value(spec.memoryGb, "GiB RAM"),
+		value(spec.diskGb, "GB disk"),
+	].join(" / ");
+}
+
 /** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
 export function renderLeaderboardMarkdown(board: Leaderboard): string {
 	const lines: string[] = [
@@ -424,12 +488,18 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	for (const { dimension, metric, rows } of board.dimensions) {
 		const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
+		// Some catalog labels already carry their unit — the fio metrics embed "(IOPS)"/"(MB/s)" to tell
+		// the IOPS and throughput variants of one scenario apart. Appending metric.unit again would render
+		// "… (IOPS) (IOPS)", so only add it when the label does not already end with it.
+		const labelHasUnit = metric.label.endsWith(`(${metric.unit})`);
+		const columnHeader = labelHasUnit ? metric.label : `${metric.label} (${metric.unit})`;
+		const headlineMeta = labelHasUnit ? better : `${metric.unit}, ${better}`;
 		lines.push(
 			`## ${dimension}`,
 			"",
-			`Headline: **${metric.label}** (${metric.unit}, ${better})`,
+			`Headline: **${metric.label}** (${headlineMeta})`,
 			"",
-			`| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | p vs. above | p (KS) |`,
+			`| Rank | Provider | ${columnHeader} | 95% CI | n | p vs. above | p (KS) |`,
 			"| ---: | --- | ---: | ---: | ---: | ---: | ---: |",
 			...rows.map((r) => {
 				const ci =
@@ -458,6 +528,34 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 				// a large, tied `p vs. above` is exactly that case — same typical speed, different machine.
 				const ks = r.pVsPrevious === null ? "—" : formatPValue(r.pVsPrevious.ks);
 				return `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${ci} | ${r.n} | ${p} | ${ks} |`;
+			}),
+			"",
+		);
+	}
+
+	// Exclusion must be conspicuous rather than silent: these providers produced real measurements,
+	// but the measurements do not satisfy the like-for-like contract and therefore cannot be ranked.
+	if (board.rankingExclusions.length > 0) {
+		lines.push(
+			"## Not ranked",
+			"",
+			"These providers produced measurements, but their results are **not included in any ranking**",
+			"because validation or target-spec comparability was not established.",
+			"",
+			"| Provider | Reason | Detail |",
+			"| --- | --- | --- |",
+			...board.rankingExclusions.map((exclusion) => {
+				const reason =
+					exclusion.reason === "validation-incomplete"
+						? "validation incomplete"
+						: exclusion.reason === "spec-mismatch"
+							? "target spec mismatch"
+							: "target spec unverified";
+				const detail =
+					exclusion.reason === "validation-incomplete"
+						? `Status: ${exclusion.validationStatus}.`
+						: `Target: ${formatSpec(board.targetSpec)}; observed: ${formatSpec(exclusion.observedSpecs)}.`;
+				return `| ${exclusion.displayName} | **${reason}** | ${escapeCell(detail)} |`;
 			}),
 			"",
 		);

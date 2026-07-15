@@ -147,4 +147,34 @@ describe("aggregateRuns", () => {
 		expect(() => aggregateRuns([a, b])).toThrow(/identity mismatch/);
 		expect(() => aggregateRuns([])).toThrow(/at least one/);
 	});
+
+	it("disqualifies a provider whose specMatched fold has any mismatched shard, regardless of order", () => {
+		const matched = provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]);
+		matched.specMatched = true;
+		const mismatched = provider("daytona", [metric("pybench_milliseconds", [900])]);
+		mismatched.specMatched = false;
+
+		// false is sticky no matter which shard arrives first.
+		for (const order of [
+			[shard([matched]), shard([mismatched])],
+			[shard([mismatched]), shard([matched])],
+		]) {
+			const daytona = aggregateRuns(order).providers.find((p) => p.providerId === "daytona");
+			expect(daytona?.specMatched).toBe(false);
+		}
+	});
+
+	it("keeps specMatched undefined when no shard observed the spec, and true when only matches did", () => {
+		const noProbe = shard([provider("daytona", [metric("node_web_tooling_runs_per_s", [10])])]);
+		expect(
+			aggregateRuns([noProbe]).providers.find((p) => p.providerId === "daytona")?.specMatched,
+		).toBeUndefined();
+
+		const matchOnly = provider("daytona", [metric("pybench_milliseconds", [900])]);
+		matchOnly.specMatched = true;
+		expect(
+			aggregateRuns([noProbe, shard([matchOnly])]).providers.find((p) => p.providerId === "daytona")
+				?.specMatched,
+		).toBe(true);
+	});
 });

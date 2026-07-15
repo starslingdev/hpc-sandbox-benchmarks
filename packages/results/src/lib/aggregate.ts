@@ -84,7 +84,14 @@ function mergeProvider(providerId: string, slices: readonly ProviderRun[]): Prov
 			}
 		}
 		if (slice.observedSpecs.cpuModel) hostCpuModels.add(slice.observedSpecs.cpuModel);
-		if (specMatched === undefined) specMatched = slice.specMatched;
+		// specMatched folds ORDER-INDEPENDENTLY across shards (was first-shard-wins, which made ranking
+		// eligibility depend on shard arrival order). The merged provider row shares one aggregate, so a
+		// single shard that ran off the target spec (specMatched === false) contaminates it and
+		// disqualifies the whole provider — false is sticky and always wins. An affirmative match stands
+		// only while no shard contradicts it; all-undefined stays undefined ("refuse to judge on partial
+		// evidence", see computeSpecMatched).
+		if (slice.specMatched === false) specMatched = false;
+		else if (slice.specMatched === true && specMatched !== false) specMatched = true;
 	}
 
 	// Disclose the distinct host CPUs when the shards saw more than one — names the confound rather than

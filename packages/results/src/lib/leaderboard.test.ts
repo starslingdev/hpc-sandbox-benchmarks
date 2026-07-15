@@ -12,15 +12,18 @@ function provider(
 	metrics: MetricResult[],
 	gaps: ProviderRun["gaps"] = [],
 	suitesCovered: ProviderRun["suitesCovered"] = [],
+	overrides: Partial<ProviderRun> = {},
 ): ProviderRun {
 	return {
 		providerId,
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
+		specMatched: true,
 		observedSpecs: {},
 		metrics,
 		suitesCovered,
 		gaps,
 		uncatalogued: [],
+		...overrides,
 	};
 }
 
@@ -79,6 +82,20 @@ describe("buildLeaderboard", () => {
 		expect(md).toMatch(/\| 1 \| Daytona \| 10 \|/);
 	});
 
+	it("does not print a unit twice when the catalog label already embeds it", () => {
+		// The fio disk headline label is "fio rand read 4KB, O_DIRECT (IOPS)" and its unit is "IOPS" —
+		// naively appending "(IOPS)" would render "(IOPS) (IOPS)" in the header and headline lines.
+		const fioIops =
+			"fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops";
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(run([provider("daytona", [metric(fioIops, [1000])])])),
+		);
+		expect(md).toContain("fio rand read 4KB, O_DIRECT (IOPS)");
+		expect(md).not.toContain("(IOPS) (IOPS)");
+		// The headline still names the direction, just without the duplicated unit.
+		expect(md).toContain("**fio rand read 4KB, O_DIRECT (IOPS)** (higher is better)");
+	});
+
 	it("orders equal headline values deterministically by providerId and shares their rank", () => {
 		// Input order is modal-then-daytona; equal values must reorder to alphabetical providerId AND
 		// share a rank — an exact tie is not a ranking win for whoever sorts first.
@@ -96,6 +113,60 @@ describe("buildLeaderboard", () => {
 	it("renders a placeholder when nothing is ranked", () => {
 		const md = renderLeaderboardMarkdown(buildLeaderboard(run([provider("daytona", [])])));
 		expect(md).toContain("No ranked dimensions yet");
+	});
+
+	it("excludes a faster spec-mismatched provider and discloses its observed shape", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]),
+				provider("blaxel", [metric("node_web_tooling_runs_per_s", [100])], [], [], {
+					specMatched: false,
+					observedSpecs: { vcpus: 6, memoryGb: 15.63, diskGb: 12.5 },
+				}),
+			]),
+		);
+
+		expect(
+			board.dimensions.find((d) => d.dimension === "cpu")?.rows.map((r) => r.providerId),
+		).toEqual(["daytona"]);
+		expect(board.rankingExclusions).toEqual([
+			{
+				providerId: "blaxel",
+				displayName: "Blaxel",
+				reason: "spec-mismatch",
+				validationStatus: "validated",
+				observedSpecs: { vcpus: 6, memoryGb: 15.63, diskGb: 12.5 },
+			},
+		]);
+
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain("## Not ranked");
+		expect(md).toContain("not included in any ranking");
+		expect(md).toContain("| Blaxel | **target spec mismatch** |");
+		expect(md).toContain("Target: 2 vCPU / 8 GiB RAM / 20 GB disk");
+		expect(md).toContain("observed: 6 vCPU / 15.63 GiB RAM / 12.5 GB disk");
+	});
+
+	it("requires positive validation and spec-match evidence before ranking measured results", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]),
+				provider("e2b", [metric("node_web_tooling_runs_per_s", [20])], [], [], {
+					specMatched: undefined,
+				}),
+				provider("modal", [metric("node_web_tooling_runs_per_s", [30])], [], [], {
+					validationStatus: "pending",
+				}),
+			]),
+		);
+
+		expect(
+			board.dimensions.find((d) => d.dimension === "cpu")?.rows.map((r) => r.providerId),
+		).toEqual(["daytona"]);
+		expect(board.rankingExclusions.map((e) => [e.providerId, e.reason])).toEqual([
+			["e2b", "spec-unverified"],
+			["modal", "validation-incomplete"],
+		]);
 	});
 });
 
