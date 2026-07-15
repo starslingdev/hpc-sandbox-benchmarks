@@ -101,6 +101,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Only for Namespace: it federates via GitHub's OIDC identity (no stored secret), which
+      # requires the job to be able to request an OIDC token from GitHub's endpoint.
+      id-token: write
     env:
       REGISTRY: ghcr.io
       IMAGE_OWNER: starslingdev
@@ -111,6 +114,20 @@ jobs:
           # Publishes to GHCR via docker/login-action (the GITHUB_TOKEN below), never `git push`, so
           # the checkout's own credentials aren't needed — don't persist the job token.
           persist-credentials: false
+
+      # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write
+      # above), minting a fresh token for this job (`nsc auth exchange-github-token` under the hood,
+      # cached at the CLI's standard /var/run/nsc/token.json — the same path every namespacelabs/*
+      # action checks). Requires a trust relationship (this repo -> the Namespace tenant) registered
+      # once on the Namespace side — continue-on-error so a not-yet-registered trust relationship (or
+      # any transient failure) degrades to the same "missing credentials" skip every other provider
+      # gets from an absent secret (bake/validate/promote loop over providers independently), rather
+      # than failing the whole job.
+      - name: Set up Namespace CLI
+        continue-on-error: true
+        id: nsc-setup
+        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -218,9 +235,10 @@ jobs:
           # Bake the novita template on Novita's E2B-compatible control plane. Optional: a missing
           # secret skips the novita bake (it is not in --require) without failing the publish.
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-          # Namespace pulls the candidate image directly (no bake artifact). Optional, like novita: a
-          # missing secret skips its validate boot (it is not in --require) without failing the publish.
-          NSC_TOKEN: ${{ secrets.NSC_TOKEN }}
+          # Namespace pulls the candidate image directly (no bake artifact). OIDC-federated per-run
+          # token, cached by the CLI step above at its standard path — optional, like novita: a
+          # skipped/failed exchange (not in --require) skips its validate boot without failing the publish.
+          NSC_TOKEN_FILE: ${{ steps.nsc-setup.outcome == 'success' && '/var/run/nsc/token.json' || '' }}
         run: |
           set -euo pipefail
           # Declare then assign so the command substitution's exit status isn't masked (SC2155).
@@ -249,9 +267,10 @@ jobs:
           # Bake the novita template on Novita's E2B-compatible control plane. Optional: a missing
           # secret skips the novita bake (it is not in --require) without failing the publish.
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-          # Namespace pulls the candidate image directly (no bake artifact). Optional, like novita: a
-          # missing secret skips its validate boot (it is not in --require) without failing the publish.
-          NSC_TOKEN: ${{ secrets.NSC_TOKEN }}
+          # Namespace pulls the candidate image directly (no bake artifact). OIDC-federated per-run
+          # token, cached by the CLI step above at its standard path — optional, like novita: a
+          # skipped/failed exchange (not in --require) skips its validate boot without failing the publish.
+          NSC_TOKEN_FILE: ${{ steps.nsc-setup.outcome == 'success' && '/var/run/nsc/token.json' || '' }}
           FORCE_REPUBLISH: ${{ inputs.force_republish }}
         # --require fails promote loudly if a required provider's secret is missing/misnamed, so the
         # public version is never published while a required provider's version artifact was silently

@@ -329,7 +329,10 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		displayName: "Namespace",
 		website: "https://namespace.so",
 		sdkPackage: "@computesdk/namespace",
-		requiredEnvVars: ["NSC_TOKEN"],
+		// NSC_TOKEN_FILE, not NSC_TOKEN: CI federates via GitHub's OIDC identity (nscloud-setup +
+		// `nsc auth exchange-github-token`, no stored secret), which lands the token at the CLI's
+		// standard cache path, wired to NSC_TOKEN_FILE — never a bare bearer string in the environment.
+		requiredEnvVars: ["NSC_TOKEN_FILE"],
 		isolation: {
 			technology: "microVM (dedicated instance)",
 			notes:

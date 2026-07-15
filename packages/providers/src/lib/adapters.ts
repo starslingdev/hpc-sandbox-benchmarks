@@ -85,10 +85,11 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: { snapshotId: config.novitaTemplate },
 	},
 	namespace: {
-		// The token rides the factory's own NSC_TOKEN env fallback (getAndValidateCredentials), same as
-		// blaxel's BL_API_KEY — never read here. virtualCpu/memoryMegabytes are per-instance knobs on
-		// this factory config (not per-create options), so the target spec is pinned once, at
-		// construction, like blaxel's/modal's cpu/memory.
+		// The token rides the factory's own NSC_TOKEN_FILE env fallback (getAndValidateCredentials) —
+		// CI's OIDC federation (nscloud-setup) lands the token there, not in NSC_TOKEN — never read
+		// here, same as blaxel's BL_API_KEY. virtualCpu/memoryMegabytes are per-instance knobs on this
+		// factory config (not per-create options), so the target spec is pinned once, at construction,
+		// like blaxel's/modal's cpu/memory.
 		createCompute: () =>
 			namespace({
 				virtualCpu: TARGET_SPEC.vcpus,

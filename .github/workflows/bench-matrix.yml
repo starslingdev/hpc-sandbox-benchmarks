@@ -18,9 +18,12 @@ on:
         # to include it; `plan-matrix` rejects any name that is not in the registry.
         default: e2b,daytona,modal
 
-# Least privilege: jobs only read the checked-out code and upload artifacts.
+# Least privilege: jobs only read the checked-out code and upload artifacts. `id-token: write` is
+# only for Namespace: it federates via GitHub's OIDC identity (no stored secret), which requires the
+# job to be able to request an OIDC token from GitHub's endpoint.
 permissions:
   contents: read
+  id-token: write
 
 # Serialize matrix runs on a ref so concurrent dispatches don't contend for provider quota.
 concurrency:
@@ -78,6 +81,19 @@ jobs:
           # credentials), so don't persist the job token in .git/config.
           persist-credentials: false
 
+      # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write
+      # above), minting a fresh token per cell (`nsc auth exchange-github-token` under the hood,
+      # cached at the CLI's standard /var/run/nsc/token.json — the same path every namespacelabs/*
+      # action checks). Requires a trust relationship (this repo -> the Namespace tenant) registered
+      # once on the Namespace side — continue-on-error so a not-yet-registered trust relationship (or
+      # any transient failure) degrades to the same "missing credentials" skip every other provider
+      # gets from an absent secret, rather than failing the whole cell.
+      - name: Set up Namespace CLI
+        if: matrix.provider == 'namespace'
+        continue-on-error: true
+        id: nsc-setup
+        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+
       # `no-cache` is REQUIRED on this label, unlike the hosted-runner jobs above/below. Two runner
       # images answer to `starsling-ubuntu-24.04-2` and they root the workspace at different depths
       # (`/home/runner/_work/…` vs `/home/runner/actions-runner/_work/…`), yet setup-bun keys its cache
@@ -114,7 +130,10 @@ jobs:
           BL_API_KEY: ${{ secrets.BL_API_KEY }}
           BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-          NSC_TOKEN: ${{ secrets.NSC_TOKEN }}
+          # OIDC-federated per-cell token, cached by the CLI step above at its standard path — empty
+          # when a different provider is this cell's target or the exchange was skipped/failed, which
+          # the harness reads as the standard missing-credentials skip, never a stored secret.
+          NSC_TOKEN_FILE: ${{ steps.nsc-setup.outcome == 'success' && '/var/run/nsc/token.json' || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results
