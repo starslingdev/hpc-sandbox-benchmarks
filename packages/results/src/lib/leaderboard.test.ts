@@ -66,7 +66,7 @@ describe("buildLeaderboard", () => {
 		expect(econ?.rows[0]?.displayName).toBe("E2B"); // resolved from the provider registry
 	});
 
-	it("omits dimensions with no headline value and renders Markdown tables", () => {
+	it("omits dimensions with no emitted value and renders Markdown tables", () => {
 		const board = buildLeaderboard(
 			run([provider("daytona", [metric("node_web_tooling_runs_per_s", [10])])]),
 		);
@@ -95,7 +95,54 @@ describe("buildLeaderboard", () => {
 
 	it("renders a placeholder when nothing is ranked", () => {
 		const md = renderLeaderboardMarkdown(buildLeaderboard(run([provider("daytona", [])])));
-		expect(md).toContain("No ranked dimensions yet");
+		expect(md).toContain("No ranked metrics yet");
+	});
+
+	it("ranks every emitted catalogued Metric, including non-headlines", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [
+					metric("node_web_tooling_runs_per_s", [10]),
+					metric("stream_type_copy", [20]),
+				]),
+				provider("modal", [metric("stream_type_copy", [15])]),
+			]),
+		);
+		expect(board.dimensions.map(({ dimension }) => dimension)).toEqual(["cpu", "memory"]);
+		expect(
+			board.dimensions.flatMap(({ metrics }) => metrics.map(({ metric }) => metric.id)),
+		).toEqual(["node_web_tooling_runs_per_s", "stream_type_copy"]);
+		expect(
+			board.dimensions.flatMap(({ metrics }) => metrics.flatMap(({ rows }) => rows)),
+		).toHaveLength(3);
+
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain("**3 metric records**");
+		expect(md).toContain("**3 retained trial observations**");
+		expect(md).toContain("**2 metrics**");
+		expect(md).toContain("### Node.js web tooling _(headline)_");
+		expect(md).toContain("### STREAM Copy");
+	});
+
+	it("uses the Run's target and warns when observed specs are not comparable", () => {
+		const blaxel = {
+			...provider("blaxel", [metric("node_web_tooling_runs_per_s", [10])]),
+			specMatched: false,
+			observedSpecs: { vcpus: 6, memoryGb: 15.63, diskGb: 12.5 },
+		};
+		const board = buildLeaderboard(run([blaxel]));
+		expect(board.targetSpec).toEqual({ vcpus: 2, memoryGb: 8, diskGb: 20 });
+		expect(board.comparabilityCaveats).toHaveLength(1);
+
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain(
+			"Requested target for every provider: **2 vCPU · 8 GiB RAM · 20 GB disk**",
+		);
+		expect(md).toContain(
+			"**Comparability warning:** Blaxel's observed compute did not match the requested CPU/RAM target",
+		);
+		expect(md).toContain("**6 vCPU · 15.63 GiB RAM · 12.5 GB disk**");
+		expect(md).not.toContain("Same pinned target");
 	});
 });
 
@@ -172,7 +219,7 @@ describe("buildLeaderboard statistical ranking", () => {
 		expect(rows[1]?.tiedWithAbove).toBe("statistical");
 		expect(rows[1]?.pVsPrevious?.mannWhitney).toBeGreaterThan(0.05);
 		// Takeaway must not claim a sole provider when the top cohort is a statistical tie.
-		expect(renderLeaderboardMarkdown(board)).toContain("share the top on this headline");
+		expect(renderLeaderboardMarkdown(board)).toContain("share the top on this metric");
 		expect(renderLeaderboardMarkdown(board)).not.toContain("is the only ranked provider");
 	});
 
@@ -207,12 +254,29 @@ describe("buildLeaderboard statistical ranking", () => {
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
 		expect(rows.map((r) => r.rank)).toEqual([1, 1]);
 	});
+
+	it("names EVERY co-leader when three or more providers share the top rank", () => {
+		// A three-way tie at rank 1: the takeaway must list all three, not silently drop the third.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+			]),
+		);
+		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
+		expect(rows.map((r) => r.rank)).toEqual([1, 1, 1]);
+		const md = renderLeaderboardMarkdown(board);
+		// All three display names appear in the "share the top" takeaway, joined as a list.
+		expect(md).toMatch(/\w+, \w+ and \w+ share the top on this metric/);
+		for (const name of ["Daytona", "E2B", "Modal"]) expect(md).toContain(name);
+	});
 });
 
 describe("renderLeaderboardMarkdown statistics", () => {
 	const HEADLINE = "node_web_tooling_runs_per_s";
 
-	it("renders CI, n and a Note for a statistical tie", () => {
+	it("renders a bootstrap interval, n and a Note for a statistical tie", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
@@ -221,12 +285,13 @@ describe("renderLeaderboardMarkdown statistics", () => {
 				]),
 			),
 		);
-		expect(md).toContain("95% CI");
+		expect(md).toContain("95% bootstrap interval");
 		expect(md).toContain("| Note |");
 		expect(md).toContain("| tied |");
 		// The reader must be told what a shared rank means, not left to infer it.
 		expect(md).toContain("statistically indistinguishable");
 		expect(md).toContain("Mann-Whitney");
+		expect(md).toContain("unadjusted, exploratory per-comparison p-values");
 	});
 
 	it("surfaces the KS p-value in the details section, not only on the row object", () => {
@@ -252,7 +317,9 @@ describe("renderLeaderboardMarkdown statistics", () => {
 			expect(row.split("|").filter((c) => c.trim() !== "").length).toBe(6);
 		}
 
-		const detailRows = md.split("\n").filter((l) => /^\| cpu \| (Daytona|E2B) \|/.test(l));
+		const detailRows = md
+			.split("\n")
+			.filter((l) => /^\| cpu \| Node\.js web tooling \| (Daytona|E2B) \|/.test(l));
 		expect(detailRows).toHaveLength(2);
 		const [first, second] = detailRows as [string, string];
 		expect(first).toContain("| — |");
@@ -265,7 +332,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(run([provider("daytona", [metric(HEADLINE, [10])])])),
 		);
-		// n=1 → em-dash for the CI; no Note column when nothing needs calling out.
+		// n=1 → em-dash for the bootstrap interval; no Note column when nothing needs calling out.
 		expect(md).toMatch(/\| 1 \| Daytona \| 10 \| — \| 1 \|\n/);
 	});
 
@@ -511,7 +578,7 @@ describe("coverage gaps", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(run([provider("e2b", [], [diskSkip(30)])])),
 		);
-		expect(md).toContain("_No ranked dimensions yet");
+		expect(md).toContain("_No ranked metrics yet");
 		expect(md).toContain("## Coverage gaps");
 		expect(md).toContain("realworld-mastra");
 	});

@@ -8,12 +8,14 @@
 export { aggregateRuns } from "./lib/aggregate.ts";
 export {
 	buildLeaderboard,
+	type ComparabilityCaveat,
 	// Every type reachable from `Leaderboard` is exported with it: a consumer that can hold the value but
 	// cannot name the type of `leaderboard.coverageGaps` can't write a function that takes one.
 	type CoverageGap,
 	type CoverageOutcome,
 	type Leaderboard,
 	type LeaderboardDimension,
+	type LeaderboardMetric,
 	type LeaderboardRow,
 	renderLeaderboardMarkdown,
 } from "./lib/leaderboard.ts";

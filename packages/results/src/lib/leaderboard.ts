@@ -1,12 +1,12 @@
 /**
- * Render a validated {@link Run} into the public comparison surface: one ranked table per Dimension,
- * keyed on that Dimension's headline Metric, plus economics. This is the payoff the dataset exists for
- * — a human-readable provider ranking. SDK-free: the Run model + the Catalog only.
+ * Render a validated {@link Run} into the public comparison surface: one ranked table per emitted,
+ * catalogued Metric, grouped by Dimension. This is the payoff the dataset exists for — a complete,
+ * human-readable provider ranking. SDK-free: the Run model + the Catalog only.
  *
- * Each Dimension shows its single headline Metric (catalog.ts guarantees exactly one), every provider
- * that produced it, ranked by the Metric's Direction (HIB → highest first, LIB → lowest first). A
- * Dimension with no headline Metric, or no provider value, is omitted. The representative value is the
- * Samples' p50 (median) — robust to a single slow pass.
+ * Each Dimension shows every Metric that at least one provider produced, with its headline Metric
+ * first (catalog.ts guarantees at most one), and every provider that produced each Metric ranked by
+ * its Direction (HIB → highest first, LIB → lowest first). A Metric with no provider value is omitted.
+ * The representative value is the Samples' p50 (median) — robust to a single slow pass.
  *
  * Ranking is INFERENTIAL, not a bare sort. A provider's Samples are repeated trials inside one sandbox,
  * so their spread is environmental noise, and ordering on the median alone would let a lucky draw buy a
@@ -21,7 +21,9 @@ import type {
 	GapScope,
 	MedianInterval,
 	MetricDef,
+	ObservedSpecs,
 	Run,
+	TargetSpec,
 } from "@sandbox-benchmarks/schema";
 import {
 	bootstrapMedianInterval,
@@ -32,14 +34,13 @@ import {
 	kolmogorovSmirnov,
 	METRIC_CATALOG,
 	mannWhitneyU,
-	TARGET_SPEC,
 } from "@sandbox-benchmarks/schema";
 
-/** One provider's standing on a Dimension's headline Metric. */
+/** One provider's standing on one Metric. */
 export interface LeaderboardRow {
 	providerId: string;
 	displayName: string;
-	/** Representative value (Samples' p50) of the headline Metric for this provider. */
+	/** Representative value (Samples' p50) of the Metric for this provider. */
 	value: number;
 	/**
 	 * 1-based rank by the Metric's Direction. Providers whose Sample distributions are NOT
@@ -47,7 +48,7 @@ export interface LeaderboardRow {
 	 * median earned inside the noise is not a faster provider.
 	 */
 	rank: number;
-	/** Bootstrapped interval around {@link value} — the honest precision of the median. */
+	/** Descriptive percentile-bootstrap interval around {@link value}. */
 	interval: MedianInterval;
 	/** Retained Sample count and their spread, so a wide/unstable row is legible at a glance. */
 	n: number;
@@ -93,11 +94,27 @@ export type ComparisonVerdict = "separated" | "tied" | "underpowered" | "unteste
 /** Why a row shares the rank above it. See {@link LeaderboardRow.tiedWithAbove}. */
 export type TieBasis = "statistical" | "identical-value";
 
-/** One Dimension's ranked comparison on its headline Metric. */
-export interface LeaderboardDimension {
-	dimension: Dimension;
+/** One emitted Metric's ranked provider comparison. */
+export interface LeaderboardMetric {
 	metric: MetricDef;
 	rows: LeaderboardRow[];
+}
+
+/** Every emitted Metric in one Dimension, with the headline first. */
+export interface LeaderboardDimension {
+	dimension: Dimension;
+	metrics: LeaderboardMetric[];
+	/** First rendered Metric (the headline when one was emitted), retained for API compatibility. */
+	metric: MetricDef;
+	/** Rows for {@link metric}, retained for API compatibility. */
+	rows: LeaderboardRow[];
+}
+
+/** A provider whose observed allocation did not match the Run's requested target. */
+export interface ComparabilityCaveat {
+	providerId: string;
+	displayName: string;
+	observedSpecs: ObservedSpecs;
 }
 
 /**
@@ -139,7 +156,11 @@ export interface Leaderboard {
 	runId: string;
 	sha: string;
 	generatedAt: string;
+	/** The requested comparison target recorded on this Run — never substituted from global config. */
+	targetSpec: TargetSpec;
 	dimensions: LeaderboardDimension[];
+	/** Providers explicitly recorded as failing to match {@link targetSpec}. */
+	comparabilityCaveats: ComparabilityCaveat[];
 	/** Every benchmark that produced no result somewhere, disk gaps first. Empty when coverage is complete. */
 	coverageGaps: CoverageGap[];
 }
@@ -232,136 +253,158 @@ function coverageGapsOf(run: Run): CoverageGap[] {
 	);
 }
 
+/** Rank all providers that emitted one Metric; empty when the Run has no result for it. */
+function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
+	// Carry each provider's raw Samples alongside its row: the ranking needs the full distributions,
+	// not just their medians, to tell a real difference from environmental noise.
+	const candidates = run.providers.flatMap((provider) => {
+		const result = provider.metrics.find((m) => m.metricId === metric.id);
+		if (!result) return [];
+		const row: LeaderboardRow = {
+			providerId: provider.providerId,
+			displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
+			value: result.aggregates.p50,
+			rank: 0, // assigned after sort
+			// Seed from stable identity so a committed leaderboard is byte-identical on every
+			// regeneration — a Math.random() bootstrap would churn the diff on every run.
+			interval: bootstrapMedianInterval(result.samples, {
+				seed: `${run.runId}:${metric.id}:${provider.providerId}`,
+			}),
+			n: result.aggregates.n,
+			stdev: result.aggregates.stdev,
+			pVsPrevious: null,
+			verdict: null,
+			tiedWithAbove: null,
+		};
+		return [{ samples: result.samples, row }];
+	});
+	if (candidates.length === 0) return [];
+
+	// Order by Direction; tie-break on providerId so the output is deterministic.
+	candidates.sort((a, b) =>
+		a.row.value !== b.row.value
+			? metric.direction === "HIB"
+				? b.row.value - a.row.value
+				: a.row.value - b.row.value
+			: a.row.providerId.localeCompare(b.row.providerId),
+	);
+
+	// Competition ranking with STATISTICAL ties. Walk the ordered rows and test each against the one
+	// above: when Mann-Whitney can't separate them, they share a rank rather than letting a median
+	// won inside the noise buy a position. `separated` carries the verdict; `ks` is reported beside
+	// it because two providers can share a median while differing in distribution shape.
+	//
+	// Only ADJACENT rows are tested, which is deliberate: a leaderboard is a linear order, and the
+	// pairwise "which providers are mutually indistinguishable" relation is not transitive (A~B and
+	// B~C does not give A~C). Testing the chain keeps the table honest about the one comparison it
+	// actually renders — each row against the row above it — instead of implying a grouping the
+	// tests don't support. It also keeps this to k−1 tests. The rendered methodology explicitly labels
+	// their p-values unadjusted and exploratory; it does not claim family-wise error control.
+	candidates.forEach((candidate, i) => {
+		const previous = candidates[i - 1];
+		if (!previous) {
+			candidate.row.rank = 1;
+			return;
+		}
+		// A row shares the rank above it EXACTLY when it has a reason to, and the reason is recorded.
+		// That invariant is the whole defence against the table claiming a tie it never established: a
+		// shared rank always answers "on what basis?", and the renderer prints the answer.
+		const settle = (basis: TieBasis | null): void => {
+			candidate.row.tiedWithAbove = basis;
+			candidate.row.rank = basis === null ? i + 1 : previous.row.rank;
+		};
+		// Exactly equal values cannot be ordered by a ranking that ranks on the value. Whenever no
+		// verdict is available to override that, they must share a rank — otherwise the providerId sort
+		// tie-break alone would split two providers with an identical published price.
+		const identical = candidate.row.value === previous.row.value;
+
+		// A single Sample is not a distribution: there is nothing to test, and the value is typically
+		// exact rather than measured (a Metric like `usd_per_hour` is a published price, not a trial).
+		// Rank such rows on the value and mark them untested, rather than declaring every provider
+		// "indistinguishable" because a one-trial comparison can never reach significance.
+		if (previous.samples.length < 2 || candidate.samples.length < 2) {
+			candidate.row.verdict = "untested";
+			settle(identical ? "identical-value" : null);
+			return;
+		}
+
+		const mw = mannWhitneyU(previous.samples, candidate.samples);
+		const ks = kolmogorovSmirnov(previous.samples, candidate.samples);
+		candidate.row.pVsPrevious = {
+			mannWhitney: mw.pValue,
+			ks: ks.pValue,
+			floor: mw.minAttainablePValue,
+		};
+
+		// The same "a test that can never reach α is not evidence of sameness" rule as the n<2 case
+		// above, applied where it actually bites: Mann-Whitney's p has a FLOOR, and at 3 v 3 that floor
+		// (0.1) is already above α. Grouping those rows would print "statistically tied" for a provider
+		// running at half the speed of the one above it — a fact about the trial count masquerading as a
+		// fact about the providers. Claim no verdict, rank on the observed value, and let the rendering
+		// disclose that the comparison was untestable.
+		//
+		// The floor comes from the test itself (it depends on the tie pattern, not just the sample
+		// sizes), so the guard and the p-value it guards are answers about the same enumerated null and
+		// cannot disagree.
+		if (!canSeparate(mw)) {
+			candidate.row.verdict = "underpowered";
+			// An underpowered row can still share a rank — but only ever because the two values are
+			// identical, never because the test "found no difference". The basis says which, so the
+			// renderer and the footer can keep the two apart.
+			settle(identical ? "identical-value" : null);
+			return;
+		}
+
+		if (mw.pValue < DEFAULT_ALPHA) {
+			candidate.row.verdict = "separated";
+			settle(null);
+			return;
+		}
+		// The test could have separated them and did not: a real statistical tie.
+		candidate.row.verdict = "tied";
+		settle("statistical");
+	});
+
+	return candidates.map((candidate) => candidate.row);
+}
+
 /** Build the structured leaderboard from a validated Run. Pure — Run in, ranking out. */
 export function buildLeaderboard(run: Run): Leaderboard {
 	const dimensions: LeaderboardDimension[] = [];
 
 	for (const dimension of DIMENSIONS) {
-		// The headline Metric for this Dimension, if one is catalogued (else the Dimension is unpopulated).
-		// A direct lookup, not headlineMetric()+catch: an unpopulated Dimension is the expected case here,
-		// not an exceptional one, and a bare catch would also swallow real programming errors.
-		const metric: MetricDef | undefined = METRIC_CATALOG.find(
-			(m) => m.dimension === dimension && m.headline,
+		// Catalog order is the stable display order, except the dimension's editorial headline leads.
+		// Crucially, every emitted Metric gets a table: headline is presentation priority, not a filter.
+		const catalogued = METRIC_CATALOG.filter((metric) => metric.dimension === dimension).sort(
+			(a, b) => Number(b.headline) - Number(a.headline),
 		);
-		if (!metric) continue;
-
-		// Carry each provider's raw Samples alongside its row: the ranking needs the full distributions,
-		// not just their medians, to tell a real difference from environmental noise.
-		const candidates = run.providers.flatMap((provider) => {
-			const result = provider.metrics.find((m) => m.metricId === metric.id);
-			if (!result) return [];
-			const row: LeaderboardRow = {
-				providerId: provider.providerId,
-				displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
-				value: result.aggregates.p50,
-				rank: 0, // assigned after sort
-				// Seed from stable identity so a committed leaderboard is byte-identical on every
-				// regeneration — a Math.random() bootstrap would churn the diff on every run.
-				interval: bootstrapMedianInterval(result.samples, {
-					seed: `${run.runId}:${metric.id}:${provider.providerId}`,
-				}),
-				n: result.aggregates.n,
-				stdev: result.aggregates.stdev,
-				pVsPrevious: null,
-				verdict: null,
-				tiedWithAbove: null,
-			};
-			return [{ samples: result.samples, row }];
+		const metrics = catalogued.flatMap((metric): LeaderboardMetric[] => {
+			const rows = rankMetric(run, metric);
+			return rows.length === 0 ? [] : [{ metric, rows }];
 		});
-		if (candidates.length === 0) continue;
-
-		// Order by Direction; tie-break on providerId so the output is deterministic.
-		candidates.sort((a, b) =>
-			a.row.value !== b.row.value
-				? metric.direction === "HIB"
-					? b.row.value - a.row.value
-					: a.row.value - b.row.value
-				: a.row.providerId.localeCompare(b.row.providerId),
-		);
-
-		// Competition ranking with STATISTICAL ties. Walk the ordered rows and test each against the one
-		// above: when Mann-Whitney can't separate them, they share a rank rather than letting a median
-		// won inside the noise buy a position. `separated` carries the verdict; `ks` is reported beside
-		// it because two providers can share a median while differing in distribution shape.
-		//
-		// Only ADJACENT rows are tested, which is deliberate: a leaderboard is a linear order, and the
-		// pairwise "which providers are mutually indistinguishable" relation is not transitive (A~B and
-		// B~C does not give A~C). Testing the chain keeps the table honest about the one comparison it
-		// actually renders — each row against the row above it — instead of implying a grouping the
-		// tests don't support. It also keeps this to k−1 tests, so no multiplicity correction is owed.
-		candidates.forEach((candidate, i) => {
-			const previous = candidates[i - 1];
-			if (!previous) {
-				candidate.row.rank = 1;
-				return;
-			}
-			// A row shares the rank above it EXACTLY when it has a reason to, and the reason is recorded.
-			// That invariant is the whole defence against the table claiming a tie it never established: a
-			// shared rank always answers "on what basis?", and the renderer prints the answer.
-			const settle = (basis: TieBasis | null): void => {
-				candidate.row.tiedWithAbove = basis;
-				candidate.row.rank = basis === null ? i + 1 : previous.row.rank;
-			};
-			// Exactly equal values cannot be ordered by a ranking that ranks on the value. Whenever no
-			// verdict is available to override that, they must share a rank — otherwise the providerId sort
-			// tie-break alone would split two providers with an identical published price.
-			const identical = candidate.row.value === previous.row.value;
-
-			// A single Sample is not a distribution: there is nothing to test, and the value is typically
-			// exact rather than measured (a Metric like `usd_per_hour` is a published price, not a trial).
-			// Rank such rows on the value and mark them untested, rather than declaring every provider
-			// "indistinguishable" because a one-trial comparison can never reach significance.
-			if (previous.samples.length < 2 || candidate.samples.length < 2) {
-				candidate.row.verdict = "untested";
-				settle(identical ? "identical-value" : null);
-				return;
-			}
-
-			const mw = mannWhitneyU(previous.samples, candidate.samples);
-			const ks = kolmogorovSmirnov(previous.samples, candidate.samples);
-			candidate.row.pVsPrevious = {
-				mannWhitney: mw.pValue,
-				ks: ks.pValue,
-				floor: mw.minAttainablePValue,
-			};
-
-			// The same "a test that can never reach α is not evidence of sameness" rule as the n<2 case
-			// above, applied where it actually bites: Mann-Whitney's p has a FLOOR, and at 3 v 3 that floor
-			// (0.1) is already above α. Grouping those rows would print "statistically tied" for a provider
-			// running at half the speed of the one above it — a fact about the trial count masquerading as a
-			// fact about the providers. Claim no verdict, rank on the observed value, and let the rendering
-			// disclose that the comparison was untestable.
-			//
-			// The floor comes from the test itself (it depends on the tie pattern, not just the sample
-			// sizes), so the guard and the p-value it guards are answers about the same enumerated null and
-			// cannot disagree.
-			if (!canSeparate(mw)) {
-				candidate.row.verdict = "underpowered";
-				// An underpowered row can still share a rank — but only ever because the two values are
-				// identical, never because the test "found no difference". The basis says which, so the
-				// renderer and the footer can keep the two apart.
-				settle(identical ? "identical-value" : null);
-				return;
-			}
-
-			if (mw.pValue < DEFAULT_ALPHA) {
-				candidate.row.verdict = "separated";
-				settle(null);
-				return;
-			}
-			// The test could have separated them and did not: a real statistical tie.
-			candidate.row.verdict = "tied";
-			settle("statistical");
-		});
-
-		dimensions.push({ dimension, metric, rows: candidates.map((c) => c.row) });
+		const primary = metrics[0];
+		if (primary) {
+			dimensions.push({ dimension, metrics, metric: primary.metric, rows: primary.rows });
+		}
 	}
 
 	return {
 		runId: run.runId,
 		sha: run.sha,
 		generatedAt: run.generatedAt,
+		targetSpec: run.targetSpec,
 		dimensions,
+		comparabilityCaveats: run.providers.flatMap((provider): ComparabilityCaveat[] =>
+			provider.specMatched === false
+				? [
+						{
+							providerId: provider.providerId,
+							displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
+							observedSpecs: provider.observedSpecs,
+						},
+					]
+				: [],
+		),
 		coverageGaps: coverageGapsOf(run),
 	};
 }
@@ -376,13 +419,15 @@ export function buildLeaderboard(run: Run): Leaderboard {
  */
 function underpoweredFloors(board: Leaderboard): string[] {
 	const seen = new Map<string, string>();
-	for (const { rows } of board.dimensions) {
-		rows.forEach((row, i) => {
-			const previous = rows[i - 1];
-			if (row.verdict !== "underpowered" || !previous || !row.pVsPrevious) return;
-			const key = `${previous.n} v ${row.n}`;
-			seen.set(key, `${key} floors at p ≈ ${formatPValue(row.pVsPrevious.floor)}`);
-		});
+	for (const { metrics } of board.dimensions) {
+		for (const { rows } of metrics) {
+			rows.forEach((row, i) => {
+				const previous = rows[i - 1];
+				if (row.verdict !== "underpowered" || !previous || !row.pVsPrevious) return;
+				const key = `${previous.n} v ${row.n}`;
+				seen.set(key, `${key} floors at p ≈ ${formatPValue(row.pVsPrevious.floor)}`);
+			});
+		}
 	}
 	return [...seen.entries()].sort(([a], [b]) => a.localeCompare(b, "en")).map(([, text]) => text);
 }
@@ -435,12 +480,8 @@ function formatInterval(r: LeaderboardRow): string {
 		: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
 }
 
-/** One-line takeaway above each dimension table (leader vs next, or sole provider). */
-function dimensionTakeaway(
-	dimension: Dimension,
-	metric: MetricDef,
-	rows: LeaderboardRow[],
-): string {
+/** One-line takeaway above each Metric table (leader vs next, or sole provider). */
+function metricTakeaway(dimension: Dimension, metric: MetricDef, rows: LeaderboardRow[]): string {
 	const leader = rows[0];
 	if (!leader) return "";
 	const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
@@ -450,8 +491,14 @@ function dimensionTakeaway(
 	if (!next) {
 		return `${leader.displayName} is the only ranked provider (${formatValue(leader.value)} ${metric.unit}; ${better}).`;
 	}
-	if (next.tiedWithAbove === "statistical" || next.rank === leader.rank) {
-		return `${leader.displayName} and ${next.displayName} share the top on this headline (${better}).`;
+	// Collect the full top cohort, not just the immediate neighbor: three or more providers can share
+	// rank 1 (statistical tie or identical values), and naming only the first two would silently drop
+	// the rest. Rows are rank-sorted, so everything at the leader's rank is the contiguous top group.
+	const coLeaders = rows.filter((r) => r.rank === leader.rank);
+	if (coLeaders.length > 1) {
+		const names = coLeaders.map((r) => r.displayName);
+		const list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+		return `${list} share the top on this metric (${better}).`;
 	}
 	if (metric.direction === "HIB") {
 		const ratio = leader.value / next.value;
@@ -480,50 +527,86 @@ function coverageSummary(gaps: CoverageGap[]): string {
 	return `${gaps.length} uncovered result${gaps.length === 1 ? "" : "s"} across ${byProvider.size} provider${byProvider.size === 1 ? "" : "s"} (${parts.join(", ")}). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.`;
 }
 
+/** Compact requested/observed allocation description, omitting fields probes could not see. */
+function formatSpec(spec: TargetSpec | ObservedSpecs): string {
+	const parts = [
+		spec.vcpus === undefined ? undefined : `${formatValue(spec.vcpus)} vCPU`,
+		spec.memoryGb === undefined ? undefined : `${formatValue(spec.memoryGb)} GiB RAM`,
+		spec.diskGb === undefined ? undefined : `${formatValue(spec.diskGb)} GB disk`,
+	].filter((part): part is string => part !== undefined);
+	return parts.length > 0 ? parts.join(" · ") : "allocation not observable";
+}
+
 /** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
 export function renderLeaderboardMarkdown(board: Leaderboard): string {
-	const spec = `${TARGET_SPEC.vcpus} vCPU · ${TARGET_SPEC.memoryGb} GiB RAM · ${TARGET_SPEC.diskGb} GB disk`;
+	const spec = formatSpec(board.targetSpec);
+	const metricCount = board.dimensions.reduce(
+		(sum, dimension) => sum + dimension.metrics.length,
+		0,
+	);
+	const rows = board.dimensions.flatMap((dimension) =>
+		dimension.metrics.flatMap((metric) => metric.rows),
+	);
+	const observationCount = rows.reduce((sum, row) => sum + row.n, 0);
+	const providerCount = new Set(rows.map((row) => row.providerId)).size;
+	const metricNoun = metricCount === 1 ? "metric" : "metrics";
+	const providerNoun = providerCount === 1 ? "provider" : "providers";
 	const lines: string[] = [
 		"# Sandbox provider leaderboard",
 		"",
 		`Run \`${board.runId}\` · commit \`${board.sha}\` · generated ${board.generatedAt}`,
 		"",
-		`Same pinned target for every provider (**${spec}**). Each table ranks providers on that`,
-		"dimension's headline metric (median of retained trials). Generated from the published Run",
-		"dataset — do not edit by hand. Methodology: [`docs/methodology.md`](docs/methodology.md).",
+		`Requested target for every provider: **${spec}**. This run contains **${rows.length} metric records**`,
+		`backed by **${observationCount} retained trial observations**, across **${metricCount} ${metricNoun}** and`,
+		`**${providerCount} ${providerNoun}**; every emitted, catalogued metric has a ranked table below`,
+		"(median of retained trials), grouped by dimension with its headline first.",
+		"Generated from the published Run dataset — do not edit by hand. Methodology:",
+		"[`docs/methodology.md`](docs/methodology.md).",
 		"",
-		"**How to read:** value = median (p50) · 95% CI = bootstrap around that median · ranks split only",
+		"**How to read:** value = median (p50) · 95% bootstrap interval around that median · ranks split only",
 		"when distributions differ (see details below) · a coverage gap means unmeasured, never a score of zero.",
+		"CPU/RAM comparability uses observed vCPU and RAM (±10% RAM); disk is a workload-capacity gate",
+		"surfaced through coverage gaps, not part of the compute-match verdict.",
 		"",
 	];
-
-	if (board.dimensions.length === 0) {
-		lines.push("_No ranked dimensions yet (no provider produced a headline metric)._", "");
-	}
-
-	for (const { dimension, metric, rows } of board.dimensions) {
-		const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
-		const notes = rows.map(rowNote);
-		const hasNotes = notes.some((n) => n !== "");
+	for (const caveat of board.comparabilityCaveats) {
 		lines.push(
-			`## ${dimension}`,
-			"",
-			`Headline: **${metric.label}** (${metric.unit}, ${better})`,
-			"",
-			`_${dimensionTakeaway(dimension, metric, rows)}_`,
-			"",
-			hasNotes
-				? `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n | Note |`
-				: `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% CI | n |`,
-			hasNotes
-				? "| ---: | --- | ---: | ---: | ---: | --- |"
-				: "| ---: | --- | ---: | ---: | ---: |",
-			...rows.map((r, i) => {
-				const base = `| ${r.rank} | ${r.displayName} | ${formatValue(r.value)} | ${formatInterval(r)} | ${r.n} |`;
-				return hasNotes ? `${base} ${notes[i] || "—"} |` : base;
-			}),
+			`> **Comparability warning:** ${caveat.displayName}'s observed compute did not match the requested CPU/RAM target; its observed allocation was **${formatSpec(caveat.observedSpecs)}**. Its measured ranks are not like-for-like with compute-matched providers.`,
 			"",
 		);
+	}
+
+	if (board.dimensions.length === 0) {
+		lines.push("_No ranked metrics yet (no provider produced a catalogued metric)._", "");
+	}
+
+	for (const { dimension, metrics } of board.dimensions) {
+		lines.push(`## ${dimension}`, "");
+		for (const { metric, rows: metricRows } of metrics) {
+			const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
+			const notes = metricRows.map(rowNote);
+			const hasNotes = notes.some((note) => note !== "");
+			const headline = metric.headline ? " _(headline)_" : "";
+			lines.push(
+				`### ${metric.label}${headline}`,
+				"",
+				`${metric.unit} · ${better}`,
+				"",
+				`_${metricTakeaway(dimension, metric, metricRows)}_`,
+				"",
+				hasNotes
+					? `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% bootstrap interval | n | Note |`
+					: `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% bootstrap interval | n |`,
+				hasNotes
+					? "| ---: | --- | ---: | ---: | ---: | --- |"
+					: "| ---: | --- | ---: | ---: | ---: |",
+				...metricRows.map((row, i) => {
+					const base = `| ${row.rank} | ${row.displayName} | ${formatValue(row.value)} | ${formatInterval(row)} | ${row.n} |`;
+					return hasNotes ? `${base} ${notes[i] || "—"} |` : base;
+				}),
+				"",
+			);
+		}
 	}
 
 	// Coverage gaps: summary first; full table + legends inside <details> so unfinished providers
@@ -582,9 +665,10 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"<summary>How rankings are decided</summary>",
 		"",
 		"The value is the median (p50) of the retained per-trial Samples, not the mean — a single stalled",
-		"pass drags a mean far more than it moves a median. The 95% CI is a percentile bootstrap of that",
-		"median (10,000 resamples, seeded from the Run id so the table is reproducible byte-for-byte), not",
-		"a normal-theory interval: these Samples are neither normal nor independent of the host's scheduling.",
+		"pass drags a mean far more than it moves a median. The 95% interval is a percentile bootstrap of",
+		"that median (10,000 resamples, seeded from the Run id so the table is reproducible byte-for-byte).",
+		"It is a descriptive interval conditional on the retained trials, **not a calibrated frequentist",
+		"confidence interval**: n is small and within-sandbox trials may be dependent on host scheduling.",
 		"",
 		`Rows are separated only when Mann-Whitney U (two-sided, α = ${DEFAULT_ALPHA}, enumerated exactly`,
 		"over the permutation null rather than approximated) finds a shift in central tendency — at these",
@@ -593,7 +677,6 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"",
 	);
 
-	const rows = board.dimensions.flatMap((d) => d.rows);
 	const sharedRankReasons: string[] = [];
 	if (rows.some((r) => r.tiedWithAbove === "statistical")) {
 		sharedRankReasons.push(
@@ -618,7 +701,7 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	lines.push(
 		"Samples are repeated trials inside one sandbox, so their spread is environmental (neighbours, host",
-		"contention, virtualization), and a wide CI or a large `n` (the harness re-runs a test that will not",
+		"contention, virtualization), and a wide bootstrap interval or a large `n` (the harness re-runs a test that will not",
 		"converge) is itself the signal that the provider's performance is unstable, not that the measurement",
 		"is imprecise.",
 		"",
@@ -649,14 +732,20 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			"`p vs. above` is Mann-Whitney (drives rank). `p (KS)` is Kolmogorov-Smirnov on distribution",
 			"*shape* — it does not drive the ranking. A tied Mann-Whitney beside a small KS often means the",
 			"same typical speed with different behaviour (e.g. bimodal stalls).",
+			"These are unadjusted, exploratory per-comparison p-values; no family-wise or false-discovery-rate",
+			"correction is applied across providers or metrics.",
 			"",
-			"| Dimension | Provider | p vs. above | p (KS) |",
-			"| --- | --- | ---: | ---: |",
+			"| Dimension | Metric | Provider | p vs. above | p (KS) |",
+			"| --- | --- | --- | ---: | ---: |",
 		);
-		for (const { dimension, rows: dimRows } of board.dimensions) {
-			for (const r of dimRows) {
-				const ks = r.pVsPrevious === null ? "—" : formatPValue(r.pVsPrevious.ks);
-				lines.push(`| ${dimension} | ${r.displayName} | ${formatPairwiseP(r)} | ${ks} |`);
+		for (const { dimension, metrics } of board.dimensions) {
+			for (const { metric, rows: metricRows } of metrics) {
+				for (const row of metricRows) {
+					const ks = row.pVsPrevious === null ? "—" : formatPValue(row.pVsPrevious.ks);
+					lines.push(
+						`| ${dimension} | ${metric.label} | ${row.displayName} | ${formatPairwiseP(row)} | ${ks} |`,
+					);
+				}
 			}
 		}
 		lines.push("");
