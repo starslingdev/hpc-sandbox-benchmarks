@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	daytonaTransientPushCommands,
 	daytonaTransientRef,
+	describeDaytonaError,
 	snapshotDestroyedMessage,
 	withCleanupPreservingPrimaryError,
 } from "./daytona.ts";
@@ -122,5 +123,48 @@ describe("withCleanupPreservingPrimaryError", () => {
 				},
 			),
 		).rejects.toBe(cleanup);
+	});
+});
+
+describe("describeDaytonaError", () => {
+	it("surfaces status code, error code, and response body from the opaque SDK error", () => {
+		const out = describeDaytonaError({
+			name: "DaytonaError",
+			statusCode: 500,
+			code: "INTERNAL",
+			response: { data: { message: "failed to inspect in registry" } },
+		});
+		expect(out).toContain("name=DaytonaError");
+		expect(out).toContain("status=500");
+		expect(out).toContain("code=INTERNAL");
+		expect(out).toContain("failed to inspect in registry");
+	});
+
+	// `JSON.stringify` returns undefined (not a string) for a function/symbol response body, so the
+	// formatter must fall back to String() rather than call `.slice` on undefined — it runs on the
+	// error path and must never throw over a non-serializable SDK payload.
+	it("does not throw when the response body is a non-serializable value", () => {
+		const out = describeDaytonaError({ statusCode: 500, response: { data: () => "boom" } });
+		expect(out).toContain("status=500");
+		expect(out).toContain("response=");
+	});
+
+	it("includes the cause chain when present", () => {
+		expect(
+			describeDaytonaError({ message: "boom", cause: new Error("registry unreachable") }),
+		).toContain("cause=registry unreachable");
+	});
+
+	it("never throws on a non-object error, and says so", () => {
+		expect(describeDaytonaError("plain string")).toContain("plain string");
+		expect(describeDaytonaError(undefined)).toContain("non-object");
+	});
+
+	// The function is exported, so it has to be useful on its own — a caller that doesn't separately log
+	// `.message` must not be left with just `name=Error` and no diagnostic.
+	it("keeps the error's own message for a plain Error (no SDK shape to mine)", () => {
+		const out = describeDaytonaError(new Error("failed to inspect registry for image"));
+		expect(out).toContain("name=Error");
+		expect(out).toContain("message=failed to inspect registry for image");
 	});
 });

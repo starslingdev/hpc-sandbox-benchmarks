@@ -128,6 +128,51 @@ async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log)
 	}
 }
 
+/** A verbose one-line description of a Daytona SDK error for diagnostics — pulls status codes, any
+ *  response body, an error code, and the `cause` chain out of the opaque object the SDK throws, so a
+ *  bake log records more than the bare `.message`. Pure and defensive (never throws), so it is safe on
+ *  an error path and unit-testable without the SDK. */
+export function describeDaytonaError(err: unknown): string {
+	if (typeof err !== "object" || err === null) return `non-object error: ${String(err)}`;
+	const e = err as {
+		name?: unknown;
+		message?: unknown;
+		statusCode?: number;
+		status?: number;
+		code?: string | number;
+		response?: { status?: number; data?: unknown };
+		cause?: unknown;
+	};
+	const parts: string[] = [];
+	if (typeof e.name === "string") parts.push(`name=${e.name}`);
+	// Include the error's OWN message. The current caller (logCreateFailure) logs it on a separate line,
+	// but this function is exported: a caller that doesn't know to log `.message` separately would
+	// otherwise get `name=Error` and lose the entire diagnostic for a plain `new Error("…")`.
+	if (typeof e.message === "string" && e.message.length > 0) parts.push(`message=${e.message}`);
+	const status = e.statusCode ?? e.status ?? e.response?.status;
+	if (status !== undefined) parts.push(`status=${status}`);
+	if (e.code !== undefined) parts.push(`code=${String(e.code)}`);
+	if (e.response?.data !== undefined) {
+		let body: string;
+		try {
+			body =
+				typeof e.response.data === "string"
+					? e.response.data
+					: (JSON.stringify(e.response.data) ?? String(e.response.data));
+		} catch {
+			body = String(e.response.data);
+		}
+		parts.push(`response=${body.slice(0, 500)}`);
+	}
+	if (e.cause !== undefined && e.cause !== null) {
+		const cause = e.cause as { message?: unknown };
+		const causeText =
+			typeof cause.message === "string" ? cause.message : String(e.cause).slice(0, 300);
+		parts.push(`cause=${causeText}`);
+	}
+	return parts.length > 0 ? parts.join(" ") : "no structured detail";
+}
+
 /** The message for a create that failed after `deleted` (> 0) pre-existing snapshots of `name` were
  *  removed to free the name: `name` now resolves to nothing. Stated plainly because the caller that
  *  passes a published name (promote `--force`) surfaces this as the report's `reason`, where "failed"
@@ -246,6 +291,39 @@ async function transientPushAccess(
 	return (await registryApi.getTransientPushAccess(undefined, region)).data;
 }
 
+/** Create attempts — a small resilient retry that self-heals a transient registry-inspect blip; a
+ *  persistent failure is characterized across every attempt by {@link logCreateFailure}. */
+const CREATE_ATTEMPTS = 5;
+
+/** Log the diagnostics for a failed create attempt: the structured SDK error, plus where the snapshot
+ *  landed — "absent" vs an `error`-state snapshot (with its richer `errorReason`) distinguishes a failed
+ *  registry inspect from a failed build. Best-effort: never throws (it runs on an error path). */
+async function logCreateFailure(
+	daytona: Daytona,
+	name: string,
+	err: unknown,
+	log: Log,
+): Promise<void> {
+	log(`    message: ${err instanceof Error ? err.message : String(err)}`);
+	log(`    detail:  ${describeDaytonaError(err)}`);
+	try {
+		const landed = await listSnapshotsByName(daytona, name);
+		if (landed.length === 0) {
+			log(`    post-failure: no snapshot named ${name} exists (create never landed one)`);
+		}
+		for (const snap of landed) {
+			const errorReason = (snap as { errorReason?: unknown }).errorReason;
+			log(
+				`    post-failure snapshot: state=${snap.state}${errorReason ? ` errorReason=${String(errorReason)}` : ""}`,
+			);
+		}
+	} catch (listErr) {
+		log(
+			`    post-failure: could not list ${name} — ${listErr instanceof Error ? listErr.message : String(listErr)}`,
+		);
+	}
+}
+
 /** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote).
  *  Idempotent: delete any existing snapshot of that name first.
  *
@@ -289,29 +367,88 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 	);
 
 	const deleted = await deleteExistingSnapshots(daytona, name, log);
-	log(
-		`creating Linux-VM snapshot ${name} from uploaded image (target ${daytonaCfg.target ?? "default"})`,
-	);
-	try {
-		await daytona.snapshot.create(
-			{
-				name,
-				image: transientRef,
-				resources: {
-					cpu: targetSpec.vcpus,
-					memory: targetSpec.memoryGb,
-					disk: targetSpec.diskGb,
-				},
-				...(daytonaCfg.target ? { regionId: daytonaCfg.target } : {}),
-				sandboxClass: SandboxClass.LINUX_VM,
-			},
-			{ onLogs: (chunk) => log(chunk) },
+
+	const params = {
+		name,
+		image: transientRef,
+		resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: targetSpec.diskGb },
+		...(daytonaCfg.target ? { regionId: daytonaCfg.target } : {}),
+		// Pin to microVM runners (never the `container` default) — the fleet's hard constraint.
+		sandboxClass: SandboxClass.LINUX_VM,
+	};
+
+	// Daytona's create inspects `image` in the registry on a build runner, and that inspect can fail with
+	// an opaque, often-transient "internal error" (a different runner/registry blip each time). Retry with
+	// backoff — self-healing when it's genuinely transient — and on every failed attempt capture rich
+	// diagnostics (see logCreateFailure) so a PERSISTENT failure is precisely characterized rather than
+	// reported once and lost.
+	let lastErr: unknown;
+	// Set only when a pre-retry cleanup failed and stopped the loop early. Kept SEPARATE from `lastErr`:
+	// the create failure is what failed the bake and carries the real diagnostic, while this explains why
+	// we stopped retrying. Folding the cleanup error into `lastErr` would overwrite (and misattribute)
+	// the create error in the message below.
+	let cleanupErr: unknown;
+	for (let attempt = 1; attempt <= CREATE_ATTEMPTS; attempt++) {
+		// A failed create can leave the name held by an error-state snapshot; sweep it before retrying so
+		// the next attempt isn't rejected with "already exists". (The initial `deleted` count above is
+		// what the destroyed-message reports — these are our own failed remnants, not a pre-existing one.)
+		if (attempt > 1) {
+			try {
+				await deleteExistingSnapshots(daytona, name, log);
+			} catch (err) {
+				// STOP retrying. deleteExistingSnapshots already absorbs transient blips itself — it polls
+				// for a 3-minute deadline before throwing — so a throw here is a PERSISTENT failure to free
+				// the name, not a blip. The name is still held, every remaining create would just fail
+				// "already exists" after burning another 3-minute pre-clean, and the real blocker (the
+				// undeletable snapshot) would be buried under a generic create error. Fail fast on it.
+				log(
+					`!!! attempt ${attempt}: could not free ${name} — ${err instanceof Error ? err.message : String(err)}`,
+				);
+				log("    the name is still held, so further create attempts cannot succeed; giving up.");
+				cleanupErr = err;
+				break;
+			}
+		}
+		log(
+			`>>> daytona snapshot create attempt ${attempt}/${CREATE_ATTEMPTS}: ${name} from ${transientRef} (target ${daytonaCfg.target ?? "default"})`,
 		);
-	} catch (err) {
-		// Nothing was deleted → the name was already free, so the prior state (none) is intact: rethrow
-		// verbatim rather than dress up an ordinary create failure as a destroyed artifact.
-		if (deleted === 0) throw err;
-		const reason = err instanceof Error ? err.message : String(err);
-		throw new Error(snapshotDestroyedMessage(name, deleted, reason), { cause: err });
+		const startMs = performance.now();
+		try {
+			await daytona.snapshot.create(params, { onLogs: log });
+			log(
+				`<<< daytona snapshot create succeeded on attempt ${attempt}/${CREATE_ATTEMPTS} (${(performance.now() - startMs).toFixed(0)}ms)`,
+			);
+			return;
+		} catch (err) {
+			lastErr = err;
+			log(
+				`!!! daytona create attempt ${attempt}/${CREATE_ATTEMPTS} failed after ${(performance.now() - startMs).toFixed(0)}ms`,
+			);
+			await logCreateFailure(daytona, name, err, log);
+			if (attempt < CREATE_ATTEMPTS) {
+				const backoffMs = Math.min(attempt * 5000, 20000);
+				log(`    backing off ${backoffMs}ms before retry…`);
+				await new Promise((resolve) => setTimeout(resolve, backoffMs));
+			}
+		}
 	}
+
+	// Every attempt failed (or a failed pre-clean stopped them early). Report BOTH causes when there are
+	// two: the create failure is what actually failed the bake, and the cleanup failure is why we stopped
+	// retrying it. `lastErr` stays the create error, so the `cause` chain still points at the real thing.
+	const createReason = lastErr instanceof Error ? lastErr.message : String(lastErr);
+	const reason =
+		cleanupErr === undefined
+			? createReason
+			: `${createReason}; retries stopped because ${name} could not be freed for another attempt: ${
+					cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
+				}`;
+
+	// Nothing was deleted → the name was already free, so the prior state (none) is intact: rethrow
+	// verbatim rather than dress up an ordinary create failure as a destroyed artifact.
+	if (deleted === 0) {
+		if (cleanupErr === undefined) throw lastErr;
+		throw new Error(`daytona snapshot ${name} create failed — ${reason}`, { cause: lastErr });
+	}
+	throw new Error(snapshotDestroyedMessage(name, deleted, reason), { cause: lastErr });
 }
