@@ -4,7 +4,8 @@ name: Bench matrix
 # cell, each spinning up a real sandbox, running its suite, and uploading the normalized Run as an
 # artifact. The matrix is computed from the SUITES × PROVIDERS registries by `plan-matrix` — adding a
 # provider or suite to its registry grows CI with no workflow edit. Off the PR path (real sandbox time
-# + provider credentials); dispatch on demand.
+# + provider credentials); dispatch on demand from main only, gated by Environment `privileged`
+# (required reviewers + environment secrets — see docs/ci-secrets.md).
 on:
   workflow_dispatch:
     inputs:
@@ -18,7 +19,7 @@ on:
         # to include it; `plan-matrix` rejects any name that is not in the registry.
         default: e2b,daytona,modal
 
-# Least privilege: jobs only read the checked-out code and upload artifacts.
+# Least privilege: jobs only read the checked-out code and upload artifacts (publish elevates).
 permissions:
   contents: read
 
@@ -29,8 +30,13 @@ concurrency:
 
 jobs:
   # Compute the provider × suite matrix once, as the single $GITHUB_OUTPUT contract the fan-out reads.
+  # No secrets — plan stays off the privileged environment so approval isn't needed just to dry-run
+  # the matrix shape; the gate below still confines dispatch to this repo's main.
   plan:
     name: Plan matrix
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/sandbox-benchmarks'
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -64,11 +70,15 @@ jobs:
   bench:
     name: ${{ matrix.suite }} on ${{ matrix.provider }}
     needs: plan
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/sandbox-benchmarks'
     # The ephemeral self-hosted label is reaped after 70 minutes even while a step is healthy. The
     # full CPU-generic and real-world matrices legitimately exceed that on slower providers, leaving
     # the step stuck `in_progress` with no logs/artifact. Hosted runners honor timeout-minutes below;
     # 180 minutes also leaves teardown/artifact margin around the longest 155-minute suite budget.
     runs-on: ubuntu-24.04
+    environment: privileged
     timeout-minutes: 180
     strategy:
       # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
@@ -78,8 +88,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # This cell only reads code (the sandbox clones via BENCH_REPO_TOKEN, not the checkout's
-          # credentials), so don't persist the job token in .git/config.
+          # This cell only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
+          # checkout's credentials), so don't persist the job token in .git/config.
           persist-credentials: false
 
       - name: Set up Bun
@@ -96,19 +106,26 @@ jobs:
       - name: Run suite and normalize
         env:
           BENCH_REPO_REF: ${{ github.sha }}
+          # Optional once the repo is public (anonymous clone works). Still passed so private forks and
+          # rate-limited clones keep working via the short-lived job token.
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_PROVIDER: ${{ matrix.provider }}
           BENCH_SUITE: ${{ matrix.suite }}
-          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          # Boot daytona sandboxes in the active region (us-west-2). Defaulted so an unsynced secret
-          # can't fail the config gatekeeper at module load.
-          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
-          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-          BL_API_KEY: ${{ secrets.BL_API_KEY }}
-          BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
-          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          # Scope every provider credential to the cell that actually uses it: a cell receives ONLY
+          # the secret(s) for its own `matrix.provider`, so a compromised adapter or suite can't read
+          # another provider's credential out of the environment. A non-matching provider evaluates to
+          # '', which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
+          # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
+          DAYTONA_API_KEY: ${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
+          # Boot daytona sandboxes in the active region (us-west-2); the default applies only to the
+          # daytona cell so an unsynced secret can't fail the config gatekeeper at module load.
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
+          MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
+          NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results
@@ -122,17 +139,26 @@ jobs:
           # data/ means the job is genuinely broken — fail the upload rather than bury a warning.
           if-no-files-found: error
 
-  # Collect every shard Run, aggregate into one candidate, gate it (promote), and commit the published
-  # dataset. candidate→promote: aggregate is the collect half, promote the validate-and-publish half.
+  # Collect every shard Run, aggregate into one candidate, gate it (promote), regenerate the public
+  # leaderboard, and commit both. candidate→promote: aggregate is the collect half, promote the
+  # validate-and-publish half. Environment `privileged` is required even without provider secrets —
+  # this job is the dataset release surface (`contents: write`).
   publish:
     name: Aggregate + promote dataset
-    needs: bench
+    needs: [plan, bench]
     # Run even if some matrix cells failed (fail-fast is off) so the successful shards still publish:
     # `aggregate` exits non-zero when zero shards are found and `promote` gates on >=1 validated
     # provider, so the quality bar is preserved. `!cancelled()` still lets an explicit cancel stop it.
-    if: ${{ !cancelled() }}
+    # `!cancelled()` opts out of the implicit success() gate, so require `plan` explicitly: a skipped
+    # or failed plan means there is no matrix contract, so there is nothing to publish.
+    if: >
+      !cancelled() &&
+      needs.plan.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/sandbox-benchmarks'
     runs-on: ubuntu-24.04
-    # Commit the published dataset back to the branch.
+    environment: privileged
+    # Commit the published dataset + leaderboard back to the branch.
     permissions:
       contents: write
     steps:
@@ -173,11 +199,15 @@ jobs:
           bun apps/cli/src/bin/aggregate.ts "$GITHUB_RUN_ID" data/candidate "${shards[@]}"
           bun apps/cli/src/bin/promote.ts "data/candidate/runs/$GITHUB_RUN_ID.json" data/dataset
 
+      # Keep LEADERBOARD.md byte-identical to what the renderer produces from the newly promoted Run.
+      - name: Regenerate leaderboard
+        run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$GITHUB_RUN_ID.json" LEADERBOARD.md
+
       - name: Commit the published dataset
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/dataset
+          git add data/dataset LEADERBOARD.md
           if git diff --cached --quiet; then
             echo "dataset unchanged; nothing to commit"
           else

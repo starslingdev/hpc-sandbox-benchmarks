@@ -12,7 +12,10 @@
 //      of BOTH bench-smoke.yml and bench-matrix.yml — the secret a new provider needs must be wired
 //      into both the smoke lane and the matrix lane, or the live run silently skips it.
 //   4. A credential key shared across the two workflows maps to the same value expression — both
-//      lanes must hand the suite the same secret, not plan one and run the other.
+//      lanes must hand the suite the same secret, not plan one and run the other. Each lane scopes
+//      its secrets to the selected provider (so a cell only sees its own credential), and the two
+//      lanes pick that provider differently — `inputs.provider` in smoke, `matrix.provider` in the
+//      matrix fan-out — so the comparison folds those two selector tokens together before checking.
 //   5. Both live-run jobs outlast the longest registered sandbox lifetime by a fixed margin, so a
 //      suite budget increase cannot leave an otherwise healthy job to be killed by Actions first.
 //
@@ -234,9 +237,22 @@ export function checkSuiteInput(input: DispatchInput, label: string = SMOKE_WORK
 }
 
 /**
+ * Fold a credential value expression to its lane-independent form for cross-lane comparison. Each
+ * lane scopes a secret to the selected provider so a cell receives only its own credential, but the
+ * two lanes name that selector differently — `inputs.provider` (the smoke dispatch input) vs
+ * `matrix.provider` (the matrix cell) — so both selector tokens collapse to one placeholder. A
+ * genuine drift (a secret guarded on a different provider id, or a different secret entirely)
+ * survives the fold and still fails Invariant 4.
+ */
+function canonicalCredentialExpr(value: string): string {
+	return value.replace(/\b(?:inputs|matrix)\.provider\b/g, "<provider>");
+}
+
+/**
  * Invariants 3 + 4: every provider requiredEnvVar is present in the run-step env of every workflow,
- * and a key shared across them maps to the same value expression. `envByWorkflow` keys are workflow
- * paths so error messages name the offending file.
+ * and a key shared across them maps to the same value expression (modulo each lane's provider
+ * selector — see {@link canonicalCredentialExpr}). `envByWorkflow` keys are workflow paths so error
+ * messages name the offending file.
  */
 export function checkCredentialEnv(
 	envByWorkflow: Record<string, Record<string, string>>,
@@ -253,12 +269,19 @@ export function checkCredentialEnv(
 			);
 			continue;
 		}
-		// biome-ignore lint/style/noNonNullAssertion: presence checked above.
-		const values = new Set(workflows.map((wf) => envByWorkflow[wf]![key]!));
-		if (values.size > 1) {
+		// Dedupe on the canonical (selector-folded) form, but report the raw expressions so a human
+		// sees the real drift, not the placeholder. First raw value wins per canonical form.
+		const rawByCanonical = new Map<string, string>();
+		for (const wf of workflows) {
+			// biome-ignore lint/style/noNonNullAssertion: presence checked above.
+			const raw = envByWorkflow[wf]![key]!;
+			const canonical = canonicalCredentialExpr(raw);
+			if (!rawByCanonical.has(canonical)) rawByCanonical.set(canonical, raw);
+		}
+		if (rawByCanonical.size > 1) {
 			errors.push(
 				`${key}: maps to different value expressions across workflows ` +
-					`(${[...values].map((v) => `"${v}"`).join(" vs ")}) — every lane must hand the suite the same secret`,
+					`(${[...rawByCanonical.values()].map((v) => `"${v}"`).join(" vs ")}) — every lane must hand the suite the same secret`,
 			);
 		}
 	}

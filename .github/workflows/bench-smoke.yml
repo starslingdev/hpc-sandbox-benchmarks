@@ -2,7 +2,8 @@ name: Bench smoke
 
 # Manually-dispatched live benchmark: spins up a real provider sandbox, runs one suite, normalizes
 # the result into a Run document, and uploads it as an artifact. Off the PR path (it costs real
-# sandbox time and needs provider credentials) — run it on demand to validate the end-to-end lane.
+# sandbox time and needs provider credentials) — run it on demand from main only, gated by
+# Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md).
 on:
   workflow_dispatch:
     inputs:
@@ -45,10 +46,14 @@ concurrency:
 jobs:
   smoke:
     name: ${{ inputs.suite }} on ${{ inputs.provider }}
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/sandbox-benchmarks'
     # The ephemeral self-hosted label is reaped after 70 minutes, while this dispatch exposes suites
     # with a 155-minute sandbox budget. Match the matrix's hosted runner and leave job-level margin
     # for checkout, sandbox teardown, normalization, and artifact upload.
     runs-on: ubuntu-24.04
+    environment: privileged
     timeout-minutes: 180
     steps:
       # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
@@ -56,8 +61,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # The job only reads code (the sandbox clones via BENCH_REPO_TOKEN, not the checkout's
-          # credentials), so don't persist the job token in .git/config.
+          # The job only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
+          # checkout's credentials), so don't persist the job token in .git/config.
           persist-credentials: false
 
       - name: Set up Bun
@@ -74,7 +79,8 @@ jobs:
       - name: Run suite and normalize
         env:
           BENCH_REPO_REF: ${{ github.sha }}
-          # The sandbox clones this private repo at the run's SHA; the short-lived job token authorizes it.
+          # Optional once the repo is public (anonymous clone works). Still passed so private forks and
+          # rate-limited clones keep working via the short-lived job token.
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Pass the dispatch inputs through the environment, never interpolated into the `run` script.
           # `provider` and `suite` are both constrained choices, but env passthrough is kept as
@@ -86,16 +92,21 @@ jobs:
           # misnamed provider secret is recorded as a skip and the job still exits 0 having
           # benchmarked nothing — assert the dispatched provider actually reached "validated".
           REQUIRE_PROVIDERS: ${{ inputs.provider }}
-          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          # Boot daytona sandboxes in the active region (us-west-2). Defaulted so an unsynced secret
-          # can't fail the config gatekeeper at module load.
-          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
-          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-          BL_API_KEY: ${{ secrets.BL_API_KEY }}
-          BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
-          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          # Scope every provider credential to the dispatched provider: this run receives ONLY the
+          # secret(s) for `inputs.provider`, so a compromised adapter or suite can't read another
+          # provider's credential out of the environment. A non-matching provider evaluates to '',
+          # which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
+          # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
+          DAYTONA_API_KEY: ${{ inputs.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
+          # Boot daytona sandboxes in the active region (us-west-2); the default applies only to a
+          # daytona dispatch so an unsynced secret can't fail the config gatekeeper at module load.
+          DAYTONA_TARGET: ${{ inputs.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          E2B_API_KEY: ${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
+          MODAL_TOKEN_ID: ${{ inputs.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ inputs.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          BL_API_KEY: ${{ inputs.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ inputs.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
+          NOVITA_API_KEY: ${{ inputs.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results
