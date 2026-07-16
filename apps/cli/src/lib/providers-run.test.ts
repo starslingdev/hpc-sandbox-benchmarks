@@ -1,0 +1,44 @@
+import { describe, expect, test } from "bun:test";
+import { forEachProviderWithCreds } from "./providers-run.ts";
+
+describe("forEachProviderWithCreds `only`", () => {
+	test("visits only the requested provider (a matrix cell reports just its own)", async () => {
+		const bodyRan: string[] = [];
+		const runs = await forEachProviderWithCreds(
+			async (provider) => {
+				bodyRan.push(provider.name);
+				return null;
+			},
+			// No creds for daytona in this env → it skips, but nothing else is even considered.
+			{ only: ["daytona"], env: {} },
+		);
+		expect(runs.map((r) => r.provider)).toEqual(["daytona"]);
+		expect(runs[0]?.status).toBe("skipped");
+		expect(bodyRan).toEqual([]); // skipped: the body never runs
+	});
+
+	test("runs the body for a selected provider whose creds are present", async () => {
+		const runs = await forEachProviderWithCreds(async () => "smoked", {
+			only: ["e2b"],
+			env: { E2B_API_KEY: "present" },
+		});
+		expect(runs).toHaveLength(1);
+		expect(runs[0]?.provider).toBe("e2b");
+		expect(runs[0]?.status).toBe("ok");
+		expect(runs[0]?.value).toBe("smoked");
+	});
+
+	test("without `only`, drives every registered provider (unchanged default)", async () => {
+		const runs = await forEachProviderWithCreds(async () => null, { env: {} });
+		// All registered providers are visited (all skipped here for want of creds).
+		expect(runs.map((r) => r.provider)).toEqual(["e2b", "daytona", "blaxel", "modal", "novita"]);
+	});
+
+	// `[]` is truthy, so without a guard it would select nothing, validate nothing, and still exit 0 —
+	// a release that baked nothing looking exactly like one that passed.
+	test("an empty `only` throws rather than silently validating zero providers", async () => {
+		await expect(forEachProviderWithCreds(async () => null, { only: [], env: {} })).rejects.toThrow(
+			/empty list/,
+		);
+	});
+});
