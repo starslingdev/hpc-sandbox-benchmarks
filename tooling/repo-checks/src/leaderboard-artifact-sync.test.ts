@@ -66,11 +66,7 @@ function loadCommittedRun(): {
 }
 
 describe("LEADERBOARD.md stays in sync with the renderer", () => {
-	// TEMPORARILY SKIPPED on this branch only. This PR changes the renderer but deliberately does NOT
-	// regenerate the 735-line LEADERBOARD.md, so the generated artifact can be reviewed on its own in
-	// the PR stacked directly above (which regenerates it and re-enables this assertion). The skip is
-	// undone one branch up; it never reaches main.
-	it.skip("is byte-identical to a fresh render of the Run it names", () => {
+	it("is byte-identical to a fresh render of the Run it names", () => {
 		const { committed, runId, run } = loadCommittedRun();
 		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run));
 		if (committed !== rendered) {
