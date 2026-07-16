@@ -1,0 +1,68 @@
+name: Release summary
+description: >-
+  Append a consistent, machine-checkable phase table to the job summary and surface the phase result as
+  a run annotation, via @actions/core (release-summary.ts). Every release job calls this with the same
+  field vocabulary (mode, image, base, provider target, size tier, verify command, published pointer,
+  diagnostics, elapsed) so an operator reads one shape across build/bake/promote. Rows with an empty
+  value are omitted, so each phase shows only its own facts.
+
+inputs:
+  phase:
+    description: 'Phase label, e.g. "e2b/bake" or "publish".'
+    required: true
+  status:
+    description: Phase status (ok / failed / skipped / success / failure).
+    default: ""
+  mode:
+    description: Release mode (build / republish).
+    default: ""
+  source-ref:
+    description: The source ref the release is cut from (github.sha).
+    default: ""
+  image:
+    description: The image ref (repo@sha256:… when a digest is known, else the tag).
+    default: ""
+  base-image:
+    description: The base image the artifact derives from.
+    default: ""
+  provider-target:
+    description: The provider region / workspace / template the artifact targets.
+    default: ""
+  size-tier:
+    description: The cpu/memory/disk size tier.
+    default: ""
+  verify:
+    description: The exact verify command an operator can rerun locally.
+    default: ""
+  published:
+    description: The published pointer (tag / snapshot / template) this phase advanced.
+    default: ""
+  diagnostics:
+    description: The name of the uploaded diagnostics artifact for this phase.
+    default: ""
+  elapsed:
+    description: Elapsed wall time for the phase.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Append phase summary
+      shell: bash
+      # Inputs reach the script as env (a composite `run` step gets no INPUT_* vars); the script owns the
+      # core.summary table + run annotation. RUN_URL links the diagnostics artifact to this run.
+      env:
+        PHASE: ${{ inputs.phase }}
+        STATUS: ${{ inputs.status }}
+        MODE: ${{ inputs.mode }}
+        SOURCE_REF: ${{ inputs.source-ref }}
+        IMAGE: ${{ inputs.image }}
+        BASE_IMAGE: ${{ inputs.base-image }}
+        PROVIDER_TARGET: ${{ inputs.provider-target }}
+        SIZE_TIER: ${{ inputs.size-tier }}
+        VERIFY: ${{ inputs.verify }}
+        PUBLISHED: ${{ inputs.published }}
+        DIAGNOSTICS: ${{ inputs.diagnostics }}
+        ELAPSED: ${{ inputs.elapsed }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bun apps/cli/src/bin/release-summary.ts

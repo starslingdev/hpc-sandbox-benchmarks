@@ -1,0 +1,26 @@
+name: GHCR session
+description: >-
+  Log in to the GitHub Container Registry with a pinned docker/login-action. Isolated so the privileged
+  registry session is introduced by exactly the jobs that push/retag/inspect images — never in shared
+  setup — and always after third-party tooling is installed.
+
+inputs:
+  token:
+    description: "Registry password (the job's GITHUB_TOKEN; the caller scopes packages read/write)."
+    required: true
+  registry:
+    description: Container registry host.
+    default: ghcr.io
+  username:
+    description: Registry username.
+    default: ${{ github.actor }}
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to the container registry
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.token }}
