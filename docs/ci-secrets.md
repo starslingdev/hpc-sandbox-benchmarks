@@ -14,7 +14,7 @@ and toolchain publish must not trigger on `push`.
 | --- | --- | --- |
 | `toolchain-image.yml` | `publish` | Provider bake secrets + `packages: write` (GHCR release) |
 | `bench-matrix.yml` | `bench` | Provider API keys |
-| `bench-matrix.yml` | `publish` | Dataset + leaderboard commit (`contents: write`) |
+| `bench-matrix.yml` | `publish` | Dataset + leaderboard publish (`contents: write` + `pull-requests: write`) |
 | `bench-smoke.yml` | `smoke` | Provider API keys |
 
 Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no secrets).
@@ -29,6 +29,11 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    deployments to the `main` branch. Write access alone cannot finish a release.
 4. **Fork PRs.** Same-repo guard on self-hosted PR jobs; fork PR code never runs on
    `starsling-ubuntu-24.04-2`. Forks never receive Environment secrets on `pull_request`.
+5. **Dataset lands via PR.** `main` is protected by a "changes must be made through a pull request"
+   ruleset, so `bench-matrix.yml`'s `publish` job cannot push the promoted dataset straight to
+   `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>` PR instead
+   and best-effort auto-merges it; if the repo can't land it automatically the PR stays open for a
+   maintainer to merge. This is why `publish` also holds `pull-requests: write`.
 
 > **Two approvals per bench-matrix run.** `bench` and `publish` both carry `environment:
 > privileged` and run sequentially, so GitHub raises **two** separate pending-deployment gates: one

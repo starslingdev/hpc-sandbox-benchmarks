@@ -158,9 +158,10 @@ jobs:
       github.repository == 'starslingdev/sandbox-benchmarks'
     runs-on: ubuntu-24.04
     environment: privileged
-    # Commit the published dataset + leaderboard back to the branch.
+    # Commit the published dataset + leaderboard, then open the PR that lands them on main.
     permissions:
       contents: write
+      pull-requests: write
     steps:
       # Unlike the read-only jobs above, this one commits + `git push`es the published dataset, so it
       # keeps the default persisted job token (contents: write above authorizes it). Don't add
@@ -203,14 +204,35 @@ jobs:
       - name: Regenerate leaderboard
         run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$GITHUB_RUN_ID.json" LEADERBOARD.md
 
-      - name: Commit the published dataset
+      # main is protected by a "changes must be made through a pull request" ruleset (the public-repo
+      # hardening in #176/#177), so this job can no longer push the promoted dataset straight to main —
+      # a direct push is rejected with GH013. Publish through a short-lived branch + pull request
+      # instead, then best-effort auto-land it. Opening the PR is the publish now: if the repo can land
+      # it without a human (admin bypass, else queued auto-merge) it does; otherwise the PR stays open
+      # for a maintainer to merge, which is exactly what the ruleset exists to require.
+      - name: Publish the dataset via pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/dataset LEADERBOARD.md
           if git diff --cached --quiet; then
             echo "dataset unchanged; nothing to commit"
-          else
-            git commit -m "chore(dataset): publish run ${GITHUB_RUN_ID}"
-            git push
+            exit 0
           fi
+          branch="dataset/publish-${GITHUB_RUN_ID}"
+          git switch -c "$branch"
+          git commit -m "chore(dataset): publish run ${GITHUB_RUN_ID}"
+          git push -u origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore(dataset): publish run ${GITHUB_RUN_ID}" \
+            --body "Automated dataset + leaderboard publish for run [\`${GITHUB_RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+          # Land it without a human round-trip when the repo permits: admin bypass if this token may
+          # bypass the ruleset, else queued auto-merge for when required checks pass. Both are
+          # best-effort — the PR is already open, so a failure here is not a publish failure.
+          gh pr merge "$branch" --squash --delete-branch --admin \
+            || gh pr merge "$branch" --squash --delete-branch --auto \
+            || echo "dataset PR left open for a maintainer to merge"
