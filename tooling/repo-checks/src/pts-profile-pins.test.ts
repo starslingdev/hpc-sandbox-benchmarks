@@ -11,11 +11,18 @@
 // Like the workflow-sync gate, this reads the files as text: the bash tasks aren't importable, and
 // parsing pins.ts as a module would drag a workspace dependency into repo-checks for one string.
 import { describe, expect, it } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { findRepoRoot } from "./lib/workspace.ts";
 
 const root = findRepoRoot();
+
+/** Every file-backed mise benchmark task, relative to the repository root. */
+function benchmarkTaskPaths(): string[] {
+	return readdirSync(join(root, ".mise/tasks/benchmark"), { recursive: true })
+		.map((entry) => join(".mise/tasks/benchmark", entry.toString()))
+		.filter((path) => statSync(join(root, path), { throwIfNoEntry: false })?.isFile());
+}
 
 /** The vendored `<name>-<ver>` profile dirs (upstream `pts/` ones live flat; `local/` are nested). */
 function vendoredProfiles(): Set<string> {
@@ -40,19 +47,7 @@ function pinnedReferences(text: string): string[] {
  * it. pinnedReferences() already ignores pin-free files.
  */
 function referencedProfiles(): Set<string> {
-	const paths = [
-		"lib/bench.sh",
-		...readdirSync(join(root, ".mise/tasks/benchmark"), { recursive: true })
-			.map((entry) => join(".mise/tasks/benchmark", entry.toString()))
-			.filter((path) => {
-				try {
-					readFileSync(join(root, path), "utf8");
-					return true;
-				} catch {
-					return false; // directories
-				}
-			}),
-	];
+	const paths = ["lib/bench.sh", ...benchmarkTaskPaths()];
 	return new Set(paths.flatMap((path) => pinnedReferences(readFileSync(join(root, path), "utf8"))));
 }
 
@@ -66,6 +61,14 @@ function bakedTests(): Set<string> {
 
 describe("PTS profile version pins", () => {
 	const vendored = vendoredProfiles();
+
+	it("keeps every benchmark mise task executable so mise can discover it", () => {
+		const paths = benchmarkTaskPaths();
+		expect(paths.length).toBeGreaterThan(0);
+		for (const path of paths) {
+			expect(statSync(join(root, path)).mode & 0o111).not.toBe(0);
+		}
+	});
 
 	it("vendors every version-pinned profile the producer tasks run", () => {
 		const referenced = referencedProfiles();
