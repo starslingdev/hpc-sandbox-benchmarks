@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	digestPinnedRef,
+	imageRepo,
 	imagetoolsNormalizeCmd,
 	imagetoolsRetagCmd,
 	registryManifestAbsent,
@@ -78,5 +79,28 @@ describe("registryManifestAbsent", () => {
 		expect(registryManifestAbsent("error getting credentials: executable not found")).toBe(false);
 		expect(registryManifestAbsent("docker-credential-osxkeychain: not found")).toBe(false);
 		expect(registryManifestAbsent("unauthorized: authentication required")).toBe(false);
+	});
+});
+
+describe("imageRepo", () => {
+	it("strips the tag from the refs we actually publish", () => {
+		expect(imageRepo("ghcr.io/starslingdev/toolchain:v1")).toBe("ghcr.io/starslingdev/toolchain");
+		expect(imageRepo("ghcr.io/starslingdev/toolchain:v1-candidate")).toBe(
+			"ghcr.io/starslingdev/toolchain",
+		);
+	});
+
+	// The bug in the `split(":")[0]` this replaced: it truncated the repo to the bare host.
+	it("keeps a registry port — a colon before the last slash is host:port, not a tag", () => {
+		expect(imageRepo("localhost:5001/org/image:tag")).toBe("localhost:5001/org/image");
+		expect(imageRepo("localhost:5001/org/image")).toBe("localhost:5001/org/image");
+	});
+
+	it("strips a digest", () => {
+		expect(imageRepo(`ghcr.io/org/image@sha256:${"a".repeat(64)}`)).toBe("ghcr.io/org/image");
+	});
+
+	it("returns an untagged ref unchanged", () => {
+		expect(imageRepo("ghcr.io/org/image")).toBe("ghcr.io/org/image");
 	});
 });

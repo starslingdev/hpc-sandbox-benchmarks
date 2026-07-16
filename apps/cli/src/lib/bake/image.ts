@@ -95,6 +95,21 @@ export function registryManifestAbsent(stderr: string): boolean {
 	return /no such manifest|manifest unknown|name[_ ]unknown/i.test(stderr);
 }
 
+/**
+ * The repository part of an image ref — `ghcr.io/org/image:v1` → `ghcr.io/org/image`.
+ *
+ * NOT `ref.split(":")[0]`: a registry host may carry a PORT (`localhost:5001/org/image:tag`), and
+ * splitting on the first colon would truncate the repo to the bare host. A colon is only a tag
+ * separator when it comes after the last `/`; anywhere earlier it belongs to the host:port. A digest
+ * (`repo@sha256:…`) is stripped first, so the function is total over every ref shape we build.
+ */
+export function imageRepo(ref: string): string {
+	const withoutDigest = ref.split("@")[0] ?? ref;
+	const lastColon = withoutDigest.lastIndexOf(":");
+	const lastSlash = withoutDigest.lastIndexOf("/");
+	return lastColon > lastSlash ? withoutDigest.slice(0, lastColon) : withoutDigest;
+}
+
 /** Whether `ref` already exists in the registry — a successful `docker manifest inspect`. Queries the
  *  registry (not local images), so a locally-built `:v1` tag never reads as published. promote uses
  *  this to REFUSE overwriting the immutable public version.
