@@ -4,9 +4,16 @@ name: Bench matrix
 # cell, each spinning up a real sandbox, running its suite, and uploading the normalized Run as an
 # artifact. The matrix is computed from the SUITES × PROVIDERS registries by `plan-matrix` — adding a
 # provider or suite to its registry grows CI with no workflow edit. Off the PR path (real sandbox time
-# + provider credentials); dispatch on demand from main only, gated by Environment `privileged`
-# (required reviewers + environment secrets — see docs/ci-secrets.md).
+# + provider credentials); runs nightly on main's latest commit (every registered provider) or on
+# demand from main only, gated by Environment `privileged` (required reviewers + environment secrets —
+# see docs/ci-secrets.md). That reviewer gate applies to scheduled runs too, so a maintainer still has
+# to approve the `bench` and `publish` jobs each night.
 on:
+  schedule:
+    # 00:00 PST daily. GitHub Actions cron is always UTC and does not observe DST, so this fires at
+    # 01:00 PDT (UTC-7) during daylight saving instead of 00:00 PDT — adjust to '0 7 * * *' for the
+    # summer half of the year if wall-clock PT consistency matters more than a fixed UTC offset.
+    - cron: '0 8 * * *'
   workflow_dispatch:
     inputs:
       providers:
@@ -56,9 +63,12 @@ jobs:
       - name: Plan
         id: plan
         # The dispatch input reaches plan-matrix through the environment, never interpolated into the
-        # shell, so a crafted input can't inject into the runner command.
+        # shell, so a crafted input can't inject into the runner command. `inputs` is only populated for
+        # workflow_dispatch; the nightly schedule run always gets '' (every registered provider), per the
+        # "for all providers" cron requirement — it doesn't inherit workflow_dispatch's e2b,daytona,modal
+        # default, which exists only to keep an ad hoc manual run cheap.
         env:
-          BENCH_PROVIDERS: ${{ inputs.providers }}
+          BENCH_PROVIDERS: ${{ github.event_name == 'workflow_dispatch' && inputs.providers || '' }}
         # Capture into a variable first so a plan-matrix.ts failure aborts the step (set -e): inlining
         # the command substitution inside `echo` would mask its exit code behind echo's 0. An
         # unregistered provider name exits 2 here, so a typo fails the plan instead of quietly
