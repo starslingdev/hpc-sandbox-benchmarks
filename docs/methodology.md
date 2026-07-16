@@ -14,10 +14,9 @@ schema-validated dataset.
 Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/providers.ts): **2 vCPU,
 8 GiB RAM, 40 GB disk**. It's sized to fit inside every provider's reproducible envelope (E2B caps
 sandbox RAM at 8 GiB), so anyone can rerun on the same shape. A provider that can't express a dimension
-runs with its actuals recorded and the mismatch disclosed (`specMatched`). Its measurements remain in
-the dataset for auditability, but the leaderboard excludes them from rankings and lists the provider in
-an explicit **Not ranked** section. An absent `specMatched` is also unrankable: comparability must be
-positively established, not assumed.
+runs with its actuals recorded and the mismatch disclosed (`specMatched`). Its measurements stay in the
+rankings, but the leaderboard flags the provider with an explicit **Comparability warning** naming its
+observed allocation, so its ranks are never read as like-for-like with the compute-matched providers.
 
 ## Dimensions and metrics
 
