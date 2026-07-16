@@ -101,13 +101,21 @@ jobs:
       - name: Regenerate leaderboard
         run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$RUN_ID.json" LEADERBOARD.md
 
-      # Pre-flight the PR's lint gate on the generated content. The dataset + leaderboard are committed
-      # files, so ci.yml's Biome gate (`biome check .`) lints them — Biome formats JSON (2-space, per
-      # biome.json's `**/*.json` override), so an unformatted Run document would fail the PR. Check
-      # exactly the files this job writes (not the whole workspace) with the same rules and severity
-      # ci.yml uses, so the pre-flight fails the job early on a bad Run document — but a pre-existing,
-      # unrelated lint failure elsewhere on main can't strand a clean dataset publish. The PR's own
-      # `biome check .` still gates the merge; this is just fast, in-run feedback on the new content.
+      # Canonicalize the promoted dataset to Biome's format before the gate + commit. The promote
+      # writer emits `JSON.stringify(run, null, 2)` (every array element on its own line), but Biome's
+      # JSON formatter inlines short arrays and wraps long ones at the 100-col width — so the committed
+      # dataset is in Biome's shape and a raw Run document fails `biome check .` on the PR. Autofixing
+      # the mechanical formatting here is exactly what a developer's `bun run lint:fix` would do. Scope
+      # the write to data/dataset (JSON only): LEADERBOARD.md must stay byte-identical to the renderer
+      # output (the leaderboard-artifact-sync gate), and Biome leaves the rendered Markdown untouched.
+      - name: Autofix the promoted dataset formatting (Biome)
+        run: bunx biome check data/dataset --write
+
+      # Confirm the published content passes the exact gate ci.yml runs (`biome check .`), scoped to the
+      # files this job writes. After the autofix above this should pass; if anything Biome can't fix
+      # mechanically remains, fail the job early (before any PR is opened) rather than leave a doomed PR.
+      # A pre-existing, unrelated lint failure elsewhere on main can't strand a clean dataset publish;
+      # the PR's own `biome check .` still gates the merge.
       - name: Confirm the published dataset passes Biome (the PR lint gate)
         run: bunx biome check data/dataset LEADERBOARD.md --error-on-warnings
 
