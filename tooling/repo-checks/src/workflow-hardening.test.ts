@@ -285,30 +285,33 @@ describe("checkPrivilegedEnvironment", () => {
 		).toEqual([]);
 	});
 
-	test("flags secrets forwarded to a reusable workflow (secrets: inherit) without privileged", () => {
+	test("flags secrets forwarded to a REMOTE reusable workflow (secrets: inherit) — unverifiable", () => {
 		// `secrets: inherit` on a `uses:` job forwards every repo secret with no ${{ secrets.* }} here.
+		// A remote callee can't be checked to gate on the privileged Environment, so it is flagged.
 		const doc = oneJob("call", {
 			uses: "org/repo/.github/workflows/release.yml@main",
 			secrets: "inherit",
 		});
 		const errors = checkPrivilegedEnvironment(doc, "reusable.yml");
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("reusable workflow");
+		expect(errors[0]).toContain("remote reusable workflow");
 		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
 	});
 
-	test("accepts a reusable-workflow call that forwards secrets behind privileged", () => {
+	test("accepts a local reusable-workflow call that forwards secrets (gating defers to the called file)", () => {
+		// GHA forbids `environment:` on a `uses:` job, so a local call can't gate on the caller — the
+		// called ./.github/workflows file is walked by this same gate and must gate its own write/secret
+		// jobs, so the caller passes.
 		const doc = oneJob("call", {
-			uses: "org/repo/.github/workflows/release.yml@main",
+			uses: "./.github/workflows/publish-dataset.yml",
 			secrets: "inherit",
-			environment: PRIVILEGED_ENVIRONMENT,
 		});
 		expect(checkPrivilegedEnvironment(doc, "reusable-ok.yml")).toEqual([]);
 	});
 
-	test("flags a secret passed to a reusable workflow via a JOB-LEVEL with: input", () => {
+	test("flags a secret passed to a REMOTE reusable workflow via a JOB-LEVEL with: input", () => {
 		// A `uses:` job has no steps: its inputs ride a job-level `with:`. Passing a secret as an input
-		// there (instead of the `secrets:` block) must not slip past the gate.
+		// there (instead of the `secrets:` block) to an unverifiable remote callee must not slip past.
 		const doc = oneJob("call", {
 			uses: "org/repo/.github/workflows/deploy.yml@main",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
@@ -320,14 +323,26 @@ describe("checkPrivilegedEnvironment", () => {
 		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
 	});
 
-	test("accepts a job-level with: secret input behind privileged", () => {
+	test("accepts a local reusable call that passes a secret via a job-level with: input", () => {
+		// Same as above: a local call defers the privileged gate to the called file, which this gate
+		// checks in its own right.
 		const doc = oneJob("call", {
-			uses: "org/repo/.github/workflows/deploy.yml@main",
+			uses: "./.github/workflows/deploy.yml",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 			with: { api_key: "${{ secrets.DEPLOY_KEY }}" },
-			environment: PRIVILEGED_ENVIRONMENT,
 		});
 		expect(checkPrivilegedEnvironment(doc, "with-ok.yml")).toEqual([]);
+	});
+
+	test("accepts a local reusable call that grants write perms (bench-matrix.yml::publish shape)", () => {
+		// The real case: bench-matrix's publish job grants contents/pull-requests write to the local
+		// publish-dataset.yml. A `uses:` job can't set `environment:`; the called file gates itself.
+		const doc = oneJob("publish", {
+			uses: "./.github/workflows/publish-dataset.yml",
+			permissions: { contents: "write", "pull-requests": "write", actions: "read" },
+			with: { run_id: "123" },
+		});
+		expect(checkPrivilegedEnvironment(doc, "bench-matrix.yml")).toEqual([]);
 	});
 });
 

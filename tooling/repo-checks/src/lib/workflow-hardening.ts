@@ -12,6 +12,8 @@
 //   3. Privileged-environment gate — every job that reads a custom secret (anything other than
 //      GITHUB_TOKEN / github.token) OR elevates to contents:write / packages:write must declare
 //      `environment: privileged`, so secrets and releases stay behind Environment protection rules.
+//      A reusable-workflow caller (`uses:` job) can't declare `environment:`; a LOCAL call defers the
+//      gate to the called file (checked here in its own right), a REMOTE one is flagged (unverifiable).
 //   4. Toolchain publish is dispatch-only — toolchain-image.yml must not fire a release on push/merge.
 //
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
@@ -30,9 +32,10 @@ export const PRIVILEGED_ENVIRONMENT = "privileged";
 /** Checkout steps that intentionally keep the persisted job token, keyed "<file>::<jobId>", with the
  *  reason they push. Every other `actions/checkout` must set persist-credentials: false. */
 export const CREDENTIALED_CHECKOUTS: Readonly<Record<string, string>> = {
-	// bench-matrix.yml's publish job commits the promoted dataset and `git push`es it back to the
-	// branch (it grants `contents: write` for exactly this), so it must keep the persisted token.
-	"bench-matrix.yml::publish": "commits + pushes the promoted dataset back to the branch",
+	// publish-dataset.yml's publish job commits the promoted dataset and `git push`es it back to the
+	// branch (it grants `contents: write` for exactly this), so it must keep the persisted token. It is
+	// the reusable workflow bench-matrix.yml's publish job calls, and a maintainer dispatches to backfill.
+	"publish-dataset.yml::publish": "commits + pushes the promoted dataset back to the branch",
 };
 
 /** Built-in / non-environment tokens that may appear as `${{ secrets.* }}` without requiring the
@@ -283,9 +286,31 @@ function jobSecretStrings(job: Record<string, unknown>, file: string, jobId: str
 	return strings;
 }
 
+/** Human-readable list of why a job needs the privileged Environment (secrets it reads/forwards and
+ *  the write scopes it grants), used in both the normal-job and reusable-call error messages. */
+function privilegeReasons(f: {
+	secrets: Set<string>;
+	forwardsSecrets: boolean;
+	contentsWrite: boolean;
+	packagesWrite: boolean;
+}): string[] {
+	const reasons: string[] = [];
+	if (f.secrets.size > 0) reasons.push(`custom secrets (${[...f.secrets].sort().join(", ")})`);
+	if (f.forwardsSecrets) reasons.push("secrets forwarded to a reusable workflow");
+	if (f.contentsWrite) reasons.push("contents: write");
+	if (f.packagesWrite) reasons.push("packages: write");
+	return reasons;
+}
+
 /**
  * Invariant 3: jobs that touch custom secrets or elevate write permissions must sit behind the
  * `privileged` GitHub Environment so Environment secrets + required reviewers apply.
+ *
+ * A job that calls a reusable workflow (`uses:` at the job level) is special: GHA forbids
+ * `environment:` on such a job, so the gate can't live on the caller. A LOCAL call
+ * (`./.github/workflows/*`) targets a file this same gate walks, so that file's own write/secret jobs
+ * are independently required to declare `environment: privileged` — trust that and pass the caller. A
+ * REMOTE call can't be verified, so a remote caller that forwards secrets or write access is flagged.
  */
 export function checkPrivilegedEnvironment(
 	doc: unknown,
@@ -321,15 +346,27 @@ export function checkPrivilegedEnvironment(
 		const needsPrivileged = secrets.size > 0 || forwardsSecrets || contentsWrite || packagesWrite;
 		if (!needsPrivileged) continue;
 
+		// Reusable-workflow caller: can't declare `environment:`, so gating moves into the called file.
+		if (typeof job.uses === "string") {
+			if (!job.uses.startsWith("./")) {
+				const reasons = privilegeReasons({
+					secrets,
+					forwardsSecrets,
+					contentsWrite,
+					packagesWrite,
+				});
+				errors.push(
+					`${key}: calls a remote reusable workflow (${job.uses}) with ${reasons.join(" and ")} — ` +
+						`it can't be verified to gate on \`environment: ${privileged}\`; call a local ` +
+						`./.github/workflows reusable workflow (which this gate checks) instead — see docs/ci-secrets.md`,
+				);
+			}
+			continue;
+		}
+
 		const envName = jobEnvironmentName(job);
 		if (envName !== privileged) {
-			const reasons: string[] = [];
-			if (secrets.size > 0) {
-				reasons.push(`custom secrets (${[...secrets].sort().join(", ")})`);
-			}
-			if (forwardsSecrets) reasons.push("secrets forwarded to a reusable workflow");
-			if (contentsWrite) reasons.push("contents: write");
-			if (packagesWrite) reasons.push("packages: write");
+			const reasons = privilegeReasons({ secrets, forwardsSecrets, contentsWrite, packagesWrite });
 			errors.push(
 				`${key}: must set \`environment: ${privileged}\` because it uses ${reasons.join(" and ")} — ` +
 					`see docs/ci-secrets.md`,
