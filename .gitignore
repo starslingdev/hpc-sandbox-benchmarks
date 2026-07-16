@@ -79,7 +79,21 @@ typings/
 
 # dotenv environment variables file
 .env
-.env.test
+.env.*
+!.env.example
+# Credential / key material — kept in lockstep with the secret-hygiene gate's KEY_EXTENSIONS +
+# SECRET_BASENAMES (tooling/repo-checks) so the working-tree defense matches what CI enforces.
+*.pem
+*.p12
+*.key
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+credentials.json
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
