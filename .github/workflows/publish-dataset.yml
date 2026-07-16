@@ -103,12 +103,13 @@ jobs:
 
       # Pre-flight the PR's lint gate on the generated content. The dataset + leaderboard are committed
       # files, so ci.yml's Biome gate (`biome check .`) lints them — Biome formats JSON (2-space, per
-      # biome.json's `**/*.json` override), so an unformatted Run document would fail the PR. Running
-      # the exact gate here fails the job early (before any PR is opened) on a formatting/lint miss,
-      # instead of leaving a doomed PR behind. This does not replace the PR's own required checks — it
-      # just gives fast, in-run feedback on exactly the content being published.
+      # biome.json's `**/*.json` override), so an unformatted Run document would fail the PR. Check
+      # exactly the files this job writes (not the whole workspace) with the same rules and severity
+      # ci.yml uses, so the pre-flight fails the job early on a bad Run document — but a pre-existing,
+      # unrelated lint failure elsewhere on main can't strand a clean dataset publish. The PR's own
+      # `biome check .` still gates the merge; this is just fast, in-run feedback on the new content.
       - name: Confirm the published dataset passes Biome (the PR lint gate)
-        run: bun run lint
+        run: bunx biome check data/dataset LEADERBOARD.md --error-on-warnings
 
       # main is protected by a "changes must be made through a pull request" ruleset (the public-repo
       # hardening in #176/#177), so this job can't push the promoted dataset straight to main — a direct
@@ -130,9 +131,21 @@ jobs:
             exit 0
           fi
           branch="dataset/publish-${RUN_ID}"
+          # The branch name is deterministic per run, so a re-run (retried matrix run, or a re-dispatched
+          # backfill) must converge on the existing PR instead of colliding. If an open PR for this run's
+          # branch already exists (a prior attempt got past the push), just (re-)arm auto-merge and stop.
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "dataset PR for $branch already open; re-arming auto-merge"
+            gh pr merge "$branch" --squash --delete-branch --auto \
+              || echo "auto-merge not armed; dataset PR left open for a maintainer to merge"
+            exit 0
+          fi
           git switch -c "$branch"
           git commit -m "chore(dataset): publish run ${RUN_ID}"
-          git push -u origin "$branch"
+          # --force so a leftover branch from a partial prior run (pushed, but PR never created) is
+          # overwritten rather than rejected as non-fast-forward; it is a bot-owned branch and a re-run
+          # recomputes byte-identical content, so the overwrite is a no-op in the common case.
+          git push -u --force origin "$branch"
           gh pr create \
             --base main \
             --head "$branch" \

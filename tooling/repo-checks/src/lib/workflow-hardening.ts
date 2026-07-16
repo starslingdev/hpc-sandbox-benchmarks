@@ -302,20 +302,40 @@ function privilegeReasons(f: {
 	return reasons;
 }
 
+/** True if any job in a parsed workflow declares `environment: <privileged>`. Used to confirm a local
+ *  reusable workflow carries its own approval gate (the caller can't declare one for it). */
+function hasPrivilegedJob(doc: unknown, privileged: string): boolean {
+	const root = asRecord(doc, "reusable workflow: not a YAML mapping");
+	const jobs = asRecord(root.jobs, "reusable workflow: no jobs mapping");
+	return Object.values(jobs).some(
+		(j) =>
+			j !== null &&
+			typeof j === "object" &&
+			!Array.isArray(j) &&
+			jobEnvironmentName(j as Record<string, unknown>) === privileged,
+	);
+}
+
 /**
  * Invariant 3: jobs that touch custom secrets or elevate write permissions must sit behind the
  * `privileged` GitHub Environment so Environment secrets + required reviewers apply.
  *
  * A job that calls a reusable workflow (`uses:` at the job level) is special: GHA forbids
  * `environment:` on such a job, so the gate can't live on the caller. A LOCAL call
- * (`./.github/workflows/*`) targets a file this same gate walks, so that file's own write/secret jobs
- * are independently required to declare `environment: privileged` — trust that and pass the caller. A
- * REMOTE call can't be verified, so a remote caller that forwards secrets or write access is flagged.
+ * (`./.github/workflows/*`) hands the gate to the called file — but the caller's grant of write /
+ * secrets does NOT show up in that file's own YAML (the callee may inherit it), so the callee's
+ * per-file check can miss it. To close that bypass, a privileged local caller must point at a callee
+ * that gates at least one job on `environment: privileged` — verified by resolving the callee here.
+ * (`resolveLocalWorkflow` maps a repo-relative workflow path to its parsed doc; it defaults to reading
+ * from disk, and {@link runHardeningCheck} passes the already-parsed docs. An unresolvable callee is
+ * skipped — actionlint separately fails a `uses:` pointing at a missing local workflow.) A REMOTE call
+ * can't be verified at all, so a remote caller that forwards secrets or write access is flagged.
  */
 export function checkPrivilegedEnvironment(
 	doc: unknown,
 	file: string,
 	privileged: string = PRIVILEGED_ENVIRONMENT,
+	resolveLocalWorkflow: (relPath: string) => unknown = (relPath) => readWorkflow(relPath),
 ): string[] {
 	const errors: string[] = [];
 	const root = asRecord(doc, `${file}: not a YAML mapping`);
@@ -348,17 +368,30 @@ export function checkPrivilegedEnvironment(
 
 		// Reusable-workflow caller: can't declare `environment:`, so gating moves into the called file.
 		if (typeof job.uses === "string") {
+			const reasons = privilegeReasons({ secrets, forwardsSecrets, contentsWrite, packagesWrite });
 			if (!job.uses.startsWith("./")) {
-				const reasons = privilegeReasons({
-					secrets,
-					forwardsSecrets,
-					contentsWrite,
-					packagesWrite,
-				});
 				errors.push(
 					`${key}: calls a remote reusable workflow (${job.uses}) with ${reasons.join(" and ")} — ` +
 						`it can't be verified to gate on \`environment: ${privileged}\`; call a local ` +
 						`./.github/workflows reusable workflow (which this gate checks) instead — see docs/ci-secrets.md`,
+				);
+				continue;
+			}
+			// Local call: verify the callee actually carries an approval gate. The caller's grant of
+			// write/secrets is invisible in the callee's own YAML, so its per-file check can't be relied
+			// on to catch an ungated callee — check it here. Skip only if the callee can't be resolved
+			// (actionlint fails a `uses:` at a missing local workflow).
+			let calledDoc: unknown;
+			try {
+				calledDoc = resolveLocalWorkflow(job.uses.replace(/^\.\//, ""));
+			} catch {
+				calledDoc = undefined;
+			}
+			if (calledDoc !== undefined && !hasPrivilegedJob(calledDoc, privileged)) {
+				errors.push(
+					`${key}: calls local reusable workflow ${job.uses} with ${reasons.join(" and ")} but no ` +
+						`job in it sets \`environment: ${privileged}\` — a \`uses:\` caller can't gate itself, so ` +
+						`the called workflow must — see docs/ci-secrets.md`,
 				);
 			}
 			continue;
@@ -466,8 +499,22 @@ export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 			? [`${CI_LINT_WORKFLOW}: missing from ${WORKFLOWS_DIR}`]
 			: checkCiLintGate(ciLintDoc)),
 	];
+	// Resolve a local `uses: ./.github/workflows/<f>` to its already-parsed doc so the privileged-env
+	// check can verify a reusable callee gates itself; throw on a miss so it's treated as unresolvable.
+	const resolveLocalWorkflow = (relPath: string): unknown => {
+		const doc = docs.get(relPath.slice(`${WORKFLOWS_DIR}/`.length));
+		if (doc === undefined) throw new Error(`no such local workflow: ${relPath}`);
+		return doc;
+	};
 	for (const file of files) {
-		errors.push(...checkPrivilegedEnvironment(docs.get(file), file));
+		errors.push(
+			...checkPrivilegedEnvironment(
+				docs.get(file),
+				file,
+				PRIVILEGED_ENVIRONMENT,
+				resolveLocalWorkflow,
+			),
+		);
 	}
 	const toolchainDoc = docs.get(TOOLCHAIN_WORKFLOW);
 	if (toolchainDoc === undefined) {

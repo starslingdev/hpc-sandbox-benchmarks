@@ -298,15 +298,54 @@ describe("checkPrivilegedEnvironment", () => {
 		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
 	});
 
-	test("accepts a local reusable-workflow call that forwards secrets (gating defers to the called file)", () => {
-		// GHA forbids `environment:` on a `uses:` job, so a local call can't gate on the caller — the
-		// called ./.github/workflows file is walked by this same gate and must gate its own write/secret
-		// jobs, so the caller passes.
+	// A local callee that gates a job on the privileged Environment, and one that gates nothing —
+	// injected via the resolver so these stay pure unit tests independent of on-disk workflow files.
+	const gatedCallee = oneJob("run", {
+		environment: PRIVILEGED_ENVIRONMENT,
+		permissions: { contents: "write" },
+		steps: [NOOP_STEP],
+	});
+	const ungatedCallee = oneJob("run", { permissions: { contents: "write" }, steps: [NOOP_STEP] });
+
+	test("accepts a local reusable-workflow call that forwards secrets when the callee gates a job", () => {
+		// GHA forbids `environment:` on a `uses:` job, so a local call can't gate on the caller — but the
+		// caller's grant is invisible in the callee's YAML, so the gate resolves the callee and requires
+		// it to gate a job itself.
 		const doc = oneJob("call", {
 			uses: "./.github/workflows/publish-dataset.yml",
 			secrets: "inherit",
 		});
-		expect(checkPrivilegedEnvironment(doc, "reusable-ok.yml")).toEqual([]);
+		expect(
+			checkPrivilegedEnvironment(doc, "reusable-ok.yml", PRIVILEGED_ENVIRONMENT, () => gatedCallee),
+		).toEqual([]);
+	});
+
+	test("flags a local reusable call whose callee gates no job (caller can't gate itself)", () => {
+		const doc = oneJob("publish", {
+			uses: "./.github/workflows/ungated.yml",
+			permissions: { contents: "write" },
+		});
+		const errors = checkPrivilegedEnvironment(
+			doc,
+			"caller.yml",
+			PRIVILEGED_ENVIRONMENT,
+			() => ungatedCallee,
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("caller.yml::publish");
+		expect(errors[0]).toContain("no job in it sets");
+		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
+	});
+
+	test("skips a local reusable call whose callee can't be resolved (actionlint covers a missing file)", () => {
+		const doc = oneJob("publish", {
+			uses: "./.github/workflows/missing.yml",
+			permissions: { contents: "write" },
+		});
+		const errors = checkPrivilegedEnvironment(doc, "caller.yml", PRIVILEGED_ENVIRONMENT, () => {
+			throw new Error("ENOENT");
+		});
+		expect(errors).toEqual([]);
 	});
 
 	test("flags a secret passed to a REMOTE reusable workflow via a JOB-LEVEL with: input", () => {
@@ -324,25 +363,33 @@ describe("checkPrivilegedEnvironment", () => {
 	});
 
 	test("accepts a local reusable call that passes a secret via a job-level with: input", () => {
-		// Same as above: a local call defers the privileged gate to the called file, which this gate
-		// checks in its own right.
+		// A local call defers the privileged gate to the called file, which must gate a job itself.
 		const doc = oneJob("call", {
 			uses: "./.github/workflows/deploy.yml",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 			with: { api_key: "${{ secrets.DEPLOY_KEY }}" },
 		});
-		expect(checkPrivilegedEnvironment(doc, "with-ok.yml")).toEqual([]);
+		expect(
+			checkPrivilegedEnvironment(doc, "with-ok.yml", PRIVILEGED_ENVIRONMENT, () => gatedCallee),
+		).toEqual([]);
 	});
 
 	test("accepts a local reusable call that grants write perms (bench-matrix.yml::publish shape)", () => {
 		// The real case: bench-matrix's publish job grants contents/pull-requests write to the local
-		// publish-dataset.yml. A `uses:` job can't set `environment:`; the called file gates itself.
+		// publish-dataset.yml. A `uses:` job can't set `environment:`; the called file gates a job.
 		const doc = oneJob("publish", {
 			uses: "./.github/workflows/publish-dataset.yml",
 			permissions: { contents: "write", "pull-requests": "write", actions: "read" },
 			with: { run_id: "123" },
 		});
-		expect(checkPrivilegedEnvironment(doc, "bench-matrix.yml")).toEqual([]);
+		expect(
+			checkPrivilegedEnvironment(
+				doc,
+				"bench-matrix.yml",
+				PRIVILEGED_ENVIRONMENT,
+				() => gatedCallee,
+			),
+		).toEqual([]);
 	});
 });
 
