@@ -42,8 +42,53 @@ describe("Run schema", () => {
 		expect(run.providers[0]?.validationStatus).toBe("validated");
 	});
 
+	it("accepts both the v2 and v3 schemaVersion", () => {
+		expect(parseRun({ ...validRun, schemaVersion: "2" }).schemaVersion).toBe("2");
+		expect(parseRun({ ...validRun, schemaVersion: "3" }).schemaVersion).toBe("3");
+	});
+
 	it("rejects an unknown schemaVersion", () => {
-		expect(() => parseRun({ ...validRun, schemaVersion: "3" })).toThrow();
+		expect(() => parseRun({ ...validRun, schemaVersion: "1" })).toThrow();
+		expect(() => parseRun({ ...validRun, schemaVersion: "4" })).toThrow();
+	});
+
+	it("accepts a v3 Metric carrying a consistent replicate breakdown", () => {
+		const withReplicates = structuredClone(validRun);
+		withReplicates.schemaVersion = "3";
+		const provider = withReplicates.providers[0];
+		const metric = provider?.metrics[0];
+		if (metric) {
+			// Pooled samples are the union of the two replicate slices, aggregates match the pooled set.
+			(metric as Record<string, unknown>).replicates = [
+				{ index: 0, samples: [16.19, 16.3] },
+				{ index: 1, samples: [16.08] },
+			];
+		}
+		expect(parseRun(withReplicates).providers[0]?.metrics[0]?.replicates).toHaveLength(2);
+	});
+
+	it("rejects a replicate breakdown that disagrees with the pooled samples", () => {
+		const bad = structuredClone(validRun);
+		bad.schemaVersion = "3";
+		const metric = bad.providers[0]?.metrics[0];
+		// samples are [16.19, 16.3, 16.08]; the replicates below pool to a different multiset.
+		if (metric)
+			(metric as Record<string, unknown>).replicates = [
+				{ index: 0, samples: [16.19, 16.3] },
+				{ index: 1, samples: [99] },
+			];
+		expect(() => parseRun(bad)).toThrow();
+	});
+
+	it("rejects a lone replicate (a single sandbox is just samples)", () => {
+		const bad = structuredClone(validRun);
+		bad.schemaVersion = "3";
+		const metric = bad.providers[0]?.metrics[0];
+		if (metric)
+			(metric as Record<string, unknown>).replicates = [
+				{ index: 0, samples: [16.19, 16.3, 16.08] },
+			];
+		expect(() => parseRun(bad)).toThrow();
 	});
 
 	it("rejects a non-positive target spec", () => {

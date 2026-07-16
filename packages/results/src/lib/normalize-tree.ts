@@ -38,6 +38,9 @@ export interface NormalizeInput {
 	sha: string;
 	generatedAt: string;
 	sourceRunUrl?: string;
+	/** The replicate sandbox index this shard was run under (the `--replicate` argument), stamped onto
+	 *  the shard Run so the aggregate can key its replicate breakdown. Absent for a non-replicate run. */
+	replicateIndex?: number;
 }
 
 /** Normalize a whole raw tree into one validated Run — every known provider appears in every Run. */
@@ -48,11 +51,13 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 		.map((meta) => normalizeProviderDir(input.rawRoot, meta.id));
 
 	const candidate = {
-		schemaVersion: "2" as const,
+		// v3: a shard may carry a replicateIndex the aggregate folds into MetricResult.replicates.
+		schemaVersion: "3" as const,
 		runId: input.runId,
 		sha: input.sha,
 		generatedAt: input.generatedAt,
 		...(input.sourceRunUrl !== undefined ? { sourceRunUrl: input.sourceRunUrl } : {}),
+		...(input.replicateIndex !== undefined ? { replicateIndex: input.replicateIndex } : {}),
 		targetSpec: { ...TARGET_SPEC },
 		providers,
 	};

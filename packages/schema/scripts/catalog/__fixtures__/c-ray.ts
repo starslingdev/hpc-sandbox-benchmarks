@@ -1,4 +1,13 @@
-<?xml version="1.0"?>
+// The c-ray-2.0.0 upstream profile, inlined as a test fixture. c-ray is retired from the vendored set
+// (the cpu-generic suite is gone), but it remains the cleanest small multi-result option matrix for the
+// generator's unit tests — two <Option> axes, one <Description> per resolution, a numeric result
+// transform — so its XML is kept here rather than in `src/pts-profiles/`. Decoupling these tests from the
+// vendored set is also correct: the generator's parse/synthesize/generate logic is what they exercise,
+// not which profiles happen to ship. Byte-copied from the upstream test-profiles vendoring.
+import type { PtsProfile } from "../parse.ts";
+import { parseProfile } from "../parse.ts";
+
+export const CRAY_TEST_DEFINITION = `<?xml version="1.0"?>
 <!--Phoronix Test Suite v10.8.5-->
 <PhoronixTestSuite>
   <TestInformation>
@@ -58,3 +67,19 @@
     </Option>
   </TestSettings>
 </PhoronixTestSuite>
+`;
+
+export const CRAY_RESULTS_DEFINITION = `<?xml version="1.0"?>
+<!--Phoronix Test Suite v10.8.5-->
+<PhoronixTestSuite>
+  <ResultsParser>
+    <OutputTemplate>Rendering took: 86 seconds (#_RESULT_# milliseconds)</OutputTemplate>
+    <DivideResultBy>1000</DivideResultBy>
+  </ResultsParser>
+</PhoronixTestSuite>
+`;
+
+/** The parsed c-ray profile the generator tests exercise (repo `pts`, dir `c-ray-2.0.0`). */
+export function crayProfile(): PtsProfile {
+	return parseProfile("pts", "c-ray-2.0.0", CRAY_TEST_DEFINITION, CRAY_RESULTS_DEFINITION);
+}

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
 	aggregate,
+	bootstrapMedianDifferenceInterval,
 	bootstrapMedianInterval,
 	canSeparate,
 	DEFAULT_ALPHA,
+	hierarchicalBootstrapMedianInterval,
 	kolmogorovSmirnov,
 	mannWhitneyU,
 	percentileOf,
@@ -184,6 +186,142 @@ describe("bootstrapMedianInterval", () => {
 			level: 0.95,
 			resamples: 0,
 		});
+	});
+});
+
+describe("hierarchicalBootstrapMedianInterval", () => {
+	it("reports the pooled median and brackets it", () => {
+		const interval = hierarchicalBootstrapMedianInterval([MODAL_COPY, DAYTONA_COPY], { seed: "s" });
+		expect(interval.median).toBe(percentileOf([...MODAL_COPY, ...DAYTONA_COPY], 0.5));
+		expect(interval.lo).toBeLessThanOrEqual(interval.median);
+		expect(interval.hi).toBeGreaterThanOrEqual(interval.median);
+	});
+
+	it("widens when the replicates disagree across sandboxes (between-sandbox variance)", () => {
+		// Same pooled median (55) both ways; the only difference is machine-to-machine spread. The
+		// hierarchical resample draws the clusters first, so a run where the two sandboxes landed far
+		// apart must report a wider interval than one where they agreed — the whole point of the level.
+		const disagree = hierarchicalBootstrapMedianInterval(
+			[
+				[10, 10],
+				[100, 100],
+			],
+			{ seed: "s" },
+		);
+		const agree = hierarchicalBootstrapMedianInterval(
+			[
+				[54, 54],
+				[56, 56],
+			],
+			{ seed: "s" },
+		);
+		expect(disagree.hi - disagree.lo).toBeGreaterThan(agree.hi - agree.lo);
+	});
+
+	it("degenerates to the ordinary bootstrap's median at R = 1", () => {
+		// One replicate: the cluster draw always re-selects it, so the resample distribution is the plain
+		// bootstrap's. The observed median is identical; the raw draw sequence is not, which is why the
+		// leaderboard keeps the single-level function at R = 1 for byte-stability.
+		const single = hierarchicalBootstrapMedianInterval([MODAL_COPY], { seed: "s" });
+		const plain = bootstrapMedianInterval(MODAL_COPY, { seed: "s" });
+		expect(single.median).toBe(plain.median);
+		expect(single.lo).toBeLessThanOrEqual(single.median);
+		expect(single.hi).toBeGreaterThanOrEqual(single.median);
+	});
+
+	it("degenerates to a point interval for a single pooled Sample", () => {
+		expect(hierarchicalBootstrapMedianInterval([[42]])).toEqual({
+			median: 42,
+			lo: 42,
+			hi: 42,
+			level: 0.95,
+			resamples: 0,
+		});
+	});
+
+	it("is reproducible for a given seed", () => {
+		const shape = [MODAL_COPY, DAYTONA_COPY];
+		expect(hierarchicalBootstrapMedianInterval(shape, { seed: "run-1" })).toEqual(
+			hierarchicalBootstrapMedianInterval(shape, { seed: "run-1" }),
+		);
+	});
+
+	it("rejects an empty structure, a non-finite Sample, and bad options", () => {
+		expect(() => hierarchicalBootstrapMedianInterval([])).toThrow(/at least one replicate/);
+		expect(() => hierarchicalBootstrapMedianInterval([[]])).toThrow(/at least one sample/);
+		expect(() => hierarchicalBootstrapMedianInterval([[1, Number.NaN]])).toThrow(/finite/);
+		expect(() => hierarchicalBootstrapMedianInterval([[1, 2]], { level: 0 })).toThrow(/level/);
+		expect(() => hierarchicalBootstrapMedianInterval([[1, 2]], { resamples: 0 })).toThrow(
+			/positive integer/,
+		);
+	});
+});
+
+describe("bootstrapMedianDifferenceInterval", () => {
+	it("reports the difference of pooled medians, sign following argument order", () => {
+		const diff = bootstrapMedianDifferenceInterval([[100, 100]], [[10, 10]], { seed: "s" });
+		expect(diff.difference).toBe(90);
+		const flipped = bootstrapMedianDifferenceInterval([[10, 10]], [[100, 100]], { seed: "s" });
+		expect(flipped.difference).toBe(-90);
+	});
+
+	it("separates two providers whose replicates never overlap", () => {
+		// Every replicate of A is 1000, every replicate of B is 1, so every hierarchical resample yields
+		// exactly 999: the interval collapses to [999, 999], which excludes 0.
+		const diff = bootstrapMedianDifferenceInterval(
+			[
+				[1000, 1000],
+				[1000, 1000],
+				[1000, 1000],
+			],
+			[
+				[1, 1],
+				[1, 1],
+				[1, 1],
+			],
+			{ seed: "s" },
+		);
+		expect(diff.separated).toBe(true);
+		expect(diff.lo).toBeGreaterThan(0);
+	});
+
+	it("ties two providers drawn from the same distribution (interval straddles 0)", () => {
+		const shape = [
+			[10, 20],
+			[10, 20],
+			[10, 20],
+		];
+		const diff = bootstrapMedianDifferenceInterval(shape, shape, { seed: "s" });
+		expect(diff.difference).toBe(0);
+		expect(diff.separated).toBe(false);
+		expect(diff.lo).toBeLessThanOrEqual(0);
+		expect(diff.hi).toBeGreaterThanOrEqual(0);
+	});
+
+	it("ties adjacent R = 3 providers whose medians are close — replicas are the dial, not more trials", () => {
+		// The honest small-R behaviour the design accepts: three replicate sandboxes a step apart cannot
+		// be told from three a step higher. A caller must read this as "not separated", never "equal".
+		const diff = bootstrapMedianDifferenceInterval([[10], [20], [30]], [[15], [25], [35]], {
+			seed: "s",
+		});
+		expect(diff.separated).toBe(false);
+	});
+
+	it("is reproducible for a given seed", () => {
+		const a = [[10, 12], [11]];
+		const b = [[20, 22], [21]];
+		expect(bootstrapMedianDifferenceInterval(a, b, { seed: "r" })).toEqual(
+			bootstrapMedianDifferenceInterval(a, b, { seed: "r" }),
+		);
+	});
+
+	it("rejects an empty side, a non-finite Sample, and bad options", () => {
+		expect(() => bootstrapMedianDifferenceInterval([], [[1]])).toThrow(/at least one replicate/);
+		expect(() => bootstrapMedianDifferenceInterval([[1]], [[Number.NaN]])).toThrow(/finite/);
+		expect(() => bootstrapMedianDifferenceInterval([[1]], [[2]], { level: 1 })).toThrow(/level/);
+		expect(() => bootstrapMedianDifferenceInterval([[1]], [[2]], { resamples: -1 })).toThrow(
+			/positive integer/,
+		);
 	});
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import { metricDefSchema } from "../../src/metrics.ts";
+import { crayProfile } from "./__fixtures__/c-ray.ts";
 import {
 	dimensionForTestType,
 	generateCatalog,
@@ -71,8 +72,8 @@ describe("generateProfile", () => {
 	});
 
 	test("every emitted pts.test carries the source repo segment as its prefix", async () => {
-		for (const dir of ["node-web-tooling-1.0.1", "c-ray-2.0.0"]) {
-			for (const def of generateProfile(await load(dir))) {
+		for (const p of [await load("node-web-tooling-1.0.1"), crayProfile()]) {
+			for (const def of generateProfile(p)) {
 				expect(def.pts?.test.startsWith("pts/")).toBe(true);
 			}
 		}
@@ -87,8 +88,8 @@ describe("generateProfile", () => {
 		expect(defs[0]?.dimension).toBe("disk");
 	});
 
-	test("direction mirrors <Proportion>; unit mirrors <ResultScale>", async () => {
-		const cray = generateProfile(await load("c-ray-2.0.0"))[0];
+	test("direction mirrors <Proportion>; unit mirrors <ResultScale>", () => {
+		const cray = generateProfile(crayProfile())[0];
 		if (!cray) throw new Error("expected a generated metric");
 		expect(cray.direction).toBe("LIB");
 		expect(cray.unit).toBe("Seconds");
@@ -110,7 +111,7 @@ describe("generateProfile", () => {
 describe("generateCatalog", () => {
 	test("is deterministic regardless of profile order (stable id sort)", async () => {
 		const nwt = await load("node-web-tooling-1.0.1");
-		const cray = await load("c-ray-2.0.0");
+		const cray = crayProfile();
 		const forward = generateCatalog([nwt, cray]).map((d) => d.id);
 		const reversed = generateCatalog([cray, nwt]).map((d) => d.id);
 		expect(reversed).toEqual(forward); // order-independent

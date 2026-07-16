@@ -15,6 +15,20 @@ import { directionSchema } from "./metrics.ts";
 export const validationStatusSchema = type("'validated' | 'pending'");
 export type ValidationStatus = typeof validationStatusSchema.infer;
 
+/**
+ * One replicate sandbox's contribution to a Metric: the raw per-pass Samples that one (provider, suite)
+ * replicate produced, tagged with its {@link index}. Present only on a Metric merged from ≥2 replicate
+ * shards ({@link MetricResult.replicates}); the pooled `samples`/`aggregates` above stay the ranking
+ * value, this is the between-sandbox breakdown the hierarchical-bootstrap inference reads.
+ */
+export const metricReplicateSchema = type({
+	// The replicate sandbox this slice came from (the `--replicate` index the shard was run under).
+	index: "number.integer >= 0",
+	// This replicate's retained per-pass Samples (>= 1, all finite — enforced by the parent narrow).
+	samples: "number[] >= 1",
+});
+export type MetricReplicate = typeof metricReplicateSchema.infer;
+
 /** One catalogued Metric's result: the retained Samples and their distribution, with provenance. */
 export const metricResultSchema = type({
 	metricId: "string",
@@ -29,6 +43,11 @@ export const metricResultSchema = type({
 	// was measured under, so a profile/option bump can't silently shift numbers across Runs.
 	"appVersion?": "string",
 	"arguments?": "string",
+	// The per-replicate breakdown, set only when the aggregate merged ≥2 replicate sandboxes for this
+	// Metric. `samples` above is the pooled union (the ranking median is unchanged); `replicates` keeps
+	// the clusters distinct so render-time inference can resample the between-sandbox level. Absent at
+	// R = 1, so a single-replicate Run is byte-identical to the pre-replicate schema.
+	"replicates?": metricReplicateSchema.array(),
 }).narrow((metric, ctx) => {
 	// `aggregate()` already guarantees these at the producer; enforce them at the dataset boundary too,
 	// so a hand-edited/corrupt persisted Run can't carry NaN/Infinity samples or a sample count that
@@ -38,6 +57,40 @@ export const metricResultSchema = type({
 	}
 	if (metric.aggregates.n !== metric.samples.length) {
 		return ctx.mustBe("a MetricResult whose aggregates.n equals samples.length");
+	}
+	if (metric.replicates !== undefined) {
+		// The replicate structure only exists to hold ≥2 clusters; a lone replicate is just `samples`.
+		if (metric.replicates.length < 2) {
+			return ctx.mustBe(
+				"a MetricResult whose replicates hold at least two sandboxes (or omit them)",
+			);
+		}
+		const indices = new Set<number>();
+		const pooled: number[] = [];
+		for (const replicate of metric.replicates) {
+			if (indices.has(replicate.index)) {
+				return ctx.mustBe("a MetricResult whose replicate indices are distinct");
+			}
+			indices.add(replicate.index);
+			if (!replicate.samples.every((s) => Number.isFinite(s))) {
+				return ctx.mustBe("a MetricResult whose replicate samples are all finite");
+			}
+			pooled.push(...replicate.samples);
+		}
+		// The pooled `samples` must be exactly the union of the replicate slices (as a multiset), so the
+		// ranking distribution and the between-sandbox breakdown can never silently disagree.
+		if (pooled.length !== metric.samples.length) {
+			return ctx.mustBe(
+				"a MetricResult whose pooled samples count equals the sum of its replicates",
+			);
+		}
+		const sortedPooled = [...pooled].sort((a, b) => a - b);
+		const sortedSamples = [...metric.samples].sort((a, b) => a - b);
+		if (!sortedPooled.every((value, i) => value === sortedSamples[i])) {
+			return ctx.mustBe(
+				"a MetricResult whose pooled samples are the union of its replicate samples",
+			);
+		}
 	}
 	return true;
 });
@@ -210,20 +263,27 @@ export type ProviderRun = typeof providerRunSchema.infer;
 /**
  * A full benchmark Run: every provider measured against one pinned target spec at one SHA.
  *
- * `schemaVersion` is `"2"`: v1's `skips: { suite, reason }[]` could not say whether a benchmark was
- * deliberately not run or had crashed, and carried no positive record of what DID run — so a suite
- * that vanished (job died, artifact never uploaded) left no trace anywhere in the document. v2
- * replaces it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. The committed dataset
- * is migrated in place, not dual-read: one shape, validated at every boundary.
+ * `schemaVersion` accepts `"2"` and `"3"`. v1's `skips: { suite, reason }[]` could not say whether a
+ * benchmark was deliberately not run or had crashed, and carried no positive record of what DID run —
+ * so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the document.
+ * v2 replaced it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. v3 adds the
+ * replicate model: a shard Run carries its {@link replicateIndex}, and the aggregate folds ≥2
+ * replicate sandboxes of one (provider, suite) into {@link MetricResult.replicates}. Both versions
+ * validate here — already-published v2 Runs (single replicate, no `replicates` field) are read
+ * unchanged, and the parser never migrates them in place.
  */
 export const runSchema = type({
-	schemaVersion: "'2'",
+	schemaVersion: "'2' | '3'",
 	runId: "string",
 	sha: "string",
 	// ISO-8601 timestamp the Run was generated at — validated so the RunIndex sort key can't be a
 	// free-form string ("tomorrow") that silently breaks newest-first ordering.
 	generatedAt: "string.date.iso",
 	"sourceRunUrl?": "string",
+	// The replicate sandbox index a SHARD Run was measured under (the `--replicate` argument). Present on
+	// a per-replicate shard; the aggregate reads it to key {@link MetricResult.replicates} and drops it
+	// from the merged Run (which spans every replicate). Absent on legacy shards and aggregated Runs.
+	"replicateIndex?": "number.integer >= 0",
 	targetSpec: targetSpecSchema,
 	providers: providerRunSchema.array(),
 });

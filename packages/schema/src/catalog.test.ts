@@ -62,14 +62,14 @@ describe("metric catalog", () => {
 	});
 
 	it("wires the generated PTS catalog (curated), not a hand-authored stand-in", () => {
-		// Guards against a revert to the old hand-authored `ptsCpu`: the c-ray option matrix only exists
-		// in the generated module, and the override-supplied short label proves curation was applied.
-		const cRay = getMetric("c_ray_resolution_1080p_rays_per_pixel_16");
-		expect(cRay?.pts).toEqual({
-			test: "pts/c-ray",
-			description: "Resolution: 1080p - Rays Per Pixel: 16",
+		// Guards against a revert to a hand-authored stand-in: the pgbench 160-combination matrix only
+		// exists in the generated module, and the override-supplied short label proves curation was applied.
+		const pgbench = getMetric("pgbench_scaling_factor_100_clients_50_mode_read_only");
+		expect(pgbench?.pts).toEqual({
+			test: "pts/pgbench",
+			description: "Scaling Factor: 100 - Clients: 50 - Mode: Read Only",
 		});
-		expect(cRay?.label).toBe("C-Ray (1080p, 16 RPP)");
+		expect(pgbench?.label).toBe("pgbench RO (s100, 50c)");
 		expect(getMetric("node_web_tooling_runs_per_s")?.headline).toBe(true);
 	});
 

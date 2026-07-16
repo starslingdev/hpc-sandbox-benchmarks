@@ -7,6 +7,18 @@ function metric(metricId: string, samples: number[]): MetricResult {
 	return { metricId, samples, aggregates: aggregate(samples) };
 }
 
+/** A metric merged from replicate sandboxes: pooled samples + the per-replicate breakdown the R>1
+ *  inference reads (as the aggregate produces). */
+function replicatedMetric(metricId: string, replicateSamples: number[][]): MetricResult {
+	const samples = replicateSamples.flat();
+	return {
+		metricId,
+		samples,
+		aggregates: aggregate(samples),
+		replicates: replicateSamples.map((s, index) => ({ index, samples: s })),
+	};
+}
+
 function provider(
 	providerId: string,
 	metrics: MetricResult[],
@@ -103,15 +115,15 @@ describe("buildLeaderboard", () => {
 			run([
 				provider("daytona", [
 					metric("node_web_tooling_runs_per_s", [10]),
-					metric("stream_type_copy", [20]),
+					metric("sqlite_speedtest_seconds", [20]),
 				]),
-				provider("modal", [metric("stream_type_copy", [15])]),
+				provider("modal", [metric("sqlite_speedtest_seconds", [15])]),
 			]),
 		);
-		expect(board.dimensions.map(({ dimension }) => dimension)).toEqual(["cpu", "memory"]);
+		expect(board.dimensions.map(({ dimension }) => dimension)).toEqual(["cpu", "system"]);
 		expect(
 			board.dimensions.flatMap(({ metrics }) => metrics.map(({ metric }) => metric.id)),
-		).toEqual(["node_web_tooling_runs_per_s", "stream_type_copy"]);
+		).toEqual(["node_web_tooling_runs_per_s", "sqlite_speedtest_seconds"]);
 		expect(
 			board.dimensions.flatMap(({ metrics }) => metrics.flatMap(({ rows }) => rows)),
 		).toHaveLength(3);
@@ -121,7 +133,7 @@ describe("buildLeaderboard", () => {
 		expect(md).toContain("**3 retained trial observations**");
 		expect(md).toContain("**2 metrics**");
 		expect(md).toContain("### Node.js web tooling _(headline)_");
-		expect(md).toContain("### STREAM Copy");
+		expect(md).toContain("### SQLite Speedtest");
 	});
 
 	it("uses the Run's target and warns when observed specs are not comparable", () => {
@@ -270,6 +282,57 @@ describe("buildLeaderboard statistical ranking", () => {
 		// All three display names appear in the "share the top" takeaway, joined as a list.
 		expect(md).toMatch(/\w+, \w+ and \w+ share the top on this metric/);
 		for (const name of ["Daytona", "E2B", "Modal"]) expect(md).toContain(name);
+	});
+});
+
+describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
+	const HEADLINE = "node_web_tooling_runs_per_s"; // HIB
+
+	it("uses the hierarchical bootstrap interval and pools every replicate's samples into n", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [
+					replicatedMetric(HEADLINE, [
+						[10, 11],
+						[40, 41],
+						[70, 71],
+					]),
+				]),
+			]),
+		);
+		const row = board.dimensions[0]?.metrics[0]?.rows[0];
+		// A real (not point) interval was drawn, and it brackets the pooled median; n is R×k = 6.
+		expect(row?.interval.resamples).toBeGreaterThan(0);
+		expect(row?.interval.lo).toBeLessThanOrEqual(row?.value ?? 0);
+		expect(row?.interval.hi).toBeGreaterThanOrEqual(row?.value ?? 0);
+		expect(row?.n).toBe(6);
+	});
+
+	it("separates providers whose replicate sandboxes never overlap (difference-CI clears 0)", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [replicatedMetric(HEADLINE, [[100], [101], [102]])]),
+				provider("modal", [replicatedMetric(HEADLINE, [[1], [2], [3]])]),
+			]),
+		);
+		const rows = board.dimensions[0]?.metrics[0]?.rows ?? [];
+		expect(rows.map((r) => r.rank)).toEqual([1, 2]);
+		expect(rows[1]?.verdict).toBe("separated");
+		// Mann-Whitney/KS are still reported as descriptive columns even though they no longer decide.
+		expect(rows[1]?.pVsPrevious).not.toBeNull();
+	});
+
+	it("ties adjacent providers whose replicate spreads overlap (a statistical tie, not underpowered)", () => {
+		const board = buildLeaderboard(
+			run([
+				provider("daytona", [replicatedMetric(HEADLINE, [[10], [30], [50]])]),
+				provider("modal", [replicatedMetric(HEADLINE, [[15], [25], [45]])]),
+			]),
+		);
+		const rows = board.dimensions[0]?.metrics[0]?.rows ?? [];
+		expect(rows[1]?.verdict).toBe("tied");
+		expect(rows[1]?.rank).toBe(rows[0]?.rank);
+		expect(rows[1]?.tiedWithAbove).toBe("statistical");
 	});
 });
 
@@ -782,7 +845,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 	it("orders disk skips first, then failures, then the unexplained absences", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk", "memory"]),
+				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk", "pgbench"]),
 				provider(
 					"e2b",
 					[],
@@ -801,7 +864,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		expect(board.coverageGaps.map((g) => `${g.id}/${g.outcome}`)).toEqual([
 			"disk/skipped", // ❌ disk leads: a structural absence
 			"cpu-node/failed", // then what broke
-			"memory/missing", // then what never said anything at all
+			"pgbench/missing", // then what never said anything at all
 		]);
 	});
 });

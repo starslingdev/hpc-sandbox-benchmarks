@@ -26,11 +26,13 @@ import type {
 	TargetSpec,
 } from "@sandbox-benchmarks/schema";
 import {
+	bootstrapMedianDifferenceInterval,
 	bootstrapMedianInterval,
 	canSeparate,
 	DEFAULT_ALPHA,
 	DIMENSIONS,
 	getProvider,
+	hierarchicalBootstrapMedianInterval,
 	kolmogorovSmirnov,
 	METRIC_CATALOG,
 	mannWhitneyU,
@@ -260,23 +262,28 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 	const candidates = run.providers.flatMap((provider) => {
 		const result = provider.metrics.find((m) => m.metricId === metric.id);
 		if (!result) return [];
+		// The per-replicate sample slices, present only once the aggregate merged ≥2 replicate sandboxes.
+		const replicates = result.replicates?.map((r) => r.samples);
+		const seed = `${run.runId}:${metric.id}:${provider.providerId}`;
 		const row: LeaderboardRow = {
 			providerId: provider.providerId,
 			displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
 			value: result.aggregates.p50,
 			rank: 0, // assigned after sort
-			// Seed from stable identity so a committed leaderboard is byte-identical on every
-			// regeneration — a Math.random() bootstrap would churn the diff on every run.
-			interval: bootstrapMedianInterval(result.samples, {
-				seed: `${run.runId}:${metric.id}:${provider.providerId}`,
-			}),
+			// Seed from stable identity so a committed leaderboard is byte-identical on every regeneration —
+			// a Math.random() bootstrap would churn the diff on every run. With replicate sandboxes the
+			// interval is the HIERARCHICAL bootstrap (resample sandboxes, then samples within), reflecting
+			// between-sandbox variance; at R=1 it stays the ordinary percentile bootstrap, byte-for-byte.
+			interval: replicates
+				? hierarchicalBootstrapMedianInterval(replicates, { seed })
+				: bootstrapMedianInterval(result.samples, { seed }),
 			n: result.aggregates.n,
 			stdev: result.aggregates.stdev,
 			pVsPrevious: null,
 			verdict: null,
 			tiedWithAbove: null,
 		};
-		return [{ samples: result.samples, row }];
+		return [{ samples: result.samples, replicates, row }];
 	});
 	if (candidates.length === 0) return [];
 
@@ -336,6 +343,20 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 			ks: ks.pValue,
 			floor: mw.minAttainablePValue,
 		};
+
+		// Replicate-aware separation: when BOTH rows carry ≥2 replicate sandboxes, the tie decider is the
+		// hierarchical-bootstrap CI of the DIFFERENCE in medians (separated iff it excludes 0) — cluster-
+		// honest where Mann-Whitney on samples pooled across replicates is anti-conservative, and where MW
+		// on the few replicate medians could never reach significance. MW/KS stay above as descriptive
+		// columns only. At R=1 (no replicates) this is skipped and Mann-Whitney decides the rank, as before.
+		if (previous.replicates && candidate.replicates) {
+			const diff = bootstrapMedianDifferenceInterval(previous.replicates, candidate.replicates, {
+				seed: `${run.runId}:${metric.id}:${previous.row.providerId}:${candidate.row.providerId}`,
+			});
+			candidate.row.verdict = diff.separated ? "separated" : "tied";
+			settle(diff.separated ? null : "statistical");
+			return;
+		}
 
 		// The same "a test that can never reach α is not evidence of sameness" rule as the n<2 case
 		// above, applied where it actually bites: Mann-Whitney's p has a FLOOR, and at 3 v 3 that floor

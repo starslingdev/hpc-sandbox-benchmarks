@@ -19,5 +19,5 @@ fi
 
 # The pinned upstream runner hangs on netcat-openbsd after starting trial 1. Stage the vendored
 # repair under the same `pts/` identifier, then let run_pts_benchmark install and verify it.
-install_vendored_pts_profile "network-loopback-1.0.1"
-run_pts_benchmark "pts/network-loopback-1.0.1" "pts_network-loopback"
+install_vendored_pts_profile "network-loopback-1.0.3"
+run_pts_benchmark "pts/network-loopback-1.0.3" "pts_network-loopback"

@@ -15,10 +15,6 @@ export type MetricOverride = Partial<Pick<MetricDef, "dimension" | "headline" | 
 export const ptsOverrides: Record<string, MetricOverride> = {
 	// Node.js web tooling is the cpu dimension's headline (the existing hand-authored choice).
 	node_web_tooling_runs_per_s: { headline: true, label: "Node.js web tooling" },
-	// c-ray's verbose generated labels fold the option matrix into a short, chart-friendly form.
-	c_ray_resolution_1080p_rays_per_pixel_16: { label: "C-Ray (1080p, 16 RPP)" },
-	c_ray_resolution_4k_rays_per_pixel_16: { label: "C-Ray (4K, 16 RPP)" },
-	c_ray_resolution_5k_rays_per_pixel_16: { label: "C-Ray (5K, 16 RPP)" },
 	// System dimension: PyBench is its headline (a broad Python interpreter workload); SQLite Speedtest
 	// rounds it out. Both single-result wildcards, so curation only supplies labels + the one headline.
 	pybench_milliseconds: { headline: true, label: "PyBench" },
@@ -99,36 +95,6 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// System dimension: the synthetic Git profile complements the realworld repo tasks by isolating a
 	// fixed command sequence over a fixed GTK corpus.
 	git_seconds: { label: "Git common operations" },
-
-	// Cpu dimension (cpu-generic suite): Zstd compression across its Compression Level matrix — the
-	// classic CPU-throughput synthetic, run over every level in batch mode. Two metrics per level
-	// (compress/decompress via AppendToArgumentsDescription). node-web-tooling keeps the cpu headline.
-	compress_zstd_compression_level_3_compression_speed: { label: "Zstd 3 compress" },
-	compress_zstd_compression_level_3_decompression_speed: { label: "Zstd 3 decompress" },
-	compress_zstd_compression_level_3_long_mode_compression_speed: {
-		label: "Zstd 3 (long) compress",
-	},
-	compress_zstd_compression_level_3_long_mode_decompression_speed: {
-		label: "Zstd 3 (long) decompress",
-	},
-	compress_zstd_compression_level_8_compression_speed: { label: "Zstd 8 compress" },
-	compress_zstd_compression_level_8_decompression_speed: { label: "Zstd 8 decompress" },
-	compress_zstd_compression_level_8_long_mode_compression_speed: {
-		label: "Zstd 8 (long) compress",
-	},
-	compress_zstd_compression_level_8_long_mode_decompression_speed: {
-		label: "Zstd 8 (long) decompress",
-	},
-	compress_zstd_compression_level_12_compression_speed: { label: "Zstd 12 compress" },
-	compress_zstd_compression_level_12_decompression_speed: { label: "Zstd 12 decompress" },
-	compress_zstd_compression_level_19_compression_speed: { label: "Zstd 19 compress" },
-	compress_zstd_compression_level_19_decompression_speed: { label: "Zstd 19 decompress" },
-	compress_zstd_compression_level_19_long_mode_compression_speed: {
-		label: "Zstd 19 (long) compress",
-	},
-	compress_zstd_compression_level_19_long_mode_decompression_speed: {
-		label: "Zstd 19 (long) decompress",
-	},
 
 	// Realworld dimension (ENG-135/137): mastra-ai/mastra run through its own CI tasks, a repo-local
 	// PTS profile with a Task option axis. TestType System's default dimension is corrected to

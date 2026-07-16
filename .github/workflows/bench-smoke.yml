@@ -17,19 +17,19 @@ on:
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
         # new suite must be added here too. Still passed through the environment below (never
         # interpolated into the shell) as defense-in-depth.
-        # Defaults to `memory` (STREAM): the fastest suite in the registry — a couple of minutes of
-        # benchmark on top of setup — which makes it the cheapest end-to-end validation of the lane.
+        # Defaults to `system` (PyBench + SQLite Speedtest): the shortest suite in the registry — a
+        # couple of minutes of benchmark on top of setup — making it the cheapest end-to-end lane check.
         description: Suite to run
         type: choice
-        default: memory
+        default: system
         options:
           [
             cpu-node,
             system,
+            pgbench,
             memory,
             disk,
             network,
-            cpu-generic,
             realworld-mastra,
             realworld-better-auth,
             realworld-openclaw,

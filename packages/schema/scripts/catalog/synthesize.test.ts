@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { crayProfile } from "./__fixtures__/c-ray.ts";
 import { generateProfile } from "./generate.ts";
 import type { PtsProfile } from "./parse.ts";
 import { parseProfile } from "./parse.ts";
@@ -59,8 +60,8 @@ describe("synthesizeResults", () => {
 		expect(descriptions(await load("node-web-tooling-1.0.1"))).toEqual([undefined]);
 	});
 
-	test("c-ray option matrix -> one byte-exact description per resolution", async () => {
-		expect(descriptions(await load("c-ray-2.0.0"))).toEqual([
+	test("c-ray option matrix -> one byte-exact description per resolution", () => {
+		expect(descriptions(crayProfile())).toEqual([
 			"Resolution: 1080p - Rays Per Pixel: 16",
 			"Resolution: 4K - Rays Per Pixel: 16",
 			"Resolution: 5K - Rays Per Pixel: 16",
@@ -169,8 +170,8 @@ describe("synthesizeResults", () => {
 });
 
 describe("generateProfile with synthesis", () => {
-	test("c-ray -> three schema-valid metrics with distinct ids and pts.description", async () => {
-		const defs = generateProfile(await load("c-ray-2.0.0"));
+	test("c-ray -> three schema-valid metrics with distinct ids and pts.description", () => {
+		const defs = generateProfile(crayProfile());
 		expect(defs.map((d) => d.id)).toEqual([
 			"c_ray_resolution_1080p_rays_per_pixel_16",
 			"c_ray_resolution_4k_rays_per_pixel_16",

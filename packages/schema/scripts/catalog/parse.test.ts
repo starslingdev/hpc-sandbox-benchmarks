@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { crayProfile } from "./__fixtures__/c-ray.ts";
 import { parseProfile } from "./parse.ts";
 
 const PROFILES = `${import.meta.dir}/../../src/pts-profiles`;
@@ -24,8 +25,8 @@ describe("parseProfile", () => {
 		expect(p.parsers).toHaveLength(1);
 	});
 
-	test("forces repeatable nodes to arrays for an option-matrix profile", async () => {
-		const p = await load("c-ray-2.0.0");
+	test("forces repeatable nodes to arrays for an option-matrix profile", () => {
+		const p = crayProfile();
 		expect(p.info.Proportion).toBe("LIB");
 		expect(p.info.SubTitle).toBe("Total Time - 4K, 16 Rays Per Pixel");
 		// Two <Option> axes; the first (Resolution) has a three-<Entry> menu — both kept as arrays.

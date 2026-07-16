@@ -23,6 +23,8 @@ usage: bench-suite [provider] [suite] [runId]
   provider           Provider to run on (default: daytona). See --list-providers.
   suite              Suite to run (default: cpu-node). See --list-suites.
   runId              Run identifier for the data/ tree (default: local-<timestamp>).
+  --replicate <idx>  Replicate sandbox index this shard represents (a non-negative integer). Stamped
+                     onto the shard Run so the aggregate folds ≥2 replicates of one suite together.
   --require <ids>    Comma-separated providers that MUST reach "validated"; exit 1 otherwise.
                      Also read from REQUIRE_PROVIDERS. CI sets this so a missing secret fails loudly.
   --list-providers   List the registered providers.
@@ -41,9 +43,34 @@ examples:
 
 Next: render the Run with \`leaderboard data/runs/<runId>.json\`.`;
 
+/**
+ * Parse `--replicate <idx>` / `--replicate=<idx>` into a non-negative integer, or `undefined` when the
+ * flag is absent. A dangling or non-integer value fails loudly rather than silently defaulting the shard
+ * to replicate 0 — a wrong index would collide two sandboxes into one replicate slot at aggregate time.
+ * Exported so the parsing is unit-testable without spawning a process.
+ */
+export function parseReplicateFlag(argv: readonly string[]): number | undefined {
+	let raw: string | undefined;
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === "--replicate") {
+			raw = argv[i + 1];
+			if (raw === undefined) throw new Error("--replicate requires an index argument");
+		} else if (arg?.startsWith("--replicate=")) {
+			raw = arg.slice("--replicate=".length);
+		}
+	}
+	if (raw === undefined) return undefined;
+	const idx = Number(raw);
+	if (!Number.isInteger(idx) || idx < 0) {
+		throw new Error(`--replicate must be a non-negative integer; got "${raw}"`);
+	}
+	return idx;
+}
+
 if (import.meta.main) {
 	const argv = process.argv.slice(2);
-	const discovery = handleDiscovery(argv, HELP, ["--require"]);
+	const discovery = handleDiscovery(argv, HELP, ["--require", "--replicate"]);
 	if (discovery !== null) {
 		(discovery.ok ? console.log : console.error)(discovery.text);
 		process.exit(discovery.ok ? 0 : 2);
@@ -57,9 +84,9 @@ if (import.meta.main) {
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
 		if (arg === undefined) continue;
-		// Only the space-separated spelling needs the skip: `--require=<ids>` is a single token and is
-		// already dropped by the leading-`-` guard below.
-		if (arg === "--require") {
+		// Only the space-separated spelling needs the skip: `--require=<ids>`/`--replicate=<idx>` are
+		// single tokens already dropped by the leading-`-` guard below. Both flags take a separate operand.
+		if (arg === "--require" || arg === "--replicate") {
 			i++;
 			continue;
 		}
@@ -70,6 +97,7 @@ if (import.meta.main) {
 	const suite = positionals[1] ?? "cpu-node";
 	const runId = positionals[2] ?? `local-${Date.now()}`;
 	const sha = process.env.GITHUB_SHA ?? "local";
+	const replicateIndex = parseReplicateFlag(argv);
 
 	const rawRoot = join("data", "raw", runId);
 	const outFile = join("data", "runs", `${runId}.json`);
@@ -102,7 +130,14 @@ if (import.meta.main) {
 
 	let run: Run;
 	try {
-		run = writeNormalizedRun({ rawRoot, runId, sha, outFile, updateIndexFile: indexFile });
+		run = writeNormalizedRun({
+			rawRoot,
+			runId,
+			sha,
+			outFile,
+			updateIndexFile: indexFile,
+			...(replicateIndex !== undefined ? { replicateIndex } : {}),
+		});
 	} catch (normalizeErr) {
 		// Never let a normalization failure mask the benchmark failure that caused it.
 		if (suiteError) throw suiteError;

@@ -20,10 +20,11 @@ import { ptsOverrides } from "./pts-overrides.ts";
 // The generated draft refined by curation, keyed by id (`{ ...generated, ...override }`): the override
 // wins only on the fields it declares (label/headline/dimension), the generator owns the rest.
 //
-// Both wired suites' synthesized `pts.description` strings are proven to byte-match real PTS output by
-// the golden gate (packages/results pts-golden.test): node-web-tooling (wildcard) and the c-ray
-// option matrix, the latter against a recorded c-ray-2.0.0 composite (design §3.7). A drift would turn
-// that gate red rather than silently routing results to `uncatalogued`.
+// Every wired suite's synthesized `pts.description` strings are proven to byte-match real PTS output by
+// the golden gate (packages/results pts-golden.test): the single-result wildcards (node-web-tooling,
+// pybench, sqlite-speedtest) and the multi-result option matrices (fio's scale-pinned twins, pgbench's
+// mode descriptions), each against a recorded composite (design §3.7). A drift would turn that gate red
+// rather than silently routing results to `uncatalogued`.
 const ptsCurated: MetricDef[] = ptsGenerated.map((def) => ({ ...def, ...ptsOverrides[def.id] }));
 
 // Fail fast if a curation key matches no generated id — e.g. a profile regen renamed a slug. The merge

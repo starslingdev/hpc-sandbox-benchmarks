@@ -71,10 +71,10 @@ describe("suiteContractViolations", () => {
 
 	it("flags a declared dimension that no declared metric covers", () => {
 		const out = suiteContractViolations(
-			suites({ "cpu-suite": { dimensions: ["cpu", "memory"], metrics: ["cpu_a"] } }),
+			suites({ "cpu-suite": { dimensions: ["cpu", "system"], metrics: ["cpu_a"] } }),
 			catalog,
 		);
-		expect(out).toEqual([{ suite: "cpu-suite", kind: "empty-dimension", dimension: "memory" }]);
+		expect(out).toEqual([{ suite: "cpu-suite", kind: "empty-dimension", dimension: "system" }]);
 	});
 
 	it("flags every declared dimension when the suite emits no metrics at all", () => {
@@ -138,8 +138,8 @@ describe("describeSuiteContractViolation", () => {
 			}),
 		).toBe('suite "s" declares metric "m" on undeclared dimension "disk"');
 		expect(
-			describeSuiteContractViolation({ suite: "s", kind: "empty-dimension", dimension: "memory" }),
-		).toBe('suite "s" declares dimension "memory" but emits no metric on it');
+			describeSuiteContractViolation({ suite: "s", kind: "empty-dimension", dimension: "system" }),
+		).toBe('suite "s" declares dimension "system" but emits no metric on it');
 	});
 });
 

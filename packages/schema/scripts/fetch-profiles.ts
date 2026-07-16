@@ -36,7 +36,6 @@ const REPO = "test-profiles";
 const REF = "d2f1a150d388bd062737b445891edda0780f7e25";
 const PROFILES = [
 	"node-web-tooling-1.0.1",
-	"c-ray-2.0.0",
 	// System dimension — both single-result (no <Option> matrix), so each generates a description-less
 	// wildcard entry (zero byte-match risk).
 	"pybench-1.1.3",
@@ -53,15 +52,12 @@ const PROFILES = [
 	// the generator's `pts.scale` pins and proven by a recorded composite golden fixture.
 	"fio-2.1.0",
 	// Network dimension — single-result (sys.time monitor, no <Option> matrix), so it generates one
-	// description-less wildcard entry (zero byte-match risk).
-	"network-loopback-1.0.1",
+	// description-less wildcard entry (zero byte-match risk). 1.0.3 carries the repo's deterministic
+	// netcat-openbsd runner override (install.sh) — the upstream dd|nc runner races its listener.
+	"network-loopback-1.0.3",
 	// Network dimension — a real Internet transfer through Netflix's fast.com CDN. The profile emits
 	// download/upload throughput plus idle/loaded latency from fast-cli's JSON output.
 	"fast-cli-1.0.0",
-	// Cpu dimension — Zstd compression across its Compression Level matrix; two parsers per level
-	// (Compression/Decompression Speed via AppendToArgumentsDescription), byte-match-proven by a
-	// recorded composite golden fixture.
-	"compress-zstd-1.6.0",
 	// System dimension — PostgreSQL via its integrated pgbench, fully in-sandbox (the profile builds
 	// postgres 17.0 and runs server + client locally, so every provider measures the same topology).
 	// The producer pins one (Scaling Factor, Clients) point per mode via PRESET_OPTIONS; two parsers

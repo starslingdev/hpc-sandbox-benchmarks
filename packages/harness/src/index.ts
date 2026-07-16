@@ -269,7 +269,8 @@ export async function runSuiteOnSandbox(
 	ctx: SuiteRunContext,
 ): Promise<void> {
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
-	const runner = new StepRunner(sandbox, transport);
+	// Thread the suite's in-sandbox repeat count (k) into the preamble; absent → the harness default.
+	const runner = new StepRunner(sandbox, transport, undefined, suite.ptsTimesToRun);
 	let suiteError: unknown;
 	try {
 		runner.phase = "setup";

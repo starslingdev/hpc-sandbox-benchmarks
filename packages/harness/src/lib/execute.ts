@@ -154,11 +154,20 @@ function parseExitCode(raw: string): number {
 }
 
 /**
- * Re-establish env + PATH on every step (each runCommand is a fresh shell). `$SUDO` covers both root
- * images (no prefix) and non-root images with sudo. The toolchain image (packages/templates/images)
- * installs mise globally under /mise, so prefer it when present.
+ * The default in-sandbox repeat count (k) applied when a suite pins none: two timed PTS passes per case
+ * — the balanced count published comparisons use (PR #129 lowered it from three). A per-suite override
+ * (`Suite.ptsTimesToRun`) is threaded through {@link StepRunner}; replicate sandboxes (aggregate.ts),
+ * not extra in-sandbox passes, carry the between-machine variance.
  */
-export const PREAMBLE = [
+export const DEFAULT_PTS_TIMES_TO_RUN = 2;
+
+/**
+ * The static head of the in-sandbox preamble: env + PATH re-established on every step (each runCommand is
+ * a fresh shell). `$SUDO` covers both root images (no prefix) and non-root images with sudo. The
+ * toolchain image (packages/templates/images) installs mise globally under /mise, so prefer it when
+ * present. The trials + sudo tail is appended by {@link buildPreamble}, which pins the PTS repeat count.
+ */
+const PREAMBLE_HEAD = [
 	"set -eo pipefail",
 	"export DEBIAN_FRONTEND=noninteractive",
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: bash expansion, not a JS template
@@ -181,17 +190,29 @@ export const PREAMBLE = [
 	// E2B-compatible builders inject an unprivileged runtime user. Point PTS at the root-baked profile
 	// registry explicitly even if a provider strips the Docker ENV while importing the image.
 	"if [ -d /var/lib/phoronix-test-suite ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/; fi",
-	// Published comparisons use exactly two trials per PTS case — the balanced count the suites pin
-	// (PR #129 lowered it from three). Five overran the command and sandbox lifetimes (a two-repeat run
-	// already took ~67 min), and chasing significance with more trials is a non-goal: the leaderboard
-	// LABELS underpowered comparisons rather than buying statistical power with extra runs. Fixing the
-	// count also prevents PTS's variance-driven policy from giving noisy providers 20-40 trials until the
-	// suite times out. BENCH_PASSES=1 keeps contract-verification runs at one pass via lib/bench.sh.
-	...(process.env.BENCH_PASSES === "1"
-		? []
-		: ["export PTS_RESPECT_TIMES_TO_RUN=1", "export FORCE_TIMES_TO_RUN=2"]),
-	'if [ "$(id -u)" = 0 ]; then SUDO=""; elif command -v sudo >/dev/null 2>&1; then SUDO="sudo -E"; else SUDO=""; fi',
-].join("; ");
+];
+
+/**
+ * The full preamble string for a step, pinning `ptsTimesToRun` (k) timed PTS passes per case. PTS's
+ * variance-driven policy is disabled (PTS_RESPECT_TIMES_TO_RUN=1) so a noisy provider can't stretch a
+ * suite to 20-40 passes; between-sandbox variance is captured by REPLICATE sandboxes (aggregate.ts), not
+ * more in-sandbox passes, and the leaderboard LABELS underpowered comparisons rather than buying
+ * significance with extra runs. BENCH_PASSES=1 keeps contract-verification runs at one pass via
+ * lib/bench.sh. Suites pin k per tier (realworld k=1, long synthetic k=2, short k=3).
+ */
+export function buildPreamble(ptsTimesToRun: number = DEFAULT_PTS_TIMES_TO_RUN): string {
+	return [
+		...PREAMBLE_HEAD,
+		...(process.env.BENCH_PASSES === "1"
+			? []
+			: ["export PTS_RESPECT_TIMES_TO_RUN=1", `export FORCE_TIMES_TO_RUN=${ptsTimesToRun}`]),
+		'if [ "$(id -u)" = 0 ]; then SUDO=""; elif command -v sudo >/dev/null 2>&1; then SUDO="sudo -E"; else SUDO=""; fi',
+	].join("; ");
+}
+
+/** The preamble at the default repeat count (k = 2) — the StepRunner default and the value the preamble
+ *  tests pin; a per-suite k is threaded through {@link StepRunner}. */
+export const PREAMBLE = buildPreamble();
 
 /** Print liveness every 2 min while a long step runs — exec transports buffer output, so without
  *  this a healthy multi-minute benchmark looks hung in the CI log. */
@@ -214,6 +235,8 @@ export class StepRunner {
 	phase: Phase = "setup";
 	/** Every executed step with its phase, elapsed ms, and exit code. */
 	readonly stepLog: StepLogEntry[] = [];
+	/** The in-sandbox preamble prepended to every step, pinned to this suite's PTS repeat count (k). */
+	private readonly preamble: string;
 
 	constructor(
 		private readonly sandbox: SandboxHandle,
@@ -222,7 +245,12 @@ export class StepRunner {
 		/** The inter-poll sleep used by {@link runDetached}; injectable so tests can assert the backoff
 		 *  schedule without real waiting. */
 		private readonly sleep: (ms: number) => Promise<void> = delay,
-	) {}
+		/** The suite's in-sandbox repeat count (k) — how many timed PTS passes each case runs. Omitted →
+		 *  {@link DEFAULT_PTS_TIMES_TO_RUN}, so a StepRunner built without one keeps the old behaviour. */
+		ptsTimesToRun: number = DEFAULT_PTS_TIMES_TO_RUN,
+	) {
+		this.preamble = buildPreamble(ptsTimesToRun);
+	}
 
 	/**
 	 * Run a step on the transport the provider's {@link ProviderTransport} calls for: detached+poll when
@@ -261,7 +289,7 @@ export class StepRunner {
 		let result: CommandResult;
 		try {
 			result = await withTimeout(
-				this.sandbox.runCommand(`bash -c ${shellQuote(`${PREAMBLE}; ${script}`)}`),
+				this.sandbox.runCommand(`bash -c ${shellQuote(`${this.preamble}; ${script}`)}`),
 				timeoutMs,
 				`Step "${label}" timed out after ${Math.round(timeoutMs / 1000)}s`,
 			);
@@ -307,7 +335,7 @@ export class StepRunner {
 			// shell aborts on first failure and its real exit code flows through the `&&/||` capture —
 			// success writes 0, failure writes the real code.
 			const wrapped =
-				`bash -c ${shellQuote(`${PREAMBLE}; ${script}`)} > ${logPath} 2>&1 ` +
+				`bash -c ${shellQuote(`${this.preamble}; ${script}`)} > ${logPath} 2>&1 ` +
 				`&& echo 0 > ${donePath} || echo $? > ${donePath}`;
 			// Double-fork daemonization: a single nohup/setsid still blocks e2b's envd, which holds the
 			// exec open for as long as its DIRECT child lives (probed live: even `nohup ... &` pins the

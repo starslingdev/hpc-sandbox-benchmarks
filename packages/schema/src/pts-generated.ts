@@ -5,228 +5,6 @@ import type { MetricDef } from "./metrics.ts";
 
 const chunk1: MetricDef[] = [
 	{
-		id: "c_ray_resolution_1080p_rays_per_pixel_16",
-		dimension: "cpu",
-		unit: "Seconds",
-		direction: "LIB",
-		headline: false,
-		label: "C-Ray - Resolution: 1080p - Rays Per Pixel: 16",
-		description:
-			"This is a test of C-Ray, a simple multi-threaded raytracer designed to test the floating-point CPU performance.",
-		pts: { test: "pts/c-ray", description: "Resolution: 1080p - Rays Per Pixel: 16" },
-		sourceUrl: "http://nuclear.mutantstargoat.com/sw/c-ray/",
-	},
-	{
-		id: "c_ray_resolution_4k_rays_per_pixel_16",
-		dimension: "cpu",
-		unit: "Seconds",
-		direction: "LIB",
-		headline: false,
-		label: "C-Ray - Resolution: 4K - Rays Per Pixel: 16",
-		description:
-			"This is a test of C-Ray, a simple multi-threaded raytracer designed to test the floating-point CPU performance.",
-		pts: { test: "pts/c-ray", description: "Resolution: 4K - Rays Per Pixel: 16" },
-		sourceUrl: "http://nuclear.mutantstargoat.com/sw/c-ray/",
-	},
-	{
-		id: "c_ray_resolution_5k_rays_per_pixel_16",
-		dimension: "cpu",
-		unit: "Seconds",
-		direction: "LIB",
-		headline: false,
-		label: "C-Ray - Resolution: 5K - Rays Per Pixel: 16",
-		description:
-			"This is a test of C-Ray, a simple multi-threaded raytracer designed to test the floating-point CPU performance.",
-		pts: { test: "pts/c-ray", description: "Resolution: 5K - Rays Per Pixel: 16" },
-		sourceUrl: "http://nuclear.mutantstargoat.com/sw/c-ray/",
-	},
-	{
-		id: "compress_zstd_compression_level_12_compression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 12 - Compression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 12 - Compression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_12_decompression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 12 - Decompression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 12 - Decompression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_19_compression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 19 - Compression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 19 - Compression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_19_decompression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 19 - Decompression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 19 - Decompression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_19_long_mode_compression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 19, Long Mode - Compression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: {
-			test: "pts/compress-zstd",
-			description: "Compression Level: 19, Long Mode - Compression Speed",
-		},
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_19_long_mode_decompression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 19, Long Mode - Decompression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: {
-			test: "pts/compress-zstd",
-			description: "Compression Level: 19, Long Mode - Decompression Speed",
-		},
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_3_compression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 3 - Compression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 3 - Compression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_3_decompression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 3 - Decompression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 3 - Decompression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_3_long_mode_compression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 3, Long Mode - Compression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: {
-			test: "pts/compress-zstd",
-			description: "Compression Level: 3, Long Mode - Compression Speed",
-		},
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_3_long_mode_decompression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 3, Long Mode - Decompression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: {
-			test: "pts/compress-zstd",
-			description: "Compression Level: 3, Long Mode - Decompression Speed",
-		},
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_8_compression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 8 - Compression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 8 - Compression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_8_decompression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 8 - Decompression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: { test: "pts/compress-zstd", description: "Compression Level: 8 - Decompression Speed" },
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_8_long_mode_compression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 8, Long Mode - Compression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: {
-			test: "pts/compress-zstd",
-			description: "Compression Level: 8, Long Mode - Compression Speed",
-		},
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
-		id: "compress_zstd_compression_level_8_long_mode_decompression_speed",
-		dimension: "cpu",
-		unit: "MB/s",
-		direction: "HIB",
-		headline: false,
-		label: "Zstd Compression - Compression Level: 8, Long Mode - Decompression Speed",
-		description:
-			"This test measures the time needed to compress/decompress a sample file (silesia.tar) using Zstd (Zstandard) compression with options for different compression levels / settings.",
-		pts: {
-			test: "pts/compress-zstd",
-			description: "Compression Level: 8, Long Mode - Decompression Speed",
-		},
-		sourceUrl: "https://facebook.github.io/zstd/",
-	},
-	{
 		id: "fast_cli_internet_download_speed",
 		dimension: "network",
 		unit: "Mbit/s",
@@ -4396,9 +4174,6 @@ const chunk1: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
-];
-
-const chunk2: MetricDef[] = [
 	{
 		id: "fio_type_random_read_engine_windows_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -4705,6 +4480,9 @@ const chunk2: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk2: MetricDef[] = [
 	{
 		id: "fio_type_random_write_engine_io_uring_direct_no_block_size_256kb_job_count_1_disk_target_default_test_directory_iops",
 		dimension: "disk",
@@ -8899,9 +8677,6 @@ const chunk2: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
-];
-
-const chunk3: MetricDef[] = [
 	{
 		id: "fio_type_random_write_engine_windows_aio_direct_yes_block_size_8mb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -9208,6 +8983,9 @@ const chunk3: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk3: MetricDef[] = [
 	{
 		id: "fio_type_sequential_read_engine_io_uring_direct_no_block_size_512kb_job_count_1_disk_target_default_test_directory_iops",
 		dimension: "disk",
@@ -13402,9 +13180,6 @@ const chunk3: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
-];
-
-const chunk4: MetricDef[] = [
 	{
 		id: "fio_type_sequential_write_engine_io_uring_direct_no_block_size_2mb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -13711,6 +13486,9 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk4: MetricDef[] = [
 	{
 		id: "fio_type_sequential_write_engine_io_uring_direct_yes_block_size_16kb_job_count_1_disk_target_default_test_directory_iops",
 		dimension: "disk",
@@ -17837,9 +17615,6 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
-];
-
-const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_10000_clients_250_mode_read_write_average_latency",
 		dimension: "system",
@@ -18096,6 +17871,9 @@ const chunk5: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
+];
+
+const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_only",
 		dimension: "system",
