@@ -66,6 +66,7 @@
         "@computesdk/daytona": "catalog:computesdk",
         "@computesdk/e2b": "catalog:computesdk",
         "@computesdk/modal": "catalog:computesdk",
+        "@computesdk/namespace": "catalog:computesdk",
         "@computesdk/provider": "catalog:computesdk",
         "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
@@ -166,6 +167,7 @@
       "@computesdk/daytona": "1.7.31",
       "@computesdk/e2b": "1.7.51",
       "@computesdk/modal": "1.9.3",
+      "@computesdk/namespace": "1.6.12",
       "@computesdk/provider": "2.1.3",
       "@daytona/api-client": "0.192.0",
       "@daytona/sdk": "0.192.0",
@@ -289,6 +291,8 @@
     "@computesdk/e2b": ["@computesdk/e2b@1.7.51", "", { "dependencies": { "@computesdk/provider": "2.1.3", "computesdk": "4.1.3", "e2b": "^2.26.0" } }, "sha512-fFDLFtPp8acJdJbdAFn8Uvbps+pvCGTf1mq84jFbNroDNim/rWa3T1C0c7iBTWufBz2An5tWqRBxIZzb+5JUPw=="],
 
     "@computesdk/modal": ["@computesdk/modal@1.9.3", "", { "dependencies": { "@computesdk/provider": "2.1.3", "computesdk": "4.1.3", "modal": "0.7.6" } }, "sha512-kD69VIcUe56UpqolNZqIp16B2cLCSyYBeHMXuEcZYcV912IG/ZaiLRut2OS8QGIDxUdpBvl4LrdDiYqEayZweg=="],
+
+    "@computesdk/namespace": ["@computesdk/namespace@1.6.12", "", { "dependencies": { "@computesdk/provider": "2.1.3", "computesdk": "4.1.3" } }, "sha512-CkPkDxrD3coI0bpePMLku1mrVH/vFKBYQ8oZ/XB1JxuVdo5VDXGKraIGKtViDSn9hI/1ViTUCr2miePfjnAbVQ=="],
 
     "@computesdk/provider": ["@computesdk/provider@2.1.3", "", { "dependencies": { "@computesdk/cmd": "0.4.1", "computesdk": "4.1.3", "daemond": "0.1.4" } }, "sha512-soT+eu9VdeLkDjMdHe2fWh0WoiQ1C6xlMIdw8UKlJz5ivipJE6HP6Emm05qUdpeXooWquL1o3LQtRQDMFsrTfA=="],
 

@@ -35,6 +35,13 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},
 	novita: (image, log) => bakeNovitaTemplate(config.novitaTemplateCandidate, image, log),
+	// Same shape as blaxel: namespace pulls the toolchain image straight into a container instance at
+	// create time (no template/snapshot system), so there's no candidate artifact to bake — the
+	// validate boot right after this proves reachability. Takes the pinned candidate image like the
+	// others but doesn't need it (nothing to bake), so `_image`.
+	namespace: async (_image, log) => {
+		log("namespace boots the candidate image directly — no candidate artifact to bake");
+	},
 };
 
 /**

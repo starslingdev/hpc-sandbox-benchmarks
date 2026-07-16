@@ -19,7 +19,10 @@ on:
         # to include it; `plan-matrix` rejects any name that is not in the registry.
         default: e2b,daytona,modal
 
-# Least privilege: jobs only read the checked-out code and upload artifacts (publish elevates).
+# Least privilege, workflow default: jobs only read the checked-out code and upload artifacts (publish
+# elevates to contents: write). `id-token: write` is deliberately NOT granted here — only the `bench`
+# job needs it (Namespace's GitHub OIDC federation), so it is scoped to that job; zizmor flags a
+# workflow-level id-token: write as overly broad since `plan` and `publish` never touch it.
 permissions:
   contents: read
 
@@ -80,6 +83,12 @@ jobs:
     runs-on: ubuntu-24.04
     environment: privileged
     timeout-minutes: 180
+    # Only this job needs id-token: write (Namespace's GitHub OIDC federation) — scoped here, not at
+    # the workflow level, per zizmor's excessive-permissions audit. Widened from the workflow default
+    # (contents: read) so `id-token` is additive, not a replacement.
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
       fail-fast: false
@@ -91,6 +100,39 @@ jobs:
           # This cell only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
           # checkout's credentials), so don't persist the job token in .git/config.
           persist-credentials: false
+
+      # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write
+      # above), logging the `nsc` CLI into the workspace via `nsc auth exchange-github-token` under
+      # the hood. That login lives in the CLI's own local session store, not a discoverable file —
+      # /var/run/nsc/token.json is only pre-populated on Namespace-hosted runners (confirmed by a
+      # live smoke run: ENOENT on a regular GitHub-hosted runner) — so the next step mints a portable
+      # token file from that session for @computesdk/namespace to read. Requires a trust relationship
+      # (this repo -> the Namespace tenant) registered once on the Namespace side — continue-on-error
+      # so a not-yet-registered trust relationship (or any transient failure) degrades to the same
+      # "missing credentials" skip every other provider gets from an absent secret, rather than
+      # failing the whole cell.
+      - name: Set up Namespace CLI
+        if: matrix.provider == 'namespace'
+        continue-on-error: true
+        id: nsc-setup
+        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+
+      # `nsc token create` mints a scoped, revocable token from the CLI session above and writes it as
+      # a {"bearer_token": "..."} JSON file @computesdk/namespace can read via NSC_TOKEN_FILE. The
+      # grant below is the minimal permission set the harness needs against the Compute API's
+      # instance resource: create (CreateInstance), list (ListInstances), get (DescribeInstance),
+      # destroy (DestroyInstance), and exec (RunCommandSync) — found by live trial: a wildcard action
+      # is rejected outright ("not allowed in revokable tokens"), and each wrong verb name (e.g.
+      # "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error.
+      - name: Mint a portable Namespace token
+        if: matrix.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
+        continue-on-error: true
+        id: nsc-token
+        run: |
+          nsc token create \
+            --name "sandbox-benchmarks-matrix-${{ github.run_id }}-${{ strategy.job-index }}" \
+            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
+            --token_file "${{ runner.temp }}/nsc-token.json"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -126,6 +168,11 @@ jobs:
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          # OIDC-federated per-cell token file (see the Namespace CLI steps above). Not a stored
+          # secret: it is empty unless THIS cell is the namespace cell AND the mint above succeeded
+          # (steps.nsc-token only runs when matrix.provider == 'namespace'), which the harness reads
+          # as the standard missing-credentials skip on every other cell.
+          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results

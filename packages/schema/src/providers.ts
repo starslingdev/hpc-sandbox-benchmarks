@@ -11,7 +11,7 @@
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel" | "novita";
+export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel" | "novita" | "namespace";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -121,9 +121,10 @@ export interface ProviderMeta {
  * Providers that expose a per-sandbox/snapshot disk get 40 GiB (Daytona, via the snapshot's
  * `resources.disk`); Modal has no disk knob but its gVisor root reports effectively unbounded disk,
  * so it clears the gate anyway. Providers that CANNOT express disk — e2b/novita (the `@e2b/cli`
- * `template create` takes only `--cpu-count`/`--memory-mb`) and blaxel (disk is a RAM-derived tmpfs)
- * — run with actuals recorded, and the heavy suites that need the disk skip there. Those skips are
- * surfaced as an explicit coverage gap in the leaderboard, never silently dropped.
+ * `template create` takes only `--cpu-count`/`--memory-mb`), blaxel (disk is a RAM-derived tmpfs),
+ * and namespace (`NamespaceConfig` has no disk field at all) — run with actuals recorded, and the
+ * heavy suites that need the disk skip there. Those skips are surfaced as an explicit coverage gap
+ * in the leaderboard, never silently dropped.
  */
 export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 40 } as const;
 
@@ -322,6 +323,52 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			streaming: false,
 			syncCapMs: 60_000,
 			detachedPoll: true,
+		},
+	},
+	namespace: {
+		displayName: "Namespace",
+		website: "https://namespace.so",
+		sdkPackage: "@computesdk/namespace",
+		// NSC_TOKEN_FILE, not NSC_TOKEN: CI federates via GitHub's OIDC identity (nscloud-setup +
+		// `nsc auth exchange-github-token`, no stored secret), which lands the token at the CLI's
+		// standard cache path, wired to NSC_TOKEN_FILE — never a bare bearer string in the environment.
+		// This gate is a strict AND (missingCreds has no OR-group concept), so a local run with a bare
+		// NSC_TOKEN alone still skips even though @computesdk/namespace's own fallback chain would
+		// accept it — for local dev, mint a file instead (`nsc token create --token_file <path>` after
+		// `nsc auth login`) and point NSC_TOKEN_FILE at it, mirroring what CI does.
+		requiredEnvVars: ["NSC_TOKEN_FILE"],
+		isolation: {
+			technology: "microVM (dedicated instance)",
+			notes:
+				"Namespace runs each instance on its own hardware/network (namespace.so/docs/architecture/compute). The @computesdk/namespace wrapper deploys one container workload per instance via the Compute API's `containers` shape, and defines no template/snapshot managers (unexposed, same clean skip as novita) — and, unlike every other provider here, no filesystem manager either.",
+		},
+		pricing: {
+			model: "unknown",
+			notes:
+				"Not yet vetted against a published per-second/hour rate for the Compute API this wrapper drives; namespace.so/pricing documents CI-runner minutes, a distinct product.",
+			sourceUrl: "https://namespace.so/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Local e2e validation wiring; not yet a committed run. The wrapper's `methods.sandbox` declares no `filesystem` table, so computesdk falls back to its UnsupportedFileSystem (every filesystem op throws) — realworld suites that read/write through `sandbox.filesystem` skip on this provider.",
+		},
+		// virtualCpu/memoryMegabytes are independent, uncoupled knobs on the factory config (unlike
+		// blaxel's memory-derived cpu/disk), so the 2 vCPU / 8 GiB target spec is exactly expressible.
+		specPinning: "settable",
+		transport: {
+			// `runCommand` POSTs to the CommandService's RunCommandSync RPC and awaits the full response
+			// with no client-side timeout — but there is no evidence (SDK default, docs, or a measured
+			// probe) of a server-side cap either, unlike e2b's documented 60s or Daytona's measured 408.
+			// Declaring a guessed cap here would trip the schema's own invariant (a finite syncCapMs
+			// requires detachedPoll: true), and there IS no detached alternative — see below — so the
+			// honest declaration is uncapped, and every step, however long, stays synchronous.
+			streaming: false,
+			syncCapMs: null,
+			// No `filesystem` table on the wrapper (see isolation notes) means no pollable done-file for
+			// the harness's background+poll pattern — the durable long-step path other providers get is
+			// simply unavailable here.
+			detachedPoll: false,
 		},
 	},
 };
