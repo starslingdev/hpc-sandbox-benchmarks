@@ -29,12 +29,21 @@ apt-get update
 # > tcl: sqlite-speedtest builds SQLite from source, and SQLite's Makefile shells out to `tclsh` to
 # > generate opcodes.h — without it the build dies with exit 127 mid-`batch-install`. PTS still exits
 # > 0 there, so the failure only surfaces in 20-pts.sh's post-install verification.
+# > The fonts/GTK/X11 libraries are fast-cli's Puppeteer/Chrome runtime dependencies. Keep them baked
+# > beside the pre-installed profile: otherwise its launcher starts but Chrome fails before the first
+# > fast.com transfer, leaving a deceptively successful PTS composite with four empty values.
 apt-get install -y --no-install-recommends \
 	curl git ca-certificates \
 	build-essential autoconf \
 	php-cli php-xml \
 	flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev \
 	dnsutils jq netcat-openbsd iputils-ping \
+	fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+	libcairo2 libcups2 libdbus-1-3 libdrm2 libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 \
+	libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 \
+	libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 \
+	libxext6 libxfixes3 libxi6 libxkbcommon0 libxrandr2 libxrender1 libxss1 libxtst6 \
+	xdg-utils \
 	tcl \
 	stress-ng tar gzip xz-utils unzip procps
 

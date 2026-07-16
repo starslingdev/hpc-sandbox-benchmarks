@@ -10,7 +10,36 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 	exit 0
 fi
 
-# Version-pinned to the vendored definition/catalog and pre-installed in the toolchain image. The
-# installed fast-cli package performs sustained transfers through Netflix's fast.com CDN and emits
-# download/upload throughput plus idle/loaded latency from one JSON-producing invocation.
+# The upstream profile's generated launcher still targets fast-cli's removed cli.js path. If the
+# image already baked the profile, repair that installed copy in place (the pinned package is reused);
+# on a stock image, stage the complete vendored profile so its install uses the same repair.
+profile="fast-cli-1.0.0"
+pts_init
+if _pts_is_installed "pts/${profile}"; then
+	installed_dir="$(pts_user_dir)/installed-tests/pts/${profile}"
+	(
+		cd "$installed_dir"
+		sh "${REPO_ROOT}/packages/schema/src/pts-profiles/${profile}/install.sh"
+	)
+else
+	install_vendored_pts_profile "$profile"
+fi
+
+# The repaired fast-cli package performs sustained transfers through Netflix's fast.com CDN and
+# emits download/upload throughput plus idle/loaded latency from one JSON-producing invocation.
 run_pts_benchmark "pts/fast-cli-1.0.0" "pts_fast-cli"
+
+# PTS returns zero and writes a composite even when every trial failed. Treat the suite as successful
+# only when its four result parsers each emitted a numeric value; this caught missing Chrome libraries
+# that would otherwise turn into an apparently green job with no usable metrics.
+result_xml="$(results_dir)/pts_fast-cli.xml"
+if [ ! -s "$result_xml" ] || ! awk '
+	match($0, /<Value>[^<]*<\/Value>/) {
+		value = substr($0, RSTART + 7, RLENGTH - 15)
+		if (value ~ /^[0-9]+([.][0-9]+)?$/) numeric++
+	}
+	END { exit numeric == 4 ? 0 : 1 }
+' "$result_xml"; then
+	echo "ERROR: pts/fast-cli did not produce four numeric metrics" >&2
+	exit 1
+fi
