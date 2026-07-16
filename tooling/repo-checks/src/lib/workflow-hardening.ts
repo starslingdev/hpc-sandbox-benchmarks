@@ -472,12 +472,12 @@ export function checkToolchainDispatchOnly(
 	for (const needle of [
 		"workflow_dispatch",
 		"refs/heads/main",
-		"starslingdev/sandbox-benchmarks",
+		"starslingdev/hpc-sandbox-benchmarks",
 	] as const) {
 		if (!publishIf.includes(needle)) {
 			errors.push(
 				`${file}::publish: \`if:\` must confine the release to workflow_dispatch on main of ` +
-					`starslingdev/sandbox-benchmarks (missing "${needle}")`,
+					`starslingdev/hpc-sandbox-benchmarks (missing "${needle}")`,
 			);
 		}
 	}

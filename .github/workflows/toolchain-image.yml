@@ -129,7 +129,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
-      github.repository == 'starslingdev/sandbox-benchmarks'
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
     runs-on: starsling-ubuntu-24.04-2
     # Validation + one registry probe; it should take a minute. A hang means the registry is wedged.
     timeout-minutes: 15
@@ -383,7 +383,7 @@ jobs:
       needs.plan.outputs.skip != 'true' &&
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
-      github.repository == 'starslingdev/sandbox-benchmarks'
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
     runs-on: starsling-ubuntu-24.04-2
     environment: privileged
     # Re-validates the candidate and promotes across all five providers SERIALLY (it is a transaction,

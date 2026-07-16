@@ -29,7 +29,9 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 1. **No publish on merge.** Toolchain GHCR promote is `workflow_dispatch` only (never `push`).
 2. **Main only, this repo only.** Privileged jobs require
    `github.ref == 'refs/heads/main'` and
-   `github.repository == 'starslingdev/sandbox-benchmarks'`.
+   `github.repository == 'starslingdev/hpc-sandbox-benchmarks'`. The benchmark matrix additionally
+   permits an explicitly opted-in non-main dispatch for pre-merge validation; those cells still
+   require `privileged` approval, and dataset publishing remains main-only.
 3. **Environment approval.** `privileged` must require at least one reviewer and restrict
    deployments to the `main` branch. Write access alone cannot finish a release.
 4. **Fork PRs.** Same-repo guard on self-hosted PR jobs; fork PR code never runs on
