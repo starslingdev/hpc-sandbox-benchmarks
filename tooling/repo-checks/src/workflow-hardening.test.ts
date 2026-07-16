@@ -1,9 +1,10 @@
 // Invariant: the GitHub Actions layer stays hardened. (1) every actions/checkout opts out of
-// credential persistence unless it is an allowlisted pushing checkout, and (2) ci-lint.yml runs
-// actionlint + zizmor at the agreed gate threshold. The runHardeningCheck() test against the real
-// .github files IS the gate's CI enforcement point (same precedent as workflow-registry-sync.test.ts);
-// the rest is unit coverage of the pure checks on synthetic drift so a regression names the offender.
-// See ./lib/workflow-hardening.ts.
+// credential persistence unless it is an allowlisted pushing checkout, (2) ci-lint.yml runs
+// actionlint + zizmor at the agreed gate threshold, (3) custom-secret / write jobs declare
+// environment: privileged, and (4) toolchain publish is workflow_dispatch-only. The
+// runHardeningCheck() test against the real .github files IS the gate's CI enforcement point
+// (same precedent as workflow-registry-sync.test.ts); the rest is unit coverage of the pure checks
+// on synthetic drift so a regression names the offender. See ./lib/workflow-hardening.ts.
 import { describe, expect, test } from "bun:test";
 import type { CheckoutStep } from "./lib/workflow-hardening.ts";
 import {
@@ -12,11 +13,21 @@ import {
 	checkCiLintGate,
 	checkoutSteps,
 	checkPersistCredentials,
+	checkPrivilegedEnvironment,
+	checkToolchainDispatchOnly,
+	customSecretsIn,
 	listWorkflowFiles,
+	PRIVILEGED_ENVIRONMENT,
 	readWorkflow,
 	runHardeningCheck,
+	TOOLCHAIN_WORKFLOW,
 	WORKFLOWS_DIR,
 } from "./lib/workflow-hardening.ts";
+
+/** A no-op step — the body for fixtures whose step content is irrelevant to what they assert. */
+const NOOP_STEP = { run: "true" };
+/** Build a single-job workflow doc: `{ ...root, jobs: { [id]: job } }`. */
+const oneJob = (id: string, job: object, root: object = {}) => ({ ...root, jobs: { [id]: job } });
 
 describe("checkoutSteps against the real workflows", () => {
 	test("every workflow's checkouts are extracted with a persist-credentials reading", () => {
@@ -135,6 +146,241 @@ describe("checkCiLintGate", () => {
 		const errors = checkCiLintGate(loosened);
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("--min-confidence high");
+	});
+});
+
+describe("customSecretsIn", () => {
+	test("ignores GITHUB_TOKEN and extracts provider secrets in dot and bracket notation", () => {
+		expect(
+			customSecretsIn(
+				// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+				"${{ secrets.GITHUB_TOKEN }} ${{ secrets.E2B_API_KEY }} ${{ secrets.DAYTONA_TARGET || 'us-west-2' }} ${{ secrets['NOVITA_API_KEY'] }} ${{ secrets[\"BL_API_KEY\"] }}",
+			),
+		).toEqual(["E2B_API_KEY", "DAYTONA_TARGET", "NOVITA_API_KEY", "BL_API_KEY"]);
+	});
+
+	test("matches the dot accessor even with GHA-legal whitespace around it", () => {
+		expect(
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			customSecretsIn("${{ secrets . E2B_API_KEY }} ${{ secrets. DAYTONA_API_KEY }}"),
+		).toEqual(["E2B_API_KEY", "DAYTONA_API_KEY"]);
+	});
+
+	test("detects a secret guarded behind a condition (the scoped `&& secrets.X || ''` form)", () => {
+		expect(
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			customSecretsIn("${{ inputs.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}"),
+		).toEqual(["DAYTONA_API_KEY"]);
+	});
+
+	test("finds every secret access within a single expression block", () => {
+		expect(
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			customSecretsIn("${{ secrets.A || secrets.B }}"),
+		).toEqual(["A", "B"]);
+	});
+});
+
+describe("checkPrivilegedEnvironment", () => {
+	test("passes the real privileged workflows", () => {
+		for (const file of ["bench-matrix.yml", "bench-smoke.yml", "toolchain-image.yml"]) {
+			expect(checkPrivilegedEnvironment(readWorkflow(`${WORKFLOWS_DIR}/${file}`), file)).toEqual(
+				[],
+			);
+		}
+	});
+
+	test("passes jobs that only use GITHUB_TOKEN without an environment", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+		const env = { TOKEN: "${{ secrets.GITHUB_TOKEN }}" };
+		const doc = oneJob("clone", { steps: [{ env, run: "true" }] });
+		expect(checkPrivilegedEnvironment(doc, "safe.yml")).toEqual([]);
+	});
+
+	test("flags a custom secret without environment: privileged", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+		const env = { E2B_API_KEY: "${{ secrets.E2B_API_KEY }}" };
+		const doc = oneJob("bench", { steps: [{ env, run: "true" }] });
+		const errors = checkPrivilegedEnvironment(doc, "leak.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("leak.yml::bench");
+		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
+		expect(errors[0]).toContain("E2B_API_KEY");
+	});
+
+	test("flags a provider-scoped secret env value (condition && secrets.X || '') without privileged", () => {
+		// The bench/smoke lanes scope each secret behind a condition; the gate must still require
+		// `environment: privileged` for such a job, or removing it would silently pass the drift gate.
+		const env = {
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			DAYTONA_API_KEY: "${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}",
+		};
+		const doc = oneJob("bench", { steps: [{ env, run: "true" }] });
+		const errors = checkPrivilegedEnvironment(doc, "scoped-leak.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("scoped-leak.yml::bench");
+		expect(errors[0]).toContain("DAYTONA_API_KEY");
+		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
+	});
+
+	test("flags custom secrets in job or step if conditions without environment: privileged", () => {
+		const doc = oneJob("bench", {
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			if: "${{ secrets.JOB_SECRET != '' }}",
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			steps: [{ if: "${{ secrets.STEP_SECRET != '' }}", run: "true" }],
+		});
+		const errors = checkPrivilegedEnvironment(doc, "leak-if.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("leak-if.yml::bench");
+		expect(errors[0]).toContain("JOB_SECRET");
+		expect(errors[0]).toContain("STEP_SECRET");
+	});
+
+	test("flags custom secrets in workflow-level env inherited by every job", () => {
+		const doc = oneJob(
+			"plan",
+			{ steps: [NOOP_STEP] },
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			{ env: { E2B_API_KEY: "${{ secrets.E2B_API_KEY }}" } },
+		);
+		const errors = checkPrivilegedEnvironment(doc, "leak-root-env.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("leak-root-env.yml::plan");
+		expect(errors[0]).toContain("E2B_API_KEY");
+	});
+
+	test("flags packages: write without the privileged environment", () => {
+		const doc = oneJob("publish", { permissions: { packages: "write" }, steps: [NOOP_STEP] });
+		const errors = checkPrivilegedEnvironment(doc, "ghcr.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("packages: write");
+	});
+
+	test("accepts a write job that declares environment: privileged", () => {
+		const doc = oneJob("publish", {
+			environment: PRIVILEGED_ENVIRONMENT,
+			permissions: { contents: "write" },
+			steps: [NOOP_STEP],
+		});
+		expect(checkPrivilegedEnvironment(doc, "ok.yml")).toEqual([]);
+	});
+
+	test("handles the string permissions shorthand (write-all elevates, read-all does not)", () => {
+		// `permissions: write-all` grants contents+packages write — must be flagged; the string form
+		// must not throw (it once crashed asRecord). `read-all` grants no write, so it is clean.
+		const errors = checkPrivilegedEnvironment(
+			oneJob("publish", { permissions: "write-all", steps: [NOOP_STEP] }),
+			"write-all.yml",
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("contents: write");
+		expect(errors[0]).toContain("packages: write");
+
+		expect(
+			checkPrivilegedEnvironment(
+				oneJob("publish", { permissions: "read-all", steps: [NOOP_STEP] }),
+				"read-all.yml",
+			),
+		).toEqual([]);
+	});
+
+	test("flags secrets forwarded to a reusable workflow (secrets: inherit) without privileged", () => {
+		// `secrets: inherit` on a `uses:` job forwards every repo secret with no ${{ secrets.* }} here.
+		const doc = oneJob("call", {
+			uses: "org/repo/.github/workflows/release.yml@main",
+			secrets: "inherit",
+		});
+		const errors = checkPrivilegedEnvironment(doc, "reusable.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("reusable workflow");
+		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
+	});
+
+	test("accepts a reusable-workflow call that forwards secrets behind privileged", () => {
+		const doc = oneJob("call", {
+			uses: "org/repo/.github/workflows/release.yml@main",
+			secrets: "inherit",
+			environment: PRIVILEGED_ENVIRONMENT,
+		});
+		expect(checkPrivilegedEnvironment(doc, "reusable-ok.yml")).toEqual([]);
+	});
+
+	test("flags a secret passed to a reusable workflow via a JOB-LEVEL with: input", () => {
+		// A `uses:` job has no steps: its inputs ride a job-level `with:`. Passing a secret as an input
+		// there (instead of the `secrets:` block) must not slip past the gate.
+		const doc = oneJob("call", {
+			uses: "org/repo/.github/workflows/deploy.yml@main",
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			with: { api_key: "${{ secrets.DEPLOY_KEY }}" },
+		});
+		const errors = checkPrivilegedEnvironment(doc, "with-leak.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("DEPLOY_KEY");
+		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
+	});
+
+	test("accepts a job-level with: secret input behind privileged", () => {
+		const doc = oneJob("call", {
+			uses: "org/repo/.github/workflows/deploy.yml@main",
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			with: { api_key: "${{ secrets.DEPLOY_KEY }}" },
+			environment: PRIVILEGED_ENVIRONMENT,
+		});
+		expect(checkPrivilegedEnvironment(doc, "with-ok.yml")).toEqual([]);
+	});
+});
+
+describe("checkToolchainDispatchOnly", () => {
+	// The main-only dispatch guard the publish job's `if:` must carry, and a publish job that passes.
+	const DISPATCH_GATE_IF =
+		"github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'starslingdev/sandbox-benchmarks'";
+	const gatedPublish = {
+		environment: PRIVILEGED_ENVIRONMENT,
+		if: DISPATCH_GATE_IF,
+		steps: [NOOP_STEP],
+	};
+
+	test("passes the real toolchain-image.yml", () => {
+		expect(
+			checkToolchainDispatchOnly(
+				readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`),
+				TOOLCHAIN_WORKFLOW,
+			),
+		).toEqual([]);
+	});
+
+	test("flags a push trigger on the toolchain workflow", () => {
+		const doc = {
+			on: { workflow_dispatch: {}, pull_request: {}, push: { branches: ["main"] } },
+			jobs: { publish: gatedPublish },
+		};
+		const errors = checkToolchainDispatchOnly(doc, TOOLCHAIN_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("trigger `push` is not allowed");
+	});
+
+	test("flags a publish job missing the main-only dispatch gate", () => {
+		const doc = {
+			on: { workflow_dispatch: {}, pull_request: {} },
+			jobs: { publish: { ...gatedPublish, if: "true" } },
+		};
+		const errors = checkToolchainDispatchOnly(doc, TOOLCHAIN_WORKFLOW);
+		expect(errors.some((e) => e.includes('missing "workflow_dispatch"'))).toBe(true);
+		expect(errors.some((e) => e.includes('missing "refs/heads/main"'))).toBe(true);
+	});
+
+	test("normalizes the string and array `on:` shorthand forms", () => {
+		// `on: workflow_dispatch` (string) has no pull_request → the PR-gate requirement fires.
+		const stringForm = { on: "workflow_dispatch", jobs: { publish: gatedPublish } };
+		const stringErrors = checkToolchainDispatchOnly(stringForm, TOOLCHAIN_WORKFLOW);
+		expect(stringErrors.some((e) => e.includes("must declare `pull_request`"))).toBe(true);
+		// `on: [workflow_dispatch, pull_request]` (array) is the allowed pair → clean.
+		const arrayForm = {
+			on: ["workflow_dispatch", "pull_request"],
+			jobs: { publish: gatedPublish },
+		};
+		expect(checkToolchainDispatchOnly(arrayForm, TOOLCHAIN_WORKFLOW)).toEqual([]);
 	});
 });
 
