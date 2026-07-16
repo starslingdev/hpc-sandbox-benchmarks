@@ -15,6 +15,7 @@ describe("raw-file naming", () => {
 	it("recognises PTS result XML by prefix and extension", () => {
 		expect(isPtsResultFile("pts_node-web-tooling.xml")).toBe(true);
 		expect(isPtsResultFile("pts_node-web-tooling.log")).toBe(false);
+		expect(isPtsResultFile("pts_node-web-tooling--metadata.json")).toBe(false);
 		expect(isPtsResultFile("observed-specs.json")).toBe(false);
 	});
 

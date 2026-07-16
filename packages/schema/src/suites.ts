@@ -82,6 +82,7 @@ export const SUITES = {
 		metrics: [
 			"pybench_milliseconds",
 			"sqlite_speedtest_seconds",
+			"git_seconds",
 			"pgbench_scaling_factor_100_clients_50_mode_read_only",
 			"pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
 			"pgbench_scaling_factor_100_clients_50_mode_read_write",
@@ -133,15 +134,23 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:disk:all"],
 	},
-	// The network dimension: loopback TCP (10GB via nc) — self-contained, no external endpoint, so it
-	// isolates the sandbox's network stack from internet weather. The suite task also runs the
-	// latency/DNS/download probes (raw JSON provenance, no catalogued metrics).
+	// The network dimension: fast-cli performs sustained real-world download/upload transfers through
+	// Netflix's fast.com CDN and reports idle/loaded latency; loopback TCP (10GB via nc) is the paired
+	// self-contained synthetic that isolates the sandbox's network stack from Internet weather. The
+	// suite task also runs latency/DNS and a small GitHub control-download probe as raw provenance.
 	network: {
 		setupPts: true,
-		commandTimeoutMinutes: 30,
-		timeoutMinutes: 40,
+		setupNode: true,
+		commandTimeoutMinutes: 45,
+		timeoutMinutes: 55,
 		dimensions: ["network"],
-		metrics: ["network_loopback_seconds"],
+		metrics: [
+			"fast_cli_internet_download_speed",
+			"fast_cli_internet_upload_speed",
+			"fast_cli_internet_latency",
+			"fast_cli_internet_loaded_latency_bufferbloat",
+			"network_loopback_seconds",
+		],
 		commands: ["mise run benchmark:network:all"],
 	},
 	// The generic-compute dimension slice next to cpu-node: c-ray (float/thread scaling — the seam the

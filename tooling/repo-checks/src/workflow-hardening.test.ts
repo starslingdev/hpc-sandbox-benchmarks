@@ -396,7 +396,7 @@ describe("checkPrivilegedEnvironment", () => {
 describe("checkToolchainDispatchOnly", () => {
 	// The main-only dispatch guard the publish job's `if:` must carry, and a publish job that passes.
 	const DISPATCH_GATE_IF =
-		"github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'starslingdev/sandbox-benchmarks'";
+		"github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'starslingdev/hpc-sandbox-benchmarks'";
 	const gatedPublish = {
 		environment: PRIVILEGED_ENVIRONMENT,
 		if: DISPATCH_GATE_IF,

@@ -64,10 +64,10 @@ describe("suite registry", () => {
 		// over the unpinned half instead of dropping the suite from the gate entirely.
 		const PINNED_PREFIXES = ["pgbench_"];
 		const profilesOf = {
-			network: ["pts/network-loopback"],
+			network: ["pts/network-loopback", "pts/fast-cli"],
 			"cpu-generic": ["pts/c-ray", "pts/compress-zstd"],
 			memory: ["pts/stream"],
-			system: ["pts/pybench", "pts/sqlite-speedtest"],
+			system: ["pts/pybench", "pts/sqlite-speedtest", "pts/git"],
 		} as const;
 		for (const [suiteName, ptsTests] of Object.entries(profilesOf)) {
 			const fromCatalog = METRIC_CATALOG.filter(

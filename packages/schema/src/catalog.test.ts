@@ -119,16 +119,11 @@ describe("metric catalog", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});
 
-	it("resolves the Loopback TCP headline for the network dimension (last unpopulated axis)", () => {
-		// network was the one dimension still without metrics; network-loopback populates it. With that,
-		// every Dimension is populated + headlined, so headlineMetric's no-headline throw is no longer
-		// reachable through the real catalog — the "exactly one headline per dimension" test above keeps
-		// it that way. NOT the load check, which only ever rejects a SECOND headline.
+	it("keeps the controlled Loopback TCP measurement as the network headline", () => {
 		const metric = headlineMetric("network");
 		expect(metric.id).toBe("network_loopback_seconds");
 		expect(metric.label).toBe("Loopback TCP (10GB)");
 		expect(metric.direction).toBe("LIB");
-		// Single-result wildcard: no pts.description (so the byte-match gate needs no recorded composite).
 		expect(metric.pts).toEqual({ test: "pts/network-loopback" });
 	});
 

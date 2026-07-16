@@ -9,7 +9,7 @@ import {
 } from "@sandbox-benchmarks/schema";
 import { normalizeProviderDir } from "./normalize-tree.ts";
 
-// A composite carrying a catalogued node-web-tooling result plus an uncatalogued pts/git result.
+// A composite carrying a catalogued node-web-tooling result plus an uncatalogued synthetic result.
 // `samples` lets a second file diverge so we can prove the contamination-vs-benign distinction.
 function composite(samples: string): string {
 	return `<?xml version="1.0"?>
@@ -22,8 +22,8 @@ function composite(samples: string): string {
     <Data><Entry><Value>10.5</Value><RawString>${samples}</RawString></Entry></Data>
   </Result>
   <Result>
-    <Identifier>pts/git-1.1.0</Identifier>
-    <Title>Git</Title>
+    <Identifier>pts/not-in-catalog-1.0.0</Identifier>
+    <Title>Not In Catalog</Title>
     <Scale>Seconds</Scale><Proportion>LIB</Proportion>
     <Data><Entry><Value>54.27</Value></Entry></Data>
   </Result>
@@ -44,7 +44,7 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 	});
 
 	it("keeps one copy and does NOT pool samples across files (no inflated n)", () => {
-		// Both files carry the same node-web-tooling + git result — the exact TEST_RESULTS_NAME-reuse
+		// Both files carry the same node-web-tooling + straggler — the exact TEST_RESULTS_NAME-reuse
 		// contamination seen in real PTS output. Pooling would give n=6 and a fabricated stddev.
 		writeFileSync(join(providerDir, "pts_compress_zstd.xml"), composite("10.5:10.6:10.4"));
 		writeFileSync(join(providerDir, "pts_node-web-tooling.xml"), composite("10.5:10.6:10.4"));
@@ -57,8 +57,8 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 		const metric = matches[0];
 		expect(metric?.samples).toEqual([10.5, 10.6, 10.4]);
 		expect(metric?.aggregates.n).toBe(3);
-		// The uncatalogued git straggler is collapsed to a single entry too.
-		expect(run.uncatalogued.filter((u) => u.id.startsWith("pts/git"))).toHaveLength(1);
+		// The uncatalogued straggler is collapsed to a single entry too.
+		expect(run.uncatalogued.filter((u) => u.id.startsWith("pts/not-in-catalog"))).toHaveLength(1);
 	});
 
 	it("warns loudly when the duplicate's samples diverge (real contamination, not a rewrite)", () => {
@@ -97,12 +97,38 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		const metric = run.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		// sourceFile is prefixed with the suite so a number stays traceable to the suite that wrote it.
 		expect(metric?.sourceFile).toBe("cpu-node/pts_node-web-tooling.xml");
-		// The git result is still an inert straggler, also suite-tagged.
+		// The synthetic result is still an inert straggler, also suite-tagged.
 		expect(run.uncatalogued.map((u) => u.sourceFile)).toEqual([
 			"cpu-node/pts_node-web-tooling.xml",
 		]);
 		// observed-specs.json is read from the suite subdirectory (per-sandbox), not just the provider dir.
 		expect(run.observedSpecs.vcpus).toBe(4);
+	});
+
+	it("retains suite-tagged mise and PTS host records in the normalized provider", () => {
+		const suiteDir = join(providerDir, "system");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "system-provider.json"),
+			JSON.stringify({ asn: "AS64500", manufacturer: "Amazon EC2" }),
+		);
+		writeFileSync(
+			join(suiteDir, "pts_git--metadata.json"),
+			JSON.stringify({ systems: { sandbox: { hardware: { Processor: "AMD EPYC" } } } }),
+		);
+
+		const run = normalizeProviderDir(root, "daytona");
+		expect(run.observedSpecs).toMatchObject({
+			egressAsn: "AS64500",
+			manufacturer: "Amazon EC2",
+		});
+		expect(run.hostMetadata?.map(({ source, sourceFile }) => ({ source, sourceFile }))).toEqual([
+			{
+				source: "phoronix/result-file-to-json",
+				sourceFile: "system/pts_git--metadata.json",
+			},
+			{ source: "mise/system-provider", sourceFile: "system/system-provider.json" },
+		]);
 	});
 
 	it("records suitesCovered from the metrics a suite produced, not from the directory existing", () => {

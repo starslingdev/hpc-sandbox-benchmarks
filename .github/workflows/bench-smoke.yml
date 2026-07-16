@@ -48,7 +48,7 @@ jobs:
     name: ${{ inputs.suite }} on ${{ inputs.provider }}
     if: >
       github.ref == 'refs/heads/main' &&
-      github.repository == 'starslingdev/sandbox-benchmarks'
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
     # The ephemeral self-hosted label is reaped after 70 minutes, while this dispatch exposes suites
     # with a 155-minute sandbox budget. Match the matrix's hosted runner and leave job-level margin
     # for checkout, sandbox teardown, normalization, and artifact upload.

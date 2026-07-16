@@ -56,6 +56,26 @@ export const uncataloguedResultSchema = type({
 });
 export type UncataloguedResult = typeof uncataloguedResultSchema.infer;
 
+/** One flattened field from a host-metadata source. String values preserve the source value while
+ * the path retains its original nested shape (`hardware.Processor`, `data.cpu-smt`, ...). */
+export const hostMetadataFieldSchema = type({
+	path: "string >= 1",
+	value: "string",
+});
+export type HostMetadataField = typeof hostMetadataFieldSchema.infer;
+
+/**
+ * One rich host record retained from an in-sandbox producer. `mise/system-provider` is the repo's
+ * ASN/geo/DMI probe; `phoronix/result-file-to-json` is PTS's native structured System export. The
+ * generic flattened field list deliberately preserves new upstream keys without a Run schema bump.
+ */
+export const hostMetadataRecordSchema = type({
+	source: "'mise/system-provider' | 'phoronix/result-file-to-json'",
+	sourceFile: "string >= 1",
+	fields: hostMetadataFieldSchema.array(),
+});
+export type HostMetadataRecord = typeof hostMetadataRecordSchema.infer;
+
 /**
  * Observed actuals recorded per Run — what in-sandbox probes actually saw, versus the requested
  * {@link TargetSpec}. All optional: providers differ in what in-sandbox
@@ -83,6 +103,24 @@ export const observedSpecsSchema = type({
 	// The distinct host CPU models when merged shards of one provider disclosed more than one — the
 	// aggregate-only heterogeneity disclosure (cpuModel is the key; cpuMicroarch is derived from it).
 	"hostCpuModels?": "string[]",
+	// Rich identity from benchmark:system:provider. ASN/org describe public egress; DMI describes the
+	// machine/hypervisor. Full source records also live in ProviderRun.hostMetadata.
+	"publicIp?": "string",
+	"egressOrg?": "string",
+	"egressAsn?": "string",
+	"egressOrgName?": "string",
+	"reverseDns?": "string",
+	"city?": "string",
+	"region?": "string",
+	"country?": "string",
+	"location?": "string",
+	"timezone?": "string",
+	"manufacturer?": "string",
+	"productName?": "string",
+	"biosVendor?": "string",
+	"networkPrefix?": "string",
+	"asnSource?": "string",
+	"geoSource?": "string",
 });
 export type ObservedSpecs = typeof observedSpecsSchema.infer;
 
@@ -147,6 +185,8 @@ export const providerRunSchema = type({
 	// Whether observed specs honored the pinned target spec; absent when probes saw too little to judge.
 	"specMatched?": "boolean",
 	observedSpecs: observedSpecsSchema,
+	/** Rich, source-attributed host records; optional for historical Runs predating capture. */
+	"hostMetadata?": hostMetadataRecordSchema.array(),
 	metrics: metricResultSchema.array(),
 	/**
 	 * Every suite that produced at least one catalogued Metric here — the POSITIVE record of coverage,

@@ -55,6 +55,9 @@ const PROFILES = [
 	// Network dimension — single-result (sys.time monitor, no <Option> matrix), so it generates one
 	// description-less wildcard entry (zero byte-match risk).
 	"network-loopback-1.0.1",
+	// Network dimension — a real Internet transfer through Netflix's fast.com CDN. The profile emits
+	// download/upload throughput plus idle/loaded latency from fast-cli's JSON output.
+	"fast-cli-1.0.0",
 	// Cpu dimension — Zstd compression across its Compression Level matrix; two parsers per level
 	// (Compression/Decompression Speed via AppendToArgumentsDescription), byte-match-proven by a
 	// recorded composite golden fixture.
@@ -65,7 +68,23 @@ const PROFILES = [
 	// per combination (TPS + Average Latency, distinct descriptions), proven by a recorded fixture.
 	// 1.15.0 is the newest pgbench profile published upstream at REF.
 	"pgbench-1.15.0",
+	// System dimension — common Git operations over a fixed GTK repository checkout. Kept alongside
+	// the realworld repo clones: this synthetic profile isolates Git itself and is short enough to run
+	// in the system matrix cell.
+	"git-1.1.0",
 ] as const;
+
+// These short profiles intentionally use two trials in the benchmark matrix. Keep that local
+// runtime policy in the vendoring tool itself so a refresh remains byte-for-byte idempotent instead
+// of silently restoring upstream's three-trial default. Longer profiles retain their upstream count.
+const TWO_TRIAL_PROFILES = new Set([
+	"node-web-tooling-1.0.1",
+	"c-ray-2.0.0",
+	"pybench-1.1.3",
+	"sqlite-speedtest-1.0.1",
+	"fast-cli-1.0.0",
+	"git-1.1.0",
+]);
 
 // Only these definition files feed the generator; siblings (downloads.xml, install.sh) are ignored.
 // `required` distinguishes the essential `test-definition.xml` (a missing one is a hard failure, not
@@ -134,7 +153,11 @@ async function vendorProfile(commitSha: string, profile: string): Promise<void> 
 			}
 			// Bun.write creates parent dirs, normalizes the path, and overwrites in place — no node:path
 			// join or mkdir + writeFile dance needed.
-			await Bun.write(`${OUT_DIR}/${profile}/${name}`, await fetchBlobText(sha));
+			let contents = await fetchBlobText(sha);
+			if (name === "test-definition.xml" && TWO_TRIAL_PROFILES.has(profile)) {
+				contents = contents.replace(/<TimesToRun>\d+<\/TimesToRun>/, "<TimesToRun>2</TimesToRun>");
+			}
+			await Bun.write(`${OUT_DIR}/${profile}/${name}`, contents);
 			console.log(`✓ ${profile}/${name}`);
 		}),
 	);
