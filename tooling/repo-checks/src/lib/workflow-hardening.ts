@@ -12,6 +12,8 @@
 //   3. Privileged-environment gate — every job that reads a custom secret (anything other than
 //      GITHUB_TOKEN / github.token) OR elevates to contents:write / packages:write must declare
 //      `environment: privileged`, so secrets and releases stay behind Environment protection rules.
+//      A reusable-workflow caller (`uses:` job) can't declare `environment:`; a LOCAL call defers the
+//      gate to the called file (checked here in its own right), a REMOTE one is flagged (unverifiable).
 //   4. Toolchain publish is dispatch-only — toolchain-image.yml must not fire a release on push/merge.
 //
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
@@ -30,9 +32,10 @@ export const PRIVILEGED_ENVIRONMENT = "privileged";
 /** Checkout steps that intentionally keep the persisted job token, keyed "<file>::<jobId>", with the
  *  reason they push. Every other `actions/checkout` must set persist-credentials: false. */
 export const CREDENTIALED_CHECKOUTS: Readonly<Record<string, string>> = {
-	// bench-matrix.yml's publish job commits the promoted dataset and `git push`es it back to the
-	// branch (it grants `contents: write` for exactly this), so it must keep the persisted token.
-	"bench-matrix.yml::publish": "commits + pushes the promoted dataset back to the branch",
+	// publish-dataset.yml's publish job commits the promoted dataset and `git push`es it back to the
+	// branch (it grants `contents: write` for exactly this), so it must keep the persisted token. It is
+	// the reusable workflow bench-matrix.yml's publish job calls, and a maintainer dispatches to backfill.
+	"publish-dataset.yml::publish": "commits + pushes the promoted dataset back to the branch",
 };
 
 /** Built-in / non-environment tokens that may appear as `${{ secrets.* }}` without requiring the
@@ -283,14 +286,56 @@ function jobSecretStrings(job: Record<string, unknown>, file: string, jobId: str
 	return strings;
 }
 
+/** Human-readable list of why a job needs the privileged Environment (secrets it reads/forwards and
+ *  the write scopes it grants), used in both the normal-job and reusable-call error messages. */
+function privilegeReasons(f: {
+	secrets: Set<string>;
+	forwardsSecrets: boolean;
+	contentsWrite: boolean;
+	packagesWrite: boolean;
+}): string[] {
+	const reasons: string[] = [];
+	if (f.secrets.size > 0) reasons.push(`custom secrets (${[...f.secrets].sort().join(", ")})`);
+	if (f.forwardsSecrets) reasons.push("secrets forwarded to a reusable workflow");
+	if (f.contentsWrite) reasons.push("contents: write");
+	if (f.packagesWrite) reasons.push("packages: write");
+	return reasons;
+}
+
+/** True if any job in a parsed workflow declares `environment: <privileged>`. Used to confirm a local
+ *  reusable workflow carries its own approval gate (the caller can't declare one for it). */
+function hasPrivilegedJob(doc: unknown, privileged: string): boolean {
+	const root = asRecord(doc, "reusable workflow: not a YAML mapping");
+	const jobs = asRecord(root.jobs, "reusable workflow: no jobs mapping");
+	return Object.values(jobs).some(
+		(j) =>
+			j !== null &&
+			typeof j === "object" &&
+			!Array.isArray(j) &&
+			jobEnvironmentName(j as Record<string, unknown>) === privileged,
+	);
+}
+
 /**
  * Invariant 3: jobs that touch custom secrets or elevate write permissions must sit behind the
  * `privileged` GitHub Environment so Environment secrets + required reviewers apply.
+ *
+ * A job that calls a reusable workflow (`uses:` at the job level) is special: GHA forbids
+ * `environment:` on such a job, so the gate can't live on the caller. A LOCAL call
+ * (`./.github/workflows/*`) hands the gate to the called file — but the caller's grant of write /
+ * secrets does NOT show up in that file's own YAML (the callee may inherit it), so the callee's
+ * per-file check can miss it. To close that bypass, a privileged local caller must point at a callee
+ * that gates at least one job on `environment: privileged` — verified by resolving the callee here.
+ * (`resolveLocalWorkflow` maps a repo-relative workflow path to its parsed doc; it defaults to reading
+ * from disk, and {@link runHardeningCheck} passes the already-parsed docs. An unresolvable callee is
+ * skipped — actionlint separately fails a `uses:` pointing at a missing local workflow.) A REMOTE call
+ * can't be verified at all, so a remote caller that forwards secrets or write access is flagged.
  */
 export function checkPrivilegedEnvironment(
 	doc: unknown,
 	file: string,
 	privileged: string = PRIVILEGED_ENVIRONMENT,
+	resolveLocalWorkflow: (relPath: string) => unknown = (relPath) => readWorkflow(relPath),
 ): string[] {
 	const errors: string[] = [];
 	const root = asRecord(doc, `${file}: not a YAML mapping`);
@@ -321,15 +366,40 @@ export function checkPrivilegedEnvironment(
 		const needsPrivileged = secrets.size > 0 || forwardsSecrets || contentsWrite || packagesWrite;
 		if (!needsPrivileged) continue;
 
+		// Reusable-workflow caller: can't declare `environment:`, so gating moves into the called file.
+		if (typeof job.uses === "string") {
+			const reasons = privilegeReasons({ secrets, forwardsSecrets, contentsWrite, packagesWrite });
+			if (!job.uses.startsWith("./")) {
+				errors.push(
+					`${key}: calls a remote reusable workflow (${job.uses}) with ${reasons.join(" and ")} — ` +
+						`it can't be verified to gate on \`environment: ${privileged}\`; call a local ` +
+						`./.github/workflows reusable workflow (which this gate checks) instead — see docs/ci-secrets.md`,
+				);
+				continue;
+			}
+			// Local call: verify the callee actually carries an approval gate. The caller's grant of
+			// write/secrets is invisible in the callee's own YAML, so its per-file check can't be relied
+			// on to catch an ungated callee — check it here. Skip only if the callee can't be resolved
+			// (actionlint fails a `uses:` at a missing local workflow).
+			let calledDoc: unknown;
+			try {
+				calledDoc = resolveLocalWorkflow(job.uses.replace(/^\.\//, ""));
+			} catch {
+				calledDoc = undefined;
+			}
+			if (calledDoc !== undefined && !hasPrivilegedJob(calledDoc, privileged)) {
+				errors.push(
+					`${key}: calls local reusable workflow ${job.uses} with ${reasons.join(" and ")} but no ` +
+						`job in it sets \`environment: ${privileged}\` — a \`uses:\` caller can't gate itself, so ` +
+						`the called workflow must — see docs/ci-secrets.md`,
+				);
+			}
+			continue;
+		}
+
 		const envName = jobEnvironmentName(job);
 		if (envName !== privileged) {
-			const reasons: string[] = [];
-			if (secrets.size > 0) {
-				reasons.push(`custom secrets (${[...secrets].sort().join(", ")})`);
-			}
-			if (forwardsSecrets) reasons.push("secrets forwarded to a reusable workflow");
-			if (contentsWrite) reasons.push("contents: write");
-			if (packagesWrite) reasons.push("packages: write");
+			const reasons = privilegeReasons({ secrets, forwardsSecrets, contentsWrite, packagesWrite });
 			errors.push(
 				`${key}: must set \`environment: ${privileged}\` because it uses ${reasons.join(" and ")} — ` +
 					`see docs/ci-secrets.md`,
@@ -429,8 +499,22 @@ export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 			? [`${CI_LINT_WORKFLOW}: missing from ${WORKFLOWS_DIR}`]
 			: checkCiLintGate(ciLintDoc)),
 	];
+	// Resolve a local `uses: ./.github/workflows/<f>` to its already-parsed doc so the privileged-env
+	// check can verify a reusable callee gates itself; throw on a miss so it's treated as unresolvable.
+	const resolveLocalWorkflow = (relPath: string): unknown => {
+		const doc = docs.get(relPath.slice(`${WORKFLOWS_DIR}/`.length));
+		if (doc === undefined) throw new Error(`no such local workflow: ${relPath}`);
+		return doc;
+	};
 	for (const file of files) {
-		errors.push(...checkPrivilegedEnvironment(docs.get(file), file));
+		errors.push(
+			...checkPrivilegedEnvironment(
+				docs.get(file),
+				file,
+				PRIVILEGED_ENVIRONMENT,
+				resolveLocalWorkflow,
+			),
+		);
 	}
 	const toolchainDoc = docs.get(TOOLCHAIN_WORKFLOW);
 	if (toolchainDoc === undefined) {

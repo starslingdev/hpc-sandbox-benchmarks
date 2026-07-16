@@ -14,8 +14,13 @@ and toolchain publish must not trigger on `push`.
 | --- | --- | --- |
 | `toolchain-image.yml` | `publish` | Provider bake secrets + `packages: write` (GHCR release) |
 | `bench-matrix.yml` | `bench` | Provider API keys |
-| `bench-matrix.yml` | `publish` | Dataset + leaderboard commit (`contents: write`) |
+| `publish-dataset.yml` | `publish` | Dataset + leaderboard publish (`contents: write` + `pull-requests: write`) |
 | `bench-smoke.yml` | `smoke` | Provider API keys |
+
+`publish-dataset.yml` is a reusable workflow: `bench-matrix.yml`'s `publish` job calls it at the end
+of a matrix run, and a maintainer can dispatch it standalone to backfill (see rule 6). A `uses:` caller
+can't declare `environment:`, so the `privileged` gate lives on the reusable workflow's own job — the
+workflow-hardening drift gate checks it there and passes the local caller.
 
 Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no secrets).
 
@@ -29,6 +34,30 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    deployments to the `main` branch. Write access alone cannot finish a release.
 4. **Fork PRs.** Same-repo guard on self-hosted PR jobs; fork PR code never runs on
    `starsling-ubuntu-24.04-2`. Forks never receive Environment secrets on `pull_request`.
+5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a
+   pull request" ruleset, so `publish-dataset.yml`'s `publish` job cannot push the promoted dataset
+   straight to `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>`
+   PR instead (hence `pull-requests: write`) and arms GitHub-native auto-merge (`gh pr merge --auto`),
+   which merges only once branch protection is satisfied — required status checks green and any
+   required reviews in. It never bypasses those rules. As a fast pre-flight, the job first runs the
+   Biome gate on the generated dataset + leaderboard (`biome check data/dataset LEADERBOARD.md`, the
+   same rules ci.yml runs) — Biome formats JSON, so an unformatted Run document would fail the PR — and
+   aborts before opening a doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the
+   existing open PR instead of colliding on the deterministic branch.
+
+   > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
+   > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI check
+   > is a *required* status, auto-merge waits for a check that never runs, and a maintainer completes
+   > the merge (their merge to `main` runs `ci.yml` normally); the in-job pre-flight guarantees the
+   > content is already clean. For fully hands-off auto-merge, open the PR with a GitHub App
+   > installation token or PAT instead of `GITHUB_TOKEN` so the PR's own checks run.
+6. **Backfilling a failed publish.** The publish logic is the reusable `publish-dataset.yml`, so when
+   a matrix run's publish fails (or was never reached) a maintainer can re-run it standalone:
+   **Actions → Publish dataset → Run workflow**, passing the original run's id. It re-downloads that
+   run's `bench-*` shard artifacts by run-id (needs `actions: read`), re-aggregates, and opens the
+   same lint-gated dataset PR — no re-benching. This only works while that run's shard artifacts are
+   still within the repo's artifact-retention window. Dispatch is still gated by Environment
+   `privileged` (main-only, required reviewer), so it is effectively maintainer-only.
 
 > **Two approvals per bench-matrix run.** `bench` and `publish` both carry `environment:
 > privileged` and run sequentially, so GitHub raises **two** separate pending-deployment gates: one
