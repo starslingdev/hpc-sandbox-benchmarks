@@ -1,0 +1,2487 @@
+{
+  "schemaVersion": "2",
+  "runId": "29472826358",
+  "sha": "d85e6a9f905d428b9efd469a1d287f4075fddef7",
+  "generatedAt": "2026-07-16T07:25:11.693Z",
+  "targetSpec": {
+    "vcpus": 2,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "providers": [
+    {
+      "providerId": "blaxel",
+      "validationStatus": "validated",
+      "specMatched": false,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.90GHz",
+        "hostVcpus": 6,
+        "hostMemoryGb": 16,
+        "os": "Debian GNU/Linux 12 (bookworm)",
+        "kernel": "6.12.75+",
+        "user": "root",
+        "vcpus": 6,
+        "virtualization": "unknown",
+        "memoryGb": 15.63,
+        "diskGb": 12.5
+      },
+      "metrics": [
+        {
+          "metricId": "c_ray_resolution_1080p_rays_per_pixel_16",
+          "samples": [128.793, 128.091],
+          "aggregates": {
+            "p50": 128.442,
+            "p95": 128.7579,
+            "mean": 128.442,
+            "stdev": 0.4963889603929551,
+            "min": 128.091,
+            "max": 128.793,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_c-ray.xml",
+          "appVersion": "2.0",
+          "arguments": "-s 1920x1080 -r 16"
+        },
+        {
+          "metricId": "c_ray_resolution_4k_rays_per_pixel_16",
+          "samples": [513.535, 511.165],
+          "aggregates": {
+            "p50": 512.35,
+            "p95": 513.4164999999999,
+            "mean": 512.35,
+            "stdev": 1.6758430714120605,
+            "min": 511.165,
+            "max": 513.535,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_c-ray.xml",
+          "appVersion": "2.0",
+          "arguments": "-s 3840x2160 -r 16"
+        },
+        {
+          "metricId": "c_ray_resolution_5k_rays_per_pixel_16",
+          "samples": [908.26, 906.89],
+          "aggregates": {
+            "p50": 907.575,
+            "p95": 908.1915,
+            "mean": 907.575,
+            "stdev": 0.9687362902255332,
+            "min": 906.89,
+            "max": 908.26,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_c-ray.xml",
+          "appVersion": "2.0",
+          "arguments": "-s 5120x2880 -r 16"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_12_compression_speed",
+          "samples": [115.3, 116.5],
+          "aggregates": {
+            "p50": 115.9,
+            "p95": 116.44,
+            "mean": 115.9,
+            "stdev": 0.848528137423854,
+            "min": 115.3,
+            "max": 116.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b12"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_12_decompression_speed",
+          "samples": [1055.5, 1051.6],
+          "aggregates": {
+            "p50": 1053.55,
+            "p95": 1055.305,
+            "mean": 1053.55,
+            "stdev": 2.7577164466275996,
+            "min": 1051.6,
+            "max": 1055.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b12"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_compression_speed",
+          "samples": [11.6, 11.1],
+          "aggregates": {
+            "p50": 11.35,
+            "p95": 11.575,
+            "mean": 11.35,
+            "stdev": 0.3535533905932738,
+            "min": 11.1,
+            "max": 11.6,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_decompression_speed",
+          "samples": [882, 893.6],
+          "aggregates": {
+            "p50": 887.8,
+            "p95": 893.02,
+            "mean": 887.8,
+            "stdev": 8.202438661764008,
+            "min": 882,
+            "max": 893.6,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_long_mode_compression_speed",
+          "samples": [6.09, 6.18],
+          "aggregates": {
+            "p50": 6.135,
+            "p95": 6.1754999999999995,
+            "mean": 6.135,
+            "stdev": 0.06363961030678918,
+            "min": 6.09,
+            "max": 6.18,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_long_mode_decompression_speed",
+          "samples": [893.3, 900],
+          "aggregates": {
+            "p50": 896.65,
+            "p95": 899.665,
+            "mean": 896.65,
+            "stdev": 4.737615433949901,
+            "min": 893.3,
+            "max": 900,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_3_compression_speed",
+          "samples": [1295.2, 1303.5],
+          "aggregates": {
+            "p50": 1299.35,
+            "p95": 1303.085,
+            "mean": 1299.35,
+            "stdev": 5.868986283848393,
+            "min": 1295.2,
+            "max": 1303.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b3"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_3_long_mode_compression_speed",
+          "samples": [848.2, 832.3],
+          "aggregates": {
+            "p50": 840.25,
+            "p95": 847.4050000000001,
+            "mean": 840.25,
+            "stdev": 11.24299782086617,
+            "min": 832.3,
+            "max": 848.2,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b3 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_8_compression_speed",
+          "samples": [344.2, 345],
+          "aggregates": {
+            "p50": 344.6,
+            "p95": 344.96,
+            "mean": 344.6,
+            "stdev": 0.5656854249492259,
+            "min": 344.2,
+            "max": 345,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b8"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_8_decompression_speed",
+          "samples": [1125.5, 1111.1],
+          "aggregates": {
+            "p50": 1118.3,
+            "p95": 1124.78,
+            "mean": 1118.3,
+            "stdev": 10.18233764908635,
+            "min": 1111.1,
+            "max": 1125.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b8"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_8_long_mode_compression_speed",
+          "samples": [323.5, 330.5],
+          "aggregates": {
+            "p50": 327,
+            "p95": 330.15,
+            "mean": 327,
+            "stdev": 4.949747468305833,
+            "min": 323.5,
+            "max": 330.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b8 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_8_long_mode_decompression_speed",
+          "samples": [1136.8, 1130.4],
+          "aggregates": {
+            "p50": 1133.6,
+            "p95": 1136.48,
+            "mean": 1133.6,
+            "stdev": 4.525483399593888,
+            "min": 1130.4,
+            "max": 1136.8,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b8 --long"
+        },
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [525000, 555000],
+          "aggregates": {
+            "p50": 540000,
+            "p95": 553500,
+            "mean": 540000,
+            "stdev": 21213.203435596424,
+            "min": 525000,
+            "max": 555000,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [2050, 2169],
+          "aggregates": {
+            "p50": 2109.5,
+            "p95": 2163.05,
+            "mean": 2109.5,
+            "stdev": 84.14570696119915,
+            "min": 2050,
+            "max": 2169,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [492000, 495000],
+          "aggregates": {
+            "p50": 493500,
+            "p95": 494850,
+            "mean": 493500,
+            "stdev": 2121.3203435596424,
+            "min": 492000,
+            "max": 495000,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [1922, 1935],
+          "aggregates": {
+            "p50": 1928.5,
+            "p95": 1934.35,
+            "mean": 1928.5,
+            "stdev": 9.192388155425117,
+            "min": 1922,
+            "max": 1935,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [4535, 4670],
+          "aggregates": {
+            "p50": 4602.5,
+            "p95": 4663.25,
+            "mean": 4602.5,
+            "stdev": 95.45941546018392,
+            "min": 4535,
+            "max": 4670,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-read.xml",
+          "appVersion": "3.36",
+          "arguments": "read libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [4537, 4672],
+          "aggregates": {
+            "p50": 4604.5,
+            "p95": 4665.25,
+            "mean": 4604.5,
+            "stdev": 95.45941546018392,
+            "min": 4537,
+            "max": 4672,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-read.xml",
+          "appVersion": "3.36",
+          "arguments": "read libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [3544, 3622],
+          "aggregates": {
+            "p50": 3583,
+            "p95": 3618.1,
+            "mean": 3583,
+            "stdev": 55.154328932550705,
+            "min": 3544,
+            "max": 3622,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [3545, 3624],
+          "aggregates": {
+            "p50": 3584.5,
+            "p95": 3620.05,
+            "mean": 3584.5,
+            "stdev": 55.86143571373726,
+            "min": 3545,
+            "max": 3624,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [12.29, 11.96],
+          "aggregates": {
+            "p50": 12.125,
+            "p95": 12.273499999999999,
+            "mean": 12.125,
+            "stdev": 0.23334523779155947,
+            "min": 11.96,
+            "max": 12.29,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "network_loopback_seconds",
+          "samples": [7.183, 6.732],
+          "aggregates": {
+            "p50": 6.9575,
+            "p95": 7.16045,
+            "mean": 6.9575,
+            "stdev": 0.318905158315133,
+            "min": 6.732,
+            "max": 7.183,
+            "n": 2
+          },
+          "sourceFile": "network/pts_network-loopback.xml"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [12.73, 12.67],
+          "aggregates": {
+            "p50": 12.7,
+            "p95": 12.727,
+            "mean": 12.7,
+            "stdev": 0.04242640687119383,
+            "min": 12.67,
+            "max": 12.73,
+            "n": 2
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "pybench_milliseconds",
+          "samples": [841, 838],
+          "aggregates": {
+            "p50": 839.5,
+            "p95": 840.85,
+            "mean": 839.5,
+            "stdev": 2.1213203435596424,
+            "min": 838,
+            "max": 841,
+            "n": 2
+          },
+          "sourceFile": "system/pts_pybench.xml",
+          "appVersion": "2018-02-16"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [10.076, 9.754],
+          "aggregates": {
+            "p50": 9.915,
+            "p95": 10.0599,
+            "mean": 9.915,
+            "stdev": 0.2276883835420696,
+            "min": 9.754,
+            "max": 10.076,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [18.511, 16.531],
+          "aggregates": {
+            "p50": 17.521,
+            "p95": 18.412,
+            "mean": 17.521,
+            "stdev": 1.400071426749363,
+            "min": 16.531,
+            "max": 18.511,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [1.286, 1.532],
+          "aggregates": {
+            "p50": 1.409,
+            "p95": 1.5197,
+            "mean": 1.409,
+            "stdev": 0.17394826817189069,
+            "min": 1.286,
+            "max": 1.532,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [3.827, 3.957],
+          "aggregates": {
+            "p50": 3.892,
+            "p95": 3.9505,
+            "mean": 3.892,
+            "stdev": 0.0919238815542511,
+            "min": 3.827,
+            "max": 3.957,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [15.754, 14.888],
+          "aggregates": {
+            "p50": 15.321,
+            "p95": 15.7107,
+            "mean": 15.321,
+            "stdev": 0.6123544725075499,
+            "min": 14.888,
+            "max": 15.754,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [4.936, 4.834],
+          "aggregates": {
+            "p50": 4.885,
+            "p95": 4.9309,
+            "mean": 4.885,
+            "stdev": 0.07212489168102806,
+            "min": 4.834,
+            "max": 4.936,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [2.965, 2.939],
+          "aggregates": {
+            "p50": 2.952,
+            "p95": 2.9637,
+            "mean": 2.952,
+            "stdev": 0.018384776310850094,
+            "min": 2.939,
+            "max": 2.965,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [11.757, 11.696],
+          "aggregates": {
+            "p50": 11.7265,
+            "p95": 11.75395,
+            "mean": 11.7265,
+            "stdev": 0.04313351365237936,
+            "min": 11.696,
+            "max": 11.757,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [30.162, 30.565],
+          "aggregates": {
+            "p50": 30.363500000000002,
+            "p95": 30.54485,
+            "mean": 30.363500000000002,
+            "stdev": 0.284964032818179,
+            "min": 30.162,
+            "max": 30.565,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [2.074, 2.014],
+          "aggregates": {
+            "p50": 2.0439999999999996,
+            "p95": 2.0709999999999997,
+            "mean": 2.0439999999999996,
+            "stdev": 0.04242640687119305,
+            "min": 2.014,
+            "max": 2.074,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [69.812, 69.377],
+          "aggregates": {
+            "p50": 69.5945,
+            "p95": 69.79025,
+            "mean": 69.5945,
+            "stdev": 0.3075914498161498,
+            "min": 69.377,
+            "max": 69.812,
+            "n": 2
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [72177.7, 72132.8],
+          "aggregates": {
+            "p50": 72155.25,
+            "p95": 72175.455,
+            "mean": 72155.25,
+            "stdev": 31.749094475271868,
+            "min": 72132.8,
+            "max": 72177.7,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [109160.3, 107214.1],
+          "aggregates": {
+            "p50": 108187.20000000001,
+            "p95": 109062.99,
+            "mean": 108187.20000000001,
+            "stdev": 1376.1712175452517,
+            "min": 107214.1,
+            "max": 109160.3,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [61712.3, 61410.8],
+          "aggregates": {
+            "p50": 61561.55,
+            "p95": 61697.225000000006,
+            "mean": 61561.55,
+            "stdev": 213.19269452774407,
+            "min": 61410.8,
+            "max": 61712.3,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [72315.2, 72268.9],
+          "aggregates": {
+            "p50": 72292.04999999999,
+            "p95": 72312.885,
+            "mean": 72292.04999999999,
+            "stdev": 32.73904396894435,
+            "min": 72268.9,
+            "max": 72315.2,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        }
+      ],
+      "suitesCovered": [
+        "cpu-generic",
+        "cpu-node",
+        "disk",
+        "memory",
+        "network",
+        "realworld-better-auth",
+        "system"
+      ],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 12.5 GiB free, suite needs 30 GiB"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 12.5 GiB free, suite needs 25 GiB"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD EPYC",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.19.14",
+        "virtualization": "kvm",
+        "user": "root",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 39.1
+      },
+      "metrics": [
+        {
+          "metricId": "c_ray_resolution_1080p_rays_per_pixel_16",
+          "samples": [202.099, 201.501],
+          "aggregates": {
+            "p50": 201.8,
+            "p95": 202.0691,
+            "mean": 201.8,
+            "stdev": 0.4228498551495346,
+            "min": 201.501,
+            "max": 202.099,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_c-ray.xml",
+          "appVersion": "2.0",
+          "arguments": "-s 1920x1080 -r 16"
+        },
+        {
+          "metricId": "c_ray_resolution_4k_rays_per_pixel_16",
+          "samples": [808.973, 803.302],
+          "aggregates": {
+            "p50": 806.1375,
+            "p95": 808.68945,
+            "mean": 806.1375,
+            "stdev": 4.010002556108825,
+            "min": 803.302,
+            "max": 808.973,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_c-ray.xml",
+          "appVersion": "2.0",
+          "arguments": "-s 3840x2160 -r 16"
+        },
+        {
+          "metricId": "c_ray_resolution_5k_rays_per_pixel_16",
+          "samples": [1423.485, 1417.234],
+          "aggregates": {
+            "p50": 1420.3595,
+            "p95": 1423.1724499999998,
+            "mean": 1420.3595,
+            "stdev": 4.420124489197011,
+            "min": 1417.234,
+            "max": 1423.485,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_c-ray.xml",
+          "appVersion": "2.0",
+          "arguments": "-s 5120x2880 -r 16"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_12_compression_speed",
+          "samples": [99.5, 99.3],
+          "aggregates": {
+            "p50": 99.4,
+            "p95": 99.49,
+            "mean": 99.4,
+            "stdev": 0.14142135623730648,
+            "min": 99.3,
+            "max": 99.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b12"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_12_decompression_speed",
+          "samples": [2304.5, 2283],
+          "aggregates": {
+            "p50": 2293.75,
+            "p95": 2303.425,
+            "mean": 2293.75,
+            "stdev": 15.202795795510772,
+            "min": 2283,
+            "max": 2304.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b12"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_compression_speed",
+          "samples": [8.16, 8.15],
+          "aggregates": {
+            "p50": 8.155000000000001,
+            "p95": 8.1595,
+            "mean": 8.155000000000001,
+            "stdev": 0.0070710678118646965,
+            "min": 8.15,
+            "max": 8.16,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_decompression_speed",
+          "samples": [1922.3, 1920],
+          "aggregates": {
+            "p50": 1921.15,
+            "p95": 1922.185,
+            "mean": 1921.15,
+            "stdev": 1.6263455967289469,
+            "min": 1920,
+            "max": 1922.3,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_long_mode_compression_speed",
+          "samples": [7.15, 6.96],
+          "aggregates": {
+            "p50": 7.055,
+            "p95": 7.1405,
+            "mean": 7.055,
+            "stdev": 0.13435028842544464,
+            "min": 6.96,
+            "max": 7.15,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_19_long_mode_decompression_speed",
+          "samples": [1846.1, 1809.5],
+          "aggregates": {
+            "p50": 1827.8,
+            "p95": 1844.27,
+            "mean": 1827.8,
+            "stdev": 25.880108191427574,
+            "min": 1809.5,
+            "max": 1846.1,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b19 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_3_compression_speed",
+          "samples": [778.7, 783.7],
+          "aggregates": {
+            "p50": 781.2,
+            "p95": 783.45,
+            "mean": 781.2,
+            "stdev": 3.5355339059327378,
+            "min": 778.7,
+            "max": 783.7,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b3"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_3_decompression_speed",
+          "samples": [2114.7, 2109.9],
+          "aggregates": {
+            "p50": 2112.3,
+            "p95": 2114.46,
+            "mean": 2112.3,
+            "stdev": 3.3941125496950746,
+            "min": 2109.9,
+            "max": 2114.7,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b3"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_3_long_mode_compression_speed",
+          "samples": [530.4, 537.7],
+          "aggregates": {
+            "p50": 534.05,
+            "p95": 537.335,
+            "mean": 534.05,
+            "stdev": 5.161879502661885,
+            "min": 530.4,
+            "max": 537.7,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b3 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_3_long_mode_decompression_speed",
+          "samples": [2163, 2161.8],
+          "aggregates": {
+            "p50": 2162.4,
+            "p95": 2162.94,
+            "mean": 2162.4,
+            "stdev": 0.8485281374237283,
+            "min": 2161.8,
+            "max": 2163,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b3 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_8_compression_speed",
+          "samples": [208.9, 209.5],
+          "aggregates": {
+            "p50": 209.2,
+            "p95": 209.47,
+            "mean": 209.2,
+            "stdev": 0.42426406871193456,
+            "min": 208.9,
+            "max": 209.5,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b8"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_8_long_mode_compression_speed",
+          "samples": [202.3, 203.6],
+          "aggregates": {
+            "p50": 202.95,
+            "p95": 203.535,
+            "mean": 202.95,
+            "stdev": 0.9192388155425097,
+            "min": 202.3,
+            "max": 203.6,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b8 --long"
+        },
+        {
+          "metricId": "compress_zstd_compression_level_8_long_mode_decompression_speed",
+          "samples": [2306.6, 2320.9],
+          "aggregates": {
+            "p50": 2313.75,
+            "p95": 2320.185,
+            "mean": 2313.75,
+            "stdev": 10.111626970967759,
+            "min": 2306.6,
+            "max": 2320.9,
+            "n": 2
+          },
+          "sourceFile": "cpu-generic/pts_compress-zstd.xml",
+          "appVersion": "1.5.4",
+          "arguments": "-b8 --long"
+        },
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [269000, 264000],
+          "aggregates": {
+            "p50": 266500,
+            "p95": 268750,
+            "mean": 266500,
+            "stdev": 3535.5339059327375,
+            "min": 264000,
+            "max": 269000,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [1050, 1031],
+          "aggregates": {
+            "p50": 1040.5,
+            "p95": 1049.05,
+            "mean": 1040.5,
+            "stdev": 13.435028842544403,
+            "min": 1031,
+            "max": 1050,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [228000, 229000],
+          "aggregates": {
+            "p50": 228500,
+            "p95": 228950,
+            "mean": 228500,
+            "stdev": 707.1067811865476,
+            "min": 228000,
+            "max": 229000,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [891, 896],
+          "aggregates": {
+            "p50": 893.5,
+            "p95": 895.75,
+            "mean": 893.5,
+            "stdev": 3.5355339059327378,
+            "min": 891,
+            "max": 896,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [19000, 8801],
+          "aggregates": {
+            "p50": 13900.5,
+            "p95": 18490.05,
+            "mean": 13900.5,
+            "stdev": 7211.782061321598,
+            "min": 8801,
+            "max": 19000,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-read.xml",
+          "appVersion": "3.36",
+          "arguments": "read libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [8803],
+          "aggregates": {
+            "p50": 8803,
+            "p95": 8803,
+            "mean": 8803,
+            "stdev": 0,
+            "min": 8803,
+            "max": 8803,
+            "n": 1
+          },
+          "sourceFile": "disk/pts_fio-seq-read.xml",
+          "appVersion": "3.36",
+          "arguments": "read libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [5766, 5697],
+          "aggregates": {
+            "p50": 5731.5,
+            "p95": 5762.55,
+            "mean": 5731.5,
+            "stdev": 48.79036790187178,
+            "min": 5697,
+            "max": 5766,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [5767, 5699],
+          "aggregates": {
+            "p50": 5733,
+            "p95": 5763.6,
+            "mean": 5733,
+            "stdev": 48.08326112068523,
+            "min": 5699,
+            "max": 5767,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [26.29, 26.13],
+          "aggregates": {
+            "p50": 26.21,
+            "p95": 26.282,
+            "mean": 26.21,
+            "stdev": 0.11313708498984645,
+            "min": 26.13,
+            "max": 26.29,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "network_loopback_seconds",
+          "samples": [4.737, 4.326],
+          "aggregates": {
+            "p50": 4.531499999999999,
+            "p95": 4.71645,
+            "mean": 4.531499999999999,
+            "stdev": 0.2906208870676717,
+            "min": 4.326,
+            "max": 4.737,
+            "n": 2
+          },
+          "sourceFile": "network/pts_network-loopback.xml"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [20.08, 18.79],
+          "aggregates": {
+            "p50": 19.435,
+            "p95": 20.0155,
+            "mean": 19.435,
+            "stdev": 0.9121677477306457,
+            "min": 18.79,
+            "max": 20.08,
+            "n": 2
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [12.467, 12.437],
+          "aggregates": {
+            "p50": 12.452,
+            "p95": 12.4655,
+            "mean": 12.452,
+            "stdev": 0.02121320343559723,
+            "min": 12.437,
+            "max": 12.467,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [12.118, 11.088],
+          "aggregates": {
+            "p50": 11.603,
+            "p95": 12.0665,
+            "mean": 11.603,
+            "stdev": 0.7283199846221448,
+            "min": 11.088,
+            "max": 12.118,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [1.696, 1.745],
+          "aggregates": {
+            "p50": 1.7205,
+            "p95": 1.74255,
+            "mean": 1.7205,
+            "stdev": 0.03464823227814102,
+            "min": 1.696,
+            "max": 1.745,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [4.876, 4.849],
+          "aggregates": {
+            "p50": 4.862500000000001,
+            "p95": 4.87465,
+            "mean": 4.862500000000001,
+            "stdev": 0.019091883092036566,
+            "min": 4.849,
+            "max": 4.876,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [10.867, 10.767],
+          "aggregates": {
+            "p50": 10.817,
+            "p95": 10.862,
+            "mean": 10.817,
+            "stdev": 0.07071067811865576,
+            "min": 10.767,
+            "max": 10.867,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [2.679, 2.759],
+          "aggregates": {
+            "p50": 2.719,
+            "p95": 2.755,
+            "mean": 2.719,
+            "stdev": 0.05656854249492385,
+            "min": 2.679,
+            "max": 2.759,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [4.05, 3.999],
+          "aggregates": {
+            "p50": 4.0245,
+            "p95": 4.0474499999999995,
+            "mean": 4.0245,
+            "stdev": 0.03606244584051388,
+            "min": 3.999,
+            "max": 4.05,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [6.711, 6.803],
+          "aggregates": {
+            "p50": 6.757,
+            "p95": 6.7984,
+            "mean": 6.757,
+            "stdev": 0.06505382386916243,
+            "min": 6.711,
+            "max": 6.803,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [52.206, 49.969],
+          "aggregates": {
+            "p50": 51.087500000000006,
+            "p95": 52.094150000000006,
+            "mean": 51.087500000000006,
+            "stdev": 1.5817978695143056,
+            "min": 49.969,
+            "max": 52.206,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [1.447, 1.439],
+          "aggregates": {
+            "p50": 1.443,
+            "p95": 1.4466,
+            "mean": 1.443,
+            "stdev": 0.005656854249492385,
+            "min": 1.439,
+            "max": 1.447,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "realworld_mastra_task_build_core",
+          "samples": [82.893, 87.716],
+          "aggregates": {
+            "p50": 85.30449999999999,
+            "p95": 87.47484999999999,
+            "mean": 85.30449999999999,
+            "stdev": 3.410376005662719,
+            "min": 82.893,
+            "max": 87.716,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "build_core"
+        },
+        {
+          "metricId": "realworld_mastra_task_cold_install",
+          "samples": [29.256, 28.734],
+          "aggregates": {
+            "p50": 28.995,
+            "p95": 29.2299,
+            "mean": 28.995,
+            "stdev": 0.3691097397793767,
+            "min": 28.734,
+            "max": 29.256,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_mastra_task_git_clone",
+          "samples": [7.904, 7.144],
+          "aggregates": {
+            "p50": 7.524,
+            "p95": 7.866,
+            "mean": 7.524,
+            "stdev": 0.537401153701776,
+            "min": 7.144,
+            "max": 7.904,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_mastra_task_lint_format",
+          "samples": [91.434, 91.288],
+          "aggregates": {
+            "p50": 91.36099999999999,
+            "p95": 91.4267,
+            "mean": 91.36099999999999,
+            "stdev": 0.10323759005324153,
+            "min": 91.288,
+            "max": 91.434,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [34.638, 34.309],
+          "aggregates": {
+            "p50": 34.4735,
+            "p95": 34.62155,
+            "mean": 34.4735,
+            "stdev": 0.23263813101037206,
+            "min": 34.309,
+            "max": 34.638,
+            "n": 2
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [78375.3, 77807.5],
+          "aggregates": {
+            "p50": 78091.4,
+            "p95": 78346.91,
+            "mean": 78091.4,
+            "stdev": 401.4952303577289,
+            "min": 77807.5,
+            "max": 78375.3,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [87151.5, 85820.4],
+          "aggregates": {
+            "p50": 86485.95,
+            "p95": 87084.945,
+            "mean": 86485.95,
+            "stdev": 941.2298364374176,
+            "min": 85820.4,
+            "max": 87151.5,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [73887.6, 71573.2],
+          "aggregates": {
+            "p50": 72730.4,
+            "p95": 73771.88,
+            "mean": 72730.4,
+            "stdev": 1636.527934378157,
+            "min": 71573.2,
+            "max": 73887.6,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [79252.9, 77375.7],
+          "aggregates": {
+            "p50": 78314.29999999999,
+            "p95": 79159.04,
+            "mean": 78314.29999999999,
+            "stdev": 1327.38084964339,
+            "min": 77375.7,
+            "max": 79252.9,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.1494],
+          "aggregates": {
+            "p50": 0.1494,
+            "p95": 0.1494,
+            "mean": 0.1494,
+            "stdev": 0,
+            "min": 0.1494,
+            "max": 0.1494,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": [
+        "cpu-generic",
+        "cpu-node",
+        "disk",
+        "memory",
+        "network",
+        "realworld-better-auth",
+        "realworld-mastra",
+        "system"
+      ],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:realworld:pts:openclaw\" lost its sandbox: 12 consecutive detached polls failed (last: done-file fs exists) — the sandbox stopped responding, not a quiet long step"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "vcpus": 2,
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+        "virtualization": "kvm",
+        "memoryGb": 7.78,
+        "diskGb": 22.7,
+        "kernel": "6.1.158+",
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "user": "root",
+        "hostMemoryGb": 8
+      },
+      "metrics": [
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [31600, 33500],
+          "aggregates": {
+            "p50": 32550,
+            "p95": 33405,
+            "mean": 32550,
+            "stdev": 1343.5028842544402,
+            "min": 31600,
+            "max": 33500,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [123, 131],
+          "aggregates": {
+            "p50": 127,
+            "p95": 130.6,
+            "mean": 127,
+            "stdev": 5.656854249492381,
+            "min": 123,
+            "max": 131,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [55300, 52600],
+          "aggregates": {
+            "p50": 53950,
+            "p95": 55165,
+            "mean": 53950,
+            "stdev": 1909.1883092036783,
+            "min": 52600,
+            "max": 55300,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [216, 206],
+          "aggregates": {
+            "p50": 211,
+            "p95": 215.5,
+            "mean": 211,
+            "stdev": 7.0710678118654755,
+            "min": 206,
+            "max": 216,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [599, 599],
+          "aggregates": {
+            "p50": 599,
+            "p95": 599,
+            "mean": 599,
+            "stdev": 0,
+            "min": 599,
+            "max": 599,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-read.xml",
+          "appVersion": "3.36",
+          "arguments": "read libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [601, 601],
+          "aggregates": {
+            "p50": 601,
+            "p95": 601,
+            "mean": 601,
+            "stdev": 0,
+            "min": 601,
+            "max": 601,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-read.xml",
+          "appVersion": "3.36",
+          "arguments": "read libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [599, 600],
+          "aggregates": {
+            "p50": 599.5,
+            "p95": 599.95,
+            "mean": 599.5,
+            "stdev": 0.7071067811865476,
+            "min": 599,
+            "max": 600,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [601, 601],
+          "aggregates": {
+            "p50": 601,
+            "p95": 601,
+            "mean": 601,
+            "stdev": 0,
+            "min": 601,
+            "max": 601,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [1.43, 1.43],
+          "aggregates": {
+            "p50": 1.43,
+            "p95": 1.43,
+            "mean": 1.43,
+            "stdev": 0,
+            "min": 1.43,
+            "max": 1.43,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "network_loopback_seconds",
+          "samples": [15.074, 14.891],
+          "aggregates": {
+            "p50": 14.9825,
+            "p95": 15.06485,
+            "mean": 14.9825,
+            "stdev": 0.12940054095713807,
+            "min": 14.891,
+            "max": 15.074,
+            "n": 2
+          },
+          "sourceFile": "network/pts_network-loopback.xml"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [10.59, 10.66],
+          "aggregates": {
+            "p50": 10.625,
+            "p95": 10.6565,
+            "mean": 10.625,
+            "stdev": 0.049497474683058526,
+            "min": 10.59,
+            "max": 10.66,
+            "n": 2
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [22.259, 23.495],
+          "aggregates": {
+            "p50": 22.877000000000002,
+            "p95": 23.4332,
+            "mean": 22.877000000000002,
+            "stdev": 0.873983981546572,
+            "min": 22.259,
+            "max": 23.495,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [20.039, 19.799],
+          "aggregates": {
+            "p50": 19.919,
+            "p95": 20.027,
+            "mean": 19.919,
+            "stdev": 0.1697056274847728,
+            "min": 19.799,
+            "max": 20.039,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [1.753, 1.724],
+          "aggregates": {
+            "p50": 1.7385,
+            "p95": 1.75155,
+            "mean": 1.7385,
+            "stdev": 0.02050609665440982,
+            "min": 1.724,
+            "max": 1.753,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [8.502, 8.746],
+          "aggregates": {
+            "p50": 8.624,
+            "p95": 8.7338,
+            "mean": 8.624,
+            "stdev": 0.17253405460951743,
+            "min": 8.502,
+            "max": 8.746,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [19.952, 19.777],
+          "aggregates": {
+            "p50": 19.8645,
+            "p95": 19.943250000000003,
+            "mean": 19.8645,
+            "stdev": 0.12374368670764757,
+            "min": 19.777,
+            "max": 19.952,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [5.604, 5.18],
+          "aggregates": {
+            "p50": 5.3919999999999995,
+            "p95": 5.5828,
+            "mean": 5.3919999999999995,
+            "stdev": 0.2998132752230967,
+            "min": 5.18,
+            "max": 5.604,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [7.226, 7.345],
+          "aggregates": {
+            "p50": 7.2855,
+            "p95": 7.339049999999999,
+            "mean": 7.2855,
+            "stdev": 0.084145706961199,
+            "min": 7.226,
+            "max": 7.345,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [13.405, 13.364],
+          "aggregates": {
+            "p50": 13.3845,
+            "p95": 13.402949999999999,
+            "mean": 13.3845,
+            "stdev": 0.028991378028648082,
+            "min": 13.364,
+            "max": 13.405,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [103.9, 102.462],
+          "aggregates": {
+            "p50": 103.18100000000001,
+            "p95": 103.8281,
+            "mean": 103.18100000000001,
+            "stdev": 1.016819551346252,
+            "min": 102.462,
+            "max": 103.9,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [2.301, 2.369],
+          "aggregates": {
+            "p50": 2.335,
+            "p95": 2.3656,
+            "mean": 2.335,
+            "stdev": 0.048083261120685436,
+            "min": 2.301,
+            "max": 2.369,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [67.822, 67.642],
+          "aggregates": {
+            "p50": 67.732,
+            "p95": 67.813,
+            "mean": 67.732,
+            "stdev": 0.12727922061358338,
+            "min": 67.642,
+            "max": 67.822,
+            "n": 2
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [23943.4, 22656.3],
+          "aggregates": {
+            "p50": 23299.85,
+            "p95": 23879.045000000002,
+            "mean": 23299.85,
+            "stdev": 910.1171380652082,
+            "min": 22656.3,
+            "max": 23943.4,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [51070.8, 46635.8],
+          "aggregates": {
+            "p50": 48853.3,
+            "p95": 50849.05,
+            "mean": 48853.3,
+            "stdev": 3136.0185745623385,
+            "min": 46635.8,
+            "max": 51070.8,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [21882.5, 21139.7],
+          "aggregates": {
+            "p50": 21511.1,
+            "p95": 21845.36,
+            "mean": 21511.1,
+            "stdev": 525.2389170653682,
+            "min": 21139.7,
+            "max": 21882.5,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [24279.4, 22638.1],
+          "aggregates": {
+            "p50": 23458.75,
+            "p95": 24197.335000000003,
+            "mean": 23458.75,
+            "stdev": 1160.5743599614825,
+            "min": 22638.1,
+            "max": 24279.4,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.2304],
+          "aggregates": {
+            "p50": 0.2304,
+            "p95": 0.2304,
+            "mean": 0.2304,
+            "stdev": 0,
+            "min": 0.2304,
+            "max": 0.2304,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": ["cpu-node", "disk", "memory", "network", "realworld-better-auth", "system"],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "cpu-generic",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:cpu:generic\" timed out after 7800s"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 19.7 GiB free, suite needs 30 GiB"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "skipped",
+          "reason": "Insufficient disk: 19.7 GiB free, suite needs 25 GiB"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "vcpus": 2,
+        "cpuModel": "unknown",
+        "virtualization": "unknown",
+        "memoryGb": 8,
+        "kernel": "4.19.0-gvisor",
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "user": "root",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8
+      },
+      "metrics": [
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [33600, 32800],
+          "aggregates": {
+            "p50": 33200,
+            "p95": 33560,
+            "mean": 33200,
+            "stdev": 565.685424949238,
+            "min": 32800,
+            "max": 33600,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [131, 128],
+          "aggregates": {
+            "p50": 129.5,
+            "p95": 130.85,
+            "mean": 129.5,
+            "stdev": 2.1213203435596424,
+            "min": 128,
+            "max": 131,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-read.xml",
+          "appVersion": "3.36",
+          "arguments": "randread libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [29400, 29000],
+          "aggregates": {
+            "p50": 29200,
+            "p95": 29380,
+            "mean": 29200,
+            "stdev": 282.842712474619,
+            "min": 29000,
+            "max": 29400,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [115, 113],
+          "aggregates": {
+            "p50": 114,
+            "p95": 114.9,
+            "mean": 114,
+            "stdev": 1.4142135623730951,
+            "min": 113,
+            "max": 115,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-rand-write.xml",
+          "appVersion": "3.36",
+          "arguments": "randwrite libaio 1 4k 1"
+        },
+        {
+          "metricId": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [10700, 13300],
+          "aggregates": {
+            "p50": 12000,
+            "p95": 13170,
+            "mean": 12000,
+            "stdev": 1838.4776310850236,
+            "min": 10700,
+            "max": 13300,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-read.xml",
+          "appVersion": "3.36",
+          "arguments": "read libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "samples": [2770, 1695],
+          "aggregates": {
+            "p50": 2232.5,
+            "p95": 2716.25,
+            "mean": 2232.5,
+            "stdev": 760.1397897755386,
+            "min": 1695,
+            "max": 2770,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "samples": [2772, 1697],
+          "aggregates": {
+            "p50": 2234.5,
+            "p95": 2718.25,
+            "mean": 2234.5,
+            "stdev": 760.1397897755386,
+            "min": 1697,
+            "max": 2772,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_fio-seq-write.xml",
+          "appVersion": "3.36",
+          "arguments": "write libaio 1 1m 1"
+        },
+        {
+          "metricId": "hardlink_bogo_ops_per_s",
+          "samples": [3.21, 3.18],
+          "aggregates": {
+            "p50": 3.1950000000000003,
+            "p95": 3.2085,
+            "mean": 3.1950000000000003,
+            "stdev": 0.021213203435596132,
+            "min": 3.18,
+            "max": 3.21,
+            "n": 2
+          },
+          "sourceFile": "disk/pts_hardlink.xml",
+          "appVersion": "0.16"
+        },
+        {
+          "metricId": "network_loopback_seconds",
+          "samples": [58.153, 55.712],
+          "aggregates": {
+            "p50": 56.932500000000005,
+            "p95": 58.03095,
+            "mean": 56.932500000000005,
+            "stdev": 1.7260476528763566,
+            "min": 55.712,
+            "max": 58.153,
+            "n": 2
+          },
+          "sourceFile": "network/pts_network-loopback.xml"
+        },
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [9, 9.48],
+          "aggregates": {
+            "p50": 9.24,
+            "p95": 9.456,
+            "mean": 9.24,
+            "stdev": 0.3394112549695431,
+            "min": 9,
+            "max": 9.48,
+            "n": 2
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [41.06, 40.485],
+          "aggregates": {
+            "p50": 40.7725,
+            "p95": 41.03125,
+            "mean": 40.7725,
+            "stdev": 0.40658639918226686,
+            "min": 40.485,
+            "max": 41.06,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [30.946, 30.657],
+          "aggregates": {
+            "p50": 30.8015,
+            "p95": 30.93155,
+            "mean": 30.8015,
+            "stdev": 0.2043538597629133,
+            "min": 30.657,
+            "max": 30.946,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [2.588, 2.872],
+          "aggregates": {
+            "p50": 2.73,
+            "p95": 2.8578,
+            "mean": 2.73,
+            "stdev": 0.20081832585697937,
+            "min": 2.588,
+            "max": 2.872,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [17.58, 17.326],
+          "aggregates": {
+            "p50": 17.453,
+            "p95": 17.5673,
+            "mean": 17.453,
+            "stdev": 0.17960512242138152,
+            "min": 17.326,
+            "max": 17.58,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [29.325, 28.668],
+          "aggregates": {
+            "p50": 28.996499999999997,
+            "p95": 29.29215,
+            "mean": 28.996499999999997,
+            "stdev": 0.464569155239563,
+            "min": 28.668,
+            "max": 29.325,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [6.608, 6.486],
+          "aggregates": {
+            "p50": 6.547,
+            "p95": 6.6019,
+            "mean": 6.547,
+            "stdev": 0.08626702730475871,
+            "min": 6.486,
+            "max": 6.608,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [15.806, 15.718],
+          "aggregates": {
+            "p50": 15.762,
+            "p95": 15.801599999999999,
+            "mean": 15.762,
+            "stdev": 0.06222539674441498,
+            "min": 15.718,
+            "max": 15.806,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [15.979, 14.796],
+          "aggregates": {
+            "p50": 15.3875,
+            "p95": 15.919849999999999,
+            "mean": 15.3875,
+            "stdev": 0.8365073221436856,
+            "min": 14.796,
+            "max": 15.979,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [187.989, 187.249],
+          "aggregates": {
+            "p50": 187.619,
+            "p95": 187.952,
+            "mean": 187.619,
+            "stdev": 0.5232590180780515,
+            "min": 187.249,
+            "max": 187.989,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [3.288, 3.447],
+          "aggregates": {
+            "p50": 3.3674999999999997,
+            "p95": 3.43905,
+            "mean": 3.3674999999999997,
+            "stdev": 0.1124299782086614,
+            "min": 3.288,
+            "max": 3.447,
+            "n": 2
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "realworld_mastra_task_build_core",
+          "samples": [207.877, 203.39],
+          "aggregates": {
+            "p50": 205.6335,
+            "p95": 207.65265,
+            "mean": 205.6335,
+            "stdev": 3.172788127184055,
+            "min": 203.39,
+            "max": 207.877,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "build_core"
+        },
+        {
+          "metricId": "realworld_mastra_task_cold_install",
+          "samples": [70.361, 70.283],
+          "aggregates": {
+            "p50": 70.322,
+            "p95": 70.3571,
+            "mean": 70.322,
+            "stdev": 0.0551543289325528,
+            "min": 70.283,
+            "max": 70.361,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_mastra_task_git_clone",
+          "samples": [10.108, 10.545],
+          "aggregates": {
+            "p50": 10.3265,
+            "p95": 10.52315,
+            "mean": 10.3265,
+            "stdev": 0.3090056633785215,
+            "min": 10.108,
+            "max": 10.545,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_mastra_task_lint_format",
+          "samples": [201.02, 212.119],
+          "aggregates": {
+            "p50": 206.5695,
+            "p95": 211.56405,
+            "mean": 206.5695,
+            "stdev": 7.848178164389483,
+            "min": 201.02,
+            "max": 212.119,
+            "n": 2
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "sqlite_speedtest_seconds",
+          "samples": [574.989, 504.878],
+          "aggregates": {
+            "p50": 539.9335,
+            "p95": 571.4834500000001,
+            "mean": 539.9335,
+            "stdev": 49.575963535770086,
+            "min": 504.878,
+            "max": 574.989,
+            "n": 2
+          },
+          "sourceFile": "system/pts_sqlite-speedtest.xml",
+          "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [51061.7, 47414],
+          "aggregates": {
+            "p50": 49237.85,
+            "p95": 50879.314999999995,
+            "mean": 49237.85,
+            "stdev": 2579.313405734167,
+            "min": 47414,
+            "max": 51061.7,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [61908.2, 63111.4],
+          "aggregates": {
+            "p50": 62509.8,
+            "p95": 63051.24,
+            "mean": 62509.8,
+            "stdev": 850.7908791236546,
+            "min": 61908.2,
+            "max": 63111.4,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [40859.4, 35063.1],
+          "aggregates": {
+            "p50": 37961.25,
+            "p95": 40569.585,
+            "mean": 37961.25,
+            "stdev": 4098.603035791588,
+            "min": 35063.1,
+            "max": 40859.4,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [47777.6, 44678.3],
+          "aggregates": {
+            "p50": 46227.95,
+            "p95": 47622.634999999995,
+            "mean": 46227.95,
+            "stdev": 2191.536046931466,
+            "min": 44678.3,
+            "max": 47777.6,
+            "n": 2
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.47736],
+          "aggregates": {
+            "p50": 0.47736,
+            "p95": 0.47736,
+            "mean": 0.47736,
+            "stdev": 0,
+            "min": 0.47736,
+            "max": 0.47736,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": [
+        "cpu-node",
+        "disk",
+        "memory",
+        "network",
+        "realworld-better-auth",
+        "realworld-mastra",
+        "system"
+      ],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "cpu-generic",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:cpu:generic\" timed out after 7800s"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:realworld:pts:openclaw\" timed out after 8400s"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "novita",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    }
+  ]
+}
