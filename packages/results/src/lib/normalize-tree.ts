@@ -7,6 +7,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type {
+	HostMetadataRecord,
 	MetricResult,
 	ObservedSpecs,
 	OffDimensionEmission,
@@ -28,6 +29,7 @@ import {
 } from "@sandbox-benchmarks/schema";
 import type { SampleContribution } from "./extract.ts";
 import { extractProviderDir } from "./extract.ts";
+import { readHostMetadata } from "./host-metadata.ts";
 import { computeSpecMatched, readObservedSpecs } from "./specs.ts";
 
 export interface NormalizeInput {
@@ -138,12 +140,16 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// directory instead of the metrics would hide exactly that case.
 	const suitesCovered = new Set<string>();
 	const offDimension: OffDimensionEmission[] = [];
+	const hostMetadata: HostMetadataRecord[] = [];
 	// Host fingerprint from a composite's <System>, first non-empty across the read order (all suites of
 	// one provider ran on the same machine). Merged UNDER the spec probe below so the probe always wins.
 	let systemHost: ObservedSpecs | undefined;
 
 	for (const suite of suiteDirs) {
 		const ext = extractProviderDir(join(dir, suite), providerId);
+		for (const record of readHostMetadata(join(dir, suite))) {
+			hostMetadata.push({ ...record, sourceFile: `${suite}/${record.sourceFile}` });
+		}
 		if (!systemHost && ext.observedHost) systemHost = ext.observedHost;
 		// Runtime half of the contract: collect any catalogued metric this suite emitted on a Dimension it
 		// does not declare. (Uncatalogued emissions are NOT breaches — they stay inert stragglers below.)
@@ -177,6 +183,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// flat therefore claims no suite coverage, which correctly makes the derived missing-suite gaps
 	// empty (nothing is known to have run anywhere) rather than accusing every provider of a hole.
 	const flat = extractProviderDir(dir, providerId);
+	hostMetadata.push(...readHostMetadata(dir));
 	contributions.push(...flat.contributions);
 	rawUncatalogued.push(...flat.uncatalogued);
 	gaps.push(...flat.gaps);
@@ -280,6 +287,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
 		...(specMatched !== undefined ? { specMatched } : {}),
 		observedSpecs,
+		...(hostMetadata.length > 0 ? { hostMetadata } : {}),
 		metrics,
 		suitesCovered: [...suitesCovered].sort((a, b) => a.localeCompare(b)),
 		gaps,

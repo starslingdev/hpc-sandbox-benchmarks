@@ -104,6 +104,58 @@ describe("readObservedSpecs: observed-specs.json (harness-written, primary)", ()
 	});
 });
 
+describe("readObservedSpecs: system-provider.json rich identity projection", () => {
+	it("projects every queryable ASN/geo/DMI field and lets observed-specs stay authoritative", () => {
+		const specs = readObservedSpecs(
+			reader({
+				"system-provider.json": {
+					public_ip: "203.0.113.8",
+					org: "AS64500 Example Network",
+					asn: "AS64500",
+					org_name: "Example Network",
+					reverse_dns: "sandbox.example",
+					city: "Portland",
+					region: "Oregon",
+					country: "US",
+					loc: "45.52,-122.68",
+					timezone: "America/Los_Angeles",
+					manufacturer: "Amazon EC2",
+					product_name: "c7a.large",
+					bios_vendor: "Amazon EC2",
+					virtualization: "kvm",
+					cpu_model: "provider fallback",
+					kernel: "provider-kernel",
+					prefix: "203.0.113.0/24",
+					asn_source: "cymru",
+					geo_source: "ipinfo",
+				},
+				"observed-specs.json": { cpuModel: "direct model", kernel: "direct-kernel" },
+			}),
+		);
+		expect(specs).toMatchObject({
+			publicIp: "203.0.113.8",
+			egressOrg: "AS64500 Example Network",
+			egressAsn: "AS64500",
+			egressOrgName: "Example Network",
+			reverseDns: "sandbox.example",
+			city: "Portland",
+			region: "Oregon",
+			country: "US",
+			location: "45.52,-122.68",
+			timezone: "America/Los_Angeles",
+			manufacturer: "Amazon EC2",
+			productName: "c7a.large",
+			biosVendor: "Amazon EC2",
+			virtualization: "kvm",
+			cpuModel: "direct model",
+			kernel: "direct-kernel",
+			networkPrefix: "203.0.113.0/24",
+			asnSource: "cymru",
+			geoSource: "ipinfo",
+		});
+	});
+});
+
 describe("readObservedSpecs: jc probe fallback (real fixtures)", () => {
 	it("assembles vcpus/cpuModel/virtualization, memoryGb, kernel and diskGb from the four probes", () => {
 		const specs = readObservedSpecs(fixtureReader(PROBE_FILES));

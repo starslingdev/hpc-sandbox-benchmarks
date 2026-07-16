@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#MISE description="PTS: common Git operations against a fixed GTK repository"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_git"
+	exit 0
+fi
+
+# The matrix used to carry only an old pts_git skip fixture: no registered suite actually invoked
+# the profile. Pin the vendored version so its GTK corpus and command sequence cannot drift.
+run_pts_benchmark "pts/git-1.1.0" "pts_git"

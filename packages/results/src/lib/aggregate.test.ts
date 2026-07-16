@@ -141,6 +141,42 @@ describe("aggregateRuns", () => {
 		expect(daytona?.observedSpecs.hostCpuModels).toBeUndefined();
 	});
 
+	it("unions rich host metadata across shards and removes byte-identical duplicates", () => {
+		const record = {
+			source: "mise/system-provider" as const,
+			sourceFile: "system/system-provider.json",
+			fields: [{ path: "asn", value: "AS64500" }],
+		};
+		const a = shard([
+			{
+				...provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]),
+				hostMetadata: [record],
+			},
+		]);
+		const b = shard([
+			{
+				...provider("daytona", [metric("pybench_milliseconds", [900])]),
+				hostMetadata: [
+					record,
+					{
+						source: "phoronix/result-file-to-json" as const,
+						sourceFile: "system/pts_git--metadata.json",
+						fields: [{ path: "sandbox.hardware.Processor", value: "AMD EPYC" }],
+					},
+				],
+			},
+		]);
+
+		const metadata = aggregateRuns([a, b]).providers.find(
+			(p) => p.providerId === "daytona",
+		)?.hostMetadata;
+		expect(metadata).toHaveLength(2);
+		expect(metadata?.map((m) => m.source)).toEqual([
+			"mise/system-provider",
+			"phoronix/result-file-to-json",
+		]);
+	});
+
 	it("throws on a shard-identity mismatch and on empty input", () => {
 		const a = shard([provider("daytona", [metric("node_web_tooling_runs_per_s", [10])])]);
 		const b: Run = { ...a, sha: "different" };

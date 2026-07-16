@@ -25,6 +25,28 @@ const NUMERIC_FIELDS = [
 ] as const;
 const STRING_FIELDS = ["cpuModel", "kernel", "os", "virtualization", "user"] as const;
 
+const PROVIDER_STRING_FIELDS = {
+	public_ip: "publicIp",
+	org: "egressOrg",
+	asn: "egressAsn",
+	org_name: "egressOrgName",
+	reverse_dns: "reverseDns",
+	city: "city",
+	region: "region",
+	country: "country",
+	loc: "location",
+	timezone: "timezone",
+	manufacturer: "manufacturer",
+	product_name: "productName",
+	bios_vendor: "biosVendor",
+	virtualization: "virtualization",
+	cpu_model: "cpuModel",
+	kernel: "kernel",
+	prefix: "networkPrefix",
+	asn_source: "asnSource",
+	geo_source: "geoSource",
+} as const satisfies Record<string, keyof ObservedSpecs>;
+
 function fromObservedSpecsFile(raw: Record<string, unknown>): ObservedSpecs {
 	const specs: ObservedSpecs = {};
 	for (const key of NUMERIC_FIELDS) {
@@ -34,6 +56,16 @@ function fromObservedSpecsFile(raw: Record<string, unknown>): ObservedSpecs {
 	for (const key of STRING_FIELDS) {
 		const value = str(raw[key]);
 		if (value !== undefined) specs[key] = value;
+	}
+	return specs;
+}
+
+/** Convenience projection of the rich system-provider record onto commonly queried Run fields. */
+function fromProviderFile(raw: Record<string, unknown>): ObservedSpecs {
+	const specs: ObservedSpecs = {};
+	for (const [source, target] of Object.entries(PROVIDER_STRING_FIELDS)) {
+		const value = str(raw[source]);
+		if (value !== undefined) (specs as Record<string, unknown>)[target] = value;
 	}
 	return specs;
 }
@@ -98,11 +130,16 @@ function fromProbeFiles(readJson: JsonReader): ObservedSpecs {
  */
 export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
 	const probes = fromProbeFiles(readJson);
+	const providerRaw = readJson("system-provider.json");
+	const provider =
+		providerRaw && typeof providerRaw === "object" && !Array.isArray(providerRaw)
+			? fromProviderFile(providerRaw as Record<string, unknown>)
+			: {};
 	const direct = readJson("observed-specs.json");
 	if (direct && typeof direct === "object" && !Array.isArray(direct)) {
-		return { ...probes, ...fromObservedSpecsFile(direct as Record<string, unknown>) };
+		return { ...probes, ...provider, ...fromObservedSpecsFile(direct as Record<string, unknown>) };
 	}
-	return probes;
+	return { ...probes, ...provider };
 }
 
 /**

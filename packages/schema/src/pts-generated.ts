@@ -227,6 +227,54 @@ const chunk1: MetricDef[] = [
 		sourceUrl: "https://facebook.github.io/zstd/",
 	},
 	{
+		id: "fast_cli_internet_download_speed",
+		dimension: "network",
+		unit: "Mbit/s",
+		direction: "HIB",
+		headline: false,
+		label: "fast-cli - Internet Download Speed",
+		description:
+			"This test profile uses the open-source fast-cli client to benchmark your Internet connection's upload/download performance and latency against Netflix's fast.com service.",
+		pts: { test: "pts/fast-cli", description: "Internet Download Speed" },
+		sourceUrl: "https://fast.com/",
+	},
+	{
+		id: "fast_cli_internet_latency",
+		dimension: "network",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "fast-cli - Internet Latency",
+		description:
+			"This test profile uses the open-source fast-cli client to benchmark your Internet connection's upload/download performance and latency against Netflix's fast.com service.",
+		pts: { test: "pts/fast-cli", description: "Internet Latency" },
+		sourceUrl: "https://fast.com/",
+	},
+	{
+		id: "fast_cli_internet_loaded_latency_bufferbloat",
+		dimension: "network",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "fast-cli - Internet Loaded Latency (Bufferbloat)",
+		description:
+			"This test profile uses the open-source fast-cli client to benchmark your Internet connection's upload/download performance and latency against Netflix's fast.com service.",
+		pts: { test: "pts/fast-cli", description: "Internet Loaded Latency (Bufferbloat)" },
+		sourceUrl: "https://fast.com/",
+	},
+	{
+		id: "fast_cli_internet_upload_speed",
+		dimension: "network",
+		unit: "Mbit/s",
+		direction: "HIB",
+		headline: false,
+		label: "fast-cli - Internet Upload Speed",
+		description:
+			"This test profile uses the open-source fast-cli client to benchmark your Internet connection's upload/download performance and latency against Netflix's fast.com service.",
+		pts: { test: "pts/fast-cli", description: "Internet Upload Speed" },
+		sourceUrl: "https://fast.com/",
+	},
+	{
 		id: "fio_type_random_read_engine_io_uring_direct_no_block_size_128kb_job_count_1_disk_target_default_test_directory_iops",
 		dimension: "disk",
 		unit: "IOPS",
@@ -4348,6 +4396,9 @@ const chunk1: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk2: MetricDef[] = [
 	{
 		id: "fio_type_random_read_engine_windows_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -4420,9 +4471,6 @@ const chunk1: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
-];
-
-const chunk2: MetricDef[] = [
 	{
 		id: "fio_type_random_read_engine_windows_aio_direct_yes_block_size_512kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -8851,6 +8899,9 @@ const chunk2: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk3: MetricDef[] = [
 	{
 		id: "fio_type_random_write_engine_windows_aio_direct_yes_block_size_8mb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -8923,9 +8974,6 @@ const chunk2: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
-];
-
-const chunk3: MetricDef[] = [
 	{
 		id: "fio_type_sequential_read_engine_io_uring_direct_no_block_size_16kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -13354,6 +13402,9 @@ const chunk3: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
+];
+
+const chunk4: MetricDef[] = [
 	{
 		id: "fio_type_sequential_write_engine_io_uring_direct_no_block_size_2mb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -13426,9 +13477,6 @@ const chunk3: MetricDef[] = [
 		},
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
-];
-
-const chunk4: MetricDef[] = [
 	{
 		id: "fio_type_sequential_write_engine_io_uring_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		dimension: "disk",
@@ -17516,6 +17564,18 @@ const chunk4: MetricDef[] = [
 		sourceUrl: "https://fio.readthedocs.io/en/latest/fio_doc.html",
 	},
 	{
+		id: "git_seconds",
+		dimension: "system",
+		unit: "Seconds",
+		direction: "LIB",
+		headline: false,
+		label: "Git - Time To Complete Common Git Commands",
+		description:
+			"This test measures the time needed to carry out some sample Git operations on an example, static repository that happens to be a copy of the GNOME GTK tool-kit repository.",
+		pts: { test: "pts/git" },
+		sourceUrl: "https://git-scm.com/",
+	},
+	{
 		id: "hardlink_bogo_ops_per_s",
 		dimension: "disk",
 		unit: "bogo ops/s",
@@ -17777,6 +17837,9 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
+];
+
+const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_10000_clients_250_mode_read_write_average_latency",
 		dimension: "system",
@@ -17853,9 +17916,6 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
-];
-
-const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_10000_clients_500_mode_read_only",
 		dimension: "system",

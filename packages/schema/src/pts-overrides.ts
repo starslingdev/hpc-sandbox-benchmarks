@@ -88,10 +88,17 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio rand write 4KB, buffered (MB/s)" },
 
-	// Network dimension: loopback TCP is its first (and headline) metric — a self-contained synthetic
-	// with no external endpoint, so it isolates the sandbox's network stack (virtio vs gVisor netstack
-	// vs host namespaces) from internet weather.
+	// Network dimension: loopback remains the stable headline that separates sandbox network-stack
+	// overhead from Internet/CDN weather; fast.com adds sustained real-world transfer measurements.
+	fast_cli_internet_download_speed: { label: "fast.com download" },
+	fast_cli_internet_upload_speed: { label: "fast.com upload" },
+	fast_cli_internet_latency: { label: "fast.com latency" },
+	fast_cli_internet_loaded_latency_bufferbloat: { label: "fast.com loaded latency" },
 	network_loopback_seconds: { headline: true, label: "Loopback TCP (10GB)" },
+
+	// System dimension: the synthetic Git profile complements the realworld repo tasks by isolating a
+	// fixed command sequence over a fixed GTK corpus.
+	git_seconds: { label: "Git common operations" },
 
 	// Cpu dimension (cpu-generic suite): Zstd compression across its Compression Level matrix — the
 	// classic CPU-throughput synthetic, run over every level in batch mode. Two metrics per level

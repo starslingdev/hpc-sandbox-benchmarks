@@ -17,7 +17,7 @@ const realFixture = readFileSync(
 );
 
 // A two-result composite (as a batch run produces): proves Result stays an array, and exercises an
-// uncatalogued result (pts/git is not in this slice's Catalog) alongside the catalogued one.
+// uncatalogued synthetic result alongside the catalogued one.
 const multiResultXml = `<?xml version="1.0"?>
 <PhoronixTestSuite>
   <Generated><TestClient>phoronix-test-suite/10.8.4</TestClient></Generated>
@@ -29,8 +29,8 @@ const multiResultXml = `<?xml version="1.0"?>
     <Data><Entry><Value>20.5</Value><RawString>20.5</RawString></Entry></Data>
   </Result>
   <Result>
-    <Identifier>pts/git-1.1.0</Identifier>
-    <Title>Git</Title>
+    <Identifier>pts/not-in-catalog-1.0.0</Identifier>
+    <Title>Not In Catalog</Title>
     <Scale>Seconds</Scale>
     <Proportion>LIB</Proportion>
     <Data><Entry><Value>4.2</Value></Entry></Data>
@@ -95,8 +95,8 @@ describe("resultSamples", () => {
 	});
 
 	it("falls back to the single Value when RawString is absent", () => {
-		const git = parsePtsComposite(multiResultXml).PhoronixTestSuite.Result[1];
-		expect(git && resultSamples(git)).toEqual([4.2]);
+		const unknown = parsePtsComposite(multiResultXml).PhoronixTestSuite.Result[1];
+		expect(unknown && resultSamples(unknown)).toEqual([4.2]);
 	});
 
 	it("retains legitimate zero-valued samples (filters non-finite/negative, not zero)", () => {
@@ -138,10 +138,10 @@ describe("ptsResultToMetric", () => {
 	});
 
 	it("returns an uncatalogued mapping for a result with no catalogued Metric", () => {
-		const git = parsePtsComposite(multiResultXml).PhoronixTestSuite.Result[1];
-		expect(git && ptsResultToMetric(git)).toEqual({
+		const unknown = parsePtsComposite(multiResultXml).PhoronixTestSuite.Result[1];
+		expect(unknown && ptsResultToMetric(unknown)).toEqual({
 			kind: "uncatalogued",
-			test: "pts/git",
+			test: "pts/not-in-catalog",
 			description: "",
 			scale: "Seconds",
 		});

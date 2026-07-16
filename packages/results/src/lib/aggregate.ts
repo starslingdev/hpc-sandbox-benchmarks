@@ -10,6 +10,7 @@
  * inconsistent merge fails here rather than reaching a consumer.
  */
 import type {
+	HostMetadataRecord,
 	MetricResult,
 	ObservedSpecs,
 	ProviderRun,
@@ -64,8 +65,16 @@ function mergeProvider(providerId: string, slices: readonly ProviderRun[]): Prov
 	// published Run must disclose. cpuModel is the key (cpuMicroarch is derived from it, so distinct
 	// microarchs can't arise without distinct models); collect the distinct disclosures, publish below.
 	const hostCpuModels = new Set<string>();
+	const hostMetadata: HostMetadataRecord[] = [];
+	const seenHostMetadata = new Set<string>();
 
 	for (const slice of slices) {
+		for (const record of slice.hostMetadata ?? []) {
+			const key = JSON.stringify(record);
+			if (seenHostMetadata.has(key)) continue;
+			seenHostMetadata.add(key);
+			hostMetadata.push(record);
+		}
 		for (const suite of slice.suitesCovered) suitesCovered.add(suite);
 		for (const gap of slice.gaps) {
 			const key = [gap.scope, gap.id, gap.outcome, gap.reason].join(NUL);
@@ -120,6 +129,7 @@ function mergeProvider(providerId: string, slices: readonly ProviderRun[]): Prov
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
 		...(specMatched !== undefined ? { specMatched } : {}),
 		observedSpecs,
+		...(hostMetadata.length > 0 ? { hostMetadata } : {}),
 		metrics,
 		suitesCovered: [...suitesCovered].sort((a, b) => a.localeCompare(b)),
 		gaps,

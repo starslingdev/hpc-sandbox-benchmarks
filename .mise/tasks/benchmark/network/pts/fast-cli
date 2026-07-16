@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="PTS: sustained Internet download/upload throughput and latency via fast.com"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_fast-cli"
+	exit 0
+fi
+
+# Version-pinned to the vendored definition/catalog and pre-installed in the toolchain image. The
+# installed fast-cli package performs sustained transfers through Netflix's fast.com CDN and emits
+# download/upload throughput plus idle/loaded latency from one JSON-producing invocation.
+run_pts_benchmark "pts/fast-cli-1.0.0" "pts_fast-cli"

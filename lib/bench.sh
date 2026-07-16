@@ -499,12 +499,25 @@ run_pts_benchmark() {
 	if [ -n "$xml_found" ] && [ -f "$xml_found" ]; then
 		cp "$xml_found" "$(results_dir)/${prefix}.xml" 2>/dev/null || true
 		echo "Structured result: ${prefix}.xml (from $(dirname "$xml_found"))"
+		# Preserve PTS's own structured system record too. composite.xml carries Hardware/Software as
+		# comma-delimited prose; result-file-to-json expands those into component maps and also retains
+		# PTS's timestamp, client version, user, notes and collected JSON data. OUTPUT_FILE is an exact
+		# path in PTS 10.8.4, so every leaf gets a deterministic sibling that cannot collide with the
+		# metric XML predicate. Metadata export is provenance: warn but do not void a valid benchmark if
+		# an older/partial PTS install lacks the command.
+		local result_dir pts_metadata_file
+		result_dir="$(dirname "$xml_found")"
+		pts_metadata_file="$(results_dir)/${prefix}--metadata.json"
+		if OUTPUT_FILE="$pts_metadata_file" phoronix-test-suite result-file-to-json "$(basename "$result_dir")" >/dev/null 2>&1 && [ -s "$pts_metadata_file" ]; then
+			echo "Structured host metadata: ${prefix}--metadata.json"
+		else
+			echo "WARNING: PTS structured metadata export failed for ${test_name}" >&2
+			rm -f "$pts_metadata_file"
+		fi
 		# Capture the whole result dir (composite.xml + installation-logs/ + test-logs/) as a forensics
 		# tarball for debugging. A .tar.gz — not a flattened copy — so its nested .xml files can't be
 		# misrouted by the extractor (the name ends --forensics.tar.gz, which isPtsResultFile never
 		# matches). `|| true` so a /var/lib perms hiccup can't abort this `set -e` measurement leaf.
-		local result_dir
-		result_dir="$(dirname "$xml_found")"
 		tar -czf "$(results_dir)/${prefix}--forensics.tar.gz" \
 			-C "$(dirname "$result_dir")" "$(basename "$result_dir")" 2>/dev/null || true
 	else

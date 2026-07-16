@@ -2,8 +2,10 @@ name: Bench matrix
 
 # Fan the live benchmark out across the full provider × suite matrix: one job per (provider, suite)
 # cell, each spinning up a real sandbox, running its suite, and uploading the normalized Run as an
-# artifact. The matrix is computed from the SUITES × PROVIDERS registries by `plan-matrix` — adding a
-# provider or suite to its registry grows CI with no workflow edit. Off the PR path (real sandbox time
+# artifact. The matrix is computed from the SUITES × PROVIDERS registries by `plan-matrix`; each suite
+# cell runs all of its registered leaves (for example, system runs pts/git and network runs
+# pts/fast-cli), rather than giving each PTS profile its own row. Adding a provider or suite to its
+# registry grows CI with no workflow edit. Off the PR path (real sandbox time
 # + provider credentials); dispatch on demand from main only, gated by Environment `privileged`
 # (required reviewers + environment secrets — see docs/ci-secrets.md).
 on:

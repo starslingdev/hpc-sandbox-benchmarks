@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Run network benchmarks (PTS loopback TCP + latency/DNS/download probes)"
+#MISE description="Run network benchmarks (PTS loopback + fast.com throughput/latency + probes)"
 # Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
 # (error-mode conventions: lib/bench.sh).
 set -uo pipefail
@@ -15,9 +15,11 @@ echo "========================================"
 ensure_pts || true
 
 run_task benchmark:network:pts:loopback
+run_task benchmark:network:pts:fast-cli
 
 # Tolerant probes (raw JSON provenance, no catalogued metrics): where does this sandbox's traffic
-# actually go, and how fast? Egress latency, resolver behavior, and real-world download timing.
+# actually go, and how fast? fast-cli above is the sustained real-world transfer; these probes retain
+# endpoint-specific connection timings and a small GitHub control transfer for diagnosis.
 run_task benchmark:network:latency
 run_task benchmark:network:dns
 run_task benchmark:network:download
