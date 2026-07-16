@@ -110,6 +110,42 @@ export function imageRepo(ref: string): string {
 	return lastColon > lastSlash ? withoutDigest.slice(0, lastColon) : withoutDigest;
 }
 
+/** Resolve a pushed `ref` to its immutable registry digest (`sha256:…`) via a registry-side inspect —
+ *  no pull. The release records this so every phase pins/records the exact bytes the candidate push
+ *  produced (provenance); the TOCTOU guard proper is promote's re-validation of the mutable candidate. */
+export async function resolveImageDigest(ref: string): Promise<string> {
+	// Parse the `Digest:` line from the default `imagetools inspect` output rather than a
+	// `--format '{{.Manifest.Digest}}'` template: on the runner's buildx that template prints the whole
+	// default descriptor block, so parsing the labelled line is the portable read. The first match is
+	// the top-level manifest/index digest (the ref's digest); per-platform sub-digests, if any, follow.
+	const proc = Bun.spawn(["docker", "buildx", "imagetools", "inspect", ref], {
+		stdout: "pipe",
+		stderr: "pipe",
+		env: process.env,
+	});
+	const [code, stdout, stderr] = await Promise.all([
+		proc.exited,
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+	]);
+	const match = stdout.match(/\bDigest:\s*(sha256:[0-9a-f]{64})\b/);
+	// Distinguish the two failure modes: the inspect itself failed (non-zero exit — auth, network, no
+	// such ref) vs. it SUCCEEDED but printed no digest we recognize (exit 0, no match), which means the
+	// `imagetools inspect` output format changed under us. Same throw, but the message says which, so a
+	// future format change isn't misread as a registry outage.
+	if (code !== 0) {
+		throw new Error(
+			`could not resolve digest for ${ref}: imagetools inspect failed (exit ${code}): ${stderr.trim() || stdout.trim() || "no output"}`,
+		);
+	}
+	if (!match) {
+		throw new Error(
+			`could not resolve digest for ${ref}: imagetools inspect succeeded but printed no 'Digest: sha256:…' line — the output format may have changed. Output: ${stdout.trim() || "(empty)"}`,
+		);
+	}
+	return match[1] as string;
+}
+
 /** Whether `ref` already exists in the registry — a successful `docker manifest inspect`. Queries the
  *  registry (not local images), so a locally-built `:v1` tag never reads as published. promote uses
  *  this to REFUSE overwriting the immutable public version.
