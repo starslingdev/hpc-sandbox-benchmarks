@@ -29,11 +29,15 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    deployments to the `main` branch. Write access alone cannot finish a release.
 4. **Fork PRs.** Same-repo guard on self-hosted PR jobs; fork PR code never runs on
    `starsling-ubuntu-24.04-2`. Forks never receive Environment secrets on `pull_request`.
-5. **Dataset lands via PR.** `main` is protected by a "changes must be made through a pull request"
-   ruleset, so `bench-matrix.yml`'s `publish` job cannot push the promoted dataset straight to
-   `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>` PR instead
-   and best-effort auto-merges it; if the repo can't land it automatically the PR stays open for a
-   maintainer to merge. This is why `publish` also holds `pull-requests: write`.
+5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a
+   pull request" ruleset, so `bench-matrix.yml`'s `publish` job cannot push the promoted dataset
+   straight to `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>`
+   PR instead (hence `pull-requests: write`) and arms GitHub-native auto-merge (`gh pr merge --auto`),
+   which merges only once branch protection is satisfied — required status checks green and any
+   required reviews in. It never bypasses those rules. As a fast pre-flight, the job first re-runs the
+   Biome gate (`bun run lint`) on the generated dataset + leaderboard — Biome formats JSON, so an
+   unformatted Run document would fail the PR — and aborts before opening a doomed PR on a miss. If
+   auto-merge can't be armed, the PR stays open for a maintainer.
 
 > **Two approvals per bench-matrix run.** `bench` and `publish` both carry `environment:
 > privileged` and run sequentially, so GitHub raises **two** separate pending-deployment gates: one
