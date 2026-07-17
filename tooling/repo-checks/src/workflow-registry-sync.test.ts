@@ -1,40 +1,47 @@
 // Invariant: the GitHub workflows that dispatch live benchmarks stay in lockstep with the schema
-// registries (PROVIDERS + SUITE_NAMES). GHA can't import TypeScript, so the provider/suite choices
-// and the per-provider credential env block are hand-mirrored across .github/workflows/bench-*.yml;
-// this gate re-derives the truth from the registries and fails if someone adds a provider/suite (or
-// its required secret) without updating the workflows. Mirrors runner-benchmarking's
-// test/workflow-{env,suite}-sync.test.ts. See ./lib/workflow-sync.ts for the parsers + pure checks.
+// registries (PROVIDERS + SUITE_NAMES). GHA can't import TypeScript, so the provider/suite choices and
+// the per-provider credential env block are hand-mirrored across .github/workflows/bench-*.yml; this
+// gate re-derives the truth from the registries and fails if someone adds a provider/suite (or its
+// required secret) without updating the workflows. bench-matrix.yml runs a named job per suite, each
+// calling the reusable bench-suite.yml — so the credential block + run-job timeout live in the reusable
+// (the "matrix side" of the credential/timeout checks reads it), and a separate invariant asserts the
+// suite jobs cover SUITE_NAMES. Mirrors runner-benchmarking's test/workflow-{env,suite}-sync.test.ts.
+// See ./lib/workflow-sync.ts for the parsers + pure checks.
 //
-// The runCheck() test against the real workflow files IS the gate's CI enforcement point (it runs
-// under `bun test`, same precedent as boundary.test.ts); the rest is unit coverage of the parsers and
-// the failure messages on synthetic drift, so a future regression names the offending file + key.
+// The runCheck() test against the real workflow files IS the gate's CI enforcement point (it runs under
+// `bun test`, same precedent as boundary.test.ts); the rest is unit coverage of the parsers and the
+// failure messages on synthetic drift, so a future regression names the offending file + key.
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import {
 	checkCredentialEnv,
 	checkProviderInput,
 	checkSuiteInput,
+	checkSuiteJobCoverage,
 	checkWorkflowTimeouts,
 	dispatchInput,
 	jobTimeoutMinutes,
-	MATRIX_JOB,
 	MATRIX_WORKFLOW,
+	matrixSuiteJobs,
 	RUN_STEP,
 	readWorkflow,
 	requiredCredentialKeys,
 	runCheck,
 	SMOKE_JOB,
 	SMOKE_WORKFLOW,
+	SUITE_JOB,
+	SUITE_WORKFLOW,
 	stepEnv,
 	WORKFLOW_TIMEOUT_MARGIN_MINUTES,
 } from "./lib/workflow-sync.ts";
 
 const smoke = readWorkflow(SMOKE_WORKFLOW);
 const matrix = readWorkflow(MATRIX_WORKFLOW);
+const suiteWf = readWorkflow(SUITE_WORKFLOW);
 const providerInput = dispatchInput(smoke, "provider", SMOKE_WORKFLOW);
 const suiteInput = dispatchInput(smoke, "suite", SMOKE_WORKFLOW);
 const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
-const matrixEnv = stepEnv(matrix, MATRIX_JOB, RUN_STEP, MATRIX_WORKFLOW);
+const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 
 describe("parsers against the real workflow files", () => {
 	test("dispatchInput extracts the smoke provider choice (type + options + default)", () => {
@@ -49,16 +56,17 @@ describe("parsers against the real workflow files", () => {
 		expect(suiteInput.type).toBe("choice");
 	});
 
-	test("stepEnv extracts a realistic credential block from both workflows", () => {
+	test("stepEnv extracts a realistic credential block from both lanes", () => {
 		expect(smokeEnv).toContainKey("DAYTONA_API_KEY");
-		expect(matrixEnv).toContainKey("E2B_API_KEY");
+		// The matrix lane's credential block lives in the reusable bench-suite.yml.
+		expect(suiteEnv).toContainKey("E2B_API_KEY");
 		// A real block (credentials + runtime context), not a parse fragment.
 		expect(Object.keys(smokeEnv).length).toBeGreaterThanOrEqual(8);
 	});
 
 	test("both live-run jobs reserve host margin beyond the longest suite", () => {
 		expect(jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW)).toBe(180);
-		expect(jobTimeoutMinutes(matrix, MATRIX_JOB, MATRIX_WORKFLOW)).toBe(180);
+		expect(jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW)).toBe(180);
 	});
 
 	test("dispatchInput throws on a missing input instead of passing vacuously", () => {
@@ -185,24 +193,24 @@ describe("checkCredentialEnv", () => {
 		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal"]);
 	});
 
-	test("flags a required key dropped from the matrix block, naming key and file", () => {
-		const { E2B_API_KEY: _, ...drifted } = matrixEnv;
+	test("flags a required key dropped from the matrix (reusable) block, naming key and file", () => {
+		const { E2B_API_KEY: _, ...drifted } = suiteEnv;
 		const errors = checkCredentialEnv({
 			[SMOKE_WORKFLOW]: smokeEnv,
-			[MATRIX_WORKFLOW]: drifted,
+			[SUITE_WORKFLOW]: drifted,
 		});
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("E2B_API_KEY");
 		expect(errors[0]).toContain("required by provider e2b");
-		expect(errors[0]).toContain(MATRIX_WORKFLOW);
+		expect(errors[0]).toContain(SUITE_WORKFLOW);
 		expect(errors[0]).not.toContain(SMOKE_WORKFLOW);
 	});
 
 	test("flags a shared key whose value expression differs across the two lanes", () => {
-		const drifted = { ...matrixEnv, DAYTONA_API_KEY: `\${{ secrets.DAYTONA_API_KEY_OTHER }}` };
+		const drifted = { ...suiteEnv, DAYTONA_API_KEY: `\${{ secrets.DAYTONA_API_KEY_OTHER }}` };
 		const errors = checkCredentialEnv({
 			[SMOKE_WORKFLOW]: smokeEnv,
-			[MATRIX_WORKFLOW]: drifted,
+			[SUITE_WORKFLOW]: drifted,
 		});
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("DAYTONA_API_KEY:");
@@ -213,9 +221,52 @@ describe("checkCredentialEnv", () => {
 	test("tolerates extra runtime-context vars beyond the required credentials", () => {
 		const errors = checkCredentialEnv({
 			[SMOKE_WORKFLOW]: { ...smokeEnv, SOME_RUNTIME_CONTEXT: "x" },
-			[MATRIX_WORKFLOW]: matrixEnv,
+			[SUITE_WORKFLOW]: suiteEnv,
 		});
 		expect(errors).toEqual([]);
+	});
+});
+
+describe("checkSuiteJobCoverage", () => {
+	const realJobs = matrixSuiteJobs(matrix);
+
+	test("matrixSuiteJobs extracts exactly one job per registered suite", () => {
+		expect(new Set(realJobs.map((j) => j.suite))).toEqual(new Set(SUITE_NAMES));
+		expect(realJobs).toHaveLength(SUITE_NAMES.length);
+	});
+
+	test("the real matrix suite jobs cover SUITE_NAMES", () => {
+		expect(checkSuiteJobCoverage(realJobs)).toEqual([]);
+	});
+
+	test("flags a registry suite that no matrix job benchmarks", () => {
+		const [dropped] = SUITE_NAMES;
+		const errors = checkSuiteJobCoverage(realJobs.filter((j) => j.suite !== dropped));
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain(`no matrix job benchmarks suite "${dropped}"`);
+		expect(errors[0]).toContain("bench-suite.yml");
+	});
+
+	test("flags a job dispatching a suite the registry doesn't know", () => {
+		const errors = checkSuiteJobCoverage([...realJobs, { jobId: "gpu", suite: "gpu" }]);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('suite "gpu" which is not in SUITE_NAMES');
+	});
+
+	test("flags a suite dispatched by two jobs", () => {
+		// "system" is a registered suite already covered by realJobs, so a second job for it is a dup.
+		const errors = checkSuiteJobCoverage([...realJobs, { jobId: "dup", suite: "system" }]);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("more than one job");
+	});
+
+	test("matrixSuiteJobs throws on a reusable-caller job with no string suite", () => {
+		const yaml = Bun.YAML.stringify({
+			jobs: { bad: { uses: "./.github/workflows/bench-suite.yml", with: { providers: "[]" } } },
+		});
+		expect(() => matrixSuiteJobs(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
+			'without a string "suite" input',
+		);
 	});
 });
 

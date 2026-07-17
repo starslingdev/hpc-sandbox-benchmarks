@@ -63,7 +63,12 @@ bun run check:catalog-drift                                    # fail if the com
 2. **Producer tasks** — add the mise task(s) under `.mise/tasks/benchmark/**` that the `commands` name,
    driving the benchmark via the helpers in [`lib/bench.sh`](./lib/bench.sh) (e.g. `run_pts_benchmark`).
    An orchestrator is a task *file*; its leaves live in a sibling *directory* (a task path can't be both).
-3. The CI matrix picks the suite up automatically (`plan-matrix` crosses `PROVIDERS × SUITE_NAMES`).
+3. **Add its matrix job** in [`bench-matrix.yml`](./.github/workflows/bench-matrix.yml): one named job
+   (grouped under its dimension) that `uses: ./.github/workflows/bench-suite.yml` with `suite: <name>`.
+   The workflow-registry-sync drift gate (`tooling/repo-checks`) fails until every `SUITE_NAMES` entry
+   has exactly one such job, so a new suite can't silently go un-benchmarked. Its provider fan-out is
+   automatic (`plan-providers` selects the provider axis from `PROVIDERS`); add it to the `bench-smoke`
+   suite `options` too so it stays dispatchable on its own.
 
 ## Add a metric
 

@@ -1,0 +1,108 @@
+name: Benchmark suite (reusable)
+
+# One suite, fanned out across a provider matrix. bench-matrix.yml calls this once per registered
+# suite (a named job each, grouped by dimension), passing the plan's selected provider list — so N
+# providers group under one suite label in the UI and jobs display as "<suite> / <provider>". Factoring
+# the shared cell here (checkout → run → upload, plus the per-provider credential wiring) keeps that
+# block in ONE place instead of copy-pasted into every suite job, mirroring runner-benchmarking's
+# reusable bench-suite.yml.
+#
+# The artifact name (bench-<suite>-<provider>-<run_id>) is load-bearing: publish-dataset.yml downloads
+# the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep.
+#
+# Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md) lives on
+# the fan-out job here: a `uses:` caller can't declare `environment:`, so the approval gate and the
+# provider secrets are enforced at this layer. The caller passes `secrets: inherit` so the environment
+# secrets on `privileged` reach this job — a caller job has no environment of its own, so it could not
+# resolve them to pass explicitly.
+on:
+  workflow_call:
+    inputs:
+      providers:
+        description: 'JSON array of provider ids to fan out over (the plan job selected provider list).'
+        required: true
+        type: string
+      suite:
+        description: 'Suite to run — the bench-suite.ts arg and the artifact-name key. A registered SUITE_NAMES value.'
+        required: true
+        type: string
+
+# Least privilege: the fan-out only reads the checked-out code and uploads artifacts.
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    # Display as "<caller suite job> / <provider>", e.g. "system / e2b" — the provider cells group
+    # under their suite's job name in the Actions UI.
+    name: ${{ matrix.provider }}
+    environment: privileged
+    # The ephemeral self-hosted label is reaped after 70 minutes even while a step is healthy. The
+    # full CPU-generic and real-world matrices legitimately exceed that on slower providers, leaving
+    # the step stuck `in_progress` with no logs/artifact. Hosted runners honor timeout-minutes below;
+    # 180 minutes also leaves teardown/artifact margin around the longest 155-minute suite budget.
+    # (workflow-registry-sync asserts this stays above the longest registered sandbox lifetime.)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
+      fail-fast: false
+      matrix:
+        provider: ${{ fromJSON(inputs.providers) }}
+    steps:
+      # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
+      # moved/compromised tag can't silently change what runs.
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # This cell only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
+          # checkout's credentials), so don't persist the job token in .git/config.
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      # Frozen lockfile + no lifecycle scripts, matching bunfig.toml's supply-chain posture.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # Drive the provider SDK to create a sandbox, run the suite, collect results, and normalize. The
+      # cell's provider is a matrix value and its suite the reusable input, both passed through the
+      # environment (never interpolated into the shell) so neither can inject into the runner command.
+      - name: Run suite and normalize
+        env:
+          BENCH_REPO_REF: ${{ github.sha }}
+          # Optional once the repo is public (anonymous clone works). Still passed so private forks and
+          # rate-limited clones keep working via the short-lived job token.
+          BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENCH_PROVIDER: ${{ matrix.provider }}
+          BENCH_SUITE: ${{ inputs.suite }}
+          # Scope every provider credential to the cell that actually uses it: a cell receives ONLY
+          # the secret(s) for its own `matrix.provider`, so a compromised adapter or suite can't read
+          # another provider's credential out of the environment. A non-matching provider evaluates to
+          # '', which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
+          # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
+          DAYTONA_API_KEY: ${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
+          # Boot daytona sandboxes in the active region (us-west-2); the default applies only to the
+          # daytona cell so an unsynced secret can't fail the config gatekeeper at module load.
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
+          MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
+          NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
+
+      - name: Upload Run + raw results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # Per-cell artifact name so every (provider, suite) shard uploads independently.
+          name: bench-${{ inputs.suite }}-${{ matrix.provider }}-${{ github.run_id }}
+          path: data/
+          # A successful run always writes data/runs/<id>.json (even an all-skipped Run), so an empty
+          # data/ means the job is genuinely broken — fail the upload rather than bury a warning.
+          if-no-files-found: error

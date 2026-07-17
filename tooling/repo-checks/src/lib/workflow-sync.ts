@@ -2,22 +2,33 @@
 // schema registries. GHA can't import TypeScript, so the provider/suite vocabulary and the
 // per-provider credential wiring are re-spelled by hand in the workflow files; this module re-derives
 // the truth from PROVIDERS + SUITE_NAMES (packages/schema) and compares. It mirrors
-// runner-benchmarking's check-workflow-{env,suite}-sync.ts, adapted to this repo's two workflows.
+// runner-benchmarking's check-workflow-{env,suite}-sync.ts, adapted to this repo's workflows.
+//
+// Two workflows dispatch live benchmarks: bench-smoke.yml (one dispatched suite × provider) and
+// bench-matrix.yml (a named job per suite, each fanning out over the selected providers by CALLING the
+// reusable bench-suite.yml). The credential block + the run job's timeout therefore live in
+// bench-suite.yml for the matrix lane, so the "matrix side" of the credential/timeout checks reads
+// that reusable workflow, not bench-matrix.yml itself.
 //
 // Invariants (each maps to a real "added X, forgot the workflow" failure mode):
 //   1. bench-smoke.yml's `provider` dispatch input options == the PROVIDERS id set, and its default
 //      is one of them — a new provider must be dispatchable, a removed one must not linger.
 //   2. bench-smoke.yml's `suite` dispatch input options == SUITE_NAMES, with a valid default.
 //   3. Every provider's requiredEnvVars (schema) is present in the "Run suite and normalize" step env
-//      of BOTH bench-smoke.yml and bench-matrix.yml — the secret a new provider needs must be wired
-//      into both the smoke lane and the matrix lane, or the live run silently skips it.
-//   4. A credential key shared across the two workflows maps to the same value expression — both
-//      lanes must hand the suite the same secret, not plan one and run the other. Each lane scopes
-//      its secrets to the selected provider (so a cell only sees its own credential), and the two
-//      lanes pick that provider differently — `inputs.provider` in smoke, `matrix.provider` in the
-//      matrix fan-out — so the comparison folds those two selector tokens together before checking.
-//   5. Both live-run jobs outlast the longest registered sandbox lifetime by a fixed margin, so a
-//      suite budget increase cannot leave an otherwise healthy job to be killed by Actions first.
+//      of BOTH bench-smoke.yml and the reusable bench-suite.yml — the secret a new provider needs must
+//      be wired into both the smoke lane and the matrix fan-out, or the live run silently skips it.
+//   4. A credential key shared across the two lanes maps to the same value expression — both must hand
+//      the suite the same secret, not plan one and run the other. Each lane scopes its secrets to the
+//      selected provider (so a cell only sees its own credential), and the two lanes pick that provider
+//      differently — `inputs.provider` in smoke, `matrix.provider` in the fan-out — so the comparison
+//      folds those two selector tokens together before checking.
+//   5. Both live-run jobs (smoke's job and the reusable fan-out) outlast the longest registered sandbox
+//      lifetime by a fixed margin, so a suite budget increase cannot leave an otherwise healthy job to
+//      be killed by Actions first.
+//   6. bench-matrix.yml has exactly one matrix job per SUITE_NAMES entry (a job that `uses` the
+//      reusable bench-suite.yml with that `suite`) — a new suite must gain its named job, a removed one
+//      must not linger. This is what keeps the hand-enumerated suite jobs registry-driven now that the
+//      fan-out is a static named job per suite rather than one dynamic 2-D matrix.
 //
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency), so the parse stays dependency-light.
 import { readFileSync } from "node:fs";
@@ -28,10 +39,15 @@ import { findRepoRoot } from "./workspace.ts";
 
 export const SMOKE_WORKFLOW = ".github/workflows/bench-smoke.yml";
 export const MATRIX_WORKFLOW = ".github/workflows/bench-matrix.yml";
-/** The step (in both workflows) that drives the provider SDK; it owns the credential env block. */
+/** The reusable workflow each bench-matrix suite job calls; it owns the credential block + run timeout. */
+export const SUITE_WORKFLOW = ".github/workflows/bench-suite.yml";
+/** The step (in bench-smoke.yml and bench-suite.yml) that drives the provider SDK; it owns the env. */
 export const RUN_STEP = "Run suite and normalize";
 export const SMOKE_JOB = "smoke";
-export const MATRIX_JOB = "bench";
+/** The fan-out job inside the reusable bench-suite.yml (its credential env + timeout). */
+export const SUITE_JOB = "bench";
+/** A bench-matrix suite job is one that `uses` this reusable workflow (matched by path suffix). */
+const SUITE_WORKFLOW_USES_SUFFIX = "/bench-suite.yml";
 /** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. */
 export const WORKFLOW_TIMEOUT_MARGIN_MINUTES = 15;
 
@@ -142,6 +158,40 @@ export function stepEnv(
 		entries[key] = value;
 	}
 	return entries;
+}
+
+/** One bench-matrix suite job: its job id and the `suite` it dispatches to the reusable fan-out. */
+export interface SuiteJob {
+	jobId: string;
+	suite: string;
+}
+
+/**
+ * The bench-matrix suite jobs — every job whose `uses` targets the reusable bench-suite.yml, paired
+ * with the `suite` it passes. A job that calls the reusable without a string `with.suite` throws (a
+ * malformed suite job must fail the gate, not be silently skipped); jobs that don't call the reusable
+ * (plan, publish) are ignored. This is the workflow half of Invariant 6 — the schema half is
+ * {@link SUITE_NAMES}.
+ */
+export function matrixSuiteJobs(doc: unknown, label: string = MATRIX_WORKFLOW): SuiteJob[] {
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	const suiteJobs: SuiteJob[] = [];
+	for (const [jobId, rawJob] of Object.entries(jobs)) {
+		const job = asRecord(rawJob, `${label}: job "${jobId}" is not a mapping`);
+		const uses = job.uses;
+		if (typeof uses !== "string" || !uses.endsWith(SUITE_WORKFLOW_USES_SUFFIX)) continue;
+		const withMap = asRecord(
+			job.with,
+			`${label}: job "${jobId}" calls ${uses} without a "with" mapping`,
+		);
+		const suite = withMap.suite;
+		if (typeof suite !== "string") {
+			throw new Error(`${label}: job "${jobId}" calls ${uses} without a string "suite" input`);
+		}
+		suiteJobs.push({ jobId, suite });
+	}
+	return suiteJobs;
 }
 
 /** The canonical provider ids from the schema registry. */
@@ -288,6 +338,48 @@ export function checkCredentialEnv(
 	return errors;
 }
 
+/**
+ * Invariant 6: the bench-matrix suite jobs cover SUITE_NAMES exactly — every registered suite has one
+ * matrix job, no job names an unregistered suite, and no suite is dispatched twice. `label` names the
+ * workflow in error messages.
+ */
+export function checkSuiteJobCoverage(
+	suiteJobs: SuiteJob[],
+	label: string = MATRIX_WORKFLOW,
+): string[] {
+	const errors: string[] = [];
+	const expected = new Set<string>(SUITE_NAMES);
+	const seen = new Map<string, string>();
+	for (const { jobId, suite } of suiteJobs) {
+		if (!expected.has(suite)) {
+			errors.push(
+				`${label}: job "${jobId}" benchmarks suite "${suite}" which is not in SUITE_NAMES ` +
+					`(packages/schema/src/suites.ts) — remove it or add the suite to the registry`,
+			);
+			continue;
+		}
+		const prior = seen.get(suite);
+		if (prior !== undefined) {
+			errors.push(
+				`${label}: suite "${suite}" is dispatched by more than one job ("${prior}" and "${jobId}") — ` +
+					"each suite gets exactly one matrix job",
+			);
+			continue;
+		}
+		seen.set(suite, jobId);
+	}
+	for (const suite of expected) {
+		if (!seen.has(suite)) {
+			errors.push(
+				`${label}: no matrix job benchmarks suite "${suite}" — it is in SUITE_NAMES; add a job that ` +
+					"`uses: ./.github/workflows/bench-suite.yml` with `suite: " +
+					`${suite}\``,
+			);
+		}
+	}
+	return errors;
+}
+
 /** Invariant 5: every live-run job has margin beyond the longest registered sandbox lifetime. */
 export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>): string[] {
 	const longestSuite = Math.max(...Object.values(SUITES).map((suite) => suite.timeoutMinutes));
@@ -308,16 +400,20 @@ export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>)
 export function runCheck(root: string = findRepoRoot()): string[] {
 	const smoke = readWorkflow(SMOKE_WORKFLOW, root);
 	const matrix = readWorkflow(MATRIX_WORKFLOW, root);
+	// The matrix lane's credential block + run-job timeout live in the reusable bench-suite.yml that
+	// every suite job calls, so the "matrix side" of Invariants 3–5 reads that file.
+	const suiteWf = readWorkflow(SUITE_WORKFLOW, root);
 	return [
 		...checkProviderInput(dispatchInput(smoke, "provider", SMOKE_WORKFLOW)),
 		...checkSuiteInput(dispatchInput(smoke, "suite", SMOKE_WORKFLOW)),
 		...checkCredentialEnv({
 			[SMOKE_WORKFLOW]: stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW),
-			[MATRIX_WORKFLOW]: stepEnv(matrix, MATRIX_JOB, RUN_STEP, MATRIX_WORKFLOW),
+			[SUITE_WORKFLOW]: stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW),
 		}),
 		...checkWorkflowTimeouts({
 			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),
-			[MATRIX_WORKFLOW]: jobTimeoutMinutes(matrix, MATRIX_JOB, MATRIX_WORKFLOW),
+			[SUITE_WORKFLOW]: jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW),
 		}),
+		...checkSuiteJobCoverage(matrixSuiteJobs(matrix, MATRIX_WORKFLOW), MATRIX_WORKFLOW),
 	];
 }
