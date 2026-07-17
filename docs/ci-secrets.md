@@ -98,6 +98,11 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
 
 5. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
    the candidate base anonymously (Org → Packages → package settings).
+6. Enable **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create
+   and approve pull requests"**. `publish-dataset.yml`'s `gh pr create` fails outright without it
+   (`GraphQL: GitHub Actions is not permitted to create or approve pull requests`) — the job pushes
+   the `dataset/publish-<run-id>` branch and then dies, so every matrix run's publish step needs a
+   maintainer to open the PR by hand until this is on.
 
 Optional bootstrap (creates the empty environment; reviewers/secrets still need a human):
 

@@ -18,7 +18,11 @@ fi
 
 cat <<'EOF' >fast-cli
 #!/bin/sh
-node node_modules/fast-cli/distribution/cli.js --upload --json > "$LOG_FILE" 2>&1
+# fast.com's transfer can stall mid-measurement instead of erroring (observed: a daytona run hung the
+# whole 45-minute network suite budget with no exit). Bound the CLI itself so a stalled trial fails
+# fast — as a normal nonzero trial, letting PTS's own TimesToRun retry the next trial or the composite
+# report a failed result — rather than consuming the outer suite's step timeout.
+timeout 240 node node_modules/fast-cli/distribution/cli.js --upload --json > "$LOG_FILE" 2>&1
 status=$?
 echo "$status" > ~/test-exit-status
 exit "$status"
