@@ -22,7 +22,13 @@ cat <<'EOF' >fast-cli
 # whole 45-minute network suite budget with no exit). Bound the CLI itself so a stalled trial fails
 # fast — as a normal nonzero trial, letting PTS's own TimesToRun retry the next trial or the composite
 # report a failed result — rather than consuming the outer suite's step timeout.
-timeout 240 node node_modules/fast-cli/distribution/cli.js --upload --json > "$LOG_FILE" 2>&1
+#
+# Plain `timeout 240` isn't enough: on daytona specifically, a stalled fast.com transfer sits in an
+# uninterruptible network wait that ignores `timeout`'s default SIGTERM, so the process never exits and
+# the hang just gets caught by the outer 45-minute step timeout instead (confirmed live: run 29587815350
+# ran the full 2700s before GitHub force-killed the step). `-k 10` escalates to SIGKILL 10s after the
+# SIGTERM if the process is still alive, which reaps it unconditionally.
+timeout -k 10 240 node node_modules/fast-cli/distribution/cli.js --upload --json > "$LOG_FILE" 2>&1
 status=$?
 echo "$status" > ~/test-exit-status
 exit "$status"
