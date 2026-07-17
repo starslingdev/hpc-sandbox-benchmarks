@@ -5,13 +5,13 @@
 // core.notice/core.error surface the phase result in the run's annotations panel. Inputs arrive as env
 // (the composite maps its `with:` inputs), NOT via core.getInput (that only works for JS/Docker actions).
 import * as core from "@actions/core";
+import type { CellKind } from "../lib/actions-log.ts";
 import {
 	canWriteSummary,
 	escapeHtml,
 	fieldTable,
 	isFailure,
 	renderCell,
-	type CellKind,
 } from "../lib/actions-log.ts";
 
 // Re-export pure helpers so existing unit tests keep importing from this bin path.
