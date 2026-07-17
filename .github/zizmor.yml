@@ -10,3 +10,14 @@ rules:
       # persist-credentials: false; this one can't, by design. (Filename-scoped, not repo-wide — this
       # reusable workflow's only checkout is the pushing one, so just its finding is accepted.)
       - publish-dataset.yml
+  secrets-inherit:
+    ignore:
+      # bench-matrix.yml's suite-matrix job calls the reusable bench-suite.yml with `secrets: inherit`.
+      # The reusable's fan-out job declares `environment: privileged`, which raises the approval gate and
+      # scopes the provider ENVIRONMENT secrets (docs/ci-secrets.md) to that job, where it re-scopes each
+      # credential to its own provider cell (`matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY ||
+      # ''`). `inherit` hands the reusable the caller's secret / token context in one line instead of
+      # enumerating each secret as a `workflow_call` input (a `uses:` caller can't declare the
+      # environment to resolve them itself). The workflow-hardening drift gate independently verifies the
+      # callee self-gates on `privileged`. (Filename-scoped, not repo-wide.)
+      - bench-matrix.yml

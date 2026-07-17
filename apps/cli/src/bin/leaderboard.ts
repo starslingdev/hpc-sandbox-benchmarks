@@ -1,11 +1,14 @@
 #!/usr/bin/env bun
 // `leaderboard` — render a published Run document into the Markdown comparison surface (one ranked
 // table per dimension on its headline metric). Writes to <outFile> when given, else prints to stdout.
+// Uses @actions/core for step logs, annotations, and a job summary when writing a file in CI.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import * as core from "@actions/core";
 import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
+import { fail, inActions, logInfo, withGroup, writeJobSummary } from "../lib/actions-log.ts";
 import { handleDiscovery } from "../lib/discovery.ts";
 
 /** Agent-facing usage. The Run document names the providers/suites it covers, so the registry
@@ -32,23 +35,71 @@ if (import.meta.main) {
 	const argv = process.argv.slice(2);
 	const discovery = handleDiscovery(argv, HELP);
 	if (discovery !== null) {
-		(discovery.ok ? console.log : console.error)(discovery.text);
-		process.exit(discovery.ok ? 0 : 2);
+		if (discovery.ok) {
+			process.stdout.write(`${discovery.text}\n`);
+			process.exit(0);
+		}
+		fail(discovery.text, {
+			properties: { title: "leaderboard discovery" },
+			exitCode: 2,
+		});
 	}
 
 	const [runFile, outFile] = argv;
 	if (!runFile) {
-		console.error("usage: leaderboard <run.json> [outFile.md] (see --help)");
-		process.exit(1);
+		fail("usage: leaderboard <run.json> [outFile.md] (see --help)", {
+			properties: { title: "leaderboard usage" },
+			exitCode: 2,
+		});
 	}
-	const run = parseRun(JSON.parse(readFileSync(runFile, "utf8")));
-	const markdown = renderLeaderboardMarkdown(buildLeaderboard(run));
+
+	const run = await withGroup(`Load Run ${runFile}`, async () => {
+		const parsed = parseRun(JSON.parse(readFileSync(runFile, "utf8")));
+		logInfo(`runId=${parsed.runId} providers=${parsed.providers.length} sha=${parsed.sha}`);
+		return parsed;
+	});
+
+	const board = await withGroup("Build leaderboard", async () => {
+		const built = buildLeaderboard(run);
+		logInfo(`dimensions=${built.dimensions.length}`);
+		if (inActions()) {
+			core.debug(
+				JSON.stringify(
+					built.dimensions.map((d) => ({
+						dimension: d.dimension,
+						headline: d.metric.id,
+						metrics: d.metrics.length,
+						rows: d.rows.length,
+					})),
+				),
+			);
+		}
+		return built;
+	});
+	const markdown = renderLeaderboardMarkdown(board);
 
 	if (outFile) {
 		mkdirSync(dirname(outFile), { recursive: true });
 		writeFileSync(outFile, markdown);
-		console.error(`Wrote leaderboard → ${outFile}`);
+		logInfo(`Wrote leaderboard → ${outFile}`);
+		await writeJobSummary({
+			heading: `Leaderboard ${run.runId}`,
+			fields: [
+				["Status", "success", "plain"],
+				["Run id", run.runId, "code"],
+				["Source", runFile, "code"],
+				["Output", outFile, "code"],
+				["Dimensions", String(board.dimensions.length), "plain"],
+				["Providers", String(run.providers.length), "plain"],
+			],
+			annotation: {
+				failed: false,
+				title: `Leaderboard ${run.runId}`,
+				message: `Wrote ${outFile} (${board.dimensions.length} dimension(s))`,
+			},
+		});
 	} else {
+		// stdout is the Markdown contract when no outFile is given — keep it pristine.
 		process.stdout.write(markdown);
 	}
 }

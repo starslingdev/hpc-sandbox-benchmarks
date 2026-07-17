@@ -1,14 +1,17 @@
 name: Bench matrix
 
-# Fan the live benchmark out across the full provider × suite matrix: one job per (provider, suite)
-# cell, each spinning up a real sandbox, running its suite, and uploading the normalized Run as an
-# artifact. The matrix is computed from the SUITES × PROVIDERS registries by `plan-matrix`; each suite
-# cell runs all of its registered leaves (for example, system runs pts/git and network runs
-# pts/fast-cli), rather than giving each PTS profile its own row. Adding a provider or suite to its
-# registry grows CI with no workflow edit. Off the PR path (real sandbox time + provider credentials);
-# main is the default, while an explicit allow_branch dispatch supports pre-merge validation. Every
-# benchmark cell remains gated by Environment `privileged` (required reviewers + environment secrets
-# — see docs/ci-secrets.md), and publishing stays main-only.
+# Fan the live benchmark out across the provider × suite matrix using GitHub's native reusable-workflow
+# nesting. `plan` emits both axes; a single suite-matrix job calls the reusable bench-suite.yml once per
+# suite (`name: ${{ matrix.suite }}`), and that reusable fans out providers (`name: ${{ matrix.provider
+# }}`) — so each cell displays as "<suite> / <provider>" (e.g. "system / e2b") and provider cells nest
+# under their suite in the Actions UI. Adding a suite is a schema change only: the suite axis is
+# `fromJSON(needs.plan.outputs.suites)`, kept in lockstep by the workflow-registry-sync gate. The
+# `suites` dispatch input narrows that axis to a subset (blank = every registered suite) — the
+# targeted/pre-merge knob, so a validation dispatch can run just one suite instead of the whole matrix.
+# Off the PR path (real sandbox time + provider credentials); main is the default, while an explicit
+# allow_branch dispatch supports pre-merge validation. Every benchmark cell remains gated by Environment
+# `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md, declared inside
+# bench-suite.yml), and publishing stays main-only.
 on:
   workflow_dispatch:
     inputs:
@@ -19,8 +22,17 @@ on:
         # The providers with a baked toolchain artifact and credentials in CI. blaxel boots the stock
         # base image (nothing baked for it), so it is excluded by default rather than burning ~150min
         # of runner time per suite on cells that cannot produce a comparable result. Pass it explicitly
-        # to include it; `plan-matrix` rejects any name that is not in the registry.
+        # to include it; `plan-providers` rejects any name that is not in the registry.
         default: e2b,daytona,modal
+      suites:
+        description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
+        required: false
+        type: string
+        # Blank runs every registered suite (the main-publish default). A subset narrows the suite-matrix
+        # axis to just those suites — the pre-merge/targeted knob so a validation dispatch needn't spend
+        # the whole matrix. `plan-suites` rejects any name that is not in the registry, so a typo fails
+        # the plan.
+        default: ''
       allow_branch:
         description: 'Allow benchmark cells on a non-main ref (publish remains main-only).'
         required: false
@@ -37,9 +49,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Compute the provider × suite matrix once, as the single $GITHUB_OUTPUT contract the fan-out reads.
-  # No secrets — plan stays off the privileged environment so approval isn't needed just to dry-run
-  # the matrix shape; a non-main run requires the explicit dispatch opt-in below.
+  # Compute both matrix axes once, as the single $GITHUB_OUTPUT contract the suite job reads. No
+  # secrets — plan stays off the privileged environment so approval isn't needed just to dry-run the
+  # axes; a non-main run requires the explicit dispatch opt-in below. The suite job `needs: plan`, so
+  # this guard also gates the fan-out: a skipped plan (fork, or a non-main run without allow_branch)
+  # skips every cell.
   plan:
     name: Plan matrix
     if: >
@@ -47,7 +61,8 @@ jobs:
       (github.ref == 'refs/heads/main' || inputs.allow_branch)
     runs-on: ubuntu-24.04
     outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
+      providers: ${{ steps.plan.outputs.providers }}
+      suites: ${{ steps.plan.outputs.suites }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -60,92 +75,44 @@ jobs:
           bun-version: 1.3.14
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
-      # plan-matrix prints one line of compact JSON ({"include":[...]}) — the strategy.matrix contract.
+      # plan-providers / plan-suites each write their axis to $GITHUB_OUTPUT via emitStepOutputs and
+      # log through @actions/core (foldable groups + notices). An unregistered provider or suite name
+      # fails the step, so a typo fails the plan instead of quietly publishing a dataset with it
+      # missing or running nothing.
       - name: Plan
         id: plan
-        # The dispatch input reaches plan-matrix through the environment, never interpolated into the
+        # The dispatch inputs reach the planners through the environment, never interpolated into the
         # shell, so a crafted input can't inject into the runner command.
         env:
           BENCH_PROVIDERS: ${{ inputs.providers }}
-        # Capture into a variable first so a plan-matrix.ts failure aborts the step (set -e): inlining
-        # the command substitution inside `echo` would mask its exit code behind echo's 0. An
-        # unregistered provider name exits 2 here, so a typo fails the plan instead of quietly
-        # publishing a dataset with that provider missing.
+          BENCH_SUITES: ${{ inputs.suites }}
         run: |
-          matrix="$(bun apps/cli/src/bin/plan-matrix.ts)"
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          bun apps/cli/src/bin/plan-providers.ts
+          bun apps/cli/src/bin/plan-suites.ts
 
-  bench:
-    name: ${{ matrix.suite }} on ${{ matrix.provider }}
+  # One matrix cell per selected suite → reusable workflow call. GitHub nests the reusable's provider
+  # matrix under each suite name, so the Actions UI shows expandable "<suite>" groups with "<provider>"
+  # children (display: "<suite> / <provider>"). fail-fast stays off so one bad suite doesn't cancel peers.
+  # The fork/branch guard is repeated here (not only inherited via `needs: plan`) so the job stays
+  # explicit when read in isolation — matching every other live-run job in the repo.
+  suite:
+    name: ${{ matrix.suite }}
     needs: plan
     if: >
       github.repository == 'starslingdev/hpc-sandbox-benchmarks' &&
       (github.ref == 'refs/heads/main' || inputs.allow_branch)
-    # The ephemeral self-hosted label is reaped after 70 minutes even while a step is healthy. The
-    # full CPU-generic and real-world matrices legitimately exceed that on slower providers, leaving
-    # the step stuck `in_progress` with no logs/artifact. Hosted runners honor timeout-minutes below;
-    # 180 minutes also leaves teardown/artifact margin around the longest 155-minute suite budget.
-    runs-on: ubuntu-24.04
-    environment: privileged
-    timeout-minutes: 180
     strategy:
-      # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          # This cell only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
-          # checkout's credentials), so don't persist the job token in .git/config.
-          persist-credentials: false
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.3.14
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-
-      # Drive the provider SDK to create a sandbox, run the suite, collect results, and normalize. The
-      # cell's provider/suite are matrix values, passed through the environment (never interpolated into
-      # the shell) so a registry value can't inject into the runner command.
-      - name: Run suite and normalize
-        env:
-          BENCH_REPO_REF: ${{ github.sha }}
-          # Optional once the repo is public (anonymous clone works). Still passed so private forks and
-          # rate-limited clones keep working via the short-lived job token.
-          BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BENCH_PROVIDER: ${{ matrix.provider }}
-          BENCH_SUITE: ${{ matrix.suite }}
-          # Scope every provider credential to the cell that actually uses it: a cell receives ONLY
-          # the secret(s) for its own `matrix.provider`, so a compromised adapter or suite can't read
-          # another provider's credential out of the environment. A non-matching provider evaluates to
-          # '', which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
-          # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
-          DAYTONA_API_KEY: ${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
-          # Boot daytona sandboxes in the active region (us-west-2); the default applies only to the
-          # daytona cell so an unsynced secret can't fail the config gatekeeper at module load.
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
-          E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
-          BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
-          BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
-          NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
-
-      - name: Upload Run + raw results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          # Per-cell artifact name so every (provider, suite) shard uploads independently.
-          name: bench-${{ matrix.suite }}-${{ matrix.provider }}-${{ github.run_id }}
-          path: data/
-          # A successful run always writes data/runs/<id>.json (even an all-skipped Run), so an empty
-          # data/ means the job is genuinely broken — fail the upload rather than bury a warning.
-          if-no-files-found: error
+      matrix:
+        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
+    # `secrets: inherit` keeps repository secrets / token context available to the callee; Environment
+    # secrets on `privileged` are resolved by the reusable job's own `environment:` declaration (a
+    # `uses:` caller can't set `environment:`).
+    uses: ./.github/workflows/bench-suite.yml
+    with:
+      providers: ${{ needs.plan.outputs.providers }}
+      suite: ${{ matrix.suite }}
+    secrets: inherit
 
   # Collect every shard Run, aggregate into one candidate, gate it (promote), regenerate the public
   # leaderboard, and open the PR that lands both on main. The logic lives in the reusable
@@ -154,12 +121,14 @@ jobs:
   # is declared inside that reusable workflow — a `uses:` caller can't set `environment:` itself.
   publish:
     name: Aggregate + promote dataset
-    needs: [plan, bench]
-    # Run even if some matrix cells failed (fail-fast is off) so the successful shards still publish:
-    # `aggregate` exits non-zero when zero shards are found and `promote` gates on >=1 validated
-    # provider, so the quality bar is preserved. `!cancelled()` still lets an explicit cancel stop it.
-    # `!cancelled()` opts out of the implicit success() gate, so require `plan` explicitly: a skipped
-    # or failed plan means there is no matrix contract, so there is nothing to publish.
+    needs:
+      - plan
+      - suite
+    # Run even if some suite matrix cells failed (fail-fast is off) so the successful shards still
+    # publish: `aggregate` exits non-zero when zero shards are found and `promote` gates on >=1
+    # validated provider, so the quality bar is preserved. `!cancelled()` still lets an explicit cancel
+    # stop it. `!cancelled()` opts out of the implicit success() gate, so require `plan` explicitly: a
+    # skipped or failed plan means there is no provider axis, so there is nothing to publish.
     if: >
       !cancelled() &&
       needs.plan.result == 'success' &&

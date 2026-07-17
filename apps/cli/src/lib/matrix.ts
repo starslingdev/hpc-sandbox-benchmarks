@@ -12,34 +12,60 @@ export interface MatrixEntry {
 }
 
 /**
+ * Parse a comma-separated dispatch list against a registry: blank → every registered id; unknown names
+ * throw (never silently shrink); duplicates collapse; order follows the registry, not the request;
+ * matching is case-insensitive. Shared by the provider and suite axes so they can't drift.
+ */
+export function selectRegistryIds<T extends string>(
+	raw: string | undefined,
+	registered: readonly T[],
+	kind: "provider" | "suite",
+): T[] {
+	const requested = (raw ?? "")
+		.toLowerCase()
+		.split(",")
+		.map((name) => name.trim())
+		.filter((name) => name.length > 0);
+	if (requested.length === 0) return [...registered];
+
+	const registeredSet = new Set<string>(registered);
+	const unknown = requested.filter((name) => !registeredSet.has(name));
+	if (unknown.length > 0) {
+		const plural = kind === "provider" ? "provider(s)" : "suite(s)";
+		const registeredLabel = kind === "provider" ? "providers" : "suites";
+		throw new Error(
+			`unknown ${plural}: ${unknown.join(", ")} — registered ${registeredLabel} are ${registered.join(", ")}`,
+		);
+	}
+	// Registry order, not request order: the matrix is a set of cells, and a stable order keeps the CI
+	// job list (and any diff of it) from churning with the way a dispatch happened to spell the list.
+	return registered.filter((id) => requested.includes(id));
+}
+
+/**
  * The providers a dispatch asks the matrix to fan out over, parsed from a comma-separated list (the
  * `BENCH_PROVIDERS` dispatch input). Absent or blank → every registered provider, so the default CI
  * matrix is unchanged and the registry stays the source of truth.
  *
  * An unregistered name THROWS rather than being dropped: a typo'd `--providers e2b,dayton` would
  * otherwise silently shrink the matrix and publish a dataset missing that provider, which reads
- * downstream as "daytona had no results" instead of "you misspelled it". Duplicates collapse, and the
- * result is ordered by the registry, so a dispatch can't reorder or double-run a cell. Matching is
- * case-insensitive (every registered id is lowercase), so a hand-typed `E2B` still selects `e2b`.
+ * downstream as "daytona had no results" instead of "you misspelled it".
  */
 export function selectProviders(raw: string | undefined): ProviderId[] {
-	const registered = PROVIDERS.map((p) => p.id);
-	const requested = (raw ?? "")
-		.toLowerCase()
-		.split(",")
-		.map((name) => name.trim())
-		.filter((name) => name.length > 0);
-	if (requested.length === 0) return registered;
+	return selectRegistryIds(
+		raw,
+		PROVIDERS.map((p) => p.id),
+		"provider",
+	);
+}
 
-	const unknown = requested.filter((name) => !registered.includes(name as ProviderId));
-	if (unknown.length > 0) {
-		throw new Error(
-			`unknown provider(s): ${unknown.join(", ")} — registered providers are ${registered.join(", ")}`,
-		);
-	}
-	// Registry order, not request order: the matrix is a set of cells, and a stable order keeps the CI
-	// job list (and any diff of it) from churning with the way a dispatch happened to spell the list.
-	return registered.filter((id) => requested.includes(id));
+/**
+ * The suites a dispatch asks the matrix to run, parsed from a comma-separated list (the `BENCH_SUITES`
+ * dispatch input). Absent or blank → every registered suite. This is the pre-merge/targeted-run knob:
+ * `BENCH_SUITES=network` runs only the network suite's jobs.
+ */
+export function selectSuites(raw: string | undefined): SuiteName[] {
+	return selectRegistryIds(raw, SUITE_NAMES, "suite");
 }
 
 /**
