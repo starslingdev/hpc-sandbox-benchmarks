@@ -20,7 +20,7 @@ or bandwidth-capped disk turns that into the longest step of your run.
 | | |
 | --- | --- |
 | **[Leaderboard](./LEADERBOARD.md)** | Provider rankings from the latest published run |
-| **[Leaderboard JSON](./data/dataset/leaderboards/29546060837.json)** | Machine-readable projection of the same ranks, intervals, gaps, and comparability evidence |
+| **[Leaderboard JSON](./data/dataset/leaderboards/)** | Machine-readable projections of published ranks, intervals, gaps, and comparability evidence |
 | **[Methodology](./docs/methodology.md)** | How a measurement is produced |
 | **[Docs hub](./docs/README.md)** | ADRs, CI secrets, security, contributing |
 

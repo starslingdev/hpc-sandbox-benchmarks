@@ -198,6 +198,9 @@ export interface PublicLeaderboard {
 				value: number;
 				interval: { low: number; high: number } | null;
 				n: number;
+				verdict: ComparisonVerdict | null;
+				tiedWithAbove: TieBasis | null;
+				pVsPrevious: LeaderboardRow["pVsPrevious"];
 				note?: string;
 			}>;
 		}>;
@@ -565,6 +568,9 @@ export function buildPublicLeaderboard(
 						interval:
 							row.interval.resamples === 0 ? null : { low: row.interval.lo, high: row.interval.hi },
 						n: row.n,
+						verdict: row.verdict,
+						tiedWithAbove: row.tiedWithAbove,
+						pVsPrevious: row.pVsPrevious,
 						...(note ? { note } : {}),
 					};
 				}),

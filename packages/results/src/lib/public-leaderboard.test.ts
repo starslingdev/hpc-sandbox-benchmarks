@@ -78,6 +78,9 @@ describe("public leaderboard JSON", () => {
 			rank: sourceRow?.rank,
 			value: sourceRow?.value,
 			n: sourceRow?.n,
+			verdict: sourceRow?.verdict,
+			tiedWithAbove: sourceRow?.tiedWithAbove,
+			pVsPrevious: sourceRow?.pVsPrevious,
 		});
 		expect(publicRow.interval).toEqual({
 			low: sourceRow.interval.lo,

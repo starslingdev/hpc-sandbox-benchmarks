@@ -97,9 +97,12 @@ jobs:
           bun apps/cli/src/bin/aggregate.ts "$RUN_ID" data/candidate "${shards[@]}"
           bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset
 
-      # Keep LEADERBOARD.md byte-identical to what the renderer produces from the newly promoted Run.
-      - name: Regenerate leaderboard
-        run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$RUN_ID.json" LEADERBOARD.md
+      # Keep both public leaderboard surfaces byte-identical to what the renderer produces from the
+      # newly promoted Run. The JSON path is run-addressed so older published artifacts remain pinned.
+      - name: Regenerate leaderboards
+        run: |
+          bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$RUN_ID.json" LEADERBOARD.md
+          bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$RUN_ID.json" "data/dataset/leaderboards/$RUN_ID.json"
 
       # Canonicalize the promoted dataset to Biome's format before the gate + commit. The promote
       # writer emits `JSON.stringify(run, null, 2)` (every array element on its own line), but Biome's

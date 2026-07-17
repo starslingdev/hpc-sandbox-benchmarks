@@ -179,7 +179,10 @@
                 "low": 19.46,
                 "high": 19.55
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -190,6 +193,13 @@
                 "high": 17.58
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -201,6 +211,13 @@
                 "high": 12.94
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -212,6 +229,13 @@
                 "high": 11.12
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -223,6 +247,13 @@
                 "high": 8.93
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -242,7 +273,10 @@
                 "low": 127.58,
                 "high": 127.687
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -253,6 +287,13 @@
                 "high": 200.073
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -264,6 +305,13 @@
                 "high": 240.99
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -283,7 +331,10 @@
                 "low": 509.653,
                 "high": 509.793
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -294,6 +345,13 @@
                 "high": 800.445
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -305,6 +363,13 @@
                 "high": 962.324
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -324,7 +389,10 @@
                 "low": 907.024,
                 "high": 908.074
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -335,6 +403,13 @@
                 "high": 1425.799
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -346,6 +421,13 @@
                 "high": 1705.315
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -365,7 +447,10 @@
                 "low": 115.9,
                 "high": 118.3
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -376,6 +461,13 @@
                 "high": 99.6
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -387,6 +479,13 @@
                 "high": 71.6
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -406,7 +505,10 @@
                 "low": 2298.9,
                 "high": 2308.8
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -417,6 +519,13 @@
                 "high": 1915.4
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -428,6 +537,13 @@
                 "high": 1060.2
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -447,7 +563,10 @@
                 "low": 11,
                 "high": 11.2
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -458,6 +577,13 @@
                 "high": 8.14
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -469,6 +595,13 @@
                 "high": 5.71
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -488,7 +621,10 @@
                 "low": 1914.5,
                 "high": 1917.6
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -499,6 +635,13 @@
                 "high": 1626.9
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -510,6 +653,13 @@
                 "high": 894.6
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -529,7 +679,10 @@
                 "low": 7.03,
                 "high": 7.12
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "blaxel",
@@ -540,6 +693,13 @@
                 "high": 5.95
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -551,6 +711,13 @@
                 "high": 5.23
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -570,7 +737,10 @@
                 "low": 1839.6,
                 "high": 1844.7
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -581,6 +751,13 @@
                 "high": 1551.5
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -592,6 +769,13 @@
                 "high": 902.5
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -611,7 +795,10 @@
                 "low": 1293.9,
                 "high": 1305.8
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -622,6 +809,13 @@
                 "high": 782.3
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -633,6 +827,13 @@
                 "high": 682.1
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -652,7 +853,10 @@
                 "low": 2112.1,
                 "high": 2114.5
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -663,6 +867,13 @@
                 "high": 1751.3
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -670,7 +881,10 @@
               "rank": 3,
               "value": 1116.9,
               "interval": null,
-              "n": 1
+              "n": 1,
+              "verdict": "untested",
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             }
           ]
         },
@@ -689,7 +903,10 @@
                 "low": 841.7,
                 "high": 854.1
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -700,6 +917,13 @@
                 "high": 536.5
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -711,6 +935,13 @@
                 "high": 531
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -730,7 +961,10 @@
                 "low": 2161,
                 "high": 2171.2
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -741,6 +975,13 @@
                 "high": 1810.9
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -760,7 +1001,10 @@
                 "low": 352,
                 "high": 352.7
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -771,6 +1015,13 @@
                 "high": 212
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -782,6 +1033,13 @@
                 "high": 180.2
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -801,7 +1059,10 @@
                 "low": 2269,
                 "high": 2269.2
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -812,6 +1073,13 @@
                 "high": 1912.3
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -823,6 +1091,13 @@
                 "high": 1126.2
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -842,7 +1117,10 @@
                 "low": 323.7,
                 "high": 326.9
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -853,6 +1131,13 @@
                 "high": 203
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -864,6 +1149,13 @@
                 "high": 174.8
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -883,7 +1175,10 @@
                 "low": 2304.8,
                 "high": 2310.5
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -894,6 +1189,13 @@
                 "high": 1915
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -905,6 +1207,13 @@
                 "high": 1136
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -929,7 +1238,10 @@
                 "low": 570000,
                 "high": 582000
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -940,6 +1252,13 @@
                 "high": 257000
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -951,6 +1270,13 @@
                 "high": 63700
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -962,6 +1288,13 @@
                 "high": 41300
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -973,6 +1306,13 @@
                 "high": 34600
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -992,7 +1332,10 @@
                 "low": 2226,
                 "high": 2275
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -1003,6 +1346,13 @@
                 "high": 1006
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1014,6 +1364,13 @@
                 "high": 249
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1025,6 +1382,13 @@
                 "high": 162
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1036,6 +1400,13 @@
                 "high": 135
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1055,7 +1426,10 @@
                 "low": 484000,
                 "high": 506000
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -1066,6 +1440,13 @@
                 "high": 255000
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1077,6 +1458,13 @@
                 "high": 94600
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1088,6 +1476,13 @@
                 "high": 44300
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1099,6 +1494,13 @@
                 "high": 29600
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1118,7 +1520,10 @@
                 "low": 1891,
                 "high": 1977
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -1129,6 +1534,13 @@
                 "high": 994
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1140,6 +1552,13 @@
                 "high": 369
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1151,6 +1570,13 @@
                 "high": 173
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1162,6 +1588,13 @@
                 "high": 116
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1181,7 +1614,10 @@
                 "low": 11900,
                 "high": 12800
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -1192,6 +1628,13 @@
                 "high": 11300
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1203,6 +1646,13 @@
                 "high": 12700
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 1,
+                "ks": 0.8438198245415606,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1214,6 +1664,13 @@
                 "high": 4809
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1225,6 +1682,13 @@
                 "high": 599
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1241,7 +1705,10 @@
               "rank": 1,
               "value": 5585,
               "interval": null,
-              "n": 1
+              "n": 1,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "blaxel",
@@ -1251,7 +1718,10 @@
                 "low": 4611,
                 "high": 4811
               },
-              "n": 2
+              "n": 2,
+              "verdict": "untested",
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "e2b",
@@ -1262,6 +1732,13 @@
                 "high": 601
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1281,7 +1758,10 @@
                 "low": 5714,
                 "high": 5928
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -1292,6 +1772,13 @@
                 "high": 5570
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1303,6 +1790,13 @@
                 "high": 3700
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1314,6 +1808,13 @@
                 "high": 3554
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1325,6 +1826,13 @@
                 "high": 600
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1344,7 +1852,10 @@
                 "low": 5716,
                 "high": 5930
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -1355,6 +1866,13 @@
                 "high": 5571
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1366,6 +1884,13 @@
                 "high": 3702
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1377,6 +1902,13 @@
                 "high": 3556
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1388,6 +1920,13 @@
                 "high": 601
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1407,7 +1946,10 @@
                 "low": 23.62,
                 "high": 23.69
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -1418,6 +1960,13 @@
                 "high": 18.59
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1429,6 +1978,13 @@
                 "high": 12.46
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1440,6 +1996,13 @@
                 "high": 3.12
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1451,6 +2014,13 @@
                 "high": 1.46
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1475,7 +2045,10 @@
                 "low": 70326.4,
                 "high": 77460.7
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -1486,6 +2059,13 @@
                 "high": 56009.6
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1497,6 +2077,13 @@
                 "high": 46212.3
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1508,6 +2095,13 @@
                 "high": 48697.4
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 1,
+                "ks": 0.8438198245415606,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1519,6 +2113,13 @@
                 "high": 22264.7
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1538,7 +2139,10 @@
                 "low": 70135.9,
                 "high": 77686.7
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -1549,6 +2153,13 @@
                 "high": 55755.6
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1560,6 +2171,13 @@
                 "high": 50672.2
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1571,6 +2189,13 @@
                 "high": 45928.2
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 1,
+                "ks": 0.8438198245415606,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1582,6 +2207,13 @@
                 "high": 22208.7
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1601,7 +2233,10 @@
                 "low": 107305.5,
                 "high": 120361.7
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -1612,6 +2247,13 @@
                 "high": 65692.3
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1623,6 +2265,13 @@
                 "high": 67440.2
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 1,
+                "ks": 0.8438198245415606,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1634,6 +2283,13 @@
                 "high": 55127.3
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1645,6 +2301,13 @@
                 "high": 46760.5
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1664,7 +2327,10 @@
                 "low": 58675.3,
                 "high": 66567
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -1675,6 +2341,13 @@
                 "high": 50181.9
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1686,6 +2359,13 @@
                 "high": 45606.5
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1697,6 +2377,13 @@
                 "high": 40662
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1708,6 +2395,13 @@
                 "high": 21051.5
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1732,7 +2426,10 @@
                 "low": 5.286,
                 "high": 5.595
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "blaxel",
@@ -1743,6 +2440,13 @@
                 "high": 6.867
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1754,6 +2458,13 @@
                 "high": 7.959
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1765,6 +2476,13 @@
                 "high": 10.97
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1776,6 +2494,13 @@
                 "high": 56.857
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1795,7 +2520,10 @@
                 "low": 3,
                 "high": 3.5
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             }
           ]
         },
@@ -1814,7 +2542,10 @@
                 "low": 7,
                 "high": 7
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             }
           ]
         },
@@ -1830,7 +2561,10 @@
               "rank": 1,
               "value": 9,
               "interval": null,
-              "n": 1
+              "n": 1,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             }
           ]
         },
@@ -1849,7 +2583,10 @@
                 "low": 760,
                 "high": 780
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             }
           ]
         }
@@ -1873,7 +2610,10 @@
                 "low": 839,
                 "high": 849
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             }
           ]
         },
@@ -1892,7 +2632,10 @@
                 "low": 35.962,
                 "high": 36.164
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -1903,6 +2646,13 @@
                 "high": 43.678
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1914,6 +2664,13 @@
                 "high": 61.589
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1925,6 +2682,13 @@
                 "high": 70.513
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1936,6 +2700,13 @@
                 "high": 81.995
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -1955,7 +2726,10 @@
                 "low": 30.412,
                 "high": 30.671
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -1966,6 +2740,13 @@
                 "high": 39.091
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1977,6 +2758,13 @@
                 "high": 68.245
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1988,6 +2776,13 @@
                 "high": 69.863
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -1999,6 +2794,13 @@
                 "high": 523.75
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2023,7 +2825,10 @@
                 "low": 28.657,
                 "high": 29.027
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2034,6 +2839,13 @@
                 "high": 42.881
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2045,6 +2857,13 @@
                 "high": 74.61
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2064,7 +2883,10 @@
                 "low": 10.786,
                 "high": 11.083
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -2075,6 +2897,13 @@
                 "high": 12.944
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2086,6 +2915,13 @@
                 "high": 14.528
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2097,6 +2933,13 @@
                 "high": 21.517
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2108,6 +2951,13 @@
                 "high": 41.897
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2127,7 +2977,10 @@
                 "low": 10.743,
                 "high": 11.035
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2138,6 +2991,13 @@
                 "high": 11.952
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2149,6 +3009,13 @@
                 "high": 17.174
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2160,6 +3027,13 @@
                 "high": 19.98
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2171,6 +3045,13 @@
                 "high": 31.611
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2190,7 +3071,10 @@
                 "low": 1.555,
                 "high": 1.586
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -2201,6 +3085,13 @@
                 "high": 1.768
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.6666666666666666,
+                "ks": 0.8438198245415606,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2212,6 +3103,13 @@
                 "high": 1.787
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.6666666666666666,
+                "ks": 0.8438198245415606,
+                "floor": 0.6666666666666666
+              },
               "note": "n too small"
             },
             {
@@ -2223,6 +3121,13 @@
                 "high": 2.187
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 1,
+                "ks": 0.8438198245415606,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2234,6 +3139,13 @@
                 "high": 2.524
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2253,7 +3165,10 @@
                 "low": 3.936,
                 "high": 3.942
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -2264,6 +3179,13 @@
                 "high": 4.869
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2275,6 +3197,13 @@
                 "high": 5.411
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2286,6 +3215,13 @@
                 "high": 8.433
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2297,6 +3233,13 @@
                 "high": 17.23
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2316,7 +3259,10 @@
                 "low": 10.955,
                 "high": 10.975
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2327,6 +3273,13 @@
                 "high": 11.703
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2338,6 +3291,13 @@
                 "high": 16.97
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2349,6 +3309,13 @@
                 "high": 18.778
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2360,6 +3327,13 @@
                 "high": 28.658
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2379,7 +3353,10 @@
                 "low": 2.679,
                 "high": 2.683
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2390,6 +3367,13 @@
                 "high": 3.053
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2401,6 +3385,13 @@
                 "high": 4.946
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2412,6 +3403,13 @@
                 "high": 5.266
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2423,6 +3421,13 @@
                 "high": 6.668
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2442,7 +3447,10 @@
                 "low": 2.966,
                 "high": 3.001
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -2453,6 +3461,13 @@
                 "high": 4.02
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2464,6 +3479,13 @@
                 "high": 4.638
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2475,6 +3497,13 @@
                 "high": 7.619
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2486,6 +3515,13 @@
                 "high": 15.968
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2505,7 +3541,10 @@
                 "low": 6.769,
                 "high": 6.908
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2516,6 +3555,13 @@
                 "high": 7.925
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2527,6 +3573,13 @@
                 "high": 12.208
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2538,6 +3591,13 @@
                 "high": 12.568
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2549,6 +3609,13 @@
                 "high": 15.65
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2568,7 +3635,10 @@
                 "low": 33.475,
                 "high": 33.801
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "daytona",
@@ -2579,6 +3649,13 @@
                 "high": 51.19
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2590,6 +3667,13 @@
                 "high": 60.534
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2601,6 +3685,13 @@
                 "high": 99.48
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2612,6 +3703,13 @@
                 "high": 187.659
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2631,7 +3729,10 @@
                 "low": 1.378,
                 "high": 1.398
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2642,6 +3743,13 @@
                 "high": 1.483
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2653,6 +3761,13 @@
                 "high": 2.038
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2664,6 +3779,13 @@
                 "high": 2.79
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2675,6 +3797,13 @@
                 "high": 3.326
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2694,7 +3823,10 @@
                 "low": 82.979,
                 "high": 83.024
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2705,6 +3837,13 @@
                 "high": 126.008
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2716,6 +3855,13 @@
                 "high": 204.988
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2735,7 +3881,10 @@
                 "low": 6.425,
                 "high": 6.827
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2746,6 +3895,13 @@
                 "high": 7.096
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2757,6 +3913,13 @@
                 "high": 10.564
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2776,7 +3939,10 @@
                 "low": 90.341,
                 "high": 91.077
               },
-              "n": 2
+              "n": 2,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
@@ -2787,6 +3953,13 @@
                 "high": 128.834
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             },
             {
@@ -2798,6 +3971,13 @@
                 "high": 201.084
               },
               "n": 2,
+              "verdict": "underpowered",
+              "tiedWithAbove": null,
+              "pVsPrevious": {
+                "mannWhitney": 0.3333333333333333,
+                "ks": 0.0970268975952207,
+                "floor": 0.3333333333333333
+              },
               "note": "n too small"
             }
           ]
@@ -2819,28 +3999,40 @@
               "rank": 1,
               "value": 0.1494,
               "interval": null,
-              "n": 1
+              "n": 1,
+              "verdict": null,
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "novita",
               "rank": 2,
               "value": 0.16272,
               "interval": null,
-              "n": 1
+              "n": 1,
+              "verdict": "untested",
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "e2b",
               "rank": 3,
               "value": 0.2304,
               "interval": null,
-              "n": 1
+              "n": 1,
+              "verdict": "untested",
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             },
             {
               "providerId": "modal",
               "rank": 4,
               "value": 0.47736,
               "interval": null,
-              "n": 1
+              "n": 1,
+              "verdict": "untested",
+              "tiedWithAbove": null,
+              "pVsPrevious": null
             }
           ]
         }

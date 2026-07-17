@@ -43,7 +43,10 @@ describe("public leaderboard artifact", () => {
 		const run = parseRun(
 			JSON.parse(readFileSync(join(ROOT, "data", "dataset", "runs", `${runId}.json`), "utf8")),
 		);
-		const artifact = buildPublicLeaderboard(run);
+		const artifact = JSON.parse(
+			readFileSync(join(ROOT, "data", "dataset", "leaderboards", `${runId}.json`), "utf8"),
+		) as ReturnType<typeof buildPublicLeaderboard>;
+		const board = buildLeaderboard(run);
 		const metricRecordCount = run.providers.reduce(
 			(sum, provider) => sum + provider.metrics.length,
 			0,
@@ -60,5 +63,44 @@ describe("public leaderboard artifact", () => {
 		expect(
 			artifact.dimensions.flatMap(({ metrics }) => metrics.flatMap(({ rows }) => rows)),
 		).toHaveLength(metricRecordCount);
+
+		for (const sourceDimension of board.dimensions) {
+			const publicDimension = artifact.dimensions.find(
+				({ id }) => id === sourceDimension.dimension,
+			);
+			expect(publicDimension, sourceDimension.dimension).toBeDefined();
+			for (const sourceMetric of sourceDimension.metrics) {
+				const publicMetric = publicDimension?.metrics.find(
+					({ id }) => id === sourceMetric.metric.id,
+				);
+				expect(publicMetric, sourceMetric.metric.id).toMatchObject({
+					name: sourceMetric.metric.label,
+					unit: sourceMetric.metric.unit,
+					direction: sourceMetric.metric.direction === "HIB" ? "higher" : "lower",
+					headline: sourceMetric.metric.headline === true,
+				});
+				expect(publicMetric?.rows.map(({ providerId }) => providerId)).toEqual(
+					sourceMetric.rows.map(({ providerId }) => providerId),
+				);
+				for (const sourceRow of sourceMetric.rows) {
+					const publicRow = publicMetric?.rows.find(
+						({ providerId }) => providerId === sourceRow.providerId,
+					);
+					expect(publicRow, `${sourceMetric.metric.id}/${sourceRow.providerId}`).toMatchObject({
+						rank: sourceRow.rank,
+						value: sourceRow.value,
+						n: sourceRow.n,
+						verdict: sourceRow.verdict,
+						tiedWithAbove: sourceRow.tiedWithAbove,
+						pVsPrevious: sourceRow.pVsPrevious,
+					});
+					expect(publicRow?.interval).toEqual(
+						sourceRow.interval.resamples === 0
+							? null
+							: { low: sourceRow.interval.lo, high: sourceRow.interval.hi },
+					);
+				}
+			}
+		}
 	});
 });
