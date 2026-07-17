@@ -134,4 +134,18 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		const unpriced: ProviderMeta = { ...fixture, pricing: { model: "unknown", notes: "n/a" } };
 		expect(hourlyCostAtTargetSpec(unpriced)).toBeNull();
 	});
+
+	it("declares modal's dynamic-hardware burst ceiling above TARGET_SPEC, and no other provider's", () => {
+		// Modal's SDK is the only one wired for a reservation/limit spread (cpu/cpuLimit,
+		// memoryMiB/memoryLimitMiB); every other provider's create-time size is a single fixed number,
+		// so `dynamicHardware` must stay absent for them — its presence is what the harness adapter and
+		// `computeSpecMatched` key off to widen the accepted range at all.
+		const modalBounds = getProvider("modal").dynamicHardware;
+		expect(modalBounds).toEqual({ maxVcpus: 8, maxMemoryGb: 16 });
+		expect(modalBounds?.maxVcpus).toBeGreaterThan(TARGET_SPEC.vcpus);
+		expect(modalBounds?.maxMemoryGb).toBeGreaterThan(TARGET_SPEC.memoryGb);
+		for (const id of ["e2b", "daytona", "blaxel", "novita"] as const) {
+			expect(getProvider(id).dynamicHardware).toBeUndefined();
+		}
+	});
 });

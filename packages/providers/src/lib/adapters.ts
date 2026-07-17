@@ -8,7 +8,7 @@ import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
-import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { getProvider, TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config } from "./config.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { novitaCompute } from "./novita.ts";
@@ -17,6 +17,16 @@ import type { ProviderAdapter } from "./types.ts";
 // The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
 // `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.
 const daytonaCfg = config.daytona;
+
+// Modal's burst ceiling, schema-owned (packages/schema/src/providers.ts) so the harness policy below
+// and the provider's declared capability can never drift apart. modal's REGISTRY entry always declares
+// `dynamicHardware` (guarded by the "pins modal's create-time spec" test in index.test.ts); the throw is
+// an invariant guard, not an expected runtime path.
+const modalDynamicHardware =
+	getProvider("modal").dynamicHardware ??
+	(() => {
+		throw new Error("modal's schema entry is missing dynamicHardware bounds");
+	})();
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
@@ -70,14 +80,21 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			// cpu=1/cpuLimit=1 exposes nproc=1 and delivers exactly half the dual-worker throughput of
 			// cpu=2/cpuLimit=2 (probed 2026-07-10: 264 vs 512 MB hashed/worker/8s). In practice `cpu` is
 			// the schedulable-CPU count the guest sees, so halving TARGET_SPEC.vcpus benchmarked Modal on
-			// half the CPU of every other provider (which all expose nproc=2). Pass the vCPU spec through.
+			// half the CPU of every other provider (which all expose nproc=2). `cpu` is the RESERVATION
+			// (what every provider is compared/billed at, same as every other adapter's pinned spec);
+			// `cpuLimit` is the hard ceiling the sandbox may burst to under load — set from the schema's
+			// declared `dynamicHardware` bound rather than pinned equal to the reservation, so Modal's
+			// SDK-native reservation/limit spread (the "min/max cores" the latest client exposes) is
+			// actually used instead of collapsing it back to one fixed number.
 			cpu: TARGET_SPEC.vcpus,
-			cpuLimit: TARGET_SPEC.vcpus,
+			cpuLimit: modalDynamicHardware.maxVcpus,
 			// `memoryMiB` is only a RESERVATION — on its own the guest still sees the host's RAM (a live
 			// sandbox reported 464 GB), and PTS sizes STREAM's arrays from that, so the memory suite never
-			// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report the target spec.
+			// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report a bounded size;
+			// same reservation/limit split as `cpu` above, so memory can burst to the schema's declared
+			// ceiling instead of being clamped to the reservation.
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
-			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
+			memoryLimitMiB: modalDynamicHardware.maxMemoryGb * 1024,
 		},
 	},
 	novita: {

@@ -18,6 +18,14 @@ runs with its actuals recorded and the mismatch disclosed (`specMatched`). Its m
 rankings, but the leaderboard flags the provider with an explicit **Comparability warning** naming its
 observed allocation, so its ranks are never read as like-for-like with the compute-matched providers.
 
+A provider whose SDK supports a reservation/limit spread instead of only one fixed size declares a
+[`dynamicHardware`](../packages/schema/src/providers.ts) ceiling — today only Modal, whose `cpu`/`cpuLimit`
+and `memoryMiB`/`memoryLimitMiB` let the guest burst from `TARGET_SPEC` up to 8 vCPU / 16 GiB under load,
+rather than being hard-capped at the reservation. The reservation stays what every provider is
+billed/compared at (`hourlyCostAtTargetSpec` never reads the ceiling); `specMatched` widens its accepted
+range to `[TARGET_SPEC, ceiling]` for a provider that declares one, so an observed burst is still a match
+and not a false Comparability warning — see [ADR-0006](./adr/0006-dynamic-hardware-bounds.md).
+
 ## Dimensions and metrics
 
 Results land on a closed, ordered set of [`DIMENSIONS`](../packages/schema/src/metrics.ts): `lifecycle`,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 // The stock wrapper factory, imported so the novita test can prove the connection methods were
 // actually REPLACED (identity inequality against an unpatched instance's methods table).
 import { e2b } from "@computesdk/e2b";
-import { PROVIDERS, TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { getProvider, PROVIDERS, TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { config, NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection, providers } from "./index.ts";
 import { runE2bCommandAsRoot } from "./lib/e2b-root.ts";
 import { assertProviderJoin } from "./lib/join.ts";
@@ -29,19 +29,23 @@ describe("@sandbox-benchmarks/providers", () => {
 		}
 	});
 
-	it("pins modal's create-time spec from the shared TARGET_SPEC", () => {
+	it("pins modal's create-time reservation to TARGET_SPEC and its limit to the dynamic-hardware ceiling", () => {
 		const modal = providers.find((p) => p.name === "modal");
 		expect(modal).toBeDefined();
+		const bounds = getProvider("modal").dynamicHardware;
+		expect(bounds).toBeDefined();
 		// Modal's `cpu` unit delivers one schedulable vCPU (nproc tracks it 1:1 and throughput scales
 		// with it — measured 2026-07-10), so the pinned vCPU count passes through unhalved; halving it
-		// benchmarked Modal on half the CPU of every other provider.
-		// `memoryLimitMiB` is the hard cap (memoryMiB alone is only a reservation, and the guest then
-		// still sees the host's RAM) — assert it, or the memory fix has no regression guard at all.
+		// benchmarked Modal on half the CPU of every other provider. `cpu`/`memoryMiB` are the
+		// RESERVATION (pinned to TARGET_SPEC, same as every other provider); `cpuLimit`/`memoryLimitMiB`
+		// are the burst ceiling the schema declares (`dynamicHardware`), not pinned equal to the
+		// reservation — assert both distinctly, or a regression collapsing the range back to one fixed
+		// number would pass silently.
 		expect(modal?.createOptions).toMatchObject({
 			cpu: TARGET_SPEC.vcpus,
-			cpuLimit: TARGET_SPEC.vcpus,
+			cpuLimit: bounds?.maxVcpus,
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
-			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
+			memoryLimitMiB: (bounds?.maxMemoryGb ?? 0) * 1024,
 		});
 	});
 

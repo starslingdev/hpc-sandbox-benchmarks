@@ -4,7 +4,7 @@
  * absent — or omits a field — the in-sandbox jc probe files the producer writes (lscpu/free/uname/df)
  * backfill the EFFECTIVE side (vcpus/memoryGb/diskGb/cpuModel/kernel/virtualization).
  */
-import type { ObservedSpecs } from "@sandbox-benchmarks/schema";
+import type { DynamicHardwareBounds, ObservedSpecs } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 
 /** Reads a named JSON file from a provider's raw directory, or undefined when absent/unparseable. */
@@ -143,9 +143,13 @@ export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
 }
 
 /**
- * Did the sandbox honor the pinned target spec? vCPUs must match exactly; memory within ±10%
- * (kernels reserve some). Undefined when either observation is missing — we refuse to judge on
- * partial evidence.
+ * Did the sandbox honor the pinned target spec? Without a `dynamicHardware` bound, vCPUs must match
+ * exactly and memory within ±10% (kernels reserve some) — the fixed-size case every non-Modal provider
+ * is in today. With one (currently only Modal), the SDK's reservation/limit spread means the guest may
+ * legitimately observe anywhere from {@link TARGET_SPEC} up to the declared ceiling: vCPUs must fall in
+ * `[TARGET_SPEC.vcpus, bounds.maxVcpus]`, memory in `[TARGET_SPEC.memoryGb * 0.9, bounds.maxMemoryGb]`
+ * (the same 10% floor tolerance, no matching upper tolerance since the ceiling is already the max).
+ * Undefined when either observation is missing — we refuse to judge on partial evidence.
  *
  * Deliberately covers the COMPARABILITY dimensions only — the two that decide whether two providers'
  * numbers may be put side by side. {@link TARGET_SPEC}.diskGb is excluded even though it is part of
@@ -155,8 +159,16 @@ export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
  * A disk shortfall is not silently absorbed here — it surfaces as a skip with an "Insufficient disk"
  * reason and is rendered as an explicit leaderboard coverage gap.
  */
-export function computeSpecMatched(specs: ObservedSpecs): boolean | undefined {
+export function computeSpecMatched(
+	specs: ObservedSpecs,
+	dynamicHardware?: DynamicHardwareBounds,
+): boolean | undefined {
 	if (specs.vcpus === undefined || specs.memoryGb === undefined) return undefined;
-	const memoryOk = Math.abs(specs.memoryGb - TARGET_SPEC.memoryGb) <= TARGET_SPEC.memoryGb * 0.1;
-	return specs.vcpus === TARGET_SPEC.vcpus && memoryOk;
+	const maxVcpus = dynamicHardware?.maxVcpus ?? TARGET_SPEC.vcpus;
+	const maxMemoryGb = dynamicHardware?.maxMemoryGb ?? TARGET_SPEC.memoryGb;
+	const memoryFloor = TARGET_SPEC.memoryGb * 0.9;
+	const memoryCeiling = dynamicHardware ? maxMemoryGb : TARGET_SPEC.memoryGb * 1.1;
+	const vcpusOk = specs.vcpus >= TARGET_SPEC.vcpus && specs.vcpus <= maxVcpus;
+	const memoryOk = specs.memoryGb >= memoryFloor && specs.memoryGb <= memoryCeiling;
+	return vcpusOk && memoryOk;
 }

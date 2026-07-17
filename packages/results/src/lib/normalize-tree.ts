@@ -279,7 +279,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// fields (vcpus/memoryGb), and <System> only ever fills host-side fields, so the probe always wins on
 	// overlap and a host disclosure can never masquerade as the sandbox's effective size.
 	const observedSpecs: ObservedSpecs = { ...(systemHost ?? {}), ...probeSpecs };
-	const specMatched = computeSpecMatched(observedSpecs);
+	const specMatched = computeSpecMatched(observedSpecs, meta?.dynamicHardware);
 
 	return {
 		providerId,

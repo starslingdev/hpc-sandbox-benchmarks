@@ -264,3 +264,29 @@ describe("computeSpecMatched (target: 2 vCPU / 8 GB ±10%)", () => {
 		expect(computeSpecMatched({ vcpus: 1, memoryGb: 8 })).toBe(false);
 	});
 });
+
+describe("computeSpecMatched with a dynamicHardware bound (Modal: reservation 2 vCPU / 8 GB, ceiling 8 vCPU / 16 GB)", () => {
+	const bounds = { maxVcpus: 8, maxMemoryGb: 16 };
+
+	it("still matches the bare reservation, same as the fixed-size case", () => {
+		expect(computeSpecMatched({ vcpus: 2, memoryGb: 8 }, bounds)).toBe(true);
+	});
+
+	it("matches anywhere inside [reservation, ceiling], not only the two endpoints", () => {
+		expect(computeSpecMatched({ vcpus: 4, memoryGb: 12 }, bounds)).toBe(true);
+	});
+
+	it("matches at the declared ceiling", () => {
+		expect(computeSpecMatched({ vcpus: 8, memoryGb: 16 }, bounds)).toBe(true);
+	});
+
+	it("still fails below the reservation", () => {
+		expect(computeSpecMatched({ vcpus: 1, memoryGb: 8 }, bounds)).toBe(false);
+		expect(computeSpecMatched({ vcpus: 2, memoryGb: 4 }, bounds)).toBe(false);
+	});
+
+	it("fails above the declared ceiling — bursting isn't unbounded", () => {
+		expect(computeSpecMatched({ vcpus: 9, memoryGb: 16 }, bounds)).toBe(false);
+		expect(computeSpecMatched({ vcpus: 8, memoryGb: 17 }, bounds)).toBe(false);
+	});
+});

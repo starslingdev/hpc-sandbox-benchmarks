@@ -17,6 +17,23 @@ export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel" | "novita";
 export type SpecPinning = "settable" | "fixed" | "unknown";
 
 /**
+ * The ceiling a provider's SDK can burst a sandbox to, when create()-time sizing is a
+ * reservation/limit spread rather than one fixed number. Distinct from {@link SpecPinning}:
+ * "settable" only says a size can be requested at all, not that the size is a *range*. Declared per
+ * provider (like {@link ProviderTransport}) because it is a static SDK capability — today only Modal's
+ * `cpu`/`cpuLimit` and `memoryMiB`/`memoryLimitMiB` express a reservation below a hard limit, letting
+ * the guest scale between {@link TARGET_SPEC} (the reservation every provider is pinned to, and what
+ * cross-provider cost/ranking still uses) and this ceiling under load. A provider without this field
+ * has no such range: its create-time size is a single number, matched or not against `TARGET_SPEC`.
+ */
+export interface DynamicHardwareBounds {
+	/** Hard vCPU ceiling the sandbox may burst to, above {@link TARGET_SPEC}.vcpus. */
+	maxVcpus: number;
+	/** Hard memory ceiling (GiB) the sandbox may burst to, above {@link TARGET_SPEC}.memoryGb. */
+	maxMemoryGb: number;
+}
+
+/**
  * How a provider's command-exec transport behaves *through its `@computesdk/*` adapter* — the facts the
  * harness needs to pick a per-step transport instead of hardcoding one provider's quirks (the original
  * sin this models away: the harness forced Daytona's detached+poll on every provider). Owned here
@@ -108,6 +125,8 @@ export interface ProviderMeta {
 	specPinning: SpecPinning;
 	/** How the provider's exec transport behaves — the harness selects sync vs detached from this. */
 	transport: ProviderTransport;
+	/** The reservation→limit burst ceiling, when the SDK supports one; absent for fixed-size providers. */
+	dynamicHardware?: DynamicHardwareBounds;
 }
 
 /**
@@ -268,6 +287,10 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 		maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },
 		specPinning: "settable",
+		// `cpu`/`memoryMiB` stay pinned at TARGET_SPEC (the reservation every provider is compared at);
+		// `cpuLimit`/`memoryLimitMiB` are set to this ceiling so the guest can burst above the reservation
+		// under load instead of being hard-capped at it. See the harness adapter for the create-time wiring.
+		dynamicHardware: { maxVcpus: 8, maxMemoryGb: 16 },
 		transport: {
 			// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
 			// separate per-exec timeout. There is no hard server gateway cap, but the exec stdio stream
