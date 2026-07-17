@@ -16,7 +16,7 @@ describe("normalizeResultsTree", () => {
 	});
 
 	it("validates as a Run and includes every known provider", () => {
-		expect(run.schemaVersion).toBe("2");
+		expect(run.schemaVersion).toBe("3");
 		expect(run.providers.map((provider) => provider.providerId).sort()).toEqual(
 			PROVIDERS.map((provider) => provider.id).sort(),
 		);

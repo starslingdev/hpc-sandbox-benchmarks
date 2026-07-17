@@ -26,11 +26,13 @@ import type {
 	TargetSpec,
 } from "@sandbox-benchmarks/schema";
 import {
+	bootstrapMedianDifferenceInterval,
 	bootstrapMedianInterval,
 	canSeparate,
 	DEFAULT_ALPHA,
 	DIMENSIONS,
 	getProvider,
+	hierarchicalBootstrapMedianInterval,
 	kolmogorovSmirnov,
 	METRIC_CATALOG,
 	mannWhitneyU,
@@ -260,23 +262,28 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 	const candidates = run.providers.flatMap((provider) => {
 		const result = provider.metrics.find((m) => m.metricId === metric.id);
 		if (!result) return [];
+		// The per-replicate sample slices, present only once the aggregate merged ≥2 replicate sandboxes.
+		const replicates = result.replicates?.map((r) => r.samples);
+		const seed = `${run.runId}:${metric.id}:${provider.providerId}`;
 		const row: LeaderboardRow = {
 			providerId: provider.providerId,
 			displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
 			value: result.aggregates.p50,
 			rank: 0, // assigned after sort
-			// Seed from stable identity so a committed leaderboard is byte-identical on every
-			// regeneration — a Math.random() bootstrap would churn the diff on every run.
-			interval: bootstrapMedianInterval(result.samples, {
-				seed: `${run.runId}:${metric.id}:${provider.providerId}`,
-			}),
+			// Seed from stable identity so a committed leaderboard is byte-identical on every regeneration —
+			// a Math.random() bootstrap would churn the diff on every run. With replicate sandboxes the
+			// interval is the HIERARCHICAL bootstrap (resample sandboxes, then samples within), reflecting
+			// between-sandbox variance; at R=1 it stays the ordinary percentile bootstrap, byte-for-byte.
+			interval: replicates
+				? hierarchicalBootstrapMedianInterval(replicates, { seed })
+				: bootstrapMedianInterval(result.samples, { seed }),
 			n: result.aggregates.n,
 			stdev: result.aggregates.stdev,
 			pVsPrevious: null,
 			verdict: null,
 			tiedWithAbove: null,
 		};
-		return [{ samples: result.samples, row }];
+		return [{ samples: result.samples, replicates, row }];
 	});
 	if (candidates.length === 0) return [];
 
@@ -336,6 +343,36 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 			ks: ks.pValue,
 			floor: mw.minAttainablePValue,
 		};
+
+		// Replicate-aware separation: when EITHER row carries ≥2 replicate sandboxes, the decider is the
+		// EXACT cluster-level rank permutation inside bootstrapMedianDifferenceInterval — Mann-Whitney U on
+		// the per-sandbox medians, whole sandboxes the exchangeable unit. That is cluster-honest where MW on
+		// samples pooled across replicates is anti-conservative, and it carries the real 2/C(2R,R) floor, so
+		// small R reads as UNDERPOWERED rather than a false tie or a false separation. A row with no
+		// replicate breakdown enters as a single cluster of its pooled Samples, so a mixed-R pair is judged
+		// the same honest way. MW/KS above stay as descriptive columns only. At R=1 on BOTH sides this is
+		// skipped and Mann-Whitney on the pooled Samples decides the rank, as before.
+		if (previous.replicates || candidate.replicates) {
+			const diff = bootstrapMedianDifferenceInterval(
+				previous.replicates ?? [previous.samples],
+				candidate.replicates ?? [candidate.samples],
+				{
+					seed: `${run.runId}:${metric.id}:${previous.row.providerId}:${candidate.row.providerId}`,
+				},
+			);
+			// The same "a test that can never reach α is not evidence of sameness" rule as the R=1 path:
+			// when the between-sandbox floor already meets α (2/C(6,3)=0.1 at R=3), no data could separate
+			// the pair, so it is underpowered — never a "tied" verdict, which would claim the test had the
+			// power to find a difference and didn't. Rank on the value; the renderer discloses it.
+			if (diff.minAttainablePValue >= DEFAULT_ALPHA) {
+				candidate.row.verdict = "underpowered";
+				settle(identical ? "identical-value" : null);
+				return;
+			}
+			candidate.row.verdict = diff.separated ? "separated" : "tied";
+			settle(diff.separated ? null : "statistical");
+			return;
+		}
 
 		// The same "a test that can never reach α is not evidence of sameness" rule as the n<2 case
 		// above, applied where it actually bites: Mann-Whitney's p has a FLOOR, and at 3 v 3 that floor

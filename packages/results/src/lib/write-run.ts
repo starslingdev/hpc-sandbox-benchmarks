@@ -28,6 +28,8 @@ export interface WriteNormalizedRunInput {
 	generatedAt?: string;
 	sourceRunUrl?: string;
 	updateIndexFile?: string;
+	/** The replicate sandbox index for this shard (the `--replicate` argument), threaded onto the Run. */
+	replicateIndex?: number;
 }
 
 /** Insert a Run into the index (newest first, de-duplicated by runId) and rewrite the index file. */
@@ -79,6 +81,7 @@ export function writeNormalizedRun(input: WriteNormalizedRunInput): Run {
 		sha: input.sha,
 		generatedAt: input.generatedAt ?? new Date().toISOString(),
 		...(input.sourceRunUrl !== undefined ? { sourceRunUrl: input.sourceRunUrl } : {}),
+		...(input.replicateIndex !== undefined ? { replicateIndex: input.replicateIndex } : {}),
 	});
 
 	const outPath = resolve(input.outFile);

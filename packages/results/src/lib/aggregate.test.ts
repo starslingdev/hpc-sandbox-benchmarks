@@ -25,12 +25,18 @@ function provider(providerId: string, metrics: MetricResult[]): ProviderRun {
 	};
 }
 
-function shard(providers: ProviderRun[], generatedAt = "2026-06-01T00:00:00.000Z"): Run {
+function shard(
+	providers: ProviderRun[],
+	generatedAt = "2026-06-01T00:00:00.000Z",
+	replicateIndex?: number,
+): Run {
 	return {
-		schemaVersion: "2",
+		// A shard carrying a replicate index is a v3 shard; the plain per-suite shards stay v2.
+		schemaVersion: replicateIndex === undefined ? "2" : "3",
 		runId: "run-1",
 		sha: "abc123",
 		generatedAt,
+		...(replicateIndex !== undefined ? { replicateIndex } : {}),
 		targetSpec: { vcpus: 2, memoryGb: 8, diskGb: 20 },
 		providers,
 	};
@@ -49,6 +55,66 @@ describe("aggregateRuns", () => {
 		expect(ids).toContain("node_web_tooling_runs_per_s");
 		expect(ids).toContain("pybench_milliseconds");
 		expect(daytona?.validationStatus).toBe("validated");
+	});
+
+	it("folds ≥2 replicate shards of one suite into a replicate breakdown with pooled samples", () => {
+		const r0 = shard(
+			[provider("daytona", [metric("node_web_tooling_runs_per_s", [10, 11])])],
+			"2026-06-01T00:00:00.000Z",
+			0,
+		);
+		const r1 = shard(
+			[provider("daytona", [metric("node_web_tooling_runs_per_s", [20, 21])])],
+			"2026-06-01T00:00:00.000Z",
+			1,
+		);
+
+		const merged = aggregateRuns([r0, r1]);
+		const node = merged.providers
+			.find((p) => p.providerId === "daytona")
+			?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
+		// Two replicates, indexed and ordered; the pooled samples are their union; aggregates recomputed.
+		expect(node?.replicates).toEqual([
+			{ index: 0, samples: [10, 11] },
+			{ index: 1, samples: [20, 21] },
+		]);
+		expect(node?.samples).toEqual([10, 11, 20, 21]);
+		expect(node?.aggregates.n).toBe(4);
+		// The merged Run is v3 (replicate-aware); its Metric carries no single replicateIndex.
+		expect(merged.schemaVersion).toBe("3");
+	});
+
+	it("keeps a single-replicate metric verbatim — no replicates field at R = 1", () => {
+		const only = shard(
+			[provider("daytona", [metric("node_web_tooling_runs_per_s", [10, 11])])],
+			"2026-06-01T00:00:00.000Z",
+			0,
+		);
+		const node = aggregateRuns([only])
+			.providers.find((p) => p.providerId === "daytona")
+			?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
+		expect(node?.replicates).toBeUndefined();
+		expect(node?.samples).toEqual([10, 11]);
+	});
+
+	it("first-wins for a duplicate metric WITHIN one replicate (result-name contamination)", () => {
+		// Same replicate index, same metric id, divergent samples — a contaminated composite, not a
+		// second sandbox. Keep the first and never build a replicate breakdown from it.
+		const a = shard(
+			[provider("daytona", [metric("node_web_tooling_runs_per_s", [10, 11])])],
+			"2026-06-01T00:00:00.000Z",
+			0,
+		);
+		const b = shard(
+			[provider("daytona", [metric("node_web_tooling_runs_per_s", [99, 99])])],
+			"2026-06-01T00:00:00.000Z",
+			0,
+		);
+		const node = aggregateRuns([a, b])
+			.providers.find((p) => p.providerId === "daytona")
+			?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
+		expect(node?.replicates).toBeUndefined();
+		expect(node?.samples).toEqual([10, 11]);
 	});
 
 	it("merges different providers' shards into one Run", () => {

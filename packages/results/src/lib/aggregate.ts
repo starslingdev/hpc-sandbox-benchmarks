@@ -1,16 +1,24 @@
 /**
  * Aggregate the per-shard {@link Run}s of one benchmark run into a single published Run. The CI matrix
- * (ENG-66) fans out one job per `(provider, suite)` cell, each emitting a Run document where only that
- * cell's provider/suite carries data. This merges them back into the one Run the dataset publishes:
- * each provider's measured Metrics unioned across suites, coverage/gaps/uncatalogued/observed-specs
- * combined, and — critically — economics RE-DERIVED from the merged measured set so `usd_per_lifecycle`
- * reflects every suite's timings, not whichever shard happened to carry them.
+ * fans out one job per `(provider, suite, replicate)` cell, each emitting a Run document where only that
+ * cell's provider/suite carries data (and, on a v3 shard, its {@link Run.replicateIndex}). This merges
+ * them back into the one Run the dataset publishes: each provider's measured Metrics unioned across
+ * suites, coverage/gaps/uncatalogued/observed-specs combined, and — critically — economics RE-DERIVED
+ * from the merged measured set so `usd_per_lifecycle` reflects every suite's timings, not whichever shard
+ * happened to carry them.
+ *
+ * Replicate sandboxes report the SAME metric id (they ran the same suite), so the merge folds them by id:
+ * ≥2 replicate slices of one metric become a {@link MetricResult.replicates} breakdown with a pooled
+ * `samples`/`aggregates` recomputed across all of them, while a metric seen in a single replicate is kept
+ * verbatim (the R = 1 path — byte-identical to the pre-replicate merge). A repeated id WITHIN one
+ * replicate is still a duplicate (result-name contamination), so first-wins survives at that level.
  *
  * SDK-free — schema + the Run model only. Validates the result at the boundary (parseRun), so an
  * inconsistent merge fails here rather than reaching a consumer.
  */
 import type {
 	HostMetadataRecord,
+	MetricReplicate,
 	MetricResult,
 	ObservedSpecs,
 	ProviderRun,
@@ -18,7 +26,13 @@ import type {
 	Run,
 	UncataloguedResult,
 } from "@sandbox-benchmarks/schema";
-import { deriveEconomics, getMetric, getProvider, parseRun } from "@sandbox-benchmarks/schema";
+import {
+	aggregate,
+	deriveEconomics,
+	getMetric,
+	getProvider,
+	parseRun,
+} from "@sandbox-benchmarks/schema";
 
 /**
  * Field separator for the composite dedupe keys below. A NUL can't occur in a suite name, a reason, or
@@ -33,17 +47,64 @@ function isMeasured(metric: MetricResult): boolean {
 	return getMetric(metric.metricId)?.derived !== true;
 }
 
-/** Merge one provider's slice across every shard that carried it. */
-function mergeProvider(providerId: string, slices: readonly ProviderRun[]): ProviderRun {
-	// Union measured metrics by id, keeping the first occurrence (deterministic shard order). One
-	// <Result> owns a metric's samples, so the same id in two shards is a duplicate, not extra passes.
-	const measured = new Map<string, MetricResult>();
-	for (const slice of slices) {
+/** One provider's slice from one shard, tagged with the replicate sandbox the shard was measured under. */
+interface ReplicateSlice {
+	slice: ProviderRun;
+	replicateIndex: number;
+}
+
+/**
+ * Fold one metric id's per-replicate slices into a single {@link MetricResult}. A single replicate is
+ * returned verbatim (the R = 1 path stays byte-identical to the old first-wins union). Two or more become
+ * a {@link MetricResult.replicates} breakdown — replicates ordered by index, `samples` the pooled union
+ * in that order, `aggregates` recomputed over the pool — so the cluster structure survives for the
+ * hierarchical-bootstrap inference while the pooled median stays the ranking value. Provenance
+ * (`sourceFile`/`appVersion`/`arguments`) is carried from the lowest-index replicate.
+ */
+function mergeMetricReplicates(byReplicate: Map<number, MetricResult>): MetricResult {
+	const indices = [...byReplicate.keys()].sort((a, b) => a - b);
+	const first = byReplicate.get(indices[0] as number) as MetricResult;
+	if (indices.length === 1) return first;
+
+	const replicates: MetricReplicate[] = indices.map((index) => ({
+		index,
+		samples: [...(byReplicate.get(index) as MetricResult).samples],
+	}));
+	const pooled = replicates.flatMap((r) => r.samples);
+	// Spread `first` so every provenance field (sourceFile/appVersion/arguments — and any future optional
+	// MetricResult field) is carried from the lowest-index replicate without re-listing the schema here,
+	// then override the pooled fields. A shard's `first` never carries `replicates`, so this is byte-
+	// identical to the old field-by-field build today and stays correct if MetricResult gains a field.
+	return {
+		...first,
+		samples: pooled,
+		aggregates: aggregate(pooled),
+		replicates,
+	};
+}
+
+/** Merge one provider's slices across every replicate shard that carried it. */
+function mergeProvider(providerId: string, entries: readonly ReplicateSlice[]): ProviderRun {
+	const slices = entries.map((entry) => entry.slice);
+	// Group measured metrics by id, then by the replicate that produced them. A metric id recurring across
+	// replicate shards is R distinct sandboxes (folded into the replicate structure below); a metric id
+	// recurring WITHIN one replicate is a duplicate (one <Result> owns a metric's samples — result-name
+	// contamination), so first-wins survives at the per-replicate level.
+	const byMetric = new Map<string, Map<number, MetricResult>>();
+	for (const { slice, replicateIndex } of entries) {
 		for (const metric of slice.metrics) {
-			if (isMeasured(metric) && !measured.has(metric.metricId)) {
-				measured.set(metric.metricId, metric);
+			if (!isMeasured(metric)) continue;
+			let byReplicate = byMetric.get(metric.metricId);
+			if (!byReplicate) {
+				byReplicate = new Map<number, MetricResult>();
+				byMetric.set(metric.metricId, byReplicate);
 			}
+			if (!byReplicate.has(replicateIndex)) byReplicate.set(replicateIndex, metric);
 		}
+	}
+	const measured = new Map<string, MetricResult>();
+	for (const [metricId, byReplicate] of byMetric) {
+		measured.set(metricId, mergeMetricReplicates(byReplicate));
 	}
 
 	// Gaps deduped by (scope, id, outcome, reason); uncatalogued stragglers by id — both can recur across
@@ -164,7 +225,14 @@ export function aggregateRuns(runs: readonly Run[]): Run {
 	const providers = providerIds.map((id) =>
 		mergeProvider(
 			id,
-			runs.flatMap((run) => run.providers.filter((p) => p.providerId === id)),
+			// Carry each shard's replicate index alongside its slice so the merge can key the replicate
+			// breakdown by it. A shard without one (a legacy v2 shard) is replicate 0 — so a run of such
+			// shards folds every metric into a single replicate and stays byte-identical to the old merge.
+			runs.flatMap((run) =>
+				run.providers
+					.filter((p) => p.providerId === id)
+					.map((slice) => ({ slice, replicateIndex: run.replicateIndex ?? 0 })),
+			),
 		),
 	);
 
@@ -174,8 +242,10 @@ export function aggregateRuns(runs: readonly Run[]): Run {
 	];
 	const sourceRunUrl = runs.find((run) => run.sourceRunUrl !== undefined)?.sourceRunUrl;
 
+	// The merged Run spans every replicate, so it carries no single `replicateIndex` — that lived on the
+	// shards. Emit v3 (the replicate-aware schema); v2 shards read in above validate unchanged.
 	return parseRun({
-		schemaVersion: "2",
+		schemaVersion: "3",
 		runId: first.runId,
 		sha: first.sha,
 		generatedAt,
