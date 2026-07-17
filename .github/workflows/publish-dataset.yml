@@ -168,7 +168,7 @@ jobs:
               "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
               "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
               "A maintainer must either enable it and re-dispatch this workflow with run_id=$RUN_ID," \
-              "or open the PR for '$branch' manually. See docs/ci-secrets.md." >&2
+              "or open the PR for '$branch' manually. See docs/ci-secrets.md."
             exit 1
           fi
           # Queue GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
