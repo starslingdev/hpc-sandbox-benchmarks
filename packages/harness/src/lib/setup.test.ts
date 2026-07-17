@@ -26,6 +26,32 @@ describe("setupSteps", () => {
 		expect(ptsStep?.script).not.toContain("command -v phoronix-test-suite");
 	});
 
+	it("includes fast-cli's Puppeteer/Chrome runtime libs in the stock-image PTS deps fallback", () => {
+		// Regression guard for the class of bug fixed in a2dd493: this list must stay in lockstep with
+		// packages/templates/images/base/scripts/00-apt.sh's Chrome/Puppeteer block, or a stock-image
+		// provider (e.g. modal) crashes fast-cli's freshly-downloaded Chrome with a missing-.so error.
+		const ptsStep = setupSteps(SUITES["cpu-node"]).find(
+			(step) => step.label === "ensure PTS build deps + fresh apt index",
+		);
+		for (const chromeDep of [
+			"libglib2.0-0",
+			"libnss3",
+			"libgtk-3-0",
+			"libx11-6",
+			"fonts-liberation",
+			"libasound2",
+			"libatk-bridge2.0-0",
+			"libcairo2",
+			"libgbm1",
+			"libxcomposite1",
+			"libxdamage1",
+			"libxrandr2",
+			"xdg-utils",
+		]) {
+			expect(ptsStep?.script).toContain(chromeDep);
+		}
+	});
+
 	it("does not install repository developer tools inside benchmark sandboxes", () => {
 		expect(labels).not.toContain("mise install");
 		const nodeStep = setupSteps(SUITES["cpu-node"]).find(

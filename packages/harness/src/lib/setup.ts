@@ -112,9 +112,23 @@ export function setupSteps(suite: Suite): SetupStep[] {
 		// profile locally; in either case PTS's own dependency install needs a usable package index.
 		// Best-effort lets a healthy baked image proceed when a provider cannot reach its distro mirror.
 		// Keep this set aligned with packages/templates/images/base/scripts/00-apt.sh.
+		//
+		// The fonts/GTK/X11 block is fast-cli's Puppeteer/Chrome runtime dependencies. Without them, a
+		// stock-image provider (e.g. modal, which takes this fallback path rather than the baked image)
+		// downloads a fresh Chrome via npm install that fails immediately with "error while loading
+		// shared libraries: libglib-2.0.so.0: cannot open shared object file" — a same-day-observed live
+		// failure (run 29587815350, modal/network) with zero fast-cli metrics produced. 00-apt.sh already
+		// bakes these for the pre-baked image path; this was the one runtime fallback that had drifted
+		// out of lockstep with it.
 		const ptsDeps =
 			"php-cli php-xml build-essential autoconf flex bison bc libelf-dev libssl-dev " +
-			"libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps";
+			"libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps " +
+			"fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 " +
+			"libcairo2 libcups2 libdbus-1-3 libdrm2 libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 " +
+			"libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 " +
+			"libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 " +
+			"libxext6 libxfixes3 libxi6 libxkbcommon0 libxrandr2 libxrender1 libxss1 libxtst6 " +
+			"xdg-utils";
 		steps.push({
 			label: "ensure PTS build deps + fresh apt index",
 			script:
