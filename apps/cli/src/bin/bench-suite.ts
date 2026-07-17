@@ -18,18 +18,16 @@ import type { Run } from "@sandbox-benchmarks/schema";
 import {
 	fail,
 	inActions,
+	logInfo,
 	logProviderStatuses,
+	logWarning,
 	providerSummaryRows,
 	withGroup,
 	writeJobSummary,
 } from "../lib/actions-log.ts";
 import { handleDiscovery } from "../lib/discovery.ts";
-import type { SuiteTaskPlan } from "../lib/suite-tasks.ts";
-import {
-	describeSuiteTasks,
-	suiteMetricSummaryRows,
-	suiteTaskSummaryRows,
-} from "../lib/suite-tasks.ts";
+import { suiteMetricSummaryRows, suiteTaskSummaryRows } from "../lib/suite-summary.ts";
+import { describeSuiteTasks, type SuiteTaskPlan } from "../lib/suite-tasks.ts";
 
 function plural(n: number, singular: string, pluralForm: string = `${singular}s`): string {
 	return `${n} ${n === 1 ? singular : pluralForm}`;
@@ -69,25 +67,32 @@ examples:
 
 Next: render the Run with \`leaderboard data/runs/<runId>.json\`.`;
 
+/** One exit path for every cell outcome — success, usage error, normalize failure, suite gap, require. */
 async function reportCell(opts: {
 	provider: string;
 	suite: string;
 	runId: string;
-	sha: string;
-	outFile: string;
-	run: Run;
+	sha?: string;
+	outFile?: string;
+	run?: Run;
 	failed: boolean;
 	detail?: string;
 	taskPlan?: SuiteTaskPlan;
 }): Promise<void> {
 	const title = `${opts.suite} / ${opts.provider}`;
 	const status = opts.failed ? "failure" : "success";
-	const provider = opts.run.providers.find((p) => p.providerId === opts.provider);
+	const provider = opts.run?.providers.find((p) => p.providerId === opts.provider);
 	const annotationMessage =
 		opts.detail ??
 		(provider
 			? `${provider.providerId} ${provider.validationStatus} metrics=${provider.metrics.length}`
 			: title);
+	const taskTables = opts.taskPlan
+		? [
+				{ heading: "Mise tasks", rows: suiteTaskSummaryRows(opts.taskPlan) },
+				{ heading: "Declared metrics", rows: suiteMetricSummaryRows(opts.taskPlan) },
+			]
+		: [];
 	await writeJobSummary({
 		heading: title,
 		fields: [
@@ -95,14 +100,14 @@ async function reportCell(opts: {
 			["Suite", opts.suite, "code"],
 			["Provider", opts.provider, "code"],
 			["Run id", opts.runId, "code"],
-			["SHA", opts.sha, "code"],
-			["Artifact", opts.outFile, "code"],
+			["SHA", opts.sha ?? "", "code"],
+			["Artifact", opts.outFile ?? "", "code"],
 			["Harness commands", opts.taskPlan?.commands.join(" · ") ?? "", "code"],
 			["Mise tasks", opts.taskPlan ? miseTaskSummary(opts.taskPlan) : "", "plain"],
-			["Validation", provider?.validationStatus ?? "absent", "plain"],
-			["Metrics", String(provider?.metrics.length ?? 0), "plain"],
-			["Suites covered", String(provider?.suitesCovered.length ?? 0), "plain"],
-			["Gaps", String(provider?.gaps.length ?? 0), "plain"],
+			["Validation", provider?.validationStatus ?? (opts.run ? "absent" : ""), "plain"],
+			["Metrics", provider ? String(provider.metrics.length) : "", "plain"],
+			["Suites covered", provider ? String(provider.suitesCovered.length) : "", "plain"],
+			["Gaps", provider ? String(provider.gaps.length) : "", "plain"],
 			["Observed CPU", provider?.observedSpecs.cpuModel ?? "", "code"],
 			[
 				"Spec matched",
@@ -111,19 +116,10 @@ async function reportCell(opts: {
 			],
 		],
 		tables: [
-			...(opts.taskPlan
-				? [
-						{
-							heading: "Mise tasks",
-							rows: suiteTaskSummaryRows(opts.taskPlan),
-						},
-						{
-							heading: "Declared metrics",
-							rows: suiteMetricSummaryRows(opts.taskPlan),
-						},
-					]
+			...taskTables,
+			...(opts.run
+				? [{ heading: "Provider status", rows: providerSummaryRows(opts.run) }]
 				: []),
-			{ heading: "Provider status", rows: providerSummaryRows(opts.run) },
 		],
 		detail: opts.detail,
 		annotation: {
@@ -132,6 +128,16 @@ async function reportCell(opts: {
 			message: annotationMessage,
 		},
 	});
+}
+
+type CellReport = Parameters<typeof reportCell>[0];
+
+/** Write the cell summary then fail without a second annotation. */
+async function failCell(
+	opts: Omit<CellReport, "failed"> & { detail: string },
+): Promise<never> {
+	await reportCell({ ...opts, failed: true });
+	return fail(opts.detail, { annotate: false });
 }
 
 if (import.meta.main) {
@@ -172,8 +178,8 @@ if (import.meta.main) {
 	const outFile = join("data", "runs", `${runId}.json`);
 	const indexFile = join("data", "runs", "index.json");
 
+	logInfo(`Benchmark cell ${cell}`);
 	if (inActions()) {
-		core.info(`Benchmark cell ${cell}`);
 		core.debug(
 			JSON.stringify({
 				provider,
@@ -185,8 +191,6 @@ if (import.meta.main) {
 				require: requiredProviders(argv),
 			}),
 		);
-	} else {
-		console.error(`Benchmark cell ${cell}`);
 	}
 
 	// Resolve the precise mise tasks + PTS pins before the sandbox run so the job summary can name
@@ -195,12 +199,11 @@ if (import.meta.main) {
 	await withGroup(`Discover suite tasks (${suite})`, async () => {
 		try {
 			taskPlan = await describeSuiteTasks(suite);
-			const log = inActions() ? core.info.bind(core) : (m: string) => console.error(m);
-			log(`commands: ${taskPlan.commands.join(" · ")}`);
+			logInfo(`commands: ${taskPlan.commands.join(" · ")}`);
 			for (const task of taskPlan.tasks) {
 				const pts = task.ptsProfile ? ` pts=${task.ptsProfile}` : "";
 				const prefix = task.resultsPrefix ? ` prefix=${task.resultsPrefix}` : "";
-				log(
+				logInfo(
 					`${task.role} ${task.task}${task.description ? ` — ${task.description}` : ""}${pts}${prefix}`,
 				);
 			}
@@ -214,8 +217,7 @@ if (import.meta.main) {
 			}
 		} catch (err) {
 			const msg = `Could not describe suite tasks for "${suite}": ${err instanceof Error ? err.message : String(err)}`;
-			if (inActions()) core.warning(msg, { title: cell });
-			else console.error(msg);
+			logWarning(msg, { title: cell });
 		}
 	});
 
@@ -235,39 +237,28 @@ if (import.meta.main) {
 				// Dimensions (the runtime half of the suite↔dimension↔metric contract).
 				resultsDir: join(rawRoot, provider, suite),
 			});
-			if (inActions()) core.info(`Suite "${suite}" completed on ${provider}`);
-			else console.error(`Suite "${suite}" completed on ${provider}`);
+			logInfo(`Suite "${suite}" completed on ${provider}`);
 		} catch (err) {
 			// A usage error (unknown provider/suite) produced no raw tree and no marker: there is nothing to
 			// normalize, and pretending otherwise would write an empty Run for a cell that never existed.
 			if (err instanceof SuiteUsageError) {
-				await writeJobSummary({
-					heading: cell,
-					fields: [
-						["Status", "failure", "plain"],
-						["Suite", suite, "code"],
-						["Provider", provider, "code"],
-						["Run id", runId, "code"],
-						["Harness commands", taskPlan?.commands.join(" · ") ?? "", "code"],
-						["Mise tasks", taskPlan ? miseTaskSummary(taskPlan) : "", "plain"],
-					],
-					tables: taskPlan
-						? [
-								{ heading: "Mise tasks", rows: suiteTaskSummaryRows(taskPlan) },
-								{ heading: "Declared metrics", rows: suiteMetricSummaryRows(taskPlan) },
-							]
-						: undefined,
+				await failCell({
+					provider,
+					suite,
+					runId,
+					sha,
+					outFile,
 					detail: err.message,
-					annotation: { failed: true, title: cell, message: err.message },
+					taskPlan,
 				});
-				fail(err.message, { annotate: false });
 			}
 			suiteError = err;
-			const msg = `Suite "${suite}" threw on ${provider} — will normalize the failed marker into a gap: ${
-				err instanceof Error ? err.message : String(err)
-			}`;
-			if (inActions()) core.warning(msg, { title: cell });
-			else console.error(msg);
+			logWarning(
+				`Suite "${suite}" threw on ${provider} — will normalize the failed marker into a gap: ${
+					err instanceof Error ? err.message : String(err)
+				}`,
+				{ title: cell },
+			);
 		}
 	});
 
@@ -276,8 +267,7 @@ if (import.meta.main) {
 	await withGroup("Normalize Run document", async () => {
 		try {
 			run = writeNormalizedRun({ rawRoot, runId, sha, outFile, updateIndexFile: indexFile });
-			if (inActions()) core.info(`Normalized Run ${runId} → ${outFile}`);
-			else console.error(`Normalized Run ${runId} → ${outFile}`);
+			logInfo(`Normalized Run ${runId} → ${outFile}`);
 			// Already inside withGroup — don't nest another ::group::.
 			logProviderStatuses(run, { grouped: false });
 		} catch (err) {
@@ -292,46 +282,35 @@ if (import.meta.main) {
 				: normalizeError
 					? String(normalizeError)
 					: "normalize produced no Run document";
-		await writeJobSummary({
-			heading: cell,
-			fields: [
-				["Status", "failure", "plain"],
-				["Suite", suite, "code"],
-				["Provider", provider, "code"],
-				["Run id", runId, "code"],
-				["Artifact", outFile, "code"],
-				["Harness commands", taskPlan?.commands.join(" · ") ?? "", "code"],
-				["Mise tasks", taskPlan ? miseTaskSummary(taskPlan) : "", "plain"],
-			],
-			tables: taskPlan
-				? [
-						{ heading: "Mise tasks", rows: suiteTaskSummaryRows(taskPlan) },
-						{ heading: "Declared metrics", rows: suiteMetricSummaryRows(taskPlan) },
-					]
-				: undefined,
-			detail,
-			annotation: { failed: true, title: cell, message: detail },
-		});
-		fail(detail, { annotate: false });
-	}
-
-	if (suiteError) {
-		const detail =
-			`Suite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ` +
-			`${suiteError instanceof Error ? suiteError.message : String(suiteError)}`;
 		await reportCell({
 			provider,
 			suite,
 			runId,
 			sha,
 			outFile,
-			run,
 			failed: true,
 			detail,
 			taskPlan,
 		});
-		// Annotation already written by reportCell — exit without a second ::error::.
+		// Synchronous `never` so TypeScript narrows `run` for the paths below.
 		fail(detail, { annotate: false });
+	}
+	const normalized = run;
+
+	if (suiteError) {
+		const detail =
+			`Suite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ` +
+			`${suiteError instanceof Error ? suiteError.message : String(suiteError)}`;
+		await failCell({
+			provider,
+			suite,
+			runId,
+			sha,
+			outFile,
+			run: normalized,
+			detail,
+			taskPlan,
+		});
 	}
 
 	// Missing credentials (and an unusable sandbox) are recorded as a skip, not a throw — the lenient
@@ -342,7 +321,7 @@ if (import.meta.main) {
 	// carries the bun executable and script path), so the flag this bin parses is the flag this gate reads.
 	const required = requiredProviders(argv);
 	if (required.length > 0) {
-		const reports = run.providers.map((p) => ({
+		const reports = normalized.providers.map((p) => ({
 			provider: p.providerId,
 			status: p.validationStatus === "validated" ? "ok" : p.validationStatus,
 		}));
@@ -353,24 +332,21 @@ if (import.meta.main) {
 				// The gaps ARE the explanation for "no metrics", and their outcome is the important half of
 				// it: a required provider that skipped on a precondition is a configuration problem, one that
 				// failed is an outage, and the operator reading this line needs to know which they have.
-				const gaps = run.providers.find((p) => p.providerId === providerId)?.gaps ?? [];
+				const gaps = normalized.providers.find((p) => p.providerId === providerId)?.gaps ?? [];
 				const gapDetail = gaps.map((g) => `${g.id} ${g.outcome}: ${g.reason}`).join("; ");
 				const line = `Required provider "${providerId}" produced no metrics${gapDetail ? ` — ${gapDetail}` : " and was absent from the Run"}`;
 				details.push(line);
 			}
-			const detail = details.join("\n");
-			await reportCell({
+			await failCell({
 				provider,
 				suite,
 				runId,
 				sha,
 				outFile,
-				run,
-				failed: true,
-				detail,
+				run: normalized,
+				detail: details.join("\n"),
 				taskPlan,
 			});
-			fail(detail, { annotate: false });
 		}
 	}
 
@@ -380,10 +356,9 @@ if (import.meta.main) {
 		runId,
 		sha,
 		outFile,
-		run,
+		run: normalized,
 		failed: false,
 		taskPlan,
 	});
-	if (inActions()) core.info(`Cell ${cell} succeeded → ${outFile}`);
-	else console.error(`Cell ${cell} succeeded → ${outFile}`);
+	logInfo(`Cell ${cell} succeeded → ${outFile}`);
 }

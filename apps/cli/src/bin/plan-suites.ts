@@ -6,18 +6,16 @@
 // `selectSuites` with the matrix builder, so SUITE_NAMES stays the single source of truth.
 //
 // In Actions ($GITHUB_OUTPUT set) the bin writes `suites=` via emitStepOutputs and logs through
-// @actions/core — no bash capture that could splice diagnostics into the outputs file.
-import * as core from "@actions/core";
-import { fail, inActions, withGroup } from "../lib/actions-log.ts";
-import { handleDiscovery } from "../lib/discovery.ts";
-import { emitStepOutputs } from "../lib/gha-output.ts";
+// @actions/core — no bash capture that could splice diagnostics into the outputs file. Control flow
+// lives in `plan-axis.ts` (shared with plan-providers).
 import { selectSuites } from "../lib/matrix.ts";
+import { planAxisJson, runAxisPlan } from "../lib/plan-axis.ts";
 
 /** The selected-suites JSON for `suitesRaw` (a comma-separated `BENCH_SUITES` value; blank/undefined =
  *  every registered suite). Takes the raw string rather than reading `process.env` itself, so it stays
  *  pure — the bin owns the env read, and a test can't be perturbed by an ambient value. */
 export function planSuitesJson(suitesRaw?: string): string {
-	return JSON.stringify(selectSuites(suitesRaw));
+	return planAxisJson(selectSuites, suitesRaw);
 }
 
 /** Agent-facing usage; the bare invocation stays the $GITHUB_OUTPUT suites contract. */
@@ -46,38 +44,17 @@ examples:
 Next: run one cell with  bench-suite <provider> <suite> <runId>`;
 
 if (import.meta.main) {
-	const argv = process.argv.slice(2);
-	const discovery = handleDiscovery(argv, HELP);
-	if (discovery !== null) {
-		if (discovery.ok) {
-			process.stdout.write(`${discovery.text}\n`);
-			process.exit(0);
-		}
-		fail(discovery.text, { properties: { title: "plan-suites discovery" }, exitCode: 2 });
-	}
-	// A bad BENCH_SUITES must fail the step, not print a diagnostic onto stdout: stdout here IS the
-	// `suites=` value local callers capture, so an error message there would be parsed as the selection.
-	try {
-		const suites = planSuitesJson(process.env.BENCH_SUITES);
-		const suiteList = JSON.parse(suites) as string[];
-
-		if (process.env.GITHUB_OUTPUT) {
-			await withGroup("Plan suite axis", async () => {
-				core.info(`${suiteList.length} suite(s)`);
-				core.debug(`suites=${suites}`);
-				for (const name of suiteList) core.info(`suite: ${name}`);
-			});
-			emitStepOutputs(`suites=${suites}`);
-			if (inActions()) {
-				core.notice(`Planned ${suiteList.length} suite(s)`, { title: "Plan suites" });
-			}
-		} else {
-			process.stdout.write(`${suites}\n`);
-		}
-	} catch (err) {
-		fail(`plan-suites: ${err instanceof Error ? err.message : String(err)}`, {
-			properties: { title: "plan-suites" },
-			exitCode: 2,
-		});
-	}
+	await runAxisPlan(
+		{
+			binName: "plan-suites",
+			envKey: "BENCH_SUITES",
+			outputKey: "suites",
+			groupTitle: "Plan suite axis",
+			noticeTitle: "Plan suites",
+			itemLabel: "suite",
+			help: HELP,
+			select: selectSuites,
+		},
+		process.argv.slice(2),
+	);
 }

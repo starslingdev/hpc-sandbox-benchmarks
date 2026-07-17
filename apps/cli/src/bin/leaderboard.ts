@@ -8,7 +8,7 @@ import { dirname } from "node:path";
 import * as core from "@actions/core";
 import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
-import { fail, inActions, withGroup, writeJobSummary } from "../lib/actions-log.ts";
+import { fail, inActions, logInfo, withGroup, writeJobSummary } from "../lib/actions-log.ts";
 import { handleDiscovery } from "../lib/discovery.ts";
 
 /** Agent-facing usage. The Run document names the providers/suites it covers, so the registry
@@ -30,11 +30,6 @@ examples:
   leaderboard data/runs/local-1.json LEADERBOARD.md  # write the comparison surface to a file
 
 Next: produce a Run with  bench-suite <provider> <suite> <runId>`;
-
-function logInfo(message: string): void {
-	if (inActions()) core.info(message);
-	else console.error(message);
-}
 
 if (import.meta.main) {
 	const argv = process.argv.slice(2);

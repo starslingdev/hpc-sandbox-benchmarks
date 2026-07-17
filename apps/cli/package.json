@@ -9,6 +9,8 @@
     "bench-smoke": "./src/bin/bench-smoke.ts",
     "bake": "./src/bin/bake.ts",
     "plan-matrix": "./src/bin/plan-matrix.ts",
+    "plan-providers": "./src/bin/plan-providers.ts",
+    "plan-suites": "./src/bin/plan-suites.ts",
     "build-template": "./src/bin/build-template.ts",
     "normalize": "./src/bin/normalize.ts",
     "aggregate": "./src/bin/aggregate.ts",

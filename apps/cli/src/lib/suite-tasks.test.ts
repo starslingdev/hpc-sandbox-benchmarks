@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
+import { suiteMetricSummaryRows, suiteTaskSummaryRows } from "./suite-summary.ts";
 import {
 	conventionalTaskFile,
 	describeSuiteTasks,
@@ -11,8 +12,6 @@ import {
 	ptsPinsFromScript,
 	realworldVersionFromBenchSh,
 	runTaskChildren,
-	suiteMetricSummaryRows,
-	suiteTaskSummaryRows,
 } from "./suite-tasks.ts";
 
 // apps/cli/src/lib → repo root

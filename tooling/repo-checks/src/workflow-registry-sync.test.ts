@@ -7,7 +7,8 @@
 // timeout live in the reusable (the "matrix side" of the credential/timeout checks reads it), and a
 // separate invariant asserts the suite-matrix caller stays wired to plan.outputs.suites. Mirrors
 // runner-benchmarking's test/workflow-{env,suite}-sync.test.ts. See ./lib/workflow-sync.ts for the
-// parsers + pure checks.
+// parsers + pure checks. Nesting (invariant 6) lives in ./lib/workflow-nesting.ts; YAML helpers in
+// ./lib/workflow-yaml.ts — workflow-sync.ts re-exports the public surface.
 //
 // The runCheck() test against the real workflow files IS the gate's CI enforcement point (it runs under
 // `bun test`, same precedent as boundary.test.ts); the rest is unit coverage of the parsers and the

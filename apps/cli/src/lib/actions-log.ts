@@ -19,6 +19,18 @@ export function canWriteSummary(): boolean {
 	return Boolean(process.env.GITHUB_STEP_SUMMARY?.trim());
 }
 
+/** Info log that uses @actions/core in CI and stderr locally (never pollutes JSON stdout contracts). */
+export function logInfo(message: string): void {
+	if (inActions()) core.info(message);
+	else console.error(message);
+}
+
+/** Warning log that uses @actions/core in CI and stderr locally. */
+export function logWarning(message: string, properties?: AnnotationProperties): void {
+	if (inActions()) core.warning(message, properties);
+	else console.error(message);
+}
+
 /** Escape HTML metacharacters for values reaching core.summary addHeading/addRaw/addLink. */
 export function escapeHtml(value: string): string {
 	return value
@@ -41,7 +53,8 @@ export function isFailure(status: string): boolean {
 	return s === "failure" || s === "failed";
 }
 
-type SummaryRow = Array<{ data: string; header: boolean } | string>;
+/** One job-summary table row (`@actions/core` addTable shape). */
+export type SummaryRow = Array<{ data: string; header: boolean } | string>;
 
 /** Build a Field/Value table from non-empty `[label, value, kind]` rows. */
 export function fieldTable(

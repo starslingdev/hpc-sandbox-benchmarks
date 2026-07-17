@@ -8,18 +8,15 @@
 //
 // In Actions ($GITHUB_OUTPUT set) the bin writes `providers=` via emitStepOutputs and logs through
 // @actions/core — no bash capture that could splice diagnostics into the outputs file. The suite axis
-// is the sibling `plan-suites` bin (honors `BENCH_SUITES`).
-import * as core from "@actions/core";
-import { fail, inActions, withGroup } from "../lib/actions-log.ts";
-import { handleDiscovery } from "../lib/discovery.ts";
-import { emitStepOutputs } from "../lib/gha-output.ts";
+// is the sibling `plan-suites` bin (honors `BENCH_SUITES`). Control flow lives in `plan-axis.ts`.
 import { selectProviders } from "../lib/matrix.ts";
+import { planAxisJson, runAxisPlan } from "../lib/plan-axis.ts";
 
 /** The provider-axis JSON for `providersRaw` (a comma-separated `BENCH_PROVIDERS` value; blank/undefined
  *  = every registered provider). Takes the raw string rather than reading `process.env` itself, so it
  *  stays pure — the bin owns the env read, and a test can't be perturbed by an ambient value. */
 export function planProvidersJson(providersRaw?: string): string {
-	return JSON.stringify(selectProviders(providersRaw));
+	return planAxisJson(selectProviders, providersRaw);
 }
 
 /** Agent-facing usage; the bare invocation stays the $GITHUB_OUTPUT providers contract. */
@@ -48,39 +45,17 @@ examples:
 Next: run one cell with  bench-suite <provider> <suite> <runId>`;
 
 if (import.meta.main) {
-	const argv = process.argv.slice(2);
-	const discovery = handleDiscovery(argv, HELP);
-	if (discovery !== null) {
-		if (discovery.ok) {
-			process.stdout.write(`${discovery.text}\n`);
-			process.exit(0);
-		}
-		fail(discovery.text, { properties: { title: "plan-providers discovery" }, exitCode: 2 });
-	}
-	// A bad BENCH_PROVIDERS must fail the step, not print a diagnostic onto stdout: stdout here IS the
-	// `providers=` value local callers capture, so an error message there would be parsed as the axis.
-	try {
-		const providers = planProvidersJson(process.env.BENCH_PROVIDERS);
-		const providerList = JSON.parse(providers) as string[];
-
-		if (process.env.GITHUB_OUTPUT) {
-			await withGroup("Plan provider axis", async () => {
-				core.info(`${providerList.length} provider(s)`);
-				core.debug(`providers=${providers}`);
-				for (const id of providerList) core.info(`provider: ${id}`);
-			});
-			emitStepOutputs(`providers=${providers}`);
-			if (inActions()) {
-				core.notice(`Planned ${providerList.length} provider(s)`, { title: "Plan providers" });
-			}
-		} else {
-			// Local / test capture: keep the single-line providers stdout contract pristine.
-			process.stdout.write(`${providers}\n`);
-		}
-	} catch (err) {
-		fail(`plan-providers: ${err instanceof Error ? err.message : String(err)}`, {
-			properties: { title: "plan-providers" },
-			exitCode: 2,
-		});
-	}
+	await runAxisPlan(
+		{
+			binName: "plan-providers",
+			envKey: "BENCH_PROVIDERS",
+			outputKey: "providers",
+			groupTitle: "Plan provider axis",
+			noticeTitle: "Plan providers",
+			itemLabel: "provider",
+			help: HELP,
+			select: selectProviders,
+		},
+		process.argv.slice(2),
+	);
 }

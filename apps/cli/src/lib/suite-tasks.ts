@@ -1,4 +1,4 @@
-// Discover the precise mise tasks a suite runs — for metadata-rich GHA job summaries.
+// Discover the precise mise tasks a suite runs — pure domain planning for metadata-rich summaries.
 // Sources (automated, no hard-coded per-suite leaf lists):
 //   1. SUITES[suite].commands — what the harness actually steps
 //   2. `mise task info <name> --json` — description + task file path
@@ -6,32 +6,14 @@
 //   4. Orchestrator file `run_task` lines — leaf expansion (mise `depends` is unused here)
 //   5. Leaf file PTS helper calls + lib/bench.sh pins — profile / results-prefix metadata
 //   6. Schema Metric Catalog — declared metrics with PTS test ids / labels
+//
+// Actions HTML table rendering lives in suite-summary.ts so this module stays free of Toolkit/
+// presentation concerns. Callers pass an explicit `root` (tests) or default to process.cwd()
+// (CI / local bins already run from the monorepo root).
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import type { SuiteName } from "@sandbox-benchmarks/schema";
 import { getMetric, SUITES } from "@sandbox-benchmarks/schema";
-import { escapeHtml, renderCell } from "./actions-log.ts";
-
-/** Walk up from `start` until a package.json declaring `workspaces` is found (the monorepo root). */
-function findRepoRoot(start: string = process.cwd()): string {
-	let dir = resolve(start);
-	for (;;) {
-		const pj = join(dir, "package.json");
-		if (existsSync(pj)) {
-			try {
-				const pkg = JSON.parse(readFileSync(pj, "utf8")) as { workspaces?: unknown };
-				if (pkg.workspaces) return dir;
-			} catch {
-				// keep walking
-			}
-		}
-		const parent = dirname(dir);
-		if (parent === dir) {
-			throw new Error("could not locate repo root (no package.json with workspaces)");
-		}
-		dir = parent;
-	}
-}
 
 /** One PTS/local pin mined from a leaf task script. */
 export interface PtsPin {
@@ -270,7 +252,7 @@ function joinPins(pins: PtsPin[], key: keyof PtsPin): string {
  */
 export async function describeSuiteTasks(
 	suiteName: string,
-	root: string = findRepoRoot(),
+	root: string = process.cwd(),
 ): Promise<SuiteTaskPlan> {
 	if (!(suiteName in SUITES)) {
 		throw new Error(`unknown suite "${suiteName}" — not in SUITE_NAMES`);
@@ -327,57 +309,4 @@ export async function describeSuiteTasks(
 		tasks,
 		metrics: suiteMetricInfo(suiteName as SuiteName),
 	};
-}
-
-/** Summary-table rows for the suite's mise tasks (Task / Role / Description / PTS profile). */
-export function suiteTaskSummaryRows(
-	plan: SuiteTaskPlan,
-): Array<Array<{ data: string; header: boolean } | string>> {
-	const header = [
-		{ data: "Task", header: true },
-		{ data: "Role", header: true },
-		{ data: "Description", header: true },
-		{ data: "PTS profile", header: true },
-		{ data: "Results prefix", header: true },
-	];
-	if (plan.tasks.length === 0) {
-		return [
-			header,
-			[renderCell("(none)", "code"), "", escapeHtml("No mise run commands on this suite"), "", ""],
-		];
-	}
-	return [
-		header,
-		...plan.tasks.map((task) => [
-			renderCell(task.task, "code"),
-			escapeHtml(task.role),
-			escapeHtml(task.description || task.file || "—"),
-			task.ptsProfile ? renderCell(task.ptsProfile, "code") : "",
-			task.resultsPrefix ? renderCell(task.resultsPrefix, "code") : "",
-		]),
-	];
-}
-
-/** Summary-table rows for the suite's declared catalog metrics. */
-export function suiteMetricSummaryRows(
-	plan: SuiteTaskPlan,
-): Array<Array<{ data: string; header: boolean } | string>> {
-	const header = [
-		{ data: "Metric", header: true },
-		{ data: "Label", header: true },
-		{ data: "Dimension", header: true },
-		{ data: "PTS test", header: true },
-	];
-	if (plan.metrics.length === 0) {
-		return [header, [renderCell("(none)", "code"), "", "", ""]];
-	}
-	return [
-		header,
-		...plan.metrics.map((metric) => [
-			renderCell(metric.id, "code"),
-			escapeHtml(metric.label),
-			escapeHtml(metric.dimension),
-			metric.ptsTest ? renderCell(metric.ptsTest, "code") : "",
-		]),
-	];
 }

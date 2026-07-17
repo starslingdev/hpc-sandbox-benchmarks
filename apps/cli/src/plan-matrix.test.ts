@@ -5,7 +5,7 @@ import { handleDiscovery } from "./lib/discovery.ts";
 import { selectProviders } from "./lib/matrix.ts";
 
 describe("plan-matrix", () => {
-	it("emits a single line of compact JSON (the $GITHUB_OUTPUT contract)", () => {
+	it("emits a single line of compact JSON (local cell-list contract)", () => {
 		const out = planMatrixJson();
 		// Single line: no embedded newlines and no pretty-print indentation.
 		expect(out).not.toContain("\n");
@@ -39,8 +39,10 @@ describe("plan-matrix", () => {
 		) as Array<{ name: string }>;
 		expect(suites.map((s) => s.name)).toEqual([...SUITE_NAMES]);
 
-		// A bare invocation has no discovery flag, so the matrix path (the GITHUB_OUTPUT contract) runs.
+		// A bare invocation has no discovery flag, so the cell-list path runs.
 		expect(handleDiscovery([], HELP)).toBeNull();
+		expect(HELP).toContain("plan-providers");
+		expect(HELP).toContain("plan-suites");
 	});
 
 	it("narrows the matrix to the providers a dispatch names, still one line of JSON", () => {

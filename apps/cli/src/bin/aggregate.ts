@@ -12,16 +12,12 @@ import { parseRun } from "@sandbox-benchmarks/schema";
 import {
 	fail,
 	inActions,
+	logInfo,
 	logProviderStatuses,
 	providerSummaryRows,
 	withGroup,
 	writeJobSummary,
 } from "../lib/actions-log.ts";
-
-function logInfo(message: string): void {
-	if (inActions()) core.info(message);
-	else console.error(message);
-}
 
 if (import.meta.main) {
 	const [runId, outDir, ...shardFiles] = process.argv.slice(2);
