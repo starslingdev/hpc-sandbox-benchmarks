@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
 	aggregate,
+	bootstrapMedianDifferenceInterval,
 	bootstrapMedianInterval,
 	canSeparate,
 	DEFAULT_ALPHA,
+	hierarchicalBootstrapMedianInterval,
 	kolmogorovSmirnov,
 	mannWhitneyU,
 	percentileOf,
@@ -184,6 +186,215 @@ describe("bootstrapMedianInterval", () => {
 			level: 0.95,
 			resamples: 0,
 		});
+	});
+});
+
+describe("hierarchicalBootstrapMedianInterval", () => {
+	it("reports the pooled median and brackets it", () => {
+		const interval = hierarchicalBootstrapMedianInterval([MODAL_COPY, DAYTONA_COPY], { seed: "s" });
+		expect(interval.median).toBe(percentileOf([...MODAL_COPY, ...DAYTONA_COPY], 0.5));
+		expect(interval.lo).toBeLessThanOrEqual(interval.median);
+		expect(interval.hi).toBeGreaterThanOrEqual(interval.median);
+	});
+
+	it("widens when the replicates disagree across sandboxes (between-sandbox variance)", () => {
+		// Same pooled median (55) both ways; the only difference is machine-to-machine spread. The
+		// hierarchical resample draws the clusters first, so a run where the two sandboxes landed far
+		// apart must report a wider interval than one where they agreed — the whole point of the level.
+		const disagree = hierarchicalBootstrapMedianInterval(
+			[
+				[10, 10],
+				[100, 100],
+			],
+			{ seed: "s" },
+		);
+		const agree = hierarchicalBootstrapMedianInterval(
+			[
+				[54, 54],
+				[56, 56],
+			],
+			{ seed: "s" },
+		);
+		expect(disagree.hi - disagree.lo).toBeGreaterThan(agree.hi - agree.lo);
+	});
+
+	it("degenerates to the ordinary bootstrap's median at R = 1", () => {
+		// One replicate: the cluster draw always re-selects it, so the resample distribution is the plain
+		// bootstrap's. The observed median is identical; the raw draw sequence is not, which is why the
+		// leaderboard keeps the single-level function at R = 1 for byte-stability.
+		const single = hierarchicalBootstrapMedianInterval([MODAL_COPY], { seed: "s" });
+		const plain = bootstrapMedianInterval(MODAL_COPY, { seed: "s" });
+		expect(single.median).toBe(plain.median);
+		expect(single.lo).toBeLessThanOrEqual(single.median);
+		expect(single.hi).toBeGreaterThanOrEqual(single.median);
+	});
+
+	it("degenerates to a point interval for a single pooled Sample", () => {
+		expect(hierarchicalBootstrapMedianInterval([[42]])).toEqual({
+			median: 42,
+			lo: 42,
+			hi: 42,
+			level: 0.95,
+			resamples: 0,
+		});
+	});
+
+	it("is reproducible for a given seed", () => {
+		const shape = [MODAL_COPY, DAYTONA_COPY];
+		expect(hierarchicalBootstrapMedianInterval(shape, { seed: "run-1" })).toEqual(
+			hierarchicalBootstrapMedianInterval(shape, { seed: "run-1" }),
+		);
+	});
+
+	it("rejects an empty structure, a non-finite Sample, and bad options", () => {
+		expect(() => hierarchicalBootstrapMedianInterval([])).toThrow(/at least one replicate/);
+		expect(() => hierarchicalBootstrapMedianInterval([[]])).toThrow(/at least one sample/);
+		expect(() => hierarchicalBootstrapMedianInterval([[1, Number.NaN]])).toThrow(/finite/);
+		expect(() => hierarchicalBootstrapMedianInterval([[1, 2]], { level: 0 })).toThrow(/level/);
+		expect(() => hierarchicalBootstrapMedianInterval([[1, 2]], { resamples: 0 })).toThrow(
+			/positive integer/,
+		);
+	});
+});
+
+describe("bootstrapMedianDifferenceInterval", () => {
+	it("reports the difference of pooled medians, sign following argument order", () => {
+		const diff = bootstrapMedianDifferenceInterval([[100, 100]], [[10, 10]], { seed: "s" });
+		expect(diff.difference).toBe(90);
+		const flipped = bootstrapMedianDifferenceInterval([[10, 10]], [[100, 100]], { seed: "s" });
+		expect(flipped.difference).toBe(-90);
+	});
+
+	it("separates two providers whose replicate sandboxes never overlap, once R clears the floor", () => {
+		// Four non-overlapping sandboxes per side: the exact cluster test floors at 2/C(8,4) ≈ 0.029, so
+		// complete separation clears α = 0.05. Every replicate of A is 1000 and of B is 1, so every
+		// hierarchical resample still yields exactly 999 — the DISPLAYED interval collapses to [999, 999].
+		const diff = bootstrapMedianDifferenceInterval(
+			[
+				[1000, 1000],
+				[1000, 1000],
+				[1000, 1000],
+				[1000, 1000],
+			],
+			[
+				[1, 1],
+				[1, 1],
+				[1, 1],
+				[1, 1],
+			],
+			{ seed: "s" },
+		);
+		expect(diff.separated).toBe(true);
+		expect(diff.pValue).toBeLessThan(0.05);
+		expect(diff.lo).toBeGreaterThan(0);
+	});
+
+	it("ties two providers drawn from the same distribution (interval straddles 0)", () => {
+		const shape = [
+			[10, 20],
+			[10, 20],
+			[10, 20],
+		];
+		const diff = bootstrapMedianDifferenceInterval(shape, shape, { seed: "s" });
+		expect(diff.difference).toBe(0);
+		expect(diff.separated).toBe(false);
+		expect(diff.lo).toBeLessThanOrEqual(0);
+		expect(diff.hi).toBeGreaterThanOrEqual(0);
+	});
+
+	it("ties adjacent R = 3 providers whose medians are close — replicas are the dial, not more trials", () => {
+		// The honest small-R behaviour the design accepts: three replicate sandboxes a step apart cannot
+		// be told from three a step higher. A caller must read this as "not separated", never "equal".
+		const diff = bootstrapMedianDifferenceInterval([[10], [20], [30]], [[15], [25], [35]], {
+			seed: "s",
+		});
+		expect(diff.separated).toBe(false);
+	});
+
+	it("cannot separate at R = 3 even under complete separation — the 2/C(6,3) = 0.1 floor", () => {
+		// The reviewer's case: three sandboxes per side, perfectly separated. The exact cluster test's
+		// smallest attainable two-sided p is 2/C(6,3) = 0.1, above α = 0.05, so NO R=3 comparison can be
+		// declared separated — the old "interval clears 0" rule would have over-claimed it. Raising k
+		// (in-sandbox trials) cannot lower this floor; only more sandboxes (R) can.
+		const diff = bootstrapMedianDifferenceInterval([[100], [101], [102]], [[1], [2], [3]], {
+			seed: "s",
+		});
+		expect(diff.separated).toBe(false);
+		expect(diff.pValue).toBeCloseTo(0.1, 12); // 2 / C(6,3)
+		expect(diff.minAttainablePValue).toBeCloseTo(0.1, 12);
+		expect(diff.lo).toBeGreaterThan(0); // the DISPLAYED bootstrap interval still excludes 0
+	});
+
+	it("a single sandbox per side can never separate, however many in-sandbox trials", () => {
+		// One replicate cluster per side reduces to a 1-vs-1 cluster test (floor p = 1), so no gap and no
+		// trial count can separate the providers — the between-sandbox axis is simply absent. This is the
+		// case the pooled-sample CI missed: four identical trials look like power, but are one sandbox.
+		const diff = bootstrapMedianDifferenceInterval([[10, 10, 10, 10]], [[99, 99, 99, 99]], {
+			seed: "s",
+		});
+		expect(diff.separated).toBe(false);
+		expect(diff.minAttainablePValue).toBe(1);
+	});
+
+	it("reports the verdict's method — exact at the R this benchmark runs", () => {
+		// The verdict is the cluster permutation via Mann-Whitney U on R_a + R_b sandboxes; at any real R
+		// that stays under mannWhitneyU's exact-N ceiling, so `method` is "exact" and the label is honest.
+		const diff = bootstrapMedianDifferenceInterval([[1], [2], [3]], [[4], [5], [6]], { seed: "s" });
+		expect(diff.method).toBe("exact");
+	});
+
+	it("falls back to the asymptotic method past the exact-N ceiling, and says so rather than claiming exact", () => {
+		// Above mannWhitneyU's MAX_EXACT_N (50 total sandboxes) the cluster test uses the normal
+		// approximation. Far beyond any real R, but the verdict must surface that rather than mislabel an
+		// approximated p as exact — so `method` flips to "asymptotic".
+		const many = (base: number) => Array.from({ length: 30 }, (_, i) => [base + i]);
+		const diff = bootstrapMedianDifferenceInterval(many(0), many(1000), { seed: "s" });
+		expect(diff.method).toBe("asymptotic");
+	});
+
+	it("degenerates to a point interval when each side pools to a single Sample (no power to separate)", () => {
+		// One Sample per side has no spread, so there is nothing to resample: report resamples: 0 and a
+		// point interval — never 10 000 identical draws, and never a separation verdict on zero power
+		// (mirrors hierarchicalBootstrapMedianInterval's single-pooled-sample short-circuit).
+		const diff = bootstrapMedianDifferenceInterval([[5]], [[8]]);
+		expect(diff.resamples).toBe(0);
+		expect(diff.separated).toBe(false);
+		expect(diff.difference).toBe(-3);
+		expect(diff.lo).toBe(-3);
+		expect(diff.hi).toBe(-3);
+	});
+
+	it("is reproducible for a given seed", () => {
+		const a = [[10, 12], [11]];
+		const b = [[20, 22], [21]];
+		expect(bootstrapMedianDifferenceInterval(a, b, { seed: "r" })).toEqual(
+			bootstrapMedianDifferenceInterval(a, b, { seed: "r" }),
+		);
+	});
+
+	it("negates the observed difference on reversal; the separation verdict is order-invariant", () => {
+		// The shared seeded RNG draws A then B in order, so the resampled lo/hi bounds are not guaranteed
+		// mirror images on reversal (a deliberate trade for one reproducible seed). What IS guaranteed:
+		// `difference` negates exactly (computed directly, not resampled), and the separation VERDICT is
+		// order-invariant — it comes from Mann-Whitney U on the per-sandbox medians, symmetric in its two
+		// arguments. Uses R=4 so a clearly-separated pair can actually clear the 5% floor.
+		const hi = [[100], [101], [102], [103]];
+		const lo = [[1], [2], [3], [4]];
+		const forward = bootstrapMedianDifferenceInterval(hi, lo, { seed: "rev" });
+		const reversed = bootstrapMedianDifferenceInterval(lo, hi, { seed: "rev" });
+		expect(reversed.difference).toBe(-forward.difference);
+		expect(forward.separated).toBe(true);
+		expect(reversed.separated).toBe(true);
+		expect(forward.pValue).toBe(reversed.pValue);
+	});
+
+	it("rejects an empty side, a non-finite Sample, and bad options", () => {
+		expect(() => bootstrapMedianDifferenceInterval([], [[1]])).toThrow(/at least one replicate/);
+		expect(() => bootstrapMedianDifferenceInterval([[1]], [[Number.NaN]])).toThrow(/finite/);
+		expect(() => bootstrapMedianDifferenceInterval([[1]], [[2]], { level: 1 })).toThrow(/level/);
+		expect(() => bootstrapMedianDifferenceInterval([[1]], [[2]], { resamples: -1 })).toThrow(
+			/positive integer/,
+		);
 	});
 });
 

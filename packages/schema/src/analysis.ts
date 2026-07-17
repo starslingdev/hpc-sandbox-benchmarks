@@ -242,6 +242,228 @@ export function bootstrapMedianInterval(
 	};
 }
 
+// ---------------------------------------------------------------------------------------------
+// Replicate-aware inference. A replicate is one whole sandbox: R replicates of a (provider, suite)
+// capture BETWEEN-sandbox variance (host placement, region, noisy neighbours) that the within-sandbox
+// trials cannot see. Pooling every replicate's Samples into one flat set and bootstrapping THAT
+// under-states the spread — it treats R×k correlated draws as R×k independent ones, so the interval
+// narrows with the trial count even when the true machine-to-machine variance is large. The
+// hierarchical bootstrap below resamples at BOTH levels (replicates, then Samples within each), so the
+// interval it reports reflects the variance a user actually experiences. At R = 1 it degenerates to the
+// ordinary percentile bootstrap {@link bootstrapMedianInterval} computes.
+// ---------------------------------------------------------------------------------------------
+
+/** Reject empty/non-finite replicate structure at the boundary, naming the caller. Every replicate
+ *  must carry at least one finite Sample, and there must be at least one replicate — the same
+ *  fail-fast posture as {@link assertFiniteSamples}, extended to the two-level shape. */
+function assertReplicates(fn: string, replicates: readonly (readonly number[])[]): void {
+	if (replicates.length === 0) {
+		throw new Error(`${fn}() requires at least one replicate`);
+	}
+	for (const replicate of replicates) {
+		assertFiniteSamples(fn, replicate);
+	}
+}
+
+/**
+ * One hierarchical resample's median: draw R replicates WITH REPLACEMENT, then within each drawn
+ * replicate draw its own number of Samples with replacement, pool the lot, and take the median. Drawing
+ * the clusters first is what carries the between-sandbox variance into the resample distribution — a
+ * flat bootstrap that skipped this level would treat the pooled Samples as exchangeable and hide it.
+ */
+function hierarchicalResampleMedian(
+	replicates: readonly (readonly number[])[],
+	rng: () => number,
+): number {
+	const R = replicates.length;
+	const pool: number[] = [];
+	for (let r = 0; r < R; r++) {
+		const chosen = replicates[Math.floor(rng() * R)] as readonly number[];
+		const n = chosen.length;
+		for (let i = 0; i < n; i++) pool.push(chosen[Math.floor(rng() * n)] as number);
+	}
+	pool.sort((x, y) => x - y);
+	return percentile(pool, 0.5);
+}
+
+/**
+ * Hierarchical (two-level) percentile bootstrap of the median across replicate sandboxes. The reported
+ * `median` is the observed median of the POOLED Samples — the same ranking value the leaderboard prints
+ * — and `[lo, hi]` is the [α/2, 1−α/2] envelope of the resampled medians, where each resample first
+ * draws replicates with replacement and then Samples within each.
+ *
+ * Degenerates deterministically:
+ *  - one replicate  → the cluster draw always re-selects it, so this is the ordinary percentile
+ *    bootstrap over that replicate's Samples (statistically identical to {@link bootstrapMedianInterval};
+ *    the raw draw sequence differs, so the leaderboard keeps calling the single-level function at R = 1
+ *    to stay byte-stable against the committed dataset).
+ *  - one pooled Sample → a point interval (`resamples: 0`, `lo === hi === median`), never a fabricated
+ *    bound, exactly as the single-level bootstrap does.
+ */
+export function hierarchicalBootstrapMedianInterval(
+	replicates: readonly (readonly number[])[],
+	options: { resamples?: number; level?: number; seed?: string } = {},
+): MedianInterval {
+	assertReplicates("hierarchicalBootstrapMedianInterval", replicates);
+	const level = options.level ?? 0.95;
+	if (!(level > 0 && level < 1)) {
+		throw new Error(`hierarchicalBootstrapMedianInterval() requires level in (0, 1); got ${level}`);
+	}
+	const resamples = options.resamples ?? DEFAULT_RESAMPLES;
+	if (!Number.isInteger(resamples) || resamples < 1) {
+		throw new Error(
+			`hierarchicalBootstrapMedianInterval() requires resamples to be a positive integer; got ${resamples}`,
+		);
+	}
+
+	const pooled = replicates.flat();
+	const median = percentileOf(pooled, 0.5);
+	// A single pooled Sample carries no information about its own spread — degenerate to a point interval
+	// rather than resampling one value into a fake bound (mirrors {@link bootstrapMedianInterval}).
+	if (pooled.length === 1) return { median, lo: median, hi: median, level, resamples: 0 };
+
+	const rng = seededRng(options.seed ?? "sandbox-benchmarks");
+	const medians = new Float64Array(resamples);
+	for (let b = 0; b < resamples; b++) medians[b] = hierarchicalResampleMedian(replicates, rng);
+	const sorted = Array.from(medians).sort((a, b) => a - b);
+	const tail = (1 - level) / 2;
+	return {
+		median,
+		lo: percentile(sorted, tail),
+		hi: percentile(sorted, 1 - tail),
+		level,
+		resamples,
+	};
+}
+
+/** A bootstrapped interval around the DIFFERENCE in two Metrics' medians, plus the cluster-level
+ *  separation verdict a ranking reads. Interval and verdict come from deliberately-different methods. */
+export interface MedianDifferenceInterval {
+	/** Observed difference: median(pooled A) − median(pooled B). Sign follows the argument order. */
+	difference: number;
+	/** Lower/upper bound of the hierarchical-bootstrap interval at {@link level} — the DISPLAYED interval. */
+	lo: number;
+	hi: number;
+	/** Coverage, e.g. 0.95. */
+	level: number;
+	/** Resamples drawn for the interval. `0` is the degenerate single-pooled-Sample-per-side case: the
+	 *  bounds collapse to the observed `difference`. */
+	resamples: number;
+	/**
+	 * How the verdict's p-value was computed, straight from the underlying {@link mannWhitneyU}: `exact` —
+	 * enumerated over the cluster permutation null — up to that test's exact-N ceiling (`MAX_EXACT_N` total
+	 * sandboxes, far beyond any R this benchmark runs), and the normal `asymptotic` approximation only
+	 * above it. Surfaced so a consumer is never told an approximated verdict is exact.
+	 */
+	method: PValueMethod;
+	/**
+	 * Two-sided p-value of the cluster-level rank permutation — Mann-Whitney U on each side's per-sandbox
+	 * medians, with whole replicate sandboxes as the exchangeable unit (exact per {@link method}). This,
+	 * not the interval, decides {@link separated}: MW on Samples pooled across replicates treats clustered
+	 * draws as independent (anti-conservative), while the CI's `lo > 0 || hi < 0` rule read between-provider
+	 * power off within-sandbox spread and over-claimed at small R. Resampling the sandboxes is honest.
+	 */
+	pValue: number;
+	/**
+	 * The smallest p this comparison could ever yield — the attainable floor under complete separation. It
+	 * depends on the sandbox counts AND the tie pattern among the per-sandbox medians (for DISTINCT medians
+	 * it is `2/C(R_a+R_b, R_a)`: 1 at R=1, 0.1 at R=3, 0.029 at R=4). When it already meets or exceeds
+	 * α (= 1 − {@link level}) the comparison is UNDERPOWERED: no data separates the two at this coverage,
+	 * so a consumer must not read a non-separation as a tie. Mirrors {@link mannWhitneyU}'s field of the
+	 * same name — because it IS that field, computed on the per-sandbox medians.
+	 */
+	minAttainablePValue: number;
+	/**
+	 * Separation verdict: {@link pValue} < α (α = 1 − {@link level}). True only when the sandboxes
+	 * themselves separate the two providers — never from within-sandbox spread alone, and never below the
+	 * R ≥ 4 the 5% floor requires. A single sandbox per side (however many in-sandbox trials) can never be
+	 * separated: its 1-vs-1 cluster test floors at p = 1.
+	 */
+	separated: boolean;
+}
+
+/**
+ * Compare two Metrics measured across replicate sandboxes, returning BOTH a displayed interval and a
+ * separation verdict — computed by different, deliberately-matched methods:
+ *
+ *  - INTERVAL (`lo`/`hi`): the hierarchical bootstrap of the difference in medians. Each resample draws a
+ *    hierarchical median for A and one for B (replicates with replacement, then Samples within) from ONE
+ *    shared seeded RNG and records their difference; the interval is the [α/2, 1−α/2] envelope. Because
+ *    that RNG draws A then B in order, the bounds depend on argument ORDER — reversing A and B negates
+ *    `difference` but need not mirror `lo`/`hi`. A deliberate trade for one reproducible seed; the
+ *    leaderboard always calls it higher-vs-lower, so the committed artifact stays byte-stable.
+ *
+ *  - VERDICT (`separated`/`pValue`/`minAttainablePValue`/`method`): a cluster-level rank permutation —
+ *    {@link mannWhitneyU} on each side's per-sandbox medians, with whole sandboxes as the exchangeable
+ *    unit (EXACT up to that test's exact-N ceiling — far beyond any real R — else asymptotic; see
+ *    `method`). Unlike the interval this is ORDER-INVARIANT and carries the honest attainable floor
+ *    (`2/C(R_a+R_b, R_a)` for distinct medians), so a single sandbox per side never separates and R < 4
+ *    cannot clear α = 0.05. It replaces the old "interval clears 0" rule, which over-claimed separation.
+ *
+ * Deterministic given `seed`, so a committed leaderboard built from it is byte-stable across machines.
+ */
+export function bootstrapMedianDifferenceInterval(
+	a: readonly (readonly number[])[],
+	b: readonly (readonly number[])[],
+	options: { resamples?: number; level?: number; seed?: string } = {},
+): MedianDifferenceInterval {
+	assertReplicates("bootstrapMedianDifferenceInterval", a);
+	assertReplicates("bootstrapMedianDifferenceInterval", b);
+	const level = options.level ?? 0.95;
+	if (!(level > 0 && level < 1)) {
+		throw new Error(`bootstrapMedianDifferenceInterval() requires level in (0, 1); got ${level}`);
+	}
+	const resamples = options.resamples ?? DEFAULT_RESAMPLES;
+	if (!Number.isInteger(resamples) || resamples < 1) {
+		throw new Error(
+			`bootstrapMedianDifferenceInterval() requires resamples to be a positive integer; got ${resamples}`,
+		);
+	}
+
+	const pooledA = a.flat();
+	const pooledB = b.flat();
+	const difference = percentileOf(pooledA, 0.5) - percentileOf(pooledB, 0.5);
+
+	// VERDICT — a cluster-level rank permutation: Mann-Whitney U on each side's per-sandbox medians (one
+	// summary per replicate), so the sandboxes themselves are the exchangeable unit. It is EXACT up to
+	// mannWhitneyU's MAX_EXACT_N total sandboxes (far beyond any real R), asymptotic above; `method` records
+	// which. Its `minAttainablePValue` is the honest between-sandbox floor — 1 at R=1, 0.1 at R=3 — the
+	// power the CI rule below cannot see. `separated` reads this, never the interval.
+	const clusterTest = mannWhitneyU(
+		a.map((replicate) => percentileOf(replicate, 0.5)),
+		b.map((replicate) => percentileOf(replicate, 0.5)),
+	);
+	const { pValue, minAttainablePValue, method } = clusterTest;
+	const separated = pValue < 1 - level;
+
+	// INTERVAL — one pooled Sample per side carries no spread, so the DISPLAYED interval degenerates to a
+	// point (resamples: 0) rather than 10 000 identical draws. The verdict above already forced `separated`
+	// false for it (its 1-vs-1 cluster test floors at p = 1).
+	if (pooledA.length === 1 && pooledB.length === 1) {
+		return {
+			difference,
+			lo: difference,
+			hi: difference,
+			level,
+			resamples: 0,
+			method,
+			pValue,
+			minAttainablePValue,
+			separated,
+		};
+	}
+	const rng = seededRng(options.seed ?? "sandbox-benchmarks");
+	const diffs = new Float64Array(resamples);
+	for (let i = 0; i < resamples; i++) {
+		diffs[i] = hierarchicalResampleMedian(a, rng) - hierarchicalResampleMedian(b, rng);
+	}
+	const sorted = Array.from(diffs).sort((x, y) => x - y);
+	const tail = (1 - level) / 2;
+	const lo = percentile(sorted, tail);
+	const hi = percentile(sorted, 1 - tail);
+	return { difference, lo, hi, level, resamples, method, pValue, minAttainablePValue, separated };
+}
+
 /** Standard normal CDF, via a rational approximation to erfc (Numerical Recipes `erfcc`,
  *  |ε| < 1.2e-7 — far finer than any p-value we act on). */
 function normalCdf(z: number): number {
