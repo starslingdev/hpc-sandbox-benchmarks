@@ -1,18 +1,17 @@
 name: Bench matrix
 
-# Fan the live benchmark out across the full provider × suite matrix. Each registered suite is its own
-# intuitively-named job (grouped by dimension below), and every suite job fans out across the selected
-# providers via the reusable bench-suite.yml — so a cell displays as "<suite> / <provider>" (e.g.
-# "system / e2b") and provider cells group under their suite. The provider axis is computed once by
-# `plan-providers` from the PROVIDERS registry (honoring the `providers` dispatch input); the suite
-# jobs are enumerated here from SUITE_NAMES and kept in lockstep by the workflow-registry-sync gate
-# (tooling/repo-checks), so adding a suite is one job below (its provider fan-out is automatic). The
-# `suites` dispatch input narrows the run to a subset of suites (blank = all) — the targeted/pre-merge
-# knob, so a validation dispatch can run just one suite instead of the whole matrix. Off the PR path
-# (real sandbox time + provider credentials); main is the default, while an explicit allow_branch
-# dispatch supports pre-merge validation. Every benchmark cell remains gated by
-# Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md, declared
-# inside bench-suite.yml), and publishing stays main-only.
+# Fan the live benchmark out across the provider × suite matrix using GitHub's native reusable-workflow
+# nesting. `plan` emits both axes; a single suite-matrix job calls the reusable bench-suite.yml once per
+# suite (`name: ${{ matrix.suite }}`), and that reusable fans out providers (`name: ${{ matrix.provider
+# }}`) — so each cell displays as "<suite> / <provider>" (e.g. "system / e2b") and provider cells nest
+# under their suite in the Actions UI. Adding a suite is a schema change only: the suite axis is
+# `fromJSON(needs.plan.outputs.suites)`, kept in lockstep by the workflow-registry-sync gate. The
+# `suites` dispatch input narrows that axis to a subset (blank = every registered suite) — the
+# targeted/pre-merge knob, so a validation dispatch can run just one suite instead of the whole matrix.
+# Off the PR path (real sandbox time + provider credentials); main is the default, while an explicit
+# allow_branch dispatch supports pre-merge validation. Every benchmark cell remains gated by Environment
+# `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md, declared inside
+# bench-suite.yml), and publishing stays main-only.
 on:
   workflow_dispatch:
     inputs:
@@ -29,9 +28,10 @@ on:
         description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
         required: false
         type: string
-        # Blank runs every registered suite (the main-publish default). A subset runs only those suites'
-        # jobs — the pre-merge/targeted knob so a validation dispatch needn't spend the whole matrix.
-        # `plan-suites` rejects any name that is not in the registry, so a typo fails the plan.
+        # Blank runs every registered suite (the main-publish default). A subset narrows the suite-matrix
+        # axis to just those suites — the pre-merge/targeted knob so a validation dispatch needn't spend
+        # the whole matrix. `plan-suites` rejects any name that is not in the registry, so a typo fails
+        # the plan.
         default: ''
       allow_branch:
         description: 'Allow benchmark cells on a non-main ref (publish remains main-only).'
@@ -49,11 +49,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Compute the provider axis once, as the single $GITHUB_OUTPUT contract every suite job's matrix
-  # reads. No secrets — plan stays off the privileged environment so approval isn't needed just to
-  # dry-run the provider list; a non-main run requires the explicit dispatch opt-in below. Every suite
-  # job `needs: plan`, so this guard also gates them: a skipped plan (fork, or a non-main run without
-  # allow_branch) skips the whole fan-out.
+  # Compute both matrix axes once, as the single $GITHUB_OUTPUT contract the suite job reads. No
+  # secrets — plan stays off the privileged environment so approval isn't needed just to dry-run the
+  # axes; a non-main run requires the explicit dispatch opt-in below. The suite job `needs: plan`, so
+  # this guard also gates the fan-out: a skipped plan (fork, or a non-main run without allow_branch)
+  # skips every cell.
   plan:
     name: Plan matrix
     if: >
@@ -61,8 +61,6 @@ jobs:
       (github.ref == 'refs/heads/main' || inputs.allow_branch)
     runs-on: ubuntu-24.04
     outputs:
-      # The provider axis every suite matrix fans out over, and the set of suites whose jobs run (each
-      # suite job is gated on membership in `suites`).
       providers: ${{ steps.plan.outputs.providers }}
       suites: ${{ steps.plan.outputs.suites }}
     steps:
@@ -77,9 +75,10 @@ jobs:
           bun-version: 1.3.14
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
-      # plan-providers prints the `provider` axis (["e2b","daytona", …]); plan-suites prints the suites
-      # whose jobs run (["cpu-node", …]), blank input = every registered suite. Both are one line of
-      # compact JSON — the strategy/`if:` contracts the suite jobs read.
+      # plan-providers prints the `provider` axis (["e2b","daytona", …]) the reusable fans out over;
+      # plan-suites prints the suite axis (["cpu-node", …]) this job's matrix expands, blank input =
+      # every registered suite. Both are one line of compact JSON — the strategy contracts the suite job
+      # reads.
       - name: Plan
         id: plan
         # The dispatch inputs reach the planners through the environment, never interpolated into the
@@ -87,7 +86,7 @@ jobs:
         env:
           BENCH_PROVIDERS: ${{ inputs.providers }}
           BENCH_SUITES: ${{ inputs.suites }}
-        # Capture into a variable first so a planner failure aborts the step (set -e): inlining the
+        # Capture into variables first so a planner failure aborts the step (set -e): inlining the
         # command substitution inside `echo` would mask its exit code behind echo's 0. An unregistered
         # provider or suite name exits 2 here, so a typo fails the plan instead of quietly publishing a
         # dataset with that provider missing or running nothing.
@@ -97,95 +96,23 @@ jobs:
           echo "providers=$providers" >> "$GITHUB_OUTPUT"
           echo "suites=$suites" >> "$GITHUB_OUTPUT"
 
-  # ── CPU ──────────────────────────────────────────────────────────────
-  cpu-node:
+  # One matrix cell per selected suite → reusable workflow call. GitHub nests the reusable's provider
+  # matrix under each suite name, so the Actions UI shows expandable "<suite>" groups with "<provider>"
+  # children (display: "<suite> / <provider>"). fail-fast stays off so one bad suite doesn't cancel peers.
+  suite:
+    name: ${{ matrix.suite }}
     needs: plan
-    # Run only when this suite is in the plan's selected set (blank `suites` input = all). This is the
-    # per-suite half of the targeted-run knob; the provider fan-out lives inside bench-suite.yml.
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'cpu-node') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
+    # `secrets: inherit` keeps repository secrets / token context available to the callee; Environment
+    # secrets on `privileged` are resolved by the reusable job's own `environment:` declaration (a
+    # `uses:` caller can't set `environment:`).
     uses: ./.github/workflows/bench-suite.yml
     with:
       providers: ${{ needs.plan.outputs.providers }}
-      suite: cpu-node
-    # `secrets: inherit` so the `privileged` environment secrets reach bench-suite.yml's fan-out job,
-    # which scopes each provider's credential to its own cell.
-    secrets: inherit
-
-  cpu-generic:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'cpu-generic') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: cpu-generic
-    secrets: inherit
-
-  # ── System ───────────────────────────────────────────────────────────
-  system:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'system') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: system
-    secrets: inherit
-
-  # ── Memory ───────────────────────────────────────────────────────────
-  memory:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'memory') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: memory
-    secrets: inherit
-
-  # ── Disk ─────────────────────────────────────────────────────────────
-  disk:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'disk') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: disk
-    secrets: inherit
-
-  # ── Network ──────────────────────────────────────────────────────────
-  network:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'network') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: network
-    secrets: inherit
-
-  # ── Real-world (per-repo CI suites) ──────────────────────────────────
-  realworld-mastra:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'realworld-mastra') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: realworld-mastra
-    secrets: inherit
-
-  realworld-better-auth:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'realworld-better-auth') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: realworld-better-auth
-    secrets: inherit
-
-  realworld-openclaw:
-    needs: plan
-    if: ${{ contains(fromJSON(needs.plan.outputs.suites), 'realworld-openclaw') }}
-    uses: ./.github/workflows/bench-suite.yml
-    with:
-      providers: ${{ needs.plan.outputs.providers }}
-      suite: realworld-openclaw
+      suite: ${{ matrix.suite }}
     secrets: inherit
 
   # Collect every shard Run, aggregate into one candidate, gate it (promote), regenerate the public
@@ -197,20 +124,12 @@ jobs:
     name: Aggregate + promote dataset
     needs:
       - plan
-      - cpu-node
-      - cpu-generic
-      - system
-      - memory
-      - disk
-      - network
-      - realworld-mastra
-      - realworld-better-auth
-      - realworld-openclaw
-    # Run even if some suite jobs failed (fail-fast is off) so the successful shards still publish:
-    # `aggregate` exits non-zero when zero shards are found and `promote` gates on >=1 validated
-    # provider, so the quality bar is preserved. `!cancelled()` still lets an explicit cancel stop it.
-    # `!cancelled()` opts out of the implicit success() gate, so require `plan` explicitly: a skipped
-    # or failed plan means there is no provider axis, so there is nothing to publish.
+      - suite
+    # Run even if some suite matrix cells failed (fail-fast is off) so the successful shards still
+    # publish: `aggregate` exits non-zero when zero shards are found and `promote` gates on >=1
+    # validated provider, so the quality bar is preserved. `!cancelled()` still lets an explicit cancel
+    # stop it. `!cancelled()` opts out of the implicit success() gate, so require `plan` explicitly: a
+    # skipped or failed plan means there is no provider axis, so there is nothing to publish.
     if: >
       !cancelled() &&
       needs.plan.result == 'success' &&

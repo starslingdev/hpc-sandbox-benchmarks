@@ -2,8 +2,11 @@
 // `bench-suite` — run a benchmark suite on a provider sandbox, collect the raw results into a
 // data/raw tree, and normalize them into a validated Run document. Missing provider credentials are
 // recorded as a skip (the provider stays `pending` in the Run), so this is runnable without secrets.
+// In GitHub Actions it also writes a compact job summary + run annotation so the nested
+// "<suite> / <provider>" cell shows a clean result without digging through the log.
 
 import { join } from "node:path";
+import * as core from "@actions/core";
 import {
 	requiredProviders,
 	runSuite,
@@ -13,6 +16,52 @@ import {
 import { summarizeRun, writeNormalizedRun } from "@sandbox-benchmarks/results";
 import type { Run } from "@sandbox-benchmarks/schema";
 import { handleDiscovery } from "../lib/discovery.ts";
+
+/** Escape HTML metacharacters for values reaching core.summary addHeading/addRaw (those APIs do not
+ *  escape). Mirrors release-summary.ts. */
+function escapeHtml(value: string): string {
+	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Write the cell's outcome to the Actions job summary + annotations panel when running in GHA.
+ *  No-op locally so `bun apps/cli/src/bin/bench-suite.ts` stays a plain CLI. */
+async function writeActionsResult(opts: {
+	provider: string;
+	suite: string;
+	runId: string;
+	outFile: string;
+	run: Run;
+	failed: boolean;
+	detail?: string;
+}): Promise<void> {
+	if (process.env.GITHUB_ACTIONS !== "true") return;
+	const status = opts.failed ? "failure" : "success";
+	const title = `${opts.suite} / ${opts.provider}`;
+	const lines = summarizeRun(opts.run);
+	core.summary.addHeading(escapeHtml(title), 3).addTable([
+		[
+			{ data: "Field", header: true },
+			{ data: "Value", header: true },
+		],
+		["Status", status],
+		["Suite", `<code>${escapeHtml(opts.suite)}</code>`],
+		["Provider", `<code>${escapeHtml(opts.provider)}</code>`],
+		["Run", `<code>${escapeHtml(opts.runId)}</code>`],
+		["Artifact path", `<code>${escapeHtml(opts.outFile)}</code>`],
+	]);
+	if (lines.length > 0) {
+		core.summary.addHeading("Provider status", 4);
+		core.summary.addCodeBlock(lines.join("\n"));
+	}
+	if (opts.detail) {
+		core.summary.addRaw(escapeHtml(opts.detail));
+		core.summary.addEOL();
+	}
+	await core.summary.write();
+	const annotation = lines[0] ?? opts.detail ?? title;
+	if (opts.failed) core.error(annotation, { title });
+	else core.notice(annotation, { title });
+}
 
 /** Agent-facing usage; bare invocation keeps the daytona/cpu-node local-dev default. */
 export const HELP = `bench-suite — run a benchmark suite on a provider sandbox and normalize it into a Run document.
@@ -112,10 +161,19 @@ if (import.meta.main) {
 	for (const line of summarizeRun(run)) console.log(line);
 
 	if (suiteError) {
-		console.error(
-			`\nSuite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ` +
-				`${suiteError instanceof Error ? suiteError.message : String(suiteError)}`,
-		);
+		const detail =
+			`Suite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ` +
+			`${suiteError instanceof Error ? suiteError.message : String(suiteError)}`;
+		console.error(`\n${detail}`);
+		await writeActionsResult({
+			provider,
+			suite,
+			runId,
+			outFile,
+			run,
+			failed: true,
+			detail,
+		});
 		process.exit(1);
 	}
 
@@ -133,17 +191,29 @@ if (import.meta.main) {
 		}));
 		const unmet = unmetRequirements(reports, required);
 		if (unmet.length > 0) {
+			const details: string[] = [];
 			for (const providerId of unmet) {
 				// The gaps ARE the explanation for "no metrics", and their outcome is the important half of
 				// it: a required provider that skipped on a precondition is a configuration problem, one that
 				// failed is an outage, and the operator reading this line needs to know which they have.
 				const gaps = run.providers.find((p) => p.providerId === providerId)?.gaps ?? [];
-				const detail = gaps.map((g) => `${g.id} ${g.outcome}: ${g.reason}`).join("; ");
-				console.error(
-					`Required provider "${providerId}" produced no metrics${detail ? ` — ${detail}` : " and was absent from the Run"}`,
-				);
+				const gapDetail = gaps.map((g) => `${g.id} ${g.outcome}: ${g.reason}`).join("; ");
+				const line = `Required provider "${providerId}" produced no metrics${gapDetail ? ` — ${gapDetail}` : " and was absent from the Run"}`;
+				console.error(line);
+				details.push(line);
 			}
+			await writeActionsResult({
+				provider,
+				suite,
+				runId,
+				outFile,
+				run,
+				failed: true,
+				detail: details.join("\n"),
+			});
 			process.exit(1);
 		}
 	}
+
+	await writeActionsResult({ provider, suite, runId, outFile, run, failed: false });
 }

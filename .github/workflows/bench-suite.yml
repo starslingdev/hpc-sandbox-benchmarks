@@ -1,20 +1,20 @@
 name: Benchmark suite (reusable)
 
-# One suite, fanned out across a provider matrix. bench-matrix.yml calls this once per registered
-# suite (a named job each, grouped by dimension), passing the plan's selected provider list — so N
-# providers group under one suite label in the UI and jobs display as "<suite> / <provider>". Factoring
-# the shared cell here (checkout → run → upload, plus the per-provider credential wiring) keeps that
-# block in ONE place instead of copy-pasted into every suite job, mirroring runner-benchmarking's
-# reusable bench-suite.yml.
+# One suite, fanned out across a provider matrix. bench-matrix.yml calls this once per suite via its
+# suite-matrix job (`name: ${{ matrix.suite }}`), passing the plan's selected provider list — so N
+# providers nest under one suite label in the Actions UI and cells display as "<suite> / <provider>".
+# Factoring the shared cell here (checkout → run → upload, plus the per-provider credential wiring)
+# keeps that block in ONE place instead of copy-pasted into every suite job, mirroring
+# runner-benchmarking's reusable bench-suite.yml.
 #
 # The artifact name (bench-<suite>-<provider>-<run_id>) is load-bearing: publish-dataset.yml downloads
 # the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep.
 #
 # Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md) lives on
 # the fan-out job here: a `uses:` caller can't declare `environment:`, so the approval gate and the
-# provider secrets are enforced at this layer. The caller passes `secrets: inherit` so the environment
-# secrets on `privileged` reach this job — a caller job has no environment of its own, so it could not
-# resolve them to pass explicitly.
+# provider secrets are enforced at this layer. Environment secrets resolve from this job's
+# `environment:` declaration; the caller may still pass `secrets: inherit` for repository-level
+# secrets / token context.
 on:
   workflow_call:
     inputs:
@@ -33,8 +33,8 @@ permissions:
 
 jobs:
   bench:
-    # Display as "<caller suite job> / <provider>", e.g. "system / e2b" — the provider cells group
-    # under their suite's job name in the Actions UI.
+    # Display as "<caller suite job> / <provider>", e.g. "system / e2b" — the provider cells nest
+    # under their suite's job name in the Actions UI (GitHub-native reusable-workflow nesting).
     name: ${{ matrix.provider }}
     environment: privileged
     # The ephemeral self-hosted label is reaped after 70 minutes even while a step is healthy. The
@@ -71,6 +71,7 @@ jobs:
       # Drive the provider SDK to create a sandbox, run the suite, collect results, and normalize. The
       # cell's provider is a matrix value and its suite the reusable input, both passed through the
       # environment (never interpolated into the shell) so neither can inject into the runner command.
+      # On success/failure the bin also writes a compact job summary + run annotation (clean Results).
       - name: Run suite and normalize
         env:
           BENCH_REPO_REF: ${{ github.sha }}

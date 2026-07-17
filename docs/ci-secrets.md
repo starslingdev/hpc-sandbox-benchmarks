@@ -13,7 +13,7 @@ and toolchain publish must not trigger on `push`.
 | Workflow | Job | Why |
 | --- | --- | --- |
 | `toolchain-image.yml` | `publish` | Provider bake secrets + `packages: write` (GHCR release) |
-| `bench-suite.yml` | `bench` | Provider API keys (reusable fan-out `bench-matrix.yml`'s per-suite jobs call) |
+| `bench-suite.yml` | `bench` | Provider API keys (reusable fan-out `bench-matrix.yml`'s suite-matrix job calls) |
 | `publish-dataset.yml` | `publish` | Dataset + leaderboard publish (`contents: write` + `pull-requests: write`) |
 | `bench-smoke.yml` | `smoke` | Provider API keys |
 
@@ -21,10 +21,10 @@ Two of these are reusable workflows whose `privileged` gate lives on their own j
 caller can't declare `environment:` (the workflow-hardening drift gate checks the callee and passes the
 local caller):
 
-- `bench-suite.yml` runs one suite across a provider matrix; `bench-matrix.yml`'s named per-suite jobs
-  each call it with `secrets: inherit` — required because the provider API keys are Environment secrets
-  on `privileged` (no repository copy), so only a job that declares that environment can resolve them,
-  and the `uses:` caller can't.
+- `bench-suite.yml` runs one suite across a provider matrix; `bench-matrix.yml`'s suite-matrix job
+  calls it once per suite. Environment secrets on `privileged` resolve from the reusable job's own
+  `environment:` declaration (a `uses:` caller can't set `environment:`). The caller still passes
+  `secrets: inherit` for repository-level secrets / token context.
 - `publish-dataset.yml` runs the dataset publish: `bench-matrix.yml`'s `publish` job calls it at the end
   of a matrix run, and a maintainer can dispatch it standalone to backfill (see rule 6).
 
@@ -67,13 +67,14 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    still within the repo's artifact-retention window. Dispatch is still gated by Environment
    `privileged` (main-only, required reviewer), so it is effectively maintainer-only.
 
-> **Two approval gates per bench-matrix run.** The per-suite fan-out jobs (each calling
-> `bench-suite.yml`) and the `publish` job all carry `environment: privileged` and run sequentially.
-> The suite jobs all become pending together the moment `plan` finishes, so they surface as one batch
-> in "Review pending deployments" and a single approval of the `privileged` environment releases the
-> whole matrix; `publish` becomes pending only after the long matrix (~150 min), raising a **second**
-> gate before the dataset is committed. A reviewer who approves only the matrix and walks away leaves
-> the run parked at `publish` until the second approval lands or the protection rule times out.
+> **Two approval gates per bench-matrix run.** The suite-matrix fan-out (each cell calling
+> `bench-suite.yml` with `environment: privileged`) and the `publish` job both carry the environment
+> and run sequentially. Every suite × provider cell becomes pending together the moment `plan`
+> finishes, so they surface as one batch in "Review pending deployments" and a single approval of the
+> `privileged` environment releases the whole matrix; `publish` becomes pending only after the long
+> matrix (~150 min), raising a **second** gate before the dataset is committed. A reviewer who
+> approves only the matrix and walks away leaves the run parked at `publish` until the second approval
+> lands or the protection rule times out.
 
 ## Operator setup (before flipping the repo public)
 

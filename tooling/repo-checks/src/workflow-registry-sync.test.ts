@@ -2,11 +2,12 @@
 // registries (PROVIDERS + SUITE_NAMES). GHA can't import TypeScript, so the provider/suite choices and
 // the per-provider credential env block are hand-mirrored across .github/workflows/bench-*.yml; this
 // gate re-derives the truth from the registries and fails if someone adds a provider/suite (or its
-// required secret) without updating the workflows. bench-matrix.yml runs a named job per suite, each
-// calling the reusable bench-suite.yml — so the credential block + run-job timeout live in the reusable
-// (the "matrix side" of the credential/timeout checks reads it), and a separate invariant asserts the
-// suite jobs cover SUITE_NAMES. Mirrors runner-benchmarking's test/workflow-{env,suite}-sync.test.ts.
-// See ./lib/workflow-sync.ts for the parsers + pure checks.
+// required secret) without updating the workflows. bench-matrix.yml has one suite-matrix job that calls
+// the reusable bench-suite.yml (native nesting: suite / provider) — so the credential block + run-job
+// timeout live in the reusable (the "matrix side" of the credential/timeout checks reads it), and a
+// separate invariant asserts the suite-matrix caller stays wired to plan.outputs.suites. Mirrors
+// runner-benchmarking's test/workflow-{env,suite}-sync.test.ts. See ./lib/workflow-sync.ts for the
+// parsers + pure checks.
 //
 // The runCheck() test against the real workflow files IS the gate's CI enforcement point (it runs under
 // `bun test`, same precedent as boundary.test.ts); the rest is unit coverage of the parsers and the
@@ -17,12 +18,14 @@ import {
 	checkCredentialEnv,
 	checkProviderInput,
 	checkSuiteInput,
-	checkSuiteJobCoverage,
+	checkSuiteMatrixCaller,
 	checkWorkflowTimeouts,
 	dispatchInput,
+	EXPECTED_SUITE_MATRIX_EXPR,
+	EXPECTED_SUITE_NAME_EXPR,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
-	matrixSuiteJobs,
+	matrixSuiteCaller,
 	RUN_STEP,
 	readWorkflow,
 	requiredCredentialKeys,
@@ -227,44 +230,85 @@ describe("checkCredentialEnv", () => {
 	});
 });
 
-describe("checkSuiteJobCoverage", () => {
-	const realJobs = matrixSuiteJobs(matrix);
+describe("checkSuiteMatrixCaller", () => {
+	const realCaller = matrixSuiteCaller(matrix);
 
-	test("matrixSuiteJobs extracts exactly one job per registered suite", () => {
-		expect(new Set(realJobs.map((j) => j.suite))).toEqual(new Set(SUITE_NAMES));
-		expect(realJobs).toHaveLength(SUITE_NAMES.length);
+	test("matrixSuiteCaller extracts the real suite-matrix nesting wiring", () => {
+		expect(realCaller.jobId).toBe("suite");
+		expect(realCaller.name).toBe(EXPECTED_SUITE_NAME_EXPR);
+		expect(realCaller.suiteInput).toBe(EXPECTED_SUITE_NAME_EXPR);
+		expect(realCaller.matrixSuiteExpr).toBe(EXPECTED_SUITE_MATRIX_EXPR);
+		expect(realCaller.publishNeeds).toContain("suite");
 	});
 
-	test("the real matrix suite jobs cover SUITE_NAMES", () => {
-		expect(checkSuiteJobCoverage(realJobs)).toEqual([]);
+	test("the real suite-matrix caller is wired for native nesting", () => {
+		expect(checkSuiteMatrixCaller(realCaller)).toEqual([]);
 	});
 
-	test("flags a registry suite that no matrix job benchmarks", () => {
-		const [dropped] = SUITE_NAMES;
-		const errors = checkSuiteJobCoverage(realJobs.filter((j) => j.suite !== dropped));
+	test("flags a caller whose display name is not matrix.suite", () => {
+		const errors = checkSuiteMatrixCaller({ ...realCaller, name: "Bench suites" });
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain(`no matrix job benchmarks suite "${dropped}"`);
-		expect(errors[0]).toContain("bench-suite.yml");
+		expect(errors[0]).toContain("name must be");
+		expect(errors[0]).toContain(EXPECTED_SUITE_NAME_EXPR);
 	});
 
-	test("flags a job dispatching a suite the registry doesn't know", () => {
-		const errors = checkSuiteJobCoverage([...realJobs, { jobId: "gpu", suite: "gpu" }]);
+	test("flags a caller whose with.suite is not matrix.suite", () => {
+		const errors = checkSuiteMatrixCaller({ ...realCaller, suiteInput: "cpu-node" });
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain('suite "gpu" which is not in SUITE_NAMES');
+		expect(errors[0]).toContain("with.suite must be");
 	});
 
-	test("flags a suite dispatched by two jobs", () => {
-		// "system" is a registered suite already covered by realJobs, so a second job for it is a dup.
-		const errors = checkSuiteJobCoverage([...realJobs, { jobId: "dup", suite: "system" }]);
+	test("flags a caller whose suite axis is not plan.outputs.suites", () => {
+		const errors = checkSuiteMatrixCaller({
+			...realCaller,
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal (wrong axis), not a JS template.
+			matrixSuiteExpr: "${{ fromJSON(needs.plan.outputs.providers) }}",
+		});
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("more than one job");
+		expect(errors[0]).toContain("strategy.matrix.suite must be");
+		expect(errors[0]).toContain(EXPECTED_SUITE_MATRIX_EXPR);
 	});
 
-	test("matrixSuiteJobs throws on a reusable-caller job with no string suite", () => {
+	test("flags publish that does not need the suite-matrix caller", () => {
+		const errors = checkSuiteMatrixCaller({ ...realCaller, publishNeeds: ["plan"] });
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('publish" must need "suite"');
+	});
+
+	test("matrixSuiteCaller throws when no job calls the reusable", () => {
+		const yaml = Bun.YAML.stringify({ jobs: { plan: { "runs-on": "ubuntu-24.04" } } });
+		expect(() => matrixSuiteCaller(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
+			"no job calls the reusable bench-suite.yml",
+		);
+	});
+
+	test("matrixSuiteCaller throws on multiple suite-matrix callers", () => {
+		const yaml = Bun.YAML.stringify({
+			jobs: {
+				a: {
+					name: EXPECTED_SUITE_NAME_EXPR,
+					uses: "./.github/workflows/bench-suite.yml",
+					with: { suite: EXPECTED_SUITE_NAME_EXPR },
+					strategy: { matrix: { suite: EXPECTED_SUITE_MATRIX_EXPR } },
+				},
+				b: {
+					name: EXPECTED_SUITE_NAME_EXPR,
+					uses: "./.github/workflows/bench-suite.yml",
+					with: { suite: EXPECTED_SUITE_NAME_EXPR },
+					strategy: { matrix: { suite: EXPECTED_SUITE_MATRIX_EXPR } },
+				},
+			},
+		});
+		expect(() => matrixSuiteCaller(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
+			"expected exactly one suite-matrix caller",
+		);
+	});
+
+	test("matrixSuiteCaller throws on a reusable-caller job with no string suite", () => {
 		const yaml = Bun.YAML.stringify({
 			jobs: { bad: { uses: "./.github/workflows/bench-suite.yml", with: { providers: "[]" } } },
 		});
-		expect(() => matrixSuiteJobs(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
+		expect(() => matrixSuiteCaller(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
 			'without a string "suite" input',
 		);
 	});
