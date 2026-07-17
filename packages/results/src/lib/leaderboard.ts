@@ -165,6 +165,53 @@ export interface Leaderboard {
 	coverageGaps: CoverageGap[];
 }
 
+/** Stable, machine-readable projection of the public leaderboard. */
+export interface PublicLeaderboard {
+	schemaVersion: "1";
+	runId: string;
+	sha: string;
+	generatedAt: string;
+	targetSpec: TargetSpec;
+	summary: {
+		providerCount: number;
+		metricCount: number;
+		metricRecordCount: number;
+		retainedObservationCount: number;
+	};
+	providers: Array<{
+		id: string;
+		name: string;
+		specMatched: boolean | null;
+		observedSpecs: ObservedSpecs;
+	}>;
+	dimensions: Array<{
+		id: Dimension;
+		metrics: Array<{
+			id: string;
+			name: string;
+			unit: string;
+			direction: "higher" | "lower";
+			headline: boolean;
+			rows: Array<{
+				providerId: string;
+				rank: number;
+				value: number;
+				interval: { low: number; high: number } | null;
+				n: number;
+				note?: string;
+			}>;
+		}>;
+	}>;
+	coverageGaps: Array<{
+		providerId: string;
+		benchmark: string;
+		scope: GapScope;
+		outcome: CoverageOutcome;
+		detail: string;
+		disk: boolean;
+	}>;
+}
+
 /**
  * Whether a skip reason is a disk-capacity gap — i.e. the harness wrote its "Insufficient disk: …"
  * marker because the sandbox had less free disk than the suite's `minDiskGb`. Matched by prefix rather
@@ -465,6 +512,78 @@ function rowNote(r: LeaderboardRow): string {
 	}
 	if (r.verdict === "tied") return "tied";
 	return "";
+}
+
+/**
+ * Project the existing leaderboard result into a stable JSON contract for downstream consumers.
+ * Ranking, intervals, ties, gaps, and comparability remain owned by {@link buildLeaderboard}; this
+ * function only names and serializes those already-derived facts.
+ */
+export function buildPublicLeaderboard(
+	run: Run,
+	board: Leaderboard = buildLeaderboard(run),
+): PublicLeaderboard {
+	if (board.runId !== run.runId || board.sha !== run.sha || board.generatedAt !== run.generatedAt) {
+		throw new Error("Leaderboard and Run provenance do not match");
+	}
+
+	const metrics = board.dimensions.flatMap((dimension) => dimension.metrics);
+	const rows = metrics.flatMap((metric) => metric.rows);
+
+	return {
+		schemaVersion: "1",
+		runId: board.runId,
+		sha: board.sha,
+		generatedAt: board.generatedAt,
+		targetSpec: board.targetSpec,
+		summary: {
+			providerCount: run.providers.length,
+			metricCount: metrics.length,
+			metricRecordCount: rows.length,
+			retainedObservationCount: rows.reduce((sum, row) => sum + row.n, 0),
+		},
+		providers: run.providers.map((provider) => ({
+			id: provider.providerId,
+			name: getProvider(provider.providerId)?.displayName ?? provider.providerId,
+			specMatched: provider.specMatched ?? null,
+			observedSpecs: provider.observedSpecs,
+		})),
+		dimensions: board.dimensions.map((dimension) => ({
+			id: dimension.dimension,
+			metrics: dimension.metrics.map(({ metric, rows: metricRows }) => ({
+				id: metric.id,
+				name: metric.label,
+				unit: metric.unit,
+				direction: metric.direction === "HIB" ? "higher" : "lower",
+				headline: metric.headline === true,
+				rows: metricRows.map((row) => {
+					const note = rowNote(row);
+					return {
+						providerId: row.providerId,
+						rank: row.rank,
+						value: row.value,
+						interval:
+							row.interval.resamples === 0 ? null : { low: row.interval.lo, high: row.interval.hi },
+						n: row.n,
+						...(note ? { note } : {}),
+					};
+				}),
+			})),
+		})),
+		coverageGaps: board.coverageGaps.map((gap) => ({
+			providerId: gap.providerId,
+			benchmark: gap.id,
+			scope: gap.scope,
+			outcome: gap.outcome,
+			detail: gap.reason,
+			disk: gap.disk,
+		})),
+	};
+}
+
+/** Deterministic, newline-terminated serialization used by the CLI and artifact-sync gate. */
+export function renderPublicLeaderboardJson(publicLeaderboard: PublicLeaderboard): string {
+	return `${JSON.stringify(publicLeaderboard, null, 2)}\n`;
 }
 
 /** Mann-Whitney cell in the pairwise details table — reuses {@link rowNote} for the verdict suffix. */

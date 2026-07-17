@@ -8,6 +8,7 @@
 export { aggregateRuns } from "./lib/aggregate.ts";
 export {
 	buildLeaderboard,
+	buildPublicLeaderboard,
 	type ComparabilityCaveat,
 	// Every type reachable from `Leaderboard` is exported with it: a consumer that can hold the value but
 	// cannot name the type of `leaderboard.coverageGaps` can't write a function that takes one.
@@ -17,7 +18,9 @@ export {
 	type LeaderboardDimension,
 	type LeaderboardMetric,
 	type LeaderboardRow,
+	type PublicLeaderboard,
 	renderLeaderboardMarkdown,
+	renderPublicLeaderboardJson,
 } from "./lib/leaderboard.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
 export {

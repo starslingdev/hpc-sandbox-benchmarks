@@ -1,0 +1,2956 @@
+{
+  "schemaVersion": "1",
+  "runId": "29546060837",
+  "sha": "dd1f6ef472e3de4b76043c74f3cce5ff0d636af2",
+  "generatedAt": "2026-07-17T03:31:38.992Z",
+  "targetSpec": {
+    "vcpus": 2,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "summary": {
+    "providerCount": 5,
+    "metricCount": 54,
+    "metricRecordCount": 204,
+    "retainedObservationCount": 401
+  },
+  "providers": [
+    {
+      "id": "blaxel",
+      "name": "Blaxel",
+      "specMatched": false,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.90GHz",
+        "hostVcpus": 6,
+        "hostMemoryGb": 16,
+        "os": "Debian GNU/Linux 12 (bookworm)",
+        "kernel": "6.12.75+",
+        "user": "root",
+        "vcpus": 6,
+        "virtualization": "unknown",
+        "memoryGb": 15.63,
+        "diskGb": 12.5,
+        "publicIp": "34.214.71.218",
+        "egressOrg": "AS16509 Amazon.com, Inc.",
+        "egressAsn": "AS16509",
+        "egressOrgName": "Amazon.com, Inc.",
+        "reverseDns": "ec2-34-214-71-218.us-west-2.compute.amazonaws.com",
+        "city": "Boardman",
+        "region": "Oregon",
+        "country": "US",
+        "location": "45.8399,-119.7006",
+        "timezone": "America/Los_Angeles",
+        "networkPrefix": "34.208.0.0/12",
+        "asnSource": "cymru",
+        "geoSource": "ipinfo"
+      }
+    },
+    {
+      "id": "daytona",
+      "name": "Daytona",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD EPYC",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.19.14",
+        "virtualization": "kvm",
+        "user": "root",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 39.1,
+        "publicIp": "67.213.124.39",
+        "egressOrg": "AS396356 Latitude.sh",
+        "egressAsn": "AS396356",
+        "egressOrgName": "Latitude.sh",
+        "city": "Los Angeles",
+        "region": "California",
+        "country": "US",
+        "location": "34.0522,-118.2437",
+        "timezone": "America/Los_Angeles",
+        "networkPrefix": "67.213.124.0/24",
+        "asnSource": "cymru",
+        "geoSource": "ipinfo"
+      }
+    },
+    {
+      "id": "e2b",
+      "name": "E2B",
+      "specMatched": true,
+      "observedSpecs": {
+        "vcpus": 2,
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+        "virtualization": "kvm",
+        "memoryGb": 7.78,
+        "diskGb": 24.3,
+        "kernel": "6.1.158+",
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "user": "root",
+        "hostMemoryGb": 8,
+        "publicIp": "34.169.9.225",
+        "egressOrg": "AS396982 Google LLC",
+        "egressAsn": "AS396982",
+        "egressOrgName": "Google LLC",
+        "reverseDns": "225.9.169.34.bc.googleusercontent.com",
+        "city": "The Dalles",
+        "region": "Oregon",
+        "country": "US",
+        "location": "45.5946,-121.1787",
+        "timezone": "America/Los_Angeles",
+        "networkPrefix": "34.169.0.0/17",
+        "asnSource": "cymru",
+        "geoSource": "ipinfo"
+      }
+    },
+    {
+      "id": "modal",
+      "name": "Modal",
+      "specMatched": true,
+      "observedSpecs": {
+        "vcpus": 2,
+        "cpuModel": "unknown",
+        "virtualization": "unknown",
+        "memoryGb": 8,
+        "kernel": "4.19.0-gvisor",
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "user": "root",
+        "hostVcpus": 2,
+        "hostMemoryGb": 8,
+        "publicIp": "20.118.128.192",
+        "egressOrg": "AS8075 Microsoft Corporation",
+        "egressAsn": "AS8075",
+        "egressOrgName": "Microsoft Corporation",
+        "city": "Phoenix",
+        "region": "Arizona",
+        "country": "US",
+        "location": "33.4484,-112.0740",
+        "timezone": "America/Phoenix",
+        "networkPrefix": "20.64.0.0/10",
+        "asnSource": "cymru",
+        "geoSource": "ipinfo"
+      }
+    },
+    {
+      "id": "novita",
+      "name": "Novita",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD EPYC",
+        "hostMemoryGb": 8,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "kernel": "6.1.158+",
+        "virtualization": "kvm",
+        "user": "root",
+        "vcpus": 2,
+        "memoryGb": 7.78,
+        "diskGb": 103.7,
+        "publicIp": "161.153.9.169",
+        "egressOrg": "AS31898 Oracle Corporation",
+        "egressAsn": "AS31898",
+        "egressOrgName": "Oracle Corporation",
+        "city": "Phoenix",
+        "region": "Arizona",
+        "country": "US",
+        "location": "33.4484,-112.0740",
+        "timezone": "America/Phoenix",
+        "networkPrefix": "161.153.0.0/17",
+        "asnSource": "cymru",
+        "geoSource": "ipinfo"
+      }
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "cpu",
+      "metrics": [
+        {
+          "id": "node_web_tooling_runs_per_s",
+          "name": "Node.js web tooling",
+          "unit": "runs/s",
+          "direction": "higher",
+          "headline": true,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 19.505000000000003,
+              "interval": {
+                "low": 19.46,
+                "high": 19.55
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 17.505,
+              "interval": {
+                "low": 17.43,
+                "high": 17.58
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 12.805,
+              "interval": {
+                "low": 12.67,
+                "high": 12.94
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 11.055,
+              "interval": {
+                "low": 10.99,
+                "high": 11.12
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 8.82,
+              "interval": {
+                "low": 8.71,
+                "high": 8.93
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "c_ray_resolution_1080p_rays_per_pixel_16",
+          "name": "C-Ray (1080p, 16 RPP)",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 127.6335,
+              "interval": {
+                "low": 127.58,
+                "high": 127.687
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 199.7365,
+              "interval": {
+                "low": 199.4,
+                "high": 200.073
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 240.61950000000002,
+              "interval": {
+                "low": 240.249,
+                "high": 240.99
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "c_ray_resolution_4k_rays_per_pixel_16",
+          "name": "C-Ray (4K, 16 RPP)",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 509.723,
+              "interval": {
+                "low": 509.653,
+                "high": 509.793
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 799.296,
+              "interval": {
+                "low": 798.147,
+                "high": 800.445
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 961.9245,
+              "interval": {
+                "low": 961.525,
+                "high": 962.324
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "c_ray_resolution_5k_rays_per_pixel_16",
+          "name": "C-Ray (5K, 16 RPP)",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 907.549,
+              "interval": {
+                "low": 907.024,
+                "high": 908.074
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 1422.0459999999998,
+              "interval": {
+                "low": 1418.293,
+                "high": 1425.799
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 1704.7035,
+              "interval": {
+                "low": 1704.092,
+                "high": 1705.315
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_12_compression_speed",
+          "name": "Zstd 12 compress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 117.1,
+              "interval": {
+                "low": 115.9,
+                "high": 118.3
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 99.44999999999999,
+              "interval": {
+                "low": 99.3,
+                "high": 99.6
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 71.4,
+              "interval": {
+                "low": 71.2,
+                "high": 71.6
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_12_decompression_speed",
+          "name": "Zstd 12 decompress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 2303.8500000000004,
+              "interval": {
+                "low": 2298.9,
+                "high": 2308.8
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1906.35,
+              "interval": {
+                "low": 1897.3,
+                "high": 1915.4
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 1052,
+              "interval": {
+                "low": 1043.8,
+                "high": 1060.2
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_19_compression_speed",
+          "name": "Zstd 19 compress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 11.1,
+              "interval": {
+                "low": 11,
+                "high": 11.2
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 8.09,
+              "interval": {
+                "low": 8.04,
+                "high": 8.14
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 5.7,
+              "interval": {
+                "low": 5.69,
+                "high": 5.71
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_19_decompression_speed",
+          "name": "Zstd 19 decompress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 1916.05,
+              "interval": {
+                "low": 1914.5,
+                "high": 1917.6
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1621.8000000000002,
+              "interval": {
+                "low": 1616.7,
+                "high": 1626.9
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 881.75,
+              "interval": {
+                "low": 868.9,
+                "high": 894.6
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_19_long_mode_compression_speed",
+          "name": "Zstd 19 (long) compress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 7.075,
+              "interval": {
+                "low": 7.03,
+                "high": 7.12
+              },
+              "n": 2
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 2,
+              "value": 5.875,
+              "interval": {
+                "low": 5.8,
+                "high": 5.95
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 5.225,
+              "interval": {
+                "low": 5.22,
+                "high": 5.23
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_19_long_mode_decompression_speed",
+          "name": "Zstd 19 (long) decompress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 1842.15,
+              "interval": {
+                "low": 1839.6,
+                "high": 1844.7
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1543.6,
+              "interval": {
+                "low": 1535.7,
+                "high": 1551.5
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 894.4,
+              "interval": {
+                "low": 886.3,
+                "high": 902.5
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_3_compression_speed",
+          "name": "Zstd 3 compress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 1299.85,
+              "interval": {
+                "low": 1293.9,
+                "high": 1305.8
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 781.75,
+              "interval": {
+                "low": 781.2,
+                "high": 782.3
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 677.6500000000001,
+              "interval": {
+                "low": 673.2,
+                "high": 682.1
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_3_decompression_speed",
+          "name": "Zstd 3 decompress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 2113.3,
+              "interval": {
+                "low": 2112.1,
+                "high": 2114.5
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1746.9,
+              "interval": {
+                "low": 1742.5,
+                "high": 1751.3
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 1116.9,
+              "interval": null,
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_3_long_mode_compression_speed",
+          "name": "Zstd 3 (long) compress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 847.9000000000001,
+              "interval": {
+                "low": 841.7,
+                "high": 854.1
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 535.7,
+              "interval": {
+                "low": 534.9,
+                "high": 536.5
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 529.45,
+              "interval": {
+                "low": 527.9,
+                "high": 531
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_3_long_mode_decompression_speed",
+          "name": "Zstd 3 (long) decompress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 2166.1,
+              "interval": {
+                "low": 2161,
+                "high": 2171.2
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1807.95,
+              "interval": {
+                "low": 1805,
+                "high": 1810.9
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_8_compression_speed",
+          "name": "Zstd 8 compress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 352.35,
+              "interval": {
+                "low": 352,
+                "high": 352.7
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 210.4,
+              "interval": {
+                "low": 208.8,
+                "high": 212
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 179.45,
+              "interval": {
+                "low": 178.7,
+                "high": 180.2
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_8_decompression_speed",
+          "name": "Zstd 8 decompress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 2269.1,
+              "interval": {
+                "low": 2269,
+                "high": 2269.2
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1910,
+              "interval": {
+                "low": 1907.7,
+                "high": 1912.3
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 1121.75,
+              "interval": {
+                "low": 1117.3,
+                "high": 1126.2
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_8_long_mode_compression_speed",
+          "name": "Zstd 8 (long) compress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 325.29999999999995,
+              "interval": {
+                "low": 323.7,
+                "high": 326.9
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 202.65,
+              "interval": {
+                "low": 202.3,
+                "high": 203
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 174.65,
+              "interval": {
+                "low": 174.5,
+                "high": 174.8
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "compress_zstd_compression_level_8_long_mode_decompression_speed",
+          "name": "Zstd 8 (long) decompress",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 2307.65,
+              "interval": {
+                "low": 2304.8,
+                "high": 2310.5
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1913.25,
+              "interval": {
+                "low": 1911.5,
+                "high": 1915
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 1135.35,
+              "interval": {
+                "low": 1134.7,
+                "high": 1136
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "disk",
+      "metrics": [
+        {
+          "id": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "name": "fio rand read 4KB, O_DIRECT (IOPS)",
+          "unit": "IOPS",
+          "direction": "higher",
+          "headline": true,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 576000,
+              "interval": {
+                "low": 570000,
+                "high": 582000
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 248500,
+              "interval": {
+                "low": 240000,
+                "high": 257000
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 59500,
+              "interval": {
+                "low": 55300,
+                "high": 63700
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 40000,
+              "interval": {
+                "low": 38700,
+                "high": 41300
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 33900,
+              "interval": {
+                "low": 33200,
+                "high": 34600
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "name": "fio rand read 4KB, O_DIRECT (MB/s)",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 2250.5,
+              "interval": {
+                "low": 2226,
+                "high": 2275
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 971,
+              "interval": {
+                "low": 936,
+                "high": 1006
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 232.5,
+              "interval": {
+                "low": 216,
+                "high": 249
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 156.5,
+              "interval": {
+                "low": 151,
+                "high": 162
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 132.5,
+              "interval": {
+                "low": 130,
+                "high": 135
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+          "name": "fio rand write 4KB, O_DIRECT (IOPS)",
+          "unit": "IOPS",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 495000,
+              "interval": {
+                "low": 484000,
+                "high": 506000
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 231500,
+              "interval": {
+                "low": 208000,
+                "high": 255000
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 85150,
+              "interval": {
+                "low": 75700,
+                "high": 94600
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 43900,
+              "interval": {
+                "low": 43500,
+                "high": 44300
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 28300,
+              "interval": {
+                "low": 27000,
+                "high": 29600
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "name": "fio rand write 4KB, O_DIRECT (MB/s)",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 1934,
+              "interval": {
+                "low": 1891,
+                "high": 1977
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 902.5,
+              "interval": {
+                "low": 811,
+                "high": 994
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 332.5,
+              "interval": {
+                "low": 296,
+                "high": 369
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 171.5,
+              "interval": {
+                "low": 170,
+                "high": 173
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 110.5,
+              "interval": {
+                "low": 105,
+                "high": 116
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "name": "fio seq read 1MB, O_DIRECT (IOPS)",
+          "unit": "IOPS",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "modal",
+              "rank": 1,
+              "value": 12350,
+              "interval": {
+                "low": 11900,
+                "high": 12800
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 11250,
+              "interval": {
+                "low": 11200,
+                "high": 11300
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "daytona",
+              "rank": 3,
+              "value": 9142,
+              "interval": {
+                "low": 5584,
+                "high": 12700
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 4,
+              "value": 4709,
+              "interval": {
+                "low": 4609,
+                "high": 4809
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 599,
+              "interval": {
+                "low": 599,
+                "high": 599
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "name": "fio seq read 1MB, O_DIRECT (MB/s)",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 5585,
+              "interval": null,
+              "n": 1
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 2,
+              "value": 4711,
+              "interval": {
+                "low": 4611,
+                "high": 4811
+              },
+              "n": 2
+            },
+            {
+              "providerId": "e2b",
+              "rank": 3,
+              "value": 601,
+              "interval": {
+                "low": 601,
+                "high": 601
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+          "name": "fio seq write 1MB, O_DIRECT (IOPS)",
+          "unit": "IOPS",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 5821,
+              "interval": {
+                "low": 5714,
+                "high": 5928
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 5390,
+              "interval": {
+                "low": 5210,
+                "high": 5570
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 3658,
+              "interval": {
+                "low": 3616,
+                "high": 3700
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 4,
+              "value": 3458,
+              "interval": {
+                "low": 3362,
+                "high": 3554
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 599,
+              "interval": {
+                "low": 598,
+                "high": 600
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+          "name": "fio seq write 1MB, O_DIRECT (MB/s)",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 5823,
+              "interval": {
+                "low": 5716,
+                "high": 5930
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 5391,
+              "interval": {
+                "low": 5211,
+                "high": 5571
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 3660,
+              "interval": {
+                "low": 3618,
+                "high": 3702
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 4,
+              "value": 3459.5,
+              "interval": {
+                "low": 3363,
+                "high": 3556
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 600.5,
+              "interval": {
+                "low": 600,
+                "high": 601
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "hardlink_bogo_ops_per_s",
+          "name": "Hardlink throughput",
+          "unit": "bogo ops/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 23.655,
+              "interval": {
+                "low": 23.62,
+                "high": 23.69
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 18.52,
+              "interval": {
+                "low": 18.45,
+                "high": 18.59
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 12.425,
+              "interval": {
+                "low": 12.39,
+                "high": 12.46
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 4,
+              "value": 3.05,
+              "interval": {
+                "low": 2.98,
+                "high": 3.12
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 1.46,
+              "interval": {
+                "low": 1.46,
+                "high": 1.46
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "metrics": [
+        {
+          "id": "stream_type_triad",
+          "name": "STREAM Triad",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": true,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 73893.54999999999,
+              "interval": {
+                "low": 70326.4,
+                "high": 77460.7
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 55995.1,
+              "interval": {
+                "low": 55980.6,
+                "high": 56009.6
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 46028.100000000006,
+              "interval": {
+                "low": 45843.9,
+                "high": 46212.3
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 4,
+              "value": 45372.600000000006,
+              "interval": {
+                "low": 42047.8,
+                "high": 48697.4
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 22018.7,
+              "interval": {
+                "low": 21772.7,
+                "high": 22264.7
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "stream_type_add",
+          "name": "STREAM Add",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 73911.29999999999,
+              "interval": {
+                "low": 70135.9,
+                "high": 77686.7
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 55740.649999999994,
+              "interval": {
+                "low": 55725.7,
+                "high": 55755.6
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 3,
+              "value": 45920.5,
+              "interval": {
+                "low": 41168.8,
+                "high": 50672.2
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 4,
+              "value": 45853.85,
+              "interval": {
+                "low": 45779.5,
+                "high": 45928.2
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 22023.45,
+              "interval": {
+                "low": 21838.2,
+                "high": 22208.7
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "stream_type_copy",
+          "name": "STREAM Copy",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 113833.6,
+              "interval": {
+                "low": 107305.5,
+                "high": 120361.7
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 65684.15,
+              "interval": {
+                "low": 65676,
+                "high": 65692.3
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 3,
+              "value": 62012.7,
+              "interval": {
+                "low": 56585.2,
+                "high": 67440.2
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 4,
+              "value": 54822.850000000006,
+              "interval": {
+                "low": 54518.4,
+                "high": 55127.3
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 45122.05,
+              "interval": {
+                "low": 43483.6,
+                "high": 46760.5
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "stream_type_scale",
+          "name": "STREAM Scale",
+          "unit": "MB/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 62621.15,
+              "interval": {
+                "low": 58675.3,
+                "high": 66567
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 50115.8,
+              "interval": {
+                "low": 50049.7,
+                "high": 50181.9
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 45407.8,
+              "interval": {
+                "low": 45209.1,
+                "high": 45606.5
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 4,
+              "value": 37402.65,
+              "interval": {
+                "low": 34143.3,
+                "high": 40662
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 5,
+              "value": 20876.05,
+              "interval": {
+                "low": 20700.6,
+                "high": 21051.5
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "network",
+      "metrics": [
+        {
+          "id": "network_loopback_seconds",
+          "name": "Loopback TCP (10GB)",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": true,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 5.4405,
+              "interval": {
+                "low": 5.286,
+                "high": 5.595
+              },
+              "n": 2
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 2,
+              "value": 6.603,
+              "interval": {
+                "low": 6.339,
+                "high": 6.867
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 7.9435,
+              "interval": {
+                "low": 7.928,
+                "high": 7.959
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 10.4365,
+              "interval": {
+                "low": 9.903,
+                "high": 10.97
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 54.104,
+              "interval": {
+                "low": 51.351,
+                "high": 56.857
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "fast_cli_internet_download_speed",
+          "name": "fast.com download",
+          "unit": "Mbit/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "e2b",
+              "rank": 1,
+              "value": 3.25,
+              "interval": {
+                "low": 3,
+                "high": 3.5
+              },
+              "n": 2
+            }
+          ]
+        },
+        {
+          "id": "fast_cli_internet_latency",
+          "name": "fast.com latency",
+          "unit": "ms",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "e2b",
+              "rank": 1,
+              "value": 7,
+              "interval": {
+                "low": 7,
+                "high": 7
+              },
+              "n": 2
+            }
+          ]
+        },
+        {
+          "id": "fast_cli_internet_loaded_latency_bufferbloat",
+          "name": "fast.com loaded latency",
+          "unit": "ms",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "e2b",
+              "rank": 1,
+              "value": 9,
+              "interval": null,
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": "fast_cli_internet_upload_speed",
+          "name": "fast.com upload",
+          "unit": "Mbit/s",
+          "direction": "higher",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "e2b",
+              "rank": 1,
+              "value": 770,
+              "interval": {
+                "low": 760,
+                "high": 780
+              },
+              "n": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system",
+      "metrics": [
+        {
+          "id": "pybench_milliseconds",
+          "name": "PyBench",
+          "unit": "Milliseconds",
+          "direction": "lower",
+          "headline": true,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 844,
+              "interval": {
+                "low": 839,
+                "high": 849
+              },
+              "n": 2
+            }
+          ]
+        },
+        {
+          "id": "git_seconds",
+          "name": "Git common operations",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 36.063,
+              "interval": {
+                "low": 35.962,
+                "high": 36.164
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 43.5865,
+              "interval": {
+                "low": 43.495,
+                "high": 43.678
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 61.477000000000004,
+              "interval": {
+                "low": 61.365,
+                "high": 61.589
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 70.214,
+              "interval": {
+                "low": 69.915,
+                "high": 70.513
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 81.3655,
+              "interval": {
+                "low": 80.736,
+                "high": 81.995
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "sqlite_speedtest_seconds",
+          "name": "SQLite Speedtest",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 30.5415,
+              "interval": {
+                "low": 30.412,
+                "high": 30.671
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 38.811499999999995,
+              "interval": {
+                "low": 38.532,
+                "high": 39.091
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 68.11449999999999,
+              "interval": {
+                "low": 67.984,
+                "high": 68.245
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 69.84049999999999,
+              "interval": {
+                "low": 69.818,
+                "high": 69.863
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 514.6595,
+              "interval": {
+                "low": 505.569,
+                "high": 523.75
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "realworld",
+      "metrics": [
+        {
+          "id": "realworld_mastra_task_cold_install",
+          "name": "Mastra: cold install",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": true,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 28.842,
+              "interval": {
+                "low": 28.657,
+                "high": 29.027
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 42.480000000000004,
+              "interval": {
+                "low": 42.079,
+                "high": 42.881
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 3,
+              "value": 73.7775,
+              "interval": {
+                "low": 72.945,
+                "high": 74.61
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_build",
+          "name": "Better-Auth: build",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 10.9345,
+              "interval": {
+                "low": 10.786,
+                "high": 11.083
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 12.780000000000001,
+              "interval": {
+                "low": 12.616,
+                "high": 12.944
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 14.5235,
+              "interval": {
+                "low": 14.519,
+                "high": 14.528
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 21.3985,
+              "interval": {
+                "low": 21.28,
+                "high": 21.517
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 40.919,
+              "interval": {
+                "low": 39.941,
+                "high": 41.897
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_cold_install",
+          "name": "Better-Auth: cold install",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 10.889,
+              "interval": {
+                "low": 10.743,
+                "high": 11.035
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 11.86,
+              "interval": {
+                "low": 11.768,
+                "high": 11.952
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 16.865499999999997,
+              "interval": {
+                "low": 16.557,
+                "high": 17.174
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 19.6415,
+              "interval": {
+                "low": 19.303,
+                "high": 19.98
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 31.1415,
+              "interval": {
+                "low": 30.672,
+                "high": 31.611
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_git_clone",
+          "name": "Better-Auth: git clone",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 1.5705,
+              "interval": {
+                "low": 1.555,
+                "high": 1.586
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 1.669,
+              "interval": {
+                "low": 1.57,
+                "high": 1.768
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 3,
+              "value": 1.7774999999999999,
+              "interval": {
+                "low": 1.768,
+                "high": 1.787
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 4,
+              "value": 1.9565,
+              "interval": {
+                "low": 1.726,
+                "high": 2.187
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 2.3875,
+              "interval": {
+                "low": 2.251,
+                "high": 2.524
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_lint_biome",
+          "name": "Better-Auth: lint (Biome)",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 3.939,
+              "interval": {
+                "low": 3.936,
+                "high": 3.942
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 4.869,
+              "interval": {
+                "low": 4.869,
+                "high": 4.869
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 5.3945,
+              "interval": {
+                "low": 5.378,
+                "high": 5.411
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 8.346,
+              "interval": {
+                "low": 8.259,
+                "high": 8.433
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 17.182000000000002,
+              "interval": {
+                "low": 17.134,
+                "high": 17.23
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_lint_deps_knip",
+          "name": "Better-Auth: lint deps (Knip)",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 10.965,
+              "interval": {
+                "low": 10.955,
+                "high": 10.975
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 11.674,
+              "interval": {
+                "low": 11.645,
+                "high": 11.703
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 16.778,
+              "interval": {
+                "low": 16.586,
+                "high": 16.97
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 18.75,
+              "interval": {
+                "low": 18.722,
+                "high": 18.778
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 28.497,
+              "interval": {
+                "low": 28.336,
+                "high": 28.658
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_lint_format",
+          "name": "Better-Auth: lint format",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 2.681,
+              "interval": {
+                "low": 2.679,
+                "high": 2.683
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 3.0454999999999997,
+              "interval": {
+                "low": 3.038,
+                "high": 3.053
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 4.946,
+              "interval": {
+                "low": 4.946,
+                "high": 4.946
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 5.2115,
+              "interval": {
+                "low": 5.157,
+                "high": 5.266
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 6.5809999999999995,
+              "interval": {
+                "low": 6.494,
+                "high": 6.668
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_lint_packages",
+          "name": "Better-Auth: lint packages",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 2.9835000000000003,
+              "interval": {
+                "low": 2.966,
+                "high": 3.001
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 4.015,
+              "interval": {
+                "low": 4.01,
+                "high": 4.02
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 4.635,
+              "interval": {
+                "low": 4.632,
+                "high": 4.638
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 7.606,
+              "interval": {
+                "low": 7.593,
+                "high": 7.619
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 15.762,
+              "interval": {
+                "low": 15.556,
+                "high": 15.968
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_lint_spell",
+          "name": "Better-Auth: lint spell",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 6.8385,
+              "interval": {
+                "low": 6.769,
+                "high": 6.908
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 7.691,
+              "interval": {
+                "low": 7.457,
+                "high": 7.925
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 12.2,
+              "interval": {
+                "low": 12.192,
+                "high": 12.208
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 12.43,
+              "interval": {
+                "low": 12.292,
+                "high": 12.568
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 15.177,
+              "interval": {
+                "low": 14.704,
+                "high": 15.65
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_lint_types",
+          "name": "Better-Auth: lint types",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "blaxel",
+              "rank": 1,
+              "value": 33.638000000000005,
+              "interval": {
+                "low": 33.475,
+                "high": 33.801
+              },
+              "n": 2
+            },
+            {
+              "providerId": "daytona",
+              "rank": 2,
+              "value": 51.068,
+              "interval": {
+                "low": 50.946,
+                "high": 51.19
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "novita",
+              "rank": 3,
+              "value": 60.08,
+              "interval": {
+                "low": 59.626,
+                "high": 60.534
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 98.63900000000001,
+              "interval": {
+                "low": 97.798,
+                "high": 99.48
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 183.281,
+              "interval": {
+                "low": 178.903,
+                "high": 187.659
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_better_auth_task_typecheck",
+          "name": "Better-Auth: typecheck",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 1.388,
+              "interval": {
+                "low": 1.378,
+                "high": 1.398
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 1.4740000000000002,
+              "interval": {
+                "low": 1.465,
+                "high": 1.483
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "blaxel",
+              "rank": 3,
+              "value": 2.0374999999999996,
+              "interval": {
+                "low": 2.037,
+                "high": 2.038
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "e2b",
+              "rank": 4,
+              "value": 2.613,
+              "interval": {
+                "low": 2.436,
+                "high": 2.79
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 5,
+              "value": 3.308,
+              "interval": {
+                "low": 3.29,
+                "high": 3.326
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_mastra_task_build_core",
+          "name": "Mastra: build:core",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 83.0015,
+              "interval": {
+                "low": 82.979,
+                "high": 83.024
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 125.62049999999999,
+              "interval": {
+                "low": 125.233,
+                "high": 126.008
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 3,
+              "value": 203.01999999999998,
+              "interval": {
+                "low": 201.052,
+                "high": 204.988
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_mastra_task_git_clone",
+          "name": "Mastra: git clone",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 6.6259999999999994,
+              "interval": {
+                "low": 6.425,
+                "high": 6.827
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 7.0135000000000005,
+              "interval": {
+                "low": 6.931,
+                "high": 7.096
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 3,
+              "value": 9.957,
+              "interval": {
+                "low": 9.35,
+                "high": 10.564
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        },
+        {
+          "id": "realworld_mastra_task_lint_format",
+          "name": "Mastra: lint:format",
+          "unit": "Seconds",
+          "direction": "lower",
+          "headline": false,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 90.709,
+              "interval": {
+                "low": 90.341,
+                "high": 91.077
+              },
+              "n": 2
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 128.67149999999998,
+              "interval": {
+                "low": 128.509,
+                "high": 128.834
+              },
+              "n": 2,
+              "note": "n too small"
+            },
+            {
+              "providerId": "modal",
+              "rank": 3,
+              "value": 199.659,
+              "interval": {
+                "low": 198.234,
+                "high": 201.084
+              },
+              "n": 2,
+              "note": "n too small"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "economics",
+      "metrics": [
+        {
+          "id": "usd_per_hour",
+          "name": "Hourly cost",
+          "unit": "USD/hr",
+          "direction": "lower",
+          "headline": true,
+          "rows": [
+            {
+              "providerId": "daytona",
+              "rank": 1,
+              "value": 0.1494,
+              "interval": null,
+              "n": 1
+            },
+            {
+              "providerId": "novita",
+              "rank": 2,
+              "value": 0.16272,
+              "interval": null,
+              "n": 1
+            },
+            {
+              "providerId": "e2b",
+              "rank": 3,
+              "value": 0.2304,
+              "interval": null,
+              "n": 1
+            },
+            {
+              "providerId": "modal",
+              "rank": 4,
+              "value": 0.47736,
+              "interval": null,
+              "n": 1
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "coverageGaps": [
+    {
+      "providerId": "blaxel",
+      "benchmark": "realworld-mastra",
+      "scope": "suite",
+      "outcome": "skipped",
+      "detail": "Insufficient disk: 12.5 GiB free, suite needs 30 GiB",
+      "disk": true
+    },
+    {
+      "providerId": "blaxel",
+      "benchmark": "realworld-openclaw",
+      "scope": "suite",
+      "outcome": "skipped",
+      "detail": "Insufficient disk: 12.5 GiB free, suite needs 25 GiB",
+      "disk": true
+    },
+    {
+      "providerId": "e2b",
+      "benchmark": "realworld-mastra",
+      "scope": "suite",
+      "outcome": "skipped",
+      "detail": "Insufficient disk: 20.0 GiB free, suite needs 30 GiB",
+      "disk": true
+    },
+    {
+      "providerId": "e2b",
+      "benchmark": "realworld-openclaw",
+      "scope": "suite",
+      "outcome": "skipped",
+      "detail": "Insufficient disk: 20.0 GiB free, suite needs 25 GiB",
+      "disk": true
+    },
+    {
+      "providerId": "blaxel",
+      "benchmark": "network",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:network:all\" failed with exit code 1",
+      "disk": false
+    },
+    {
+      "providerId": "daytona",
+      "benchmark": "network",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:network:all\" timed out after 2700s",
+      "disk": false
+    },
+    {
+      "providerId": "daytona",
+      "benchmark": "realworld-openclaw",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:realworld:pts:openclaw\" timed out after 8400s",
+      "disk": false
+    },
+    {
+      "providerId": "e2b",
+      "benchmark": "cpu-generic",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:cpu:generic\" timed out after 7800s",
+      "disk": false
+    },
+    {
+      "providerId": "modal",
+      "benchmark": "cpu-generic",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:cpu:generic\" timed out after 7800s",
+      "disk": false
+    },
+    {
+      "providerId": "modal",
+      "benchmark": "network",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:network:all\" failed with exit code 1",
+      "disk": false
+    },
+    {
+      "providerId": "modal",
+      "benchmark": "realworld-openclaw",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:realworld:pts:openclaw\" timed out after 8400s",
+      "disk": false
+    },
+    {
+      "providerId": "novita",
+      "benchmark": "network",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:network:all\" failed with exit code 1",
+      "disk": false
+    },
+    {
+      "providerId": "novita",
+      "benchmark": "realworld-openclaw",
+      "scope": "suite",
+      "outcome": "failed",
+      "detail": "Step \"mise run benchmark:realworld:pts:openclaw\" lost its sandbox: 12 consecutive detached polls failed (last: done-file fs exists) — the sandbox stopped responding, not a quiet long step",
+      "disk": false
+    }
+  ]
+}

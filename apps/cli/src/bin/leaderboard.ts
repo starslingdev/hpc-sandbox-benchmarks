@@ -6,7 +6,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import * as core from "@actions/core";
-import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
+import {
+	buildLeaderboard,
+	buildPublicLeaderboard,
+	renderLeaderboardMarkdown,
+	renderPublicLeaderboardJson,
+} from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
 import { fail, inActions, logInfo, withGroup, writeJobSummary } from "../lib/actions-log.ts";
 import { handleDiscovery } from "../lib/discovery.ts";
@@ -15,11 +20,12 @@ import { handleDiscovery } from "../lib/discovery.ts";
  *  listings are offered only as cross-CLI-consistent discovery, not the primary input. */
 export const HELP = `leaderboard — render a published Run document into the Markdown comparison surface.
 
-usage: leaderboard <run.json> [outFile.md]
+usage: leaderboard <run.json> [outFile.md|outFile.json]
        leaderboard [--help] [--list-providers] [--list-suites] [--json]
 
   <run.json>         Path to a normalized Run document (required).
-  [outFile.md]       Write the Markdown here; omit to print to stdout.
+  [outFile.md]       Write the Markdown leaderboard here; omit to print Markdown to stdout.
+  [outFile.json]     Write the machine-readable public leaderboard JSON here.
   --list-providers   List the registered providers.
   --list-suites      List the registered suites.
   --json             Emit --list-* output as JSON instead of human-readable lines.
@@ -28,6 +34,8 @@ usage: leaderboard <run.json> [outFile.md]
 examples:
   leaderboard data/runs/local-1.json                 # print the table to stdout
   leaderboard data/runs/local-1.json LEADERBOARD.md  # write the comparison surface to a file
+  leaderboard data/runs/local-1.json data/dataset/leaderboards/local-1.json
+                                                       # write the public JSON artifact
 
 Next: produce a Run with  bench-suite <provider> <suite> <runId>`;
 
@@ -76,11 +84,14 @@ if (import.meta.main) {
 		}
 		return built;
 	});
-	const markdown = renderLeaderboardMarkdown(board);
+	const jsonOutput = outFile?.endsWith(".json") === true;
+	const output = jsonOutput
+		? renderPublicLeaderboardJson(buildPublicLeaderboard(run, board))
+		: renderLeaderboardMarkdown(board);
 
 	if (outFile) {
 		mkdirSync(dirname(outFile), { recursive: true });
-		writeFileSync(outFile, markdown);
+		writeFileSync(outFile, output);
 		logInfo(`Wrote leaderboard → ${outFile}`);
 		await writeJobSummary({
 			heading: `Leaderboard ${run.runId}`,
@@ -100,6 +111,6 @@ if (import.meta.main) {
 		});
 	} else {
 		// stdout is the Markdown contract when no outFile is given — keep it pristine.
-		process.stdout.write(markdown);
+		process.stdout.write(output);
 	}
 }
