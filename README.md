@@ -1,8 +1,19 @@
-# sandbox-benchmarks
+# High-Performance Sandbox Benchmarks
 
-Compare top sandbox providers on the same pinned machine shape for real developer and CI/CD workloads — not bare-metal hardware benches.
+Compare top sandbox providers on the same pinned machine shape for real developer and CI/CD workloads.
 
 **Same target everywhere:** 2 vCPU · 8 GiB RAM · 40 GB disk. One headline metric per dimension, ranked with honest statistics.
+
+## Why real-world workflows?
+
+Synthetic scores tell you what the hardware can do. We measure what developers actually
+experience — clone a repo, install dependencies, lint, build, test, etc.
+
+A sandbox provider can top a creation time or CPU performance chart and still lose badly on:
+- dependency installation is thousands of small, random file writes, and a network-attached
+or bandwidth-capped disk turns that into the longest step of your run.
+- cloning a repo has the opposite profile: mostly sequential writes, bounded by network.
+- single-threaded developer tools are limited by single-thread CPU not threads
 
 ## Start here
 
@@ -15,6 +26,8 @@ Compare top sandbox providers on the same pinned machine shape for real develope
 Live provider benches and toolchain releases are **maintainer-only** (GitHub Environment `privileged`). Pull requests never receive provider secrets — see [CI & secrets](./docs/ci-secrets.md).
 
 ---
+
+## The repository
 
 This repo is a **Bun workspace monorepo** with a strict, enforced dependency DAG and a uniform
 package shape. The guiding rule: *"can I import this?"* is answered by the path alone, and
