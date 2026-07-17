@@ -23,20 +23,39 @@ cat <<'EOF' >fast-cli
 # fast — as a normal nonzero trial, letting PTS's own TimesToRun retry the next trial or the composite
 # report a failed result — rather than consuming the outer suite's step timeout.
 #
-# Plain `timeout 240` isn't enough: on daytona specifically, a stalled fast.com transfer sits in an
-# uninterruptible network wait that ignores `timeout`'s default SIGTERM, so the process never exits and
-# the hang just gets caught by the outer 45-minute step timeout instead (confirmed live: run 29587815350
-# ran the full 2700s before GitHub force-killed the step). `-k 10` escalates to SIGKILL 10s after the
-# SIGTERM if the process is still alive, which reaps it unconditionally.
-#
 # 420s (not 240s): novita's fast-cli trials (run 29587815350) exited cleanly on plain SIGTERM at ~240s
 # with no crash/stderr — unlike modal's immediate Chrome-library crash — meaning the run was still
 # making progress (Chrome launched, fast.com loaded) and simply hadn't converged yet. novita's sandbox
 # is single-vCPU (vs. 2+ on e2b/modal/daytona), and fast-cli's own issue tracker documents Puppeteer's
 # Chrome needing generous headroom on constrained hardware (sindresorhus/fast-cli#81). 2 trials at 420s
-# (+10s SIGKILL grace each) is at most ~860s, still well inside the 2700s suite budget.
-timeout -k 10 420 node node_modules/fast-cli/distribution/cli.js --upload --json > "$LOG_FILE" 2>&1
+# is at most ~840s, still well inside the 2700s suite budget. Live-confirmed fixed on novita AND modal
+# (run 29603585550: both validated 6/6 metrics, 0 failures).
+#
+# Plain `timeout` — even with `-k 10` SIGKILL escalation — cannot fix daytona's hang: it only signals
+# the ONE process it directly launches (node). SIGKILL gives node zero chance to run its own
+# browser.close() cleanup, so Puppeteer's Chrome (and Chrome's own zygote/renderer children, which node
+# spawns but does not own in the same process group) survive as orphans after node is reaped. Something
+# downstream still tracking that process tree's output then blocks indefinitely on it, independent of
+# node's own exit — confirmed live: run 29603585550's daytona cell hung the full 2700s outer timeout
+# even with `-k 10` in place, identical to the pre-`-k` hang. Reaping node alone is not enough.
+#
+# Fix: `setsid` starts node as its own process group leader (PGID = its PID), so every process it
+# spawns — including Chrome and Chrome's own children — inherits that same PGID unless it explicitly
+# detaches. A negative PID passed to `kill` targets the WHOLE group at once, so both the timeout and
+# the final kill below reach Chrome's entire subprocess tree, not just the top-level node process.
+setsid node node_modules/fast-cli/distribution/cli.js --upload --json > "$LOG_FILE" 2>&1 &
+pid=$!
+(
+	sleep 420
+	kill -TERM -"$pid" 2>/dev/null
+	sleep 10
+	kill -KILL -"$pid" 2>/dev/null
+) &
+watcher=$!
+wait "$pid"
 status=$?
+kill "$watcher" 2>/dev/null
+wait "$watcher" 2>/dev/null
 echo "$status" > ~/test-exit-status
 exit "$status"
 EOF
