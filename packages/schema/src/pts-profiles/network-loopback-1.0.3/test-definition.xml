@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!--Phoronix Test Suite v5.0.0m1 (Plavsk)-->
+<!--Phoronix Test Suite v8.2.0m3-->
 <PhoronixTestSuite>
   <TestInformation>
     <Title>Loopback TCP Network Performance</Title>
@@ -10,7 +10,7 @@
     <TimesToRun>3</TimesToRun>
   </TestInformation>
   <TestProfile>
-    <Version>1.0.1</Version>
+    <Version>1.0.3</Version>
     <SupportedPlatforms>Linux</SupportedPlatforms>
     <SoftwareType>Utility</SoftwareType>
     <TestType>Network</TestType>
@@ -19,5 +19,6 @@
     <EnvironmentSize>1</EnvironmentSize>
     <ProjectURL>http://developer.amazonwebservices.com/connect/thread.jspa?threadID=45513</ProjectURL>
     <Maintainer>Michael Larabel</Maintainer>
+    <SystemDependencies>nc</SystemDependencies>
   </TestProfile>
 </PhoronixTestSuite>

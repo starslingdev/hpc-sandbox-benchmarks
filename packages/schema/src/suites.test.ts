@@ -22,14 +22,25 @@ describe("suite registry", () => {
 		expect(SUITE_NAMES).toEqual([
 			"cpu-node",
 			"system",
+			"pgbench",
 			"memory",
 			"disk",
 			"network",
-			"cpu-generic",
 			"realworld-mastra",
 			"realworld-better-auth",
 			"realworld-openclaw",
 		]);
+	});
+
+	it("declares the per-tier in-sandbox repeat count (k) and replicate count (R)", () => {
+		// Real-world captures cold-start once (k=1) across more sandboxes (R=5); the long synthetics take
+		// two in-sandbox passes (k=2) across R=3. cpu-generic is retired; pgbench is split out of system.
+		expect(SUITES["realworld-mastra"].ptsTimesToRun).toBe(1);
+		expect(SUITES["realworld-mastra"].defaultReplicas).toBe(5);
+		for (const name of ["cpu-node", "system", "pgbench", "memory", "disk", "network"] as const) {
+			expect(SUITES[name].ptsTimesToRun).toBe(2);
+			expect(SUITES[name].defaultReplicas).toBe(3);
+		}
 	});
 
 	it("mirrors each realworld suite's metrics from the generated catalog (no hand-drift)", () => {
@@ -56,16 +67,11 @@ describe("suite registry", () => {
 		// These suites batch-run their profiles WITHOUT PRESET_OPTIONS, so whatever the catalog lists for
 		// the test is exactly what the suite emits — pin the declared list to it in BOTH directions (a
 		// profile bump that adds/renames a combination fails here instead of silently stranding the
-		// list). stream's Type axis is the real matrix case; pybench and sqlite-speedtest declare no
-		// <Option> axes at all, so the pin holds over their single wildcard result.
-		// `system` is MIXED: pybench + sqlite-speedtest are unpinned wildcards (mirrored here), while
-		// pgbench is preset-pinned and declares a 4-of-160 subset — pinned to its curated override keys
-		// by the subset test below. Subtracting the pinned prefix keeps this a both-directions mirror
-		// over the unpinned half instead of dropping the suite from the gate entirely.
-		const PINNED_PREFIXES = ["pgbench_"];
+		// list). stream's Type axis and fast-cli's four results are the matrix cases; pybench, sqlite,
+		// git and network-loopback declare no <Option> axes, so the pin holds over their wildcard result.
+		// (pgbench is preset-pinned and now its own suite — gated by the subset test below.)
 		const profilesOf = {
 			network: ["pts/network-loopback", "pts/fast-cli"],
-			"cpu-generic": ["pts/c-ray", "pts/compress-zstd"],
 			memory: ["pts/stream"],
 			system: ["pts/pybench", "pts/sqlite-speedtest", "pts/git"],
 		} as const;
@@ -76,9 +82,7 @@ describe("suite registry", () => {
 				.map((m) => m.id)
 				.sort();
 			expect(fromCatalog.length).toBeGreaterThan(0);
-			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics].filter(
-				(id) => !PINNED_PREFIXES.some((prefix) => id.startsWith(prefix)),
-			);
+			const declared: string[] = [...SUITES[suiteName as keyof typeof SUITES].metrics];
 			expect(declared.sort()).toEqual(fromCatalog);
 		}
 	});
@@ -93,7 +97,7 @@ describe("suite registry", () => {
 		const overrideKeys = Object.keys(ptsOverrides);
 		const subsets = [
 			{ suite: "disk", prefix: "fio_" },
-			{ suite: "system", prefix: "pgbench_" },
+			{ suite: "pgbench", prefix: "pgbench_" },
 		] as const;
 		for (const { suite, prefix } of subsets) {
 			const declared: string[] = SUITES[suite].metrics.filter((id) => id.startsWith(prefix)).sort();
@@ -116,9 +120,9 @@ describe("padded suite tokens", () => {
 	});
 
 	it("pads the full list so every token matches as a substring", () => {
-		const list = padSuiteList(["cpu-node", "cpu-generic"]);
-		expect(list).toBe(",cpu-node,cpu-generic,");
+		const list = padSuiteList(["cpu-node", "pgbench"]);
+		expect(list).toBe(",cpu-node,pgbench,");
 		expect(list.includes(paddedSuiteToken("cpu-node"))).toBe(true);
-		expect(list.includes(paddedSuiteToken("cpu-generic"))).toBe(true);
+		expect(list.includes(paddedSuiteToken("pgbench"))).toBe(true);
 	});
 });

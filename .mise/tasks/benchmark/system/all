@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Run system benchmarks (provider identity + PTS PyBench, SQLite, pgbench, Git)"
+#MISE description="Run system benchmarks (provider identity + PTS PyBench, SQLite, Git)"
 # Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
 # (error-mode conventions: lib/bench.sh).
 set -uo pipefail
@@ -22,7 +22,6 @@ run_task benchmark:system:provider
 
 run_task benchmark:system:pts:pybench
 run_task benchmark:system:pts:sqlite-speedtest
-run_task benchmark:system:pts:pgbench
 run_task benchmark:system:pts:git
 
 summary

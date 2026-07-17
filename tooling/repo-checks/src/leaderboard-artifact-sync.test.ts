@@ -365,7 +365,11 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		const board = buildLeaderboard(run);
 		const expected = run.providers
 			.flatMap((provider) =>
-				provider.metrics.map((metric) => `${provider.providerId}/${metric.metricId}`),
+				provider.metrics
+					// Retired metrics linger in already-published Runs but are uncatalogued now, so the
+					// renderer drops them — the audit compares against the catalogued set it actually renders.
+					.filter((metric) => getMetric(metric.metricId) !== undefined)
+					.map((metric) => `${provider.providerId}/${metric.metricId}`),
 			)
 			.sort();
 		const rendered = board.dimensions
@@ -384,7 +388,9 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		for (const provider of run.providers) {
 			for (const result of provider.metrics) {
 				const metric = getMetric(result.metricId);
-				if (!metric) throw new Error(`Run contains uncatalogued MetricResult ${result.metricId}`);
+				// A retired metric lingers in an already-published Run but is uncatalogued now; the renderer
+				// drops it, so the audit skips it rather than treating the historical data as drift.
+				if (!metric) continue;
 				metrics.set(metric.id, metric);
 				const heading = `${metric.dimension}\0${metric.label}`;
 				const collision = emittedByHeading.get(heading);
@@ -397,15 +403,23 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 			}
 		}
 
+		// The header counts only RENDERED (catalogued) records; retired metrics still on an already-
+		// published Run are dropped by the renderer, so the audit counts the catalogued set too.
+		const isCatalogued = (result: { metricId: string }): boolean =>
+			getMetric(result.metricId) !== undefined;
 		const metricRecordCount = run.providers.reduce(
-			(sum, provider) => sum + provider.metrics.length,
+			(sum, provider) => sum + provider.metrics.filter(isCatalogued).length,
 			0,
 		);
-		const providerCount = run.providers.filter((provider) => provider.metrics.length > 0).length;
+		const providerCount = run.providers.filter((provider) =>
+			provider.metrics.some(isCatalogued),
+		).length;
 		const observationCount = run.providers.reduce(
 			(sum, provider) =>
 				sum +
-				provider.metrics.reduce((providerSum, result) => providerSum + result.samples.length, 0),
+				provider.metrics
+					.filter(isCatalogued)
+					.reduce((providerSum, result) => providerSum + result.samples.length, 0),
 			0,
 		);
 		expect(committed).toContain(`**${metricRecordCount} metric records**`);

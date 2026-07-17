@@ -31,8 +31,8 @@ describe("miseTaskFromCommand", () => {
 describe("conventionalTaskFile", () => {
 	it("maps colon task names onto the .mise/tasks file layout", () => {
 		expect(conventionalTaskFile("benchmark:disk:all")).toBe(".mise/tasks/benchmark/disk/all");
-		expect(conventionalTaskFile("benchmark:system:pts:pgbench")).toBe(
-			".mise/tasks/benchmark/system/pts/pgbench",
+		expect(conventionalTaskFile("benchmark:pgbench:pts:pgbench")).toBe(
+			".mise/tasks/benchmark/pgbench/pts/pgbench",
 		);
 	});
 });
@@ -85,7 +85,7 @@ describe("ptsPinsFromScript", () => {
 	});
 
 	it("collects every pin when a leaf runs multiple PTS scenarios", () => {
-		const script = readFileSync(join(root, ".mise/tasks/benchmark/system/pts/pgbench"), "utf8");
+		const script = readFileSync(join(root, ".mise/tasks/benchmark/pgbench/pts/pgbench"), "utf8");
 		expect(ptsPinsFromScript(script)).toEqual([
 			{
 				ptsProfile: "pts/pgbench-1.15.0",
@@ -188,8 +188,8 @@ describe("describeSuiteTasks", () => {
 	});
 
 	it("joins multi-pin leaves (pgbench) into comma-separated summary fields", async () => {
-		const plan = await describeSuiteTasks("system", root);
-		const pgbench = plan.tasks.find((t) => t.task === "benchmark:system:pts:pgbench");
+		const plan = await describeSuiteTasks("pgbench", root);
+		const pgbench = plan.tasks.find((t) => t.task === "benchmark:pgbench:pts:pgbench");
 		expect(pgbench?.ptsProfile).toBe("pts/pgbench-1.15.0");
 		expect(pgbench?.resultsPrefix).toBe("pts_pgbench-read-only, pts_pgbench-read-write");
 	});

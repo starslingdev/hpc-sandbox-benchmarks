@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#MISE description="Run the pgbench benchmark (PTS PostgreSQL: TPS + latency, read-only + read-write)"
+# Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
+# (error-mode conventions: lib/bench.sh).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "========================================"
+echo "  PGBENCH BENCHMARK"
+echo "========================================"
+
+# One install/configure attempt for the PTS child; if PTS is still unavailable it skips fast via its
+# own `command -v` guard and writes a skip record.
+ensure_pts || true
+
+run_task benchmark:pgbench:pts:pgbench
+
+summary

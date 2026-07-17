@@ -101,7 +101,9 @@ describe("checkWorkflowTimeouts", () => {
 	});
 
 	test("flags a job cap that cannot outlast the longest suite", () => {
-		const errors = checkWorkflowTimeouts({ smoke: 155 });
+		// The longest registered suite budget is 90 min, so the required floor is 90 + 15 = 105. A 100-min
+		// cap outlasts the suite itself but not by the host margin — exactly the drift this invariant catches.
+		const errors = checkWorkflowTimeouts({ smoke: 100 });
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("smoke");
 		expect(errors[0]).toContain(`${WORKFLOW_TIMEOUT_MARGIN_MINUTES}-minute host margin`);

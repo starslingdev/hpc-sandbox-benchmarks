@@ -31,6 +31,18 @@ export interface Suite {
 	/** Skip (with a marker) when the sandbox has less than this much free disk, in GiB. */
 	minDiskGb?: number;
 	/**
+	 * In-sandbox repeat count (k): how many timed PTS passes each case runs (FORCE_TIMES_TO_RUN), threaded
+	 * into the harness preamble. Absent → the harness default ({@link DEFAULT_PTS_TIMES_TO_RUN}, k=2).
+	 * Captures WITHIN-machine noise cheaply; between-machine variance is the {@link defaultReplicas} axis.
+	 */
+	ptsTimesToRun?: number;
+	/**
+	 * Replicate sandboxes (R) to run per (provider, suite) — the between-sandbox axis the CI matrix fans
+	 * out. R replicates capture host placement / noisy-neighbour variance the in-sandbox repeats can't.
+	 * The total retained sample count per case is R × k. Absent → a single replicate (R=1).
+	 */
+	defaultReplicas?: number;
+	/**
 	 * The Dimensions this suite measures — the axes its metrics land on. Every id in {@link metrics}
 	 * must sit on one of these, and every dimension here must be covered by at least one declared
 	 * metric (both enforced by `./suite-contract.ts` at load). Declared alongside `metrics` rather than
@@ -58,43 +70,63 @@ export const SUITES = {
 	"cpu-node": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 110,
-		timeoutMinutes: 120,
-		// cpu-node runs only `benchmark:cpu:node` (node-web-tooling); the catalog's c-ray entries belong
-		// to the cpu-generic suite below, so they are deliberately not declared here.
+		// Long-synthetic tier: k=2 in-sandbox passes × R=3 replicate sandboxes (n = 6 per case). Budgets
+		// are provisional ceilings re-derived after a calibration dispatch.
+		commandTimeoutMinutes: 60,
+		timeoutMinutes: 70,
+		ptsTimesToRun: 2,
+		defaultReplicas: 3,
+		// cpu-node runs only `benchmark:cpu:node` (node-web-tooling); it is the sole cpu-dimension suite.
 		dimensions: ["cpu"],
 		metrics: ["node_web_tooling_runs_per_s"],
 		commands: ["mise run benchmark:cpu:node"],
 	},
-	// The system dimension: PyBench (Python interpreter) + SQLite Speedtest (single-result PTS
-	// profiles) + PostgreSQL via pgbench, pinned to one (scale 100, 50 clients) point per mode —
-	// each mode posts a TPS and an Average Latency metric. pgbench runs server + client fully
-	// in-sandbox (same topology on every provider). The harness fixes two trials per case, so pgbench
-	// makes four timed passes (two per mode), each with its own scale-100 `pgbench -i`. That and the
-	// ~1.5 GB dataset set the budgets and disk floor. Requires the baked image (postgres pre-built,
-	// libicu-dev present); on a stock image the from-source postgres build lands inside this budget too.
+	// The system dimension (pybench + sqlite + git): PyBench (Python interpreter) + SQLite Speedtest
+	// (single-result wildcards) + common Git operations over a fixed GTK checkout. PostgreSQL (pgbench)
+	// is its own leg below — split out so its ~1.5 GB dataset and long runtime don't gate the quick
+	// system probes. Long-synthetic tier (k=2, R=3).
 	system: {
 		setupPts: true,
-		commandTimeoutMinutes: 120,
-		timeoutMinutes: 135,
+		commandTimeoutMinutes: 55,
+		timeoutMinutes: 65,
 		minDiskGb: 5,
+		ptsTimesToRun: 2,
+		defaultReplicas: 3,
+		dimensions: ["system"],
+		metrics: ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
+		commands: ["mise run benchmark:system:all"],
+	},
+	// The system dimension (PostgreSQL via pgbench), pinned to one (scale 100, 50 clients) point per mode
+	// — each mode posts a TPS and an Average Latency metric. pgbench runs server + client fully in-sandbox
+	// (same topology on every provider). At k=2 it makes four timed passes (two per mode), each with its
+	// own scale-100 `pgbench -i`; that and the ~1.5 GB dataset set the budget and disk floor. Requires the
+	// baked image (postgres pre-built, libicu-dev present); on a stock image the from-source postgres
+	// build lands inside this budget too. Long-synthetic tier (k=2, R=3).
+	pgbench: {
+		setupPts: true,
+		commandTimeoutMinutes: 75,
+		timeoutMinutes: 85,
+		minDiskGb: 5,
+		ptsTimesToRun: 2,
+		defaultReplicas: 3,
 		dimensions: ["system"],
 		metrics: [
-			"pybench_milliseconds",
-			"sqlite_speedtest_seconds",
-			"git_seconds",
 			"pgbench_scaling_factor_100_clients_50_mode_read_only",
 			"pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
 			"pgbench_scaling_factor_100_clients_50_mode_read_write",
 			"pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency",
 		],
-		commands: ["mise run benchmark:system:all"],
+		commands: ["mise run benchmark:pgbench:all"],
 	},
 	// The memory dimension: STREAM (Copy/Scale/Add/Triad). Short — STREAM runs in a couple of minutes.
+	// Long-synthetic tier (k=2, R=3): three replicate sandboxes capture the between-machine bandwidth
+	// spread STREAM Copy is notorious for under noisy virtualization.
 	memory: {
 		setupPts: true,
 		commandTimeoutMinutes: 30,
 		timeoutMinutes: 40,
+		ptsTimesToRun: 2,
+		defaultReplicas: 3,
 		dimensions: ["memory"],
 		metrics: ["stream_type_copy", "stream_type_scale", "stream_type_add", "stream_type_triad"],
 		commands: ["mise run benchmark:memory:all"],
@@ -105,13 +137,16 @@ export const SUITES = {
 	// scale-pinned twin metrics. Direct is probed per sandbox (O_DIRECT fails on some sandbox
 	// filesystems), so every scenario declares an O_DIRECT and a buffered variant; each provider emits
 	// exactly one of the two and the mode travels in the metric identity (the contract allows declared-
-	// but-unrun combinations). Budgets cover five fixed trials of each of the four timed 60s scenarios
-	// plus the hardlink profile; fio writes 1 GiB test files, hence the raised disk floor.
+	// but-unrun combinations). At k=2 the budget covers two timed passes of each of the four 60s scenarios
+	// plus the hardlink profile; fio writes 1 GiB test files, hence the raised disk floor. Long-synthetic
+	// tier (k=2, R=3).
 	disk: {
 		setupPts: true,
-		commandTimeoutMinutes: 75,
-		timeoutMinutes: 90,
+		commandTimeoutMinutes: 65,
+		timeoutMinutes: 75,
 		minDiskGb: 4,
+		ptsTimesToRun: 2,
+		defaultReplicas: 3,
 		dimensions: ["disk"],
 		metrics: [
 			"hardlink_bogo_ops_per_s",
@@ -138,11 +173,15 @@ export const SUITES = {
 	// Netflix's fast.com CDN and reports idle/loaded latency; loopback TCP (10GB via nc) is the paired
 	// self-contained synthetic that isolates the sandbox's network stack from Internet weather. The
 	// suite task also runs latency/DNS and a small GitHub control-download probe as raw provenance.
+	// setupNode installs the fast.com CLI. Long-synthetic tier (k=2, R=3): replicate sandboxes capture the
+	// placement/peering variance a single fast.com transfer can't.
 	network: {
 		setupPts: true,
 		setupNode: true,
 		commandTimeoutMinutes: 45,
 		timeoutMinutes: 55,
+		ptsTimesToRun: 2,
+		defaultReplicas: 3,
 		dimensions: ["network"],
 		metrics: [
 			"fast_cli_internet_download_speed",
@@ -153,49 +192,22 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:network:all"],
 	},
-	// The generic-compute dimension slice next to cpu-node: c-ray (float/thread scaling — the seam the
-	// catalog's c-ray entries have waited on) and Zstd compression across its level matrix. Budgets
-	// cover the zstd build + silesia download, 7 zstd levels × compress+decompress, and c-ray's three
-	// resolutions × 5 fixed passes on a 2-vCPU target (the 5K pass alone runs several minutes per
-	// repeat). Fixed counts bound noisy hosts while giving every provider equal statistical weight.
-	"cpu-generic": {
-		setupPts: true,
-		commandTimeoutMinutes: 130,
-		timeoutMinutes: 145,
-		minDiskGb: 2,
-		dimensions: ["cpu"],
-		metrics: [
-			"c_ray_resolution_1080p_rays_per_pixel_16",
-			"c_ray_resolution_4k_rays_per_pixel_16",
-			"c_ray_resolution_5k_rays_per_pixel_16",
-			"compress_zstd_compression_level_3_compression_speed",
-			"compress_zstd_compression_level_3_decompression_speed",
-			"compress_zstd_compression_level_3_long_mode_compression_speed",
-			"compress_zstd_compression_level_3_long_mode_decompression_speed",
-			"compress_zstd_compression_level_8_compression_speed",
-			"compress_zstd_compression_level_8_decompression_speed",
-			"compress_zstd_compression_level_8_long_mode_compression_speed",
-			"compress_zstd_compression_level_8_long_mode_decompression_speed",
-			"compress_zstd_compression_level_12_compression_speed",
-			"compress_zstd_compression_level_12_decompression_speed",
-			"compress_zstd_compression_level_19_compression_speed",
-			"compress_zstd_compression_level_19_decompression_speed",
-			"compress_zstd_compression_level_19_long_mode_compression_speed",
-			"compress_zstd_compression_level_19_long_mode_decompression_speed",
-		],
-		commands: ["mise run benchmark:cpu:generic"],
-	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
-	// each a repo-local PTS profile with a Task option axis. Budgets are starting points (tuned from
-	// smoke); mastra's task matrix is the narrowest (scoped to packages/core) but its monorepo has
-	// the largest install/build footprint — hence the biggest minDiskGb. better-auth and openclaw
-	// run their full task matrices including a cold pnpm install and a full build.
+	// each a repo-local PTS profile with a Task option axis. Real-world tier: k=1 in-sandbox pass (the
+	// cold-start IS the metric) × R=5 replicate sandboxes (n = 5 per case) — replicas, not repeats,
+	// carry the between-machine variance users actually experience. Budgets are provisional ceilings
+	// re-derived after a calibration dispatch. mastra's task matrix is the narrowest (scoped to
+	// packages/core) but its monorepo has the largest install/build footprint — hence the biggest
+	// minDiskGb. better-auth and openclaw run their full task matrices including a cold pnpm install
+	// and a full build.
 	"realworld-mastra": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 140,
-		timeoutMinutes: 155,
+		commandTimeoutMinutes: 80,
+		timeoutMinutes: 90,
 		minDiskGb: 30,
+		ptsTimesToRun: 1,
+		defaultReplicas: 5,
 		dimensions: ["realworld"],
 		metrics: [
 			"realworld_mastra_task_git_clone",
@@ -206,16 +218,18 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:realworld:pts:mastra"],
 	},
-	// The five fixed trials multiply every task case, including the per-run git-clean/install resets;
-	// the 140-minute command budget covers slower virtualized filesystems while the 155-minute sandbox
-	// lifetime leaves setup and collection headroom. The workflow timeout gate independently reserves
-	// host-job margin beyond the longest sandbox lifetime.
+	// At k=1 each task case runs once (including the per-run git-clean/install resets); the command
+	// budget covers slower virtualized filesystems while the sandbox lifetime leaves setup and
+	// collection headroom. The workflow timeout gate independently reserves host-job margin beyond the
+	// longest sandbox lifetime.
 	"realworld-better-auth": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 140,
-		timeoutMinutes: 155,
+		commandTimeoutMinutes: 80,
+		timeoutMinutes: 90,
 		minDiskGb: 10,
+		ptsTimesToRun: 1,
+		defaultReplicas: 5,
 		dimensions: ["realworld"],
 		metrics: [
 			"realworld_better_auth_task_git_clone",
@@ -234,9 +248,11 @@ export const SUITES = {
 	"realworld-openclaw": {
 		setupPts: true,
 		setupNode: true,
-		commandTimeoutMinutes: 140,
-		timeoutMinutes: 155,
+		commandTimeoutMinutes: 80,
+		timeoutMinutes: 90,
 		minDiskGb: 25,
+		ptsTimesToRun: 1,
+		defaultReplicas: 5,
 		dimensions: ["realworld"],
 		metrics: [
 			"realworld_openclaw_task_git_clone",

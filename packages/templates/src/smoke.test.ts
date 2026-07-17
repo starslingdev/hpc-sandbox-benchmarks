@@ -28,20 +28,20 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		}
 	});
 
-	// The count (11) and sample profile names are hardcoded on purpose: this is a drift tripwire, not a
+	// The count (9) and sample profile names are hardcoded on purpose: this is a drift tripwire, not a
 	// derived assertion. Deriving them from pins.ptsInstallTests would make the test a tautology that
 	// tracks the generator instead of pinning it — the exact failure this guards against (a mutable-tag
 	// cache once validated an old two-profile image against a nine-profile candidate). When the pin list
 	// changes, update these literals deliberately.
 	it("requires every pinned PTS profile, so a stale partial image cannot pass smoke", () => {
 		const pts = smokeChecks.find((check) => check.name === "pts-installed-tests");
-		expect(pts?.expect).toBe("pts-profile-count=11");
+		expect(pts?.expect).toBe("pts-profile-count=9");
 		expect(pts?.cmd).toContain("phoronix-test-suite list-installed-tests");
 		expect(pts?.cmd).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
 		expect(pts?.cmd).toContain("node-web-tooling-1.0.1");
 		expect(pts?.cmd).toContain("fast-cli-1.0.0");
 		expect(pts?.cmd).toContain("git-1.1.0");
-		expect(pts?.cmd).toContain('[ "$actual" -eq 11 ]');
+		expect(pts?.cmd).toContain('[ "$actual" -eq 9 ]');
 		expect(pts?.cmd).toContain('echo "pts-profile-count=$actual"');
 	});
 
