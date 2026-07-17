@@ -1,11 +1,6 @@
 // Invariant 6: GitHub-native suite→provider nesting wiring for bench-matrix.yml + bench-suite.yml.
 // Kept out of workflow-sync.ts so credential/timeout gates and nesting gates don't grow as one file.
-import {
-	asRecord,
-	MATRIX_WORKFLOW,
-	SUITE_JOB,
-	SUITE_WORKFLOW,
-} from "./workflow-yaml.ts";
+import { asRecord, MATRIX_WORKFLOW, SUITE_JOB, SUITE_WORKFLOW } from "./workflow-yaml.ts";
 
 /** A bench-matrix suite job is one that `uses` this reusable workflow (matched by path suffix). */
 const SUITE_WORKFLOW_USES_SUFFIX = "/bench-suite.yml";

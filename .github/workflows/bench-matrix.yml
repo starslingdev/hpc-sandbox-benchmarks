@@ -93,9 +93,14 @@ jobs:
   # One matrix cell per selected suite → reusable workflow call. GitHub nests the reusable's provider
   # matrix under each suite name, so the Actions UI shows expandable "<suite>" groups with "<provider>"
   # children (display: "<suite> / <provider>"). fail-fast stays off so one bad suite doesn't cancel peers.
+  # The fork/branch guard is repeated here (not only inherited via `needs: plan`) so the job stays
+  # explicit when read in isolation — matching every other live-run job in the repo.
   suite:
     name: ${{ matrix.suite }}
     needs: plan
+    if: >
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks' &&
+      (github.ref == 'refs/heads/main' || inputs.allow_branch)
     strategy:
       fail-fast: false
       matrix:

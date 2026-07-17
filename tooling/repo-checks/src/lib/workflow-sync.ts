@@ -31,29 +31,28 @@
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
 // gate's tests import.
 import { PROVIDERS, SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
-import { findRepoRoot } from "./workspace.ts";
 import {
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
 	matrixSuiteCaller,
 } from "./workflow-nesting.ts";
+import type { DispatchInput } from "./workflow-yaml.ts";
 import {
-	type DispatchInput,
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
-	readWorkflow,
 	RUN_STEP,
+	readWorkflow,
 	SMOKE_JOB,
 	SMOKE_WORKFLOW,
-	stepEnv,
 	SUITE_JOB,
 	SUITE_WORKFLOW,
+	stepEnv,
 	WORKFLOW_TIMEOUT_MARGIN_MINUTES,
 } from "./workflow-yaml.ts";
+import { findRepoRoot } from "./workspace.ts";
 
 export type { SuiteMatrixCaller } from "./workflow-nesting.ts";
-export type { DispatchInput } from "./workflow-yaml.ts";
 export {
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
@@ -62,17 +61,18 @@ export {
 	EXPECTED_SUITE_NAME_EXPR,
 	matrixSuiteCaller,
 } from "./workflow-nesting.ts";
+export type { DispatchInput } from "./workflow-yaml.ts";
 export {
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
-	readWorkflow,
 	RUN_STEP,
+	readWorkflow,
 	SMOKE_JOB,
 	SMOKE_WORKFLOW,
-	stepEnv,
 	SUITE_JOB,
 	SUITE_WORKFLOW,
+	stepEnv,
 	WORKFLOW_TIMEOUT_MARGIN_MINUTES,
 } from "./workflow-yaml.ts";
 

@@ -1,7 +1,8 @@
 // Actions job-summary table builders for a SuiteTaskPlan.
 // Kept separate from suite-tasks.ts so discovery (mise/bash mining) stays free of HTML / Toolkit
 // presentation concerns — only the CI cell reporter needs these rows.
-import { escapeHtml, renderCell, type SummaryRow } from "./actions-log.ts";
+import type { SummaryRow } from "./actions-log.ts";
+import { escapeHtml, renderCell } from "./actions-log.ts";
 import type { SuiteTaskPlan } from "./suite-tasks.ts";
 
 /** Summary-table rows for the suite's mise tasks (Task / Role / Description / PTS profile). */

@@ -27,7 +27,8 @@ import {
 } from "../lib/actions-log.ts";
 import { handleDiscovery } from "../lib/discovery.ts";
 import { suiteMetricSummaryRows, suiteTaskSummaryRows } from "../lib/suite-summary.ts";
-import { describeSuiteTasks, type SuiteTaskPlan } from "../lib/suite-tasks.ts";
+import type { SuiteTaskPlan } from "../lib/suite-tasks.ts";
+import { describeSuiteTasks } from "../lib/suite-tasks.ts";
 
 function plural(n: number, singular: string, pluralForm: string = `${singular}s`): string {
 	return `${n} ${n === 1 ? singular : pluralForm}`;
@@ -117,9 +118,7 @@ async function reportCell(opts: {
 		],
 		tables: [
 			...taskTables,
-			...(opts.run
-				? [{ heading: "Provider status", rows: providerSummaryRows(opts.run) }]
-				: []),
+			...(opts.run ? [{ heading: "Provider status", rows: providerSummaryRows(opts.run) }] : []),
 		],
 		detail: opts.detail,
 		annotation: {
@@ -133,9 +132,7 @@ async function reportCell(opts: {
 type CellReport = Parameters<typeof reportCell>[0];
 
 /** Write the cell summary then fail without a second annotation. */
-async function failCell(
-	opts: Omit<CellReport, "failed"> & { detail: string },
-): Promise<never> {
+async function failCell(opts: Omit<CellReport, "failed"> & { detail: string }): Promise<never> {
 	await reportCell({ ...opts, failed: true });
 	return fail(opts.detail, { annotate: false });
 }
@@ -269,7 +266,7 @@ if (import.meta.main) {
 			run = writeNormalizedRun({ rawRoot, runId, sha, outFile, updateIndexFile: indexFile });
 			logInfo(`Normalized Run ${runId} → ${outFile}`);
 			// Already inside withGroup — don't nest another ::group::.
-			logProviderStatuses(run, { grouped: false });
+			await logProviderStatuses(run, { grouped: false });
 		} catch (err) {
 			// Prefer the suite failure that caused a bad tree; otherwise keep the normalize error.
 			normalizeError = suiteError ?? err;

@@ -52,7 +52,11 @@ export function selectRegistryIds<T extends string>(
  * downstream as "daytona had no results" instead of "you misspelled it".
  */
 export function selectProviders(raw: string | undefined): ProviderId[] {
-	return selectRegistryIds(raw, PROVIDERS.map((p) => p.id), "provider");
+	return selectRegistryIds(
+		raw,
+		PROVIDERS.map((p) => p.id),
+		"provider",
+	);
 }
 
 /**

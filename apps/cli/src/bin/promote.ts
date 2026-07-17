@@ -36,7 +36,7 @@ if (import.meta.main) {
 		const parsed = parseRun(JSON.parse(readFileSync(runFile, "utf8")));
 		logInfo(`runId=${parsed.runId} sha=${parsed.sha} providers=${parsed.providers.length}`);
 		// Already inside withGroup — don't nest another ::group::.
-		logProviderStatuses(parsed, { grouped: false });
+		await logProviderStatuses(parsed, { grouped: false });
 		return parsed;
 	});
 
@@ -98,11 +98,12 @@ if (import.meta.main) {
 		},
 	});
 
-	// Machine-readable line for any caller that still greps stdout (kept after the summary write).
+	// Machine-readable line for any caller that greps stdout — always on stdout (local and Actions)
+	// so `result=$(bun promote …)` keeps working in CI wrappers. Mirror to the step log in Actions.
 	const resultLine = JSON.stringify({
 		promoted: run.runId,
 		validatedProviders: validated,
 	});
+	process.stdout.write(`${resultLine}\n`);
 	if (inActions()) core.info(resultLine);
-	else process.stdout.write(`${resultLine}\n`);
 }

@@ -26,10 +26,7 @@ export interface AxisPlanConfig {
 }
 
 /** Compact single-line JSON for an axis selection — the local / `$GITHUB_OUTPUT` contract. */
-export function planAxisJson(
-	select: (raw: string | undefined) => string[],
-	raw?: string,
-): string {
+export function planAxisJson(select: (raw: string | undefined) => string[], raw?: string): string {
 	return JSON.stringify(select(raw));
 }
 

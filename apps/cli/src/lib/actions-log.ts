@@ -99,37 +99,41 @@ export function providerSummaryRows(run: Run): SummaryRow[] {
 	return [header, ...rows];
 }
 
-/** Log each provider status line; optionally wrap in a foldable group (never nest inside core.group). */
-export function logProviderStatuses(
+/** Log each provider status line; optionally wrap in a foldable group via {@link withGroup}. */
+export async function logProviderStatuses(
 	run: Run,
 	opts: { groupTitle?: string; grouped?: boolean } = {},
-): void {
-	const grouped = opts.grouped === true && inActions();
-	if (grouped) core.startGroup(opts.groupTitle ?? "Provider status");
-	for (const provider of run.providers) {
-		const skipped = provider.gaps.filter((g) => g.outcome === "skipped").length;
-		const failed = provider.gaps.filter((g) => g.outcome === "failed").length;
-		const line =
-			`${provider.providerId} status=${provider.validationStatus} ` +
-			`metrics=${provider.metrics.length} suites=${provider.suitesCovered.length} ` +
-			`skipped=${skipped} failed=${failed} uncatalogued=${provider.uncatalogued.length}`;
-		if (inActions()) core.info(line);
-		else console.error(line);
-		if (inActions() && core.isDebug()) {
-			for (const gap of provider.gaps) {
-				core.debug(`  gap ${gap.scope}/${gap.id} ${gap.outcome}: ${gap.reason}`);
-			}
-			if (provider.observedSpecs.cpuModel) {
-				core.debug(
-					`  observed cpu=${provider.observedSpecs.cpuModel}` +
-						(provider.observedSpecs.cpuMicroarch
-							? ` (${provider.observedSpecs.cpuMicroarch})`
-							: ""),
-				);
+): Promise<void> {
+	const write = (): void => {
+		for (const provider of run.providers) {
+			const skipped = provider.gaps.filter((g) => g.outcome === "skipped").length;
+			const failed = provider.gaps.filter((g) => g.outcome === "failed").length;
+			const line =
+				`${provider.providerId} status=${provider.validationStatus} ` +
+				`metrics=${provider.metrics.length} suites=${provider.suitesCovered.length} ` +
+				`skipped=${skipped} failed=${failed} uncatalogued=${provider.uncatalogued.length}`;
+			logInfo(line);
+			if (inActions() && core.isDebug()) {
+				for (const gap of provider.gaps) {
+					core.debug(`  gap ${gap.scope}/${gap.id} ${gap.outcome}: ${gap.reason}`);
+				}
+				if (provider.observedSpecs.cpuModel) {
+					core.debug(
+						`  observed cpu=${provider.observedSpecs.cpuModel}` +
+							(provider.observedSpecs.cpuMicroarch
+								? ` (${provider.observedSpecs.cpuMicroarch})`
+								: ""),
+					);
+				}
 			}
 		}
+	};
+	// Prefer withGroup/core.group over startGroup/endGroup so a throw can't leave a dangling group.
+	if (opts.grouped === true) {
+		await withGroup(opts.groupTitle ?? "Provider status", write);
+	} else {
+		write();
 	}
-	if (grouped) core.endGroup();
 }
 
 /**

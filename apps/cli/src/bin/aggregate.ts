@@ -59,7 +59,7 @@ if (import.meta.main) {
 		writeRunDocument(merged, outFile, indexFile);
 		logInfo(`Wrote candidate Run → ${outFile}`);
 		// Already inside withGroup — don't nest another ::group::.
-		logProviderStatuses(merged, { grouped: false });
+		await logProviderStatuses(merged, { grouped: false });
 	});
 
 	const validated = merged.providers.filter((p) => p.validationStatus === "validated").length;
