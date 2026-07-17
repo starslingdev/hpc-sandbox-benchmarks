@@ -1,7 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import type { SandboxHandle } from "./execute.ts";
-import { MIN, PREAMBLE, StepRunner, selectTransport, shellQuote } from "./execute.ts";
+import {
+	buildPreamble,
+	MIN,
+	PREAMBLE,
+	StepRunner,
+	selectTransport,
+	shellQuote,
+} from "./execute.ts";
 
 const CAPPED: ProviderTransport = { streaming: false, syncCapMs: MIN, detachedPoll: true };
 const UNCAPPED: ProviderTransport = { streaming: false, syncCapMs: null, detachedPoll: true };
@@ -45,9 +52,31 @@ describe("sandbox preamble", () => {
 		expect(PREAMBLE).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
 	});
 
-	it("uses two fixed PTS trials for a publishable comparison", () => {
-		expect(PREAMBLE).toContain("PTS_RESPECT_TIMES_TO_RUN=1");
-		expect(PREAMBLE).toContain("FORCE_TIMES_TO_RUN=2");
+	// buildPreamble omits the trial vars entirely under BENCH_PASSES=1 (contract-verification mode), so
+	// these trial-count assertions only hold outside it — skip in that mode rather than fail a contract run.
+	it.skipIf(process.env.BENCH_PASSES === "1")(
+		"uses two fixed PTS trials by default for a publishable comparison",
+		() => {
+			expect(PREAMBLE).toContain("PTS_RESPECT_TIMES_TO_RUN=1");
+			expect(PREAMBLE).toContain("FORCE_TIMES_TO_RUN=2");
+		},
+	);
+
+	it.skipIf(process.env.BENCH_PASSES === "1")(
+		"pins the PTS repeat count (k) a suite requests",
+		() => {
+			expect(buildPreamble(1)).toContain("FORCE_TIMES_TO_RUN=1");
+			expect(buildPreamble(3)).toContain("FORCE_TIMES_TO_RUN=3");
+			// The variance-driven policy stays disabled at every k so a noisy provider can't stretch a suite.
+			expect(buildPreamble(3)).toContain("PTS_RESPECT_TIMES_TO_RUN=1");
+		},
+	);
+
+	it("rejects a non-positive or fractional k (would emit an empty/bogus FORCE_TIMES_TO_RUN)", () => {
+		// Throws before touching the env, so this holds in every mode including BENCH_PASSES=1.
+		expect(() => buildPreamble(0)).toThrow(/positive integer/);
+		expect(() => buildPreamble(-1)).toThrow(/positive integer/);
+		expect(() => buildPreamble(1.5)).toThrow(/positive integer/);
 	});
 });
 
@@ -78,6 +107,25 @@ describe("StepRunner", () => {
 		expect(commands[0]).toContain(PREAMBLE);
 		expect(commands[0]).toContain("echo hi");
 	});
+
+	// Same BENCH_PASSES=1 caveat as the preamble tests above: the k is only emitted when trials are on.
+	it.skipIf(process.env.BENCH_PASSES === "1")(
+		"threads a per-suite PTS repeat count (k) into every step's preamble",
+		async () => {
+			const commands: string[] = [];
+			const sandbox: SandboxHandle = {
+				runCommand: async (command) => {
+					commands.push(command);
+					return { exitCode: 0, stdout: "ok" };
+				},
+				destroy: async () => undefined,
+			};
+			const runner = new StepRunner(sandbox, undefined, undefined, 3);
+			await runner.run("echo", "echo hi", 5_000);
+			expect(commands[0]).toContain("FORCE_TIMES_TO_RUN=3");
+			expect(commands[0]).not.toContain("FORCE_TIMES_TO_RUN=2");
+		},
+	);
 
 	it("throws on a non-zero exit unless allowFailure is set", async () => {
 		const sandbox: SandboxHandle = {

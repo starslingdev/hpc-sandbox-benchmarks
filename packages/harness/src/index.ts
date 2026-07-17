@@ -269,9 +269,12 @@ export async function runSuiteOnSandbox(
 	ctx: SuiteRunContext,
 ): Promise<void> {
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
-	const runner = new StepRunner(sandbox, transport);
 	let suiteError: unknown;
 	try {
+		// Thread the suite's in-sandbox repeat count (k) into the preamble; absent → the harness default.
+		// Constructed inside the try so a bad k (buildPreamble rejects k < 1) is still torn down by the
+		// finally below; a throw before the try would leak the already-created sandbox.
+		const runner = new StepRunner(sandbox, transport, undefined, suite.ptsTimesToRun);
 		runner.phase = "setup";
 		if (suite.minDiskGb) {
 			const df = await runner.run("check free disk", "df -Pk / | awk 'NR==2 {print $4}'", MIN);

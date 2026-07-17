@@ -269,10 +269,10 @@ _configure_pts_batch() {
 	export TEST_RESULTS_DESCRIPTION=ci
 	export TEST_RESULTS_IDENTIFIER=ci
 	# FORCE_TIMES_TO_RUN=1 pins contract-verification runs to a single pass. Published sandbox runs
-	# export PTS_RESPECT_TIMES_TO_RUN=1 plus FORCE_TIMES_TO_RUN=2 in the harness preamble: two balanced
-	# trials are the pinned count (see the preamble on why more trials aren't bought), while disabling
-	# PTS's adaptive variance policy (which otherwise expanded noisy fio cases to 20-40 runs and
-	# exhausted the suite).
+	# export PTS_RESPECT_TIMES_TO_RUN=1 plus a per-suite FORCE_TIMES_TO_RUN (k) in the harness preamble
+	# (Suite.ptsTimesToRun: realworld k=1, long synthetic k=2), while disabling PTS's adaptive
+	# variance policy (which otherwise expanded noisy fio cases to 20-40 runs and exhausted the suite).
+	# Between-sandbox variance is captured by REPLICATE sandboxes, not by more in-sandbox passes.
 	if [ -z "${PTS_RESPECT_TIMES_TO_RUN:-}" ]; then
 		export FORCE_TIMES_TO_RUN=1
 	fi

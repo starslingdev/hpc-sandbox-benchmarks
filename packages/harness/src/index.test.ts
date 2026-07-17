@@ -402,6 +402,18 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		expect(destroyed.hit).toBe(true);
 	});
 
+	it("tears the sandbox down when an invalid ptsTimesToRun (k < 1) fails preamble construction", async () => {
+		// StepRunner builds the preamble in its constructor, and buildPreamble rejects k < 1. That throw
+		// must land inside the teardown try/finally rather than before it — otherwise the already-created
+		// sandbox leaks. Guards the "constructed inside the try" placement in runSuiteOnSandbox.
+		const destroyed = { hit: false };
+		const sandbox = makeSandbox({ destroyed });
+		await expect(
+			runSuiteOnSandbox(sandbox, ctx(suite({ ptsTimesToRun: 0 }), freshDir())),
+		).rejects.toThrow(/positive integer/);
+		expect(destroyed.hit).toBe(true);
+	});
+
 	it("tears the sandbox down even when the benchmark fails, and propagates the error", async () => {
 		const destroyed = { hit: false };
 		const sandbox = makeSandbox({ destroyed, benchmarkFails: true });
