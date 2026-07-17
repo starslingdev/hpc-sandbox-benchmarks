@@ -165,7 +165,19 @@ export interface Leaderboard {
 	coverageGaps: CoverageGap[];
 }
 
-/** Stable, machine-readable projection of the public leaderboard. */
+/**
+ * Stable, machine-readable projection of the public leaderboard.
+ *
+ * INVARIANT — no arrays of scalars. Every array here is an array of objects. The committed artifact's
+ * byte-shape is pinned twice, and the two only agree because of this: the publish workflow runs
+ * `biome check data/dataset --write` over the file, while the artifact-sync gate re-renders it with
+ * `JSON.stringify(x, null, 2)`. Biome never inlines an array of objects (one element per line, same as
+ * `JSON.stringify`), so the shapes coincide. A scalar array — `string[]`, `number[]` — breaks that:
+ * Biome inlines the short ones (`["a", "b"]`) while `JSON.stringify` keeps one per line, so the
+ * workflow would commit the Biome shape, pass its own lint gate, and then fail the artifact-sync test —
+ * stranding the auto-generated publish PR with a check it can never satisfy. If you must add a scalar
+ * array, first make the writer and the gate share one formatter (see {@link renderPublicLeaderboardJson}).
+ */
 export interface PublicLeaderboard {
 	schemaVersion: "1";
 	runId: string;
@@ -540,6 +552,9 @@ export function buildPublicLeaderboard(
 		generatedAt: board.generatedAt,
 		targetSpec: board.targetSpec,
 		summary: {
+			// Counts every provider that participated in the Run, matching the `providers[]` array below —
+			// including a provider that produced only coverage gaps and no ranked row. This deliberately
+			// differs from the Markdown surface's "M providers", which counts only providers with a row.
 			providerCount: run.providers.length,
 			metricCount: metrics.length,
 			metricRecordCount: rows.length,
@@ -587,7 +602,12 @@ export function buildPublicLeaderboard(
 	};
 }
 
-/** Deterministic, newline-terminated serialization used by the CLI and artifact-sync gate. */
+/**
+ * Deterministic, newline-terminated serialization used by the CLI and artifact-sync gate. Its byte-shape
+ * must stay identical to what `biome check --write` produces for the committed artifact — see the
+ * no-scalar-arrays invariant on {@link PublicLeaderboard}. If that ever needs to change, this is the one
+ * place to route through Biome so the writer and the gate cannot drift apart.
+ */
 export function renderPublicLeaderboardJson(publicLeaderboard: PublicLeaderboard): string {
 	return `${JSON.stringify(publicLeaderboard, null, 2)}\n`;
 }
