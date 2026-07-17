@@ -2,22 +2,36 @@
 // schema registries. GHA can't import TypeScript, so the provider/suite vocabulary and the
 // per-provider credential wiring are re-spelled by hand in the workflow files; this module re-derives
 // the truth from PROVIDERS + SUITE_NAMES (packages/schema) and compares. It mirrors
-// runner-benchmarking's check-workflow-{env,suite}-sync.ts, adapted to this repo's two workflows.
+// runner-benchmarking's check-workflow-{env,suite}-sync.ts, adapted to this repo's workflows.
+//
+// Two workflows dispatch live benchmarks: bench-smoke.yml (one dispatched suite × provider) and
+// bench-matrix.yml (one suite-matrix job that calls the reusable bench-suite.yml once per suite, which
+// then fans out over the selected providers). The credential block + the run job's timeout therefore
+// live in bench-suite.yml for the matrix lane, so the "matrix side" of the credential/timeout checks
+// reads that reusable workflow, not bench-matrix.yml itself.
 //
 // Invariants (each maps to a real "added X, forgot the workflow" failure mode):
 //   1. bench-smoke.yml's `provider` dispatch input options == the PROVIDERS id set, and its default
 //      is one of them — a new provider must be dispatchable, a removed one must not linger.
 //   2. bench-smoke.yml's `suite` dispatch input options == SUITE_NAMES, with a valid default.
 //   3. Every provider's requiredEnvVars (schema) is present in the "Run suite and normalize" step env
-//      of BOTH bench-smoke.yml and bench-matrix.yml — the secret a new provider needs must be wired
-//      into both the smoke lane and the matrix lane, or the live run silently skips it.
-//   4. A credential key shared across the two workflows maps to the same value expression — both
-//      lanes must hand the suite the same secret, not plan one and run the other. Each lane scopes
-//      its secrets to the selected provider (so a cell only sees its own credential), and the two
-//      lanes pick that provider differently — `inputs.provider` in smoke, `matrix.provider` in the
-//      matrix fan-out — so the comparison folds those two selector tokens together before checking.
-//   5. Both live-run jobs outlast the longest registered sandbox lifetime by a fixed margin, so a
-//      suite budget increase cannot leave an otherwise healthy job to be killed by Actions first.
+//      of BOTH bench-smoke.yml and the reusable bench-suite.yml — the secret a new provider needs must
+//      be wired into both the smoke lane and the matrix fan-out, or the live run silently skips it.
+//   4. A credential key shared across the two lanes maps to the same value expression — both must hand
+//      the suite the same secret, not plan one and run the other. Each lane scopes its secrets to the
+//      selected provider (so a cell only sees its own credential), and the two lanes pick that provider
+//      differently — `inputs.provider` in smoke, `matrix.provider` in the fan-out — so the comparison
+//      folds those two selector tokens together before checking.
+//   5. Both live-run jobs (smoke's job and the reusable fan-out) outlast the longest registered sandbox
+//      lifetime by a fixed margin, so a suite budget increase cannot leave an otherwise healthy job to
+//      be killed by Actions first.
+//   6. bench-matrix.yml has exactly one suite-matrix caller of the reusable bench-suite.yml, wired for
+//      GitHub-native nesting: `name: ${{ matrix.suite }}`, `with.suite: ${{ matrix.suite }}`, and
+//      `strategy.matrix.suite: ${{ fromJSON(needs.plan.outputs.suites) }}`, with `publish` needing that
+//      caller; the reusable's fan-out job must be `name: ${{ matrix.provider }}` so cells display as
+//      "<suite> / <provider>". The suite axis itself comes from `plan-suites` (SUITE_NAMES, honoring
+//      the `suites` input), so adding a suite is a schema change — this invariant keeps the nesting
+//      wiring from drifting.
 //
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency), so the parse stays dependency-light.
 import { readFileSync } from "node:fs";
@@ -28,10 +42,15 @@ import { findRepoRoot } from "./workspace.ts";
 
 export const SMOKE_WORKFLOW = ".github/workflows/bench-smoke.yml";
 export const MATRIX_WORKFLOW = ".github/workflows/bench-matrix.yml";
-/** The step (in both workflows) that drives the provider SDK; it owns the credential env block. */
+/** The reusable workflow each bench-matrix suite job calls; it owns the credential block + run timeout. */
+export const SUITE_WORKFLOW = ".github/workflows/bench-suite.yml";
+/** The step (in bench-smoke.yml and bench-suite.yml) that drives the provider SDK; it owns the env. */
 export const RUN_STEP = "Run suite and normalize";
 export const SMOKE_JOB = "smoke";
-export const MATRIX_JOB = "bench";
+/** The fan-out job inside the reusable bench-suite.yml (its credential env + timeout). */
+export const SUITE_JOB = "bench";
+/** A bench-matrix suite job is one that `uses` this reusable workflow (matched by path suffix). */
+const SUITE_WORKFLOW_USES_SUFFIX = "/bench-suite.yml";
 /** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. */
 export const WORKFLOW_TIMEOUT_MARGIN_MINUTES = 15;
 
@@ -142,6 +161,99 @@ export function stepEnv(
 		entries[key] = value;
 	}
 	return entries;
+}
+
+/**
+ * The single bench-matrix suite-matrix caller: the job that `uses` the reusable bench-suite.yml and
+ * expands `strategy.matrix.suite` from the plan's suite axis. Native nesting depends on
+ * `name` / `with.suite` both resolving to `matrix.suite`.
+ */
+export interface SuiteMatrixCaller {
+	jobId: string;
+	name: string;
+	suiteInput: string;
+	matrixSuiteExpr: string;
+	/** Job ids listed in `publish.needs` (empty when publish is missing or has no needs list). */
+	publishNeeds: string[];
+}
+
+/** The expression the suite-matrix job must use for its suite axis (plan output → fromJSON). */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
+export const EXPECTED_SUITE_MATRIX_EXPR = "${{ fromJSON(needs.plan.outputs.suites) }}";
+/** The expression that makes each caller cell's display name the suite id (native nesting parent). */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
+export const EXPECTED_SUITE_NAME_EXPR = "${{ matrix.suite }}";
+/** The expression that makes each reusable fan-out cell's display name the provider id (nesting child). */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
+export const EXPECTED_PROVIDER_NAME_EXPR = "${{ matrix.provider }}";
+
+/**
+ * The bench-matrix suite-matrix caller — exactly one job whose `uses` targets the reusable
+ * bench-suite.yml, with its nesting wiring extracted. Zero or multiple callers throw (Invariant 6
+ * must fail loudly, not pick one). Jobs that don't call the reusable (plan, publish) are ignored
+ * except that `publish.needs` is captured for the dependency check.
+ */
+export function matrixSuiteCaller(
+	doc: unknown,
+	label: string = MATRIX_WORKFLOW,
+): SuiteMatrixCaller {
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	const callers: Array<Omit<SuiteMatrixCaller, "publishNeeds">> = [];
+	for (const [jobId, rawJob] of Object.entries(jobs)) {
+		const job = asRecord(rawJob, `${label}: job "${jobId}" is not a mapping`);
+		const uses = job.uses;
+		if (typeof uses !== "string" || !uses.endsWith(SUITE_WORKFLOW_USES_SUFFIX)) continue;
+		const withMap = asRecord(
+			job.with,
+			`${label}: job "${jobId}" calls ${uses} without a "with" mapping`,
+		);
+		const suiteInput = withMap.suite;
+		if (typeof suiteInput !== "string") {
+			throw new Error(`${label}: job "${jobId}" calls ${uses} without a string "suite" input`);
+		}
+		const name = typeof job.name === "string" ? job.name : "";
+		const strategy = asRecord(
+			job.strategy,
+			`${label}: job "${jobId}" calls ${uses} without a "strategy" mapping`,
+		);
+		const matrix = asRecord(
+			strategy.matrix,
+			`${label}: job "${jobId}" calls ${uses} without a "strategy.matrix" mapping`,
+		);
+		const matrixSuiteExpr = matrix.suite;
+		if (typeof matrixSuiteExpr !== "string") {
+			throw new Error(
+				`${label}: job "${jobId}" calls ${uses} without a string "strategy.matrix.suite" axis`,
+			);
+		}
+		callers.push({ jobId, name, suiteInput, matrixSuiteExpr });
+	}
+	if (callers.length === 0) {
+		throw new Error(
+			`${label}: no job calls the reusable bench-suite.yml — the suite-matrix caller is missing`,
+		);
+	}
+	if (callers.length > 1) {
+		throw new Error(
+			`${label}: expected exactly one suite-matrix caller of bench-suite.yml, found ` +
+				`${callers.length} (${callers.map((c) => c.jobId).join(", ")})`,
+		);
+	}
+	// biome-ignore lint/style/noNonNullAssertion: length checked above.
+	const caller = callers[0]!;
+	const publish = jobs.publish;
+	let publishNeeds: string[] = [];
+	if (publish !== undefined) {
+		const publishJob = asRecord(publish, `${label}: job "publish" is not a mapping`);
+		const needs = publishJob.needs;
+		if (Array.isArray(needs)) {
+			publishNeeds = needs.map((n) => String(n));
+		} else if (typeof needs === "string") {
+			publishNeeds = [needs];
+		}
+	}
+	return { ...caller, publishNeeds };
 }
 
 /** The canonical provider ids from the schema registry. */
@@ -288,6 +400,66 @@ export function checkCredentialEnv(
 	return errors;
 }
 
+/**
+ * Invariant 6: the bench-matrix suite-matrix caller is wired for GitHub-native nesting and depends on
+ * the plan's suite axis — display name and `with.suite` are `${{ matrix.suite }}`, the matrix axis is
+ * `fromJSON(needs.plan.outputs.suites)`, and `publish` needs the caller job. `label` names the
+ * workflow in error messages.
+ */
+export function checkSuiteMatrixCaller(
+	caller: SuiteMatrixCaller,
+	label: string = MATRIX_WORKFLOW,
+): string[] {
+	const errors: string[] = [];
+	if (caller.name !== EXPECTED_SUITE_NAME_EXPR) {
+		errors.push(
+			`${label}: job "${caller.jobId}" name must be "${EXPECTED_SUITE_NAME_EXPR}" for native ` +
+				`suite nesting in the Actions UI (got ${caller.name ? `"${caller.name}"` : "no name"})`,
+		);
+	}
+	if (caller.suiteInput !== EXPECTED_SUITE_NAME_EXPR) {
+		errors.push(
+			`${label}: job "${caller.jobId}" with.suite must be "${EXPECTED_SUITE_NAME_EXPR}" so each ` +
+				`matrix cell dispatches its own suite (got "${caller.suiteInput}")`,
+		);
+	}
+	if (caller.matrixSuiteExpr !== EXPECTED_SUITE_MATRIX_EXPR) {
+		errors.push(
+			`${label}: job "${caller.jobId}" strategy.matrix.suite must be "${EXPECTED_SUITE_MATRIX_EXPR}" ` +
+				`so the suite axis stays registry-driven via plan.outputs.suites (got "${caller.matrixSuiteExpr}")`,
+		);
+	}
+	if (!caller.publishNeeds.includes(caller.jobId)) {
+		errors.push(
+			`${label}: job "publish" must need "${caller.jobId}" so aggregation waits for every suite ` +
+				`matrix cell (publish.needs=${JSON.stringify(caller.publishNeeds)})`,
+		);
+	}
+	return errors;
+}
+
+/**
+ * Invariant 6 (callee half): the reusable bench-suite fan-out job display name is the provider id so
+ * nested Actions UI cells read as "<suite> / <provider>".
+ */
+export function checkSuiteWorkflowNesting(doc: unknown, label: string = SUITE_WORKFLOW): string[] {
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	const job = jobs[SUITE_JOB];
+	if (job === undefined) {
+		return [`${label}: job "${SUITE_JOB}" is missing — the provider fan-out job is required`];
+	}
+	const bench = asRecord(job, `${label}: job "${SUITE_JOB}" is not a mapping`);
+	const name = typeof bench.name === "string" ? bench.name : "";
+	if (name !== EXPECTED_PROVIDER_NAME_EXPR) {
+		return [
+			`${label}: job "${SUITE_JOB}" name must be "${EXPECTED_PROVIDER_NAME_EXPR}" for native ` +
+				`provider nesting under each suite (got ${name ? `"${name}"` : "no name"})`,
+		];
+	}
+	return [];
+}
+
 /** Invariant 5: every live-run job has margin beyond the longest registered sandbox lifetime. */
 export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>): string[] {
 	const longestSuite = Math.max(...Object.values(SUITES).map((suite) => suite.timeoutMinutes));
@@ -308,16 +480,21 @@ export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>)
 export function runCheck(root: string = findRepoRoot()): string[] {
 	const smoke = readWorkflow(SMOKE_WORKFLOW, root);
 	const matrix = readWorkflow(MATRIX_WORKFLOW, root);
+	// The matrix lane's credential block + run-job timeout live in the reusable bench-suite.yml that
+	// every suite job calls, so the "matrix side" of Invariants 3–5 reads that file.
+	const suiteWf = readWorkflow(SUITE_WORKFLOW, root);
 	return [
 		...checkProviderInput(dispatchInput(smoke, "provider", SMOKE_WORKFLOW)),
 		...checkSuiteInput(dispatchInput(smoke, "suite", SMOKE_WORKFLOW)),
 		...checkCredentialEnv({
 			[SMOKE_WORKFLOW]: stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW),
-			[MATRIX_WORKFLOW]: stepEnv(matrix, MATRIX_JOB, RUN_STEP, MATRIX_WORKFLOW),
+			[SUITE_WORKFLOW]: stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW),
 		}),
 		...checkWorkflowTimeouts({
 			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),
-			[MATRIX_WORKFLOW]: jobTimeoutMinutes(matrix, MATRIX_JOB, MATRIX_WORKFLOW),
+			[SUITE_WORKFLOW]: jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW),
 		}),
+		...checkSuiteMatrixCaller(matrixSuiteCaller(matrix, MATRIX_WORKFLOW), MATRIX_WORKFLOW),
+		...checkSuiteWorkflowNesting(suiteWf, SUITE_WORKFLOW),
 	];
 }

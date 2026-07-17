@@ -82,8 +82,10 @@ without being Daytona-specific.
 
 1. **Run** — `bench-suite <provider> <suite>` boots a sandbox, runs the suite's mise tasks, pulls the
    raw tree (`data/raw/<runId>/<provider>/<suite>/`), and normalizes it into a Run document.
-2. **Matrix** — the `bench-matrix` workflow fans `plan-matrix` (provider × suite) out into one job per
-   cell, each uploading its shard Run as an artifact.
+2. **Matrix** — the `bench-matrix` workflow plans both axes, then one suite-matrix job calls the
+   reusable `bench-suite` workflow per suite (GitHub-native nesting: `<suite> / <provider>`), fanning
+   out over the providers `plan-providers` selects; every (provider, suite) cell uploads its shard Run
+   as an artifact.
 3. **Aggregate → promote** — the `publish` job collects every shard, `aggregate`s them into one
    candidate Run (measured metrics unioned, economics re-derived from the merged set), then `promote`s
    it (gate: ≥1 validated provider) into the committed dataset at `data/dataset/` with a newest-first
