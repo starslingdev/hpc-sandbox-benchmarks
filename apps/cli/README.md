@@ -9,6 +9,7 @@
   with absent creds skip; per-Metric distributions go to stdout JSON, a timing log to stderr.
 - `bench-suite` — run the full suite across the matrix.
 - `plan-providers` — print the **selected provider ids** as **single-line compact JSON** for `$GITHUB_OUTPUT` (the `bench-matrix` workflow's per-suite fan-out axis; honors `BENCH_PROVIDERS`).
+- `plan-suites` — print the **selected suite names** as **single-line compact JSON** for `$GITHUB_OUTPUT` (each `bench-matrix` suite job is gated on membership; blank `BENCH_SUITES` = every suite — the targeted/pre-merge knob).
 - `plan-matrix` — print the full **provider × suite** benchmark matrix as **single-line compact JSON** (cell listing for local inspection / discovery; the workflow's fan-out axis is `plan-providers`).
 - `build-template` — build a provider's sandbox template.
 - `normalize` — turn raw runs into normalized run documents.

@@ -43,6 +43,33 @@ export function selectProviders(raw: string | undefined): ProviderId[] {
 }
 
 /**
+ * The suites a dispatch asks the matrix to run, parsed from a comma-separated list (the `BENCH_SUITES`
+ * dispatch input). Absent or blank → every registered suite, so the default matrix is unchanged and the
+ * registry stays the source of truth. Mirrors {@link selectProviders} on the suite axis: an unregistered
+ * name THROWS (a typo must fail the plan, not silently run nothing), duplicates collapse, and the result
+ * is ordered by the registry. Matching is case-insensitive to tolerate a hand-typed dispatch input.
+ *
+ * This is the pre-merge/targeted-run knob: `BENCH_SUITES=network` runs only the network suite's jobs, so
+ * a validation dispatch doesn't have to spend the whole matrix. Blank stays the main-publish default.
+ */
+export function selectSuites(raw: string | undefined): SuiteName[] {
+	const requested = (raw ?? "")
+		.toLowerCase()
+		.split(",")
+		.map((name) => name.trim())
+		.filter((name) => name.length > 0);
+	if (requested.length === 0) return [...SUITE_NAMES];
+
+	const unknown = requested.filter((name) => !SUITE_NAMES.includes(name as SuiteName));
+	if (unknown.length > 0) {
+		throw new Error(
+			`unknown suite(s): ${unknown.join(", ")} — registered suites are ${SUITE_NAMES.join(", ")}`,
+		);
+	}
+	return SUITE_NAMES.filter((name) => requested.includes(name));
+}
+
+/**
  * The full benchmark matrix: every provider × every registered suite. Each cell becomes one CI job
  * (`bench-suite <provider> <suite>`), so the dataset grows by adding a provider or a suite to its
  * registry — never by editing the workflow. Both lists are injectable for unit tests; the defaults are
