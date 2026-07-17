@@ -39,6 +39,14 @@ describe("setupSteps", () => {
 			"libgtk-3-0",
 			"libx11-6",
 			"fonts-liberation",
+			"libasound2",
+			"libatk-bridge2.0-0",
+			"libcairo2",
+			"libgbm1",
+			"libxcomposite1",
+			"libxdamage1",
+			"libxrandr2",
+			"xdg-utils",
 		]) {
 			expect(ptsStep?.script).toContain(chromeDep);
 		}
