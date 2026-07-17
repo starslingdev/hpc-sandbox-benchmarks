@@ -154,11 +154,23 @@ jobs:
           # overwritten rather than rejected as non-fast-forward; it is a bot-owned branch and a re-run
           # recomputes byte-identical content, so the overwrite is a no-op in the common case.
           git push -u --force origin "$branch"
-          gh pr create \
+          # `gh pr create` fails outright (GraphQL "GitHub Actions is not permitted to create or
+          # approve pull requests") when the repo's Settings → Actions → General → Workflow
+          # permissions → "Allow GitHub Actions to create and approve pull requests" toggle is off —
+          # see docs/ci-secrets.md. The dataset branch above is already pushed at that point, so
+          # surface the fix instead of a bare GraphQL error before failing the job.
+          if ! gh pr create \
             --base main \
             --head "$branch" \
             --title "chore(dataset): publish run ${RUN_ID}" \
-            --body "Automated dataset + leaderboard publish for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied."
+            --body "Automated dataset + leaderboard publish for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied."; then
+            echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
+              "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
+              "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
+              "A maintainer must either enable it and re-dispatch this workflow with run_id=$RUN_ID," \
+              "or open the PR for '$branch' manually. See docs/ci-secrets.md." >&2
+            exit 1
+          fi
           # Queue GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
           # required reviews land), never bypassing branch protection. Best-effort — if the repo hasn't
           # enabled auto-merge, leave the PR open for a maintainer.
