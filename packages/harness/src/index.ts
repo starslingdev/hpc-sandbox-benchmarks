@@ -277,7 +277,18 @@ export async function runSuiteOnSandbox(
 		const runner = new StepRunner(sandbox, transport, undefined, suite.ptsTimesToRun);
 		runner.phase = "setup";
 		if (suite.minDiskGb) {
-			const df = await runner.run("check free disk", "df -Pk / | awk 'NR==2 {print $4}'", MIN);
+			// Measure free space where the disk-heavy suites actually write, not the sandbox root. The
+			// heavy PTS data (realworld clones/builds, pgbench cluster, fio test files, installed-tests)
+			// lives under the PTS data dir; on Blaxel a 40 GiB volume is mounted there while / stays a
+			// small RAM-overlay tmpfs, so gating on `/` would wrongly skip suites the volume has room for.
+			// The dir exists on every baked-image provider (on the root fs → identical to `/`) and on
+			// Blaxel (the mount); it's absent only pre-PTS on a stock gVisor root (Modal), where the `/`
+			// fallback preserves today's behavior.
+			const df = await runner.run(
+				"check free disk",
+				'd=/var/lib/phoronix-test-suite; [ -d "$d" ] || d=/; df -Pk "$d" | awk \'NR==2 {print $4}\'',
+				MIN,
+			);
 			// Treat non-numeric df output as 0 free (skip) — a NaN comparison would silently pass the check.
 			const freeKb = Number.parseInt((df.stdout || "").trim(), 10);
 			const freeGb = Number.isNaN(freeKb) ? 0 : freeKb / 1024 / 1024;

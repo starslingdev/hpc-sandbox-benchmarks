@@ -173,10 +173,15 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"if [ -f /sys/fs/cgroup/memory.max ] && grep -qv max /sys/fs/cgroup/memory.max; then",
 	`  memory_gb=$(awk '{ printf "%.2f", $1 / 1073741824 }' /sys/fs/cgroup/memory.max) && limited=1`,
 	"fi",
-	// gVisor (Modal) reports / as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
+	// Report the disk the benchmark actually writes to, not the sandbox root: the PTS data dir when it
+	// exists (on Blaxel that's the mounted 40 GiB volume; on baked-image providers it's on the root fs,
+	// so identical to `/`), else `/` (a stock gVisor root pre-PTS — Modal). Keep this dir in sync with
+	// the harness disk gate and the blaxel volume mount path.
+	`disk_src=/var/lib/phoronix-test-suite; [ -d "$disk_src" ] || disk_src=/`,
+	// gVisor (Modal) reports the root as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
 	// when df's answer is plausible for a sandbox (positive, < 100 TB); a sentinel, a failed df, or
 	// a non-numeric column all leave it unset as unknown.
-	`disk_gb=$(df -Pk / | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
+	`disk_gb=$(df -Pk "$disk_src" | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
 	`cpu_model=$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1 || true)`,
 	"kernel=$(uname -r)",
 	`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,

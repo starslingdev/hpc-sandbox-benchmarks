@@ -16,6 +16,7 @@
     },
     "catalogs": {
       "computesdk": {
+        "@blaxel/core": "0.2.95",
         "@computesdk/blaxel": "1.6.16",
         "@computesdk/daytona": "1.7.31",
         "@computesdk/e2b": "1.7.51",

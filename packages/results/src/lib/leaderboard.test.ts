@@ -140,7 +140,10 @@ describe("buildLeaderboard", () => {
 		const blaxel = {
 			...provider("blaxel", [metric("node_web_tooling_runs_per_s", [10])]),
 			specMatched: false,
-			observedSpecs: { vcpus: 6, memoryGb: 15.63, diskGb: 12.5 },
+			// Blaxel's real observed shape: memory=8192 pins the 8 GiB RAM target and a mounted volume the
+			// 40 GiB disk, but CPU is coupled to RAM so it lands at 4 vCPU (2x the 2-vCPU target) — enough
+			// to keep specMatched false and fire the comparability warning below.
+			observedSpecs: { vcpus: 4, memoryGb: 8, diskGb: 40 },
 		};
 		const board = buildLeaderboard(run([blaxel]));
 		expect(board.targetSpec).toEqual({ vcpus: 2, memoryGb: 8, diskGb: 20 });
@@ -153,7 +156,7 @@ describe("buildLeaderboard", () => {
 		expect(md).toContain(
 			"**Comparability warning:** Blaxel's observed compute did not match the requested CPU/RAM target",
 		);
-		expect(md).toContain("**6 vCPU · 15.63 GiB RAM · 12.5 GB disk**");
+		expect(md).toContain("**4 vCPU · 8 GiB RAM · 40 GB disk**");
 		expect(md).not.toContain("Same pinned target");
 	});
 });

@@ -120,10 +120,12 @@ export interface ProviderMeta {
  *
  * Providers that expose a per-sandbox/snapshot disk get 40 GiB (Daytona, via the snapshot's
  * `resources.disk`); Modal has no disk knob but its gVisor root reports effectively unbounded disk,
- * so it clears the gate anyway. Providers that CANNOT express disk — e2b/novita (the `@e2b/cli`
- * `template create` takes only `--cpu-count`/`--memory-mb`) and blaxel (disk is a RAM-derived tmpfs)
- * — run with actuals recorded, and the heavy suites that need the disk skip there. Those skips are
- * surfaced as an explicit coverage gap in the leaderboard, never silently dropped.
+ * so it clears the gate anyway. Blaxel's sandbox root is a RAM-derived tmpfs with no independent disk
+ * knob, so it mounts a 40 GiB volume at the PTS data dir where the heavy suites write (see
+ * packages/providers/src/lib/blaxel-volume.ts) — clearing the gate like the others. Only e2b/novita
+ * still CANNOT express disk (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`):
+ * they run with actuals recorded and the heavy suites skip there, surfaced as an explicit coverage gap
+ * in the leaderboard, never silently dropped.
  */
 export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 40 } as const;
 
@@ -218,7 +220,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		isolation: {
 			technology: "microVM",
 			notes:
-				"Blaxel sandboxes (sub-25ms boot claim). Spec dimensions are COUPLED: CPU cores = memory MB / 2048 and disk is a tmpfs overlay at ~78% of memory, so the 2 vCPU / 8 GiB / 40 GB target spec is inexpressible -- the adapter runs oversized (16 GiB => 8-core allocation, ~12.5 GiB disk) and relies on observed-specs disclosure (specMatched=false) downstream.",
+				"Blaxel sandboxes (sub-25ms boot claim). CPU is COUPLED to RAM (measured: cores = memory MB / 2048) with no cgroup cpu.max, and the sandbox root is a RAM-overlay tmpfs with no independent disk knob (storageMb/diskPercent are accepted but silently ignored on this plan). So the adapter pins memory=8192 -> 8 GiB RAM (matches target) but 4 vCPU (2x the 2-vCPU target), and mounts a 40 GiB volume at the PTS data dir for disk (see blaxel-volume.ts). Disk and RAM match the target; the 4-vCPU overshoot is recorded via observed-specs disclosure (specMatched=false) downstream.",
 		},
 		pricing: {
 			model: "unknown",
@@ -228,10 +230,11 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"Local e2e validation wiring; not yet a committed run. Realworld suites with minDiskGb > ~12.5 (mastra 30, openclaw 25) skip on the harness disk gate until Blaxel exposes disk independently of memory.",
+				"Local e2e validation wiring; not yet a committed run. The 40 GiB volume (mounted at the PTS data dir) now lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping; the remaining spec deviation is CPU (4 vCPU vs the 2-vCPU target, from Blaxel's memory/CPU coupling).",
 		},
-		// Values ARE settable, but the CPU/disk coupling makes the shared target spec unreachable --
-		// "fixed" is the honest capability for cross-provider comparability purposes.
+		// Disk and RAM are now pinned to the target (40 GiB volume + memory=8192), but CPU stays coupled
+		// to RAM -- 2 vCPU AND 8 GiB RAM is unreachable -- so "fixed" remains the honest capability for
+		// cross-provider comparability purposes.
 		specPinning: "fixed",
 		transport: {
 			// `@computesdk/blaxel` execs through the sandbox gateway; long synchronous execs are not

@@ -9,6 +9,7 @@ import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { blaxelWithVolume } from "./blaxel-volume.ts";
 import { config } from "./config.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { novitaCompute } from "./novita.ts";
@@ -50,12 +51,16 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		},
 	},
 	blaxel: {
-		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). The stock
-		// base-image is Alpine (no apt — PTS uninstallable) and disk is a tmpfs overlay carved from VM
-		// RAM (~78%), so boot the Debian ts-app image and buy disk with memory: 16384 MB ≈ 12.5 GiB
-		// disk. No pre-baked toolchain snapshot yet — setup steps run their fallback paths.
+		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). Boot the Debian
+		// ts-app image as root (the stock Alpine base-image has no apt — PTS uninstallable). Blaxel
+		// couples CPU to RAM (measured: vCPU ≈ memory_MB / 2048) and exposes no cgroup cpu.max, so
+		// memory=8192 buys the target's 8 GiB RAM but 4 vCPU (2× the 2-vCPU target) — the closest match
+		// possible, recorded as an actual and surfaced via the leaderboard comparability warning rather
+		// than silently claimed. Disk no longer rides on RAM: blaxelWithVolume mounts a 40 GiB volume at
+		// the PTS data dir where the heavy suites write (see blaxel-volume.ts), so it now clears the disk
+		// gate like the other runners. No pre-baked toolchain snapshot yet — setup steps run fallbacks.
 		createCompute: () =>
-			blaxel({ image: "blaxel/ts-app:latest", memory: 16384, region: "us-pdx-1" }),
+			blaxelWithVolume(blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-pdx-1" })),
 		createOptions: {},
 	},
 	modal: {
