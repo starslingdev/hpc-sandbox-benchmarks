@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.12.1",
   "scripts": {
-    "build": "mkdir -p dist && echo ok > dist/out.txt && echo x >> /tmp/counts/build && sleep 2",
+    "build": "if [ -f packages/core/node_modules/.cache/ts/tsbuildinfo ]; then echo CACHE_HIT >> /tmp/counts/build-cache; fi; mkdir -p dist packages/core/node_modules/.cache/ts && echo ok > dist/out.txt && echo warm > packages/core/node_modules/.cache/ts/tsbuildinfo && echo x >> /tmp/counts/build && sleep 2",
     "lint": "echo x >> /tmp/counts/lint && sleep 0.5",
     "test": "test -f dist/out.txt && echo x >> /tmp/counts/test && sleep 1"
   }
