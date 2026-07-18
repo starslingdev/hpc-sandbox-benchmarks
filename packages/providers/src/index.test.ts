@@ -42,6 +42,7 @@ describe("@sandbox-benchmarks/providers", () => {
 			cpuLimit: TARGET_SPEC.vcpus,
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
+			experimentalOptions: { vm_runtime: true },
 		});
 	});
 
