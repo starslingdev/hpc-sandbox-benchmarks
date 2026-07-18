@@ -95,5 +95,13 @@ count() { if [ -f "$COUNTS/$1" ]; then wc -l < "$COUNTS/$1" | tr -d ' '; else ec
 	echo "FAIL: per-package TS cache hits=$(count build-cache), expected 0" >&2
 	exit 1
 }
-echo "execution-count assertions OK (build=3 lint=2 test=1 build-cache=0)"
+# Positive counterpart to build-cache=0: the turbo sentinel primed by the first build must survive
+# every subsequent wipe_tool_caches reset (build runs 2 and 3 of 3), proving the `! -name turbo`
+# exception actually preserves turbo's own cache rather than the assertion passing by wiping
+# everything indiscriminately.
+[ "$(count turbo-survived)" = "2" ] || {
+	echo "FAIL: turbo cache survived $(count turbo-survived)x resets, expected 2" >&2
+	exit 1
+}
+echo "execution-count assertions OK (build=3 lint=2 test=1 build-cache=0 turbo-survived=2)"
 echo "SELFTEST PASS"

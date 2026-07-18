@@ -36,9 +36,11 @@ end_ns=""
 
 # Wipe every workspace node_modules/.cache entry except turbo. A root-only wipe misses
 # per-package paths (e.g. better-auth packages/<pkg>/node_modules/.cache/ts), which made
-# warm-up leave an incremental TS cache and under-measure build/typecheck.
+# warm-up leave an incremental TS cache and under-measure build/typecheck. Anchored to
+# WORK_DIR (not `.`) so the blast radius is explicit even if a future call site forgets
+# to cd first.
 wipe_tool_caches() {
-	find . -type d -path '*/node_modules/.cache' 2>/dev/null |
+	find "$WORK_DIR" -type d -path '*/node_modules/.cache' 2>/dev/null |
 		while IFS= read -r cache_dir; do
 			find "$cache_dir" -mindepth 1 -maxdepth 1 ! -name turbo -exec rm -rf {} +
 		done
