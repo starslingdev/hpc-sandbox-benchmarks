@@ -183,6 +183,16 @@ jobs:
           owner: ${{ env.IMAGE_OWNER }}
           package: ${{ steps.plan.outputs.image-name }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      # The blaxel variant is its own GHCR package (pushed by the bake cell, pulled directly by
+      # Blaxel's control plane — see apps/cli/src/lib/bake/blaxel.ts), so it needs the same public-
+      # visibility bootstrap as the base candidate, independently of it.
+      - name: Ensure blaxel candidate package is public
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/ensure-package-public
+        with:
+          owner: ${{ env.IMAGE_OWNER }}
+          package: ${{ steps.plan.outputs.image-name }}-blaxel
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload release plan
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -310,8 +320,7 @@ jobs:
         # The cell's provider + required flag reach the script through the environment, never
         # interpolated into the shell, so a matrix value can't inject into the runner command. Provider
         # creds are optional: a missing one SKIPS that provider (required cells fail instead — see
-        # --require below). blaxel gets no creds here (its bake is a no-op booting the stock base), so
-        # it skips, exactly as the previous monolithic lane did.
+        # --require below).
         #
         # Each cell is handed ONLY its own provider's credentials. The cell already restricts execution
         # to one provider (`--provider`), so injecting all five providers' secrets into all five cells
@@ -331,6 +340,10 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
           # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          # Optional (blaxel is beta, not in `required` — see release-plan.ts): a missing BL_API_KEY/
+          # BL_WORKSPACE skips the blaxel bake without failing the release.
+          BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
         run: |
           set -euo pipefail
           args=(--provider "${PROVIDER}")
@@ -421,6 +434,8 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          BL_API_KEY: ${{ secrets.BL_API_KEY }}
+          BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
         run: |
           set -euo pipefail
           args=(--promote --require "${REQUIRED}")

@@ -62,7 +62,7 @@ docker build "${base_build_args[@]}" "${meta_args[@]}" \
 # > Each variant composes on the just-built base via --build-arg BASE_IMAGE, with the images/
 # > directory as context so it can COPY the shared _shared/validate-base.sh. Variants take only the
 # > base ref + build metadata (their Dockerfiles declare no toolchain pins).
-for provider in e2b daytona modal; do
+for provider in e2b daytona modal blaxel; do
 	ref="${base_repo}-${provider}:${image_version}"
 	echo ">>> building ${provider} variant: ${ref}"
 	docker build "${meta_args[@]}" \

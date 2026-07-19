@@ -93,11 +93,15 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
    | `MODAL_TOKEN_ID` | toolchain bake, bench matrix/smoke |
    | `MODAL_TOKEN_SECRET` | toolchain bake, bench matrix/smoke |
    | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
-   | `BL_API_KEY` | bench matrix/smoke only |
-   | `BL_WORKSPACE` | bench matrix/smoke only |
+   | `BL_API_KEY` | optional for toolchain (blaxel is beta, not `required`); bench matrix/smoke |
+   | `BL_WORKSPACE` | optional for toolchain (blaxel is beta, not `required`); bench matrix/smoke |
 
-5. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
-   the candidate base anonymously (Org → Packages → package settings).
+5. Confirm the GHCR packages `sandbox-benchmarks-toolchain` and `sandbox-benchmarks-toolchain-blaxel`
+   are both **public** so providers can pull the candidate base — and, for blaxel, its own baked
+   variant (base + Blaxel's sandbox-api injected) — anonymously (Org → Packages → package settings).
+   Each is created **private** on first push with no API to flip visibility, so this is a one-time
+   manual step per package; `plan`'s `Ensure … candidate package is public` steps fail loudly (rather
+   than let providers hit an opaque pull error) until each is done once.
 6. Enable **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create
    and approve pull requests"**. `publish-dataset.yml`'s `gh pr create` fails outright without it
    (`GraphQL: GitHub Actions is not permitted to create or approve pull requests`) — the job pushes

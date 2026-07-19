@@ -51,18 +51,21 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		},
 	},
 	blaxel: {
-		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). Boot the Debian
-		// ts-app image as root (the stock Alpine base-image has no apt — PTS uninstallable). Blaxel
-		// couples CPU to RAM (measured: vCPU ≈ memory_MB / 2048) and exposes no cgroup cpu.max, so
+		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). Boot the baked
+		// toolchain-blaxel image (the shared toolchain base + Blaxel's sandbox-api binary/entrypoint
+		// injected — see packages/templates/images/blaxel/Dockerfile and apps/cli/src/lib/bake/blaxel.ts)
+		// instead of the stock blaxel/ts-app image, so setup steps take the same no-op fast path the
+		// other baked-image providers get (packages/harness/src/lib/setup.ts). `image` lives in
+		// createOptions, not this factory call — computesdk's blaxel wrapper resolves it last (spread
+		// after the factory default), matching how the other providers keep their boot identity there.
+		// Blaxel couples CPU to RAM (measured: vCPU ≈ memory_MB / 2048) and exposes no cgroup cpu.max, so
 		// memory=8192 yields the target's 8 GiB RAM and 4 vCPU — the target pins vCPU at 4 precisely so
 		// Blaxel's coupled point matches on effective vCPU/memory (specMatched=true), no comparability
 		// caveat. Disk is separate: blaxelWithVolume mounts a 40 GiB volume at
 		// the PTS data dir where the heavy suites write (see blaxel-volume.ts), so it clears the disk
-		// gate like the other runners (not part of the specMatched check). No pre-baked toolchain
-		// snapshot yet — setup steps run fallbacks.
-		createCompute: () =>
-			blaxelWithVolume(blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-pdx-1" })),
-		createOptions: {},
+		// gate like the other runners (not part of the specMatched check).
+		createCompute: () => blaxelWithVolume(blaxel({ memory: 8192, region: "us-pdx-1" })),
+		createOptions: { image: config.toolchainImageBlaxel },
 	},
 	modal: {
 		// Boot sandboxes under this project's own Modal app (auto-created via apps.fromName on first

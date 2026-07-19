@@ -236,7 +236,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"Local e2e validation wiring; not yet a committed run. memory=8192 hits the 4 vCPU / 8 GiB target (specMatched=true is that vCPU/memory check only); the 40 GiB volume (mounted at the PTS data dir) separately lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping.",
+				"Bakes a real toolchain artifact now (base + Blaxel's sandbox-api injected — apps/cli/src/lib/bake/blaxel.ts) and is wired into the release bake/promote pipeline, but stays optional there (not in release-plan.ts's RELEASE_REQUIRED_PROVIDERS) and out of bench-matrix.yml's default provider set until run and checked at least once against a live account. memory=8192 hits the 4 vCPU / 8 GiB target (specMatched=true is that vCPU/memory check only); the 40 GiB volume (mounted at the PTS data dir) separately lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping.",
 		},
 		// memory=8192 lands on the target's 8 GiB / 4 vCPU point because the target's vCPU was chosen to
 		// sit on Blaxel's RAM/CPU coupling curve (specMatched only judges that pair). The 40 GiB volume

@@ -24,6 +24,7 @@
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
+import { bakeBlaxelImage } from "./blaxel.ts";
 import { bakeDaytonaSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
 import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
@@ -84,6 +85,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: pinnedCandidateImage,
+		toolchainImageBlaxelCandidate: config.toolchainImageBlaxelCandidate,
 		daytonaTarget: config.daytona.target,
 	};
 	log(`>>> re-validating candidate ${pinnedCandidateImage} before promote…`);
@@ -104,10 +106,11 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	// 3. Build each provider's version-named artifact FROM the candidate base (the bytes we just
 	//    revalidated). Built BEFORE the base retag, so a failure here leaves the version base unwritten
 	//    and a rerun is clean. Shares the skip-vs-fail loop with bake.
-	//    Under `--force` these names already exist and are live. e2b/image replace on success; daytona
-	//    deletes first (no snapshot overwrite in the SDK), so a failed daytona create removes the
-	//    published snapshot — `bakeDaytonaSnapshot` says so in its error, which lands in the report's
-	//    `reason`. The base is still never written, so the version tag itself stays consistent.
+	//    Under `--force` these names already exist and are live. e2b/image/blaxel replace on success (a
+	//    registry tag push, like the base); daytona deletes first (no snapshot overwrite in the SDK), so
+	//    a failed daytona create removes the published snapshot — `bakeDaytonaSnapshot` says so in its
+	//    error, which lands in the report's `reason`. The base is still never written, so the version
+	//    tag itself stays consistent.
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {
 			log(`>>> ${provider.name}: building version artifact from candidate…`);
@@ -126,7 +129,9 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 					log("    modal boots the published version image — nothing to build");
 					break;
 				case "blaxel":
-					log("    blaxel boots the stock base image — nothing to promote");
+					await bakeBlaxelImage(config.toolchainImageBlaxelVersion, pinnedCandidateImage, (m) =>
+						log(`    ${m}`),
+					);
 					break;
 				case "novita":
 					await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedCandidateImage, (m) =>

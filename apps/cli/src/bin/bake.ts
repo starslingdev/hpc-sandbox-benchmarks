@@ -13,6 +13,7 @@ import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harnes
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
+import { bakeBlaxelImage } from "../lib/bake/blaxel.ts";
 import { bakeDaytonaSnapshot } from "../lib/bake/daytona.ts";
 import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
@@ -31,9 +32,7 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	e2b: (image, log) => bakeE2bTemplate(config.e2bTemplateCandidate, image, log),
 	daytona: (image, log) => bakeDaytonaSnapshot(config.daytonaSnapshotCandidate, image, log),
 	modal: bakeModalImage,
-	blaxel: async (_image, log) => {
-		log("blaxel boots the stock base image — no candidate artifact to bake");
-	},
+	blaxel: (image, log) => bakeBlaxelImage(config.toolchainImageBlaxelCandidate, image, log),
 	novita: (image, log) => bakeNovitaTemplate(config.novitaTemplateCandidate, image, log),
 };
 
@@ -152,6 +151,7 @@ if (import.meta.main) {
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: pinnedCandidateImage,
+		toolchainImageBlaxelCandidate: config.toolchainImageBlaxelCandidate,
 		daytonaTarget: config.daytona.target,
 	};
 

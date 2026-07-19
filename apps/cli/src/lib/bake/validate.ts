@@ -9,6 +9,8 @@ export interface CandidateRefs {
 	/** Candidate template on Novita's E2B-compatible control plane (its own namespace). */
 	novitaTemplateCandidate: string;
 	toolchainImageCandidate: string;
+	/** Candidate blaxel-variant image (base + sandbox-api injected — see images/blaxel/Dockerfile). */
+	toolchainImageBlaxelCandidate: string;
 	/** Daytona runner target for the active region (undefined → account default). */
 	daytonaTarget?: string;
 }
@@ -30,8 +32,9 @@ export function candidateCreateOptions(
 		case "modal":
 			return { templateId: refs.toolchainImageCandidate };
 		case "blaxel":
-			// Stock base image — no candidate artifact to point at.
-			return {};
+			// computesdk's blaxel wrapper resolves `image` last (spread after its factory default), so
+			// this overrides the adapter's published-version image for the validate boot.
+			return { image: refs.toolchainImageBlaxelCandidate };
 		case "novita":
 			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.
 			return { snapshotId: refs.novitaTemplateCandidate };

@@ -11,6 +11,7 @@ import { type } from "arktype";
 //    in favor of `us-west-2` (set via DAYTONA_TARGET), so there's no region selector any more.
 const envSchema = type({
 	"BENCH_TOOLCHAIN_IMAGE?": "string >= 1",
+	"BENCH_TOOLCHAIN_IMAGE_BLAXEL?": "string >= 1",
 	"E2B_TEMPLATE?": "string >= 1",
 	"DAYTONA_API_KEY?": "string >= 1",
 	"DAYTONA_TARGET?": "string >= 1",
@@ -21,6 +22,7 @@ const envSchema = type({
 
 const ENV_KEYS = [
 	"BENCH_TOOLCHAIN_IMAGE",
+	"BENCH_TOOLCHAIN_IMAGE_BLAXEL",
 	"E2B_TEMPLATE",
 	"DAYTONA_API_KEY",
 	"DAYTONA_TARGET",
@@ -71,6 +73,11 @@ const CANDIDATE_SUFFIX = "-candidate";
 
 const toolchainImageVersion = `${imageRepo}:${TOOLCHAIN_VERSION}`;
 const toolchainImageCandidate = `${toolchainImageVersion}${CANDIDATE_SUFFIX}`;
+// The blaxel variant (base + Blaxel's sandbox-api injected, see images/blaxel/Dockerfile) is its own
+// GHCR repository, not a tag on the base — Blaxel pulls it directly via `image:`, so it needs its own
+// package (and its own public-visibility bootstrap; see docs/ci-secrets.md).
+const toolchainImageBlaxelVersion = `${imageRepo}-blaxel:${TOOLCHAIN_VERSION}`;
+const toolchainImageBlaxelCandidate = `${toolchainImageBlaxelVersion}${CANDIDATE_SUFFIX}`;
 // Version-scope the e2b template + daytona snapshot (parity with each other): a v2 makes a new
 // named artifact instead of overwriting v1.
 const e2bTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
@@ -96,6 +103,14 @@ export const config = {
 	toolchainImageVersion,
 	/** Mutable candidate image ref (`:v1-candidate`); what the bake builds/pushes while iterating. */
 	toolchainImageCandidate,
+	/** The blaxel-variant image ref the adapter boots from (sandbox-api injected on top of the
+	 *  toolchain base — see images/blaxel/Dockerfile); `BENCH_TOOLCHAIN_IMAGE_BLAXEL` override, else
+	 *  the version-scoped public image. */
+	toolchainImageBlaxel: env.BENCH_TOOLCHAIN_IMAGE_BLAXEL ?? toolchainImageBlaxelVersion,
+	/** Public (version-scoped) blaxel-variant image ref; the promote target. */
+	toolchainImageBlaxelVersion,
+	/** Candidate blaxel-variant image ref the bake builds/pushes while iterating. */
+	toolchainImageBlaxelCandidate,
 	/** The e2b template the sandbox boots from (name = e2b.toml `template_name`); `E2B_TEMPLATE`
 	 *  override, else the version-scoped public template. */
 	e2bTemplate: env.E2B_TEMPLATE ?? e2bTemplateVersion,

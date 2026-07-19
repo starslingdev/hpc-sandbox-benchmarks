@@ -8,6 +8,7 @@ const refs: CandidateRefs = {
 	// Distinct from the e2b value so the novita case fails if it ever reads the e2b field.
 	novitaTemplateCandidate: "tc-v1-novita-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
+	toolchainImageBlaxelCandidate: "ghcr.io/o/tc-blaxel:v1-candidate",
 	daytonaTarget: "zen5",
 };
 
@@ -38,6 +39,12 @@ describe("candidateCreateOptions", () => {
 	it("points modal at the candidate image via templateId", () => {
 		expect(candidateCreateOptions("modal", refs)).toEqual({
 			templateId: "ghcr.io/o/tc:v1-candidate",
+		});
+	});
+
+	it("points blaxel at its candidate variant image via image", () => {
+		expect(candidateCreateOptions("blaxel", refs)).toEqual({
+			image: "ghcr.io/o/tc-blaxel:v1-candidate",
 		});
 	});
 });

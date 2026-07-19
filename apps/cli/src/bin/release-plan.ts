@@ -26,9 +26,10 @@ import { emitStepOutputs } from "../lib/gha-output.ts";
  * Providers the release is REQUIRED to bake + validate before the public version is published — the
  * same set CI passes to `bake --promote --require …`, single-sourced here so the matrix's per-cell
  * `required` flags and promote's gate can't drift. e2b/daytona bake a real artifact; modal is required
- * because its `Image.fromRegistry` boot validates the published image the same way. blaxel (a no-op
- * bake booting the stock base) and novita (optional control plane) are best-effort: a missing secret
- * skips them without failing the release.
+ * because its `Image.fromRegistry` boot validates the published image the same way. blaxel bakes a
+ * real artifact too (the base + Blaxel's sandbox-api injected) but stays best-effort like novita
+ * (optional control plane) — both beta/optional providers whose maturity, not their bake mechanics,
+ * keeps them out of the release gate: a missing secret skips them without failing the release.
  */
 export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = ["e2b", "daytona", "modal"];
 
@@ -50,7 +51,7 @@ function providerArtifact(id: ProviderId): string {
 		case "modal":
 			return "boots the candidate image directly (no baked artifact)";
 		case "blaxel":
-			return "boots the stock base image (no baked artifact)";
+			return config.toolchainImageBlaxelCandidate;
 	}
 }
 
