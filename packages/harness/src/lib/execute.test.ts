@@ -48,6 +48,10 @@ describe("sandbox preamble", () => {
 		expect(PREAMBLE).toContain("MISE_TASK_RUN_AUTO_INSTALL=0");
 	});
 
+	it("keeps the baked mise-managed Python active", () => {
+		expect(PREAMBLE).not.toContain("MISE_DISABLE_TOOLS=python");
+	});
+
 	it("reuses the baked PTS registry for an injected unprivileged runtime user", () => {
 		expect(PREAMBLE).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
 	});

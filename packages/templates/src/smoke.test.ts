@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { pins } from "./pins.ts";
 import type { SmokeExec } from "./smoke.ts";
 import { ptsInstalledTestsSmokeCheck, runSmoke, smokeBashScript, smokeChecks } from "./smoke.ts";
 
@@ -26,6 +27,22 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 			expect(c.cmd.length).toBeGreaterThan(0);
 			expect(c.expect.length).toBeGreaterThan(0);
 		}
+	});
+
+	it("checks python and python3 independently at the same pinned version", () => {
+		const python = smokeChecks.find((check) => check.name === "python");
+		const python3 = smokeChecks.find((check) => check.name === "python3");
+
+		expect(python).toEqual({
+			name: "python",
+			cmd: "python --version",
+			expect: `Python ${pins.pythonVersion}`,
+		});
+		expect(python3).toEqual({
+			name: "python3",
+			cmd: "python3 --version",
+			expect: `Python ${pins.pythonVersion}`,
+		});
 	});
 
 	// The count (9) and sample profile names are hardcoded on purpose: this is a drift tripwire, not a
@@ -83,6 +100,26 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		expect(results.map((r) => r.name)).toEqual(smokeChecks.map((c) => c.name));
 		expect(results.every((r) => r.ok)).toBe(true);
 	});
+
+	for (const badAlias of ["python", "python3"] as const) {
+		it(`fails only the ${badAlias} check when that alias reports the wrong version`, async () => {
+			const badCommand = `${badAlias} --version`;
+			const exec: SmokeExec = (cmd) => {
+				const check = smokeChecks.find((candidate) => candidate.cmd === cmd);
+				return Promise.resolve({
+					stdout: cmd === badCommand ? "Python 0.0.0" : (check?.expect ?? ""),
+					stderr: "",
+					exitCode: 0,
+				});
+			};
+
+			const results = await runSmoke(exec);
+			const sibling = badAlias === "python" ? "python3" : "python";
+			expect(results.find((result) => result.name === badAlias)?.ok).toBe(false);
+			expect(results.find((result) => result.name === sibling)?.ok).toBe(true);
+			expect(results.every((result) => result.ok)).toBe(false);
+		});
+	}
 
 	it("fails a probe whose output is missing the expected substring", async () => {
 		const exec: SmokeExec = () =>

@@ -73,8 +73,9 @@ export function ptsInstalledTestsSmokeCheck(installTests: string): SmokeCheck {
 export const smokeChecks: readonly SmokeCheck[] = [
 	// Stable node path consumers depend on (10-mise.sh symlink) resolves the pinned node.
 	{ name: "node", cmd: "bench-node --version", expect: `v${pins.nodeVersion}` },
-	// mise-managed python on PATH at the pinned version (not distro python).
-	{ name: "python", cmd: "python3 --version", expect: `Python ${pins.pythonVersion}` },
+	// Both mise-managed Python aliases independently resolve the pinned version (not distro Python).
+	{ name: "python", cmd: "python --version", expect: `Python ${pins.pythonVersion}` },
+	{ name: "python3", cmd: "python3 --version", expect: `Python ${pins.pythonVersion}` },
 	// mise itself is the pinned release (stronger than asserting it merely lists a tool).
 	{ name: "mise", cmd: "mise --version", expect: pins.miseVersion },
 	// Every other mise-managed tool resolves on PATH at its exact pinned version — proves the *whole*

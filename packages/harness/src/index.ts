@@ -1,5 +1,5 @@
 // Public surface of @sandbox-benchmarks/harness — drives a provider to produce raw benchmark output.
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import { providers } from "@sandbox-benchmarks/providers";
@@ -166,6 +166,50 @@ async function destroySandbox(sandbox: SandboxHandle | undefined): Promise<void>
 	} catch (err) {
 		console.warn(`[cleanup] destroy failed: ${err instanceof Error ? err.message : String(err)}`);
 	}
+}
+
+function decodeXmlText(text: string): string {
+	return text.replace(
+		/&(?:#(\d+)|#x([\da-fA-F]+)|(amp|apos|gt|lt|quot));/g,
+		(entity, dec, hex, named) => {
+			const codePoint = dec ? Number.parseInt(dec, 10) : hex ? Number.parseInt(hex, 16) : undefined;
+			if (codePoint !== undefined) {
+				try {
+					return String.fromCodePoint(codePoint);
+				} catch {
+					return entity;
+				}
+			}
+			return { amp: "&", apos: "'", gt: ">", lt: "<", quot: '"' }[named as string] ?? entity;
+		},
+	);
+}
+
+/** Whether a PTS composite contains a case-sensitive Value element with non-whitespace text. */
+function ptsCompositeHasMeasurement(xml: string): boolean {
+	const tokens = xml.matchAll(
+		/<!--[\s\S]*?-->|<!\[CDATA\[([\s\S]*?)\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<\/?([A-Za-z_][\w:.-]*)(?:\s[^>]*)?>|([^<]+)/g,
+	);
+	let valueDepth = 0;
+	let valueText = "";
+	for (const match of tokens) {
+		const token = match[0];
+		const cdata = match[1];
+		const tagName = match[2];
+		const text = match[3];
+		if (tagName === "Value") {
+			if (token.startsWith("</")) {
+				if (valueDepth === 1 && decodeXmlText(valueText).trim()) return true;
+				valueDepth = Math.max(0, valueDepth - 1);
+			} else if (!token.endsWith("/>") && valueDepth++ === 0) {
+				valueText = "";
+			}
+		} else if (valueDepth > 0) {
+			if (cdata !== undefined) valueText += cdata;
+			else if (text !== undefined) valueText += text;
+		}
+	}
+	return false;
 }
 
 /**
@@ -345,12 +389,25 @@ export async function runSuiteOnSandbox(
 			}
 		}
 
-		// PTS exits 0 even when a profile fails to install, so a broken environment yields a green job
-		// with an empty artifact — treat "no pts_*.xml from a PTS suite" as a failure.
-		if (!suiteError && suite.setupPts && !readdirSync(resultsDir).some(isPtsResultFile)) {
-			suiteError = new Error(
-				`Suite "${suiteName}" on ${providerName} produced no pts_*.xml — PTS likely failed silently`,
-			);
+		if (!suiteError && suite.setupPts) {
+			const ptsResults = readdirSync(resultsDir).filter(isPtsResultFile).sort();
+			// PTS exits 0 even when a profile fails to install, so a broken environment can yield a green
+			// job with an empty artifact. Preserve that failure before inspecting individual composites.
+			if (ptsResults.length === 0) {
+				suiteError = new Error(
+					`Suite "${suiteName}" on ${providerName} produced no pts_*.xml — PTS likely failed silently`,
+				);
+			} else {
+				const hollow = ptsResults.filter(
+					(name) => !ptsCompositeHasMeasurement(readFileSync(resolve(resultsDir, name), "utf8")),
+				);
+				if (hollow.length > 0) {
+					suiteError = new Error(
+						`Suite "${suiteName}" on ${providerName} produced hollow PTS composites ` +
+							`(${hollow.join(", ")}): every <Value> is empty or absent`,
+					);
+				}
+			}
 		}
 	} finally {
 		await destroySandbox(sandbox);

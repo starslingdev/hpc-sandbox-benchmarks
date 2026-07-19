@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<!-- PTS emits this composite when the pybench profile starts but its mise-managed Python shim is
+dead. The result exists, but it carries no measurement and must not make the suite look successful. -->
+<PhoronixTestSuite>
+  <Generated>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+  </Generated>
+  <Result>
+    <Identifier>pts/pybench-1.1.3</Identifier>
+    <Title>PyBench</Title>
+    <AppVersion></AppVersion>
+    <Arguments></Arguments>
+    <Description>Total For Average Test Times</Description>
+    <Scale>Milliseconds</Scale>
+    <Proportion>LIB</Proportion>
+    <Data>
+      <Entry>
+        <Identifier>sandbox</Identifier>
+        <Value>
+        </Value>
+        <RawString></RawString>
+        <JSON>{"error":"mise ERROR No version is set for command python"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

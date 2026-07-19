@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildDaytonaTemplate } from "./daytona.ts";
 import { buildE2bTemplate } from "./e2b.ts";
 import { templateProviders } from "./index.ts";
@@ -21,5 +23,16 @@ describe("@sandbox-benchmarks/templates", () => {
 
 	it("lists every provider that has a builder", () => {
 		expect([...templateProviders]).toEqual(["e2b", "daytona", "modal"]);
+	});
+
+	it("probes mise with an existing E2B-style injected user home without baking it in", () => {
+		const installScript = readFileSync(
+			join(import.meta.dir, "../images/base/scripts/10-mise.sh"),
+			"utf8",
+		);
+
+		expect(installScript).toContain("install -d -m 0755 /home/user");
+		expect(installScript).toContain("run_sanitized /home/user");
+		expect(installScript).toContain("rm -rf /home/user");
 	});
 });

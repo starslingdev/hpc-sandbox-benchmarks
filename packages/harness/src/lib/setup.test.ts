@@ -26,6 +26,25 @@ describe("setupSteps", () => {
 		expect(ptsStep?.script).not.toContain("command -v phoronix-test-suite");
 	});
 
+	it("requires both Python aliases on every successful base-package path", () => {
+		const baseStep = setupSteps(SUITES["cpu-node"]).find(
+			(step) => step.label === "install base packages",
+		);
+		const script = baseStep?.script ?? "";
+		const branches = script.split(/\s+\|\|\s+/);
+
+		expect(branches).toHaveLength(3);
+		for (const branch of branches) {
+			expect(branch).toContain("command -v git");
+			expect(branch).toContain("command -v curl");
+			expect(branch).toContain("python --version");
+			expect(branch).toContain("python3 --version");
+		}
+		expect(branches[1]).toContain("python3 python-is-python3");
+		// Pin the terminal no-apt fallback explicitly: it must not succeed on git/curl alone.
+		expect(branches[2]).toEndWith(") >/dev/null 2>&1");
+	});
+
 	it("includes fast-cli's Puppeteer/Chrome runtime libs in the stock-image PTS deps fallback", () => {
 		// Regression guard for the class of bug fixed in a2dd493: this list must stay in lockstep with
 		// packages/templates/images/base/scripts/00-apt.sh's Chrome/Puppeteer block, or a stock-image

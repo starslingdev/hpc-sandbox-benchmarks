@@ -16,6 +16,8 @@ command -v mise >/dev/null 2>&1 || fail "mise not found on PATH"
 # > The stable node path the base resolves once; consumers depend on it, not a versioned path.
 [[ -x /usr/local/bin/bench-node ]] || fail "stable node symlink /usr/local/bin/bench-node missing"
 bench-node --version >/dev/null 2>&1 || fail "/usr/local/bin/bench-node is not runnable"
+python --version >/dev/null 2>&1 || fail "python is not runnable"
+python3 --version >/dev/null 2>&1 || fail "python3 is not runnable"
 
 # > Phoronix Test Suite + at least one completely pre-installed profile for offline execution.
 command -v phoronix-test-suite >/dev/null 2>&1 || fail "phoronix-test-suite not found on PATH"

@@ -32,6 +32,8 @@ const MISE_SHA256_ARM64 = "a068f29d8821ab0707f1a006721b5ab0baa80acaafc5a7b71e043
 const NODE_VERSION = "22.22.3";
 const PNPM_VERSION = "10.34.3";
 const PTS_VERSION = "10.8.4";
+const REQUIRED_BASE_EXECUTABLES =
+	"command -v git && command -v curl && python --version && python3 --version";
 
 export interface SetupStep {
 	label: string;
@@ -45,11 +47,11 @@ export function setupSteps(suite: Suite): SetupStep[] {
 	const steps: SetupStep[] = [
 		{
 			label: "install base packages",
-			// No-op on pre-baked images; fall back gracefully on images that already ship git/curl.
+			// No-op on pre-baked images; fall back gracefully only when every required executable works.
 			script:
-				"(command -v git && command -v curl && command -v python3) >/dev/null 2>&1 " +
-				"|| ($SUDO apt-get update -qq && $SUDO apt-get install -y -qq git curl ca-certificates tar gzip xz-utils unzip python3) " +
-				"|| (command -v git >/dev/null && command -v curl >/dev/null)",
+				`(${REQUIRED_BASE_EXECUTABLES}) >/dev/null 2>&1 ` +
+				`|| ($SUDO apt-get update -qq && $SUDO apt-get install -y -qq git curl ca-certificates tar gzip xz-utils unzip python3 python-is-python3 && ${REQUIRED_BASE_EXECUTABLES}) ` +
+				`|| (${REQUIRED_BASE_EXECUTABLES}) >/dev/null 2>&1`,
 			timeoutMs: 10 * MIN,
 		},
 		{

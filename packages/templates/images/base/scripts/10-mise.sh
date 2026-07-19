@@ -30,8 +30,20 @@ for shim in "${MISE_DATA_DIR}/shims/"*; do
 	ln -sf "${shim}" "/usr/local/bin/$(basename "${shim}")"
 done
 
-# > Gate: prove the pinned runtimes resolve under a PTS-style sanitized PATH (standard dirs only; the
-# > mise env vars are still inherited). Fails the build here, not at a later PTS test pre-install.
-env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME="${HOME:-/root}" \
-	MISE_DATA_DIR="${MISE_DATA_DIR}" MISE_CONFIG_DIR="${MISE_CONFIG_DIR}" \
-	sh -c 'node --version && npm --version && python3 --version && pip3 --version'
+# > Gate: prove the pinned runtimes resolve under a PTS-style sanitized PATH (standard dirs only) for
+# > both root and an E2B-style injected user HOME. The shared mise dirs make resolution HOME-independent.
+# > Fails the build here, not at a later PTS test pre-install.
+run_sanitized() {
+	local home="$1"
+	shift
+	env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME="${home}" \
+		MISE_DATA_DIR="${MISE_DATA_DIR}" MISE_CONFIG_DIR="${MISE_CONFIG_DIR}" "$@"
+}
+
+run_sanitized /root sh -c \
+	'node --version && npm --version && python --version && python3 --version && pip3 --version'
+# mise deliberately ignores config when HOME itself does not exist. E2B creates this home when it
+# injects its runtime user; create it only for the faithful build-time probe, then leave no user delta.
+install -d -m 0755 /home/user
+run_sanitized /home/user sh -c 'python --version && python3 --version'
+rm -rf /home/user

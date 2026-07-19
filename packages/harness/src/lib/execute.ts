@@ -182,8 +182,6 @@ const PREAMBLE_HEAD = [
 	// lookups exhaust GitHub's anonymous API quota before a benchmark starts. Suite runtime tools are
 	// installed explicitly by setupSteps (node/pnpm/PTS) or by the base-package fallback instead.
 	"export MISE_TASK_RUN_AUTO_INSTALL=0",
-	// The precompiled-python index is jdx.dev-only (no GitHub fallback) — use the distro python3.
-	"export MISE_DISABLE_TOOLS=python",
 	// Distro pythons are PEP 668 externally-managed, but PTS profiles pip-install their harness —
 	// fine in a throwaway sandbox; the baked image sets the same.
 	"export PIP_BREAK_SYSTEM_PACKAGES=1",

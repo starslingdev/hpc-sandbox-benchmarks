@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
@@ -272,6 +272,34 @@ afterAll(() => rmSync(work, { recursive: true, force: true }));
 let dirSeq = 0;
 const freshDir = (): string => join(work, `r${dirSeq++}`);
 
+function ptsComposite(...values: (string | undefined)[]): string {
+	const entries = (values.length > 0 ? values : [undefined])
+		.map(
+			(value) =>
+				`      <Entry>${value === undefined ? "" : `<Value>${value}</Value>`}<RawString>${value ?? ""}</RawString></Entry>`,
+		)
+		.join("\n");
+	return `<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier>
+    <Data>
+${entries}
+    </Data>
+  </Result>
+</PhoronixTestSuite>`;
+}
+
+function ptsCompositeBody(body: string): string {
+	return `<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier>
+    <Data><Entry>${body}<RawString></RawString></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`;
+}
+
 // Build the stdout the in-sandbox collect command emits: BEGIN/END markers around a base64'd tar of a
 // benchmark-results/ directory holding the given files — what runSuiteOnSandbox extracts.
 function collectPayload(files: Record<string, string>): string {
@@ -306,7 +334,7 @@ function makeSandbox(opts: {
 		if (command.includes("df -Pk")) return { exitCode: 0, stdout: opts.freeKb ?? "999999999" };
 		if (command.includes("base64")) {
 			if (opts.collectFails) return { exitCode: 1, stderr: "collect boom" };
-			const files = opts.collectFiles ?? { "pts_node-web-tooling.xml": "<xml/>" };
+			const files = opts.collectFiles ?? { "pts_node-web-tooling.xml": ptsComposite("16.19") };
 			return { exitCode: 0, stdout: collectPayload(files) };
 		}
 		if (command.includes("benchmark-cmd")) {
@@ -395,7 +423,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		const destroyed = { hit: false };
 		const sandbox = makeSandbox({
 			destroyed,
-			collectFiles: { "pts_node-web-tooling.xml": "<x/>" },
+			collectFiles: { "pts_node-web-tooling.xml": ptsComposite("16.19") },
 		});
 		await runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), resultsDir));
 		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(true);
@@ -462,6 +490,71 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await expect(
 			runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), freshDir())),
 		).rejects.toThrow(/no pts_\*\.xml/);
+		expect(destroyed.hit).toBe(true);
+	});
+
+	it("fails every hollow PTS composite together, writes a failed marker, and tears down", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const sandbox = makeSandbox({
+			destroyed,
+			collectFiles: {
+				"pts_node-web-tooling.xml": ptsComposite("16.19"),
+				"pts_pybench.xml": readFileSync(
+					join(import.meta.dir, "__fixtures__/pts-hollow/pts_pybench.xml"),
+					"utf8",
+				),
+				"pts_sqlite-speedtest.xml": ptsComposite(),
+			},
+		});
+
+		await expect(
+			runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), resultsDir)),
+		).rejects.toThrow(
+			/pts_pybench\.xml, pts_sqlite-speedtest\.xml.*every <Value> is empty or absent/,
+		);
+
+		const marker = join(resultsDir, "sandbox-daytona-cpu-node--failed.json");
+		expect(existsSync(marker)).toBe(true);
+		const markerText = readFileSync(marker, "utf8");
+		expect(markerText).toContain("pts_pybench.xml");
+		expect(markerText).toContain("pts_sqlite-speedtest.xml");
+		expect(destroyed.hit).toBe(true);
+	});
+
+	it("accepts a PTS composite with both blank and measured Values", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const mixed = ptsComposite(" \n ", "20.5");
+		const sandbox = makeSandbox({
+			destroyed,
+			collectFiles: { "pts_node-web-tooling.xml": mixed },
+		});
+
+		await runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), resultsDir));
+
+		expect(readFileSync(join(resultsDir, "pts_node-web-tooling.xml"), "utf8")).toBe(mixed);
+		expect(destroyed.hit).toBe(true);
+	});
+
+	it("does not mistake comments, encoded whitespace, blank CDATA, or lowercase value for measurements", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const sandbox = makeSandbox({
+			destroyed,
+			collectFiles: {
+				"pts_comment.xml": ptsCompositeBody("<!-- <Value>12</Value> -->"),
+				"pts_encoded-whitespace.xml": ptsCompositeBody("<Value>&#x20;&#10;</Value>"),
+				"pts_lowercase.xml": ptsCompositeBody("<value>12</value>"),
+				"pts_whitespace-cdata.xml": ptsCompositeBody("<Value><![CDATA[ \n\t ]]></Value>"),
+			},
+		});
+
+		await expect(
+			runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), resultsDir)),
+		).rejects.toThrow(
+			/pts_comment\.xml, pts_encoded-whitespace\.xml, pts_lowercase\.xml, pts_whitespace-cdata\.xml.*every <Value> is empty or absent/,
+		);
 		expect(destroyed.hit).toBe(true);
 	});
 });
