@@ -640,9 +640,9 @@ run_fio_pts() {
 }
 
 # Run one realworld suite end to end: gate on the toolchain, install the repo-local profile with
-# the SHARED install.sh + runner overlaid from lib/pts/realworld/ (the profiles vendor only
-# XML + target.env — no per-profile scripts to drift), then batch-run it. The single body behind
-# every benchmark:realworld:pts:<repo> mise leaf.
+# the SHARED install.sh + runner + realworld-env.sh overlaid from lib/pts/realworld/ (the profiles
+# vendor only XML + target.env — no per-profile scripts to drift), then batch-run it. The single
+# body behind every benchmark:realworld:pts:<repo> mise leaf.
 # Usage: run_realworld_pts <repo>   (repo = mastra | better-auth | openclaw)
 run_realworld_pts() {
 	local repo="$1"
@@ -660,7 +660,8 @@ run_realworld_pts() {
 
 	install_local_pts_profile "$profile" \
 		"${REPO_ROOT}/lib/pts/realworld/install.sh" \
-		"${REPO_ROOT}/lib/pts/realworld/realworld-runner.sh"
+		"${REPO_ROOT}/lib/pts/realworld/realworld-runner.sh" \
+		"${REPO_ROOT}/lib/pts/realworld/realworld-env.sh"
 
 	run_pts_benchmark "local/${profile}" "$prefix"
 }
