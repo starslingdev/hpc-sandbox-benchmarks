@@ -11,7 +11,14 @@
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel" | "novita";
+export type ProviderId =
+	| "e2b"
+	| "daytona-vm"
+	| "daytona-container"
+	| "modal-gvisor"
+	| "modal-vm"
+	| "blaxel"
+	| "novita";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -135,6 +142,72 @@ export interface ProviderMeta {
  */
 export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const;
 
+// Per-vendor pricing/transport shared across a vendor's isolation variants. Daytona and Modal each
+// expose two isolation technologies (VM vs container; gVisor vs VM runtime), but a vendor bills one
+// way and its `@computesdk/*` adapter execs one way regardless of which isolation the sandbox uses —
+// so these facts live once per vendor and both variant entries reference them. Keeping them single
+// makes it impossible for the two variants' rates or transport bounds to silently drift apart.
+
+/** Daytona's published billing, shared by `daytona-vm` and `daytona-container`. */
+const daytonaPricing: ProviderPricing = {
+	model: "per_vcpu_hour",
+	// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
+	usdPerVcpuHour: 0.0504,
+	usdPerGibHour: 0.0162,
+	// First 5 GiB of memory ship free, so only the remainder is billed at the target spec.
+	includedMemoryGb: 5,
+	// $0.00000003/GiB-s × 3600 = $0.000108/GiB-hr (first 5 GiB free).
+	usdPerGibDiskHour: 0.000108,
+	notes:
+		"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s (first 5 GiB memory free). Disk $0.00000003/GiB-s (first 5 GiB free).",
+	sourceUrl: "https://www.daytona.io/pricing",
+};
+
+/** Daytona's exec transport, shared by both variants. */
+const daytonaTransport: ProviderTransport = {
+	// The single-round-trip-capped reference case: the Daytona server returns HTTP 408 on a
+	// multi-minute synchronous `executeCommand` while the process keeps running server-side, and
+	// `@computesdk/daytona` ignores onStdout/onStderr (hardcoding `stderr:""`) — no streaming to
+	// keep the connection productive. See docs/evidence/daytona-exec-transport.md. The exact
+	// server threshold is unmeasured (sub-second probes succeed; multi-minute execs 408), so the
+	// bound is a conservative 60s policy: budget anything longer to the detached+poll path
+	// (`background` via nohup + the pollable filesystem).
+	streaming: false,
+	syncCapMs: 60_000,
+	detachedPoll: true,
+};
+
+/** Modal's published billing, shared by `modal-gvisor` and `modal-vm`. */
+const modalPricing: ProviderPricing = {
+	model: "per_vcpu_hour",
+	// Sandbox non-preemptible rates. CPU: $0.00003942/requested-cpu-s × 3600 = $0.141912/vCPU-hr —
+	// a requested `cpu` unit delivers one schedulable vCPU (measured; see the harness adapter), so
+	// the docs' "physical core" rate is billed per vCPU-equivalent and gets no ÷2 normalization.
+	// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
+	usdPerVcpuHour: 0.141912,
+	usdPerGibHour: 0.024192,
+	// Volumes: 1 TiB/mo free, then $0.09/GiB/mo. The 40 GB target spec sits inside the free
+	// tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
+	usdPerGibDiskHour: 0,
+	notes:
+		"Sandbox non-preemptible rates (exact): CPU $0.00003942/s per requested cpu unit (observed to deliver 1 schedulable vCPU each, despite the docs calling it a physical core), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
+	sourceUrl: "https://modal.com/pricing",
+};
+
+/** Modal's exec transport, shared by both variants. */
+const modalTransport: ProviderTransport = {
+	// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
+	// separate per-exec timeout. There is no hard server gateway cap, but the exec stdio stream
+	// is not reliable over benchmark-length execs: a ~66-minute better-auth run completed
+	// in-sandbox (manifest exit_code 0) while the harness-side stream died with gRPC INTERNAL
+	// "Failed to read exec stdio stream" (ZEHA3277, 2026-07-10), losing the step result. Cap
+	// synchronous execs at 30 minutes so suite-length steps take the detached+poll path, which
+	// survives a dropped stream; short setup steps keep the cheaper direct exec.
+	streaming: false,
+	syncCapMs: 30 * 60_000,
+	detachedPoll: true,
+};
+
 /**
  * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
  * keys the *behavioural* half of a provider the same way. A keyed Record (rather than an array of
@@ -177,46 +250,42 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
-	daytona: {
-		displayName: "Daytona",
+	"daytona-vm": {
+		displayName: "Daytona (VM)",
 		website: "https://daytona.io",
 		sdkPackage: "@computesdk/daytona",
 		requiredEnvVars: ["DAYTONA_API_KEY"],
 		isolation: {
-			technology: "container (OCI)",
+			technology: "microVM (Linux VM)",
 			notes:
-				"Snapshot-based images; orgs locked to a dedicated region need their own snapshot (DAYTONA_SNAPSHOT).",
+				"Boots a snapshot baked with SandboxClass.LINUX_VM on Daytona's Linux-VM runners (region us-west-2, via DAYTONA_TARGET). Snapshot-based images; orgs locked to a dedicated region need their own snapshot (DAYTONA_SNAPSHOT). The prior single `daytona` entry mislabeled this as a container — the baked class has always been a microVM.",
 		},
-		pricing: {
-			model: "per_vcpu_hour",
-			// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
-			usdPerVcpuHour: 0.0504,
-			usdPerGibHour: 0.0162,
-			// First 5 GiB of memory ship free, so only the remainder is billed at the target spec.
-			includedMemoryGb: 5,
-			// $0.00000003/GiB-s × 3600 = $0.000108/GiB-hr (first 5 GiB free).
-			usdPerGibDiskHour: 0.000108,
-			notes:
-				"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s (first 5 GiB memory free). Disk $0.00000003/GiB-s (first 5 GiB free).",
-			sourceUrl: "https://www.daytona.io/pricing",
-		},
+		pricing: daytonaPricing,
 		maturity: {
 			status: "ga",
 			notes: "The validated reference provider for this harness (pre-baked toolchain snapshot).",
 		},
 		specPinning: "settable",
-		transport: {
-			// The single-round-trip-capped reference case: the Daytona server returns HTTP 408 on a
-			// multi-minute synchronous `executeCommand` while the process keeps running server-side, and
-			// `@computesdk/daytona` ignores onStdout/onStderr (hardcoding `stderr:""`) — no streaming to
-			// keep the connection productive. See docs/evidence/daytona-exec-transport.md. The exact
-			// server threshold is unmeasured (sub-second probes succeed; multi-minute execs 408), so the
-			// bound is a conservative 60s policy: budget anything longer to the detached+poll path
-			// (`background` via nohup + the pollable filesystem).
-			streaming: false,
-			syncCapMs: 60_000,
-			detachedPoll: true,
+		transport: daytonaTransport,
+	},
+	"daytona-container": {
+		displayName: "Daytona (container)",
+		website: "https://daytona.io",
+		sdkPackage: "@computesdk/daytona",
+		requiredEnvVars: ["DAYTONA_API_KEY"],
+		isolation: {
+			technology: "container (Sysbox/OCI)",
+			notes:
+				"Boots its own snapshot baked with SandboxClass.CONTAINER on Daytona's container runners in region `us` (Daytona's default class uses Sysbox-based OCI containers, not gVisor). Separate snapshot from daytona-vm because the sandbox class is fixed at snapshot-bake time, not per-create.",
 		},
+		pricing: daytonaPricing,
+		maturity: {
+			status: "beta",
+			notes:
+				"New isolation variant sharing Daytona credentials/pricing with daytona-vm; boots a container-class snapshot in region `us`. Not yet a committed run.",
+		},
+		specPinning: "settable",
+		transport: daytonaTransport,
 	},
 	blaxel: {
 		displayName: "Blaxel",
@@ -253,44 +322,39 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
-	modal: {
-		displayName: "Modal",
+	"modal-gvisor": {
+		displayName: "Modal (gVisor)",
 		website: "https://modal.com",
 		sdkPackage: "@computesdk/modal",
 		requiredEnvVars: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 		isolation: {
-			technology: "VM",
-			notes: "VM Sandboxes",
-		},
-		pricing: {
-			model: "per_vcpu_hour",
-			// Sandbox non-preemptible rates. CPU: $0.00003942/requested-cpu-s × 3600 = $0.141912/vCPU-hr —
-			// a requested `cpu` unit delivers one schedulable vCPU (measured; see the harness adapter), so
-			// the docs' "physical core" rate is billed per vCPU-equivalent and gets no ÷2 normalization.
-			// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
-			usdPerVcpuHour: 0.141912,
-			usdPerGibHour: 0.024192,
-			// Volumes: 1 TiB/mo free, then $0.09/GiB/mo. The 40 GB target spec sits inside the free
-			// tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
-			usdPerGibDiskHour: 0,
+			technology: "gVisor container",
 			notes:
-				"Sandbox non-preemptible rates (exact): CPU $0.00003942/s per requested cpu unit (observed to deliver 1 schedulable vCPU each, despite the docs calling it a physical core), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
-			sourceUrl: "https://modal.com/pricing",
+				"Modal's default sandbox runtime. scalableSandboxes enabled in the harness; nproc tracks the requested cpu 1:1.",
 		},
-		maturity: { status: "beta", notes: "VM runtime is beta." },
+		pricing: modalPricing,
+		maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },
 		specPinning: "settable",
-		transport: {
-			// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
-			// separate per-exec timeout. There is no hard server gateway cap, but the exec stdio stream
-			// is not reliable over benchmark-length execs: a ~66-minute better-auth run completed
-			// in-sandbox (manifest exit_code 0) while the harness-side stream died with gRPC INTERNAL
-			// "Failed to read exec stdio stream" (ZEHA3277, 2026-07-10), losing the step result. Cap
-			// synchronous execs at 30 minutes so suite-length steps take the detached+poll path, which
-			// survives a dropped stream; short setup steps keep the cheaper direct exec.
-			streaming: false,
-			syncCapMs: 30 * 60_000,
-			detachedPoll: true,
+		transport: modalTransport,
+	},
+	"modal-vm": {
+		displayName: "Modal (VM)",
+		website: "https://modal.com",
+		sdkPackage: "@computesdk/modal",
+		requiredEnvVars: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
+		isolation: {
+			technology: "microVM (VM runtime)",
+			notes:
+				"Modal's experimental VM runtime — a gVisor-free KVM microVM, selected per-create via experimentalOptions {vm_runtime:true} (no separate image; same pushed toolchain image as modal-gvisor).",
 		},
+		pricing: modalPricing,
+		maturity: {
+			status: "beta",
+			notes:
+				"New isolation variant sharing Modal credentials/pricing with modal-gvisor; adds experimentalOptions {vm_runtime:true} at create. Not yet a committed run.",
+		},
+		specPinning: "settable",
+		transport: modalTransport,
 	},
 	novita: {
 		displayName: "Novita",
@@ -364,15 +428,30 @@ export const PROVIDERS: readonly ProviderMeta[] = deepFreeze(
 );
 
 /**
+ * Retired provider ids that committed run documents still carry, mapped to the current variant that
+ * subsumes them. When `modal`/`daytona` were each split into two isolation variants, the pre-split
+ * runs kept their old `providerId`; this table lets {@link getProvider} still resolve them to the
+ * variant that inherited the old behaviour (Modal's default = gVisor; Daytona's baked class = the
+ * Linux VM), so a historical leaderboard keeps its display names and economics instead of degrading
+ * to a bare id. New runs always write a current variant id, so the aliases only ever match old data.
+ */
+export const LEGACY_PROVIDER_ALIASES: Readonly<Record<string, ProviderId>> = Object.freeze({
+	modal: "modal-gvisor",
+	daytona: "daytona-vm",
+});
+
+/**
  * Look up a provider's metadata by id. A known {@link ProviderId} literal always resolves; an
- * arbitrary string (e.g. an id read back from a run document) may not.
+ * arbitrary string (e.g. an id read back from a run document) may not — but a retired id in
+ * {@link LEGACY_PROVIDER_ALIASES} resolves to the variant that subsumed it.
  */
 export function getProvider(id: ProviderId): ProviderMeta;
 export function getProvider(id: string): ProviderMeta | undefined;
 export function getProvider(id: string): ProviderMeta | undefined {
 	// A linear scan over a handful of frozen entries — no module-load Map to drift out of sync, and
 	// the entries are immutable, so returning the reference directly is safe.
-	return PROVIDERS.find((p) => p.id === id);
+	const canonical = LEGACY_PROVIDER_ALIASES[id] ?? id;
+	return PROVIDERS.find((p) => p.id === canonical);
 }
 
 /**

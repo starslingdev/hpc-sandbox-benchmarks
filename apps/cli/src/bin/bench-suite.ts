@@ -198,7 +198,7 @@ if (import.meta.main) {
 		if (arg.startsWith("-")) continue;
 		positionals.push(arg);
 	}
-	const provider = positionals[0] ?? "daytona";
+	const provider = positionals[0] ?? "daytona-vm";
 	const suite = positionals[1] ?? "cpu-node";
 	const runId = positionals[2] ?? `local-${Date.now()}`;
 	const sha = process.env.GITHUB_SHA ?? "local";

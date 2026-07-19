@@ -118,11 +118,11 @@ describe("checkProviderInput", () => {
 	test("flags a registry provider dropped from the options", () => {
 		const drifted = {
 			...providerInput,
-			options: providerInput.options?.filter((o) => o !== "modal"),
+			options: providerInput.options?.filter((o) => o !== "modal-gvisor"),
 		};
 		const errors = checkProviderInput(drifted);
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain('missing "modal"');
+		expect(errors[0]).toContain('missing "modal-gvisor"');
 		expect(errors[0]).toContain("PROVIDERS");
 	});
 
@@ -198,7 +198,9 @@ describe("checkCredentialEnv", () => {
 	test("requiredCredentialKeys records provenance per provider", () => {
 		const required = requiredCredentialKeys();
 		expect(required.get("E2B_API_KEY")).toEqual(["e2b"]);
-		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal"]);
+		// A credential shared by a vendor's isolation variants records every owner, in registry order.
+		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal-gvisor", "modal-vm"]);
+		expect(required.get("DAYTONA_API_KEY")).toEqual(["daytona-vm", "daytona-container"]);
 	});
 
 	test("flags a required key dropped from the matrix (reusable) block, naming key and file", () => {

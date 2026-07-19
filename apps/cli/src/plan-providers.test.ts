@@ -17,10 +17,10 @@ describe("plan-providers", () => {
 
 	it("narrows to the providers a dispatch names, still one line of JSON", () => {
 		// Reverse request order so this fails if the planner preserves input order instead of registry order.
-		const out = planProvidersJson("daytona,e2b");
+		const out = planProvidersJson("daytona-vm,e2b");
 		expect(out).not.toContain("\n");
 		// Registry order, not request order — the CI job list can't be reordered by a dispatch.
-		expect(JSON.parse(out)).toEqual(["e2b", "daytona"]);
+		expect(JSON.parse(out)).toEqual(["e2b", "daytona-vm"]);
 	});
 
 	it("throws on an unregistered name rather than shrinking the matrix", () => {

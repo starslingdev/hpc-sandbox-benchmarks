@@ -13,7 +13,7 @@ import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harnes
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
-import { bakeDaytonaSnapshot } from "../lib/bake/daytona.ts";
+import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "../lib/bake/daytona.ts";
 import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
@@ -29,8 +29,12 @@ import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smo
 // tag. The caller resolves that tag once and passes the same immutable digest to every baker.
 const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	e2b: (image, log) => bakeE2bTemplate(config.e2bTemplateCandidate, image, log),
-	daytona: (image, log) => bakeDaytonaSnapshot(config.daytonaSnapshotCandidate, image, log),
-	modal: bakeModalImage,
+	"daytona-vm": (image, log) => bakeDaytonaVmSnapshot(config.daytonaSnapshotCandidate, image, log),
+	"daytona-container": (image, log) =>
+		bakeDaytonaContainerSnapshot(config.daytonaContainerSnapshotCandidate, image, log),
+	// Both Modal variants boot the same pushed image via Image.fromRegistry — no per-variant artifact.
+	"modal-gvisor": bakeModalImage,
+	"modal-vm": bakeModalImage,
 	blaxel: async (_image, log) => {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},
@@ -100,11 +104,12 @@ if (import.meta.main) {
 				image: config.toolchainImageVersion,
 				e2bTemplate: config.e2bTemplateVersion,
 				daytonaSnapshot: config.daytonaSnapshotDefault,
+				daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
 				novitaTemplate: config.novitaTemplateVersion,
 			},
 			reports: promoted,
 		});
-		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona,modal`)
+		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona-vm,modal-gvisor`)
 		// runs INSIDE promoteAll before the immutable base is written, and every abort path (version already
 		// published, candidate re-validation failed, artifact failed, unmet requirements) pushes a structured
 		// `{ status: "failed" }` report. So a single `some(failed)` is the whole exit contract — re-deriving
@@ -150,9 +155,11 @@ if (import.meta.main) {
 	const candidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: pinnedCandidateImage,
-		daytonaTarget: config.daytona.target,
+		daytonaVmTarget: config.daytonaVm.target,
+		daytonaContainerTarget: config.daytonaContainer.target,
 	};
 
 	const runs = await forEachProviderWithCreds(
@@ -203,6 +210,7 @@ if (import.meta.main) {
 			image: pinnedCandidateImage,
 			e2bTemplate: config.e2bTemplateCandidate,
 			daytonaSnapshot: config.daytonaSnapshotCandidate,
+			daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
 			novitaTemplate: config.novitaTemplateCandidate,
 		},
 		reports,
@@ -210,7 +218,7 @@ if (import.meta.main) {
 
 	if (anyFailed(runs)) process.exit(1);
 
-	// D1: at the publish boundary (CI passes `--require e2b,daytona,modal`) a required provider that was
+	// D1: at the publish boundary (CI passes `--require e2b,daytona-vm,modal-gvisor`) a required provider that was
 	// skipped for a missing/misnamed secret — or failed to validate — must fail the bake loudly, so a
 	// candidate is never blessed while a provider was silently never built. Lenient locally (none required).
 	const required = requiredProviders();

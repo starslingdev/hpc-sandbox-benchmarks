@@ -24,7 +24,7 @@ export const HELP = `plan-providers — emit the selected benchmark provider ids
 
 usage: plan-providers [--help] [--list-providers] [--list-suites] [--json]
 
-  (no args)          Print ["e2b","daytona", …] on a single line (local), or write providers= to
+  (no args)          Print ["e2b","daytona-vm", …] on a single line (local), or write providers= to
                      $GITHUB_OUTPUT when set (the Bench matrix plan step).
   --list-providers   List the registered providers the matrix can fan out over.
   --list-suites      List the registered suites (the suite axis; see plan-suites).
@@ -32,14 +32,14 @@ usage: plan-providers [--help] [--list-providers] [--list-suites] [--json]
   --help, -h         Show this help.
 
 environment:
-  BENCH_PROVIDERS    Comma-separated providers to fan out over (e.g. "e2b,daytona,modal"). Unset or
+  BENCH_PROVIDERS    Comma-separated providers to fan out over (e.g. "e2b,daytona-vm,modal-gvisor"). Unset or
                      blank selects every registered provider. An unregistered name is an error,
                      never a silently smaller matrix.
   GITHUB_OUTPUT      When set (Actions), write providers= step output instead of printing on stdout.
 
 examples:
   plan-providers                               # local: print the provider axis
-  BENCH_PROVIDERS=e2b,daytona plan-providers   # only those two providers
+  BENCH_PROVIDERS=e2b,daytona-vm plan-providers   # only those two providers
   plan-providers --list-suites --json          # discover suites (selection is plan-suites)
 
 Next: run one cell with  bench-suite <provider> <suite> <runId>`;

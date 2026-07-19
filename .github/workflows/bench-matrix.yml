@@ -19,13 +19,14 @@ on:
         description: 'Comma-separated providers to benchmark (blank = every registered provider).'
         required: false
         type: string
-        # The providers with a baked toolchain artifact and credentials in CI. novita also boots its
-        # own pre-baked template (novita-sandbox Template.build), so it is comparable and included by
-        # default despite its "beta" maturity. blaxel boots the stock base image (nothing baked for
-        # it), so it is excluded by default rather than burning ~150min of runner time per suite on
-        # cells that cannot produce a comparable result. Pass it explicitly to include it;
-        # `plan-providers` rejects any name that is not in the registry.
-        default: e2b,daytona,modal,novita
+        # The validated providers with a baked toolchain artifact and credentials in CI: e2b,
+        # daytona-vm (the LINUX_VM reference), modal-gvisor (Modal's default runtime), and novita
+        # (which boots its own pre-baked template, so it is comparable despite its "beta" maturity).
+        # The new isolation variants daytona-container + modal-vm — like blaxel (stock base image) —
+        # are excluded by default until a committed run validates them, rather than burning runner time
+        # on cells that can't yet produce a comparable result. Pass any of them explicitly to include
+        # it; `plan-providers` rejects any name that is not in the registry.
+        default: e2b,daytona-vm,modal-gvisor,novita
       suites:
         description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
         required: false

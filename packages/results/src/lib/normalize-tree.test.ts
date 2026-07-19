@@ -36,7 +36,7 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 	let providerDir: string;
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "norm-dedupe-"));
-		providerDir = join(root, "daytona");
+		providerDir = join(root, "daytona-vm");
 		mkdirSync(providerDir);
 	});
 	afterEach(() => {
@@ -49,7 +49,7 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 		writeFileSync(join(providerDir, "pts_compress_zstd.xml"), composite("10.5:10.6:10.4"));
 		writeFileSync(join(providerDir, "pts_node-web-tooling.xml"), composite("10.5:10.6:10.4"));
 
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		const matches = run.metrics.filter((m) => m.metricId === "node_web_tooling_runs_per_s");
 		// The leaked metric is kept exactly once (other catalogued metrics — e.g. derived economics — may
 		// also be present; this asserts the de-dup, not the total count).
@@ -66,7 +66,7 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 		try {
 			writeFileSync(join(providerDir, "pts_compress_zstd.xml"), composite("10.5:10.6:10.4"));
 			writeFileSync(join(providerDir, "pts_node-web-tooling.xml"), composite("99.9:99.8"));
-			normalizeProviderDir(root, "daytona");
+			normalizeProviderDir(root, "daytona-vm");
 			expect(warn.mock.calls.flat().join("\n")).toMatch(/DIFFERENT samples/);
 		} finally {
 			warn.mockRestore();
@@ -79,7 +79,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 	let providerDir: string;
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "norm-tagged-"));
-		providerDir = join(root, "daytona");
+		providerDir = join(root, "daytona-vm");
 		mkdirSync(providerDir);
 	});
 	afterEach(() => {
@@ -92,7 +92,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
 		writeFileSync(join(suiteDir, "observed-specs.json"), JSON.stringify({ vcpus: 4, memoryGb: 8 }));
 
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		expect(run.validationStatus).toBe("validated");
 		const metric = run.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		// sourceFile is prefixed with the suite so a number stays traceable to the suite that wrote it.
@@ -117,7 +117,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			JSON.stringify({ systems: { sandbox: { hardware: { Processor: "AMD EPYC" } } } }),
 		);
 
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		expect(run.observedSpecs).toMatchObject({
 			egressAsn: "AS64500",
 			manufacturer: "Amazon EC2",
@@ -142,7 +142,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		mkdirSync(barren);
 		writeFileSync(join(barren, "observed-specs.json"), JSON.stringify({ vcpus: 4 }));
 
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		expect(run.suitesCovered).toEqual(["cpu-node"]);
 		// `memory` produced neither a metric nor a marker, so it is accounted for nowhere on this provider
 		// — the Run cannot describe it, and buildLeaderboard derives it as `missing` across the whole run.
@@ -155,14 +155,14 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		writeFileSync(
 			join(suiteDir, "sandbox-daytona-cpu-node--failed.json"),
 			JSON.stringify({
-				provider: "daytona",
+				provider: "daytona-vm",
 				suite: "cpu-node",
 				outcome: "failed",
 				reason: "PTS produced no pts_*.xml",
 			}),
 		);
 
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -181,10 +181,10 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		mkdirSync(suiteDir);
 		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
 
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		const usdPerHour = run.metrics.find((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerHour);
 		expect(usdPerHour?.samples).toEqual([
-			hourlyCostAtTargetSpec(getProvider("daytona")) ?? Number.NaN,
+			hourlyCostAtTargetSpec(getProvider("daytona-vm")) ?? Number.NaN,
 		]);
 		// No lifecycle timings in a PTS-only run, so no per-lifecycle cost.
 		expect(run.metrics.some((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerLifecycle)).toBe(
@@ -217,7 +217,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		// The in-sandbox probe reports the EFFECTIVE 2-vCPU cgroup quota.
 		writeFileSync(join(suiteDir, "observed-specs.json"), JSON.stringify({ vcpus: 2, memoryGb: 8 }));
 
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		// Host disclosure from <System> lands on the host side…
 		expect(run.observedSpecs.hostVcpus).toBe(48);
 		expect(run.observedSpecs.hostMemoryGb).toBe(64);
@@ -231,7 +231,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 
 	it("does NOT attach economics to a pending provider (no measured metrics)", () => {
 		// Empty provider dir → pending; economics must not promote it or appear.
-		const run = normalizeProviderDir(root, "daytona");
+		const run = normalizeProviderDir(root, "daytona-vm");
 		expect(run.validationStatus).toBe("pending");
 		expect(run.metrics).toEqual([]);
 	});
@@ -243,7 +243,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			mkdirSync(bogusDir);
 			writeFileSync(join(bogusDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
 
-			const run = normalizeProviderDir(root, "daytona");
+			const run = normalizeProviderDir(root, "daytona-vm");
 			// The unknown subdir is skipped, so nothing is attributed and the provider stays pending.
 			expect(run.metrics).toEqual([]);
 			expect(run.validationStatus).toBe("pending");

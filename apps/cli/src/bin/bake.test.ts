@@ -8,11 +8,11 @@ describe("requestedProviders", () => {
 
 	test("a matrix cell's single id selects just that provider", () => {
 		expect(requestedProviders(["--provider", "e2b"])).toEqual(["e2b"]);
-		expect(requestedProviders(["--provider=daytona"])).toEqual(["daytona"]);
+		expect(requestedProviders(["--provider=daytona-vm"])).toEqual(["daytona-vm"]);
 	});
 
 	test("a comma-separated list returns registry order, not request order", () => {
-		expect(requestedProviders(["--provider", "modal,e2b"])).toEqual(["e2b", "modal"]);
+		expect(requestedProviders(["--provider", "modal-gvisor,e2b"])).toEqual(["e2b", "modal-gvisor"]);
 	});
 
 	test("an unknown id throws, naming the registered providers", () => {

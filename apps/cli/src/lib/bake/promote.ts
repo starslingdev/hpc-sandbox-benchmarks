@@ -24,7 +24,7 @@
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
-import { bakeDaytonaSnapshot } from "./daytona.ts";
+import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
 import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
@@ -82,9 +82,11 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: pinnedCandidateImage,
-		daytonaTarget: config.daytona.target,
+		daytonaVmTarget: config.daytonaVm.target,
+		daytonaContainerTarget: config.daytonaContainer.target,
 	};
 	log(`>>> re-validating candidate ${pinnedCandidateImage} before promote…`);
 	const validateRuns = await validateCandidates(candidateRefs, log);
@@ -117,12 +119,20 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 						log(`    ${m}`),
 					);
 					break;
-				case "daytona":
-					await bakeDaytonaSnapshot(config.daytonaSnapshotDefault, pinnedCandidateImage, (m) =>
+				case "daytona-vm":
+					await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedCandidateImage, (m) =>
 						log(`    ${m}`),
 					);
 					break;
-				case "modal":
+				case "daytona-container":
+					await bakeDaytonaContainerSnapshot(
+						config.daytonaContainerSnapshotDefault,
+						pinnedCandidateImage,
+						(m) => log(`    ${m}`),
+					);
+					break;
+				case "modal-gvisor":
+				case "modal-vm":
 					log("    modal boots the published version image — nothing to build");
 					break;
 				case "blaxel":
@@ -182,7 +192,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	}
 
 	// Required-providers gate (D1), enforced HERE — before step 4 writes the immutable base — not
-	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona,modal`; a required
+	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona-vm,modal-gvisor`; a required
 	// provider whose version artifact was skipped (missing/misnamed secret) or failed is `skipped`/
 	// `failed`, so `reports.some(failed)` above does NOT catch a pure skip. Were the base published
 	// first and the gap detected only in bake.ts, the immutable `:v1` would already be tagged and a

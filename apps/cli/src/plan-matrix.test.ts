@@ -46,12 +46,12 @@ describe("plan-matrix", () => {
 	});
 
 	it("narrows the matrix to the providers a dispatch names, still one line of JSON", () => {
-		const out = planMatrixJson("e2b,daytona");
+		const out = planMatrixJson("e2b,daytona-vm");
 		expect(out).not.toContain("\n");
 
 		const parsed = JSON.parse(out) as { include: Array<{ provider: string }> };
 		expect(parsed.include.length).toBe(2 * SUITE_NAMES.length);
-		expect([...new Set(parsed.include.map((c) => c.provider))]).toEqual(["e2b", "daytona"]);
+		expect([...new Set(parsed.include.map((c) => c.provider))]).toEqual(["e2b", "daytona-vm"]);
 	});
 });
 
@@ -75,10 +75,10 @@ describe("selectProviders", () => {
 
 	it("collapses duplicates and orders by the registry, not by the request", () => {
 		// Cells are a set: a dispatch can neither double-run one nor reorder the CI job list.
-		expect(selectProviders("modal,e2b,modal")).toEqual(["e2b", "modal"]);
+		expect(selectProviders("modal-gvisor,e2b,modal-gvisor")).toEqual(["e2b", "modal-gvisor"]);
 	});
 
 	it("tolerates whitespace and mixed casing around names, as a hand-typed dispatch input has", () => {
-		expect(selectProviders(" E2b , Modal ")).toEqual(["e2b", "modal"]);
+		expect(selectProviders(" E2b , MODAL-GVISOR ")).toEqual(["e2b", "modal-gvisor"]);
 	});
 });

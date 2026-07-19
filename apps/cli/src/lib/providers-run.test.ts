@@ -10,9 +10,9 @@ describe("forEachProviderWithCreds `only`", () => {
 				return null;
 			},
 			// No creds for daytona in this env → it skips, but nothing else is even considered.
-			{ only: ["daytona"], env: {} },
+			{ only: ["daytona-vm"], env: {} },
 		);
-		expect(runs.map((r) => r.provider)).toEqual(["daytona"]);
+		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm"]);
 		expect(runs[0]?.status).toBe("skipped");
 		expect(bodyRan).toEqual([]); // skipped: the body never runs
 	});
@@ -31,7 +31,15 @@ describe("forEachProviderWithCreds `only`", () => {
 	test("without `only`, drives every registered provider (unchanged default)", async () => {
 		const runs = await forEachProviderWithCreds(async () => null, { env: {} });
 		// All registered providers are visited (all skipped here for want of creds).
-		expect(runs.map((r) => r.provider)).toEqual(["e2b", "daytona", "blaxel", "modal", "novita"]);
+		expect(runs.map((r) => r.provider)).toEqual([
+			"e2b",
+			"daytona-vm",
+			"daytona-container",
+			"blaxel",
+			"modal-gvisor",
+			"modal-vm",
+			"novita",
+		]);
 	});
 
 	// `[]` is truthy, so without a guard it would select nothing, validate nothing, and still exit 0 —

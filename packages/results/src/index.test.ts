@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { normalizeResultsTree, summarizeRun } from "./index.ts";
 
-// The committed fixture tree has one provider directory (daytona) holding a real node-web-tooling
+// The committed fixture tree has one provider directory (daytona-vm) holding a real node-web-tooling
 // composite, a bench.sh skip marker, and observed specs. This is the offline end-to-end proof.
 const rawRoot = join(import.meta.dir, "lib/__fixtures__");
 
@@ -22,8 +22,8 @@ describe("normalizeResultsTree", () => {
 		);
 	});
 
-	it("normalizes daytona's node-web-tooling into an aggregated, validated metric", () => {
-		const daytona = run.providers.find((provider) => provider.providerId === "daytona");
+	it("normalizes daytona-vm's node-web-tooling into an aggregated, validated metric", () => {
+		const daytona = run.providers.find((provider) => provider.providerId === "daytona-vm");
 		expect(daytona?.validationStatus).toBe("validated");
 		const metric = daytona?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		expect(metric?.samples).toEqual([16.19, 16.3, 16.08]);
@@ -33,7 +33,7 @@ describe("normalizeResultsTree", () => {
 	});
 
 	it("records the bench.sh skip and matches the pinned target spec", () => {
-		const daytona = run.providers.find((provider) => provider.providerId === "daytona");
+		const daytona = run.providers.find((provider) => provider.providerId === "daytona-vm");
 		expect(daytona?.gaps).toEqual([
 			{
 				scope: "suite",

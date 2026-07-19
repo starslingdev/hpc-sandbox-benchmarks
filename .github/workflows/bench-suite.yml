@@ -85,13 +85,16 @@ jobs:
           # another provider's credential out of the environment. A non-matching provider evaluates to
           # '', which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
           # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
-          DAYTONA_API_KEY: ${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
-          # Boot daytona sandboxes in the active region (us-west-2); the default applies only to the
-          # daytona cell so an unsynced secret can't fail the config gatekeeper at module load.
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          # Both Daytona isolation variants share the account key; scope it to either cell.
+          DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
+          # daytona-vm boots in us-west-2 (DAYTONA_TARGET); daytona-container derives its own region
+          # (`us`) from config, so DAYTONA_TARGET only needs to reach the vm — but it's harmless for the
+          # container cell (which ignores it), so scope it to either daytona cell.
+          DAYTONA_TARGET: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          # Both Modal variants share the account tokens; scope them to either cell.
+          MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}

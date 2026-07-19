@@ -10,8 +10,8 @@ on:
       provider:
         description: Provider to benchmark
         type: choice
-        default: daytona
-        options: [daytona, e2b, modal, blaxel, novita]
+        default: daytona-vm
+        options: [daytona-vm, daytona-container, e2b, modal-gvisor, modal-vm, blaxel, novita]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
@@ -98,13 +98,16 @@ jobs:
           # provider's credential out of the environment. A non-matching provider evaluates to '',
           # which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
           # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
-          DAYTONA_API_KEY: ${{ inputs.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
-          # Boot daytona sandboxes in the active region (us-west-2); the default applies only to a
-          # daytona dispatch so an unsynced secret can't fail the config gatekeeper at module load.
-          DAYTONA_TARGET: ${{ inputs.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          # Both Daytona isolation variants share the account key; scope it to either being dispatched.
+          DAYTONA_API_KEY: ${{ (inputs.provider == 'daytona-vm' || inputs.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
+          # daytona-vm boots in us-west-2 (DAYTONA_TARGET); daytona-container derives its own region
+          # (`us`) from config, so DAYTONA_TARGET only needs to reach the vm — but it's harmless for the
+          # container variant (which ignores it), so scope it to either daytona dispatch.
+          DAYTONA_TARGET: ${{ (inputs.provider == 'daytona-vm' || inputs.provider == 'daytona-container') && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
           E2B_API_KEY: ${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          MODAL_TOKEN_ID: ${{ inputs.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ inputs.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          # Both Modal variants share the account tokens; scope them to either being dispatched.
+          MODAL_TOKEN_ID: ${{ (inputs.provider == 'modal-gvisor' || inputs.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (inputs.provider == 'modal-gvisor' || inputs.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
           BL_API_KEY: ${{ inputs.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ inputs.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ inputs.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}

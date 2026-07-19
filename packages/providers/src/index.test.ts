@@ -29,21 +29,28 @@ describe("@sandbox-benchmarks/providers", () => {
 		}
 	});
 
-	it("pins modal's create-time spec from the shared TARGET_SPEC", () => {
-		const modal = providers.find((p) => p.name === "modal");
-		expect(modal).toBeDefined();
+	it("pins both Modal variants' create-time spec from the shared TARGET_SPEC", () => {
+		const gvisor = providers.find((p) => p.name === "modal-gvisor");
+		const vm = providers.find((p) => p.name === "modal-vm");
+		expect(gvisor).toBeDefined();
+		expect(vm).toBeDefined();
 		// Modal's `cpu` unit delivers one schedulable vCPU (nproc tracks it 1:1 and throughput scales
 		// with it — measured 2026-07-10), so the pinned vCPU count passes through unhalved; halving it
 		// benchmarked Modal on half the CPU of every other provider.
 		// `memoryLimitMiB` is the hard cap (memoryMiB alone is only a reservation, and the guest then
 		// still sees the host's RAM) — assert it, or the memory fix has no regression guard at all.
-		expect(modal?.createOptions).toMatchObject({
+		const spec = {
 			cpu: TARGET_SPEC.vcpus,
 			cpuLimit: TARGET_SPEC.vcpus,
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
-			experimentalOptions: { vm_runtime: true },
-		});
+		};
+		expect(gvisor?.createOptions).toMatchObject(spec);
+		expect(vm?.createOptions).toMatchObject(spec);
+		// The variants differ only in isolation: modal-vm selects the VM runtime via experimentalOptions,
+		// modal-gvisor (the default) carries none.
+		expect(vm?.createOptions?.experimentalOptions).toEqual({ vm_runtime: true });
+		expect(gvisor?.createOptions?.experimentalOptions).toBeUndefined();
 	});
 
 	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
@@ -120,18 +127,23 @@ describe("@sandbox-benchmarks/providers", () => {
 			.sandbox.methods;
 		expect(methods.runCommand).toBe(runE2bCommandAsRoot);
 
-		const daytona = providers.find((p) => p.name === "daytona");
+		const daytona = providers.find((p) => p.name === "daytona-vm");
 		expect(daytona).toBeDefined();
-		expect(daytona?.createOptions?.snapshotId).toBe(config.daytona.snapshot);
+		expect(daytona?.createOptions?.snapshotId).toBe(config.daytonaVm.snapshot);
 		// ComputeSDK maps its universal timeout to the Daytona SDK's create-operation timeout, not the
 		// sandbox lifetime. Pass the native option through so an 8+ minute detached suite is not stopped
 		// underneath the harness; runSuite's finally block remains the cleanup authority.
 		expect(daytona?.createOptions?.autoStopInterval).toBe(0);
 
+		// The container variant shares the account key but boots its own snapshot in its own region.
+		const container = providers.find((p) => p.name === "daytona-container");
+		expect(container?.createOptions?.snapshotId).toBe(config.daytonaContainer.snapshot);
+		expect(container?.createOptions?.target).toBe("us");
+
 		// No adapter override — requiredEnvVars falls back to the schema meta's static list. Pin the
 		// concrete value rather than only comparing the two lookups against each other: if both `find`s
 		// missed (provider renamed on one side), `undefined === undefined` would pass — a false green.
-		const daytonaMeta = PROVIDERS.find((m) => m.id === "daytona");
+		const daytonaMeta = PROVIDERS.find((m) => m.id === "daytona-vm");
 		expect(daytonaMeta?.requiredEnvVars).toEqual(["DAYTONA_API_KEY"]);
 		expect(daytona?.requiredEnvVars).toEqual(daytonaMeta?.requiredEnvVars);
 	});

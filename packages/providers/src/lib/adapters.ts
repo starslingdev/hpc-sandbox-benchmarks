@@ -9,18 +9,71 @@ import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import type { CreateSandboxOptions } from "computesdk";
 import { blaxelWithVolumeAndKeepAlive } from "./blaxel-volume.ts";
+import type { DaytonaConfig } from "./config.ts";
 import { config } from "./config.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
 
-// The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
-// `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.
-const daytonaCfg = config.daytona;
-
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
+
+/**
+ * The Daytona VM and container variants share one adapter shape — the same account API key and the
+ * same create-time policy — and differ only in the account config the config gatekeeper resolved:
+ * region (`us-west-2` vs `us`) and which pre-baked snapshot to boot. The sandbox class (LINUX_VM vs
+ * CONTAINER) is fixed inside each variant's snapshot at bake time, so nothing selects it here. `target`
+ * and autoStopInterval ride the wrapper's provider-options passthrough into Daytona's native
+ * createParams; the universal `timeout` is only the create-call deadline, so disable native auto-stop
+ * and rely on the harness's guaranteed teardown. Never read process.env here.
+ */
+function daytonaAdapter(cfg: DaytonaConfig): ProviderAdapter {
+	return {
+		createCompute: () => daytona({ apiKey: cfg.apiKey }),
+		createOptions: {
+			snapshotId: cfg.snapshot,
+			autoStopInterval: 0,
+			...(cfg.target ? { target: cfg.target } : {}),
+		},
+	};
+}
+
+/**
+ * Shared Modal create-time options. Both Modal variants boot the SAME pushed toolchain image at the
+ * target spec via `Image.fromRegistry`; the only difference is that `modal-vm` adds
+ * `experimentalOptions {vm_runtime:true}` to select Modal's VM runtime (a gVisor-free microVM). The
+ * `@computesdk/modal` wrapper spreads any option key it doesn't recognise straight through to
+ * `experimentalCreate`, so `experimentalOptions` reaches the native Modal SDK unchanged.
+ */
+function modalCreateOptions(experimentalOptions?: Record<string, unknown>): CreateSandboxOptions {
+	return {
+		templateId: config.toolchainImage,
+		// Modal's docs call `cpu` physical cores ("this value corresponds to physical cores, not
+		// vCPUs" — modal.com/docs/guide/resources), but measured behavior contradicts that reading:
+		// cpu=1/cpuLimit=1 exposes nproc=1 and delivers exactly half the dual-worker throughput of
+		// cpu=2/cpuLimit=2 (probed 2026-07-10: 264 vs 512 MB hashed/worker/8s). In practice `cpu` is
+		// the schedulable-CPU count the guest sees, so halving TARGET_SPEC.vcpus benchmarked Modal on
+		// half the CPU of every other provider (which all expose nproc=2). Pass the vCPU spec through.
+		cpu: TARGET_SPEC.vcpus,
+		cpuLimit: TARGET_SPEC.vcpus,
+		// `memoryMiB` is only a RESERVATION — on its own the guest still sees the host's RAM (a live
+		// sandbox reported 464 GB), and PTS sizes STREAM's arrays from that, so the memory suite never
+		// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report the target spec.
+		memoryMiB: TARGET_SPEC.memoryGb * 1024,
+		memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
+		...(experimentalOptions ? { experimentalOptions } : {}),
+	};
+}
+
+/** Boot sandboxes under this project's own Modal app (auto-created via apps.fromName on first
+ *  create), not the wrapper's generic `computesdk-modal` default — so this project's sandboxes are
+ *  namespaced/attributable in the Modal dashboard, separate from any other computesdk usage. The two
+ *  variants differ in one client flag: modal-gvisor enables scalableSandboxes (the gVisor path);
+ *  modal-vm omits it to match the VM-runtime config validated in #221 (VM sandboxes drop it). */
+const modalGvisorCompute = () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME });
+const modalVmCompute = () => modal({ appName: MODAL_APP_NAME });
 
 /**
  * Harness adapters, keyed by the schema {@link ProviderId}. The `Record<ProviderId, …>` type is what
@@ -37,19 +90,10 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createCompute: () => e2bCommandsAsRoot(e2b({})),
 		createOptions: { snapshotId: config.e2bTemplate },
 	},
-	daytona: {
-		// The account API key; the toolchain snapshot and runner target are pinned per-create. `target`
-		// and autoStopInterval ride the wrapper's provider-options passthrough into Daytona's native
-		// createParams. The universal `timeout` is only the Daytona SDK create-call deadline — it does
-		// not extend sandbox lifetime — so disable native auto-stop and rely on the harness's guaranteed
-		// teardown. No requiredEnvVars override needed: the schema meta owns DAYTONA_API_KEY.
-		createCompute: () => daytona({ apiKey: daytonaCfg.apiKey }),
-		createOptions: {
-			snapshotId: daytonaCfg.snapshot,
-			autoStopInterval: 0,
-			...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
-		},
-	},
+	// Both Daytona variants share the account API key (the schema meta owns DAYTONA_API_KEY); they
+	// differ only in region + the class-specific snapshot resolved by the config gatekeeper.
+	"daytona-vm": daytonaAdapter(config.daytonaVm),
+	"daytona-container": daytonaAdapter(config.daytonaContainer),
 	blaxel: {
 		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). Boot the Debian
 		// ts-app image as root (the stock Alpine base-image has no apt — PTS uninstallable). Blaxel
@@ -67,28 +111,16 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			),
 		createOptions: {},
 	},
-	modal: {
-		// Boot sandboxes under this project's own Modal app (auto-created via apps.fromName on first
-		// create), not the wrapper's generic `computesdk-modal` default — so this project's sandboxes
-		// are namespaced/attributable in the Modal dashboard, separate from any other computesdk usage.
-		createCompute: () => modal({ appName: MODAL_APP_NAME }),
-		createOptions: {
-			templateId: config.toolchainImage,
-			// Modal's docs call `cpu` physical cores ("this value corresponds to physical cores, not
-			// vCPUs" — modal.com/docs/guide/resources), but measured behavior contradicts that reading:
-			// cpu=1/cpuLimit=1 exposes nproc=1 and delivers exactly half the dual-worker throughput of
-			// cpu=2/cpuLimit=2 (probed 2026-07-10: 264 vs 512 MB hashed/worker/8s). In practice `cpu` is
-			// the schedulable-CPU count the guest sees, so halving TARGET_SPEC.vcpus benchmarked Modal on
-			// half the CPU of every other provider (which all expose nproc=2). Pass the vCPU spec through.
-			cpu: TARGET_SPEC.vcpus,
-			cpuLimit: TARGET_SPEC.vcpus,
-			// `memoryMiB` is only a RESERVATION — on its own the guest still sees the host's RAM (a live
-			// sandbox reported 464 GB), and PTS sizes STREAM's arrays from that, so the memory suite never
-			// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report the target spec.
-			memoryMiB: TARGET_SPEC.memoryGb * 1024,
-			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
-			experimentalOptions: { vm_runtime: true },
-		},
+	// Modal's default runtime = gVisor. Both variants boot the same pushed image; modal-vm adds the
+	// vm_runtime experimental flag to select Modal's gVisor-free VM runtime and drops scalableSandboxes
+	// to match the VM config validated in #221 (see modalGvisorCompute/modalVmCompute above).
+	"modal-gvisor": {
+		createCompute: modalGvisorCompute,
+		createOptions: modalCreateOptions(),
+	},
+	"modal-vm": {
+		createCompute: modalVmCompute,
+		createOptions: modalCreateOptions({ vm_runtime: true }),
 	},
 	novita: {
 		// The e2b wrapper re-pointed at Novita's E2B-compatible control plane (sandbox.novita.ai) —
