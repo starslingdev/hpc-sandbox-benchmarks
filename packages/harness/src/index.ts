@@ -185,28 +185,49 @@ function decodeXmlText(text: string): string {
 	);
 }
 
-/** Whether a PTS composite contains a case-sensitive Value element with non-whitespace text. */
+/** Whether a PTS composite contains a measured Result > Data > Entry > Value. */
 function ptsCompositeHasMeasurement(xml: string): boolean {
 	const tokens = xml.matchAll(
 		/<!--[\s\S]*?-->|<!\[CDATA\[([\s\S]*?)\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<\/?([A-Za-z_][\w:.-]*)(?:\s[^>]*)?>|([^<]+)/g,
 	);
-	let valueDepth = 0;
+	const elements: string[] = [];
+	let measurementValueDepth: number | undefined;
 	let valueText = "";
 	for (const match of tokens) {
 		const token = match[0];
 		const cdata = match[1];
 		const tagName = match[2];
 		const text = match[3];
-		if (tagName === "Value") {
-			if (token.startsWith("</")) {
-				if (valueDepth === 1 && decodeXmlText(valueText).trim()) return true;
-				valueDepth = Math.max(0, valueDepth - 1);
-			} else if (!token.endsWith("/>") && valueDepth++ === 0) {
-				valueText = "";
-			}
-		} else if (valueDepth > 0) {
+		if (!tagName) {
+			if (measurementValueDepth === undefined) continue;
 			if (cdata !== undefined) valueText += cdata;
 			else if (text !== undefined) valueText += text;
+			continue;
+		}
+
+		if (token.startsWith("</")) {
+			if (
+				tagName === "Value" &&
+				measurementValueDepth === elements.length &&
+				decodeXmlText(valueText).trim()
+			) {
+				return true;
+			}
+			if (measurementValueDepth === elements.length) measurementValueDepth = undefined;
+			elements.pop();
+			continue;
+		}
+
+		if (token.endsWith("/>")) continue;
+		const isMeasurementValue =
+			tagName === "Value" &&
+			elements.at(-3) === "Result" &&
+			elements.at(-2) === "Data" &&
+			elements.at(-1) === "Entry";
+		elements.push(tagName);
+		if (isMeasurementValue) {
+			measurementValueDepth = elements.length;
+			valueText = "";
 		}
 	}
 	return false;

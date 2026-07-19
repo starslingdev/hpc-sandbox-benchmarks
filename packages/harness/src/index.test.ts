@@ -557,4 +557,36 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		);
 		expect(destroyed.hit).toBe(true);
 	});
+
+	it("only accepts Values in the Result Data Entry measurement hierarchy", async () => {
+		const withMetadataValue = (entryValue: string): string =>
+			ptsComposite(entryValue).replace(
+				"<Result>",
+				"<Generated><Value>metadata</Value></Generated>\n  <Result>",
+			);
+
+		const hollowResultsDir = freshDir();
+		const hollowDestroyed = { hit: false };
+		await expect(
+			runSuiteOnSandbox(
+				makeSandbox({
+					destroyed: hollowDestroyed,
+					collectFiles: { "pts_metadata-value.xml": withMetadataValue(" \n ") },
+				}),
+				ctx(suite({ setupPts: true }), hollowResultsDir),
+			),
+		).rejects.toThrow(/pts_metadata-value\.xml.*every <Value> is empty or absent/);
+		expect(hollowDestroyed.hit).toBe(true);
+
+		const measuredResultsDir = freshDir();
+		const measuredDestroyed = { hit: false };
+		await runSuiteOnSandbox(
+			makeSandbox({
+				destroyed: measuredDestroyed,
+				collectFiles: { "pts_metadata-value.xml": withMetadataValue("20.5") },
+			}),
+			ctx(suite({ setupPts: true }), measuredResultsDir),
+		);
+		expect(measuredDestroyed.hit).toBe(true);
+	});
 });

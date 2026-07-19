@@ -25,14 +25,35 @@ describe("@sandbox-benchmarks/templates", () => {
 		expect([...templateProviders]).toEqual(["e2b", "daytona", "modal"]);
 	});
 
-	it("probes mise with an existing E2B-style injected user home without baking it in", () => {
+	it("preserves an existing E2B-style home and cleans up only a probe-created home", () => {
 		const installScript = readFileSync(
 			join(import.meta.dir, "../images/base/scripts/10-mise.sh"),
 			"utf8",
 		);
 
-		expect(installScript).toContain("install -d -m 0755 /home/user");
-		expect(installScript).toContain("run_sanitized /home/user");
-		expect(installScript).toContain("rm -rf /home/user");
+		const absentGuard = "if [[ ! -e /home/user && ! -L /home/user ]]; then";
+		const markCreated = "user_home_created=true";
+		const failureCleanup = "trap cleanup_user_home EXIT";
+		const createHome = "install -d -m 0755 /home/user";
+		const probe = "run_sanitized /home/user";
+		const successCleanup = "cleanup_user_home\ntrap - EXIT";
+
+		expect(installScript).toContain(`if [[ "\${user_home_created}" == true ]]; then`);
+		expect(installScript).toContain("rm -rf -- /home/user");
+		for (const contract of [
+			absentGuard,
+			markCreated,
+			failureCleanup,
+			createHome,
+			probe,
+			successCleanup,
+		]) {
+			expect(installScript).toContain(contract);
+		}
+		expect(installScript.indexOf(absentGuard)).toBeLessThan(installScript.indexOf(markCreated));
+		expect(installScript.indexOf(markCreated)).toBeLessThan(installScript.indexOf(failureCleanup));
+		expect(installScript.indexOf(failureCleanup)).toBeLessThan(installScript.indexOf(createHome));
+		expect(installScript.indexOf(createHome)).toBeLessThan(installScript.indexOf(probe));
+		expect(installScript.indexOf(probe)).toBeLessThan(installScript.indexOf(successCleanup));
 	});
 });

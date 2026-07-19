@@ -43,7 +43,19 @@ run_sanitized() {
 run_sanitized /root sh -c \
 	'node --version && npm --version && python --version && python3 --version && pip3 --version'
 # mise deliberately ignores config when HOME itself does not exist. E2B creates this home when it
-# injects its runtime user; create it only for the faithful build-time probe, then leave no user delta.
-install -d -m 0755 /home/user
+# injects its runtime user. Preserve an existing path exactly; otherwise create it only for the
+# faithful build-time probe and clean it on success or failure so the Docker layer keeps no user delta.
+user_home_created=false
+cleanup_user_home() {
+	if [[ "${user_home_created}" == true ]]; then
+		rm -rf -- /home/user
+	fi
+}
+if [[ ! -e /home/user && ! -L /home/user ]]; then
+	user_home_created=true
+	trap cleanup_user_home EXIT
+	install -d -m 0755 /home/user
+fi
 run_sanitized /home/user sh -c 'python --version && python3 --version'
-rm -rf /home/user
+cleanup_user_home
+trap - EXIT
