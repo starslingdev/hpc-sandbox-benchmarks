@@ -1,9 +1,9 @@
 # Sandbox provider leaderboard
 
-Run `29546060837` · commit `dd1f6ef472e3de4b76043c74f3cce5ff0d636af2` · generated 2026-07-17T03:31:38.992Z
+Run `29692210375` · commit `81e641fed66fc981d1e2b4fedc6a646d318b361c` · generated 2026-07-19T16:29:20.252Z
 
-Requested target for every provider: **2 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **154 metric records**
-backed by **302 retained trial observations**, across **37 metrics** and
+Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **163 metric records**
+backed by **247 retained trial observations**, across **40 metrics** and
 **5 providers**; every emitted, catalogued metric has a ranked table below
 (median of retained trials), grouped by dimension with its headline first.
 Generated from the published Run dataset — do not edit by hand. Methodology:
@@ -14,23 +14,21 @@ when statistically indistinguishable or tied on the median (see details below) �
 CPU/RAM comparability uses observed vCPU and RAM (±10% RAM); disk is a workload-capacity gate
 surfaced through coverage gaps, not part of the compute-match verdict.
 
-> **Comparability warning:** Blaxel's observed compute did not match the requested CPU/RAM target; its observed allocation was **6 vCPU · 15.63 GiB RAM · 12.5 GB disk**. Its measured ranks are not like-for-like with compute-matched providers.
-
 ## cpu
 
 ### Node.js web tooling _(headline)_
 
 runs/s · higher is better
 
-_Daytona leads · ~1.1× Novita on median (higher is better)._
+_Daytona leads on median (higher is better); see notes for how ranks are decided._
 
 | Rank | Provider | Node.js web tooling (runs/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 19.51 | 19.46 – 19.55 | 2 | — |
-| 2 | Novita | 17.5 | 17.43 – 17.58 | 2 | n too small |
-| 3 | Blaxel | 12.8 | 12.67 – 12.94 | 2 | n too small |
-| 4 | E2B | 11.05 | 10.99 – 11.12 | 2 | n too small |
-| 5 | Modal | 8.82 | 8.71 – 8.93 | 2 | n too small |
+| 1 | Daytona | 18.46 | 18.29 – 18.64 | 2 | — |
+| 2 | Novita | 17.8 | 17.63 – 17.97 | 2 | n too small |
+| 3 | Blaxel | 13.64 | 13.54 – 13.75 | 2 | n too small |
+| 4 | E2B | 11.38 | 11.26 – 11.5 | 2 | n too small |
+| 5 | Modal | 8.965 | 8.96 – 8.97 | 2 | n too small |
 
 ## disk
 
@@ -38,125 +36,117 @@ _Daytona leads · ~1.1× Novita on median (higher is better)._
 
 IOPS · higher is better
 
-_Blaxel leads · ~2.3× Daytona on median (higher is better)._
+_Blaxel leads on median (higher is better); see notes for how ranks are decided._
 
 | Rank | Provider | fio rand read 4KB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 576000 | 570000 – 582000 | 2 | — |
-| 2 | Daytona | 248500 | 240000 – 257000 | 2 | n too small |
-| 3 | Novita | 59500 | 55300 – 63700 | 2 | n too small |
-| 4 | E2B | 40000 | 38700 – 41300 | 2 | n too small |
-| 5 | Modal | 33900 | 33200 – 34600 | 2 | n too small |
+| 1 | Blaxel | 268000 | 264000 – 272000 | 2 | — |
+| 2 | Daytona | 264000 | 264000 – 264000 | 2 | n too small |
+| 3 | Novita | 75900 | 73800 – 78000 | 2 | n too small |
+| 4 | E2B | 45000 | 44100 – 45900 | 2 | n too small |
 
 ### fio rand read 4KB, O_DIRECT (MB/s)
 
 MB/s · higher is better
 
-_Blaxel leads · ~2.3× Daytona on median (higher is better)._
+_Blaxel leads on median (higher is better); see notes for how ranks are decided._
 
 | Rank | Provider | fio rand read 4KB, O_DIRECT (MB/s) (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 2251 | 2226 – 2275 | 2 | — |
-| 2 | Daytona | 971 | 936 – 1006 | 2 | n too small |
-| 3 | Novita | 232.5 | 216 – 249 | 2 | n too small |
-| 4 | E2B | 156.5 | 151 – 162 | 2 | n too small |
-| 5 | Modal | 132.5 | 130 – 135 | 2 | n too small |
+| 1 | Blaxel | 1047 | 1030 – 1063 | 2 | — |
+| 2 | Daytona | 1031 | 1030 – 1032 | 2 | n too small |
+| 3 | Novita | 296.5 | 288 – 305 | 2 | n too small |
+| 4 | E2B | 175.5 | 172 – 179 | 2 | n too small |
 
 ### fio rand write 4KB, O_DIRECT (IOPS)
 
 IOPS · higher is better
 
-_Blaxel leads · ~2.1× Daytona on median (higher is better)._
+_Blaxel leads · ~1.1× Daytona on median (higher is better)._
 
 | Rank | Provider | fio rand write 4KB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 495000 | 484000 – 506000 | 2 | — |
-| 2 | Daytona | 231500 | 208000 – 255000 | 2 | n too small |
-| 3 | Novita | 85150 | 75700 – 94600 | 2 | n too small |
-| 4 | E2B | 43900 | 43500 – 44300 | 2 | n too small |
-| 5 | Modal | 28300 | 27000 – 29600 | 2 | n too small |
+| 1 | Blaxel | 249000 | 248000 – 250000 | 2 | — |
+| 2 | Daytona | 228500 | 228000 – 229000 | 2 | n too small |
+| 3 | Novita | 78050 | 76900 – 79200 | 2 | n too small |
+| 4 | E2B | 45900 | 45700 – 46100 | 2 | n too small |
 
 ### fio rand write 4KB, O_DIRECT (MB/s)
 
 MB/s · higher is better
 
-_Blaxel leads · ~2.1× Daytona on median (higher is better)._
+_Blaxel leads · ~1.1× Daytona on median (higher is better)._
 
 | Rank | Provider | fio rand write 4KB, O_DIRECT (MB/s) (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 1934 | 1891 – 1977 | 2 | — |
-| 2 | Daytona | 902.5 | 811 – 994 | 2 | n too small |
-| 3 | Novita | 332.5 | 296 – 369 | 2 | n too small |
-| 4 | E2B | 171.5 | 170 – 173 | 2 | n too small |
-| 5 | Modal | 110.5 | 105 – 116 | 2 | n too small |
+| 1 | Blaxel | 973.5 | 970 – 977 | 2 | — |
+| 2 | Daytona | 894.5 | 893 – 896 | 2 | n too small |
+| 3 | Novita | 305 | 301 – 309 | 2 | n too small |
+| 4 | E2B | 179 | 178 – 180 | 2 | n too small |
 
 ### fio seq read 1MB, O_DIRECT (IOPS)
 
 IOPS · higher is better
 
-_Modal leads · ~1.1× Novita on median (higher is better)._
+_Novita leads · ~1.5× Daytona on median (higher is better)._
 
 | Rank | Provider | fio seq read 1MB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Modal | 12350 | 11900 – 12800 | 2 | — |
-| 2 | Novita | 11250 | 11200 – 11300 | 2 | n too small |
-| 3 | Daytona | 9142 | 5584 – 12700 | 2 | n too small |
-| 4 | Blaxel | 4709 | 4609 – 4809 | 2 | n too small |
-| 5 | E2B | 599 | 599 – 599 | 2 | n too small |
+| 1 | Novita | 11000 | 10700 – 11300 | 2 | — |
+| 2 | Daytona | 7243 | 6765 – 7720 | 2 | n too small |
+| 3 | Blaxel | 3054 | 3030 – 3077 | 2 | n too small |
+| 4 | E2B | 599.5 | 599 – 600 | 2 | n too small |
 
 ### fio seq read 1MB, O_DIRECT (MB/s)
 
 MB/s · higher is better
 
-_Daytona leads · ~1.2× Blaxel on median (higher is better)._
+_Daytona leads · ~2.4× Blaxel on median (higher is better)._
 
 | Rank | Provider | fio seq read 1MB, O_DIRECT (MB/s) (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 5585 | — | 1 | — |
-| 2 | Blaxel | 4711 | 4611 – 4811 | 2 | — |
+| 1 | Daytona | 7245 | 6767 – 7722 | 2 | — |
+| 2 | Blaxel | 3055 | 3031 – 3079 | 2 | n too small |
 | 3 | E2B | 601 | 601 – 601 | 2 | n too small |
 
 ### fio seq write 1MB, O_DIRECT (IOPS)
 
 IOPS · higher is better
 
-_Daytona leads · ~1.1× Novita on median (higher is better)._
+_Novita leads · ~1.8× Daytona on median (higher is better)._
 
 | Rank | Provider | fio seq write 1MB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 5821 | 5714 – 5928 | 2 | — |
-| 2 | Novita | 5390 | 5210 – 5570 | 2 | n too small |
-| 3 | Blaxel | 3658 | 3616 – 3700 | 2 | n too small |
-| 4 | Modal | 3458 | 3362 – 3554 | 2 | n too small |
-| 5 | E2B | 599 | 598 – 600 | 2 | n too small |
+| 1 | Novita | 6580 | 6485 – 6675 | 2 | — |
+| 2 | Daytona | 3695 | 3660 – 3729 | 2 | n too small |
+| 3 | Blaxel | 2600 | 2562 – 2637 | 2 | n too small |
+| 4 | E2B | 599.5 | 599 – 600 | 2 | n too small |
 
 ### fio seq write 1MB, O_DIRECT (MB/s)
 
 MB/s · higher is better
 
-_Daytona leads · ~1.1× Novita on median (higher is better)._
+_Novita leads · ~1.8× Daytona on median (higher is better)._
 
 | Rank | Provider | fio seq write 1MB, O_DIRECT (MB/s) (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 5823 | 5716 – 5930 | 2 | — |
-| 2 | Novita | 5391 | 5211 – 5571 | 2 | n too small |
-| 3 | Blaxel | 3660 | 3618 – 3702 | 2 | n too small |
-| 4 | Modal | 3460 | 3363 – 3556 | 2 | n too small |
-| 5 | E2B | 600.5 | 600 – 601 | 2 | n too small |
+| 1 | Novita | 6582 | 6486 – 6677 | 2 | — |
+| 2 | Daytona | 3696 | 3661 – 3731 | 2 | n too small |
+| 3 | Blaxel | 2601 | 2563 – 2639 | 2 | n too small |
+| 4 | E2B | 601 | 601 – 601 | 2 | n too small |
 
 ### Hardlink throughput
 
 bogo ops/s · higher is better
 
-_Daytona leads · ~1.3× Novita on median (higher is better)._
+_Daytona leads · ~1.4× Novita on median (higher is better)._
 
 | Rank | Provider | Hardlink throughput (bogo ops/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 23.66 | 23.62 – 23.69 | 2 | — |
-| 2 | Novita | 18.52 | 18.45 – 18.59 | 2 | n too small |
-| 3 | Blaxel | 12.43 | 12.39 – 12.46 | 2 | n too small |
-| 4 | Modal | 3.05 | 2.98 – 3.12 | 2 | n too small |
-| 5 | E2B | 1.46 | 1.46 – 1.46 | 2 | n too small |
+| 1 | Daytona | 26.23 | 26.06 – 26.39 | 2 | — |
+| 2 | Novita | 19.22 | 19.22 – 19.22 | 2 | n too small |
+| 3 | E2B | 1.445 | 1.43 – 1.46 | 2 | n too small |
+| 4 | Blaxel | 0.35 | 0.35 – 0.35 | 2 | n too small |
 
 ## memory
 
@@ -164,57 +154,53 @@ _Daytona leads · ~1.3× Novita on median (higher is better)._
 
 MB/s · higher is better
 
-_Blaxel leads · ~1.3× Daytona on median (higher is better)._
+_Daytona leads · ~2.2× Blaxel on median (higher is better)._
 
 | Rank | Provider | STREAM Triad (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 73890 | 70330 – 77460 | 2 | — |
-| 2 | Daytona | 56000 | 55980 – 56010 | 2 | n too small |
-| 3 | Novita | 46030 | 45840 – 46210 | 2 | n too small |
-| 4 | Modal | 45370 | 42050 – 48700 | 2 | n too small |
-| 5 | E2B | 22020 | 21770 – 22260 | 2 | n too small |
+| 1 | Daytona | 121600 | 113600 – 129600 | 2 | — |
+| 2 | Blaxel | 54290 | 53940 – 54640 | 2 | n too small |
+| 3 | Novita | 53320 | 53210 – 53420 | 2 | n too small |
+| 4 | E2B | 47210 | 46960 – 47470 | 2 | n too small |
 
 ### STREAM Add
 
 MB/s · higher is better
 
-_Blaxel leads · ~1.3× Daytona on median (higher is better)._
+_Daytona leads · ~2.2× Blaxel on median (higher is better)._
 
 | Rank | Provider | STREAM Add (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 73910 | 70140 – 77690 | 2 | — |
-| 2 | Daytona | 55740 | 55730 – 55760 | 2 | n too small |
-| 3 | Modal | 45920 | 41170 – 50670 | 2 | n too small |
-| 4 | Novita | 45850 | 45780 – 45930 | 2 | n too small |
-| 5 | E2B | 22020 | 21840 – 22210 | 2 | n too small |
+| 1 | Daytona | 118300 | 115400 – 121172 | 2 | — |
+| 2 | Blaxel | 53580 | 53070 – 54100 | 2 | n too small |
+| 3 | Novita | 53440 | 53310 – 53580 | 2 | n too small |
+| 4 | E2B | 47680 | 47600 – 47760 | 2 | n too small |
 
 ### STREAM Copy
 
 MB/s · higher is better
 
-_Blaxel leads · ~1.7× Daytona on median (higher is better)._
+_Daytona leads · ~1.5× Blaxel on median (higher is better)._
 
 | Rank | Provider | STREAM Copy (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 113800 | 107300 – 120400 | 2 | — |
-| 2 | Daytona | 65680 | 65676 – 65690 | 2 | n too small |
-| 3 | Modal | 62010 | 56590 – 67440 | 2 | n too small |
-| 4 | Novita | 54820 | 54520 – 55130 | 2 | n too small |
-| 5 | E2B | 45120 | 43480 – 46760 | 2 | n too small |
+| 1 | Daytona | 141500 | 137100 – 145800 | 2 | — |
+| 2 | Blaxel | 91561 | 90900 – 92230 | 2 | n too small |
+| 3 | E2B | 81810 | 80415 – 83200 | 2 | n too small |
+| 4 | Novita | 58420 | 58330 – 58510 | 2 | n too small |
 
 ### STREAM Scale
 
 MB/s · higher is better
 
-_Blaxel leads · ~1.2× Daytona on median (higher is better)._
+_Daytona leads · ~2.2× Novita on median (higher is better)._
 
 | Rank | Provider | STREAM Scale (MB/s) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 62620 | 58680 – 66567 | 2 | — |
-| 2 | Daytona | 50120 | 50050 – 50180 | 2 | n too small |
-| 3 | Novita | 45410 | 45210 – 45610 | 2 | n too small |
-| 4 | Modal | 37400 | 34140 – 40662 | 2 | n too small |
-| 5 | E2B | 20880 | 20700 – 21050 | 2 | n too small |
+| 1 | Daytona | 110100 | 105300 – 114900 | 2 | — |
+| 2 | Novita | 50590 | 50540 – 50640 | 2 | n too small |
+| 3 | Blaxel | 48160 | 46790 – 49530 | 2 | n too small |
+| 4 | E2B | 42190 | 41957 – 42430 | 2 | n too small |
 
 ## network
 
@@ -222,55 +208,66 @@ _Blaxel leads · ~1.2× Daytona on median (higher is better)._
 
 Seconds · lower is better
 
-_Daytona leads · Blaxel is ~1.2× higher (lower is better)._
+_Daytona leads · Blaxel is ~1.1× higher (lower is better)._
 
 | Rank | Provider | Loopback TCP (10GB) (Seconds) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 5.441 | 5.286 – 5.595 | 2 | — |
-| 2 | Blaxel | 6.603 | 6.339 – 6.867 | 2 | n too small |
-| 3 | Novita | 7.944 | 7.928 – 7.959 | 2 | n too small |
-| 4 | E2B | 10.44 | 9.903 – 10.97 | 2 | n too small |
-| 5 | Modal | 54.1 | 51.35 – 56.86 | 2 | n too small |
+| 1 | Daytona | 4.96 | 4.855 – 5.066 | 2 | — |
+| 2 | Blaxel | 5.657 | 5.469 – 5.845 | 2 | n too small |
+| 3 | Novita | 7.949 | 7.777 – 8.121 | 2 | n too small |
+| 4 | E2B | 9.771 | 9.272 – 10.27 | 2 | n too small |
+| 5 | Modal | 42.22 | 40.95 – 43.49 | 2 | n too small |
 
 ### fast.com download
 
 Mbit/s · higher is better
 
-_E2B is the only ranked provider (3.25 Mbit/s; higher is better)._
+_Blaxel leads · ~6.3× Modal on median (higher is better)._
 
-| Rank | Provider | fast.com download (Mbit/s) | 95% bootstrap interval | n |
-| ---: | --- | ---: | ---: | ---: |
-| 1 | E2B | 3.25 | 3 – 3.5 | 2 |
+| Rank | Provider | fast.com download (Mbit/s) | 95% bootstrap interval | n | Note |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 1 | Blaxel | 3650 | 3500 – 3800 | 2 | — |
+| 2 | Modal | 575 | 400 – 750 | 2 | n too small |
+| 3 | Novita | 122 | 14 – 230 | 2 | n too small |
+| 4 | E2B | 1.235 | 0.67 – 1.8 | 2 | n too small |
 
 ### fast.com latency
 
 ms · lower is better
 
-_E2B is the only ranked provider (7 ms; lower is better)._
+_Blaxel leads · E2B is ~1.2× higher (lower is better)._
 
-| Rank | Provider | fast.com latency (ms) | 95% bootstrap interval | n |
-| ---: | --- | ---: | ---: | ---: |
-| 1 | E2B | 7 | 7 – 7 | 2 |
+| Rank | Provider | fast.com latency (ms) | 95% bootstrap interval | n | Note |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 1 | Blaxel | 6 | 6 – 6 | 2 | — |
+| 2 | E2B | 7 | 7 – 7 | 2 | n too small |
+| 3 | Novita | 10 | 9 – 11 | 2 | n too small |
+| 4 | Modal | 79.5 | 78 – 81 | 2 | n too small |
 
 ### fast.com loaded latency
 
 ms · lower is better
 
-_E2B is the only ranked provider (9 ms; lower is better)._
+_E2B leads · Novita is ~1.3× higher (lower is better)._
 
 | Rank | Provider | fast.com loaded latency (ms) | 95% bootstrap interval | n |
 | ---: | --- | ---: | ---: | ---: |
-| 1 | E2B | 9 | — | 1 |
+| 1 | E2B | 8 | — | 1 |
+| 2 | Novita | 10 | — | 1 |
+| 3 | Modal | 80 | — | 1 |
 
 ### fast.com upload
 
 Mbit/s · higher is better
 
-_E2B is the only ranked provider (770 Mbit/s; higher is better)._
+_Novita leads · ~2.0× Blaxel on median (higher is better)._
 
-| Rank | Provider | fast.com upload (Mbit/s) | 95% bootstrap interval | n |
-| ---: | --- | ---: | ---: | ---: |
-| 1 | E2B | 770 | 760 – 780 | 2 |
+| Rank | Provider | fast.com upload (Mbit/s) | 95% bootstrap interval | n | Note |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 1 | Novita | 2900 | 2700 – 3100 | 2 | — |
+| 2 | Blaxel | 1450 | 1400 – 1500 | 2 | n too small |
+| 3 | E2B | 965 | 830 – 1100 | 2 | n too small |
+| 4 | Modal | 245 | 220 – 270 | 2 | n too small |
 
 ## system
 
@@ -278,11 +275,11 @@ _E2B is the only ranked provider (770 Mbit/s; higher is better)._
 
 Milliseconds · lower is better
 
-_Blaxel is the only ranked provider (844 Milliseconds; lower is better)._
+_Blaxel is the only ranked provider (841 Milliseconds; lower is better)._
 
 | Rank | Provider | PyBench (Milliseconds) | 95% bootstrap interval | n |
 | ---: | --- | ---: | ---: | ---: |
-| 1 | Blaxel | 844 | 839 – 849 | 2 |
+| 1 | Blaxel | 841 | 837 – 845 | 2 |
 
 ### Git common operations
 
@@ -292,11 +289,11 @@ _Daytona leads · Novita is ~1.2× higher (lower is better)._
 
 | Rank | Provider | Git common operations (Seconds) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 36.06 | 35.96 – 36.16 | 2 | — |
-| 2 | Novita | 43.59 | 43.49 – 43.68 | 2 | n too small |
-| 3 | Blaxel | 61.48 | 61.37 – 61.59 | 2 | n too small |
-| 4 | E2B | 70.21 | 69.92 – 70.51 | 2 | n too small |
-| 5 | Modal | 81.37 | 80.74 – 82 | 2 | n too small |
+| 1 | Daytona | 36.07 | 35.8 – 36.35 | 2 | — |
+| 2 | Novita | 43.32 | 43.23 – 43.4 | 2 | n too small |
+| 3 | E2B | 64.34 | 63.92 – 64.77 | 2 | n too small |
+| 4 | Blaxel | 71.15 | 70.76 – 71.53 | 2 | n too small |
+| 5 | Modal | 89.35 | 86.9 – 91.8 | 2 | n too small |
 
 ### SQLite Speedtest
 
@@ -306,11 +303,11 @@ _Daytona leads · Novita is ~1.3× higher (lower is better)._
 
 | Rank | Provider | SQLite Speedtest (Seconds) | 95% bootstrap interval | n | Note |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 30.54 | 30.41 – 30.67 | 2 | — |
-| 2 | Novita | 38.81 | 38.53 – 39.09 | 2 | n too small |
-| 3 | Blaxel | 68.11 | 67.98 – 68.25 | 2 | n too small |
-| 4 | E2B | 69.84 | 69.82 – 69.86 | 2 | n too small |
-| 5 | Modal | 514.7 | 505.6 – 523.8 | 2 | n too small |
+| 1 | Daytona | 30.72 | 30.58 – 30.86 | 2 | — |
+| 2 | Novita | 39.01 | 38.85 – 39.17 | 2 | n too small |
+| 3 | Blaxel | 68.08 | 66.68 – 69.48 | 2 | n too small |
+| 4 | E2B | 71.16 | 69.36 – 72.95 | 2 | n too small |
+| 5 | Modal | 493.6 | 481.6 – 505.7 | 2 | n too small |
 
 ## realworld
 
@@ -318,69 +315,70 @@ _Daytona leads · Novita is ~1.3× higher (lower is better)._
 
 Seconds · lower is better
 
-_Daytona leads · Novita is ~1.5× higher (lower is better)._
+_Daytona leads · Novita is ~1.3× higher (lower is better)._
 
-| Rank | Provider | Mastra: cold install (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 28.84 | 28.66 – 29.03 | 2 | — |
-| 2 | Novita | 42.48 | 42.08 – 42.88 | 2 | n too small |
-| 3 | Modal | 73.78 | 72.94 – 74.61 | 2 | n too small |
+| Rank | Provider | Mastra: cold install (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 25.41 | — | 1 |
+| 2 | Novita | 32.93 | — | 1 |
+| 3 | Blaxel | 41.65 | — | 1 |
+| 4 | Modal | 63.26 | — | 1 |
 
 ### Better-Auth: build
 
 Seconds · lower is better
 
-_Blaxel leads · Daytona is ~1.2× higher (lower is better)._
+_Daytona leads · Novita is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: build (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 10.93 | 10.79 – 11.08 | 2 | — |
-| 2 | Daytona | 12.78 | 12.62 – 12.94 | 2 | n too small |
-| 3 | Novita | 14.52 | 14.52 – 14.53 | 2 | n too small |
-| 4 | E2B | 21.4 | 21.28 – 21.52 | 2 | n too small |
-| 5 | Modal | 40.92 | 39.94 – 41.9 | 2 | n too small |
+| Rank | Provider | Better-Auth: build (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 56.23 | — | 1 |
+| 2 | Novita | 63.5 | — | 1 |
+| 3 | Blaxel | 97.76 | — | 1 |
+| 4 | E2B | 110.2 | — | 1 |
+| 5 | Modal | 141.5 | — | 1 |
 
 ### Better-Auth: cold install
 
 Seconds · lower is better
 
-_Daytona leads · Novita is ~1.1× higher (lower is better)._
+_Daytona leads on median (lower is better); see notes for how ranks are decided._
 
-| Rank | Provider | Better-Auth: cold install (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 10.89 | 10.74 – 11.04 | 2 | — |
-| 2 | Novita | 11.86 | 11.77 – 11.95 | 2 | n too small |
-| 3 | Blaxel | 16.87 | 16.56 – 17.17 | 2 | n too small |
-| 4 | E2B | 19.64 | 19.3 – 19.98 | 2 | n too small |
-| 5 | Modal | 31.14 | 30.67 – 31.61 | 2 | n too small |
+| Rank | Provider | Better-Auth: cold install (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 10.47 | — | 1 |
+| 2 | Novita | 10.79 | — | 1 |
+| 3 | E2B | 18.78 | — | 1 |
+| 4 | Modal | 29.84 | — | 1 |
+| 5 | Blaxel | 31.24 | — | 1 |
 
 ### Better-Auth: git clone
 
 Seconds · lower is better
 
-_Blaxel leads · Daytona is ~1.1× higher (lower is better)._
+_E2B leads · Daytona is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: git clone (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 1.571 | 1.555 – 1.586 | 2 | — |
-| 2 | Daytona | 1.669 | 1.57 – 1.768 | 2 | n too small |
-| 3 | E2B | 1.777 | 1.768 – 1.787 | 2 | n too small |
-| 4 | Novita | 1.956 | 1.726 – 2.187 | 2 | n too small |
-| 5 | Modal | 2.388 | 2.251 – 2.524 | 2 | n too small |
+| Rank | Provider | Better-Auth: git clone (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | E2B | 1.697 | — | 1 |
+| 2 | Daytona | 1.787 | — | 1 |
+| 3 | Novita | 2.354 | — | 1 |
+| 4 | Modal | 2.706 | — | 1 |
+| 5 | Blaxel | 3.505 | — | 1 |
 
 ### Better-Auth: lint (Biome)
 
 Seconds · lower is better
 
-_Blaxel leads · Daytona is ~1.2× higher (lower is better)._
+_Daytona leads · Novita is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: lint (Biome) (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 3.939 | 3.936 – 3.942 | 2 | — |
-| 2 | Daytona | 4.869 | 4.869 – 4.869 | 2 | n too small |
-| 3 | Novita | 5.394 | 5.378 – 5.411 | 2 | n too small |
-| 4 | E2B | 8.346 | 8.259 – 8.433 | 2 | n too small |
-| 5 | Modal | 17.18 | 17.13 – 17.23 | 2 | n too small |
+| Rank | Provider | Better-Auth: lint (Biome) (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 2.909 | — | 1 |
+| 2 | Novita | 3.173 | — | 1 |
+| 3 | E2B | 6.168 | — | 1 |
+| 4 | Blaxel | 7.247 | — | 1 |
+| 5 | Modal | 11.19 | — | 1 |
 
 ### Better-Auth: lint deps (Knip)
 
@@ -388,13 +386,13 @@ Seconds · lower is better
 
 _Daytona leads · Novita is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: lint deps (Knip) (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 10.96 | 10.96 – 10.97 | 2 | — |
-| 2 | Novita | 11.67 | 11.64 – 11.7 | 2 | n too small |
-| 3 | Blaxel | 16.78 | 16.59 – 16.97 | 2 | n too small |
-| 4 | E2B | 18.75 | 18.72 – 18.78 | 2 | n too small |
-| 5 | Modal | 28.5 | 28.34 – 28.66 | 2 | n too small |
+| Rank | Provider | Better-Auth: lint deps (Knip) (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 9.632 | — | 1 |
+| 2 | Novita | 10.5 | — | 1 |
+| 3 | E2B | 20.02 | — | 1 |
+| 4 | Blaxel | 23.05 | — | 1 |
+| 5 | Modal | 30.08 | — | 1 |
 
 ### Better-Auth: lint format
 
@@ -402,27 +400,27 @@ Seconds · lower is better
 
 _Daytona leads · Novita is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: lint format (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 2.681 | 2.679 – 2.683 | 2 | — |
-| 2 | Novita | 3.045 | 3.038 – 3.053 | 2 | n too small |
-| 3 | Blaxel | 4.946 | 4.946 – 4.946 | 2 | n too small |
-| 4 | E2B | 5.212 | 5.157 – 5.266 | 2 | n too small |
-| 5 | Modal | 6.581 | 6.494 – 6.668 | 2 | n too small |
+| Rank | Provider | Better-Auth: lint format (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 2.62 | — | 1 |
+| 2 | Novita | 2.815 | — | 1 |
+| 3 | Blaxel | 5.146 | — | 1 |
+| 4 | E2B | 5.485 | — | 1 |
+| 5 | Modal | 6.694 | — | 1 |
 
 ### Better-Auth: lint packages
 
 Seconds · lower is better
 
-_Blaxel leads · Daytona is ~1.3× higher (lower is better)._
+_Daytona leads on median (lower is better); see notes for how ranks are decided._
 
-| Rank | Provider | Better-Auth: lint packages (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 2.984 | 2.966 – 3.001 | 2 | — |
-| 2 | Daytona | 4.015 | 4.01 – 4.02 | 2 | n too small |
-| 3 | Novita | 4.635 | 4.632 – 4.638 | 2 | n too small |
-| 4 | E2B | 7.606 | 7.593 – 7.619 | 2 | n too small |
-| 5 | Modal | 15.76 | 15.56 – 15.97 | 2 | n too small |
+| Rank | Provider | Better-Auth: lint packages (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 2.466 | — | 1 |
+| 2 | Novita | 2.58 | — | 1 |
+| 3 | Blaxel | 4.542 | — | 1 |
+| 4 | E2B | 4.644 | — | 1 |
+| 5 | Modal | 11.65 | — | 1 |
 
 ### Better-Auth: lint spell
 
@@ -430,27 +428,27 @@ Seconds · lower is better
 
 _Daytona leads · Novita is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: lint spell (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 6.838 | 6.769 – 6.908 | 2 | — |
-| 2 | Novita | 7.691 | 7.457 – 7.925 | 2 | n too small |
-| 3 | Blaxel | 12.2 | 12.19 – 12.21 | 2 | n too small |
-| 4 | E2B | 12.43 | 12.29 – 12.57 | 2 | n too small |
-| 5 | Modal | 15.18 | 14.7 – 15.65 | 2 | n too small |
+| Rank | Provider | Better-Auth: lint spell (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 6.559 | — | 1 |
+| 2 | Novita | 7.3 | — | 1 |
+| 3 | Blaxel | 12.56 | — | 1 |
+| 4 | E2B | 14.86 | — | 1 |
+| 5 | Modal | 17.09 | — | 1 |
 
 ### Better-Auth: lint types
 
 Seconds · lower is better
 
-_Blaxel leads · Daytona is ~1.5× higher (lower is better)._
+_Daytona leads · Novita is ~1.2× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: lint types (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 33.64 | 33.48 – 33.8 | 2 | — |
-| 2 | Daytona | 51.07 | 50.95 – 51.19 | 2 | n too small |
-| 3 | Novita | 60.08 | 59.63 – 60.53 | 2 | n too small |
-| 4 | E2B | 98.64 | 97.8 – 99.48 | 2 | n too small |
-| 5 | Modal | 183.3 | 178.9 – 187.7 | 2 | n too small |
+| Rank | Provider | Better-Auth: lint types (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 25.14 | — | 1 |
+| 2 | Novita | 29.19 | — | 1 |
+| 3 | Blaxel | 55.6 | — | 1 |
+| 4 | E2B | 56.49 | — | 1 |
+| 5 | Modal | 108.5 | — | 1 |
 
 ### Better-Auth: typecheck
 
@@ -458,49 +456,85 @@ Seconds · lower is better
 
 _Daytona leads · Novita is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Better-Auth: typecheck (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 1.388 | 1.378 – 1.398 | 2 | — |
-| 2 | Novita | 1.474 | 1.465 – 1.483 | 2 | n too small |
-| 3 | Blaxel | 2.037 | 2.037 – 2.038 | 2 | n too small |
-| 4 | E2B | 2.613 | 2.436 – 2.79 | 2 | n too small |
-| 5 | Modal | 3.308 | 3.29 – 3.326 | 2 | n too small |
+| Rank | Provider | Better-Auth: typecheck (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 39.74 | — | 1 |
+| 2 | Novita | 43.39 | — | 1 |
+| 3 | Blaxel | 66.09 | — | 1 |
+| 4 | E2B | 83.5 | — | 1 |
+| 5 | Modal | 87.87 | — | 1 |
 
 ### Mastra: build:core
 
 Seconds · lower is better
 
-_Daytona leads · Novita is ~1.5× higher (lower is better)._
+_Daytona leads · Novita is ~1.2× higher (lower is better)._
 
-| Rank | Provider | Mastra: build:core (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 83 | 82.98 – 83.02 | 2 | — |
-| 2 | Novita | 125.6 | 125.2 – 126 | 2 | n too small |
-| 3 | Modal | 203 | 201.1 – 205 | 2 | n too small |
+| Rank | Provider | Mastra: build:core (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 68.77 | — | 1 |
+| 2 | Novita | 85.56 | — | 1 |
+| 3 | Blaxel | 122.6 | — | 1 |
+| 4 | Modal | 171 | — | 1 |
 
 ### Mastra: git clone
 
 Seconds · lower is better
 
-_Daytona leads · Novita is ~1.1× higher (lower is better)._
+_Novita leads · Daytona is ~1.1× higher (lower is better)._
 
-| Rank | Provider | Mastra: git clone (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 6.626 | 6.425 – 6.827 | 2 | — |
-| 2 | Novita | 7.014 | 6.931 – 7.096 | 2 | n too small |
-| 3 | Modal | 9.957 | 9.35 – 10.56 | 2 | n too small |
+| Rank | Provider | Mastra: git clone (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Novita | 7.021 | — | 1 |
+| 2 | Daytona | 7.665 | — | 1 |
+| 3 | Modal | 9.662 | — | 1 |
+| 4 | Blaxel | 11.86 | — | 1 |
 
 ### Mastra: lint:format
 
 Seconds · lower is better
 
-_Daytona leads · Novita is ~1.4× higher (lower is better)._
+_Daytona leads · Novita is ~1.2× higher (lower is better)._
 
-| Rank | Provider | Mastra: lint:format (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Daytona | 90.71 | 90.34 – 91.08 | 2 | — |
-| 2 | Novita | 128.7 | 128.5 – 128.8 | 2 | n too small |
-| 3 | Modal | 199.7 | 198.2 – 201.1 | 2 | n too small |
+| Rank | Provider | Mastra: lint:format (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Daytona | 84.33 | — | 1 |
+| 2 | Novita | 98.22 | — | 1 |
+| 3 | Blaxel | 142.1 | — | 1 |
+| 4 | Modal | 190.5 | — | 1 |
+
+### OpenClaw: cold install
+
+Seconds · lower is better
+
+_Novita leads · Blaxel is ~2.5× higher (lower is better)._
+
+| Rank | Provider | OpenClaw: cold install (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Novita | 5.201 | — | 1 |
+| 2 | Blaxel | 13.15 | — | 1 |
+
+### OpenClaw: git clone
+
+Seconds · lower is better
+
+_Novita leads · Blaxel is ~2.1× higher (lower is better)._
+
+| Rank | Provider | OpenClaw: git clone (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Novita | 9.333 | — | 1 |
+| 2 | Blaxel | 20.02 | — | 1 |
+
+### OpenClaw: typecheck (tsgo)
+
+Seconds · lower is better
+
+_Novita leads · Blaxel is ~1.6× higher (lower is better)._
+
+| Rank | Provider | OpenClaw: typecheck (tsgo) (Seconds) | 95% bootstrap interval | n |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Novita | 42.1 | — | 1 |
+| 2 | Blaxel | 67.41 | — | 1 |
 
 ## economics
 
@@ -508,37 +542,32 @@ _Daytona leads · Novita is ~1.4× higher (lower is better)._
 
 USD/hr · lower is better
 
-_Daytona is cheapest · Novita is ~1.1× higher (lower is better)._
+_Novita is cheapest · Daytona is ~1.1× higher (lower is better)._
 
 | Rank | Provider | Hourly cost (USD/hr) | 95% bootstrap interval | n |
 | ---: | --- | ---: | ---: | ---: |
-| 1 | Daytona | 0.1494 | — | 1 |
-| 2 | Novita | 0.1627 | — | 1 |
-| 3 | E2B | 0.2304 | — | 1 |
-| 4 | Modal | 0.4774 | — | 1 |
+| 1 | Novita | 0.2333 | — | 1 |
+| 2 | Daytona | 0.2502 | — | 1 |
+| 3 | E2B | 0.3312 | — | 1 |
+| 4 | Modal | 0.7612 | — | 1 |
 
 ## Coverage gaps
 
-13 uncovered results across 5 providers (Blaxel 3, Daytona 2, E2B 3, Modal 3, Novita 2). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
+8 uncovered results across 4 providers (Blaxel 1, Daytona 2, E2B 2, Modal 3). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
 
 <details>
 <summary>Full coverage table</summary>
 
 | Provider | Benchmark | Outcome | Detail |
 | --- | --- | --- | --- |
-| Blaxel | realworld-mastra | ❌ **disk** (skipped) | Insufficient disk: 12.5 GiB free, suite needs 30 GiB |
-| Blaxel | realworld-openclaw | ❌ **disk** (skipped) | Insufficient disk: 12.5 GiB free, suite needs 25 GiB |
 | E2B | realworld-mastra | ❌ **disk** (skipped) | Insufficient disk: 20.0 GiB free, suite needs 30 GiB |
 | E2B | realworld-openclaw | ❌ **disk** (skipped) | Insufficient disk: 20.0 GiB free, suite needs 25 GiB |
 | Blaxel | network | **failed** | Step "mise run benchmark:network:all" failed with exit code 1 |
 | Daytona | network | **failed** | Step "mise run benchmark:network:all" timed out after 2700s |
-| Daytona | realworld-openclaw | **failed** | Step "mise run benchmark:realworld:pts:openclaw" timed out after 8400s |
-| E2B | cpu-generic | **failed** | Step "mise run benchmark:cpu:generic" timed out after 7800s |
-| Modal | cpu-generic | **failed** | Step "mise run benchmark:cpu:generic" timed out after 7800s |
-| Modal | network | **failed** | Step "mise run benchmark:network:all" failed with exit code 1 |
-| Modal | realworld-openclaw | **failed** | Step "mise run benchmark:realworld:pts:openclaw" timed out after 8400s |
-| Novita | network | **failed** | Step "mise run benchmark:network:all" failed with exit code 1 |
-| Novita | realworld-openclaw | **failed** | Step "mise run benchmark:realworld:pts:openclaw" lost its sandbox: 12 consecutive detached polls failed (last: done-file fs exists) — the sandbox stopped responding, not a quiet long step |
+| Daytona | realworld-openclaw | **failed** | Step "mise run benchmark:realworld:pts:openclaw" timed out after 4800s |
+| Modal | realworld-openclaw | **failed** | Step "mise run benchmark:realworld:pts:openclaw" timed out after 4800s |
+| Modal | disk | **missing** | No result and no marker — the suite never reported for this provider. |
+| Modal | memory | **missing** | No result and no marker — the suite never reported for this provider. |
 
 **skipped** — a precondition said no before the benchmark was attempted. A ❌ **disk** skip is the
 loud one: the provider could not supply the disk the suite needs, so the workload does not run on
@@ -546,6 +575,11 @@ its current allocation at all. That is a structural absence, not a slow result.
 
 **failed** — the benchmark was attempted and broke: it threw, timed out, or died with the sandbox.
 Unlike a skip, this is a reliability fact about the provider, not a decision made on its behalf.
+
+**missing** — nothing was reported at all: no result, and no marker explaining why. The suite ran
+elsewhere in this run, so it was part of the comparison, and this provider is simply absent from
+it — a dropped job, a lost artifact, or a sandbox that died before it could say anything. Treat it
+as unmeasured, never as a pass: the provider has not been shown to run this workload.
 
 </details>
 
@@ -595,152 +629,161 @@ correction is applied across providers or metrics.
 | cpu | Node.js web tooling | E2B | 0.33 (n too small) | 0.097 |
 | cpu | Node.js web tooling | Modal | 0.33 (n too small) | 0.097 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | Blaxel | — | — |
-| disk | fio rand read 4KB, O_DIRECT (IOPS) | Daytona | 0.33 (n too small) | 0.097 |
+| disk | fio rand read 4KB, O_DIRECT (IOPS) | Daytona | 1.0 (n too small) | 0.84 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | Novita | 0.33 (n too small) | 0.097 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | E2B | 0.33 (n too small) | 0.097 |
-| disk | fio rand read 4KB, O_DIRECT (IOPS) | Modal | 0.33 (n too small) | 0.097 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | Blaxel | — | — |
-| disk | fio rand read 4KB, O_DIRECT (MB/s) | Daytona | 0.33 (n too small) | 0.097 |
+| disk | fio rand read 4KB, O_DIRECT (MB/s) | Daytona | 1.0 (n too small) | 0.84 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | Novita | 0.33 (n too small) | 0.097 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | E2B | 0.33 (n too small) | 0.097 |
-| disk | fio rand read 4KB, O_DIRECT (MB/s) | Modal | 0.33 (n too small) | 0.097 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Blaxel | — | — |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Daytona | 0.33 (n too small) | 0.097 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Novita | 0.33 (n too small) | 0.097 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | E2B | 0.33 (n too small) | 0.097 |
-| disk | fio rand write 4KB, O_DIRECT (IOPS) | Modal | 0.33 (n too small) | 0.097 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Blaxel | — | — |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Daytona | 0.33 (n too small) | 0.097 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Novita | 0.33 (n too small) | 0.097 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | E2B | 0.33 (n too small) | 0.097 |
-| disk | fio rand write 4KB, O_DIRECT (MB/s) | Modal | 0.33 (n too small) | 0.097 |
-| disk | fio seq read 1MB, O_DIRECT (IOPS) | Modal | — | — |
-| disk | fio seq read 1MB, O_DIRECT (IOPS) | Novita | 0.33 (n too small) | 0.097 |
-| disk | fio seq read 1MB, O_DIRECT (IOPS) | Daytona | 1.0 (n too small) | 0.84 |
+| disk | fio seq read 1MB, O_DIRECT (IOPS) | Novita | — | — |
+| disk | fio seq read 1MB, O_DIRECT (IOPS) | Daytona | 0.33 (n too small) | 0.097 |
 | disk | fio seq read 1MB, O_DIRECT (IOPS) | Blaxel | 0.33 (n too small) | 0.097 |
 | disk | fio seq read 1MB, O_DIRECT (IOPS) | E2B | 0.33 (n too small) | 0.097 |
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | Daytona | — | — |
-| disk | fio seq read 1MB, O_DIRECT (MB/s) | Blaxel | — | — |
+| disk | fio seq read 1MB, O_DIRECT (MB/s) | Blaxel | 0.33 (n too small) | 0.097 |
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | E2B | 0.33 (n too small) | 0.097 |
-| disk | fio seq write 1MB, O_DIRECT (IOPS) | Daytona | — | — |
-| disk | fio seq write 1MB, O_DIRECT (IOPS) | Novita | 0.33 (n too small) | 0.097 |
+| disk | fio seq write 1MB, O_DIRECT (IOPS) | Novita | — | — |
+| disk | fio seq write 1MB, O_DIRECT (IOPS) | Daytona | 0.33 (n too small) | 0.097 |
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | Blaxel | 0.33 (n too small) | 0.097 |
-| disk | fio seq write 1MB, O_DIRECT (IOPS) | Modal | 0.33 (n too small) | 0.097 |
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | E2B | 0.33 (n too small) | 0.097 |
-| disk | fio seq write 1MB, O_DIRECT (MB/s) | Daytona | — | — |
-| disk | fio seq write 1MB, O_DIRECT (MB/s) | Novita | 0.33 (n too small) | 0.097 |
+| disk | fio seq write 1MB, O_DIRECT (MB/s) | Novita | — | — |
+| disk | fio seq write 1MB, O_DIRECT (MB/s) | Daytona | 0.33 (n too small) | 0.097 |
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | Blaxel | 0.33 (n too small) | 0.097 |
-| disk | fio seq write 1MB, O_DIRECT (MB/s) | Modal | 0.33 (n too small) | 0.097 |
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | E2B | 0.33 (n too small) | 0.097 |
 | disk | Hardlink throughput | Daytona | — | — |
 | disk | Hardlink throughput | Novita | 0.33 (n too small) | 0.097 |
-| disk | Hardlink throughput | Blaxel | 0.33 (n too small) | 0.097 |
-| disk | Hardlink throughput | Modal | 0.33 (n too small) | 0.097 |
 | disk | Hardlink throughput | E2B | 0.33 (n too small) | 0.097 |
-| memory | STREAM Triad | Blaxel | — | — |
-| memory | STREAM Triad | Daytona | 0.33 (n too small) | 0.097 |
+| disk | Hardlink throughput | Blaxel | 0.33 (n too small) | 0.097 |
+| memory | STREAM Triad | Daytona | — | — |
+| memory | STREAM Triad | Blaxel | 0.33 (n too small) | 0.097 |
 | memory | STREAM Triad | Novita | 0.33 (n too small) | 0.097 |
-| memory | STREAM Triad | Modal | 1.0 (n too small) | 0.84 |
 | memory | STREAM Triad | E2B | 0.33 (n too small) | 0.097 |
-| memory | STREAM Add | Blaxel | — | — |
-| memory | STREAM Add | Daytona | 0.33 (n too small) | 0.097 |
-| memory | STREAM Add | Modal | 0.33 (n too small) | 0.097 |
+| memory | STREAM Add | Daytona | — | — |
+| memory | STREAM Add | Blaxel | 0.33 (n too small) | 0.097 |
 | memory | STREAM Add | Novita | 1.0 (n too small) | 0.84 |
 | memory | STREAM Add | E2B | 0.33 (n too small) | 0.097 |
-| memory | STREAM Copy | Blaxel | — | — |
-| memory | STREAM Copy | Daytona | 0.33 (n too small) | 0.097 |
-| memory | STREAM Copy | Modal | 1.0 (n too small) | 0.84 |
-| memory | STREAM Copy | Novita | 0.33 (n too small) | 0.097 |
+| memory | STREAM Copy | Daytona | — | — |
+| memory | STREAM Copy | Blaxel | 0.33 (n too small) | 0.097 |
 | memory | STREAM Copy | E2B | 0.33 (n too small) | 0.097 |
-| memory | STREAM Scale | Blaxel | — | — |
-| memory | STREAM Scale | Daytona | 0.33 (n too small) | 0.097 |
+| memory | STREAM Copy | Novita | 0.33 (n too small) | 0.097 |
+| memory | STREAM Scale | Daytona | — | — |
 | memory | STREAM Scale | Novita | 0.33 (n too small) | 0.097 |
-| memory | STREAM Scale | Modal | 0.33 (n too small) | 0.097 |
+| memory | STREAM Scale | Blaxel | 0.33 (n too small) | 0.097 |
 | memory | STREAM Scale | E2B | 0.33 (n too small) | 0.097 |
 | network | Loopback TCP (10GB) | Daytona | — | — |
 | network | Loopback TCP (10GB) | Blaxel | 0.33 (n too small) | 0.097 |
 | network | Loopback TCP (10GB) | Novita | 0.33 (n too small) | 0.097 |
 | network | Loopback TCP (10GB) | E2B | 0.33 (n too small) | 0.097 |
 | network | Loopback TCP (10GB) | Modal | 0.33 (n too small) | 0.097 |
-| network | fast.com download | E2B | — | — |
-| network | fast.com latency | E2B | — | — |
+| network | fast.com download | Blaxel | — | — |
+| network | fast.com download | Modal | 0.33 (n too small) | 0.097 |
+| network | fast.com download | Novita | 0.33 (n too small) | 0.097 |
+| network | fast.com download | E2B | 0.33 (n too small) | 0.097 |
+| network | fast.com latency | Blaxel | — | — |
+| network | fast.com latency | E2B | 0.33 (n too small) | 0.097 |
+| network | fast.com latency | Novita | 0.33 (n too small) | 0.097 |
+| network | fast.com latency | Modal | 0.33 (n too small) | 0.097 |
 | network | fast.com loaded latency | E2B | — | — |
-| network | fast.com upload | E2B | — | — |
+| network | fast.com loaded latency | Novita | — | — |
+| network | fast.com loaded latency | Modal | — | — |
+| network | fast.com upload | Novita | — | — |
+| network | fast.com upload | Blaxel | 0.33 (n too small) | 0.097 |
+| network | fast.com upload | E2B | 0.33 (n too small) | 0.097 |
+| network | fast.com upload | Modal | 0.33 (n too small) | 0.097 |
 | system | PyBench | Blaxel | — | — |
 | system | Git common operations | Daytona | — | — |
 | system | Git common operations | Novita | 0.33 (n too small) | 0.097 |
-| system | Git common operations | Blaxel | 0.33 (n too small) | 0.097 |
 | system | Git common operations | E2B | 0.33 (n too small) | 0.097 |
+| system | Git common operations | Blaxel | 0.33 (n too small) | 0.097 |
 | system | Git common operations | Modal | 0.33 (n too small) | 0.097 |
 | system | SQLite Speedtest | Daytona | — | — |
 | system | SQLite Speedtest | Novita | 0.33 (n too small) | 0.097 |
 | system | SQLite Speedtest | Blaxel | 0.33 (n too small) | 0.097 |
-| system | SQLite Speedtest | E2B | 0.33 (n too small) | 0.097 |
+| system | SQLite Speedtest | E2B | 0.67 (n too small) | 0.84 |
 | system | SQLite Speedtest | Modal | 0.33 (n too small) | 0.097 |
 | realworld | Mastra: cold install | Daytona | — | — |
-| realworld | Mastra: cold install | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Mastra: cold install | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Mastra: cold install | Novita | — | — |
+| realworld | Mastra: cold install | Blaxel | — | — |
+| realworld | Mastra: cold install | Modal | — | — |
+| realworld | Better-Auth: build | Daytona | — | — |
+| realworld | Better-Auth: build | Novita | — | — |
 | realworld | Better-Auth: build | Blaxel | — | — |
-| realworld | Better-Auth: build | Daytona | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: build | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: build | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: build | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: build | E2B | — | — |
+| realworld | Better-Auth: build | Modal | — | — |
 | realworld | Better-Auth: cold install | Daytona | — | — |
-| realworld | Better-Auth: cold install | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: cold install | Blaxel | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: cold install | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: cold install | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: cold install | Novita | — | — |
+| realworld | Better-Auth: cold install | E2B | — | — |
+| realworld | Better-Auth: cold install | Modal | — | — |
+| realworld | Better-Auth: cold install | Blaxel | — | — |
+| realworld | Better-Auth: git clone | E2B | — | — |
+| realworld | Better-Auth: git clone | Daytona | — | — |
+| realworld | Better-Auth: git clone | Novita | — | — |
+| realworld | Better-Auth: git clone | Modal | — | — |
 | realworld | Better-Auth: git clone | Blaxel | — | — |
-| realworld | Better-Auth: git clone | Daytona | 0.67 (n too small) | 0.84 |
-| realworld | Better-Auth: git clone | E2B | 0.67 (n too small) | 0.84 |
-| realworld | Better-Auth: git clone | Novita | 1.0 (n too small) | 0.84 |
-| realworld | Better-Auth: git clone | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: lint (Biome) | Daytona | — | — |
+| realworld | Better-Auth: lint (Biome) | Novita | — | — |
+| realworld | Better-Auth: lint (Biome) | E2B | — | — |
 | realworld | Better-Auth: lint (Biome) | Blaxel | — | — |
-| realworld | Better-Auth: lint (Biome) | Daytona | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint (Biome) | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint (Biome) | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint (Biome) | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: lint (Biome) | Modal | — | — |
 | realworld | Better-Auth: lint deps (Knip) | Daytona | — | — |
-| realworld | Better-Auth: lint deps (Knip) | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint deps (Knip) | Blaxel | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint deps (Knip) | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint deps (Knip) | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: lint deps (Knip) | Novita | — | — |
+| realworld | Better-Auth: lint deps (Knip) | E2B | — | — |
+| realworld | Better-Auth: lint deps (Knip) | Blaxel | — | — |
+| realworld | Better-Auth: lint deps (Knip) | Modal | — | — |
 | realworld | Better-Auth: lint format | Daytona | — | — |
-| realworld | Better-Auth: lint format | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint format | Blaxel | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint format | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint format | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: lint format | Novita | — | — |
+| realworld | Better-Auth: lint format | Blaxel | — | — |
+| realworld | Better-Auth: lint format | E2B | — | — |
+| realworld | Better-Auth: lint format | Modal | — | — |
+| realworld | Better-Auth: lint packages | Daytona | — | — |
+| realworld | Better-Auth: lint packages | Novita | — | — |
 | realworld | Better-Auth: lint packages | Blaxel | — | — |
-| realworld | Better-Auth: lint packages | Daytona | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint packages | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint packages | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint packages | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: lint packages | E2B | — | — |
+| realworld | Better-Auth: lint packages | Modal | — | — |
 | realworld | Better-Auth: lint spell | Daytona | — | — |
-| realworld | Better-Auth: lint spell | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint spell | Blaxel | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint spell | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint spell | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: lint spell | Novita | — | — |
+| realworld | Better-Auth: lint spell | Blaxel | — | — |
+| realworld | Better-Auth: lint spell | E2B | — | — |
+| realworld | Better-Auth: lint spell | Modal | — | — |
+| realworld | Better-Auth: lint types | Daytona | — | — |
+| realworld | Better-Auth: lint types | Novita | — | — |
 | realworld | Better-Auth: lint types | Blaxel | — | — |
-| realworld | Better-Auth: lint types | Daytona | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint types | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint types | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: lint types | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: lint types | E2B | — | — |
+| realworld | Better-Auth: lint types | Modal | — | — |
 | realworld | Better-Auth: typecheck | Daytona | — | — |
-| realworld | Better-Auth: typecheck | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: typecheck | Blaxel | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: typecheck | E2B | 0.33 (n too small) | 0.097 |
-| realworld | Better-Auth: typecheck | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Better-Auth: typecheck | Novita | — | — |
+| realworld | Better-Auth: typecheck | Blaxel | — | — |
+| realworld | Better-Auth: typecheck | E2B | — | — |
+| realworld | Better-Auth: typecheck | Modal | — | — |
 | realworld | Mastra: build:core | Daytona | — | — |
-| realworld | Mastra: build:core | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Mastra: build:core | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Mastra: build:core | Novita | — | — |
+| realworld | Mastra: build:core | Blaxel | — | — |
+| realworld | Mastra: build:core | Modal | — | — |
+| realworld | Mastra: git clone | Novita | — | — |
 | realworld | Mastra: git clone | Daytona | — | — |
-| realworld | Mastra: git clone | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Mastra: git clone | Modal | 0.33 (n too small) | 0.097 |
+| realworld | Mastra: git clone | Modal | — | — |
+| realworld | Mastra: git clone | Blaxel | — | — |
 | realworld | Mastra: lint:format | Daytona | — | — |
-| realworld | Mastra: lint:format | Novita | 0.33 (n too small) | 0.097 |
-| realworld | Mastra: lint:format | Modal | 0.33 (n too small) | 0.097 |
-| economics | Hourly cost | Daytona | — | — |
+| realworld | Mastra: lint:format | Novita | — | — |
+| realworld | Mastra: lint:format | Blaxel | — | — |
+| realworld | Mastra: lint:format | Modal | — | — |
+| realworld | OpenClaw: cold install | Novita | — | — |
+| realworld | OpenClaw: cold install | Blaxel | — | — |
+| realworld | OpenClaw: git clone | Novita | — | — |
+| realworld | OpenClaw: git clone | Blaxel | — | — |
+| realworld | OpenClaw: typecheck (tsgo) | Novita | — | — |
+| realworld | OpenClaw: typecheck (tsgo) | Blaxel | — | — |
 | economics | Hourly cost | Novita | — | — |
+| economics | Hourly cost | Daytona | — | — |
 | economics | Hourly cost | E2B | — | — |
 | economics | Hourly cost | Modal | — | — |
 
