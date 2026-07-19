@@ -34,6 +34,18 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 start_ns=""
 end_ns=""
 
+# Wipe every workspace node_modules/.cache entry except turbo. A root-only wipe misses
+# per-package paths (e.g. better-auth packages/<pkg>/node_modules/.cache/ts), which made
+# warm-up leave an incremental TS cache and under-measure build/typecheck. Anchored to
+# WORK_DIR (not `.`) so the blast radius is explicit even if a future call site forgets
+# to cd first.
+wipe_tool_caches() {
+	find "$WORK_DIR" -type d -path '*/node_modules/.cache' 2>/dev/null |
+		while IFS= read -r cache_dir; do
+			find "$cache_dir" -mindepth 1 -maxdepth 1 ! -name turbo -exec rm -rf {} +
+		done
+}
+
 case "$TASK" in
 git_clone)
 	# Measured clone: what actions/checkout does -- deterministic content, network-inclusive on
@@ -85,20 +97,22 @@ cold_install)
 		# standalone). TURBO_FORCE is lifted for the prep only; the measured command keeps
 		# TURBO_FORCE=true so it is always a genuine execution, never a cache replay.
 		git clean -xdff -e node_modules -e dist -e .turbo
+		wipe_tool_caches
 		if [ ! -d node_modules ]; then
 			eval "$TASK_CMD_cold_install"
 		fi
 		(unset TURBO_FORCE && eval "$prep")
+		# Prep may restore turbo outputs under per-package node_modules/.cache; clear them so the
+		# timed command keeps dist warm but does not inherit incremental TS/vitest caches.
+		wipe_tool_caches
 	else
 		# Turbo's cache dirs (.turbo/ at the root, node_modules/.cache/turbo) survive EVERY generic
 		# reset — not just prep tasks' — so the cache the measured build wrote is still there when a
 		# later prep replays it, regardless of which tasks ran in between. Measurement-safe: every
 		# measured turbo command runs with TURBO_FORCE=true, so preserved cache is never read inside
-		# a timed window; all other tool caches in node_modules/.cache are still wiped.
+		# a timed window; all other tool caches under any node_modules/.cache are wiped.
 		git clean -xdff -e node_modules -e .turbo
-		if [ -d node_modules/.cache ]; then
-			find node_modules/.cache -mindepth 1 -maxdepth 1 ! -name turbo -exec rm -rf {} +
-		fi
+		wipe_tool_caches
 		if [ ! -d node_modules ]; then
 			# Recovery install: output stays on the (already-redirected) log — discarding it would
 			# hide the one diagnostic that explains a subsequent task failure.
@@ -112,20 +126,15 @@ cold_install)
 		exit 1
 	fi
 	if [ -z "$prep" ]; then
-		# Steady-state warm-up (fio's ramp_time, adapted): the FIRST execution of a JS toolchain in a
-		# fresh sandbox pays one-time JIT/compile-cache costs that live outside work/ and survive the
-		# per-pass reset — observed 75s vs ~10s on an identical better-auth build, an asymmetry that
-		# poisons the sample set and trips PTS's dynamic run count. One unmeasured execution, then
-		# the same reset again, so the measured run is warm-toolchain + cold-artifact on every pass.
-		# Prep-carrying tasks skip this: their prep already exercised the toolchain.
+		# Steady-state warm-up (fio's ramp_time, adapted): one unmeasured execution, then the same
+		# cold-artifact reset again so every sample is warm-toolchain + cold-artifact. Artifact
+		# caches (including per-package node_modules/.cache/ts) must be wiped here.
 		eval "$cmd"
 		# Same PRESERVING reset as above — the old destructive form here wiped the turbo cache the
 		# measured build had written, killing the replay for any prep task downstream of a no-prep
 		# task's warm-up cycle.
 		git clean -xdff -e node_modules -e .turbo
-		if [ -d node_modules/.cache ]; then
-			find node_modules/.cache -mindepth 1 -maxdepth 1 ! -name turbo -exec rm -rf {} +
-		fi
+		wipe_tool_caches
 	fi
 	start_ns=$(date +%s%N)
 	eval "$cmd"

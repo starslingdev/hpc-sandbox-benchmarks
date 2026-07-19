@@ -89,5 +89,19 @@ count() { if [ -f "$COUNTS/$1" ]; then wc -l < "$COUNTS/$1" | tr -d ' '; else ec
 [ "$(count build)" = "3" ] || { echo "FAIL: build executed $(count build)x, expected 3 (warm-up+measured+prep)" >&2; exit 1; }
 [ "$(count lint)" = "2" ] || { echo "FAIL: lint executed $(count lint)x, expected 2 (warm-up+measured)" >&2; exit 1; }
 [ "$(count test)" = "1" ] || { echo "FAIL: test executed $(count test)x, expected 1 (no warm-up on prep tasks)" >&2; exit 1; }
-echo "execution-count assertions OK (build=3 lint=2 test=1)"
+# better-auth-shaped per-package TS cache must not survive cold-artifact resets (root-only wipe
+# left packages/*/node_modules/.cache/ts warm and under-measured build/typecheck).
+[ "$(count build-cache)" = "0" ] || {
+	echo "FAIL: per-package TS cache hits=$(count build-cache), expected 0" >&2
+	exit 1
+}
+# Positive counterpart to build-cache=0: the turbo sentinel primed by the first build must survive
+# every subsequent wipe_tool_caches reset (build runs 2 and 3 of 3), proving the `! -name turbo`
+# exception actually preserves turbo's own cache rather than the assertion passing by wiping
+# everything indiscriminately.
+[ "$(count turbo-survived)" = "2" ] || {
+	echo "FAIL: turbo cache survived $(count turbo-survived)x resets, expected 2" >&2
+	exit 1
+}
+echo "execution-count assertions OK (build=3 lint=2 test=1 build-cache=0 turbo-survived=2)"
 echo "SELFTEST PASS"
