@@ -61,7 +61,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// gate like the other runners (not part of the specMatched check). No pre-baked toolchain
 		// snapshot yet — setup steps run fallbacks.
 		createCompute: () =>
-			blaxelWithVolume(blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-pdx-1" })),
+			blaxelWithVolume(blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-was-1" })),
 		createOptions: {},
 	},
 	modal: {
