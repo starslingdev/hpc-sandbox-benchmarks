@@ -46,7 +46,10 @@ import { convertToMbps } from "./node_modules/fast-cli/distribution/utilities.js
 // fast.com normally converges in ~30-60s; a healthy path exits well before this on the "succeeded"
 // signal, so the deadline only bites degraded paths — bounding Chrome's download buffers below the OOM
 // threshold and turning an indefinite hang into a fast, clean trial result.
-const DEADLINE_MS = Number(process.env.FAST_CLI_DEADLINE_MS || 90000);
+const parsedDeadline = Number(process.env.FAST_CLI_DEADLINE_MS);
+// Guard a non-numeric override: Number("disabled") is NaN, and setTimeout(fn, NaN) fires immediately,
+// which would end every trial before it reached fast.com. Fall back to the default in that case.
+const DEADLINE_MS = Number.isFinite(parsedDeadline) && parsedDeadline > 0 ? parsedDeadline : 90000;
 const deadline = new Promise((resolve) => setTimeout(() => resolve("__deadline__"), DEADLINE_MS));
 
 let data = {};
@@ -85,23 +88,41 @@ const out = {
 // in-flight async write.
 fs.writeSync(1, JSON.stringify(out, (_key, value) => (value === undefined ? undefined : value), "\t") + "\n");
 
-// Hard-exit WITHOUT closing the browser — awaiting browser.close() is the hang we are avoiding, and the
-// launcher's process-group kill reaps the orphaned Chrome. Nonzero when no download was measured at all.
-process.exit(out.downloadSpeed > 0 ? 0 : 1);
+// Succeed only on a COMPLETE measurement — all four metrics present. A trial that timed out or errored
+// after the download started (partial upload/latency/bufferBloat) must exit nonzero so PTS records a
+// failed trial rather than banking a corrupt row: exiting 0 on downloadSpeed alone would let a 2-metric
+// result masquerade as a passed trial. (We can't gate on fast.com's own `isDone` — on fast paths it
+// never flips, which is exactly why the deadline path exists and still produces a full, ramped result.)
+// Hard-exit WITHOUT closing the browser — awaiting browser.close() is the hang we are avoiding; the
+// launcher's process-group kill reaps the orphaned Chrome.
+const complete =
+	out.downloadSpeed > 0 && out.uploadSpeed > 0 && out.latency > 0 && out.bufferBloat > 0;
+process.exit(complete ? 0 : 1);
 DRIVER_EOF
 
 # Launcher PTS executes per trial. `setsid` makes node its own process-group leader, so a negative-PID
 # `kill` reaches Chrome and Chrome's own zygote/renderer children (which node spawns but does not own)
 # rather than node alone. We reap that whole group on EVERY exit — clean or timed-out — because the
 # driver hard-exits while Chrome is still alive: a surviving Chrome would hold its buffers into the next
-# trial and can wedge this command's output pipe. The watchdog is now only a backstop against node
-# itself wedging (the driver self-bounds via DEADLINE_MS); keep it just above that deadline.
+# trial and can wedge this command's output pipe. The watchdog is only a backstop against node itself
+# wedging (the driver self-bounds via DEADLINE_MS); its default is DERIVED from that deadline so it can
+# only ever fire AFTER the driver has had its chance to writeSync the JSON and hard-exit — a fixed 120s
+# default could sit below an overridden deadline and SIGKILL the driver mid-measurement.
 cat <<'LAUNCHER_EOF' >fast-cli
 #!/bin/sh
 setsid node "$(dirname "$0")/fast-driver.mjs" >"$LOG_FILE" 2>&1 &
 pid=$!
+# Default watchdog = driver deadline + 30s grace, so it strictly outlasts the driver's own bound. Both
+# stay overridable, but the default can never be set inconsistently with the deadline. Normalize the
+# deadline to a positive integer FIRST, matching the driver's finite-positive rule: a non-numeric value
+# would otherwise arithmetic-evaluate to 0 (a 30s watchdog while the driver runs 90s), and a fractional
+# one would fatally error POSIX integer arithmetic and terminate the launcher before it reaps Chrome.
+dl_ms=${FAST_CLI_DEADLINE_MS:-90000}
+case "$dl_ms" in '' | *[!0-9]*) dl_ms=90000 ;; esac
+deadline_s=$(( dl_ms / 1000 ))
+[ "$deadline_s" -ge 1 ] || deadline_s=90
 (
-	sleep "${FAST_CLI_WATCHDOG_S:-120}"
+	sleep "${FAST_CLI_WATCHDOG_S:-$(( deadline_s + 30 ))}"
 	kill -TERM -"$pid" 2>/dev/null
 	sleep 10
 	kill -KILL -"$pid" 2>/dev/null
