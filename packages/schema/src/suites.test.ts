@@ -69,9 +69,11 @@ describe("suite registry", () => {
 		// profile bump that adds/renames a combination fails here instead of silently stranding the
 		// list). stream's Type axis and fast-cli's four results are the matrix cases; pybench, sqlite,
 		// git and network-loopback declare no <Option> axes, so the pin holds over their wildcard result.
+		// github-download declares no <Option> axis either — its four results come from four
+		// ArgumentsDescription parsers (the fast-cli shape), all catalogued and all emitted.
 		// (pgbench is preset-pinned and now its own suite — gated by the subset test below.)
 		const profilesOf = {
-			network: ["pts/network-loopback", "pts/fast-cli"],
+			network: ["pts/network-loopback", "pts/fast-cli", "local/github-download"],
 			memory: ["pts/stream"],
 			system: ["pts/pybench", "pts/sqlite-speedtest", "pts/git"],
 		} as const;

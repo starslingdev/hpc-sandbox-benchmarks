@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--Four parsers scrape the four sentinel lines the `github-download` executable prints for one
+    download (install.sh). Each carries a distinct <ArgumentsDescription> so PTS emits one <Result>
+    per metric under that description (the fast-cli pattern) — the synthesizer reproduces the same
+    strings as the catalog join key, so "Speed"/"Latency"/"Time To First Byte"/"DNS Lookup" are the
+    runtime <Description>s. Scale/direction are per-parser because they differ (throughput HIB in
+    Mbit/s vs. timings LIB in ms) — the profile-level ResultScale/Proportion are only a fallback.-->
+<PhoronixTestSuite>
+  <ResultsParser>
+    <OutputTemplate>GITHUB_DOWNLOAD_SPEED_MBPS: #_RESULT_#</OutputTemplate>
+    <LineHint>GITHUB_DOWNLOAD_SPEED_MBPS:</LineHint>
+    <ResultScale>Mbit/s</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+    <ArgumentsDescription>Speed</ArgumentsDescription>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>GITHUB_DOWNLOAD_LATENCY_MS: #_RESULT_#</OutputTemplate>
+    <LineHint>GITHUB_DOWNLOAD_LATENCY_MS:</LineHint>
+    <ResultScale>ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+    <ArgumentsDescription>Latency</ArgumentsDescription>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>GITHUB_DOWNLOAD_TTFB_MS: #_RESULT_#</OutputTemplate>
+    <LineHint>GITHUB_DOWNLOAD_TTFB_MS:</LineHint>
+    <ResultScale>ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+    <ArgumentsDescription>Time To First Byte</ArgumentsDescription>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>GITHUB_DOWNLOAD_DNS_MS: #_RESULT_#</OutputTemplate>
+    <LineHint>GITHUB_DOWNLOAD_DNS_MS:</LineHint>
+    <ResultScale>ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+    <ArgumentsDescription>DNS Lookup</ArgumentsDescription>
+  </ResultsParser>
+</PhoronixTestSuite>

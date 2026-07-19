@@ -17354,6 +17354,54 @@ const chunk4: MetricDef[] = [
 		sourceUrl: "https://git-scm.com/",
 	},
 	{
+		id: "github_download_dns_lookup",
+		dimension: "network",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "GitHub Download - DNS Lookup",
+		description:
+			"Downloads a pinned GitHub source archive over HTTPS and reports the sustained download throughput plus the connection timing curl measures on the same request — the github.com path real CI traffic (clone/install) takes. The download target is overridable via GITHUB_DOWNLOAD_URL; the default is an immutable release tag archive so the transfer size stays constant across runs and providers.",
+		pts: { test: "local/github-download", description: "DNS Lookup" },
+		sourceUrl: "https://github.com/",
+	},
+	{
+		id: "github_download_latency",
+		dimension: "network",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "GitHub Download - Latency",
+		description:
+			"Downloads a pinned GitHub source archive over HTTPS and reports the sustained download throughput plus the connection timing curl measures on the same request — the github.com path real CI traffic (clone/install) takes. The download target is overridable via GITHUB_DOWNLOAD_URL; the default is an immutable release tag archive so the transfer size stays constant across runs and providers.",
+		pts: { test: "local/github-download", description: "Latency" },
+		sourceUrl: "https://github.com/",
+	},
+	{
+		id: "github_download_speed",
+		dimension: "network",
+		unit: "Mbit/s",
+		direction: "HIB",
+		headline: false,
+		label: "GitHub Download - Speed",
+		description:
+			"Downloads a pinned GitHub source archive over HTTPS and reports the sustained download throughput plus the connection timing curl measures on the same request — the github.com path real CI traffic (clone/install) takes. The download target is overridable via GITHUB_DOWNLOAD_URL; the default is an immutable release tag archive so the transfer size stays constant across runs and providers.",
+		pts: { test: "local/github-download", description: "Speed" },
+		sourceUrl: "https://github.com/",
+	},
+	{
+		id: "github_download_time_to_first_byte",
+		dimension: "network",
+		unit: "ms",
+		direction: "LIB",
+		headline: false,
+		label: "GitHub Download - Time To First Byte",
+		description:
+			"Downloads a pinned GitHub source archive over HTTPS and reports the sustained download throughput plus the connection timing curl measures on the same request — the github.com path real CI traffic (clone/install) takes. The download target is overridable via GITHUB_DOWNLOAD_URL; the default is an immutable release tag archive so the transfer size stays constant across runs and providers.",
+		pts: { test: "local/github-download", description: "Time To First Byte" },
+		sourceUrl: "https://github.com/",
+	},
+	{
 		id: "hardlink_bogo_ops_per_s",
 		dimension: "disk",
 		unit: "bogo ops/s",
@@ -17811,6 +17859,9 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
+];
+
+const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_10000_clients_800_mode_read_only",
 		dimension: "system",
@@ -17871,9 +17922,6 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
-];
-
-const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_only",
 		dimension: "system",

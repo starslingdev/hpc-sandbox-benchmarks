@@ -170,11 +170,13 @@ export const SUITES = {
 		commands: ["mise run benchmark:disk:all"],
 	},
 	// The network dimension: fast-cli performs sustained real-world download/upload transfers through
-	// Netflix's fast.com CDN and reports idle/loaded latency; loopback TCP (10GB via nc) is the paired
-	// self-contained synthetic that isolates the sandbox's network stack from Internet weather. The
-	// suite task also runs latency/DNS and a small GitHub control-download probe as raw provenance.
-	// setupNode installs the fast.com CLI. Long-synthetic tier (k=2, R=3): replicate sandboxes capture the
-	// placement/peering variance a single fast.com transfer can't.
+	// Netflix's fast.com CDN and reports idle/loaded latency; the custom github-download suite (a
+	// repo-local PTS profile) downloads a pinned github.com archive and reports throughput plus the
+	// connect-RTT / TTFB / DNS timing of that same request — the path real CI clone/install traffic
+	// takes; loopback TCP (10GB via nc) is the paired self-contained synthetic that isolates the
+	// sandbox's network stack from Internet weather. The suite task also runs latency/DNS probes as raw
+	// provenance. setupNode installs the fast.com CLI. Long-synthetic tier (k=2, R=3): replicate
+	// sandboxes capture the placement/peering variance a single transfer can't.
 	network: {
 		setupPts: true,
 		setupNode: true,
@@ -189,6 +191,10 @@ export const SUITES = {
 			"fast_cli_internet_latency",
 			"fast_cli_internet_loaded_latency_bufferbloat",
 			"network_loopback_seconds",
+			"github_download_speed",
+			"github_download_latency",
+			"github_download_time_to_first_byte",
+			"github_download_dns_lookup",
 		],
 		commands: ["mise run benchmark:network:all"],
 	},

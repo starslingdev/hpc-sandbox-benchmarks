@@ -1,58 +1,43 @@
 #!/usr/bin/env bash
-#MISE description="Download speed and connection timing against GitHub (curl probe)"
-# Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
-# lib/bench.sh). The endpoint is GitHub deliberately: it is the one host every suite already depends
-# on (the harness clones this repo from it), so reachability is a given and the number reflects the
-# path real CI traffic takes.
-#
-# Each probe runs curl ONCE, writing the native `%{json}` write-out as the structured result and
-# rendering the human-readable log lines from that JSON — a second curl for display would double the
-# ~10MB transfer (and the two could disagree on a flaky path, which is exactly when this probe matters).
-set -uo pipefail
+#MISE description="PTS: GitHub archive download throughput + connection timing (custom local suite)"
+# Measurement leaf: -e guards the scaffolding; the measured run is isolated by run_pts_benchmark.
+# This wraps the repo-local github-download PTS profile (packages/schema/src/pts-profiles/local/
+# github-download-1.0.0) the same way benchmark:realworld:pts:* wrap better-auth/mastra: install the
+# local profile, then batch-run it. One curl download of a pinned GitHub archive posts four catalogued
+# metrics — download speed (Mbit/s) plus connect latency, time-to-first-byte and DNS lookup (ms) —
+# the fast-cli-style network numbers, over the github.com path every suite already clones from.
+set -euo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
-# Render selected write-out fields from a curl %{json} result file, tolerating a missing jq (the
-# toolchain image ships it; elsewhere the raw JSON line is still meaningful provenance).
-summarize() {
-	local file="$1" template="$2"
-	if [ ! -s "$file" ]; then
-		echo "(probe produced no result)"
-	elif command -v jq &>/dev/null; then
-		jq -r "$template" "$file" 2>/dev/null || cat "$file"
-	else
-		cat "$file"
-	fi
-}
-
-# Both probes ARE curl — without it there is nothing to measure. Guard before the redirects below:
-# `>"$SPEED_JSON"` creates the file whether or not curl exists, so an unguarded run on a curl-less
-# sandbox would leave zero-byte `.json` artifacts — provenance that reads as "the probe ran and
-# measured nothing" rather than "the tool was missing". Skip markers are the negative the normalizer
-# expects (see skip_result in lib/bench.sh), one per probe, matching the pts/loopback guard.
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_github-download"
+	exit 0
+fi
+# The profile's runner IS curl — without it there is nothing to measure. Skip before install so a
+# curl-less sandbox records the negative the normalizer expects instead of a failed install.
 if ! command -v curl &>/dev/null; then
-	skip_result "curl not installed" "$(task_result_name "speed")"
-	skip_result "curl not installed" "$(task_result_name "timing")"
+	skip_result "curl not installed" "pts_github-download"
 	exit 0
 fi
 
-echo "=== Download Speed Test ==="
-echo "Downloading ~10MB test archive from GitHub..."
+# Stage the repo-local profile (with its bundled install.sh) into PTS's local-profile dir, then let
+# run_pts_benchmark install and batch-run it under the pts_github-download result prefix.
+install_local_pts_profile "github-download-1.0.0"
+run_pts_benchmark "local/github-download-1.0.0" "pts_github-download"
 
-SPEED_JSON="$(results_dir)/$(task_result_name "speed").json"
-# -sS, and stderr NOT discarded: the %{json} write-out goes to stdout (captured in $SPEED_JSON), so
-# curl's diagnostic on stderr can't corrupt the result file — and it is the whole story when the probe
-# fails (DNS vs TLS vs proxy refusal), which is precisely what a network probe exists to record.
-curl -sSL --max-time 120 -o /dev/null -w '%{json}' \
-	"https://github.com/anthropics/anthropic-sdk-python/archive/refs/heads/main.zip" \
-	>"$SPEED_JSON" || echo "(download probe failed — curl exited non-zero)"
-summarize "$SPEED_JSON" \
-	'"HTTP \(.http_code) | \(.size_download) bytes | \(.time_total)s total | \(.speed_download) bytes/sec"'
-
-echo ""
-echo "=== Connection Timing (github.com) ==="
-TIMING_JSON="$(results_dir)/$(task_result_name "timing").json"
-curl -sSL --max-time 30 -o /dev/null -w '%{json}' "https://github.com" \
-	>"$TIMING_JSON" || echo "(timing probe failed — curl exited non-zero)"
-summarize "$TIMING_JSON" \
-	'"DNS:        \(.time_namelookup)s\nConnect:    \(.time_connect)s\nTLS:        \(.time_appconnect)s\nFirst byte: \(.time_starttransfer)s\nTotal:      \(.time_total)s"'
+# PTS returns zero and writes a composite even when every trial failed (empty <Value>s). Treat the
+# suite as successful only when all four result parsers emitted a numeric value — the same guard the
+# fast-cli leaf uses, here catching a degraded egress path that would otherwise look green with no
+# usable throughput/latency numbers.
+result_xml="$(results_dir)/pts_github-download.xml"
+if [ ! -s "$result_xml" ] || ! awk '
+	match($0, /<Value>[^<]*<\/Value>/) {
+		value = substr($0, RSTART + 7, RLENGTH - 15)
+		if (value ~ /^[0-9]+([.][0-9]+)?$/) numeric++
+	}
+	END { exit numeric == 4 ? 0 : 1 }
+' "$result_xml"; then
+	echo "ERROR: local/github-download did not produce four numeric metrics" >&2
+	exit 1
+fi

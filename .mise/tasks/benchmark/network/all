@@ -10,18 +10,20 @@ echo "========================================"
 echo "  NETWORK BENCHMARKS"
 echo "========================================"
 
-# The catalogued metric first: loopback TCP is self-contained (no external endpoint), so it isolates
-# the sandbox's network stack (virtio vs gVisor netstack vs host namespaces) from internet weather.
+# The catalogued metrics first: loopback TCP is self-contained (no external endpoint), so it isolates
+# the sandbox's network stack (virtio vs gVisor netstack vs host namespaces) from internet weather;
+# fast-cli is the sustained fast.com transfer; download is the custom github.com archive suite
+# (throughput + connection timing over the same path every suite already clones from).
 ensure_pts || true
 
 run_task benchmark:network:pts:loopback
 run_task benchmark:network:pts:fast-cli
+run_task benchmark:network:download
 
 # Tolerant probes (raw JSON provenance, no catalogued metrics): where does this sandbox's traffic
-# actually go, and how fast? fast-cli above is the sustained real-world transfer; these probes retain
-# endpoint-specific connection timings and a small GitHub control transfer for diagnosis.
+# actually go, and how fast? The catalogued suites above are the measured transfers; these probes
+# retain endpoint-specific connection timings for diagnosis.
 run_task benchmark:network:latency
 run_task benchmark:network:dns
-run_task benchmark:network:download
 
 summary

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite local profile: GitHub archive download throughput + connection timing.
+    A curl probe against the same github.com path every suite already depends on (the harness clones
+    this repo from it), turned into a catalogued PTS metric. One download per run emits four sentinel
+    lines the results-definition scrapes into four <Result>s (fast-cli's one-run/four-metrics shape):
+    download speed (Mbit/s), connect latency, time-to-first-byte and DNS lookup (ms). No <TestSettings>:
+    a single fixed scenario, mirroring fast-cli.-->
+<PhoronixTestSuite>
+  <TestInformation>
+    <Title>GitHub Download</Title>
+    <Description>Downloads a pinned GitHub source archive over HTTPS and reports the sustained download throughput plus the connection timing curl measures on the same request — the github.com path real CI traffic (clone/install) takes. The download target is overridable via GITHUB_DOWNLOAD_URL; the default is an immutable release tag archive so the transfer size stays constant across runs and providers.</Description>
+    <ResultScale>Mbit/s</ResultScale>
+    <Proportion>HIB</Proportion>
+    <TimesToRun>3</TimesToRun>
+  </TestInformation>
+  <TestProfile>
+    <Version>1.0.0</Version>
+    <SupportedPlatforms>Linux, BSD, MacOSX</SupportedPlatforms>
+    <SoftwareType>Utility</SoftwareType>
+    <TestType>Network</TestType>
+    <License>Free</License>
+    <Status>Verified</Status>
+    <ExternalDependencies>curl</ExternalDependencies>
+    <RequiresNetwork>TRUE</RequiresNetwork>
+    <RequiresInternet>TRUE</RequiresInternet>
+    <EnvironmentSize>1</EnvironmentSize>
+    <ProjectURL>https://github.com/</ProjectURL>
+    <Maintainer>StarSling</Maintainer>
+  </TestProfile>
+</PhoronixTestSuite>

@@ -91,6 +91,14 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	fast_cli_internet_latency: { label: "fast.com latency" },
 	fast_cli_internet_loaded_latency_bufferbloat: { label: "fast.com loaded latency" },
 	network_loopback_seconds: { headline: true, label: "Loopback TCP (10GB)" },
+	// Network dimension: the custom github.com archive-download suite (local/github-download), a
+	// real-transfer companion to fast.com over the path every suite already clones from — download
+	// throughput plus the connect-RTT, time-to-first-byte and DNS-lookup timings of the same request.
+	// Non-headline (loopback stays the network headline); the four just get short labels.
+	github_download_speed: { label: "GitHub download" },
+	github_download_latency: { label: "GitHub connect latency" },
+	github_download_time_to_first_byte: { label: "GitHub TTFB" },
+	github_download_dns_lookup: { label: "GitHub DNS lookup" },
 
 	// System dimension: the synthetic Git profile complements the realworld repo tasks by isolating a
 	// fixed command sequence over a fixed GTK corpus.
