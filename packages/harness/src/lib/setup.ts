@@ -186,6 +186,18 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"kernel=$(uname -r)",
 	`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,
 	"virt=$(systemd-detect-virt 2>/dev/null || echo unknown)",
+	// Best-effort isolation classification — a cross-check on the declared per-provider isolation, never
+	// authoritative (see run.ts observedSpecs.detectedIsolation: the probe cannot separate every type).
+	// gVisor announces itself in /proc/version; a cgroup quota well below the disclosed host means we're
+	// seeing THROUGH a container to a bigger host; a named hypervisor sized to its own host reads as a VM.
+	"detected=unknown",
+	"if grep -qi gvisor /proc/version 2>/dev/null; then",
+	"  detected=gvisor",
+	`elif [ -n "$limited" ] && awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
+	"  detected=container",
+	`elif [ "$virt" != unknown ] && [ "$virt" != none ]; then`,
+	"  detected=vm",
+	"fi",
 	"user=$(id -un)",
 	String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
 	"{",
@@ -193,7 +205,7 @@ export const OBSERVED_SPECS_SCRIPT = [
 	`  if [ -n "$disk_gb" ]; then printf ',"diskGb":%s' "$disk_gb"; fi`,
 	`  if [ -n "$limited" ]; then printf ',"hostVcpus":%s,"hostMemoryGb":%s' "$host_vcpus" "$host_memory_gb"; fi`,
 	`  if [ -n "$cpu_model" ]; then printf ',"cpuModel":"%s"' "$(esc "$cpu_model")"; fi`,
-	String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$user")"`,
+	String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$detected")" "$(esc "$user")"`,
 	"} > benchmark-results/observed-specs.json",
 	"cat benchmark-results/observed-specs.json",
 ].join("\n");

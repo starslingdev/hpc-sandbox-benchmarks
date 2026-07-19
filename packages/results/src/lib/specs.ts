@@ -23,7 +23,14 @@ const NUMERIC_FIELDS = [
 	"hostMemoryGb",
 	"cpuMhz",
 ] as const;
-const STRING_FIELDS = ["cpuModel", "kernel", "os", "virtualization", "user"] as const;
+const STRING_FIELDS = [
+	"cpuModel",
+	"kernel",
+	"os",
+	"virtualization",
+	"detectedIsolation",
+	"user",
+] as const;
 
 const PROVIDER_STRING_FIELDS = {
 	public_ip: "publicIp",

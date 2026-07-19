@@ -47,6 +47,7 @@ describe("readObservedSpecs: observed-specs.json (harness-written, primary)", ()
 					kernel: "6.17.0-22-generic",
 					os: "Debian GNU/Linux 13 (trixie)",
 					virtualization: "kvm",
+					detectedIsolation: "container",
 					user: "root",
 				},
 			}),
@@ -62,6 +63,7 @@ describe("readObservedSpecs: observed-specs.json (harness-written, primary)", ()
 			kernel: "6.17.0-22-generic",
 			os: "Debian GNU/Linux 13 (trixie)",
 			virtualization: "kvm",
+			detectedIsolation: "container",
 			user: "root",
 		});
 	});

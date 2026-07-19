@@ -5,9 +5,19 @@ providers and over time.
 
 ## North star
 
-Compare sandbox **providers** (`e2b` / `daytona` / `modal`), not bare-metal hardware. Every provider
-is asked to run the same workloads on the same pinned spec, and the results are normalized into one
-schema-validated dataset.
+Compare sandbox **providers**, not bare-metal hardware. Every provider is asked to run the same
+workloads on the same pinned spec, and the results are normalized into one schema-validated dataset.
+
+Where a vendor exposes more than one **isolation technology**, each is a first-class provider variant
+so the comparison attributes results to the isolation the sandbox actually used: `daytona-vm` (a
+`SandboxClass.LINUX_VM` microVM) vs `daytona-container` (a Sysbox/OCI container), and `modal-gvisor`
+(Modal's default gVisor runtime) vs `modal-vm` (Modal's gVisor-free VM runtime). Each provider's
+declared isolation is the authoritative label and is shown in the leaderboard's **Providers in this
+run** roster, beside a best-effort **detected** class from an in-sandbox probe (gVisor kernel marker;
+a cgroup quota far below the disclosed host ⇒ container; a self-sized hypervisor ⇒ VM). The probe
+cannot separate every type — a container and a microVM can both report `kvm`; gVisor and a microVM can
+both report `unknown` — so it is only a cross-check that flags a declared/detected contradiction, never
+a source of truth.
 
 ## Target spec
 
