@@ -55,7 +55,7 @@ export const economicsMetrics: MetricDef[] = [
 		headline: true,
 		label: "Hourly cost",
 		description:
-			"USD per hour to run a sandbox at the pinned target spec (2 vCPU / 8 GiB), from the provider's published per-vCPU/per-GiB rates. The price/performance denominator; null-rated providers emit nothing.",
+			"USD per hour to run a sandbox at the pinned target spec (4 vCPU / 8 GiB), from the provider's published per-vCPU/per-GiB rates. The price/performance denominator; null-rated providers emit nothing.",
 		derived: true,
 	},
 	{

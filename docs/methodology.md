@@ -11,9 +11,10 @@ schema-validated dataset.
 
 ## Target spec
 
-Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/providers.ts): **2 vCPU,
-8 GiB RAM, 40 GB disk**. It's sized to fit inside every provider's reproducible envelope (E2B caps
-sandbox RAM at 8 GiB), so anyone can rerun on the same shape. A provider that can't express a dimension
+Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/providers.ts): **4 vCPU,
+8 GiB RAM, 40 GB disk**. 8 GiB RAM fits inside every provider's reproducible envelope (E2B caps sandbox
+RAM at 8 GiB); vCPU is pinned at 4 because Blaxel couples CPU to RAM (8 GiB forces 4 vCPU there), so
+targeting 4 lets every provider — Blaxel included — match on the same shape. A provider that can't express a dimension
 runs with its actuals recorded and the mismatch disclosed (`specMatched`). Its measurements stay in the
 rankings, but the leaderboard flags the provider with an explicit **Comparability warning** naming its
 observed allocation, so its ranks are never read as like-for-like with the compute-matched providers.
@@ -60,7 +61,7 @@ enriches a provider that already produced ≥1 measured metric — it never prom
 - **Host** (`hostVcpus`/`hostMemoryGb`/`cpuModel`/…) — the underlying machine, parsed from the PTS
   composite's `<System>` block.
 
-In a container `<System>` discloses the **host** (e.g. a 48-thread EPYC), not the 2-vCPU sandbox quota.
+In a container `<System>` discloses the **host** (e.g. a 48-thread EPYC), not the 4-vCPU sandbox quota.
 The normalizer therefore maps `<System>` only to the host side and merges it **under** the spec probe,
 so a host disclosure can never masquerade as the sandbox's effective size. Forensic logs are captured as
 a `*--forensics.tar.gz` tarball (a tarball, not loose files, so nested `.xml` can't be misrouted).

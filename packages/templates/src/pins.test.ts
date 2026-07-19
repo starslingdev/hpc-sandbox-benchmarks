@@ -71,7 +71,7 @@ describe("@sandbox-benchmarks/templates pins", () => {
 	it("generates an e2b manifest with the version-scoped template name and TARGET_SPEC", () => {
 		const toml = e2bToml();
 		expect(toml).toContain(`template_name = "${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}"`);
-		expect(toml).toContain("cpu_count = 2");
+		expect(toml).toContain("cpu_count = 4");
 		expect(toml).toContain("memory_mb = 8192");
 	});
 

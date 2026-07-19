@@ -111,10 +111,16 @@ export interface ProviderMeta {
 }
 
 /**
- * The pinned cross-provider target spec: 2 vCPU, 8 GiB RAM, 40 GB disk. vCPU/RAM are sized to fit
- * inside every provider's reproducible envelope — E2B caps sandbox RAM at 8 GiB — so anyone can rerun
- * the benchmark on the same shape. Disk is sized for the realworld suites' working set instead: a
- * cold monorepo install + full build needs ~30 GiB free (mastra's `minDiskGb`), and at 20 GB a
+ * The pinned cross-provider target spec: 4 vCPU, 8 GiB RAM, 40 GB disk. Every provider is created at
+ * this exact shape so the numbers are like-for-like. 8 GiB RAM fits inside every provider's
+ * reproducible envelope (E2B caps sandbox RAM at 8 GiB). vCPU is pinned at 4 because Blaxel couples
+ * CPU to RAM (cores = memory_MB / 2048, no independent knob), so 8 GiB RAM there forces exactly 4
+ * vCPU — targeting 4 lets Blaxel match on every axis instead of carrying a permanent comparability
+ * caveat, while the others set 4 vCPU directly (Modal per-create; e2b/daytona/novita at bake time).
+ * This assumes every provider can provision 4 vCPU at 8 GiB; one that can't would flip to mismatched,
+ * so re-verify each provider's observed vCPU after a bump. Disk, by contrast, is sized for the
+ * realworld suites' working set: a cold monorepo install + full build needs ~30 GiB free (mastra's
+ * `minDiskGb`), and at 20 GB a
  * Daytona sandbox had only 16.7 GiB free, silently skipping mastra/openclaw. Disk is NOT a comparison
  * axis and is excluded from {@link hourlyCostAtTargetSpec}, so a larger disk can't bias the ranking.
  *
@@ -127,7 +133,7 @@ export interface ProviderMeta {
  * they run with actuals recorded and the heavy suites skip there, surfaced as an explicit coverage gap
  * in the leaderboard, never silently dropped.
  */
-export const TARGET_SPEC = { vcpus: 2, memoryGb: 8, diskGb: 40 } as const;
+export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const;
 
 /**
  * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
@@ -220,7 +226,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		isolation: {
 			technology: "microVM",
 			notes:
-				"Blaxel sandboxes (sub-25ms boot claim). CPU is COUPLED to RAM (measured: cores = memory MB / 2048) with no cgroup cpu.max, and the sandbox root is a RAM-overlay tmpfs with no independent disk knob (storageMb/diskPercent are accepted but silently ignored on this plan). So the adapter pins memory=8192 -> 8 GiB RAM (matches target) but 4 vCPU (2x the 2-vCPU target), and mounts a 40 GiB volume at the PTS data dir for disk (see blaxel-volume.ts). Disk and RAM match the target; the 4-vCPU overshoot is recorded via observed-specs disclosure (specMatched=false) downstream.",
+				"Blaxel sandboxes (sub-25ms boot claim). CPU is COUPLED to RAM (measured: cores = memory MB / 2048) with no cgroup cpu.max, and the sandbox root is a RAM-overlay tmpfs with no independent disk knob (storageMb/diskPercent are accepted but silently ignored on this plan). The adapter pins memory=8192 -> 8 GiB RAM and 4 vCPU (specMatched=true covers that effective vCPU/memory pair only), and mounts a 40 GiB volume at the PTS data dir so the separate disk gate clears (see blaxel-volume.ts). The target's vCPU is 4 precisely so Blaxel's coupled point lands on-spec — the dimensions stay coupled, so a different target shape would put Blaxel off-spec again.",
 		},
 		pricing: {
 			model: "unknown",
@@ -230,11 +236,13 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"Local e2e validation wiring; not yet a committed run. The 40 GiB volume (mounted at the PTS data dir) now lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping; the remaining spec deviation is CPU (4 vCPU vs the 2-vCPU target, from Blaxel's memory/CPU coupling).",
+				"Local e2e validation wiring; not yet a committed run. memory=8192 hits the 4 vCPU / 8 GiB target (specMatched=true is that vCPU/memory check only); the 40 GiB volume (mounted at the PTS data dir) separately lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping.",
 		},
-		// Disk and RAM are now pinned to the target (40 GiB volume + memory=8192), but CPU stays coupled
-		// to RAM -- 2 vCPU AND 8 GiB RAM is unreachable -- so "fixed" remains the honest capability for
-		// cross-provider comparability purposes.
+		// memory=8192 lands on the target's 8 GiB / 4 vCPU point because the target's vCPU was chosen to
+		// sit on Blaxel's RAM/CPU coupling curve (specMatched only judges that pair). The 40 GiB volume
+		// is the separate disk-gate path, not part of specMatched. The dimensions are still coupled --
+		// you can't set CPU and RAM independently -- so "fixed" remains the honest capability: this
+		// particular target is reachable, an arbitrary one would not be.
 		specPinning: "fixed",
 		transport: {
 			// `@computesdk/blaxel` execs through the sandbox gateway; long synchronous execs are not

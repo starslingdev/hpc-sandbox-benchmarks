@@ -54,11 +54,12 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). Boot the Debian
 		// ts-app image as root (the stock Alpine base-image has no apt — PTS uninstallable). Blaxel
 		// couples CPU to RAM (measured: vCPU ≈ memory_MB / 2048) and exposes no cgroup cpu.max, so
-		// memory=8192 buys the target's 8 GiB RAM but 4 vCPU (2× the 2-vCPU target) — the closest match
-		// possible, recorded as an actual and surfaced via the leaderboard comparability warning rather
-		// than silently claimed. Disk no longer rides on RAM: blaxelWithVolume mounts a 40 GiB volume at
-		// the PTS data dir where the heavy suites write (see blaxel-volume.ts), so it now clears the disk
-		// gate like the other runners. No pre-baked toolchain snapshot yet — setup steps run fallbacks.
+		// memory=8192 yields the target's 8 GiB RAM and 4 vCPU — the target pins vCPU at 4 precisely so
+		// Blaxel's coupled point matches on effective vCPU/memory (specMatched=true), no comparability
+		// caveat. Disk is separate: blaxelWithVolume mounts a 40 GiB volume at
+		// the PTS data dir where the heavy suites write (see blaxel-volume.ts), so it clears the disk
+		// gate like the other runners (not part of the specMatched check). No pre-baked toolchain
+		// snapshot yet — setup steps run fallbacks.
 		createCompute: () =>
 			blaxelWithVolume(blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-pdx-1" })),
 		createOptions: {},
