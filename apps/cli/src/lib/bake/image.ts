@@ -5,6 +5,7 @@
 import { join } from "node:path";
 import { config } from "@sandbox-benchmarks/providers";
 import type { Log } from "./types.ts";
+import type { CandidateRefs } from "./validate.ts";
 
 // Anchored to this file (not cwd): the `bake` package script runs from apps/cli, where a
 // repo-relative path would resolve to the non-existent apps/cli/packages/... and fail in bash.
@@ -30,6 +31,21 @@ export async function buildAndPushCandidate(log: Log): Promise<void> {
 	await run(["docker", "tag", config.toolchainImageVersion, config.toolchainImageCandidate], log);
 	await run(["docker", "push", config.toolchainImageCandidate], log);
 	await run(imagetoolsNormalizeCmd(config.toolchainImageCandidate), log);
+}
+
+/** The full {@link CandidateRefs} bundle for `pinnedCandidateImage` (the base's digest-pinned
+ *  candidate ref) — every provider's candidate-artifact identity, resolved from config. Shared by
+ *  bake.ts (validate right after baking) and promote.ts (re-validate right before publish) so the
+ *  two call sites can't drift out of sync with each other or with a newly added provider ref. */
+export function buildCandidateRefs(pinnedCandidateImage: string): CandidateRefs {
+	return {
+		e2bTemplateCandidate: config.e2bTemplateCandidate,
+		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		novitaTemplateCandidate: config.novitaTemplateCandidate,
+		toolchainImageCandidate: pinnedCandidateImage,
+		toolchainImageBlaxelCandidate: config.toolchainImageBlaxelCandidate,
+		daytonaTarget: config.daytona.target,
+	};
 }
 
 /** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */

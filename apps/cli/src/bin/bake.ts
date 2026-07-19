@@ -16,7 +16,11 @@ import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { bakeBlaxelImage } from "../lib/bake/blaxel.ts";
 import { bakeDaytonaSnapshot } from "../lib/bake/daytona.ts";
 import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
-import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
+import {
+	buildAndPushCandidate,
+	buildCandidateRefs,
+	resolveImageDigestRef,
+} from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
 import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
@@ -146,14 +150,7 @@ if (import.meta.main) {
 		);
 		process.exit(1);
 	}
-	const candidateRefs = {
-		e2bTemplateCandidate: config.e2bTemplateCandidate,
-		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
-		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		toolchainImageCandidate: pinnedCandidateImage,
-		toolchainImageBlaxelCandidate: config.toolchainImageBlaxelCandidate,
-		daytonaTarget: config.daytona.target,
-	};
+	const candidateRefs = buildCandidateRefs(pinnedCandidateImage);
 
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {

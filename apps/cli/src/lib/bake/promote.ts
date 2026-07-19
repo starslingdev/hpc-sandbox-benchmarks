@@ -27,10 +27,14 @@ import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeBlaxelImage } from "./blaxel.ts";
 import { bakeDaytonaSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
-import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
+import {
+	buildCandidateRefs,
+	imageExistsInRegistry,
+	promoteImage,
+	resolveImageDigestRef,
+} from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
 import type { BakeReport, Log } from "./types.ts";
-import type { CandidateRefs } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
 
 export async function promoteAll(log: Log, force = false): Promise<BakeReport[]> {
@@ -80,14 +84,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		reports.push({ provider: "image", status: "failed", reason });
 		return reports;
 	}
-	const candidateRefs: CandidateRefs = {
-		e2bTemplateCandidate: config.e2bTemplateCandidate,
-		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
-		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		toolchainImageCandidate: pinnedCandidateImage,
-		toolchainImageBlaxelCandidate: config.toolchainImageBlaxelCandidate,
-		daytonaTarget: config.daytona.target,
-	};
+	const candidateRefs = buildCandidateRefs(pinnedCandidateImage);
 	log(`>>> re-validating candidate ${pinnedCandidateImage} before promote…`);
 	const validateRuns = await validateCandidates(candidateRefs, log);
 	if (validateRuns.some((r) => r.status === "failed")) {
