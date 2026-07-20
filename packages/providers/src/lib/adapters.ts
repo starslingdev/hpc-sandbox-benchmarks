@@ -71,7 +71,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// Boot sandboxes under this project's own Modal app (auto-created via apps.fromName on first
 		// create), not the wrapper's generic `computesdk-modal` default — so this project's sandboxes
 		// are namespaced/attributable in the Modal dashboard, separate from any other computesdk usage.
-		createCompute: () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME }),
+		createCompute: () => modal({ appName: MODAL_APP_NAME }),
 		createOptions: {
 			templateId: config.toolchainImage,
 			// Modal's docs call `cpu` physical cores ("this value corresponds to physical cores, not
@@ -87,6 +87,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			// converged. `memoryLimitMiB` is the hard cap that makes /proc/meminfo report the target spec.
 			memoryMiB: TARGET_SPEC.memoryGb * 1024,
 			memoryLimitMiB: TARGET_SPEC.memoryGb * 1024,
+			experimentalOptions: { vm_runtime: true },
 		},
 	},
 	novita: {

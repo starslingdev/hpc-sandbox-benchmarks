@@ -259,8 +259,8 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		sdkPackage: "@computesdk/modal",
 		requiredEnvVars: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 		isolation: {
-			technology: "gVisor container",
-			notes: "scalableSandboxes enabled in the harness; nproc tracks the requested cpu 1:1.",
+			technology: "VM",
+			notes: "VM Sandboxes",
 		},
 		pricing: {
 			model: "per_vcpu_hour",
@@ -277,7 +277,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Sandbox non-preemptible rates (exact): CPU $0.00003942/s per requested cpu unit (observed to deliver 1 schedulable vCPU each, despite the docs calling it a physical core), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
 			sourceUrl: "https://modal.com/pricing",
 		},
-		maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },
+		maturity: { status: "beta", notes: "VM runtime is beta." },
 		specPinning: "settable",
 		transport: {
 			// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
