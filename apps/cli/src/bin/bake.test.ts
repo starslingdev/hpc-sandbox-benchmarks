@@ -12,7 +12,7 @@ describe("requestedProviders", () => {
 	});
 
 	test("a comma-separated list returns registry order, not request order", () => {
-		expect(requestedProviders(["--provider", "modal,e2b"])).toEqual(["e2b", "modal"]);
+		expect(requestedProviders(["--provider", "modal-gvisor,e2b"])).toEqual(["e2b", "modal-gvisor"]);
 	});
 
 	test("an unknown id throws, naming the registered providers", () => {

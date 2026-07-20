@@ -427,7 +427,7 @@ export function hasRequiredCreds(
  * The providers a run is *required* to exercise — parsed from `--require <ids>` (or `--require=<ids>`)
  * in `argv`, falling back to the `REQUIRE_PROVIDERS` env var; both a comma-separated id list. Empty
  * when neither is set, which is the lenient local-dev default (missing creds simply skip). CI passes
- * `--require e2b,daytona-vm,modal` at the publish boundary so a missing/misnamed secret fails loudly
+ * `--require e2b,daytona-vm,modal-gvisor` at the publish boundary so a missing/misnamed secret fails loudly
  * instead of silently shipping a version whose provider artifacts were never built/validated. Tokens
  * are returned verbatim (not filtered to known ids) so a typo'd id surfaces as unmet rather than being
  * dropped. `argv`/`env` are injectable to keep this unit-testable.

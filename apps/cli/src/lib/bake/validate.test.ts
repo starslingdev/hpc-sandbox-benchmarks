@@ -44,8 +44,17 @@ describe("candidateCreateOptions", () => {
 		});
 	});
 
-	it("points modal at the candidate image via templateId", () => {
-		expect(candidateCreateOptions("modal", refs)).toEqual({
+	it("points modal-gvisor at the candidate image via templateId", () => {
+		expect(candidateCreateOptions("modal-gvisor", refs)).toEqual({
+			templateId: "ghcr.io/o/tc:v1-candidate",
+		});
+	});
+
+	it("points modal-vm at the same candidate image (VM runtime stays on the adapter base)", () => {
+		// candidateCreateOptions returns only the candidate override; the vm_runtime flag lives in the
+		// adapter's base createOptions and is preserved by validate-run.ts's spread, so it isn't repeated
+		// here (matching modal-gvisor).
+		expect(candidateCreateOptions("modal-vm", refs)).toEqual({
 			templateId: "ghcr.io/o/tc:v1-candidate",
 		});
 	});

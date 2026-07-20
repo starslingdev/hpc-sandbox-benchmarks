@@ -53,7 +53,7 @@ describe("buildLeaderboard", () => {
 			run([
 				provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
 				provider("e2b", [metric("node_web_tooling_runs_per_s", [12])]),
-				provider("modal", []), // no metric → excluded from the row set
+				provider("modal-gvisor", []), // no metric → excluded from the row set
 			]),
 		);
 		const cpu = board.dimensions.find((d) => d.dimension === "cpu");
@@ -68,13 +68,13 @@ describe("buildLeaderboard", () => {
 	it("ranks an economics (LIB) dimension cheapest-first and uses display names", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.37])]),
+				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.37])]),
 				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.23])]),
 			]),
 		);
 		const econ = board.dimensions.find((d) => d.dimension === "economics");
 		// LIB: cheapest first.
-		expect(econ?.rows.map((r) => r.providerId)).toEqual(["e2b", "modal"]);
+		expect(econ?.rows.map((r) => r.providerId)).toEqual(["e2b", "modal-gvisor"]);
 		expect(econ?.rows[0]?.displayName).toBe("E2B"); // resolved from the provider registry
 	});
 
@@ -96,12 +96,12 @@ describe("buildLeaderboard", () => {
 		// share a rank — an exact tie is not a ranking win for whoever sorts first.
 		const board = buildLeaderboard(
 			run([
-				provider("modal", [metric("node_web_tooling_runs_per_s", [10])]),
+				provider("modal-gvisor", [metric("node_web_tooling_runs_per_s", [10])]),
 				provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
 			]),
 		);
 		const cpu = board.dimensions.find((d) => d.dimension === "cpu");
-		expect(cpu?.rows.map((r) => r.providerId)).toEqual(["daytona-vm", "modal"]);
+		expect(cpu?.rows.map((r) => r.providerId)).toEqual(["daytona-vm", "modal-gvisor"]);
 		expect(cpu?.rows.map((r) => r.rank)).toEqual([1, 1]);
 	});
 
@@ -117,7 +117,7 @@ describe("buildLeaderboard", () => {
 					metric("node_web_tooling_runs_per_s", [10]),
 					metric("sqlite_speedtest_seconds", [20]),
 				]),
-				provider("modal", [metric("sqlite_speedtest_seconds", [15])]),
+				provider("modal-gvisor", [metric("sqlite_speedtest_seconds", [15])]),
 			]),
 		);
 		expect(board.dimensions.map(({ dimension }) => dimension)).toEqual(["cpu", "system"]);
@@ -171,12 +171,12 @@ describe("buildLeaderboard statistical ranking", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(HEADLINE, DAYTONA_COPY)]),
-				provider("modal", [metric(HEADLINE, MODAL_COPY)]),
+				provider("modal-gvisor", [metric(HEADLINE, MODAL_COPY)]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		const daytona = rows.find((r) => r.providerId === "daytona-vm");
-		const modal = rows.find((r) => r.providerId === "modal");
+		const modal = rows.find((r) => r.providerId === "modal-gvisor");
 
 		expect(daytona?.interval.level).toBe(0.95);
 		expect(daytona?.interval.resamples).toBeGreaterThan(0);
@@ -192,7 +192,7 @@ describe("buildLeaderboard statistical ranking", () => {
 				buildLeaderboard(
 					run([
 						provider("daytona-vm", [metric(HEADLINE, DAYTONA_COPY)]),
-						provider("modal", [metric(HEADLINE, MODAL_COPY)]),
+						provider("modal-gvisor", [metric(HEADLINE, MODAL_COPY)]),
 					]),
 				),
 			);
@@ -203,13 +203,13 @@ describe("buildLeaderboard statistical ranking", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(HEADLINE, DAYTONA_COPY)]),
-				provider("modal", [metric(HEADLINE, MODAL_COPY)]),
+				provider("modal-gvisor", [metric(HEADLINE, MODAL_COPY)]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => [r.rank, r.providerId])).toEqual([
 			[1, "daytona-vm"],
-			[2, "modal"],
+			[2, "modal-gvisor"],
 		]);
 		const modal = rows[1];
 		expect(modal?.verdict).toBe("separated");
@@ -244,12 +244,12 @@ describe("buildLeaderboard statistical ranking", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
-				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
 		expect(rows.map((r) => [r.rank, r.providerId])).toEqual([
-			[1, "modal"],
+			[1, "modal-gvisor"],
 			[2, "daytona-vm"],
 		]);
 		expect(rows[1]?.verdict).toBe("untested");
@@ -263,7 +263,7 @@ describe("buildLeaderboard statistical ranking", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
-				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
@@ -276,7 +276,7 @@ describe("buildLeaderboard statistical ranking", () => {
 			run([
 				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
-				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
@@ -284,7 +284,7 @@ describe("buildLeaderboard statistical ranking", () => {
 		const md = renderLeaderboardMarkdown(board);
 		// All three display names appear in the "share the top" takeaway, joined as a list.
 		expect(md).toMatch(/[^,|]+, [^,|]+ and [^,|]+ share the top on this metric/);
-		for (const name of ["Daytona (VM)", "E2B", "Modal"]) expect(md).toContain(name);
+		for (const name of ["Daytona (VM)", "E2B", "Modal (gVisor)"]) expect(md).toContain(name);
 	});
 });
 
@@ -319,7 +319,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [replicatedMetric(HEADLINE, [[100], [101], [102]])]),
-				provider("modal", [replicatedMetric(HEADLINE, [[1], [2], [3]])]),
+				provider("modal-gvisor", [replicatedMetric(HEADLINE, [[1], [2], [3]])]),
 			]),
 		);
 		const rows = board.dimensions[0]?.metrics[0]?.rows ?? [];
@@ -334,7 +334,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [replicatedMetric(HEADLINE, [[100], [101], [102], [103], [104]])]),
-				provider("modal", [replicatedMetric(HEADLINE, [[1], [2], [3], [4], [5]])]),
+				provider("modal-gvisor", [replicatedMetric(HEADLINE, [[1], [2], [3], [4], [5]])]),
 			]),
 		);
 		const rows = board.dimensions[0]?.metrics[0]?.rows ?? [];
@@ -351,7 +351,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [replicatedMetric(HEADLINE, [[100], [101], [102]])]),
-				provider("modal", [metric(HEADLINE, [1, 2, 3])]),
+				provider("modal-gvisor", [metric(HEADLINE, [1, 2, 3])]),
 			]),
 		);
 		const rows = board.dimensions[0]?.metrics[0]?.rows ?? [];
@@ -365,7 +365,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [replicatedMetric(HEADLINE, [[10], [30], [50], [70], [90]])]),
-				provider("modal", [replicatedMetric(HEADLINE, [[20], [40], [60], [80], [100]])]),
+				provider("modal-gvisor", [replicatedMetric(HEADLINE, [[20], [40], [60], [80], [100]])]),
 			]),
 		);
 		const rows = board.dimensions[0]?.metrics[0]?.rows ?? [];
@@ -443,7 +443,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [1, 2, 3, 4, 5, 6, 7, 8])]),
-					provider("modal", [metric(HEADLINE, [90, 91, 92, 93, 94, 95, 96, 97])]),
+					provider("modal-gvisor", [metric(HEADLINE, [90, 91, 92, 93, 94, 95, 96, 97])]),
 				]),
 			),
 		);
@@ -461,13 +461,13 @@ describe("underpowered comparisons", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
-				provider("modal", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
+				provider("modal-gvisor", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => [r.displayName, r.rank, r.verdict, r.tiedWithAbove])).toEqual([
 			["Daytona (VM)", 1, null, null],
-			["Modal", 2, "underpowered", null],
+			["Modal (gVisor)", 2, "underpowered", null],
 		]);
 		const md = renderLeaderboardMarkdown(board);
 		expect(md).toContain("n too small");
@@ -482,7 +482,7 @@ describe("underpowered comparisons", () => {
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [19.6, 19.7, 19.9, 20.1])]),
-					provider("modal", [metric(HEADLINE, [9.5, 9.6, 9.8])]),
+					provider("modal-gvisor", [metric(HEADLINE, [9.5, 9.6, 9.8])]),
 				]),
 			),
 		);
@@ -495,7 +495,7 @@ describe("underpowered comparisons", () => {
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [10, 11, 12, 13, 14])]),
-					provider("modal", [metric(HEADLINE, [1, 2, 3, 4, 5])]),
+					provider("modal-gvisor", [metric(HEADLINE, [1, 2, 3, 4, 5])]),
 				]),
 			),
 		);
@@ -511,14 +511,14 @@ describe("underpowered comparisons", () => {
 		// gave them the same rank; now the two agree because the basis is a field, not a footnote.
 		const board = buildLeaderboard(
 			run([
-				provider("modal", [metric(HEADLINE, [9, 10, 11])]),
+				provider("modal-gvisor", [metric(HEADLINE, [9, 10, 11])]),
 				provider("daytona-vm", [metric(HEADLINE, [8, 10, 12])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => [r.providerId, r.value, r.rank])).toEqual([
 			["daytona-vm", 10, 1],
-			["modal", 10, 1],
+			["modal-gvisor", 10, 1],
 		]);
 		expect(rows[1]?.verdict).toBe("underpowered");
 		expect(rows[1]?.tiedWithAbove).toBe("identical-value");
@@ -533,7 +533,7 @@ describe("underpowered comparisons", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
-				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
+				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
@@ -550,7 +550,7 @@ describe("underpowered comparisons", () => {
 			run([
 				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
-				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
@@ -559,7 +559,7 @@ describe("underpowered comparisons", () => {
 		// Match the common phrasing across branches (the takeaway says "…this headline" here and
 		// "…this metric" once the per-metric renderer lands) so this test survives the flow up-stack.
 		expect(md).toMatch(/[^,|]+, [^,|]+ and [^,|]+ share the top on this/);
-		for (const name of ["Daytona (VM)", "E2B", "Modal"]) expect(md).toContain(name);
+		for (const name of ["Daytona (VM)", "E2B", "Modal (gVisor)"]) expect(md).toContain(name);
 	});
 
 	it("never marks a row `tied` unless the test could have separated it", () => {
@@ -568,7 +568,7 @@ describe("underpowered comparisons", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
-				provider("modal", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
+				provider("modal-gvisor", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
 				provider("e2b", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
 			]),
 		);
@@ -587,7 +587,7 @@ describe("underpowered comparisons", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(HEADLINE, near)]),
-				provider("modal", [
+				provider("modal-gvisor", [
 					metric(
 						HEADLINE,
 						near.map((v) => v - 0.01),
@@ -611,7 +611,7 @@ describe("underpowered comparisons", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(HEADLINE, [2, 2, 2])]),
-				provider("modal", [metric(HEADLINE, [1, 1, 1])]),
+				provider("modal-gvisor", [metric(HEADLINE, [1, 1, 1])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];

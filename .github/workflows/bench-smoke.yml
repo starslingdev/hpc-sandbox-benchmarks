@@ -11,7 +11,7 @@ on:
         description: Provider to benchmark
         type: choice
         default: daytona-vm
-        options: [daytona-vm, daytona-container, e2b, modal, blaxel, novita]
+        options: [daytona-vm, daytona-container, e2b, modal-gvisor, modal-vm, blaxel, novita]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
@@ -106,8 +106,9 @@ jobs:
           DAYTONA_TARGET: ${{ inputs.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
           DAYTONA_CONTAINER_TARGET: ${{ inputs.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
           E2B_API_KEY: ${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          MODAL_TOKEN_ID: ${{ inputs.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ inputs.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          # Both Modal variants share the account tokens; scope them to either being dispatched.
+          MODAL_TOKEN_ID: ${{ (inputs.provider == 'modal-gvisor' || inputs.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (inputs.provider == 'modal-gvisor' || inputs.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
           BL_API_KEY: ${{ inputs.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ inputs.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ inputs.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}

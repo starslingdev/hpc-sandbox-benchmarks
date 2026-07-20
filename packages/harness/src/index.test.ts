@@ -115,12 +115,12 @@ describe("@sandbox-benchmarks/harness", () => {
 		expect(calls).toEqual(["create", "destroy"]);
 	});
 
-	// Named "modal", so it carries modal's real (uncapped) transport rather than the capped
+	// Named "modal-gvisor", so it carries modal's real (uncapped) transport rather than the capped
 	// fixtureTransport — these creds tests never read transport, but keeping the fixture faithful to
 	// the name stops a future transport-aware test from exercising E2B/Daytona semantics under a
 	// modal-named config.
 	const credsCfg: ProviderConfig = {
-		name: "modal",
+		name: "modal-gvisor",
 		requiredEnvVars: ["A", "B"],
 		transport: { streaming: false, syncCapMs: null, detachedPoll: true },
 		createCompute: () => {

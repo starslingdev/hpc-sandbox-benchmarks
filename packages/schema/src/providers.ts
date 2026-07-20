@@ -11,7 +11,14 @@
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId = "e2b" | "daytona-vm" | "daytona-container" | "modal" | "blaxel" | "novita";
+export type ProviderId =
+	| "e2b"
+	| "daytona-vm"
+	| "daytona-container"
+	| "modal-gvisor"
+	| "modal-vm"
+	| "blaxel"
+	| "novita";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -315,17 +322,37 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
-	modal: {
-		displayName: "Modal",
+	"modal-gvisor": {
+		displayName: "Modal (gVisor)",
 		website: "https://modal.com",
 		sdkPackage: "@computesdk/modal",
 		requiredEnvVars: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 		isolation: {
-			technology: "VM",
-			notes: "VM Sandboxes",
+			technology: "gVisor container",
+			notes:
+				"Modal's default sandbox runtime. scalableSandboxes enabled in the harness; nproc tracks the requested cpu 1:1.",
 		},
 		pricing: modalPricing,
-		maturity: { status: "beta", notes: "VM runtime is beta." },
+		maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },
+		specPinning: "settable",
+		transport: modalTransport,
+	},
+	"modal-vm": {
+		displayName: "Modal (VM)",
+		website: "https://modal.com",
+		sdkPackage: "@computesdk/modal",
+		requiredEnvVars: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
+		isolation: {
+			technology: "microVM (VM runtime)",
+			notes:
+				"Modal's experimental VM runtime — a gVisor-free KVM microVM, selected per-create via experimentalOptions {vm_runtime:true} (no separate image; same pushed toolchain image as modal-gvisor).",
+		},
+		pricing: modalPricing,
+		maturity: {
+			status: "beta",
+			notes:
+				"New isolation variant sharing Modal credentials/pricing with modal-gvisor; adds experimentalOptions {vm_runtime:true} at create. Not yet a committed run.",
+		},
 		specPinning: "settable",
 		transport: modalTransport,
 	},
@@ -409,6 +436,12 @@ export const PROVIDERS: readonly ProviderMeta[] = deepFreeze(
  * old data.
  */
 export const LEGACY_PROVIDER_ALIASES: Readonly<Record<string, ProviderId>> = Object.freeze({
+	// `modal` → modal-gvisor, NOT modal-vm: pre-split `modal` ran Modal's default gVisor runtime
+	// (scalableSandboxes, no vm_runtime); the VM runtime is a later, separate variant. Every committed
+	// `modal` run predates that switch, so its data is gVisor. (The single `modal` entry on the base
+	// branch shows "VM" only because this stack sits on top of that later change — that is the current
+	// adapter config, not the runtime the historical runs were collected under.)
+	modal: "modal-gvisor",
 	daytona: "daytona-vm",
 });
 

@@ -36,7 +36,8 @@ describe("forEachProviderWithCreds `only`", () => {
 			"daytona-vm",
 			"daytona-container",
 			"blaxel",
-			"modal",
+			"modal-gvisor",
+			"modal-vm",
 			"novita",
 		]);
 	});

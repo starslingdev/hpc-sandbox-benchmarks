@@ -25,13 +25,17 @@ import { emitStepOutputs } from "../lib/gha-output.ts";
 /**
  * Providers the release is REQUIRED to bake + validate before the public version is published — the
  * same set CI passes to `bake --promote --require …`, single-sourced here so the matrix's per-cell
- * `required` flags and promote's gate can't drift. e2b/daytona-vm bake a real artifact; modal is
+ * `required` flags and promote's gate can't drift. e2b/daytona-vm bake a real artifact; modal-gvisor is
  * required because its `Image.fromRegistry` boot validates the published image the same way. The new
- * isolation variant (daytona-container) is best-effort until a committed run validates it — like
- * blaxel (a no-op bake booting the stock base) and novita (optional control plane), a missing secret
- * or an unproven variant skips without failing the release.
+ * isolation variants (daytona-container, modal-vm) are best-effort until a committed run validates
+ * them — like blaxel (a no-op bake booting the stock base) and novita (optional control plane), a
+ * missing secret or an unproven variant skips without failing the release.
  */
-export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = ["e2b", "daytona-vm", "modal"];
+export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
+	"e2b",
+	"daytona-vm",
+	"modal-gvisor",
+];
 
 /** Every provider the release fans out over, derived from the registry (never a hand-maintained
  *  literal) so adding a provider grows the matrix automatically — in registry order, matching the
@@ -50,7 +54,8 @@ function providerArtifact(id: ProviderId): string {
 			return config.daytonaContainerSnapshotCandidate;
 		case "novita":
 			return config.novitaTemplateCandidate;
-		case "modal":
+		case "modal-gvisor":
+		case "modal-vm":
 			return "boots the candidate image directly (no baked artifact)";
 		case "blaxel":
 			return "boots the stock base image (no baked artifact)";

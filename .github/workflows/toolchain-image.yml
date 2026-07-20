@@ -331,10 +331,10 @@ jobs:
           # default region and fail the bake at snapshot creation.
           DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
           DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
-          # Modal's bake is a no-op (the image is pushed once and booted directly), but validate still
-          # boots it to prove reachability.
-          MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          # Both Modal variants share the account tokens; the bake is a no-op for each (the image is
+          # pushed once and booted directly), but validate still boots each to prove reachability.
+          MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
           # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
         run: |

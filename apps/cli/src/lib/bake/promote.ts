@@ -141,8 +141,9 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 						(m) => log(`    ${m}`),
 					);
 					break;
-				case "modal":
-					log("    modal boots the published version image — nothing to build");
+				case "modal-gvisor":
+				case "modal-vm":
+					log(`    ${provider.name} boots the published version image — nothing to build`);
 					break;
 				case "blaxel":
 					log("    blaxel boots the stock base image — nothing to promote");
@@ -201,7 +202,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	}
 
 	// Required-providers gate (D1), enforced HERE — before step 4 writes the immutable base — not
-	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona-vm,modal`; a required
+	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona-vm,modal-gvisor`; a required
 	// provider whose version artifact was skipped (missing/misnamed secret) or failed is `skipped`/
 	// `failed`, so the artifact-failed check above does NOT catch a pure skip. Were the base published
 	// first and the gap detected only in bake.ts, the immutable `:v1` would already be tagged and a

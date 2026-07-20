@@ -93,8 +93,9 @@ jobs:
           DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
           DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
+          # Both Modal variants share the account tokens; scope them to either cell.
+          MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}

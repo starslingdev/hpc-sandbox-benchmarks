@@ -32,7 +32,8 @@ describe("buildReleasePlan matrix", () => {
 			"daytona-vm",
 			"daytona-container",
 			"blaxel",
-			"modal",
+			"modal-gvisor",
+			"modal-vm",
 			"novita",
 		]);
 	});
@@ -55,7 +56,7 @@ describe("planOutputs", () => {
 		expect(matrixLine).toBeDefined();
 		// The matrix value must be valid, single-line JSON (the fromJSON contract).
 		const parsed = JSON.parse((matrixLine as string).slice("matrix=".length));
-		expect(parsed.include).toHaveLength(6);
+		expect(parsed.include).toHaveLength(7);
 		expect((matrixLine as string).includes("\n")).toBe(false);
 	});
 });

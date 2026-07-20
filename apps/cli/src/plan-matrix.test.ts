@@ -75,10 +75,10 @@ describe("selectProviders", () => {
 
 	it("collapses duplicates and orders by the registry, not by the request", () => {
 		// Cells are a set: a dispatch can neither double-run one nor reorder the CI job list.
-		expect(selectProviders("modal,e2b,modal")).toEqual(["e2b", "modal"]);
+		expect(selectProviders("modal-gvisor,e2b,modal-gvisor")).toEqual(["e2b", "modal-gvisor"]);
 	});
 
 	it("tolerates whitespace and mixed casing around names, as a hand-typed dispatch input has", () => {
-		expect(selectProviders(" E2b , MODAL ")).toEqual(["e2b", "modal"]);
+		expect(selectProviders(" E2b , MODAL-GVISOR ")).toEqual(["e2b", "modal-gvisor"]);
 	});
 });

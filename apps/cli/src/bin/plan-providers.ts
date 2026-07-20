@@ -32,7 +32,7 @@ usage: plan-providers [--help] [--list-providers] [--list-suites] [--json]
   --help, -h         Show this help.
 
 environment:
-  BENCH_PROVIDERS    Comma-separated providers to fan out over (e.g. "e2b,daytona-vm,modal"). Unset or
+  BENCH_PROVIDERS    Comma-separated providers to fan out over (e.g. "e2b,daytona-vm,modal-gvisor"). Unset or
                      blank selects every registered provider. An unregistered name is an error,
                      never a silently smaller matrix.
   GITHUB_OUTPUT      When set (Actions), write providers= step output instead of printing on stdout.

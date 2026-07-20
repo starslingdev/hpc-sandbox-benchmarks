@@ -32,7 +32,9 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	"daytona-vm": (image, log) => bakeDaytonaVmSnapshot(config.daytonaSnapshotCandidate, image, log),
 	"daytona-container": (image, log) =>
 		bakeDaytonaContainerSnapshot(config.daytonaContainerSnapshotCandidate, image, log),
-	modal: bakeModalImage,
+	// Both Modal variants boot the same pushed image via Image.fromRegistry — no per-variant artifact.
+	"modal-gvisor": bakeModalImage,
+	"modal-vm": bakeModalImage,
 	blaxel: async (_image, log) => {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},
@@ -107,7 +109,7 @@ if (import.meta.main) {
 			},
 			reports: promoted,
 		});
-		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona-vm,modal`)
+		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona-vm,modal-gvisor`)
 		// runs INSIDE promoteAll before the immutable base is written, and every abort path (version already
 		// published, candidate re-validation failed, artifact failed, unmet requirements) pushes a structured
 		// `{ status: "failed" }` report. So a single `some(failed)` is the whole exit contract — re-deriving
@@ -216,7 +218,7 @@ if (import.meta.main) {
 
 	if (anyFailed(runs)) process.exit(1);
 
-	// D1: at the publish boundary (CI passes `--require e2b,daytona-vm,modal`) a required provider that was
+	// D1: at the publish boundary (CI passes `--require e2b,daytona-vm,modal-gvisor`) a required provider that was
 	// skipped for a missing/misnamed secret — or failed to validate — must fail the bake loudly, so a
 	// candidate is never blessed while a provider was silently never built. Lenient locally (none required).
 	const required = requiredProviders();

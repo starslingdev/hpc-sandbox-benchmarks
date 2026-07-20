@@ -37,7 +37,12 @@ export function candidateCreateOptions(
 				snapshotId: refs.daytonaContainerSnapshotCandidate,
 				...(refs.daytonaContainerTarget ? { target: refs.daytonaContainerTarget } : {}),
 			};
-		case "modal":
+		case "modal-gvisor":
+			return { templateId: refs.toolchainImageCandidate };
+		case "modal-vm":
+			// Same candidate image as modal-gvisor; the VM runtime is selected by the adapter's base
+			// createOptions (experimentalOptions:{vm_runtime:true}), which validate-run.ts preserves
+			// through the spread — so this candidate override, like modal-gvisor's, is only the templateId.
 			return { templateId: refs.toolchainImageCandidate };
 		case "blaxel":
 			// Stock base image — no candidate artifact to point at.

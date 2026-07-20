@@ -76,7 +76,7 @@ describe("deriveEconomics", () => {
 	});
 
 	it("omits usd_per_lifecycle when no lifecycle Metric was measured", () => {
-		const econ = deriveEconomics(getProvider("modal"), [
+		const econ = deriveEconomics(getProvider("modal-gvisor"), [
 			{ metricId: HARNESS_METRIC_IDS.controlPlaneInfo, mean: 42 },
 		]);
 		// control-plane timings are not lifecycle runtime, so no per-lifecycle cost.
