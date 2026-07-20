@@ -24,7 +24,7 @@
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
-import { bakeDaytonaSnapshot } from "./daytona.ts";
+import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
 import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
@@ -34,6 +34,13 @@ import { validateCandidates } from "./validate-run.ts";
 
 export async function promoteAll(log: Log, force = false): Promise<BakeReport[]> {
 	const reports: BakeReport[] = [];
+	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
+	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
+	// skips, so its re-validation or artifact failure is recorded but must NOT abort the publish. Locally
+	// (nothing required) any failure aborts, as a safety net for a hand-run promote.
+	const required = requiredProviders();
+	const blocks = (r: { provider: string; status: string }): boolean =>
+		r.status === "failed" && (required.length === 0 || required.includes(r.provider));
 
 	// 1. Refuse to overwrite the immutable public version (D2b). Checked first, before any mutation, so
 	//    a refused promote leaves everything untouched. A registry error here (auth/network) is NOT
@@ -48,7 +55,8 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	if (force) {
 		log(
 			`>>> force-republish: regenerating ${config.toolchainImageVersion}, overwriting if present ` +
-				`(daytona: ${config.daytonaSnapshotDefault} is deleted and rebuilt, so it is briefly absent)`,
+				`(daytona: both ${config.daytonaSnapshotDefault} and ${config.daytonaContainerSnapshotDefault} ` +
+				`are deleted and rebuilt, so each is briefly absent — and left absent if its rebuild fails)`,
 		);
 	} else {
 		let alreadyPublished: boolean;
@@ -82,14 +90,18 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: pinnedCandidateImage,
-		daytonaTarget: config.daytona.target,
+		daytonaVmTarget: config.daytonaVm.target,
+		daytonaContainerTarget: config.daytonaContainer.target,
 	};
 	log(`>>> re-validating candidate ${pinnedCandidateImage} before promote…`);
 	const validateRuns = await validateCandidates(candidateRefs, log);
-	if (validateRuns.some((r) => r.status === "failed")) {
-		log("<<< promote aborted — candidate re-validation failed (nothing published)");
+	if (validateRuns.some(blocks)) {
+		log(
+			"<<< promote aborted — a required provider's candidate re-validation failed (nothing published)",
+		);
 		for (const run of validateRuns) {
 			reports.push({
 				provider: run.provider,
@@ -117,9 +129,16 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 						log(`    ${m}`),
 					);
 					break;
-				case "daytona":
-					await bakeDaytonaSnapshot(config.daytonaSnapshotDefault, pinnedCandidateImage, (m) =>
+				case "daytona-vm":
+					await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedCandidateImage, (m) =>
 						log(`    ${m}`),
+					);
+					break;
+				case "daytona-container":
+					await bakeDaytonaContainerSnapshot(
+						config.daytonaContainerSnapshotDefault,
+						pinnedCandidateImage,
+						(m) => log(`    ${m}`),
 					);
 					break;
 				case "modal":
@@ -164,13 +183,13 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		? "Fix the cause and rerun with force_republish — a plain rerun is refused because the base image already exists."
 		: "Fix the cause and rerun `bake --promote`.";
 
-	// A provider artifact failed → do NOT publish the base. The version tag stays unwritten, so a rerun
-	// (after fixing the cause) reconciles cleanly. Nothing public was half-written — EXCEPT under
-	// `--force`, where step 3 regenerates already-published artifacts in place and daytona's
+	// A REQUIRED provider's artifact failed → do NOT publish the base. The version tag stays unwritten,
+	// so a rerun (after fixing the cause) reconciles cleanly. Nothing public was half-written — EXCEPT
+	// under `--force`, where step 3 regenerates already-published artifacts in place and daytona's
 	// delete-then-create can leave its published snapshot absent (the report's `reason` says so).
-	if (reports.some((r) => r.status === "failed")) {
+	if (reports.some(blocks)) {
 		log(
-			`!!! promote aborted before publish: a ${config.toolchainImageVersion} provider artifact failed; ` +
+			`!!! promote aborted before publish: a required ${config.toolchainImageVersion} provider artifact failed; ` +
 				"the public base was NOT written. " +
 				(force
 					? "This was a forced republish, so the failed provider's already-published artifact may have " +
@@ -182,13 +201,12 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	}
 
 	// Required-providers gate (D1), enforced HERE — before step 4 writes the immutable base — not
-	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona,modal`; a required
+	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona-vm,modal`; a required
 	// provider whose version artifact was skipped (missing/misnamed secret) or failed is `skipped`/
-	// `failed`, so `reports.some(failed)` above does NOT catch a pure skip. Were the base published
+	// `failed`, so the artifact-failed check above does NOT catch a pure skip. Were the base published
 	// first and the gap detected only in bake.ts, the immutable `:v1` would already be tagged and a
 	// fixed rerun would be refused at step 1 — forcing a version bump to recover. Gating before publish
 	// keeps the base unwritten so a rerun reconciles cleanly. (Lenient locally: nothing required.)
-	const required = requiredProviders();
 	const unmet = unmetRequirements(reports, required);
 	if (required.length > 0 && unmet.length > 0) {
 		const reason = `required providers did not promote: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`;

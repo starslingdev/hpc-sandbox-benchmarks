@@ -18,8 +18,11 @@
 // Iteration surface: a snapshot's region must match where sandboxes boot. We pass the client `target`;
 // if the target also needs an explicit snapshot `regionId`, add it to CreateSnapshotParams here.
 //
-// microVM-only: the fleet is Linux VMs. Snapshot registration pins that class rather than relying on
-// the transient-push API's container default.
+// Dual-class: this bakes BOTH isolation variants. Snapshot registration pins the class explicitly
+// (`DaytonaBakeOptions.sandboxClass`) rather than relying on the transient-push API's container
+// default — daytona-vm bakes SandboxClass.LINUX_VM in us-west-2, daytona-container bakes
+// SandboxClass.CONTAINER in region `us`. The class is a property of the snapshot, so the two variants
+// are necessarily separate snapshots.
 import type { RegistryPushAccessDto } from "@daytona/api-client";
 import { Configuration, DockerRegistryApi } from "@daytona/api-client";
 import { Daytona, SandboxClass } from "@daytona/sdk";
@@ -324,28 +327,46 @@ async function logCreateFailure(
 	}
 }
 
-/** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote).
- *  Idempotent: delete any existing snapshot of that name first.
+/** The per-variant knobs a Daytona bake needs beyond the shared toolchain image: the account key, the
+ *  region to bake in, and the sandbox class the snapshot pins. `daytona-vm` bakes LINUX_VM in us-west-2;
+ *  `daytona-container` bakes CONTAINER in `us`. Both come from the config gatekeeper's per-variant
+ *  {@link DaytonaConfig} plus the variant's fixed class — never read here from process.env. */
+export interface DaytonaBakeOptions {
+	apiKey?: string;
+	/** Runner target/region (e.g. `us-west-2` for VM, `us` for container). */
+	target?: string;
+	/** Sandbox class baked into the snapshot — determines which runners can host it. */
+	sandboxClass: SandboxClass;
+}
+
+/** Create the daytona snapshot `name` from `image` (candidate while iterating, version on promote),
+ *  pinning the `sandboxClass` and region in `opts`. Idempotent: delete any existing snapshot of that
+ *  name first.
  *
  *  If the create fails AFTER a pre-existing snapshot was deleted, the thrown error says so — `name`
  *  now resolves to nothing, and for a published name (promote `--force`) that is a public artifact
  *  the caller must report as destroyed rather than merely "not written". A create that fails with
  *  nothing deleted, or a delete that fails outright, leaves the prior snapshot intact and rethrows
  *  unchanged. */
-export async function bakeDaytonaSnapshot(name: string, image: string, log: Log): Promise<void> {
-	const { daytona: daytonaCfg, targetSpec } = config;
-	const apiKey = daytonaCfg.apiKey;
+export async function bakeDaytonaSnapshot(
+	name: string,
+	image: string,
+	log: Log,
+	opts: DaytonaBakeOptions,
+): Promise<void> {
+	const { targetSpec } = config;
+	const apiKey = opts.apiKey;
 	if (!apiKey) throw new Error("DAYTONA_API_KEY is required to bake a Daytona snapshot");
 	const daytona = new Daytona({
 		apiKey,
-		...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
+		...(opts.target ? { target: opts.target } : {}),
 	});
 
 	// The buildx publish lane does not load the pushed image into the runner's Docker daemon. Pull the
 	// immutable digest explicitly before tagging it for Daytona's transient registry.
 	// Upload fully before the destructive delete. A registry/auth/network failure therefore leaves an
 	// existing published snapshot intact and the delete→create outage is as short as the API permits.
-	const access = await transientPushAccess(apiKey, daytonaCfg.target);
+	const access = await transientPushAccess(apiKey, opts.target);
 	const registry = await dockerLogin(access, log);
 	const transientRef = await withCleanupPreservingPrimaryError(
 		async () => {
@@ -372,9 +393,10 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 		name,
 		image: transientRef,
 		resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: targetSpec.diskGb },
-		...(daytonaCfg.target ? { regionId: daytonaCfg.target } : {}),
-		// Pin to microVM runners (never the `container` default) — the fleet's hard constraint.
-		sandboxClass: SandboxClass.LINUX_VM,
+		...(opts.target ? { regionId: opts.target } : {}),
+		// Pin the snapshot's sandbox class explicitly (never rely on the transient-push API's `container`
+		// default): daytona-vm bakes LINUX_VM, daytona-container bakes CONTAINER.
+		sandboxClass: opts.sandboxClass,
 	};
 
 	// Daytona's create inspects `image` in the registry on a build runner, and that inspect can fail with
@@ -410,7 +432,7 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 			}
 		}
 		log(
-			`>>> daytona snapshot create attempt ${attempt}/${CREATE_ATTEMPTS}: ${name} from ${transientRef} (target ${daytonaCfg.target ?? "default"})`,
+			`>>> daytona snapshot create attempt ${attempt}/${CREATE_ATTEMPTS}: ${name} from ${transientRef} (target ${opts.target ?? "default"}, class ${opts.sandboxClass})`,
 		);
 		const startMs = performance.now();
 		try {
@@ -451,4 +473,23 @@ export async function bakeDaytonaSnapshot(name: string, image: string, log: Log)
 		throw new Error(`daytona snapshot ${name} create failed — ${reason}`, { cause: lastErr });
 	}
 	throw new Error(snapshotDestroyedMessage(name, deleted, reason), { cause: lastErr });
+}
+
+/** Bake the daytona-vm snapshot `name`: LINUX_VM class in the daytona-vm region (us-west-2). Binds the
+ *  variant's config + class so callers (bake/promote) don't import SandboxClass. */
+export function bakeDaytonaVmSnapshot(name: string, image: string, log: Log): Promise<void> {
+	return bakeDaytonaSnapshot(name, image, log, {
+		apiKey: config.daytonaVm.apiKey,
+		target: config.daytonaVm.target,
+		sandboxClass: SandboxClass.LINUX_VM,
+	});
+}
+
+/** Bake the daytona-container snapshot `name`: CONTAINER class in the daytona-container region (`us`). */
+export function bakeDaytonaContainerSnapshot(name: string, image: string, log: Log): Promise<void> {
+	return bakeDaytonaSnapshot(name, image, log, {
+		apiKey: config.daytonaContainer.apiKey,
+		target: config.daytonaContainer.target,
+		sandboxClass: SandboxClass.CONTAINER,
+	});
 }

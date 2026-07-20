@@ -199,6 +199,8 @@ describe("checkCredentialEnv", () => {
 		const required = requiredCredentialKeys();
 		expect(required.get("E2B_API_KEY")).toEqual(["e2b"]);
 		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal"]);
+		// A credential shared by a vendor's isolation variants records every owner, in registry order.
+		expect(required.get("DAYTONA_API_KEY")).toEqual(["daytona-vm", "daytona-container"]);
 	});
 
 	test("flags a required key dropped from the matrix (reusable) block, naming key and file", () => {

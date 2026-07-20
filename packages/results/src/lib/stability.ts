@@ -12,7 +12,7 @@
  * SDK-free: the Run model + the Catalog (for each metric's Direction) only.
  */
 import type { Direction, Run } from "@sandbox-benchmarks/schema";
-import { getMetric } from "@sandbox-benchmarks/schema";
+import { getMetric, LEGACY_PROVIDER_ALIASES } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 
 /** The default noise threshold (relative): movements within ±10% are treated as stable. */
@@ -80,11 +80,15 @@ export function compareRuns(
 	options?: CompareRunsOptions,
 ): MetricShift[] {
 	const threshold = options?.threshold ?? DEFAULT_THRESHOLD;
-	const prevByProvider = new Map(previous.providers.map((p) => [p.providerId, p]));
+	// Canonicalize retired provider ids (LEGACY_PROVIDER_ALIASES, e.g. daytona -> daytona-vm) on both
+	// sides, so a comparison spanning a variant rename still matches the previous run's `daytona` entry
+	// to the new run's `daytona-vm` and keeps that provider's regression history continuous.
+	const canonicalId = (id: string): string => LEGACY_PROVIDER_ALIASES[id] ?? id;
+	const prevByProvider = new Map(previous.providers.map((p) => [canonicalId(p.providerId), p]));
 	const shifts: MetricShift[] = [];
 
 	for (const cur of current.providers) {
-		const prev = prevByProvider.get(cur.providerId);
+		const prev = prevByProvider.get(canonicalId(cur.providerId));
 		if (!prev) continue;
 		const prevMetrics = new Map(prev.metrics.map((m) => [m.metricId, m]));
 

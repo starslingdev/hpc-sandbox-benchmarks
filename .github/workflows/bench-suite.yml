@@ -85,10 +85,13 @@ jobs:
           # another provider's credential out of the environment. A non-matching provider evaluates to
           # '', which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
           # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
-          DAYTONA_API_KEY: ${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
-          # Boot daytona sandboxes in the active region (us-west-2); the default applies only to the
-          # daytona cell so an unsynced secret can't fail the config gatekeeper at module load.
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          # Both Daytona isolation variants share the account key; scope it to either cell.
+          DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
+          # Each Daytona variant pins its region via a variant-specific secret so operators can
+          # retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET (us-west-2
+          # default), daytona-container reads DAYTONA_CONTAINER_TARGET (`us` default).
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
           MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}

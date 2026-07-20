@@ -11,7 +11,7 @@
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId = "e2b" | "daytona" | "modal" | "blaxel" | "novita";
+export type ProviderId = "e2b" | "daytona-vm" | "daytona-container" | "modal" | "blaxel" | "novita";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -243,20 +243,39 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
-	daytona: {
-		displayName: "Daytona",
+	"daytona-vm": {
+		displayName: "Daytona (VM)",
 		website: "https://daytona.io",
 		sdkPackage: "@computesdk/daytona",
 		requiredEnvVars: ["DAYTONA_API_KEY"],
 		isolation: {
-			technology: "container (OCI)",
+			technology: "microVM (Linux VM)",
 			notes:
-				"Snapshot-based images; orgs locked to a dedicated region need their own snapshot (DAYTONA_SNAPSHOT).",
+				"Boots a snapshot baked with SandboxClass.LINUX_VM on Daytona's Linux-VM runners (region us-west-2, via DAYTONA_TARGET). Snapshot-based images; orgs locked to a dedicated region need their own snapshot (DAYTONA_SNAPSHOT). The prior single `daytona` entry mislabeled this as a container — the baked class has always been a microVM.",
 		},
 		pricing: daytonaPricing,
 		maturity: {
 			status: "ga",
 			notes: "The validated reference provider for this harness (pre-baked toolchain snapshot).",
+		},
+		specPinning: "settable",
+		transport: daytonaTransport,
+	},
+	"daytona-container": {
+		displayName: "Daytona (container)",
+		website: "https://daytona.io",
+		sdkPackage: "@computesdk/daytona",
+		requiredEnvVars: ["DAYTONA_API_KEY"],
+		isolation: {
+			technology: "container (Sysbox/OCI)",
+			notes:
+				"Boots its own snapshot baked with SandboxClass.CONTAINER on Daytona's container runners in region `us` (Daytona's default class uses Sysbox-based OCI containers, not gVisor). Separate snapshot from daytona-vm because the sandbox class is fixed at snapshot-bake time, not per-create.",
+		},
+		pricing: daytonaPricing,
+		maturity: {
+			status: "beta",
+			notes:
+				"New isolation variant sharing Daytona credentials/pricing with daytona-vm; boots a container-class snapshot in region `us`. Not yet a committed run.",
 		},
 		specPinning: "settable",
 		transport: daytonaTransport,
@@ -382,15 +401,29 @@ export const PROVIDERS: readonly ProviderMeta[] = deepFreeze(
 );
 
 /**
+ * Retired provider ids that committed run documents still carry, each mapped to the current variant
+ * that subsumed it. When a provider is split into isolation variants its pre-split runs keep the old
+ * `providerId`; this table lets {@link getProvider} still resolve them to the variant that inherited
+ * the old behaviour, so a historical leaderboard keeps its display names and economics instead of
+ * degrading to a bare id. New runs always write a current variant id, so the aliases only ever match
+ * old data.
+ */
+export const LEGACY_PROVIDER_ALIASES: Readonly<Record<string, ProviderId>> = Object.freeze({
+	daytona: "daytona-vm",
+});
+
+/**
  * Look up a provider's metadata by id. A known {@link ProviderId} literal always resolves; an
- * arbitrary string (e.g. an id read back from a run document) may not.
+ * arbitrary string (e.g. an id read back from a run document) may not — but a retired id in
+ * {@link LEGACY_PROVIDER_ALIASES} resolves to the variant that subsumed it.
  */
 export function getProvider(id: ProviderId): ProviderMeta;
 export function getProvider(id: string): ProviderMeta | undefined;
 export function getProvider(id: string): ProviderMeta | undefined {
 	// A linear scan over a handful of frozen entries — no module-load Map to drift out of sync, and
 	// the entries are immutable, so returning the reference directly is safe.
-	return PROVIDERS.find((p) => p.id === id);
+	const canonical = LEGACY_PROVIDER_ALIASES[id] ?? id;
+	return PROVIDERS.find((p) => p.id === canonical);
 }
 
 /**

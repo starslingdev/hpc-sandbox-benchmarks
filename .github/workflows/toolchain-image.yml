@@ -322,11 +322,17 @@ jobs:
           PROVIDER: ${{ matrix.provider }}
           REQUIRED: ${{ matrix.required }}
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          DAYTONA_API_KEY: ${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
-          # Bake/validate the daytona snapshot in the active region. Without a target the snapshot lands
-          # in the account's default region (which has no `container` runners) and the bake fails at
-          # snapshot creation. Defaulted so an unsynced secret can't break the release at module load.
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          # Both Daytona isolation variants share the account key and bake in their own region.
+          DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
+          # Each Daytona variant bakes in its own region, pinned by a variant-specific secret so
+          # operators can retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET
+          # (LINUX_VM snapshot, us-west-2 default), daytona-container reads DAYTONA_CONTAINER_TARGET
+          # (`us` default). Both default so an unsynced secret can't leave a snapshot in the account's
+          # default region and fail the bake at snapshot creation.
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
+          # Modal's bake is a no-op (the image is pushed once and booted directly), but validate still
+          # boots it to prove reachability.
           MODAL_TOKEN_ID: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_ID || '' }}
           MODAL_TOKEN_SECRET: ${{ matrix.provider == 'modal' && secrets.MODAL_TOKEN_SECRET || '' }}
           # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
@@ -341,7 +347,17 @@ jobs:
           # stdout, so a redirect would splice their chatter into the report. bake.ts writes the file
           # even when it exits non-zero, so it's a clean diagnostic on failure too.
           export BAKE_REPORT_FILE="bake-${PROVIDER}.json"
-          bun apps/cli/src/bin/bake.ts "${args[@]}"
+          # Only a REQUIRED provider blocks the release: a required cell passed --require above, so
+          # bake.ts exits non-zero (failing the cell) if it fails or skips. A NON-required cell — e.g.
+          # daytona-container / modal-vm, which share a required variant's credentials and so can never
+          # take the missing-creds skip path — still runs, but a failure is surfaced as a warning and
+          # must NOT block the publish (its outcome is in the uploaded bake report either way).
+          if [ "${REQUIRED}" = "true" ]; then
+            bun apps/cli/src/bin/bake.ts "${args[@]}"
+          else
+            bun apps/cli/src/bin/bake.ts "${args[@]}" ||
+              echo "::warning title=Non-required provider not validated::${PROVIDER} did not pass its bake/verify — reported, not blocking the release (best-effort variant)"
+          fi
       - name: Upload bake report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -417,7 +433,10 @@ jobs:
           BAKE_REPORT_FILE: promote-payload.json
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          # Both Daytona variants may be promoted in one payload, so thread each variant's region
+          # secret (daytona-vm ⇒ DAYTONA_TARGET, daytona-container ⇒ DAYTONA_CONTAINER_TARGET).
           DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
+          DAYTONA_CONTAINER_TARGET: ${{ secrets.DAYTONA_CONTAINER_TARGET || 'us' }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}

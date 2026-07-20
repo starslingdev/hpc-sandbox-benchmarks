@@ -12,7 +12,7 @@ import {
 import type { PtsResult } from "./pts-schema.ts";
 
 const realFixture = readFileSync(
-	join(import.meta.dir, "__fixtures__/daytona/pts_node-web-tooling.xml"),
+	join(import.meta.dir, "__fixtures__/daytona-vm/pts_node-web-tooling.xml"),
 	"utf8",
 );
 

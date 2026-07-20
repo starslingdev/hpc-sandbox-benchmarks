@@ -15,6 +15,10 @@ const envSchema = type({
 	"DAYTONA_API_KEY?": "string >= 1",
 	"DAYTONA_TARGET?": "string >= 1",
 	"DAYTONA_SNAPSHOT?": "string >= 1",
+	// The container variant boots a container-class snapshot in its own region (default `us`), sharing
+	// DAYTONA_API_KEY with the VM variant. Both overrides are optional — the defaults are computed below.
+	"DAYTONA_CONTAINER_TARGET?": "string >= 1",
+	"DAYTONA_CONTAINER_SNAPSHOT?": "string >= 1",
 	"NOVITA_API_KEY?": "string >= 1",
 	"NOVITA_TEMPLATE?": "string >= 1",
 });
@@ -25,6 +29,8 @@ const ENV_KEYS = [
 	"DAYTONA_API_KEY",
 	"DAYTONA_TARGET",
 	"DAYTONA_SNAPSHOT",
+	"DAYTONA_CONTAINER_TARGET",
+	"DAYTONA_CONTAINER_SNAPSHOT",
 	"NOVITA_API_KEY",
 	"NOVITA_TEMPLATE",
 ] as const;
@@ -53,12 +59,17 @@ export interface NovitaConfig {
 	apiKey?: string;
 }
 
-/** The daytona account/target the adapter boots from. Single-region: the base DAYTONA_* env vars. */
+/**
+ * One Daytona isolation variant's account/target — the same shape for both the VM and container
+ * variants, which share DAYTONA_API_KEY but differ in region and in the sandbox class baked into their
+ * snapshot. `daytona-vm` targets us-west-2 (LINUX_VM class); `daytona-container` targets `us`
+ * (CONTAINER class). The sandbox class itself is fixed at bake time, not carried here.
+ */
 export interface DaytonaConfig {
 	apiKey?: string;
-	/** Daytona runner target/region (e.g. `us-west-2`); undefined uses the account default. */
+	/** Daytona runner target/region (e.g. `us-west-2` for VM, `us` for container). */
 	target?: string;
-	/** Snapshot to boot from (the pre-baked toolchain snapshot). */
+	/** Snapshot to boot from (the pre-baked toolchain snapshot for this variant). */
 	snapshot: string;
 }
 
@@ -77,6 +88,10 @@ const e2bTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
 const e2bTemplateCandidate = `${e2bTemplateVersion}${CANDIDATE_SUFFIX}`;
 const daytonaSnapshotDefault = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
 const daytonaSnapshotCandidate = `${daytonaSnapshotDefault}${CANDIDATE_SUFFIX}`;
+// The container variant needs its OWN snapshot (a Daytona snapshot's sandbox class is fixed at bake
+// time), so it gets a distinct `-container`-suffixed name in the same version namespace.
+const daytonaContainerSnapshotDefault = `${daytonaSnapshotDefault}-container`;
+const daytonaContainerSnapshotCandidate = `${daytonaContainerSnapshotDefault}${CANDIDATE_SUFFIX}`;
 // The novita template lives on Novita's E2B-compatible control plane (a separate namespace from
 // e2b.dev), so it reuses the same version-scoped artifact name as the e2b template — aliased, not
 // recomputed, so a change to the e2b naming formula can't silently break the shared-name invariant.
@@ -103,17 +118,31 @@ export const config = {
 	e2bTemplateVersion,
 	/** Candidate e2b template name the bake builds while iterating. */
 	e2bTemplateCandidate,
-	/** Canonical (version-scoped) daytona snapshot name; the promote target. */
+	/** Canonical (version-scoped) daytona-vm snapshot name; the promote target. */
 	daytonaSnapshotDefault,
-	/** Candidate daytona snapshot name the bake creates while iterating. */
+	/** Candidate daytona-vm snapshot name the bake creates while iterating. */
 	daytonaSnapshotCandidate,
-	/** The daytona account/target the adapter boots from: API key, runner target (`DAYTONA_TARGET`,
-	 *  e.g. `us-west-2`), and the snapshot to boot (`DAYTONA_SNAPSHOT` override, else the version-scoped
-	 *  default). */
-	daytona: {
+	/** Canonical (version-scoped) daytona-container snapshot name; the promote target. */
+	daytonaContainerSnapshotDefault,
+	/** Candidate daytona-container snapshot name the bake creates while iterating. */
+	daytonaContainerSnapshotCandidate,
+	/** The daytona-vm account/target the adapter boots from: API key, runner target
+	 *  (`DAYTONA_TARGET` override, else `us-west-2` — where the LINUX_VM snapshot lives; symmetric with
+	 *  daytona-container's `us` default so a boot with the env unset doesn't fall back to the account
+	 *  default region, which has no LINUX_VM runners), and the LINUX_VM snapshot to boot
+	 *  (`DAYTONA_SNAPSHOT` override, else the version-scoped default). */
+	daytonaVm: {
 		apiKey: env.DAYTONA_API_KEY,
-		target: env.DAYTONA_TARGET,
+		target: env.DAYTONA_TARGET ?? "us-west-2",
 		snapshot: env.DAYTONA_SNAPSHOT ?? daytonaSnapshotDefault,
+	} satisfies DaytonaConfig,
+	/** The daytona-container account/target: the SAME API key as daytona-vm, region `us`
+	 *  (`DAYTONA_CONTAINER_TARGET` override, else `us`), and the container-class snapshot to boot
+	 *  (`DAYTONA_CONTAINER_SNAPSHOT` override, else the version-scoped `-container` default). */
+	daytonaContainer: {
+		apiKey: env.DAYTONA_API_KEY,
+		target: env.DAYTONA_CONTAINER_TARGET ?? "us",
+		snapshot: env.DAYTONA_CONTAINER_SNAPSHOT ?? daytonaContainerSnapshotDefault,
 	} satisfies DaytonaConfig,
 	/** The novita template the sandbox boots from (on Novita's control plane); `NOVITA_TEMPLATE`
 	 *  override, else the version-scoped public template. */

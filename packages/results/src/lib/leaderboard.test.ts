@@ -51,7 +51,7 @@ describe("buildLeaderboard", () => {
 	it("ranks the cpu headline HIB (highest first) and includes only providers with the metric", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]),
+				provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
 				provider("e2b", [metric("node_web_tooling_runs_per_s", [12])]),
 				provider("modal", []), // no metric → excluded from the row set
 			]),
@@ -61,7 +61,7 @@ describe("buildLeaderboard", () => {
 		// HIB: e2b (12) outranks daytona (10); modal absent.
 		expect(cpu?.rows.map((r) => [r.rank, r.providerId, r.value])).toEqual([
 			[1, "e2b", 12],
-			[2, "daytona", 10],
+			[2, "daytona-vm", 10],
 		]);
 	});
 
@@ -80,7 +80,7 @@ describe("buildLeaderboard", () => {
 
 	it("omits dimensions with no emitted value and renders Markdown tables", () => {
 		const board = buildLeaderboard(
-			run([provider("daytona", [metric("node_web_tooling_runs_per_s", [10])])]),
+			run([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])]),
 		);
 		// Only cpu is populated; disk/memory/etc. are absent.
 		expect(board.dimensions.map((d) => d.dimension)).toEqual(["cpu"]);
@@ -88,7 +88,7 @@ describe("buildLeaderboard", () => {
 		expect(md).toContain("## cpu");
 		expect(md).toContain("Node.js web tooling");
 		expect(md).toContain("higher is better");
-		expect(md).toMatch(/\| 1 \| Daytona \| 10 \|/);
+		expect(md).toMatch(/\| 1 \| Daytona \(VM\) \| 10 \|/);
 	});
 
 	it("orders equal headline values deterministically by providerId and shares their rank", () => {
@@ -97,23 +97,23 @@ describe("buildLeaderboard", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("modal", [metric("node_web_tooling_runs_per_s", [10])]),
-				provider("daytona", [metric("node_web_tooling_runs_per_s", [10])]),
+				provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
 			]),
 		);
 		const cpu = board.dimensions.find((d) => d.dimension === "cpu");
-		expect(cpu?.rows.map((r) => r.providerId)).toEqual(["daytona", "modal"]);
+		expect(cpu?.rows.map((r) => r.providerId)).toEqual(["daytona-vm", "modal"]);
 		expect(cpu?.rows.map((r) => r.rank)).toEqual([1, 1]);
 	});
 
 	it("renders a placeholder when nothing is ranked", () => {
-		const md = renderLeaderboardMarkdown(buildLeaderboard(run([provider("daytona", [])])));
+		const md = renderLeaderboardMarkdown(buildLeaderboard(run([provider("daytona-vm", [])])));
 		expect(md).toContain("No ranked metrics yet");
 	});
 
 	it("ranks every emitted catalogued Metric, including non-headlines", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [
+				provider("daytona-vm", [
 					metric("node_web_tooling_runs_per_s", [10]),
 					metric("sqlite_speedtest_seconds", [20]),
 				]),
@@ -170,12 +170,12 @@ describe("buildLeaderboard statistical ranking", () => {
 	it("attaches a bootstrapped interval that is wider for the noisier provider", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, DAYTONA_COPY)]),
+				provider("daytona-vm", [metric(HEADLINE, DAYTONA_COPY)]),
 				provider("modal", [metric(HEADLINE, MODAL_COPY)]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
-		const daytona = rows.find((r) => r.providerId === "daytona");
+		const daytona = rows.find((r) => r.providerId === "daytona-vm");
 		const modal = rows.find((r) => r.providerId === "modal");
 
 		expect(daytona?.interval.level).toBe(0.95);
@@ -191,7 +191,7 @@ describe("buildLeaderboard statistical ranking", () => {
 			renderLeaderboardMarkdown(
 				buildLeaderboard(
 					run([
-						provider("daytona", [metric(HEADLINE, DAYTONA_COPY)]),
+						provider("daytona-vm", [metric(HEADLINE, DAYTONA_COPY)]),
 						provider("modal", [metric(HEADLINE, MODAL_COPY)]),
 					]),
 				),
@@ -202,13 +202,13 @@ describe("buildLeaderboard statistical ranking", () => {
 	it("separates providers whose distributions genuinely differ", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, DAYTONA_COPY)]),
+				provider("daytona-vm", [metric(HEADLINE, DAYTONA_COPY)]),
 				provider("modal", [metric(HEADLINE, MODAL_COPY)]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => [r.rank, r.providerId])).toEqual([
-			[1, "daytona"],
+			[1, "daytona-vm"],
 			[2, "modal"],
 		]);
 		const modal = rows[1];
@@ -223,7 +223,7 @@ describe("buildLeaderboard statistical ranking", () => {
 		// p50 alone would crown e2b; the U test refuses to.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
 				provider("e2b", [metric(HEADLINE, [11, 12, 10, 14, 13])]),
 			]),
 		);
@@ -243,14 +243,14 @@ describe("buildLeaderboard statistical ranking", () => {
 		// must NOT collapse every provider into a tie just because n=1 can never reach significance.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
+				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
 				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
 		expect(rows.map((r) => [r.rank, r.providerId])).toEqual([
 			[1, "modal"],
-			[2, "daytona"],
+			[2, "daytona-vm"],
 		]);
 		expect(rows[1]?.verdict).toBe("untested");
 		expect(rows[1]?.pVsPrevious).toBeNull();
@@ -262,7 +262,7 @@ describe("buildLeaderboard statistical ranking", () => {
 		// than being split by the providerId sort tie-break alone.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
 		);
@@ -274,7 +274,7 @@ describe("buildLeaderboard statistical ranking", () => {
 		// A three-way tie at rank 1: the takeaway must list all three, not silently drop the third.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
@@ -283,8 +283,8 @@ describe("buildLeaderboard statistical ranking", () => {
 		expect(rows.map((r) => r.rank)).toEqual([1, 1, 1]);
 		const md = renderLeaderboardMarkdown(board);
 		// All three display names appear in the "share the top" takeaway, joined as a list.
-		expect(md).toMatch(/\w+, \w+ and \w+ share the top on this metric/);
-		for (const name of ["Daytona", "E2B", "Modal"]) expect(md).toContain(name);
+		expect(md).toMatch(/[^,|]+, [^,|]+ and [^,|]+ share the top on this metric/);
+		for (const name of ["Daytona (VM)", "E2B", "Modal"]) expect(md).toContain(name);
 	});
 });
 
@@ -294,7 +294,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 	it("uses the hierarchical bootstrap interval and pools every replicate's samples into n", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [
+				provider("daytona-vm", [
 					replicatedMetric(HEADLINE, [
 						[10, 11],
 						[40, 41],
@@ -318,7 +318,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		// (The old difference-CI rule read power off within-sandbox spread and would have over-claimed it.)
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [replicatedMetric(HEADLINE, [[100], [101], [102]])]),
+				provider("daytona-vm", [replicatedMetric(HEADLINE, [[100], [101], [102]])]),
 				provider("modal", [replicatedMetric(HEADLINE, [[1], [2], [3]])]),
 			]),
 		);
@@ -333,7 +333,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		// cluster test can — and here does — declare a real separation. R, not k, is the dial that buys it.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [replicatedMetric(HEADLINE, [[100], [101], [102], [103], [104]])]),
+				provider("daytona-vm", [replicatedMetric(HEADLINE, [[100], [101], [102], [103], [104]])]),
 				provider("modal", [replicatedMetric(HEADLINE, [[1], [2], [3], [4], [5]])]),
 			]),
 		);
@@ -350,7 +350,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		// one cluster, and the pair is reported underpowered, never a false separation off pooled samples.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [replicatedMetric(HEADLINE, [[100], [101], [102]])]),
+				provider("daytona-vm", [replicatedMetric(HEADLINE, [[100], [101], [102]])]),
 				provider("modal", [metric(HEADLINE, [1, 2, 3])]),
 			]),
 		);
@@ -364,7 +364,7 @@ describe("buildLeaderboard with replicate sandboxes (R>1)", () => {
 		// cluster test does not — a genuine statistical tie, distinct from the underpowered R=3 case above.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [replicatedMetric(HEADLINE, [[10], [30], [50], [70], [90]])]),
+				provider("daytona-vm", [replicatedMetric(HEADLINE, [[10], [30], [50], [70], [90]])]),
 				provider("modal", [replicatedMetric(HEADLINE, [[20], [40], [60], [80], [100]])]),
 			]),
 		);
@@ -382,7 +382,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
-					provider("daytona", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
+					provider("daytona-vm", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
 					provider("e2b", [metric(HEADLINE, [11, 12, 10, 14, 13])]),
 				]),
 			),
@@ -401,7 +401,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		// a bimodal provider, and then never rendered — so no reader of LEADERBOARD.md could ever see it.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
 				provider("e2b", [metric(HEADLINE, [11, 12, 10, 14, 13])]),
 			]),
 		);
@@ -413,7 +413,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		expect(board.dimensions[0]?.rows[1]?.pVsPrevious).not.toBeNull();
 
 		// Main ranking table stays slim (Note column because of the tie); KS lives in the details table.
-		const mainRows = md.split("\n").filter((l) => /^\| \d+ \| (Daytona|E2B) \|/.test(l));
+		const mainRows = md.split("\n").filter((l) => /^\| \d+ \| (Daytona \(VM\)|E2B) \|/.test(l));
 		expect(mainRows).toHaveLength(2);
 		for (const row of mainRows) {
 			expect(row.split("|").filter((c) => c.trim() !== "").length).toBe(6);
@@ -421,7 +421,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 
 		const detailRows = md
 			.split("\n")
-			.filter((l) => /^\| cpu \| Node\.js web tooling \| (Daytona|E2B) \|/.test(l));
+			.filter((l) => /^\| cpu \| Node\.js web tooling \| (Daytona \(VM\)|E2B) \|/.test(l));
 		expect(detailRows).toHaveLength(2);
 		const [first, second] = detailRows as [string, string];
 		expect(first).toContain("| — |");
@@ -432,17 +432,17 @@ describe("renderLeaderboardMarkdown statistics", () => {
 
 	it("renders a point value with no interval for a single-Sample Metric", () => {
 		const md = renderLeaderboardMarkdown(
-			buildLeaderboard(run([provider("daytona", [metric(HEADLINE, [10])])])),
+			buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10])])])),
 		);
 		// n=1 → em-dash for the bootstrap interval; no Note column when nothing needs calling out.
-		expect(md).toMatch(/\| 1 \| Daytona \| 10 \| — \| 1 \|\n/);
+		expect(md).toMatch(/\| 1 \| Daytona \(VM\) \| 10 \| — \| 1 \|\n/);
 	});
 
 	it("never prints a p-value as a misleading 0", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
-					provider("daytona", [metric(HEADLINE, [1, 2, 3, 4, 5, 6, 7, 8])]),
+					provider("daytona-vm", [metric(HEADLINE, [1, 2, 3, 4, 5, 6, 7, 8])]),
 					provider("modal", [metric(HEADLINE, [90, 91, 92, 93, 94, 95, 96, 97])]),
 				]),
 			),
@@ -460,13 +460,13 @@ describe("underpowered comparisons", () => {
 		// providers. Rank on value, return the `underpowered` verdict, and say so in the cell.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
+				provider("daytona-vm", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
 				provider("modal", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => [r.displayName, r.rank, r.verdict, r.tiedWithAbove])).toEqual([
-			["Daytona", 1, null, null],
+			["Daytona (VM)", 1, null, null],
 			["Modal", 2, "underpowered", null],
 		]);
 		const md = renderLeaderboardMarkdown(board);
@@ -481,7 +481,7 @@ describe("underpowered comparisons", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
-					provider("daytona", [metric(HEADLINE, [19.6, 19.7, 19.9, 20.1])]),
+					provider("daytona-vm", [metric(HEADLINE, [19.6, 19.7, 19.9, 20.1])]),
 					provider("modal", [metric(HEADLINE, [9.5, 9.6, 9.8])]),
 				]),
 			),
@@ -494,7 +494,7 @@ describe("underpowered comparisons", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
-					provider("daytona", [metric(HEADLINE, [10, 11, 12, 13, 14])]),
+					provider("daytona-vm", [metric(HEADLINE, [10, 11, 12, 13, 14])]),
 					provider("modal", [metric(HEADLINE, [1, 2, 3, 4, 5])]),
 				]),
 			),
@@ -512,12 +512,12 @@ describe("underpowered comparisons", () => {
 		const board = buildLeaderboard(
 			run([
 				provider("modal", [metric(HEADLINE, [9, 10, 11])]),
-				provider("daytona", [metric(HEADLINE, [8, 10, 12])]),
+				provider("daytona-vm", [metric(HEADLINE, [8, 10, 12])]),
 			]),
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => [r.providerId, r.value, r.rank])).toEqual([
-			["daytona", 10, 1],
+			["daytona-vm", 10, 1],
 			["modal", 10, 1],
 		]);
 		expect(rows[1]?.verdict).toBe("underpowered");
@@ -532,7 +532,7 @@ describe("underpowered comparisons", () => {
 	it("marks a shared rank between untested (n<2) rows with equal values as equal, not tied", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
+				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
 				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
 			]),
 		);
@@ -548,7 +548,7 @@ describe("underpowered comparisons", () => {
 		// Three providers at identical prices share rank 1; the takeaway must list all three, not just two.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 				provider("modal", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
 			]),
@@ -558,8 +558,8 @@ describe("underpowered comparisons", () => {
 		const md = renderLeaderboardMarkdown(board);
 		// Match the common phrasing across branches (the takeaway says "…this headline" here and
 		// "…this metric" once the per-metric renderer lands) so this test survives the flow up-stack.
-		expect(md).toMatch(/\w+, \w+ and \w+ share the top on this/);
-		for (const name of ["Daytona", "E2B", "Modal"]) expect(md).toContain(name);
+		expect(md).toMatch(/[^,|]+, [^,|]+ and [^,|]+ share the top on this/);
+		for (const name of ["Daytona (VM)", "E2B", "Modal"]) expect(md).toContain(name);
 	});
 
 	it("never marks a row `tied` unless the test could have separated it", () => {
@@ -567,7 +567,7 @@ describe("underpowered comparisons", () => {
 		// reached the opposite one. An underpowered comparison may share a rank, but never on that basis.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
+				provider("daytona-vm", [metric(HEADLINE, [19.63, 19.72, 19.96])]),
 				provider("modal", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
 				provider("e2b", [metric(HEADLINE, [9.79, 9.52, 9.59])]),
 			]),
@@ -586,7 +586,7 @@ describe("underpowered comparisons", () => {
 		const near = [10, 10.1, 9.9, 10.2, 9.8, 10.05, 9.95, 10.15];
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, near)]),
+				provider("daytona-vm", [metric(HEADLINE, near)]),
 				provider("modal", [
 					metric(
 						HEADLINE,
@@ -610,7 +610,7 @@ describe("underpowered comparisons", () => {
 		// the permutation null cannot produce. Exactly: p = 0.1, and 3 v 3 stays untestable.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [2, 2, 2])]),
+				provider("daytona-vm", [metric(HEADLINE, [2, 2, 2])]),
 				provider("modal", [metric(HEADLINE, [1, 1, 1])]),
 			]),
 		);
@@ -636,7 +636,7 @@ describe("coverage gaps", () => {
 			run([
 				// daytona covers both exercised suites, so its only absence is the one e2b records — no
 				// derived `missing` gap enters the ordering under test.
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "realworld-mastra"]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "realworld-mastra"]),
 				provider(
 					"e2b",
 					[],
@@ -679,7 +679,7 @@ describe("coverage gaps", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
-					provider("daytona", [metric(HEADLINE, [10, 11])], [], ["realworld-mastra"]),
+					provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["realworld-mastra"]),
 					provider("e2b", [], [diskSkip(30)]),
 				]),
 			),
@@ -705,7 +705,7 @@ describe("coverage gaps", () => {
 
 	it("omits the section and the disk note entirely when nothing was skipped", () => {
 		const md = renderLeaderboardMarkdown(
-			buildLeaderboard(run([provider("daytona", [metric(HEADLINE, [10, 11])])])),
+			buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10, 11])])])),
 		);
 		expect(md).not.toContain("## Coverage gaps");
 		expect(md).not.toContain("❌");
@@ -744,7 +744,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		// from the comparison rather than as failing to cover it.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk"]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk"]),
 				provider("e2b", []),
 			]),
 		);
@@ -776,7 +776,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		// provider would bury the real ones in noise the reader has to learn to ignore.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
 				provider("e2b", [metric(HEADLINE, [12, 13])], [], ["cpu-node"]),
 			]),
 		);
@@ -786,20 +786,20 @@ describe("coverage gaps: the holes nobody recorded", () => {
 	it("does not derive a gap for a suite the provider actually covered", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
 				provider("e2b", [metric(HEADLINE, [12, 13])], [], ["cpu-node", "disk"]),
 			]),
 		);
 		// daytona is missing `disk` (e2b ran it), but NOT `cpu-node`, which it covered.
 		expect(board.coverageGaps.map((g) => `${g.providerId}/${g.id}/${g.outcome}`)).toEqual([
-			"daytona/disk/missing",
+			"daytona-vm/disk/missing",
 		]);
 	});
 
 	it("does not derive a `missing` gap on top of a recorded one — a marker accounts for the suite", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
 				provider(
 					"e2b",
 					[],
@@ -818,7 +818,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		// words is the workload running out of space mid-flight: a different fact, and not a structural one.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["realworld-mastra"]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["realworld-mastra"]),
 				provider(
 					"e2b",
 					[],
@@ -843,7 +843,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		const board = buildLeaderboard(
 			run([
 				provider(
-					"daytona",
+					"daytona-vm",
 					[metric(HEADLINE, [10, 11])],
 					[
 						{
@@ -859,7 +859,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		);
 		const md = renderLeaderboardMarkdown(board);
 		expect(md).toContain(
-			"| Daytona | lifecycle_snapshot_ms _(lifecycle op)_ | **skipped** | provider SDK exposes no snapshot operation |",
+			"| Daytona (VM) | lifecycle_snapshot_ms _(lifecycle op)_ | **skipped** | provider SDK exposes no snapshot operation |",
 		);
 		// An operation is not a suite, so it must never enter the missing-suite denominator.
 		expect(board.coverageGaps.every((g) => g.outcome !== "missing")).toBe(true);
@@ -869,7 +869,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		const md = renderLeaderboardMarkdown(
 			buildLeaderboard(
 				run([
-					provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+					provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
 					provider("e2b", []),
 				]),
 			),
@@ -884,7 +884,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 	it("orders disk skips first, then failures, then the unexplained absences", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk", "pgbench"]),
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk", "pgbench"]),
 				provider(
 					"e2b",
 					[],

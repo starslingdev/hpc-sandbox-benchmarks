@@ -25,7 +25,7 @@ usage: plan-matrix [--help] [--list-providers] [--list-suites] [--json]
   --help, -h         Show this help.
 
 environment:
-  BENCH_PROVIDERS    Comma-separated providers to include (e.g. "e2b,daytona,modal"). Unset or
+  BENCH_PROVIDERS    Comma-separated providers to include (e.g. "e2b,daytona-vm,modal"). Unset or
                      blank includes every registered provider. An unregistered name is an error,
                      never a silently smaller matrix.
 

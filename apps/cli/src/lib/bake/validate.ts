@@ -5,12 +5,17 @@ import type { ProviderId } from "@sandbox-benchmarks/schema";
 
 export interface CandidateRefs {
 	e2bTemplateCandidate: string;
+	/** Candidate LINUX_VM snapshot for daytona-vm. */
 	daytonaSnapshotCandidate: string;
+	/** Candidate CONTAINER snapshot for daytona-container (its own snapshot + region). */
+	daytonaContainerSnapshotCandidate: string;
 	/** Candidate template on Novita's E2B-compatible control plane (its own namespace). */
 	novitaTemplateCandidate: string;
 	toolchainImageCandidate: string;
-	/** Daytona runner target for the active region (undefined → account default). */
-	daytonaTarget?: string;
+	/** daytona-vm runner target (us-west-2; undefined → account default). */
+	daytonaVmTarget?: string;
+	/** daytona-container runner target (`us`; undefined → account default). */
+	daytonaContainerTarget?: string;
 }
 
 /** Create-options overrides that point a provider at its candidate artifact for the validate boot. */
@@ -22,10 +27,15 @@ export function candidateCreateOptions(
 		case "e2b":
 			// computesdk maps snapshotId → the e2b template id/name.
 			return { snapshotId: refs.e2bTemplateCandidate };
-		case "daytona":
+		case "daytona-vm":
 			return {
 				snapshotId: refs.daytonaSnapshotCandidate,
-				...(refs.daytonaTarget ? { target: refs.daytonaTarget } : {}),
+				...(refs.daytonaVmTarget ? { target: refs.daytonaVmTarget } : {}),
+			};
+		case "daytona-container":
+			return {
+				snapshotId: refs.daytonaContainerSnapshotCandidate,
+				...(refs.daytonaContainerTarget ? { target: refs.daytonaContainerTarget } : {}),
 			};
 		case "modal":
 			return { templateId: refs.toolchainImageCandidate };

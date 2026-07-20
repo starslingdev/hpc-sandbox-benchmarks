@@ -120,18 +120,23 @@ describe("@sandbox-benchmarks/providers", () => {
 			.sandbox.methods;
 		expect(methods.runCommand).toBe(runE2bCommandAsRoot);
 
-		const daytona = providers.find((p) => p.name === "daytona");
+		const daytona = providers.find((p) => p.name === "daytona-vm");
 		expect(daytona).toBeDefined();
-		expect(daytona?.createOptions?.snapshotId).toBe(config.daytona.snapshot);
+		expect(daytona?.createOptions?.snapshotId).toBe(config.daytonaVm.snapshot);
 		// ComputeSDK maps its universal timeout to the Daytona SDK's create-operation timeout, not the
 		// sandbox lifetime. Pass the native option through so an 8+ minute detached suite is not stopped
 		// underneath the harness; runSuite's finally block remains the cleanup authority.
 		expect(daytona?.createOptions?.autoStopInterval).toBe(0);
 
+		// The container variant shares the account key but boots its own snapshot in its own region.
+		const container = providers.find((p) => p.name === "daytona-container");
+		expect(container?.createOptions?.snapshotId).toBe(config.daytonaContainer.snapshot);
+		expect(container?.createOptions?.target).toBe("us");
+
 		// No adapter override — requiredEnvVars falls back to the schema meta's static list. Pin the
 		// concrete value rather than only comparing the two lookups against each other: if both `find`s
 		// missed (provider renamed on one side), `undefined === undefined` would pass — a false green.
-		const daytonaMeta = PROVIDERS.find((m) => m.id === "daytona");
+		const daytonaMeta = PROVIDERS.find((m) => m.id === "daytona-vm");
 		expect(daytonaMeta?.requiredEnvVars).toEqual(["DAYTONA_API_KEY"]);
 		expect(daytona?.requiredEnvVars).toEqual(daytonaMeta?.requiredEnvVars);
 	});

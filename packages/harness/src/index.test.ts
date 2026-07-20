@@ -361,7 +361,7 @@ const suite = (overrides: Partial<Suite>): Suite => ({
 const ctx = (s: Suite, resultsDir: string) => ({
 	suite: s,
 	suiteName: "cpu-node",
-	providerName: "daytona",
+	providerName: "daytona-vm",
 	resultsDir,
 	// Daytona-shaped: synchronous execs capped, detached+poll available. The fake sandbox has no
 	// filesystem, so a detached selection drives the cat-poll fallback (done-file read over exec).
@@ -371,7 +371,7 @@ const ctx = (s: Suite, resultsDir: string) => ({
 describe("runSuite (resolution + credential gate)", () => {
 	it("rejects an unknown suite as a usage error", async () => {
 		await expect(
-			runSuite({ providerName: "daytona", suiteName: "nope", resultsDir: freshDir() }),
+			runSuite({ providerName: "daytona-vm", suiteName: "nope", resultsDir: freshDir() }),
 		).rejects.toBeInstanceOf(SuiteUsageError);
 	});
 
@@ -384,8 +384,8 @@ describe("runSuite (resolution + credential gate)", () => {
 	it("records a skip marker (not a failure) when credentials are missing", async () => {
 		const resultsDir = freshDir();
 		// Empty env → daytona's required key is absent, so the suite skips before any sandbox is created.
-		await runSuite({ providerName: "daytona", suiteName: "cpu-node", resultsDir, env: {} });
-		expect(existsSync(join(resultsDir, "sandbox-daytona-cpu-node--skipped.json"))).toBe(true);
+		await runSuite({ providerName: "daytona-vm", suiteName: "cpu-node", resultsDir, env: {} });
+		expect(existsSync(join(resultsDir, "sandbox-daytona-vm-cpu-node--skipped.json"))).toBe(true);
 	});
 });
 
@@ -448,7 +448,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		// 1 KiB free, suite needs 50 GiB.
 		const sandbox = makeSandbox({ destroyed, freeKb: "1" });
 		await runSuiteOnSandbox(sandbox, ctx(suite({ minDiskGb: 50 }), resultsDir));
-		expect(existsSync(join(resultsDir, "sandbox-daytona-cpu-node--skipped.json"))).toBe(true);
+		expect(existsSync(join(resultsDir, "sandbox-daytona-vm-cpu-node--skipped.json"))).toBe(true);
 		expect(destroyed.hit).toBe(true);
 	});
 
@@ -457,7 +457,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		// Collect succeeds (a skip marker satisfies collection) but yields no pts_*.xml.
 		const sandbox = makeSandbox({
 			destroyed,
-			collectFiles: { "sandbox-daytona-cpu-node--skipped.json": '{"skipped":true}' },
+			collectFiles: { "sandbox-daytona-vm-cpu-node--skipped.json": '{"skipped":true}' },
 		});
 		await expect(
 			runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), freshDir())),

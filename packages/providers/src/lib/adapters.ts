@@ -10,17 +10,34 @@ import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { blaxelWithVolumeAndKeepAlive } from "./blaxel-volume.ts";
+import type { DaytonaConfig } from "./config.ts";
 import { config } from "./config.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
 
-// The daytona account/target (key/target/snapshot), resolved by the config gatekeeper. Named
-// `daytonaCfg` to avoid shadowing the `daytona` factory imported above. Never read process.env here.
-const daytonaCfg = config.daytona;
-
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
+
+/**
+ * The Daytona VM and container variants share one adapter shape — the same account API key and the
+ * same create-time policy — and differ only in the account config the config gatekeeper resolved:
+ * region (`us-west-2` vs `us`) and which pre-baked snapshot to boot. The sandbox class (LINUX_VM vs
+ * CONTAINER) is fixed inside each variant's snapshot at bake time, so nothing selects it here. `target`
+ * and autoStopInterval ride the wrapper's provider-options passthrough into Daytona's native
+ * createParams; the universal `timeout` is only the create-call deadline, so disable native auto-stop
+ * and rely on the harness's guaranteed teardown. Never read process.env here.
+ */
+function daytonaAdapter(cfg: DaytonaConfig): ProviderAdapter {
+	return {
+		createCompute: () => daytona({ apiKey: cfg.apiKey }),
+		createOptions: {
+			snapshotId: cfg.snapshot,
+			autoStopInterval: 0,
+			...(cfg.target ? { target: cfg.target } : {}),
+		},
+	};
+}
 
 /**
  * Harness adapters, keyed by the schema {@link ProviderId}. The `Record<ProviderId, …>` type is what
@@ -37,19 +54,10 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createCompute: () => e2bCommandsAsRoot(e2b({})),
 		createOptions: { snapshotId: config.e2bTemplate },
 	},
-	daytona: {
-		// The account API key; the toolchain snapshot and runner target are pinned per-create. `target`
-		// and autoStopInterval ride the wrapper's provider-options passthrough into Daytona's native
-		// createParams. The universal `timeout` is only the Daytona SDK create-call deadline — it does
-		// not extend sandbox lifetime — so disable native auto-stop and rely on the harness's guaranteed
-		// teardown. No requiredEnvVars override needed: the schema meta owns DAYTONA_API_KEY.
-		createCompute: () => daytona({ apiKey: daytonaCfg.apiKey }),
-		createOptions: {
-			snapshotId: daytonaCfg.snapshot,
-			autoStopInterval: 0,
-			...(daytonaCfg.target ? { target: daytonaCfg.target } : {}),
-		},
-	},
+	// Both Daytona variants share the account API key (the schema meta owns DAYTONA_API_KEY); they
+	// differ only in region + the class-specific snapshot resolved by the config gatekeeper.
+	"daytona-vm": daytonaAdapter(config.daytonaVm),
+	"daytona-container": daytonaAdapter(config.daytonaContainer),
 	blaxel: {
 		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). Boot the Debian
 		// ts-app image as root (the stock Alpine base-image has no apt — PTS uninstallable). Blaxel

@@ -23,7 +23,8 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		// output against PROVIDERS, so this pin is what makes an accidental registry removal loud.
 		expect(PROVIDERS.map((p) => p.id).sort()).toEqual([
 			"blaxel",
-			"daytona",
+			"daytona-container",
+			"daytona-vm",
 			"e2b",
 			"modal",
 			"novita",
@@ -106,9 +107,11 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		// Guards the economics constants against accidental regressions (PR #15 review). Daytona's
 		// first 5 GiB of memory are free; e2b bills all memory at the same vCPU/GiB rates.
 		const expected: Record<string, number> = {
+			// Daytona's two variants bill identically — assert one here, and the shared-pricing invariant
+			// across a vendor's variants is checked separately below.
 			modal: 0.141912 * TARGET_SPEC.vcpus + 0.024192 * TARGET_SPEC.memoryGb,
 			e2b: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * TARGET_SPEC.memoryGb,
-			daytona: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * Math.max(0, TARGET_SPEC.memoryGb - 5),
+			"daytona-vm": 0.0504 * TARGET_SPEC.vcpus + 0.0162 * Math.max(0, TARGET_SPEC.memoryGb - 5),
 			novita: 0.03528 * TARGET_SPEC.vcpus + 0.01152 * TARGET_SPEC.memoryGb,
 		};
 		for (const [id, cost] of Object.entries(expected)) {
@@ -124,10 +127,22 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			const pricing = getProvider(id)?.pricing;
 			return pricing?.model === "per_vcpu_hour" ? pricing.usdPerGibDiskHour : undefined;
 		};
-		expect(diskRate("daytona")).toBeCloseTo(0.000108); // $0.00000003/GiB-s × 3600
+		expect(diskRate("daytona-vm")).toBeCloseTo(0.000108); // $0.00000003/GiB-s × 3600
 		expect(diskRate("modal")).toBe(0); // volumes free under the 1 TiB/mo tier
 		expect(diskRate("e2b")).toBeUndefined(); // no published overage rate
 		expect(diskRate("novita")).toBe(0); // 20 GB target spec inside the 60 GB free tier
+	});
+
+	it("resolves retired provider ids through the legacy aliases", () => {
+		// Pre-split committed runs carry `daytona`; getProvider must still resolve it to the variant
+		// that subsumed it so a historical leaderboard keeps its display names + economics.
+		expect(getProvider("daytona")?.id).toBe("daytona-vm");
+	});
+
+	it("keeps a vendor's isolation variants on identical pricing", () => {
+		// Daytona's two variants differ only in isolation, never billing — a drift here would misrank one
+		// against the other, so pin that they share a pricing object.
+		expect(getProvider("daytona-container")?.pricing).toEqual(getProvider("daytona-vm")?.pricing);
 	});
 
 	it("returns null when a provider has no vetted rate", () => {
