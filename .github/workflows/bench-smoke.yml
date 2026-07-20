@@ -100,10 +100,11 @@ jobs:
           # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
           # Both Daytona isolation variants share the account key; scope it to either being dispatched.
           DAYTONA_API_KEY: ${{ (inputs.provider == 'daytona-vm' || inputs.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
-          # daytona-vm boots in us-west-2 (DAYTONA_TARGET); daytona-container derives its own region
-          # (`us`) from config, so DAYTONA_TARGET only needs to reach the vm — but it's harmless for the
-          # container variant (which ignores it), so scope it to either daytona dispatch.
-          DAYTONA_TARGET: ${{ (inputs.provider == 'daytona-vm' || inputs.provider == 'daytona-container') && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          # Each Daytona variant pins its region via a variant-specific secret so operators can
+          # retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET (us-west-2
+          # default), daytona-container reads DAYTONA_CONTAINER_TARGET (`us` default).
+          DAYTONA_TARGET: ${{ inputs.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ inputs.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
           E2B_API_KEY: ${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           # Both Modal variants share the account tokens; scope them to either being dispatched.
           MODAL_TOKEN_ID: ${{ (inputs.provider == 'modal-gvisor' || inputs.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
