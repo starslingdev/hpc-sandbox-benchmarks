@@ -14,6 +14,21 @@ when statistically indistinguishable or tied on the median (see details below) �
 CPU/RAM comparability uses observed vCPU and RAM (±10% RAM); disk is a workload-capacity gate
 surfaced through coverage gaps, not part of the compute-match verdict.
 
+## Providers in this run
+
+Each provider's isolation technology — the **declared** technology is authoritative; **detected**
+is a best-effort in-sandbox probe that cannot separate every isolation type (a container and a
+microVM can both read `kvm`; gVisor and a microVM can both read `unknown`), shown only as a
+cross-check.
+
+| Provider | Isolation (declared) | Detected |
+| --- | --- | --- |
+| Blaxel | microVM | — |
+| Daytona (VM) | microVM (Linux VM) | — |
+| E2B | Firecracker microVM | — |
+| Modal (gVisor) | gVisor container | — |
+| Novita | microVM | — |
+
 ## cpu
 
 ### Node.js web tooling _(headline)_

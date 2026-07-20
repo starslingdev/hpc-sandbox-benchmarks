@@ -120,6 +120,25 @@ export interface ComparabilityCaveat {
 }
 
 /**
+ * One provider's isolation-technology standing in a Run: what it DECLARES it runs (the authoritative
+ * per-provider fact from the schema registry) alongside what the in-sandbox probe could actually
+ * DETECT ({@link ObservedSpecs.detectedIsolation}). The two are surfaced together so the comparison
+ * discloses which isolation each measured provider used — and `mismatch` flags the rare case where a
+ * detectable signal contradicts the declaration (a bake pointed at the wrong class, say), without ever
+ * letting the unreliable probe override the declared label.
+ */
+export interface ProviderRosterEntry {
+	providerId: string;
+	displayName: string;
+	/** The schema-declared isolation technology (authoritative), or `undefined` for an unknown id. */
+	declaredIsolation: string | undefined;
+	/** The probe's coarse best-effort class ("gvisor"/"container"/"vm"/"unknown"), or `undefined`. */
+	detectedIsolation: string | undefined;
+	/** True only when the probe returned a known class that contradicts the declared technology. */
+	mismatch: boolean;
+}
+
+/**
  * How a benchmark came to produce no result for a provider — the leaderboard's outcome vocabulary.
  * The first two are RECORDED by the producer ({@link GapOutcome}); `missing` is DERIVED here, and is
  * the one a Run cannot state about itself:
@@ -161,6 +180,8 @@ export interface Leaderboard {
 	/** The requested comparison target recorded on this Run — never substituted from global config. */
 	targetSpec: TargetSpec;
 	dimensions: LeaderboardDimension[];
+	/** Every provider measured in this Run with its declared vs detected isolation, in run order. */
+	roster: ProviderRosterEntry[];
 	/** Providers explicitly recorded as failing to match {@link targetSpec}. */
 	comparabilityCaveats: ComparabilityCaveat[];
 	/** Every benchmark that produced no result somewhere, disk gaps first. Empty when coverage is complete. */
@@ -406,6 +427,53 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 	return candidates.map((candidate) => candidate.row);
 }
 
+/**
+ * Collapse a declared isolation technology to the coarse class the probe can speak in: "gvisor",
+ * "container", or "vm" (or `undefined` when it doesn't map). Order matters — Modal's "gVisor
+ * container" contains both "gvisor" and "container", so gVisor is checked first; "microVM" contains
+ * "vm", so VM is checked before the bare container fallback.
+ */
+function isolationClass(declared: string | undefined): "gvisor" | "container" | "vm" | undefined {
+	if (!declared) return undefined;
+	const lower = declared.toLowerCase();
+	if (lower.includes("gvisor")) return "gvisor";
+	if (lower.includes("vm")) return "vm";
+	if (lower.includes("container")) return "container";
+	return undefined;
+}
+
+/**
+ * Build the per-provider isolation roster: declared technology (authoritative) beside the probe's
+ * best-effort detected class. A `mismatch` is flagged only when the probe returned one of the three
+ * recognized classes ("gvisor"/"container"/"vm") that disagrees with the declared one — a detected
+ * "unknown" (the common case) or any unrecognized raw value never counts, so the declaration wins.
+ */
+function buildRoster(run: Run): ProviderRosterEntry[] {
+	return run.providers.map((provider): ProviderRosterEntry => {
+		const meta = getProvider(provider.providerId);
+		const declaredIsolation = meta?.isolation.technology;
+		const detectedIsolation = provider.observedSpecs.detectedIsolation;
+		const declaredClass = isolationClass(declaredIsolation);
+		// Flag a mismatch ONLY for the one contradiction the probe can tell apart reliably: gVisor
+		// (announced in /proc/version) vs a real VM hypervisor (systemd-detect-virt --vm). The probe's
+		// "container" signal is a cgroup-quota heuristic that a microVM (Daytona's LINUX_VM exposes a
+		// bounded vCPU quota) and gVisor both trip — and gVisor *is* a container runtime — so "container"
+		// cannot contradict a declared vm/gvisor without putting a false ⚠ on a correctly-baked provider
+		// (this PR's own run.ts note says a container and a microVM can't be separated). Any other value
+		// ("unknown", or a raw systemd-detect-virt string) never counts either.
+		const mismatch =
+			(declaredClass === "gvisor" && detectedIsolation === "vm") ||
+			(declaredClass === "vm" && detectedIsolation === "gvisor");
+		return {
+			providerId: provider.providerId,
+			displayName: meta?.displayName ?? provider.providerId,
+			declaredIsolation,
+			detectedIsolation,
+			mismatch,
+		};
+	});
+}
+
 /** Build the structured leaderboard from a validated Run. Pure — Run in, ranking out. */
 export function buildLeaderboard(run: Run): Leaderboard {
 	const dimensions: LeaderboardDimension[] = [];
@@ -432,6 +500,7 @@ export function buildLeaderboard(run: Run): Leaderboard {
 		generatedAt: run.generatedAt,
 		targetSpec: run.targetSpec,
 		dimensions,
+		roster: buildRoster(run),
 		comparabilityCaveats: run.providers.flatMap((provider): ComparabilityCaveat[] =>
 			provider.specMatched === false
 				? [
@@ -578,6 +647,44 @@ function formatSpec(spec: TargetSpec | ObservedSpecs): string {
 	return parts.length > 0 ? parts.join(" · ") : "allocation not observable";
 }
 
+/**
+ * The "Providers in this run" section: a table naming each measured provider's isolation technology,
+ * so the comparison discloses WHAT each provider runs — the declared technology (authoritative) beside
+ * the probe's best-effort detected class, with ⚠ where a known detected class contradicts the
+ * declaration. Empty (no lines) when the Run recorded no providers, so an empty run stays clean.
+ */
+function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
+	if (roster.length === 0) return [];
+	const anyMismatch = roster.some((entry) => entry.mismatch);
+	const lines = [
+		"## Providers in this run",
+		"",
+		"Each provider's isolation technology — the **declared** technology is authoritative; **detected**",
+		"is a best-effort in-sandbox probe that cannot separate every isolation type (a container and a",
+		"microVM can both read `kvm`; gVisor and a microVM can both read `unknown`), shown only as a",
+		"cross-check.",
+		"",
+		"| Provider | Isolation (declared) | Detected |",
+		"| --- | --- | --- |",
+	];
+	for (const entry of roster) {
+		// Em-dash (matching `detected`) when the provider isn't in the registry, so an unregistered id
+		// reads distinctly from the probe's "unknown" detection class rather than colliding with it.
+		const declared = entry.declaredIsolation ?? "—";
+		const detected = entry.detectedIsolation ?? "—";
+		const flag = entry.mismatch ? " ⚠" : "";
+		lines.push(`| ${entry.displayName} | ${declared} | ${detected}${flag} |`);
+	}
+	lines.push("");
+	if (anyMismatch) {
+		lines.push(
+			"> **⚠ Isolation mismatch:** a provider's detected isolation contradicts its declared technology — verify its bake/create configuration.",
+			"",
+		);
+	}
+	return lines;
+}
+
 /** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
 export function renderLeaderboardMarkdown(board: Leaderboard): string {
 	// Render the board's OWN target, not the global constant, so the header can never claim the pinned
@@ -612,6 +719,7 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"surfaced through coverage gaps, not part of the compute-match verdict.",
 		"",
 	];
+	lines.push(...rosterSection(board.roster));
 	for (const caveat of board.comparabilityCaveats) {
 		lines.push(
 			`> **Comparability warning:** ${caveat.displayName}'s observed compute did not match the requested CPU/RAM target; its observed allocation was **${formatSpec(caveat.observedSpecs)}**. Its measured ranks are not like-for-like with compute-matched providers.`,

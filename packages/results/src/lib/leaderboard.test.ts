@@ -47,6 +47,61 @@ function run(providers: ProviderRun[]): Run {
 	};
 }
 
+describe("provider isolation roster", () => {
+	const HEADLINE = "node_web_tooling_runs_per_s";
+	const withDetected = (providerId: string, detectedIsolation: string): ProviderRun => ({
+		...provider(providerId, [metric(HEADLINE, [10])]),
+		observedSpecs: { detectedIsolation },
+	});
+
+	it("pairs each provider's declared isolation with the probe's detected class", () => {
+		const board = buildLeaderboard(
+			run([withDetected("daytona-vm", "vm"), withDetected("modal-gvisor", "unknown")]),
+		);
+		expect(board.roster).toEqual([
+			{
+				providerId: "daytona-vm",
+				displayName: "Daytona (VM)",
+				declaredIsolation: "microVM (Linux VM)",
+				detectedIsolation: "vm",
+				mismatch: false,
+			},
+			{
+				providerId: "modal-gvisor",
+				displayName: "Modal (gVisor)",
+				declaredIsolation: "gVisor container",
+				detectedIsolation: "unknown",
+				mismatch: false,
+			},
+		]);
+	});
+
+	it("flags a mismatch only for the reliably-distinguishable gVisor↔VM contradiction", () => {
+		const board = buildLeaderboard(
+			run([
+				// declared gVisor, detected a real VM hypervisor → the one contradiction the probe can tell
+				// apart reliably (/proc/version gVisor token vs systemd-detect-virt --vm)
+				withDetected("modal-gvisor", "vm"),
+				// declared microVM, detected "container" → the cgroup-quota heuristic also fires for a
+				// microVM, so "container" can't contradict the declaration; never a mismatch
+				withDetected("daytona-vm", "container"),
+			]),
+		);
+		expect(board.roster.map((r) => r.mismatch)).toEqual([true, false]);
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain("## Providers in this run");
+		expect(md).toContain("| Modal (gVisor) | gVisor container | vm ⚠ |");
+		expect(md).toContain("Isolation mismatch");
+	});
+
+	it("renders an em-dash and no mismatch banner when no isolation was detected", () => {
+		const board = buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10])])]));
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain("| Daytona (VM) | microVM (Linux VM) | — |");
+		expect(md).not.toContain("Isolation mismatch");
+	});
+});
+
 describe("buildLeaderboard", () => {
 	it("ranks the cpu headline HIB (highest first) and includes only providers with the metric", () => {
 		const board = buildLeaderboard(

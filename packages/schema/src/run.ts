@@ -152,6 +152,13 @@ export const observedSpecsSchema = type({
 	"kernel?": "string",
 	"os?": "string",
 	"virtualization?": "string",
+	// A coarse, best-effort classification of the isolation boundary the in-sandbox probe could
+	// actually see — "gvisor" (kernel marker), "container" (a cgroup-limited quota under a much larger
+	// disclosed host), "vm" (a self-sized machine), or "unknown". Deliberately NOT authoritative:
+	// systemd-detect-virt cannot separate a container from a microVM (both read "kvm") or gVisor from a
+	// microVM (both read "unknown"), so the declared per-provider isolation stays the source of truth
+	// and this is only a cross-check the leaderboard flags when the two disagree.
+	"detectedIsolation?": "string",
 	"user?": "string",
 	// The distinct host CPU models when merged shards of one provider disclosed more than one — the
 	// aggregate-only heterogeneity disclosure (cpuModel is the key; cpuMicroarch is derived from it).

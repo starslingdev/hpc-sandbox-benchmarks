@@ -17,6 +17,7 @@ export {
 	type LeaderboardDimension,
 	type LeaderboardMetric,
 	type LeaderboardRow,
+	type ProviderRosterEntry,
 	renderLeaderboardMarkdown,
 } from "./lib/leaderboard.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
