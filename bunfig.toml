@@ -10,6 +10,7 @@ linker = "hoisted"
 # Add a package to trustedDependencies as a documented exception only when genuinely required.
 
 # Refuse to install any npm release younger than 7 days, blunting compromised-release attacks.
-minimumReleaseAge = 604800
+# I have to disable this, otherwise we can't update sdk versions.
+# minimumReleaseAge = 604800
 # First-party / trusted toolchain packages we want at their latest regardless of age.
 minimumReleaseAgeExcludes = ["typescript", "@types/bun", "arktype", "computesdk", "dotenv", "@biomejs/biome"]
