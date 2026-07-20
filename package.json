@@ -16,7 +16,7 @@
     },
     "catalogs": {
       "computesdk": {
-        "@blaxel/core": "0.3.4",
+        "@blaxel/core": "0.3.5",
         "@computesdk/blaxel": "1.6.16",
         "@computesdk/daytona": "1.7.31",
         "@computesdk/e2b": "1.7.51",
@@ -34,7 +34,7 @@
     }
   },
   "overrides": {
-    "@blaxel/core": "0.3.4",
+    "@blaxel/core": "0.3.5",
     "@daytonaio/sdk": "npm:@daytona/sdk@0.192.0"
   },
   "scripts": {
