@@ -7,8 +7,11 @@
 // where the benchmark's heavy writes land (/var/lib/phoronix-test-suite, per PTS_USER_PATH_OVERRIDE).
 //
 // Ephemeral volumes are lifecycle-bound to the sandbox: nothing to create beforehand or delete after,
-// so unlike a persistent volume there is no provisioning/teardown to patch onto destroy. We only patch
-// create to inject the ephemeral binding, cloning this instance's method table (never the shared one).
+// so unlike a persistent volume there is no provisioning/teardown to patch onto destroy. Blaxel also
+// enters standby after ~15s without an inbound request; a benchmark process does not itself count as
+// activity. Start one native keepAlive process for the sandbox lifetime so synchronous commands,
+// detached commands, and gaps between harness calls all run continuously. We patch only this provider
+// instance's create method, cloning its method table (never the shared one).
 
 import { randomUUID } from "node:crypto";
 import type { SandboxInstance } from "@blaxel/core";
@@ -21,6 +24,7 @@ import type { DirectProvider } from "./types.ts";
 const PTS_DATA_DIR = "/var/lib/phoronix-test-suite";
 const VOLUME_SIZE_MB = TARGET_SPEC.diskGb * 1024;
 const VOLUME_PREFIX = "sbx-bench";
+const KEEPALIVE_PROCESS_NAME = "benchmark-keepalive";
 
 type BlaxelSandboxMethods = SandboxMethods<SandboxInstance, BlaxelConfig>;
 type BlaxelCreate = BlaxelSandboxMethods["create"];
@@ -40,19 +44,35 @@ function patchableManager(provider: DirectProvider): PatchableManager {
 	return manager as PatchableManager;
 }
 
-export function blaxelWithVolume(provider: DirectProvider): DirectProvider {
+export function blaxelWithVolumeAndKeepAlive(provider: DirectProvider): DirectProvider {
 	const manager = patchableManager(provider);
 	const originalCreate = manager.methods.create;
 
 	const create: BlaxelCreate = async (config, options) => {
 		const volumeName = `${VOLUME_PREFIX}-${randomUUID().slice(0, 8)}`;
-		return originalCreate(config, {
+		const created = await originalCreate(config, {
 			...options,
 			volumes: [
 				{ name: volumeName, mountPath: PTS_DATA_DIR, type: "ephemeral", sizeMb: VOLUME_SIZE_MB },
 				...(Array.isArray(options?.volumes) ? options.volumes : []),
 			],
 		} as CreateSandboxOptions);
+
+		try {
+			await created.sandbox.process.exec({
+				name: KEEPALIVE_PROCESS_NAME,
+				command: "sleep infinity",
+				keepAlive: true,
+				timeout: 0,
+			});
+		} catch (err) {
+			// Creation succeeded, but the caller has no handle yet. Delete here or a failed keepalive
+			// launch would leak the sandbox because the harness's normal finally block cannot reach it.
+			await created.sandbox.delete().catch(() => undefined);
+			throw new Error("Failed to start Blaxel benchmark keepalive process", { cause: err });
+		}
+
+		return created;
 	};
 
 	manager.methods = { ...manager.methods, create };

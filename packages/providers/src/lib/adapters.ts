@@ -9,7 +9,7 @@ import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
-import { blaxelWithVolume } from "./blaxel-volume.ts";
+import { blaxelWithVolumeAndKeepAlive } from "./blaxel-volume.ts";
 import { config } from "./config.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { novitaCompute } from "./novita.ts";
@@ -56,12 +56,15 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// couples CPU to RAM (measured: vCPU ≈ memory_MB / 2048) and exposes no cgroup cpu.max, so
 		// memory=8192 yields the target's 8 GiB RAM and 4 vCPU — the target pins vCPU at 4 precisely so
 		// Blaxel's coupled point matches on effective vCPU/memory (specMatched=true), no comparability
-		// caveat. Disk is separate: blaxelWithVolume mounts a 40 GiB volume at
-		// the PTS data dir where the heavy suites write (see blaxel-volume.ts), so it clears the disk
-		// gate like the other runners (not part of the specMatched check). No pre-baked toolchain
-		// snapshot yet — setup steps run fallbacks.
+		// caveat. Disk is separate: blaxelWithVolumeAndKeepAlive mounts a 40 GiB volume at the PTS data
+		// dir where the heavy suites write (see blaxel-volume.ts), so it clears the disk gate like the
+		// other runners (not part of the specMatched check). It also holds one sleeping native process
+		// with keepAlive=true: without an inbound request Blaxel enters standby after ~15s, which would
+		// pause a synchronous benchmark. No pre-baked toolchain snapshot yet — setup steps run fallbacks.
 		createCompute: () =>
-			blaxelWithVolume(blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-was-1" })),
+			blaxelWithVolumeAndKeepAlive(
+				blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-was-1" }),
+			),
 		createOptions: {},
 	},
 	modal: {
