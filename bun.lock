@@ -20,6 +20,8 @@
         "bench-smoke": "./src/bin/bench-smoke.ts",
         "bake": "./src/bin/bake.ts",
         "plan-matrix": "./src/bin/plan-matrix.ts",
+        "plan-providers": "./src/bin/plan-providers.ts",
+        "plan-suites": "./src/bin/plan-suites.ts",
         "build-template": "./src/bin/build-template.ts",
         "normalize": "./src/bin/normalize.ts",
         "aggregate": "./src/bin/aggregate.ts",
@@ -153,6 +155,7 @@
     },
   },
   "overrides": {
+    "@blaxel/core": "0.3.5",
     "@daytonaio/sdk": "npm:@daytona/sdk@0.192.0",
   },
   "catalog": {
@@ -163,7 +166,7 @@
   },
   "catalogs": {
     "computesdk": {
-      "@blaxel/core": "0.2.95",
+      "@blaxel/core": "0.3.5",
       "@computesdk/blaxel": "1.6.16",
       "@computesdk/daytona": "1.7.31",
       "@computesdk/e2b": "1.7.51",
@@ -266,7 +269,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.16", "", { "os": "win32", "cpu": "x64" }, "sha512-Kp85jgoBHa05gix6UIRjfCDiUV3w/8VIdZ247VyyO2gEjaw12WEVhdIjlxp/AMzXxqxQwbxNTDVZ3Mwd2RG5rw=="],
 
-    "@blaxel/core": ["@blaxel/core@0.2.95", "", { "dependencies": { "@hey-api/client-fetch": "^0.10.0", "@modelcontextprotocol/sdk": "^1.20.0", "archiver": "^7.0.1", "axios": "^1.9.0", "dockerfile-ast": "^0.7.1", "dotenv": "^16.5.0", "form-data": "^4.0.2", "jwt-decode": "^4.0.0", "toml": "^3.0.0", "uuid": "^11.1.0", "ws": "^8.18.2", "yaml": "^2.7.1", "zod": "^3.24.3" } }, "sha512-wbwIhqXlgPbyCDY4vZReqk60YLE8C2HKILgag4rG2y5Ag2mEdnM5YS5MZi3Zj9f1z9SuTyrME8DJYCiKRmlqAw=="],
+    "@blaxel/core": ["@blaxel/core@0.3.5", "", { "dependencies": { "@hey-api/client-fetch": "^0.10.0", "@modelcontextprotocol/sdk": "^1.20.0", "archiver": "^7.0.1", "axios": "^1.9.0", "dockerfile-ast": "^0.7.1", "dotenv": "^16.5.0", "form-data": "^4.0.2", "jwt-decode": "^4.0.0", "toml": "^3.0.0", "uuid": "^11.1.0", "ws": "^8.18.2", "yaml": "^2.7.1", "zod": "^3.24.3" } }, "sha512-undBY+3HH8TWrBfYpd3OxshyEjulmPWi+Mrl0VQd2VopaRAkvYDLhwjJISOagZdhRGRUTskwjg2vGTPZQhfrnQ=="],
 
     "@bufbuild/protobuf": ["@bufbuild/protobuf@2.12.0", "", {}, "sha512-B/XlCaFIP8LOwzo+bz5uFzATYokcwCKQcghqnlfwSmM5eX/qTkvDBnDPs+gXtX/RyjxJ4DRikECcPJbyALA8FA=="],
 
