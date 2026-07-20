@@ -189,13 +189,17 @@ export const OBSERVED_SPECS_SCRIPT = [
 	// Best-effort isolation classification — a cross-check on the declared per-provider isolation, never
 	// authoritative (see run.ts observedSpecs.detectedIsolation: the probe cannot separate every type).
 	// gVisor announces itself in /proc/version; a cgroup quota well below the disclosed host means we're
-	// seeing THROUGH a container to a bigger host; a named hypervisor sized to its own host reads as a VM.
+	// seeing THROUGH a container to a bigger host; `systemd-detect-virt --vm` confirms a real hypervisor.
+	// (`--vm` restricts detection to VM technologies — bare `systemd-detect-virt` also reports container
+	// types like docker/lxc/podman, which must NOT read as a VM here; `--quiet` gives just an exit status.)
 	"detected=unknown",
 	"if grep -qi gvisor /proc/version 2>/dev/null; then",
 	"  detected=gvisor",
-	`elif [ -n "$limited" ] && awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
+	// `vcpus` only drops below `host_vcpus` in the cpu.max branch, which is also the only place that
+	// sets `limited` — so `host_vcpus > vcpus` already implies a limit; no separate `[ -n "$limited" ]`.
+	`elif awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
 	"  detected=container",
-	`elif [ "$virt" != unknown ] && [ "$virt" != none ]; then`,
+	"elif systemd-detect-virt --vm --quiet 2>/dev/null; then",
 	"  detected=vm",
 	"fi",
 	"user=$(id -un)",
