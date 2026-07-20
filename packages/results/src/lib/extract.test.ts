@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { extractProviderDir } from "./extract.ts";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 
-const daytonaDir = join(import.meta.dir, "__fixtures__/daytona");
+const daytonaDir = join(import.meta.dir, "__fixtures__/daytona-vm");
 
 describe("extractProviderDir", () => {
-	const extraction = extractProviderDir(daytonaDir, "daytona");
+	const extraction = extractProviderDir(daytonaDir, "daytona-vm");
 
 	it("contributes the catalogued node-web-tooling samples with provenance", () => {
 		expect(extraction.contributions).toEqual([
