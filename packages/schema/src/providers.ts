@@ -135,6 +135,72 @@ export interface ProviderMeta {
  */
 export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const;
 
+// Per-vendor pricing/transport, hoisted to one const per vendor ahead of the isolation-variant
+// fan-out later in this stack (Daytona → VM + container; Modal → gVisor + VM). A vendor bills one
+// way and its `@computesdk/*` adapter execs one way regardless of which isolation a sandbox uses, so
+// hoisting these lets a vendor's variant entries share one const instead of each carrying its own —
+// making it impossible for their rates or transport bounds to drift apart.
+
+/** Daytona's published billing, shared by its isolation variants. */
+const daytonaPricing: ProviderPricing = {
+	model: "per_vcpu_hour",
+	// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
+	usdPerVcpuHour: 0.0504,
+	usdPerGibHour: 0.0162,
+	// First 5 GiB of memory ship free, so only the remainder is billed at the target spec.
+	includedMemoryGb: 5,
+	// $0.00000003/GiB-s × 3600 = $0.000108/GiB-hr (first 5 GiB free).
+	usdPerGibDiskHour: 0.000108,
+	notes:
+		"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s (first 5 GiB memory free). Disk $0.00000003/GiB-s (first 5 GiB free).",
+	sourceUrl: "https://www.daytona.io/pricing",
+};
+
+/** Daytona's exec transport, shared by its isolation variants. */
+const daytonaTransport: ProviderTransport = {
+	// The single-round-trip-capped reference case: the Daytona server returns HTTP 408 on a
+	// multi-minute synchronous `executeCommand` while the process keeps running server-side, and
+	// `@computesdk/daytona` ignores onStdout/onStderr (hardcoding `stderr:""`) — no streaming to
+	// keep the connection productive. See docs/evidence/daytona-exec-transport.md. The exact
+	// server threshold is unmeasured (sub-second probes succeed; multi-minute execs 408), so the
+	// bound is a conservative 60s policy: budget anything longer to the detached+poll path
+	// (`background` via nohup + the pollable filesystem).
+	streaming: false,
+	syncCapMs: 60_000,
+	detachedPoll: true,
+};
+
+/** Modal's published billing, shared by its isolation variants. */
+const modalPricing: ProviderPricing = {
+	model: "per_vcpu_hour",
+	// Sandbox non-preemptible rates. CPU: $0.00003942/requested-cpu-s × 3600 = $0.141912/vCPU-hr —
+	// a requested `cpu` unit delivers one schedulable vCPU (measured; see the harness adapter), so
+	// the docs' "physical core" rate is billed per vCPU-equivalent and gets no ÷2 normalization.
+	// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
+	usdPerVcpuHour: 0.141912,
+	usdPerGibHour: 0.024192,
+	// Volumes: 1 TiB/mo free, then $0.09/GiB/mo. The 40 GB target spec sits inside the free
+	// tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
+	usdPerGibDiskHour: 0,
+	notes:
+		"Sandbox non-preemptible rates (exact): CPU $0.00003942/s per requested cpu unit (observed to deliver 1 schedulable vCPU each, despite the docs calling it a physical core), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
+	sourceUrl: "https://modal.com/pricing",
+};
+
+/** Modal's exec transport, shared by its isolation variants. */
+const modalTransport: ProviderTransport = {
+	// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
+	// separate per-exec timeout. There is no hard server gateway cap, but the exec stdio stream
+	// is not reliable over benchmark-length execs: a ~66-minute better-auth run completed
+	// in-sandbox (manifest exit_code 0) while the harness-side stream died with gRPC INTERNAL
+	// "Failed to read exec stdio stream" (ZEHA3277, 2026-07-10), losing the step result. Cap
+	// synchronous execs at 30 minutes so suite-length steps take the detached+poll path, which
+	// survives a dropped stream; short setup steps keep the cheaper direct exec.
+	streaming: false,
+	syncCapMs: 30 * 60_000,
+	detachedPoll: true,
+};
+
 /**
  * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
  * keys the *behavioural* half of a provider the same way. A keyed Record (rather than an array of
@@ -187,36 +253,13 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			notes:
 				"Snapshot-based images; orgs locked to a dedicated region need their own snapshot (DAYTONA_SNAPSHOT).",
 		},
-		pricing: {
-			model: "per_vcpu_hour",
-			// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
-			usdPerVcpuHour: 0.0504,
-			usdPerGibHour: 0.0162,
-			// First 5 GiB of memory ship free, so only the remainder is billed at the target spec.
-			includedMemoryGb: 5,
-			// $0.00000003/GiB-s × 3600 = $0.000108/GiB-hr (first 5 GiB free).
-			usdPerGibDiskHour: 0.000108,
-			notes:
-				"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s (first 5 GiB memory free). Disk $0.00000003/GiB-s (first 5 GiB free).",
-			sourceUrl: "https://www.daytona.io/pricing",
-		},
+		pricing: daytonaPricing,
 		maturity: {
 			status: "ga",
 			notes: "The validated reference provider for this harness (pre-baked toolchain snapshot).",
 		},
 		specPinning: "settable",
-		transport: {
-			// The single-round-trip-capped reference case: the Daytona server returns HTTP 408 on a
-			// multi-minute synchronous `executeCommand` while the process keeps running server-side, and
-			// `@computesdk/daytona` ignores onStdout/onStderr (hardcoding `stderr:""`) — no streaming to
-			// keep the connection productive. See docs/evidence/daytona-exec-transport.md. The exact
-			// server threshold is unmeasured (sub-second probes succeed; multi-minute execs 408), so the
-			// bound is a conservative 60s policy: budget anything longer to the detached+poll path
-			// (`background` via nohup + the pollable filesystem).
-			streaming: false,
-			syncCapMs: 60_000,
-			detachedPoll: true,
-		},
+		transport: daytonaTransport,
 	},
 	blaxel: {
 		displayName: "Blaxel",
@@ -262,35 +305,10 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			technology: "VM",
 			notes: "VM Sandboxes",
 		},
-		pricing: {
-			model: "per_vcpu_hour",
-			// Sandbox non-preemptible rates. CPU: $0.00003942/requested-cpu-s × 3600 = $0.141912/vCPU-hr —
-			// a requested `cpu` unit delivers one schedulable vCPU (measured; see the harness adapter), so
-			// the docs' "physical core" rate is billed per vCPU-equivalent and gets no ÷2 normalization.
-			// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
-			usdPerVcpuHour: 0.141912,
-			usdPerGibHour: 0.024192,
-			// Volumes: 1 TiB/mo free, then $0.09/GiB/mo. The 40 GB target spec sits inside the free
-			// tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
-			usdPerGibDiskHour: 0,
-			notes:
-				"Sandbox non-preemptible rates (exact): CPU $0.00003942/s per requested cpu unit (observed to deliver 1 schedulable vCPU each, despite the docs calling it a physical core), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
-			sourceUrl: "https://modal.com/pricing",
-		},
+		pricing: modalPricing,
 		maturity: { status: "beta", notes: "VM runtime is beta." },
 		specPinning: "settable",
-		transport: {
-			// `@computesdk/modal` runs `sandbox.exec([...])` and `process.wait()`s the result, with no
-			// separate per-exec timeout. There is no hard server gateway cap, but the exec stdio stream
-			// is not reliable over benchmark-length execs: a ~66-minute better-auth run completed
-			// in-sandbox (manifest exit_code 0) while the harness-side stream died with gRPC INTERNAL
-			// "Failed to read exec stdio stream" (ZEHA3277, 2026-07-10), losing the step result. Cap
-			// synchronous execs at 30 minutes so suite-length steps take the detached+poll path, which
-			// survives a dropped stream; short setup steps keep the cheaper direct exec.
-			streaming: false,
-			syncCapMs: 30 * 60_000,
-			detachedPoll: true,
-		},
+		transport: modalTransport,
 	},
 	novita: {
 		displayName: "Novita",
