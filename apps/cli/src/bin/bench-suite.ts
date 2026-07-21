@@ -285,7 +285,7 @@ if (import.meta.main) {
 			}
 			suiteError = err;
 			logWarning(
-				`Suite "${suite}" threw on ${provider} — will normalize the failed marker into a gap: ${
+				`Suite "${suite}" threw on ${provider} — will normalize any failed marker into a gap: ${
 					err instanceof Error ? err.message : String(err)
 				}`,
 				{ title: cell },
@@ -336,9 +336,18 @@ if (import.meta.main) {
 	const normalized = run;
 
 	if (suiteError) {
-		const detail =
-			`Suite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ` +
-			`${suiteError instanceof Error ? suiteError.message : String(suiteError)}`;
+		const message = suiteError instanceof Error ? suiteError.message : String(suiteError);
+		// Verify before claiming: the harness writes the failed marker, but a throw can predate it (or
+		// the marker can be lost before normalize), leaving this shard's Run EMPTY for the cell. Saying
+		// "recorded as a failed gap" then would launder the loss — the aggregate would show a bare
+		// pending provider while every job log claims the gap exists — so check the normalized Run itself.
+		const gapRecorded = normalized.providers
+			.find((p) => p.providerId === provider)
+			?.gaps.some((g) => g.scope === "suite" && g.id === suite && g.outcome === "failed");
+		const detail = gapRecorded
+			? `Suite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ${message}`
+			: `Suite "${suite}" failed on ${provider} but no gap could be recorded in ${outFile} ` +
+				`(no failed marker survived into the raw tree; this job log is the only trace): ${message}`;
 		await failCell({
 			provider,
 			suite,

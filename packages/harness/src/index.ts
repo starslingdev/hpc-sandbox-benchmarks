@@ -203,38 +203,13 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 	console.log(`\n--- Sandbox suite: ${suiteName} on ${providerName} (${REPO_URL}@${REPO_REF}) ---`);
 
 	const compute = config.createCompute();
-
-	// Concurrent jobs share one provider account; quota/capacity errors mean "no slot right now", not
-	// "broken" — retry patiently so jobs self-serialize as earlier sandboxes are destroyed.
-	const CREATE_RETRY_BUDGET_MS = 60 * MIN;
-	const CREATE_RETRY_DELAY_MS = 2 * MIN;
-	const createDeadline = Date.now() + CREATE_RETRY_BUDGET_MS;
-	let sandbox: SandboxHandle | undefined;
-	for (let attempt = 1; ; attempt++) {
-		try {
-			sandbox = await withTimeout(
-				Promise.resolve(
-					compute.sandbox.create({
-						...config.createOptions,
-						// Ask for a sandbox lifetime covering setup + the suite, where supported.
-						timeout: suite.timeoutMinutes * MIN,
-					}),
-				),
-				5 * MIN,
-				"Sandbox creation timed out",
-			);
-			break;
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			const capacity = /quota|rate.?limit|too many|capacity|429/i.test(message);
-			if (!capacity || Date.now() + CREATE_RETRY_DELAY_MS > createDeadline) throw err;
-			console.log(
-				`Sandbox create attempt ${attempt} hit a capacity limit (${message.slice(0, 140)}); ` +
-					`retrying in ${CREATE_RETRY_DELAY_MS / 1000}s...`,
-			);
-			await new Promise((r) => setTimeout(r, CREATE_RETRY_DELAY_MS));
-		}
-	}
+	const sandbox = await createSuiteSandbox(compute, {
+		suite,
+		suiteName,
+		providerName,
+		resultsDir,
+		createOptions: config.createOptions,
+	});
 
 	await runSuiteOnSandbox(sandbox, {
 		suite,
@@ -243,6 +218,85 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		resultsDir,
 		transport: config.transport,
 	});
+}
+
+/** A provider's pinned create-time options ({@link ProviderConfig.createOptions}), recovered
+ *  structurally so the harness keeps importing only from providers, never computesdk directly. */
+type SandboxCreateOptions = NonNullable<ProviderConfig["createOptions"]>;
+
+/** The create slice of a computesdk provider that {@link createSuiteSandbox} drives — structural
+ *  (like `LifecycleCompute`) so the marker-on-throw contract is testable against a fake compute. */
+export interface SuiteSandboxCompute {
+	sandbox: {
+		create(options?: SandboxCreateOptions): Promise<SandboxHandle>;
+	};
+}
+
+// Concurrent jobs share one provider account; quota/capacity errors mean "no slot right now", not
+// "broken" — retry patiently so jobs self-serialize as earlier sandboxes are destroyed.
+const CREATE_RETRY_BUDGET_MS = 60 * MIN;
+const CREATE_RETRY_DELAY_MS = 2 * MIN;
+
+/** The cell {@link createSuiteSandbox} creates for, plus where a creation failure must be recorded. */
+export interface CreateSuiteSandboxContext {
+	suite: Suite;
+	suiteName: string;
+	providerName: string;
+	/** Host results dir the FAILED marker lands in when creation ultimately throws. */
+	resultsDir: string;
+	/** The provider's pinned create-time options; the suite's lifetime is layered on top. */
+	createOptions?: SandboxCreateOptions;
+}
+
+/**
+ * Create the sandbox a suite will run on, retrying patiently through capacity errors. Any error that
+ * ESCAPES — a non-capacity failure, the per-attempt timeout, or the capacity-retry budget exhausting —
+ * writes a FAILED gap marker before rethrowing: creation failed BEFORE any result could exist, so
+ * without the marker the shard normalizes into an empty Run (no result, no gap) and the published Run
+ * cannot tell "the provider refused a sandbox" from "this cell was never scheduled" (the same contract
+ * as the post-run failure marker in {@link runSuiteOnSandbox}). Capacity errors are unchanged: each
+ * retry stays unmarked, and only the throw that finally spends the budget records the failure. Split
+ * from {@link runSuite} (the runSuiteOnSandbox precedent) so this is testable against a fake compute.
+ */
+export async function createSuiteSandbox(
+	compute: SuiteSandboxCompute,
+	ctx: CreateSuiteSandboxContext,
+): Promise<SandboxHandle> {
+	const { suite, suiteName, providerName, resultsDir, createOptions } = ctx;
+	const createDeadline = Date.now() + CREATE_RETRY_BUDGET_MS;
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await withTimeout(
+				Promise.resolve(
+					compute.sandbox.create({
+						...createOptions,
+						// Ask for a sandbox lifetime covering setup + the suite, where supported.
+						timeout: suite.timeoutMinutes * MIN,
+					}),
+				),
+				5 * MIN,
+				"Sandbox creation timed out",
+			);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			const capacity = /quota|rate.?limit|too many|capacity|429/i.test(message);
+			if (!capacity || Date.now() + CREATE_RETRY_DELAY_MS > createDeadline) {
+				writeGapMarker(
+					resultsDir,
+					providerName,
+					suiteName,
+					"failed",
+					`Failed to create sandbox: ${message}`,
+				);
+				throw err;
+			}
+			console.log(
+				`Sandbox create attempt ${attempt} hit a capacity limit (${message.slice(0, 140)}); ` +
+					`retrying in ${CREATE_RETRY_DELAY_MS / 1000}s...`,
+			);
+			await new Promise((r) => setTimeout(r, CREATE_RETRY_DELAY_MS));
+		}
+	}
 }
 
 /** The already-resolved context {@link runSuiteOnSandbox} runs against. */
