@@ -127,7 +127,9 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
    would violate the posture above AND would not reach the matrix-call path (repository secrets are
    not passed to a called workflow without `secrets: inherit`; environment secrets resolve from the
    commit job's own `environment:` declaration on both entry points). Note the expiry date when
-   creating it — an expired PAT degrades to the loud `GITHUB_TOKEN` failure in item 6.
+   creating it — and calendar the rotation: an expired/revoked PAT does NOT fall back (the workflow's
+   `||` only engages when the secret is UNSET/empty; a set-but-dead PAT is still selected and
+   `gh pr create` fails with an authentication error). Rotate or delete the secret before expiry.
 
 5. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
    the candidate base anonymously (Org → Packages → package settings).
@@ -135,8 +137,11 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
 
    - **Path A (recommended): add `DATASET_PR_TOKEN`** per the table in item 4. Works regardless of
      the Actions toggle below, and the PAT-authored PR triggers `ci.yml` so reviewers see green
-     checks. Calendar-remind on the PAT's expiry: an expired PAT degrades to the loud fallback
-     failure below, whose error message says to check expiry.
+     checks. Calendar-remind on the PAT's expiry and rotate BEFORE it lapses: an expired/revoked
+     PAT remains a non-empty secret, so the workflow still selects it (the `||` fallback engages
+     only when the secret is unset/empty) and `gh pr create` fails with an authentication error —
+     the error message names this case. Deleting the dead secret restores the `GITHUB_TOKEN`
+     fallback (and with it the Path B requirement).
    - **Path B: enable Settings → Actions → General → Workflow permissions → "Allow GitHub Actions
      to create and approve pull requests"** (currently off: `can_approve_pull_request_reviews=false`;
      if the repo checkbox is greyed out, the org-level toggle forces it and only an org admin can
