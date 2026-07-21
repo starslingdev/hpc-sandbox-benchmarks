@@ -4,12 +4,14 @@
 rules:
   artipacked:
     ignore:
-      # commit-dataset.yml's `commit` job is the one checkout that must keep its persisted job token:
-      # it commits the promoted dataset and `git push`es it back to the branch (the job grants
-      # `contents: write` for exactly this). Every other checkout in the repo sets
-      # persist-credentials: false; this one can't, by design. (Filename-scoped, not repo-wide — this
-      # reusable workflow's only checkout is the pushing one, so just its finding is accepted.)
+      # commit-dataset.yml's `commit` job and update-leaderboard.yml's `leaderboard` job are the two
+      # checkouts that must keep their persisted job token: each commits its output (the promoted dataset
+      # / the regenerated leaderboard) and `git push`es it back to the branch (both grant `contents: write`
+      # for exactly this). Every other checkout in the repo sets persist-credentials: false; these can't,
+      # by design. (Filename-scoped, not repo-wide — each of these workflows' only checkout is its pushing
+      # one, so just their findings are accepted.)
       - commit-dataset.yml
+      - update-leaderboard.yml
   secrets-inherit:
     ignore:
       # bench-matrix.yml's suite-matrix job calls the reusable bench-suite.yml with `secrets: inherit`.

@@ -119,7 +119,7 @@ jobs:
 
   # Collect every shard Run, aggregate into one candidate, gate it (promote), and commit the machine-
   # readable dataset onto main. This job only commits the dataset JSON — regenerating the public
-  # LEADERBOARD.md is a deliberate, separate step, so a matrix run
+  # LEADERBOARD.md is a deliberate, separate step (the Update leaderboard workflow), so a matrix run
   # grows the dataset without churning the comparison surface. The logic lives in the reusable
   # commit-dataset.yml so a maintainer can also run it standalone (workflow_dispatch) to backfill a run
   # whose commit failed. Environment `privileged` (the dataset release surface, `contents: write`) is

@@ -15,7 +15,7 @@
 - `normalize` — turn raw runs into normalized run documents.
 - `aggregate` — merge shard Runs into one candidate.
 - `promote` — promote normalized results to the published dataset. Used by the `commit-dataset` workflow.
-- `leaderboard` — render a committed Run as Markdown (`LEADERBOARD.md`) on demand.
+- `leaderboard` — render a Run as Markdown (`LEADERBOARD.md`); used by the `update-leaderboard` workflow.
 - `bake` / `bench-smoke` / `stability` — toolchain bake, single-cell smoke, cross-run stability gate.
 
 **Depends on:** all five packages (`workspace:*`) + `dotenv` (`catalog:`).

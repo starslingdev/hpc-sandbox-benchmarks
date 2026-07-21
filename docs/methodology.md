@@ -102,9 +102,11 @@ without being Daytona-specific.
    economics re-derived from the merged set), then `promote`s it (gate: ≥1 validated provider) into the
    committed dataset at `data/dataset/` with a newest-first index, and opens a PR to land it on `main`.
    This step commits only the machine-readable dataset — it never touches `LEADERBOARD.md`.
-4. **Leaderboard** — `leaderboard` renders a chosen committed Run into a ranked Markdown table per
-   dimension. Updating `LEADERBOARD.md` is a deliberate operation, so the dataset can grow a run per
-   matrix run without moving the public comparison surface automatically.
+4. **Leaderboard** — the `update-leaderboard` workflow renders a chosen committed Run into a ranked
+   Markdown table per dimension (`leaderboard`) and opens a PR to update `LEADERBOARD.md`. It is a
+   deliberate, maintainer-dispatched step (default: the newest committed run), so the dataset can grow a
+   run per matrix run while the public comparison surface only moves when someone updates it. See
+   [CI & secrets](./ci-secrets.md) rule 7.
 5. **Stability gate** — `stability <prev> <cur>` flags any provider metric that shifted beyond the noise
    threshold across Runs, comparing only provenance-matched (same `appVersion` + `arguments`) metrics.
 

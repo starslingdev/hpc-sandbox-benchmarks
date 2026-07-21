@@ -15,6 +15,7 @@ and toolchain publish must not trigger on `push`.
 | `toolchain-image.yml` | `publish` | Provider bake secrets + `packages: write` (GHCR release) |
 | `bench-suite.yml` | `bench` | Provider API keys (reusable fan-out `bench-matrix.yml`'s suite-matrix job calls) |
 | `commit-dataset.yml` | `commit` | Dataset JSON commit (`contents: write` + `pull-requests: write`) |
+| `update-leaderboard.yml` | `leaderboard` | Public `LEADERBOARD.md` commit (`contents: write` + `pull-requests: write`) |
 | `bench-smoke.yml` | `smoke` | Provider API keys |
 
 Two of these are reusable workflows whose `privileged` gate lives on their own job, because a `uses:`
@@ -27,8 +28,11 @@ local caller):
   `secrets: inherit` for repository-level secrets / token context.
 - `commit-dataset.yml` commits the machine-readable dataset: `bench-matrix.yml`'s `publish` job calls it
   at the end of a matrix run, and a maintainer can dispatch it standalone to backfill (see rule 6). It
-  lands `data/dataset/` only, so the dataset can accumulate a run per matrix run without moving the
-  published comparison surface.
+  lands `data/dataset/` only — the public `LEADERBOARD.md` is regenerated separately (see rule 7), so the
+  dataset can accumulate a run per matrix run without moving the published comparison surface.
+- `update-leaderboard.yml` regenerates `LEADERBOARD.md` from a committed dataset run. It is
+  maintainer-dispatched (never called by the matrix), so the published table only moves on a deliberate
+  action — see rule 7.
 
 Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no secrets).
 
@@ -53,7 +57,8 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    Biome gate on the generated dataset (`biome check data/dataset`, the same rules ci.yml runs) —
    Biome formats JSON, so an unformatted Run document would fail the PR — and aborts before opening a
    doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the existing open PR instead of
-   colliding on the deterministic branch.
+   colliding on the deterministic branch. `update-leaderboard.yml` lands `LEADERBOARD.md` the same way
+   (a `leaderboard/update-<run-id>` PR, Biome-preflighted, auto-merge armed).
 
    > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
    > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI check
@@ -72,6 +77,18 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    required reviewer), so it is effectively maintainer-only. (`workflow_dispatch` is only offered for the
    copy of the workflow on the default branch, so `commit-dataset.yml` must be merged to `main` before
    it can be dispatched.)
+
+7. **Updating the public leaderboard.** `LEADERBOARD.md` is regenerated separately from the dataset
+   commit, on a deliberate maintainer action: **Actions → Update leaderboard → Run workflow** — or
+   `scripts/update-leaderboard.sh [run-id]` from a gh-authenticated clone. Leave `run_id` blank to render
+   from the newest committed dataset run (the first entry in `data/dataset/index.json`), or pass an
+   explicit run id to point the table at a specific run. The
+   workflow renders `LEADERBOARD.md` from `data/dataset/runs/<run-id>.json` — the **committed** dataset,
+   never the gitignored `data/runs/` scratch tree (what the `leaderboard-artifact-sync` gate enforces) —
+   so the run must already be committed (via a bench-matrix run or rule 6) before the leaderboard can
+   name it. It then opens the lint-gated `leaderboard/update-<run-id>` PR (rule 5). Because the render is
+   deterministic, the resulting `LEADERBOARD.md` is exactly what `leaderboard-artifact-sync` expects, so
+   the PR's own CI stays green.
 
 > **Two approval gates per bench-matrix run.** The suite-matrix fan-out (each cell calling
 > `bench-suite.yml` with `environment: privileged`) and the `publish` job both carry the environment
@@ -105,10 +122,11 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
 5. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
    the candidate base anonymously (Org → Packages → package settings).
 6. Enable **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create
-   and approve pull requests"**. The `gh pr create` in `commit-dataset.yml` fails outright without it
-   (`GraphQL: GitHub Actions is not permitted to create or approve pull requests`) — the job pushes its
-   `dataset/publish-<run-id>` branch and then dies, so every matrix run's commit step needs a maintainer
-   to open the PR by hand until this is on.
+   and approve pull requests"**. The `gh pr create` in `commit-dataset.yml` and `update-leaderboard.yml`
+   fails outright without it (`GraphQL: GitHub Actions is not permitted to create or approve pull
+   requests`) — the job pushes its branch (`dataset/publish-<run-id>` / `leaderboard/update-<run-id>`)
+   and then dies, so every matrix run's commit step needs a maintainer to open the PR by hand until this
+   is on.
 
 Optional bootstrap (creates the empty environment; reviewers/secrets still need a human):
 

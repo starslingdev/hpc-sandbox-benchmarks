@@ -1,0 +1,159 @@
+name: Update leaderboard
+
+# Regenerate the public LEADERBOARD.md from an ALREADY-COMMITTED dataset run and land it on main via a
+# pull request. This is the deliberate, human-facing half of the old publish-dataset.yml: commit-dataset.yml
+# accumulates one machine-readable Run per matrix run under data/dataset/ automatically, and a maintainer
+# runs THIS workflow to point the comparison surface at a chosen dataset run (by default the newest one).
+# Splitting it out means the dataset can grow without churning LEADERBOARD.md, and the published table
+# only ever moves on a deliberate action.
+#
+# The Run must already be in the committed dataset (data/dataset/runs/<id>.json) — this workflow renders
+# from the published dataset, never from shard artifacts or the gitignored data/runs/ scratch tree (the
+# same source the leaderboard-artifact-sync gate enforces). If the run isn't committed yet, run the
+# Commit dataset workflow (or let a bench-matrix run commit it) first.
+#
+# Dispatch-only: a maintainer regenerates the leaderboard, optionally naming the run id. It is
+# deliberately NOT a reusable (`workflow_call`) workflow — the matrix never regenerates the leaderboard,
+# and a `workflow_call` entry point would evaluate the main-only `if:` below in the CALLER's ref context,
+# so a caller on a non-main ref would hit a silent job-skip. Keeping it dispatch-only removes that
+# footgun; the dispatcher always picks the ref (main), and Environment `privileged` gates it regardless.
+#
+# Environment `privileged` lives on the job here (the release surface, `contents: write`) so the approval
+# gate is enforced at this layer.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Committed dataset run id to render LEADERBOARD.md from (blank = newest committed run).'
+        required: false
+        type: string
+        default: ''
+
+# Least privilege at the top level; the update job elevates for exactly what it needs.
+permissions:
+  contents: read
+
+# One global group serializes all leaderboard updates so two dispatches can't race the same branch/push.
+# Unlike commit-dataset, this group is NOT keyed on run_id: run_id is optional and a blank dispatch
+# resolves to the newest committed run INSIDE the job, so a blank and an explicit-newest-id dispatch would
+# fall into different run_id-keyed groups yet target the same leaderboard/update-<id> branch — a race the
+# global group prevents. A pending update evicted by a newer one is harmless here: leaderboard renders are
+# idempotent and this workflow is maintainer-dispatched (low frequency), so the newer run supersedes it.
+concurrency:
+  group: update-leaderboard
+  cancel-in-progress: false
+
+jobs:
+  leaderboard:
+    name: Regenerate leaderboard
+    # Confine the release to this repo's main. (Environment `privileged`'s deployment-branch policy pins
+    # it to main too; this is defense in depth.)
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
+    runs-on: ubuntu-24.04
+    environment: privileged
+    # contents: write to commit + push the leaderboard branch; pull-requests: write to open the PR. No
+    # actions: read here — the leaderboard renders from the committed dataset, not from run artifacts.
+    permissions:
+      contents: write
+      pull-requests: write
+    # The dispatch input reaches the shell only through the environment, never interpolated into a
+    # `run:` command.
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+    steps:
+      # This job commits + `git push`es LEADERBOARD.md, so it keeps the default persisted job token
+      # (contents: write above authorizes it). Don't add persist-credentials: false here or the push at
+      # the end of the job loses its credentials.
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # Resolve which committed run to render: the explicit input when given, else the newest entry in
+      # the newest-first data/dataset/index.json. Fail loudly if the chosen run isn't in the committed
+      # dataset — the leaderboard must be rendered from data/dataset/runs/ (what promote writes), never
+      # from the gitignored data/runs/ scratch tree, which is exactly what leaderboard-artifact-sync
+      # guards. The resolved id is exported for the later steps (an env var, never interpolated as YAML).
+      - name: Resolve target run
+        run: |
+          # Resolve through the committed index so an explicit input can only ever name a run that exists
+          # in data/dataset/index.json with its canonical runs/<id>.json path — never a crafted value that
+          # path-traverses out of data/dataset/runs/. Blank RUN_ID → newest (first) index entry.
+          # String concatenation (no `${...}` template literals) keeps this single-quoted so the shell
+          # never expands it, without tripping shellcheck SC2016 (which flags ${...} inside single quotes).
+          target="$(bun -e 'const i = await Bun.file("data/dataset/index.json").json(); const requested = process.env.RUN_ID; const run = requested ? i.runs?.find((r) => String(r.runId) === requested) : i.runs?.[0]; if (!run || run.runId === undefined || run.runId === null || String(run.runId) === "") { console.error(requested ? "run " + requested + " is not in data/dataset/index.json" : "data/dataset/index.json lists no runs"); process.exit(1); } if (run.path !== "runs/" + run.runId + ".json") { console.error("index entry for " + run.runId + " has unexpected path " + run.path); process.exit(1); } process.stdout.write(String(run.runId));')"
+          if [ -z "$target" ]; then echo "could not resolve a target run id" >&2; exit 1; fi
+          if [ ! -f "data/dataset/runs/$target.json" ]; then
+            echo "::error::data/dataset/runs/$target.json is not committed — the leaderboard renders from the" \
+              "published dataset. Commit the run first (Commit dataset workflow, or a bench-matrix run)." >&2
+            exit 1
+          fi
+          echo "TARGET_RUN_ID=$target" >> "$GITHUB_ENV"
+
+      # Keep LEADERBOARD.md byte-identical to what the renderer produces from the chosen committed Run —
+      # the same command the leaderboard-artifact-sync gate names in its failure message.
+      - name: Regenerate leaderboard
+        run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$TARGET_RUN_ID.json" LEADERBOARD.md
+
+      # Fast pre-flight of the same gate the PR runs (`biome check .`), scoped to the file this job
+      # writes. Biome leaves the rendered Markdown untouched, so this catches only a genuine formatting
+      # regression; fail here (before any PR is opened) rather than leave a doomed PR.
+      - name: Confirm the leaderboard passes Biome (the PR lint gate)
+        run: bunx biome check LEADERBOARD.md --error-on-warnings
+
+      # main is protected by a "changes must be made through a pull request" ruleset, so this job can't
+      # push LEADERBOARD.md straight to main — a direct push is rejected with GH013. Commit through a
+      # short-lived branch + pull request and enable GitHub-native auto-merge (`--auto`): the PR merges
+      # itself only once branch protection is satisfied — required status checks green and any required
+      # reviews in. `--auto` waits for those rules, it does not bypass them. If auto-merge can't be armed
+      # (e.g. the repo hasn't enabled it), the PR stays open for a maintainer to merge normally.
+      - name: Update the leaderboard via pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add LEADERBOARD.md
+          if git diff --cached --quiet; then
+            echo "LEADERBOARD.md already reflects run $TARGET_RUN_ID; nothing to commit"
+            exit 0
+          fi
+          branch="leaderboard/update-${TARGET_RUN_ID}"
+          # Always (re)build the bot branch from the freshly rendered content and force-push FIRST, so a
+          # re-dispatch refreshes an already-open PR rather than leaving it stale (e.g. if the renderer or
+          # committed dataset changed since it was opened). `-C` resets the local branch to this run's HEAD;
+          # `--force` overwrites the bot-owned remote branch (a no-op when the content is unchanged).
+          git switch -C "$branch"
+          git commit -m "chore(leaderboard): update from run ${TARGET_RUN_ID}"
+          git push -u --force origin "$branch"
+          # Open the PR only if one isn't already open for this deterministic branch; a re-dispatch reuses
+          # it (the force-push above already refreshed its content). `gh pr create` fails outright (GraphQL
+          # "GitHub Actions is not permitted to create or approve pull requests") when the repo's Settings →
+          # Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull
+          # requests" toggle is off — see docs/ci-secrets.md. The branch is already pushed at that point, so
+          # surface the fix instead of a bare GraphQL error before failing the job.
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            if ! gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore(leaderboard): update from run ${TARGET_RUN_ID}" \
+              --body "Automated LEADERBOARD.md regeneration from committed dataset run \`${TARGET_RUN_ID}\`. Biome was pre-flighted green; auto-merge lands it once branch protection is satisfied."; then
+              echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
+                "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
+                "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
+                "A maintainer must either enable it and re-dispatch this workflow with run_id=$TARGET_RUN_ID," \
+                "or open the PR for '$branch' manually. See docs/ci-secrets.md."
+              exit 1
+            fi
+          fi
+          # (Re-)arm GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
+          # required reviews land), never bypassing branch protection. Best-effort — if the repo hasn't
+          # enabled auto-merge, leave the PR open for a maintainer.
+          gh pr merge "$branch" --squash --delete-branch --auto \
+            || echo "auto-merge not armed; leaderboard PR left open for a maintainer to merge"

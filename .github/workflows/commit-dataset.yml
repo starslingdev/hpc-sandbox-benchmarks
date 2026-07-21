@@ -3,7 +3,7 @@ name: Commit dataset
 # Aggregate a Bench matrix run's per-cell shards into one candidate, gate it (promote), and commit the
 # promoted dataset JSON onto main. This is the purely-mechanical half of the old publish-dataset.yml:
 # it lands data/dataset/ (the machine-readable Run + newest-first index) and nothing human-facing — the
-# public LEADERBOARD.md is regenerated deliberately as a separate operation, so the dataset can
+# public LEADERBOARD.md is regenerated deliberately by update-leaderboard.yml, so the dataset can
 # accumulate one committed run per matrix run without churning the comparison surface every time.
 #
 # Two entry points:
@@ -164,7 +164,7 @@ jobs:
               --base main \
               --head "$branch" \
               --title "chore(dataset): commit run ${RUN_ID}" \
-              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied. The public LEADERBOARD.md is regenerated separately."; then
+              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied. The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
                 "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
                 "requests' setting being off (Settings → Actions → General → Workflow permissions)." \

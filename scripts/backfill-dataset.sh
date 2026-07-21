@@ -71,4 +71,4 @@ echo "  gh run list --repo ${REPO} --workflow ${WORKFLOW}"
 echo "On success it opens (or re-arms) the dataset/publish-${RUN_ID} pull request. If run ${RUN_ID} is"
 echo "already committed, the job is a clean no-op ('dataset unchanged; nothing to commit')."
 echo
-echo "The public LEADERBOARD.md is updated separately from a committed dataset run."
+echo "The public LEADERBOARD.md is updated separately — see scripts/update-leaderboard.sh."
