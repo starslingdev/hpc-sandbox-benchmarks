@@ -174,6 +174,19 @@ describe("resultSamples", () => {
 		expect(result && resultSamples(result)).toEqual([]);
 	});
 
+	it("uses a later measured Entry when PTS preserves an empty leading Entry", () => {
+		const xml = `<?xml version="1.0"?>
+<PhoronixTestSuite><Result>
+  <Identifier>pts/x-1.0</Identifier><Title>X</Title><Scale>Seconds</Scale><Proportion>LIB</Proportion>
+  <Data>
+    <Entry><Value></Value><RawString></RawString></Entry>
+    <Entry><Value>4.2</Value><RawString>4.1:4.3</RawString></Entry>
+  </Data>
+</Result></PhoronixTestSuite>`;
+		const result = parsePtsComposite(xml).PhoronixTestSuite.Result[0];
+		expect(result && resultSamples(result)).toEqual([4.1, 4.3]);
+	});
+
 	it("returns no samples for an entry-less result (nothing to aggregate)", () => {
 		// The schema permits Data.Entry: [] (`.array()`); resultSamples reports it honestly as []
 		// rather than fabricating a value, so the extractor can skip the measurement-less result.

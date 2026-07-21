@@ -42,12 +42,13 @@ export function versionlessTest(identifier: string): string {
  * The per-pass samples behind a Result's headline value, falling back to the single reported value
  * when PTS emitted no per-pass samples. `RawString` is already a validated `number[]` (parsed at the
  * schema edge, pts-schema.ts) — a malformed token threw in `parsePtsComposite`, so nothing is
- * silently dropped here. One `<Entry>` per run (the harness writes one), so this reads the first.
- * `[]` when the option's every pass failed (`Value` undefined, pts-schema.ts) — no measurement, not
- * an error.
+ * silently dropped here. The harness normally writes one `<Entry>`, but PTS may preserve an empty
+ * entry before a later measured one; use the first entry that actually carries a value so that shape
+ * is not misclassified as an all-passes failure. `[]` when every entry is empty (`Value` undefined,
+ * pts-schema.ts) — no measurement, not an error.
  */
 export function resultSamples(result: PtsResult): number[] {
-	const entry = result.Data.Entry[0];
+	const entry = result.Data.Entry.find((candidate) => candidate.Value !== undefined);
 	if (!entry || entry.Value === undefined) return [];
 	return entry.RawString && entry.RawString.length > 0 ? entry.RawString : [entry.Value];
 }
