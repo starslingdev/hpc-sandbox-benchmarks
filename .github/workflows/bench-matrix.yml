@@ -117,21 +117,27 @@ jobs:
       suite: ${{ matrix.suite }}
     secrets: inherit
 
-  # Collect every shard Run, aggregate into one candidate, gate it (promote), regenerate the public
-  # leaderboard, and open the PR that lands both on main. The logic lives in the reusable
-  # publish-dataset.yml so a maintainer can also run it standalone (workflow_dispatch) to backfill a
-  # run whose publish failed. Environment `privileged` (the dataset release surface, `contents: write`)
-  # is declared inside that reusable workflow — a `uses:` caller can't set `environment:` itself.
+  # Collect every shard Run, aggregate into one candidate, gate it (promote), and commit the machine-
+  # readable dataset onto main. This job only commits the dataset JSON — regenerating the public
+  # LEADERBOARD.md is a deliberate, separate step, so a matrix run
+  # grows the dataset without churning the comparison surface. The logic lives in the reusable
+  # commit-dataset.yml so a maintainer can also run it standalone (workflow_dispatch) to backfill a run
+  # whose commit failed. Environment `privileged` (the dataset release surface, `contents: write`) is
+  # declared inside that reusable workflow — a `uses:` caller can't set `environment:` itself.
+  #
+  # The job id stays `publish` because the workflow-registry-sync nesting gate asserts `publish` needs
+  # the suite-matrix caller (so aggregation waits for every cell); the display name reflects what it now
+  # does.
   publish:
-    name: Aggregate + promote dataset
+    name: Commit dataset
     needs:
       - plan
       - suite
     # Run even if some suite matrix cells failed (fail-fast is off) so the successful shards still
-    # publish: `aggregate` exits non-zero when zero shards are found and `promote` gates on >=1
+    # commit: `aggregate` exits non-zero when zero shards are found and `promote` gates on >=1
     # validated provider, so the quality bar is preserved. `!cancelled()` still lets an explicit cancel
     # stop it. `!cancelled()` opts out of the implicit success() gate, so require `plan` explicitly: a
-    # skipped or failed plan means there is no provider axis, so there is nothing to publish.
+    # skipped or failed plan means there is no provider axis, so there is nothing to commit.
     if: >
       !cancelled() &&
       needs.plan.result == 'success' &&
@@ -143,6 +149,6 @@ jobs:
       contents: write
       pull-requests: write
       actions: read
-    uses: ./.github/workflows/publish-dataset.yml
+    uses: ./.github/workflows/commit-dataset.yml
     with:
       run_id: ${{ github.run_id }}

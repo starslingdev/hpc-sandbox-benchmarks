@@ -7,7 +7,7 @@ name: Benchmark suite (reusable)
 # keeps that block in ONE place instead of copy-pasted into every suite job, mirroring
 # runner-benchmarking's reusable bench-suite.yml.
 #
-# The artifact name (bench-<suite>-<provider>-<run_id>) is load-bearing: publish-dataset.yml downloads
+# The artifact name (bench-<suite>-<provider>-<run_id>) is load-bearing: commit-dataset.yml downloads
 # the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep.
 #
 # Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md) lives on

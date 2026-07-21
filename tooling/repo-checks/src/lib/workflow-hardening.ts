@@ -32,10 +32,10 @@ export const PRIVILEGED_ENVIRONMENT = "privileged";
 /** Checkout steps that intentionally keep the persisted job token, keyed "<file>::<jobId>", with the
  *  reason they push. Every other `actions/checkout` must set persist-credentials: false. */
 export const CREDENTIALED_CHECKOUTS: Readonly<Record<string, string>> = {
-	// publish-dataset.yml's publish job commits the promoted dataset and `git push`es it back to the
+	// commit-dataset.yml's commit job aggregates + promotes the dataset and `git push`es it back to the
 	// branch (it grants `contents: write` for exactly this), so it must keep the persisted token. It is
 	// the reusable workflow bench-matrix.yml's publish job calls, and a maintainer dispatches to backfill.
-	"publish-dataset.yml::publish": "commits + pushes the promoted dataset back to the branch",
+	"commit-dataset.yml::commit": "commits + pushes the promoted dataset back to the branch",
 };
 
 /** Built-in / non-environment tokens that may appear as `${{ secrets.* }}` without requiring the
