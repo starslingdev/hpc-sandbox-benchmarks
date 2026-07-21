@@ -32,10 +32,20 @@ export interface AttemptedEmptyResult {
 	sourceFile: string;
 }
 
+/** A PTS Result that was present in a composite but did not match any catalog Metric. */
+export interface UnmappedPtsResult {
+	test: string;
+	description: string;
+	scale: string;
+	sourceFile: string;
+}
+
 /** Everything one provider directory yields: catalogued samples, stragglers, and gap markers. */
 export interface ProviderExtraction {
 	contributions: SampleContribution[];
 	uncatalogued: UncataloguedResult[];
+	/** Internal evidence that a Result existed even when it carried no publishable measurement. */
+	unmappedPts: UnmappedPtsResult[];
 	/** Suite-scoped gaps read from `*--skipped.json` / `*--failed.json` markers. */
 	gaps: ResultGap[];
 	/**
@@ -70,6 +80,7 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 	const out: ProviderExtraction = {
 		contributions: [],
 		uncatalogued: [],
+		unmappedPts: [],
 		gaps: [],
 		attemptedEmpty: [],
 	};
@@ -93,6 +104,16 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 			}
 			for (const result of composite.PhoronixTestSuite.Result) {
 				const mapped = ptsResultToMetric(result);
+				if (mapped.kind === "uncatalogued") {
+					// Keep existence evidence even when the Result is empty. Consumers that infer a Result
+					// was omitted must distinguish true absence from a present-but-unmapped Result.
+					out.unmappedPts.push({
+						test: mapped.test,
+						description: mapped.description,
+						scale: mapped.scale,
+						sourceFile: filename,
+					});
+				}
 				// A <Result> with no measured <Entry>, or one whose every pass failed (empty <Value> — pts-schema.ts
 				// treats that as "no measurement", not a parse error; fio's all-failed shape additionally
 				// empties <Proportion> and <Scale>, tolerated the same way), carries no sample to aggregate

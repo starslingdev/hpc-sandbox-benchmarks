@@ -272,6 +272,30 @@ function streamComposite(entries: Array<[type: string, value: string]>): string 
 	return `<?xml version="1.0"?>\n<PhoronixTestSuite>\n${results}\n</PhoronixTestSuite>`;
 }
 
+// The catalogued twin-pair base for fio seq-read 1MB O_DIRECT (suffixes _mb_per_s/_iops complete it).
+const SEQ_READ_DIRECT_YES =
+	"fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory";
+
+// A fio composite for that scenario: twin Results share one <Description> and differ only in
+// <Scale> — the caller passes whichever twins PTS actually wrote (its duplicate-value dedup drops
+// a twin ENTIRELY when the numeric values collide, so a one-entry composite is the real artifact).
+function fioSeqReadComposite(entries: Array<[scale: string, value: string]>): string {
+	const description =
+		"Type: Sequential Read - Engine: Linux AIO - Direct: Yes - Block Size: 1MB - Job Count: 1 - Disk Target: Default Test Directory";
+	const results = entries
+		.map(
+			([scale, value]) => `  <Result>
+    <Identifier>pts/fio-2.1.0</Identifier>
+    <Title>Flexible IO Tester</Title>
+    <Description>${description}</Description>
+    <Scale>${scale}</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value>${value}</Value></Entry></Data>
+  </Result>`,
+		)
+		.join("\n");
+	return `<?xml version="1.0"?>\n<PhoronixTestSuite>\n${results}\n</PhoronixTestSuite>`;
+}
+
 // An all-trials-failed node-web-tooling composite: the Result is present but carries no value.
 // An all-trials-failed pybench composite (system suite's second leaf in the leaf-dedupe tests).
 const emptyPybenchComposite = `<?xml version="1.0"?>
@@ -598,6 +622,221 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				outcome: "failed",
 				reason:
 					"PTS ran but every trial failed for 1 of 3 declared metrics: pybench_milliseconds (system/pts_pybench.xml) — attempted, no value recorded",
+			},
+		]);
+	});
+
+	it("DROPPED TWIN: one fio twin present, its pair absent ENTIRELY -> gap naming the dropped twin", () => {
+		// PTS's result-parser drops a <Result> whose numeric values duplicate an earlier result's —
+		// with 1MB blocks MB/s == IOPS, so the MB/s twin is ABSENT (not empty) and attemptedEmpty
+		// never sees it. The surviving IOPS twin is the evidence the scenario ran (keep+warn: it
+		// stays ranked, disk stays covered, the loss is named).
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_fio-seq-read.xml"), fioSeqReadComposite([["IOPS", "11650"]]));
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.suitesCovered).toEqual(["disk"]);
+		expect(run.metrics.map((m) => m.metricId)).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "failed",
+				reason: `PTS duplicate-value dedup dropped 1 fio twin result (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${SEQ_READ_DIRECT_YES}_mb_per_s (twin survived in disk/pts_fio-seq-read.xml)`,
+			},
+		]);
+	});
+
+	it("BOTH TWINS PRESENT: rounding-distinct MB/s and IOPS both survive -> no twin gap", () => {
+		// The counter-case from the same real run: modal-vm seq-read posted 1731 vs 1729 — equality
+		// is a per-run coin flip, and a full pair must never gap.
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_fio-seq-read.xml"),
+			fioSeqReadComposite([
+				["MB/s", "1731"],
+				["IOPS", "1729"],
+			]),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		const ids = run.metrics.map((m) => m.metricId);
+		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_mb_per_s`);
+		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
+		expect(run.gaps).toEqual([]);
+	});
+
+	it("UNMAPPED SIBLING: a written Result that misses the catalog is not called a dropped twin", () => {
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_fio-seq-read.xml"),
+			fioSeqReadComposite([
+				["IOPS", "11650"],
+				["Megabytes/s", "11650"],
+			]),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.metrics.map((m) => m.metricId)).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
+		expect(run.uncatalogued).toHaveLength(1);
+		expect(run.gaps).toEqual([]);
+	});
+
+	it("FLAT RESCUE: a legacy flat measurement suppresses a suite-local twin candidate", () => {
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_fio-seq-read.xml"), fioSeqReadComposite([["IOPS", "11650"]]));
+		writeFileSync(
+			join(providerDir, "pts_fio-seq-read.xml"),
+			fioSeqReadComposite([["MB/s", "11650"]]),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		const ids = run.metrics.map((m) => m.metricId);
+		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_mb_per_s`);
+		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
+		expect(run.gaps).toEqual([]);
+	});
+
+	it("BOTH TWINS ABSENT: an un-probed scenario stays gap-free (the probe-subset rule)", () => {
+		// disk covered via hardlink alone; every fio pair has BOTH members absent — the direct_no
+		// variants are legitimately never probed, and a pair with no survivor carries no evidence.
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_hardlink.xml"),
+			`<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>local/hardlink-1.0.0</Identifier>
+    <Title>Hardlink Throughput</Title>
+    <Scale>bogo ops/s</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value>2.62</Value></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`,
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.suitesCovered).toEqual(["disk"]);
+		expect(run.gaps).toEqual([]);
+	});
+
+	it("4KB SIBLING ABSENT: no twin gap — MB/s and IOPS cannot collide at 4KB", () => {
+		// PTS's duplicate-value drop needs numeric equality, which only 1MB blocks produce (1 op ==
+		// 1 MB). A missing 4KB sibling is some other pathology; labeling it "duplicate-value dedup"
+		// would publish a false explanation, so 4KB pairs are excluded from twin detection.
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_fio-rand-read.xml"),
+			`<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/fio-2.1.0</Identifier>
+    <Title>Flexible IO Tester</Title>
+    <Description>Type: Random Read - Engine: Linux AIO - Direct: Yes - Block Size: 4KB - Job Count: 1 - Disk Target: Default Test Directory</Description>
+    <Scale>IOPS</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value>11650</Value></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`,
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.suitesCovered).toEqual(["disk"]);
+		expect(run.gaps).toEqual([]);
+	});
+
+	it("TWIN GAP SUPPRESSED: an existing suite-scope failed gap wins over the twin gap (no doubling)", () => {
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_fio-seq-read.xml"), fioSeqReadComposite([["IOPS", "11650"]]));
+		writeFileSync(
+			join(suiteDir, "sandbox-daytona-vm-disk--failed.json"),
+			harnessGapMarkerJson("daytona-vm", "disk", "failed", "fio timed out mid-suite"),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{ scope: "suite", id: "disk", outcome: "failed", reason: "fio timed out mid-suite" },
+		]);
+	});
+
+	it("DIFFERENT LEAF FAILURE: its folded marker coexists with a seq-read twin loss", () => {
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_fio-seq-read.xml"), fioSeqReadComposite([["IOPS", "11650"]]));
+		writeFileSync(
+			join(suiteDir, "pts_fio-rand-read--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_fio-rand-read","reason":"random read failed"}\n',
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "failed",
+				reason: "pts_fio-rand-read: random read failed",
+			},
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "failed",
+				reason: `PTS duplicate-value dedup dropped 1 fio twin result (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${SEQ_READ_DIRECT_YES}_mb_per_s (twin survived in disk/pts_fio-seq-read.xml)`,
+			},
+		]);
+	});
+
+	it("CONTAMINATED FILENAME: a rand-read marker cannot hide a seq-read twin loss", () => {
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		// PTS can leak a Result under another leaf's result name. The seq-read metric identity must win
+		// over this rand-read filename when deciding whether the rand-read marker owns the loss.
+		writeFileSync(
+			join(suiteDir, "pts_fio-rand-read.xml"),
+			fioSeqReadComposite([["IOPS", "11650"]]),
+		);
+		writeFileSync(
+			join(suiteDir, "pts_fio-rand-read--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_fio-rand-read","reason":"random read failed"}\n',
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "failed",
+				reason: "pts_fio-rand-read: random read failed",
+			},
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "failed",
+				reason: `PTS duplicate-value dedup dropped 1 fio twin result (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${SEQ_READ_DIRECT_YES}_mb_per_s (twin survived in disk/pts_fio-rand-read.xml)`,
+			},
+		]);
+	});
+
+	it("SAME LEAF FAILURE: its folded marker suppresses the duplicate twin-loss gap", () => {
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_fio-seq-read.xml"), fioSeqReadComposite([["IOPS", "11650"]]));
+		writeFileSync(
+			join(suiteDir, "pts_fio-seq-read--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_fio-seq-read","reason":"sequential read failed"}\n',
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "failed",
+				reason: "pts_fio-seq-read: sequential read failed",
 			},
 		]);
 	});

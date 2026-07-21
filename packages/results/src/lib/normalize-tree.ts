@@ -137,6 +137,50 @@ export function shortfallReason(suite: string, missing: readonly AttemptedEmptyR
 	return `PTS ran but every trial failed for ${missing.length} of ${declared} declared metrics: ${list} — attempted, no value recorded`;
 }
 
+/** A catalogued fio twin whose <Result> PTS omitted entirely; sourceFile carries the SURVIVING twin. */
+export interface DroppedTwinResult {
+	metricId: string;
+	sourceFile: string;
+}
+
+/**
+ * The single owner of the dropped-twin gap wording: a fio MB/s↔IOPS twin whose <Result> PTS's
+ * result-parser silently dropped because its numeric values duplicated the surviving twin's
+ * (MB/s == IOPS at this block size). Byte-deterministic — sorted ids, stable filenames — for the
+ * same aggregate (scope, id, outcome, reason) dedupe reason as shortfallReason above.
+ */
+export function twinDropReason(dropped: readonly DroppedTwinResult[]): string {
+	const list = dropped.map((d) => `${d.metricId} (twin survived in ${d.sourceFile})`).join(", ");
+	return `PTS duplicate-value dedup dropped ${dropped.length} fio twin result${dropped.length === 1 ? "" : "s"} (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${list}`;
+}
+
+const TWIN_SUFFIXES = ["_mb_per_s", "_iops"] as const;
+/**
+ * PTS's duplicate-value drop requires the twins to be numerically EQUAL, which is structural only at
+ * a 1MB block size (1 op == 1 MB, so MB/s == IOPS). At 4KB the two scales differ by 256x and can
+ * never collide, so an absent 4KB sibling is some other pathology — inferring "duplicate-value
+ * dedup" there would publish a false explanation.
+ */
+const TWIN_EQUALITY_MARKER = "_block_size_1mb_";
+
+/**
+ * fio twin pairs among a suite's declared metrics: two ids identical up to the _mb_per_s/_iops
+ * suffix (one scenario+direct-mode measured on two scales), restricted to the 1MB block size where
+ * the two scales are numerically equal and PTS's duplicate-value drop can actually fire. Derived
+ * from the declaration — never a hardcoded pair list — so catalog changes (new scenarios, retired
+ * probes) keep the check in sync. Sorted for a byte-stable gap reason.
+ */
+function twinPairs(declared: ReadonlySet<string>): Array<readonly [string, string]> {
+	const [mbSuffix, iopsSuffix] = TWIN_SUFFIXES;
+	const pairs: Array<readonly [string, string]> = [];
+	for (const id of [...declared].sort((a, b) => a.localeCompare(b, "en"))) {
+		if (!id.endsWith(mbSuffix) || !id.includes(TWIN_EQUALITY_MARKER)) continue;
+		const iops = `${id.slice(0, -mbSuffix.length)}${iopsSuffix}`;
+		if (declared.has(iops)) pairs.push([id, iops]);
+	}
+	return pairs;
+}
+
 /** Parse a JSON file, returning undefined (never throwing) when it's absent or malformed. */
 function readJsonFile(path: string): unknown {
 	try {
@@ -217,6 +261,10 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// leaf's entries — one leaf's recorded failure must not hide a DIFFERENT leaf's silent loss.
 	const foldedFailedLeaves = new Map<string, Set<string>>();
 	const harnessFailedSuites = new Set<string>();
+	// Per-suite dropped-twin candidates: declared fio twins whose <Result> is ABSENT (not empty)
+	// while the other member of the pair produced a value — PTS's duplicate-value dedup signature.
+	// Collected here, emitted as at most ONE suite gap after the loop, same as the shortfalls.
+	const suiteTwinDrops = new Map<string, DroppedTwinResult[]>();
 
 	for (const suite of suiteDirs) {
 		const ext = extractProviderDir(join(dir, suite), providerId);
@@ -281,6 +329,33 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 			suiteShortfalls.set(
 				suite,
 				[...missingById.values()].sort((a, b) => a.metricId.localeCompare(b.metricId, "en")),
+			);
+		}
+		// Dropped-twin evidence: PTS's result-parser drops a <Result> whose numeric values duplicate an
+		// earlier result's, and with 1MB blocks a fio scenario's MB/s equals its IOPS — so one twin
+		// vanishes ENTIRELY (absent, not empty) and the attempted-and-empty evidence above never sees
+		// it. The surviving twin IS the proof the scenario ran: exactly one member with a value, the
+		// other with neither a value nor an empty Result, means dropped — not un-probed. BOTH twins
+		// absent stays gap-free: that scenario was legitimately never run (the probe-subset rule).
+		const attempted = new Set(ext.attemptedEmpty.map((e) => e.metricId));
+		const dropped: DroppedTwinResult[] = [];
+		for (const pair of twinPairs(declared)) {
+			for (const [survivor, missing] of [pair, [pair[1], pair[0]]] as const) {
+				if (!produced.has(survivor) || produced.has(missing) || attempted.has(missing)) continue;
+				const source = ext.contributions.find((c) => c.metricId === survivor);
+				// `produced` implies a contribution exists; the guard keeps this pass total (never throw).
+				if (!source) continue;
+				// A Result that failed catalog mapping is PRESENT, not a PTS duplicate-value omission. Be
+				// conservative at the composite boundary: any unmapped Result beside the survivor makes the
+				// exact cause ambiguous, so do not publish the stronger dedup explanation.
+				if (ext.unmappedPts.some((result) => result.sourceFile === source.sourceFile)) continue;
+				dropped.push({ metricId: missing, sourceFile: `${suite}/${source.sourceFile}` });
+			}
+		}
+		if (dropped.length > 0) {
+			suiteTwinDrops.set(
+				suite,
+				dropped.sort((a, b) => a.metricId.localeCompare(b.metricId, "en")),
 			);
 		}
 	}
@@ -363,6 +438,33 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 			id: suite,
 			outcome: "failed",
 			reason: shortfallReason(suite, missing),
+		});
+	}
+
+	// Dropped-twin gaps: same shape as the shortfall above, but the lost <Result> is ABSENT rather
+	// than empty, so it needs its own evidence (the surviving twin, collected per suite above). Same
+	// suppression rules mirror shortfalls: a harness whole-suite failure mutes the suite, while a
+	// folded leaf failure mutes only candidates from that same leaf. A different leaf's marker or
+	// shortfall remains independent. Legacy flat-layout measurements also rescue a candidate because
+	// the supposedly missing metric is present in the published output. This pass only pushes gaps.
+	for (const suite of suiteDirs) {
+		const collected = suiteTwinDrops.get(suite);
+		if (!collected || harnessFailedSuites.has(suite)) continue;
+		const mutedLeaves = foldedFailedLeaves.get(suite);
+		const dropped = collected.filter((candidate) => {
+			if (producedAnywhere.has(candidate.metricId)) return false;
+			if (!mutedLeaves) return true;
+			// Use the missing twin's catalogued test/scenario identity, not the survivor composite's
+			// filename: result-name contamination can put a sequential Result in a random-read file, and
+			// that misleading filename must not let the random-read marker hide a sequential twin loss.
+			return ![...mutedLeaves].some((leaf) => leafOwnsMetric(leaf, candidate.metricId));
+		});
+		if (dropped.length === 0) continue;
+		gaps.push({
+			scope: "suite",
+			id: suite,
+			outcome: "failed",
+			reason: twinDropReason(dropped),
 		});
 	}
 
