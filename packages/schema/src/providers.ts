@@ -135,10 +135,14 @@ export interface ProviderMeta {
  * `resources.disk`); Modal has no disk knob but its gVisor root reports effectively unbounded disk,
  * so it clears the gate anyway. Blaxel's sandbox root is a RAM-derived tmpfs with no independent disk
  * knob, so it mounts a 40 GiB volume at the PTS data dir where the heavy suites write (see
- * packages/providers/src/lib/blaxel-volume.ts) — clearing the gate like the others. Only e2b/novita
- * still CANNOT express disk (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`):
- * they run with actuals recorded and the heavy suites skip there, surfaced as an explicit coverage gap
- * in the leaderboard, never silently dropped.
+ * packages/providers/src/lib/blaxel-volume.ts) — clearing the gate like the others. Novita has no
+ * disk knob either, but its control plane provisions ~100 GB by default (observed 103.5 GiB, run
+ * 29799034615), so ALL suites run there. e2b is the sole provider below the realworld floors: its
+ * sandbox disk = baked image size (~4 GiB) + the team's tier storage allowance (E2B Pro: 20 GiB
+ * included), and no template/create-time disk parameter exists anywhere (verified across @e2b/cli
+ * 2.13.3, e2b.toml, the API's TemplateBuildRequestV3, NewSandbox, and @computesdk/e2b) — the
+ * allowance is raiseable only via support@e2b.dev. Until that raise lands, mastra/openclaw skip on
+ * e2b with a recorded disk-capacity gap in the leaderboard (keep+warn), never silently dropped.
  */
 export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const;
 
@@ -235,7 +239,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			usdPerVcpuHour: 0.0504,
 			usdPerGibHour: 0.0162,
 			notes:
-				"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s. Storage 10 GiB included (20 on Pro); no published overage rate.",
+				"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s. Storage: 10 GiB included on Hobby, 20 GiB on Pro; larger allowances via support@e2b.dev (no published overage rate — record the quoted rate here if E2B provides one).",
 			sourceUrl: "https://e2b.dev/pricing",
 		},
 		maturity: { status: "ga", notes: "Custom images via e2b template build." },

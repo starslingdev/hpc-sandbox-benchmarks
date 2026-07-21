@@ -87,10 +87,16 @@ export async function bakeE2bTemplate(name: string, baseImage: string, log: Log)
 			E2B_CONTEXT,
 			"--dockerfile",
 			E2B_DOCKERFILE_GENERATED,
-			// No --disk-size-mb: @e2b/cli template create exposes only --cpu-count/--memory-mb (checked on
-			// the pinned 2.12.0), so e2b/novita disk is platform-fixed and can't be raised to
-			// TARGET_SPEC.diskGb the way Daytona's snapshot resources.disk is. The heavy realworld suites
-			// that need the disk therefore skip on e2b/novita — surfaced as a leaderboard coverage gap.
+			// No disk flag: E2B exposes no disk input anywhere — not on @e2b/cli 2.13.3 (latest as of
+			// 2026-07; its only diskSizeMB occurrence is a read-only `template list` column), not in the
+			// REST API's TemplateBuildRequestV3 (e2b SDK 2.27.1 — diskSizeMB is response-only), not at
+			// sandbox create (NewSandbox). Sandbox disk = image size + the team's tier storage allowance
+			// (E2B Pro includes 20 GiB), raiseable only via support@e2b.dev — so e2b alone sits below the
+			// realworld suite floors (novita's platform default, ~100 GB observed, clears every floor).
+			// After an E2B-side allowance change, re-dispatch toolchain-image.yml so the rebuilt template
+			// picks it up (the API records diskSizeMB per template build), then verify free disk >= 30 GiB
+			// via a bench-smoke e2b dispatch. If E2B ever ships a disk flag, pass TARGET_SPEC.diskGb * 1024
+			// here and mirror the field in pins.ts e2bToml().
 			"--cpu-count",
 			String(config.targetSpec.vcpus),
 			"--memory-mb",

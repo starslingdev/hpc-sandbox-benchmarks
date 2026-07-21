@@ -61,11 +61,11 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    (a `leaderboard/update-<run-id>` PR, Biome-preflighted, auto-merge armed).
 
    > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
-   > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI check
-   > is a *required* status, auto-merge waits for a check that never runs, and a maintainer completes
-   > the merge (their merge to `main` runs `ci.yml` normally); the in-job pre-flight guarantees the
-   > content is already clean. For fully hands-off auto-merge, open the PR with a GitHub App
-   > installation token or PAT instead of `GITHUB_TOKEN` so the PR's own checks run.
+   > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). The dataset commit step
+   > therefore prefers the optional `DATASET_PR_TOKEN` environment secret (a fine-grained PAT — operator
+   > setup items 4 and 6), falling back to `GITHUB_TOKEN`. The PAT-authored PR triggers its own checks;
+   > with the fallback, a maintainer completes the merge and that merge to `main` runs `ci.yml` normally.
+   > The in-job Biome pre-flight guarantees the dataset content is already clean either way.
 6. **Backfilling a failed dataset commit.** The commit logic is the reusable `commit-dataset.yml`, so
    when a matrix run's dataset commit fails (or was never reached) a maintainer can re-run it standalone:
    **Actions → Commit dataset → Run workflow**, passing the original run's id — or, from a
@@ -118,15 +118,44 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
    | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
    | `BL_API_KEY` | bench matrix/smoke only |
    | `BL_WORKSPACE` | bench matrix/smoke only |
+   | `DATASET_PR_TOKEN` | optional; dataset commit only (fine-grained PAT — see below and item 6) |
+
+   `DATASET_PR_TOKEN` is a fine-grained PAT — machine-account owned preferred — scoped to
+   `starslingdev/hpc-sandbox-benchmarks` with **Contents: read/write** and **Pull requests:
+   read/write**; `commit-dataset.yml`'s `gh pr list`/`create`/`merge` calls prefer it, falling back to
+   `GITHUB_TOKEN`. It MUST be an **environment** secret on `privileged`: a repository-level copy
+   would violate the posture above AND would not reach the matrix-call path (repository secrets are
+   not passed to a called workflow without `secrets: inherit`; environment secrets resolve from the
+   commit job's own `environment:` declaration on both entry points). Note the expiry date when
+   creating it — an expired PAT degrades to the loud `GITHUB_TOKEN` failure in item 6.
 
 5. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
    the candidate base anonymously (Org → Packages → package settings).
-6. Enable **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create
-   and approve pull requests"**. The `gh pr create` in `commit-dataset.yml` and `update-leaderboard.yml`
-   fails outright without it (`GraphQL: GitHub Actions is not permitted to create or approve pull
-   requests`) — the job pushes its branch (`dataset/publish-<run-id>` / `leaderboard/update-<run-id>`)
-   and then dies, so every matrix run's commit step needs a maintainer to open the PR by hand until this
-   is on.
+6. Give `commit-dataset.yml`'s `gh pr create` a token that may open PRs — one of:
+
+   - **Path A (recommended): add `DATASET_PR_TOKEN`** per the table in item 4. Works regardless of
+     the Actions toggle below, and the PAT-authored PR triggers `ci.yml` so reviewers see green
+     checks. Calendar-remind on the PAT's expiry: an expired PAT degrades to the loud fallback
+     failure below, whose error message says to check expiry.
+   - **Path B: enable Settings → Actions → General → Workflow permissions → "Allow GitHub Actions
+     to create and approve pull requests"** (currently off: `can_approve_pull_request_reviews=false`;
+     if the repo checkbox is greyed out, the org-level toggle forces it and only an org admin can
+     flip it — the org state was not readable with repo credentials). Strictly worse than Path A:
+     a `GITHUB_TOKEN`-opened PR never triggers `ci.yml` (rule 5 caveat), so reviewers see a
+     check-less PR.
+
+   With neither in place, `gh pr create` fails outright (`GraphQL: GitHub Actions is not permitted
+   to create or approve pull requests`): the dataset job pushes the `dataset/publish-<run-id>` branch,
+   then fails loudly with the remediation steps, and a maintainer must open the PR by hand.
+   `update-leaderboard.yml` still uses `GITHUB_TOKEN`, so its separate
+   `leaderboard/update-<run-id>` PR requires Path B or a manual open.
+
+   Current end state either way (so expectations are honest): repo "Allow auto-merge" is **off**
+   (`allow_auto_merge=false`), so `gh pr merge --auto` falls to its best-effort "PR left open for a
+   maintainer" echo; and `main`'s ruleset ("Require PR approval on main") has NO required status
+   checks — its gates are one approving review (repository-admin bypass: always) plus linear
+   history. So after the PAT fix the dataset PR opens automatically and an admin completes the
+   merge in one click; that human step is the designed second gate, not a bug.
 
 Optional bootstrap (creates the empty environment; reviewers/secrets still need a human):
 
