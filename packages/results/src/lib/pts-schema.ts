@@ -32,7 +32,9 @@ const sampleList = type("string").pipe((raw, ctx) => {
 // every pass of a `<Result>` fails (a real command erroring — expected for realworld CI tasks, not
 // just synthetic PTS microbenchmarks), PTS still emits the `<Result>` but with an empty `<Value>`
 // rather than omitting it. Treated as "no measurement" (undefined), not a parse failure, so one failed
-// option can't throw away every other `<Result>` in the same composite.xml.
+// option can't throw away every other `<Result>` in the same composite.xml. A profile whose Scale and
+// direction come only from the parser level (pts/fio) writes empty `<Scale>`/`<Proportion>` alongside
+// that empty `<Value>` — tolerated the same way (see `ptsResult`'s Proportion union + narrow).
 const numericParse = type("string.numeric.parse");
 const entryValue = type("string").pipe((raw, ctx) => {
 	if (raw.trim() === "") return undefined;
@@ -58,9 +60,21 @@ const ptsResult = type({
 	// Sub-result label; disambiguates multi-result tests when mapping onto the Catalog.
 	"Description?": "string",
 	Scale: "string",
-	Proportion: directionSchema,
+	// "" appears when every pass of a test errored: PTS never runs the result parser, so a profile
+	// whose direction comes only from parser-level <ResultProportion> (pts/fio — no profile-level
+	// <Proportion>) writes <Proportion></Proportion> (and an empty <Scale> alongside). Legal ONLY on
+	// a no-measurement Result (narrow below); any other non-HIB/LIB value is rejected by the union.
+	Proportion: directionSchema.or("''"),
 	Data: { Entry: ptsEntry.array() },
-});
+}).narrow(
+	(result, ctx) =>
+		result.Proportion !== "" ||
+		result.Data.Entry.every((entry) => entry.Value === undefined) ||
+		ctx.reject({
+			path: ["Proportion"],
+			expected: '"HIB" or "LIB" on a Result that carries a measured <Value>',
+		}),
+);
 
 /** Provenance from the `<Generated>` header — which PTS client wrote the file, and when. */
 const ptsGenerated = type({

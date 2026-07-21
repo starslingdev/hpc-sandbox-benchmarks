@@ -1,0 +1,5 @@
+{
+  "outcome": "failed",
+  "benchmark": "pts_fio-rand-read",
+  "reason": "PTS batch-run of pts/fio-2.1.0 completed but every trial errored (composite carries no values)"
+}

@@ -59,6 +59,27 @@ describe("extractProviderDir", () => {
 		]);
 	});
 
+	it("survives the real fio all-failed bytes: no throw, no results, one recorded failed gap", () => {
+		// The exact shape that crashed disk/modal-gvisor in run 29799034615: a composite whose ONE
+		// Result carries empty <Scale>/<Proportion>/<Value> plus the bench.sh fail_result marker the
+		// producer now writes beside it. The composite must parse (schema tolerance), the empty Result
+		// must be dropped (never a 0-valued straggler), and the marker must surface as a failed gap.
+		// NOTE: the gap id is the LEAF name at this layer — normalize-tree folds it into the suite.
+		const dir = join(import.meta.dir, "__fixtures__/fio-all-failed");
+		const extraction = extractProviderDir(dir, "modal-gvisor");
+		expect(extraction.contributions).toEqual([]);
+		expect(extraction.uncatalogued).toEqual([]);
+		expect(extraction.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "pts_fio-rand-read",
+				outcome: "failed",
+				reason:
+					"PTS batch-run of pts/fio-2.1.0 completed but every trial errored (composite carries no values)",
+			},
+		]);
+	});
+
 	it("extracts every realworld task from a real end-to-end smoke composite.xml, none uncatalogued", () => {
 		// Captured from a real Docker run of the actual install.sh + realworld-runner.sh + mise task
 		// (packages/results/src/lib/__fixtures__/realworld-smoke/ -- see its header comment for

@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite v10.8.4-->
+<!--
+  REAL output recorded 2026-07-21, GH run 29799034615, modal-gvisor disk suite - the fully-failed
+  shape that crashed normalization: every trial of the batch-run errored (the baked fio binary dies
+  instantly under gVisor's reduced ISA), so PTS never ran the result parser and wrote empty
+  <Scale>/<Proportion>/<Value>/<RawString> with the error in the Entry JSON. pts/fio has no
+  profile-level <Proportion> (its direction lives in parser-level <ResultProportion>), which is why
+  the empty Proportion appears here and not in the equally-failed stream shape. The <System> block
+  was removed (recording-host identity, not result data); the <Result> is verbatim.
+-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>benchmark-pts-fio-rand-read</Title>
+    <LastModified>2026-07-21 03:40:21</LastModified>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+    <Description>container-other testing on Debian GNU/Linux 13 via the Phoronix Test Suite.</Description>
+  </Generated>
+  <Result>
+    <Identifier>pts/fio-2.1.0</Identifier>
+    <Title>Flexible IO Tester</Title>
+    <AppVersion>3.36</AppVersion>
+    <Arguments>randread libaio 1 4k 1</Arguments>
+    <Description>Type: Random Read - Engine: Linux AIO - Direct: Yes - Block Size: 4KB - Job Count: 1 - Disk Target: Default Test Directory</Description>
+    <Scale></Scale>
+    <Proportion></Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value></Value>
+        <RawString></RawString>
+        <JSON>{"compiler-options":{"compiler-type":"CC","compiler":"gcc","compiler-options":"-rdynamic -lz -lm -laio -lpthread -ldl -std=gnu99 -ffast-math -include -O3 -fcommon -march=native"},"test-run-times":"0.03:0.03","error":"The test quit with a non-zero exit status. The test quit with a non-zero exit status."}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

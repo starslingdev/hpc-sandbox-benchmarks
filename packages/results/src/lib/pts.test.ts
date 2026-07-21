@@ -76,6 +76,61 @@ describe("parsePtsComposite", () => {
 		expect(result?.Data.Entry[0]?.Value).toBeUndefined();
 	});
 
+	it("tolerates fio's fully-failed shape (empty Proportion AND Scale on a valueless Result)", () => {
+		// pts/fio has no profile-level <Proportion> (its direction lives in parser-level
+		// <ResultProportion>, applied only when a value is parsed), so a fully-failed run writes
+		// <Proportion></Proportion> and <Scale></Scale> beside the empty <Value>. The composite must
+		// still parse — this exact shape crashed disk/modal-gvisor's normalization (run 29799034615) —
+		// and the valued sibling Result must survive untouched.
+		const xml = `<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier><Title>OK</Title>
+    <Scale>runs/s</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value>20.5</Value></Entry></Data>
+  </Result>
+  <Result>
+    <Identifier>pts/fio-2.1.0</Identifier><Title>Flexible IO Tester</Title>
+    <Scale></Scale><Proportion></Proportion>
+    <Data><Entry><Value></Value><RawString></RawString></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`;
+		const results = parsePtsComposite(xml).PhoronixTestSuite.Result;
+		expect(results[0]?.Data.Entry[0]?.Value).toBe(20.5);
+		expect(results[1]?.Proportion).toBe("");
+		expect(results[1]?.Data.Entry[0]?.Value).toBeUndefined();
+	});
+
+	it("rejects a valued Result with an empty Proportion", () => {
+		// The tolerance is scoped to no-measurement Results only: a real value with no direction cannot
+		// be ranked, so it must fail loudly rather than parse into an undirected measurement.
+		const xml = `<?xml version="1.0"?>
+<PhoronixTestSuite><Result>
+  <Identifier>pts/x-1.0</Identifier><Title>X</Title><Scale>Seconds</Scale><Proportion></Proportion>
+  <Data><Entry><Value>4.2</Value></Entry></Data>
+</Result></PhoronixTestSuite>`;
+		expect(() => parsePtsComposite(xml)).toThrow(/invalid PTS composite\.xml/);
+		expect(() => parsePtsComposite(xml)).toThrow(/Proportion/);
+	});
+
+	it("rejects a garbage Proportion regardless of values", () => {
+		const xml = `<?xml version="1.0"?>
+<PhoronixTestSuite><Result>
+  <Identifier>pts/x-1.0</Identifier><Title>X</Title><Scale></Scale><Proportion>FOO</Proportion>
+  <Data><Entry><Value></Value></Entry></Data>
+</Result></PhoronixTestSuite>`;
+		expect(() => parsePtsComposite(xml)).toThrow(/invalid PTS composite\.xml/);
+	});
+
+	it("rejects an empty Proportion when ANY entry carries a measured value (mixed entries)", () => {
+		const xml = `<?xml version="1.0"?>
+<PhoronixTestSuite><Result>
+  <Identifier>pts/x-1.0</Identifier><Title>X</Title><Scale>runs/s</Scale><Proportion></Proportion>
+  <Data><Entry><Value>5</Value></Entry><Entry><Value></Value></Entry></Data>
+</Result></PhoronixTestSuite>`;
+		expect(() => parsePtsComposite(xml)).toThrow(/Proportion/);
+	});
+
 	it("rejects a malformed RawString sample token at the schema boundary", () => {
 		// A non-numeric per-pass token fails the schema's sampleList morph, so the whole composite is
 		// rejected loudly here rather than the bad token silently vanishing during aggregation.

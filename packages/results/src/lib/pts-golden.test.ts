@@ -80,6 +80,9 @@ describe("golden composite byte-match (design §3.7)", () => {
 			// Surface the offending test+description (not just a count) so a byte-mismatch points straight
 			// at the synthesized id that drifted from the recorded <Description>.
 			const uncatalogued = results.flatMap((result) => {
+				// A fully-failed Result never ran the result parser, so it carries no parser-produced
+				// Scale/Description to byte-match — the extractor skips it (extract.ts) and so does this gate.
+				if (result.Data.Entry.every((e) => e.Value === undefined)) return [];
 				const mapping = ptsResultToMetric(result);
 				return mapping.kind === "uncatalogued"
 					? [`${mapping.test} | "${mapping.description}"`]
@@ -129,6 +132,9 @@ describe("recorded fio fixtures pin the DECLARED disk-suite subset", () => {
 		expect(fioComposites.length).toBeGreaterThan(0);
 		const offenders = fioComposites.flatMap(([name, xml]) =>
 			parsePtsComposite(xml).PhoronixTestSuite.Result.flatMap((result) => {
+				// A fully-failed Result never ran the result parser, so it carries no parser-produced
+				// Scale/Description to byte-match — the extractor skips it (extract.ts) and so does this gate.
+				if (result.Data.Entry.every((e) => e.Value === undefined)) return [];
 				const mapping = ptsResultToMetric(result);
 				if (mapping.kind !== "matched") return [`${name}: uncatalogued "${result.Description}"`];
 				return declared.has(mapping.def.id) ? [] : [`${name}: undeclared ${mapping.def.id}`];

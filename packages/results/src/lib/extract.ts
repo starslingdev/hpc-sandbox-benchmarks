@@ -68,9 +68,10 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 			}
 			for (const result of composite.PhoronixTestSuite.Result) {
 				// A <Result> with no <Entry>, or one whose every pass failed (empty <Value> — pts-schema.ts
-				// treats that as "no measurement", not a parse error), carries no sample to aggregate and no
-				// headline value to report. Skip it rather than emit a zero-sample contribution (which would
-				// throw in the normalizer's aggregate([])) or fabricate a 0-valued straggler.
+				// treats that as "no measurement", not a parse error; fio's all-failed shape additionally
+				// empties <Proportion> and <Scale>, tolerated the same way), carries no sample to aggregate
+				// and no headline value to report. Skip it rather than emit a zero-sample contribution
+				// (which would throw in the normalizer's aggregate([])) or fabricate a 0-valued straggler.
 				const headEntry = result.Data.Entry[0];
 				if (!headEntry || headEntry.Value === undefined) continue;
 				const mapped = ptsResultToMetric(result);
@@ -97,7 +98,10 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 							// entry-less results above.
 							value: headEntry.Value,
 							unit: result.Scale,
-							direction: result.Proportion,
+							// The schema narrow makes a valued Result with an empty Proportion unrepresentable;
+							// this guard exists only to convince the type system and degrades to an omitted
+							// (optional) direction if that invariant ever regresses.
+							...(result.Proportion !== "" ? { direction: result.Proportion } : {}),
 							sourceFile: filename,
 						});
 						break;
