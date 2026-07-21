@@ -97,11 +97,14 @@ without being Daytona-specific.
    reusable `bench-suite` workflow per suite (GitHub-native nesting: `<suite> / <provider>`), fanning
    out over the providers `plan-providers` selects; every (provider, suite) cell uploads its shard Run
    as an artifact.
-3. **Aggregate → promote** — the `publish` job collects every shard, `aggregate`s them into one
-   candidate Run (measured metrics unioned, economics re-derived from the merged set), then `promote`s
-   it (gate: ≥1 validated provider) into the committed dataset at `data/dataset/` with a newest-first
-   index.
-4. **Leaderboard** — `leaderboard` renders the published Run into a ranked Markdown table per dimension.
+3. **Aggregate → promote → commit** — the `commit-dataset` workflow (the matrix's `publish` job calls
+   it) collects every shard, `aggregate`s them into one candidate Run (measured metrics unioned,
+   economics re-derived from the merged set), then `promote`s it (gate: ≥1 validated provider) into the
+   committed dataset at `data/dataset/` with a newest-first index, and opens a PR to land it on `main`.
+   This step commits only the machine-readable dataset — it never touches `LEADERBOARD.md`.
+4. **Leaderboard** — `leaderboard` renders a chosen committed Run into a ranked Markdown table per
+   dimension. Updating `LEADERBOARD.md` is a deliberate operation, so the dataset can grow a run per
+   matrix run without moving the public comparison surface automatically.
 5. **Stability gate** — `stability <prev> <cur>` flags any provider metric that shifted beyond the noise
    threshold across Runs, comparing only provenance-matched (same `appVersion` + `arguments`) metrics.
 

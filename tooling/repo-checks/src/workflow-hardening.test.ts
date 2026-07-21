@@ -312,7 +312,7 @@ describe("checkPrivilegedEnvironment", () => {
 		// caller's grant is invisible in the callee's YAML, so the gate resolves the callee and requires
 		// it to gate a job itself.
 		const doc = oneJob("call", {
-			uses: "./.github/workflows/publish-dataset.yml",
+			uses: "./.github/workflows/commit-dataset.yml",
 			secrets: "inherit",
 		});
 		expect(
@@ -376,9 +376,9 @@ describe("checkPrivilegedEnvironment", () => {
 
 	test("accepts a local reusable call that grants write perms (bench-matrix.yml::publish shape)", () => {
 		// The real case: bench-matrix's publish job grants contents/pull-requests write to the local
-		// publish-dataset.yml. A `uses:` job can't set `environment:`; the called file gates a job.
+		// commit-dataset.yml. A `uses:` job can't set `environment:`; the called file gates a job.
 		const doc = oneJob("publish", {
-			uses: "./.github/workflows/publish-dataset.yml",
+			uses: "./.github/workflows/commit-dataset.yml",
 			permissions: { contents: "write", "pull-requests": "write", actions: "read" },
 			with: { run_id: "123" },
 		});

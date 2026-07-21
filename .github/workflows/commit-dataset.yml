@@ -1,12 +1,16 @@
-name: Publish dataset
+name: Commit dataset
 
-# Aggregate a Bench matrix run's per-cell shards into one candidate, gate it (promote), regenerate the
-# public leaderboard, and open the PR that lands both on main. Extracted from bench-matrix.yml so it
-# has two entry points:
+# Aggregate a Bench matrix run's per-cell shards into one candidate, gate it (promote), and commit the
+# promoted dataset JSON onto main. This is the purely-mechanical half of the old publish-dataset.yml:
+# it lands data/dataset/ (the machine-readable Run + newest-first index) and nothing human-facing — the
+# public LEADERBOARD.md is regenerated deliberately as a separate operation, so the dataset can
+# accumulate one committed run per matrix run without churning the comparison surface every time.
+#
+# Two entry points:
 #   - workflow_call: bench-matrix.yml invokes it at the end of a matrix run (run_id = that run).
-#   - workflow_dispatch: a maintainer re-runs it standalone to BACKFILL a run whose publish failed —
+#   - workflow_dispatch: a maintainer re-runs it standalone to BACKFILL a run whose commit failed —
 #     pass the old run's id, and its still-retained bench-* shard artifacts are re-aggregated and
-#     published. (Artifacts expire on the repo's retention window, so backfill only works while the
+#     committed. (Artifacts expire on the repo's retention window, so backfill only works while the
 #     shards still exist.)
 #
 # Environment `privileged` lives on the job here (the dataset release surface, `contents: write`); a
@@ -15,7 +19,7 @@ on:
   workflow_call:
     inputs:
       run_id:
-        description: 'Bench matrix run id whose shard artifacts to aggregate + publish.'
+        description: 'Bench matrix run id whose shard artifacts to aggregate + commit.'
         required: true
         type: string
   workflow_dispatch:
@@ -25,17 +29,23 @@ on:
         required: true
         type: string
 
-# Least privilege at the top level; the publish job elevates for exactly what it needs.
+# Least privilege at the top level; the commit job elevates for exactly what it needs.
 permissions:
   contents: read
 
-# Serialize dataset publishes so a matrix run and a manual backfill can't race the same branch/push.
+# Serialize ALL dataset commits under the original global group. Keep the legacy `publish-dataset` key
+# across the workflow rename so a run already active on the old workflow cannot overlap a new run and
+# race the shared newest-first data/dataset/index.json. Do NOT key this on run_id — commits for different
+# runs would then build competing PRs from the same base. cancel-in-progress: false protects the running
+# commit; GitHub still keeps only the latest PENDING run per group, so on the rare pile-up (bench-matrix
+# serializes matrix runs on main, and backfills are manual) an evicted pending run is recovered by
+# re-dispatching its backfill.
 concurrency:
   group: publish-dataset
   cancel-in-progress: false
 
 jobs:
-  publish:
+  commit:
     name: Aggregate + promote dataset
     # Confine the release to this repo's main, whether called by the matrix or dispatched to backfill.
     # (Environment `privileged`'s deployment-branch policy pins it to main too; this is defense in depth.)
@@ -55,7 +65,7 @@ jobs:
     env:
       RUN_ID: ${{ inputs.run_id }}
     steps:
-      # Unlike the read-only bench jobs, this one commits + `git push`es the published dataset, so it
+      # Unlike the read-only bench jobs, this one commits + `git push`es the promoted dataset, so it
       # keeps the default persisted job token (contents: write above authorizes it). Don't add
       # persist-credentials: false here or the push at the end of the job loses its credentials.
       - name: Checkout
@@ -69,7 +79,7 @@ jobs:
 
       # Pull every per-cell shard artifact for the target run into ./shards (each in its own subdir).
       # run-id + github-token make this work across runs: for a matrix call run-id is the current run,
-      # for a backfill it is the older run whose publish failed. (Downloading by run-id needs the
+      # for a backfill it is the older run whose commit failed. (Downloading by run-id needs the
       # actions: read scope granted above.)
       - name: Download shard artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -97,79 +107,71 @@ jobs:
           bun apps/cli/src/bin/aggregate.ts "$RUN_ID" data/candidate "${shards[@]}"
           bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset
 
-      # Keep LEADERBOARD.md byte-identical to what the renderer produces from the newly promoted Run.
-      - name: Regenerate leaderboard
-        run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$RUN_ID.json" LEADERBOARD.md
-
       # Canonicalize the promoted dataset to Biome's format before the gate + commit. The promote
       # writer emits `JSON.stringify(run, null, 2)` (every array element on its own line), but Biome's
       # JSON formatter inlines short arrays and wraps long ones at the 100-col width — so the committed
       # dataset is in Biome's shape and a raw Run document fails `biome check .` on the PR. Autofixing
       # the mechanical formatting here is exactly what a developer's `bun run lint:fix` would do. Scope
-      # the write to data/dataset (JSON only): LEADERBOARD.md must stay byte-identical to the renderer
-      # output (the leaderboard-artifact-sync gate), and Biome leaves the rendered Markdown untouched.
+      # the write to data/dataset (JSON only): this job never touches LEADERBOARD.md, and Biome leaves
+      # any rendered Markdown untouched anyway.
       - name: Autofix the promoted dataset formatting (Biome)
         run: bunx biome check data/dataset --write
 
-      # Confirm the published content passes the exact gate ci.yml runs (`biome check .`), scoped to the
+      # Confirm the committed content passes the exact gate ci.yml runs (`biome check .`), scoped to the
       # files this job writes. After the autofix above this should pass; if anything Biome can't fix
       # mechanically remains, fail the job early (before any PR is opened) rather than leave a doomed PR.
-      # A pre-existing, unrelated lint failure elsewhere on main can't strand a clean dataset publish;
+      # A pre-existing, unrelated lint failure elsewhere on main can't strand a clean dataset commit;
       # the PR's own `biome check .` still gates the merge.
-      - name: Confirm the published dataset passes Biome (the PR lint gate)
-        run: bunx biome check data/dataset LEADERBOARD.md --error-on-warnings
+      - name: Confirm the promoted dataset passes Biome (the PR lint gate)
+        run: bunx biome check data/dataset --error-on-warnings
 
       # main is protected by a "changes must be made through a pull request" ruleset (the public-repo
       # hardening in #176/#177), so this job can't push the promoted dataset straight to main — a direct
-      # push is rejected with GH013. Publish through a short-lived branch + pull request and enable
+      # push is rejected with GH013. Commit through a short-lived branch + pull request and enable
       # GitHub-native auto-merge (`--auto`): the PR merges itself only once branch protection is
       # satisfied — required status checks (the PR's Biome/CI gate) green and any required reviews in.
       # `--auto` waits for those rules, it does not bypass them, so the dataset never lands unlinted or
       # unreviewed. If auto-merge can't be armed (e.g. the repo hasn't enabled it), the PR stays open
       # for a maintainer to merge normally.
-      - name: Publish the dataset via pull request
+      - name: Commit the dataset via pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/dataset LEADERBOARD.md
+          git add data/dataset
           if git diff --cached --quiet; then
             echo "dataset for run $RUN_ID unchanged; nothing to commit"
             exit 0
           fi
           branch="dataset/publish-${RUN_ID}"
-          # The branch name is deterministic per run, so a re-run (retried matrix run, or a re-dispatched
-          # backfill) must converge on the existing PR instead of colliding. If an open PR for this run's
-          # branch already exists (a prior attempt got past the push), just (re-)arm auto-merge and stop.
-          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
-            echo "dataset PR for $branch already open; re-arming auto-merge"
-            gh pr merge "$branch" --squash --delete-branch --auto \
-              || echo "auto-merge not armed; dataset PR left open for a maintainer to merge"
-            exit 0
-          fi
-          git switch -c "$branch"
-          git commit -m "chore(dataset): publish run ${RUN_ID}"
-          # --force so a leftover branch from a partial prior run (pushed, but PR never created) is
-          # overwritten rather than rejected as non-fast-forward; it is a bot-owned branch and a re-run
-          # recomputes byte-identical content, so the overwrite is a no-op in the common case.
+          # Always (re)build the bot branch from the freshly promoted dataset and force-push FIRST, so a
+          # re-run (retried matrix run, or a re-dispatched backfill) refreshes an already-open PR rather
+          # than leaving it stale if the aggregated content changed since it was opened. `-C` resets the
+          # local branch to this run's HEAD; `--force` overwrites the bot-owned remote branch (a no-op when
+          # the content is unchanged).
+          git switch -C "$branch"
+          git commit -m "chore(dataset): commit run ${RUN_ID}"
           git push -u --force origin "$branch"
-          # `gh pr create` fails outright (GraphQL "GitHub Actions is not permitted to create or
-          # approve pull requests") when the repo's Settings → Actions → General → Workflow
-          # permissions → "Allow GitHub Actions to create and approve pull requests" toggle is off —
-          # see docs/ci-secrets.md. The dataset branch above is already pushed at that point, so
-          # surface the fix instead of a bare GraphQL error before failing the job.
-          if ! gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "chore(dataset): publish run ${RUN_ID}" \
-            --body "Automated dataset + leaderboard publish for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied."; then
-            echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
-              "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
-              "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
-              "A maintainer must either enable it and re-dispatch this workflow with run_id=$RUN_ID," \
-              "or open the PR for '$branch' manually. See docs/ci-secrets.md."
-            exit 1
+          # Open the PR only if one isn't already open for this deterministic branch; a re-run reuses it
+          # (the force-push above already refreshed its content). `gh pr create` fails outright (GraphQL
+          # "GitHub Actions is not permitted to create or approve pull requests") when the repo's Settings →
+          # Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull
+          # requests" toggle is off — see docs/ci-secrets.md. The dataset branch is already pushed at that
+          # point, so surface the fix instead of a bare GraphQL error before failing the job.
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            if ! gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore(dataset): commit run ${RUN_ID}" \
+              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied. The public LEADERBOARD.md is regenerated separately."; then
+              echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
+                "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
+                "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
+                "A maintainer must either enable it and re-dispatch this workflow with run_id=$RUN_ID," \
+                "or open the PR for '$branch' manually. See docs/ci-secrets.md."
+              exit 1
+            fi
           fi
           # Queue GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
           # required reviews land), never bypassing branch protection. Best-effort — if the repo hasn't

@@ -4,12 +4,12 @@
 rules:
   artipacked:
     ignore:
-      # publish-dataset.yml's `publish` job is the one checkout that must keep its persisted job token:
+      # commit-dataset.yml's `commit` job is the one checkout that must keep its persisted job token:
       # it commits the promoted dataset and `git push`es it back to the branch (the job grants
       # `contents: write` for exactly this). Every other checkout in the repo sets
       # persist-credentials: false; this one can't, by design. (Filename-scoped, not repo-wide — this
       # reusable workflow's only checkout is the pushing one, so just its finding is accepted.)
-      - publish-dataset.yml
+      - commit-dataset.yml
   secrets-inherit:
     ignore:
       # bench-matrix.yml's suite-matrix job calls the reusable bench-suite.yml with `secrets: inherit`.
