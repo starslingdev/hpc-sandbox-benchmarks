@@ -37,9 +37,11 @@ describe("normalizeResultsTree", () => {
 		expect(daytona?.gaps).toEqual([
 			{
 				scope: "suite",
-				id: "pts_git",
+				// The fixture is the legacy flat leaf-marker layout; normalization recovers the registered
+				// suite from Git's catalog identity and preserves the leaf in the reason.
+				id: "system",
 				outcome: "skipped",
-				reason: "phoronix-test-suite not installed",
+				reason: "pts_git: phoronix-test-suite not installed",
 			},
 		]);
 		expect(daytona?.specMatched).toBe(true);

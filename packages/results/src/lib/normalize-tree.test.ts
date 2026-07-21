@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
 	ECONOMICS_METRIC_IDS,
 	getProvider,
+	harnessGapMarkerJson,
 	hourlyCostAtTargetSpec,
 } from "@sandbox-benchmarks/schema";
 import { normalizeProviderDir } from "./normalize-tree.ts";
@@ -251,5 +252,374 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		} finally {
 			warn.mockRestore();
 		}
+	});
+});
+
+// A STREAM composite whose per-type Results can be individually valued or empty — the shape a
+// partially-failed memory suite writes (each Result maps to one stream_type_* metric).
+function streamComposite(entries: Array<[type: string, value: string]>): string {
+	const results = entries
+		.map(
+			([type, value]) => `  <Result>
+    <Identifier>pts/stream-1.3.4</Identifier>
+    <Title>Stream</Title>
+    <Description>Type: ${type}</Description>
+    <Scale>MB/s</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value>${value}</Value></Entry></Data>
+  </Result>`,
+		)
+		.join("\n");
+	return `<?xml version="1.0"?>\n<PhoronixTestSuite>\n${results}\n</PhoronixTestSuite>`;
+}
+
+// An all-trials-failed node-web-tooling composite: the Result is present but carries no value.
+// An all-trials-failed pybench composite (system suite's second leaf in the leaf-dedupe tests).
+const emptyPybenchComposite = `<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/pybench-1.1.3</Identifier>
+    <Title>PyBench</Title>
+    <Scale>Milliseconds</Scale><Proportion>LIB</Proportion>
+    <Data><Entry><Value></Value><RawString></RawString></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`;
+
+const emptyNodeComposite = `<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/node-web-tooling-1.0.1</Identifier>
+    <Title>Node.js V8 Web Tooling Benchmark</Title>
+    <Scale>runs/s</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value></Value><RawString></RawString></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`;
+
+describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", () => {
+	let root: string;
+	let providerDir: string;
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "norm-shortfall-"));
+		providerDir = join(root, "daytona-vm");
+		mkdirSync(providerDir);
+	});
+	afterEach(() => {
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("folds a leaf-named bash marker into its suite's gap id", () => {
+		// resultGapSchema's vocabulary: a suite-scoped gap's id IS the suite name. A bash fail_result
+		// marker carries the LEAF name, which — unfolded — would enter the leaderboard's missing-suite
+		// denominator as a bogus 'suite' and accuse every healthy provider of missing it. The fold keeps
+		// the leaf identity in the reason. The surviving hardlink metric keeps disk covered (keep+warn).
+		const suiteDir = join(providerDir, "disk");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_fio-rand-read--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_fio-rand-read","reason":"PTS batch-run of pts/fio-2.1.0 completed but every trial errored (composite carries no values)"}\n',
+		);
+		writeFileSync(
+			join(suiteDir, "pts_hardlink.xml"),
+			`<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>local/hardlink-1.0.0</Identifier>
+    <Title>Hardlink Throughput</Title>
+    <Scale>bogo ops/s</Scale><Proportion>HIB</Proportion>
+    <Data><Entry><Value>2.46</Value><RawString>2.39:2.53</RawString></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`,
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "failed",
+				reason:
+					"pts_fio-rand-read: PTS batch-run of pts/fio-2.1.0 completed but every trial errored (composite carries no values)",
+			},
+		]);
+		expect(run.suitesCovered).toEqual(["disk"]);
+		expect(run.validationStatus).toBe("validated");
+	});
+
+	it("TOTAL LOSS: an all-empty catalogued composite becomes ONE suite/failed shortfall gap", () => {
+		// PTS exits 0 on this shape, so without the shortfall the suite would be a green job with no
+		// metric and no gap — the exact silence that made pgbench vanish from three published runs.
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), emptyNodeComposite);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "cpu-node",
+				outcome: "failed",
+				reason:
+					"PTS ran but every trial failed for 1 of 1 declared metrics: node_web_tooling_runs_per_s (cpu-node/pts_node-web-tooling.xml) — attempted, no value recorded",
+			},
+		]);
+		expect(run.suitesCovered).toEqual([]);
+		expect(run.validationStatus).toBe("pending");
+	});
+
+	it("MARKER DEDUPE: a harness whole-suite failed marker is not doubled by a shortfall gap", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), emptyNodeComposite);
+		writeFileSync(
+			join(suiteDir, "sandbox-daytona-vm-cpu-node--failed.json"),
+			harnessGapMarkerJson("daytona-vm", "cpu-node", "failed", "PTS produced no result"),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		// Exactly ONE cpu-node gap — the marker's reason wins; the shortfall stays suppressed.
+		expect(run.gaps).toEqual([
+			{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "PTS produced no result" },
+		]);
+	});
+
+	it("FLAT MARKER DEDUPE: a legacy harness failure still mutes the suite shortfall", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), emptyNodeComposite);
+		// Mixed-layout replay: the composite was already nested, but the harness marker still landed at
+		// provider root. Its registered suite id is enough to retain whole-suite suppression.
+		writeFileSync(
+			join(providerDir, "sandbox-daytona-vm-cpu-node--failed.json"),
+			harnessGapMarkerJson("daytona-vm", "cpu-node", "failed", "legacy flat failure"),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "legacy flat failure" },
+		]);
+	});
+
+	it("LEAF-SCOPED DEDUPE: a folded leaf failure mutes only its own leaf, not a sibling's loss", () => {
+		// system has two leaves here: git's failure is recorded by its own folded marker, while
+		// pybench was attempted-and-empty with NO marker. The git marker must not swallow pybench's
+		// loss — the shortfall gap still surfaces, naming only the sibling's metric.
+		const suiteDir = join(providerDir, "system");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_git--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_git","reason":"PTS batch-run of pts/git completed but every trial errored (composite carries no values)"}\n',
+		);
+		writeFileSync(join(suiteDir, "pts_pybench.xml"), emptyPybenchComposite);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "system",
+				outcome: "failed",
+				reason:
+					"pts_git: PTS batch-run of pts/git completed but every trial errored (composite carries no values)",
+			},
+			{
+				scope: "suite",
+				id: "system",
+				outcome: "failed",
+				reason:
+					"PTS ran but every trial failed for 1 of 3 declared metrics: pybench_milliseconds (system/pts_pybench.xml) — attempted, no value recorded",
+			},
+		]);
+	});
+
+	it("LEAF-SCOPED DEDUPE: a folded leaf failure IS its own leaf's record — no doubled shortfall", () => {
+		// The bash guard writes the marker AND leaves the empty composite behind; the marker already
+		// names this leaf's loss, so a shortfall repeating the same leaf's metric would double-count.
+		const suiteDir = join(providerDir, "system");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_pybench--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_pybench","reason":"PTS batch-run of pts/pybench completed but every trial errored (composite carries no values)"}\n',
+		);
+		writeFileSync(join(suiteDir, "pts_pybench.xml"), emptyPybenchComposite);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "system",
+				outcome: "failed",
+				reason:
+					"pts_pybench: PTS batch-run of pts/pybench completed but every trial errored (composite carries no values)",
+			},
+		]);
+	});
+
+	it("CONTAMINATION: a marker cannot mute a different test merely because its Result leaked into that filename", () => {
+		const suiteDir = join(providerDir, "system");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_git--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_git","reason":"git failed"}\n',
+		);
+		// PTS contamination can copy PyBench's Result under Git's result name. The metric's catalogued
+		// pts/pybench identity — not this misleading filename — decides which marker owns the loss.
+		writeFileSync(join(suiteDir, "pts_git.xml"), emptyPybenchComposite);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{ scope: "suite", id: "system", outcome: "failed", reason: "pts_git: git failed" },
+			{
+				scope: "suite",
+				id: "system",
+				outcome: "failed",
+				reason:
+					"PTS ran but every trial failed for 1 of 3 declared metrics: pybench_milliseconds (system/pts_git.xml) — attempted, no value recorded",
+			},
+		]);
+	});
+
+	it("FLAT LEAF FOLD: a legacy pts_git marker maps to system instead of fabricating a suite", () => {
+		writeFileSync(
+			join(providerDir, "pts_git--failed.json"),
+			'{"outcome":"failed","benchmark":"pts_git","reason":"legacy git failure"}\n',
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "system",
+				outcome: "failed",
+				reason: "pts_git: legacy git failure",
+			},
+		]);
+	});
+
+	it("FLAT RESCUE: a metric the legacy flat layout produced is never claimed as a shortfall", () => {
+		// Mixed layout: the suite copy of pybench is empty but a legacy flat file carries the value.
+		// The dataset publishes that value, so a shortfall gap claiming it 'produced no value' would
+		// contradict the published metric — the flat contribution mutes the entry.
+		const suiteDir = join(providerDir, "system");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_pybench.xml"), emptyPybenchComposite);
+		writeFileSync(
+			join(providerDir, "pts_pybench.xml"),
+			`<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/pybench-1.1.3</Identifier>
+    <Title>PyBench</Title>
+    <Scale>Milliseconds</Scale><Proportion>LIB</Proportion>
+    <Data><Entry><Value>475</Value><RawString>474:476</RawString></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`,
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([]);
+		expect(run.metrics.map((m) => m.metricId)).toContain("pybench_milliseconds");
+	});
+
+	it("PARTIAL SHORTFALL: a suite stays covered AND gapped when only some declared metrics report", () => {
+		// keep+warn: the metrics that did succeed keep ranking (memory is covered via Copy/Scale) while
+		// the attempted-and-lost Add/Triad are named in a recorded gap instead of silently vanishing.
+		const suiteDir = join(providerDir, "memory");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_stream.xml"),
+			streamComposite([
+				["Copy", "66500"],
+				["Scale", "45000"],
+				["Add", ""],
+				["Triad", ""],
+			]),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.suitesCovered).toEqual(["memory"]);
+		expect(run.metrics.map((m) => m.metricId)).toContain("stream_type_copy");
+		expect(run.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "memory",
+				outcome: "failed",
+				reason:
+					"PTS ran but every trial failed for 2 of 4 declared metrics: stream_type_add (memory/pts_stream.xml), stream_type_triad (memory/pts_stream.xml) — attempted, no value recorded",
+			},
+		]);
+	});
+
+	it("LEGIT ABSENCE: declared-but-unattempted metrics never gap (no Result element, no evidence)", () => {
+		// The disk O_DIRECT-variant rule and PTS's duplicate-value drop: a declared metric whose
+		// <Result> is absent entirely was never attempted here — an expectation-based diff would
+		// fabricate a gap for it, so the detection is evidence-based only.
+		const suiteDir = join(providerDir, "memory");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_stream.xml"),
+			streamComposite([
+				["Copy", "66500"],
+				["Scale", "45000"],
+			]),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.suitesCovered).toEqual(["memory"]);
+		expect(run.gaps).toEqual([]);
+	});
+
+	it("LEAF MARKER + SHORTFALL COEXIST: a leaf SKIP never hides a different leaf's attempted loss", () => {
+		// One leaf was deliberately skipped (folded to the suite id, leaf kept in the reason) while a
+		// DIFFERENT declared metric was attempted and lost — both facts must survive: a skip is not a
+		// failure, so it must not suppress the shortfall the way a failed marker does.
+		const suiteDir = join(providerDir, "system");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_git--skipped.json"),
+			'{"schema_version":"1.0","benchmark":"pts_git","skipped":true,"skip_reason":"PTS unavailable"}\n',
+		);
+		writeFileSync(
+			join(suiteDir, "pts_pybench.xml"),
+			`<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <Result>
+    <Identifier>pts/pybench-1.1.3</Identifier>
+    <Title>PyBench</Title>
+    <Scale>Milliseconds</Scale><Proportion>LIB</Proportion>
+    <Data><Entry><Value></Value></Entry></Data>
+  </Result>
+</PhoronixTestSuite>`,
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.gaps).toEqual([
+			{ scope: "suite", id: "system", outcome: "skipped", reason: "pts_git: PTS unavailable" },
+			{
+				scope: "suite",
+				id: "system",
+				outcome: "failed",
+				reason:
+					"PTS ran but every trial failed for 1 of 3 declared metrics: pybench_milliseconds (system/pts_pybench.xml) — attempted, no value recorded",
+			},
+		]);
+	});
+
+	it("emits byte-identical shortfall reasons across normalize runs (the aggregate dedupe key)", () => {
+		// The aggregate folds replicate shards' gaps by (scope, id, outcome, reason) — a timestamp or
+		// unstable ordering in the reason would stack one gap per replicate instead of one per suite.
+		const suiteDir = join(providerDir, "memory");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "pts_stream.xml"),
+			streamComposite([
+				["Triad", ""],
+				["Add", ""],
+			]),
+		);
+
+		const first = normalizeProviderDir(root, "daytona-vm");
+		const second = normalizeProviderDir(root, "daytona-vm");
+		expect(first.gaps).toEqual(second.gaps);
+		expect(first.gaps[0]?.reason).toBe(
+			"PTS ran but every trial failed for 2 of 4 declared metrics: stream_type_add (memory/pts_stream.xml), stream_type_triad (memory/pts_stream.xml) — attempted, no value recorded",
+		);
 	});
 });

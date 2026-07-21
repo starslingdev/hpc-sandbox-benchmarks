@@ -281,3 +281,50 @@ describe("aggregateRuns", () => {
 		).toBe(true);
 	});
 });
+
+describe("aggregateRuns suite-shortfall gap folding", () => {
+	// The normalizer's shortfall reason is byte-deterministic exactly so this (scope, id, outcome,
+	// reason) fold collapses identical shortfalls across replicate shards to ONE recorded gap.
+	const shortfall = (reason: string) => ({
+		scope: "suite" as const,
+		id: "memory" as const,
+		outcome: "failed" as const,
+		reason,
+	});
+	const reason =
+		"PTS ran but every trial failed for 2 of 4 declared metrics: stream_type_add (memory/pts_stream.xml), stream_type_triad (memory/pts_stream.xml) — attempted, no value recorded";
+
+	it("folds byte-identical shortfall gaps across replicate shards into one", () => {
+		const r0 = shard(
+			[{ ...provider("daytona-vm", []), gaps: [shortfall(reason)] }],
+			"2026-06-01T00:00:00.000Z",
+			0,
+		);
+		const r1 = shard(
+			[{ ...provider("daytona-vm", []), gaps: [shortfall(reason)] }],
+			"2026-06-01T00:00:00.000Z",
+			1,
+		);
+		const daytona = aggregateRuns([r0, r1]).providers.find((p) => p.providerId === "daytona-vm");
+		expect(daytona?.gaps).toEqual([shortfall(reason)]);
+	});
+
+	it("keeps both gaps when replicate shards report divergent shortfall reasons", () => {
+		// Divergent replicates are two distinct facts (different metrics were lost in each sandbox);
+		// folding them would drop whichever arrived second — accepted keep+warn behavior.
+		const other =
+			"PTS ran but every trial failed for 1 of 4 declared metrics: stream_type_add (memory/pts_stream.xml) — attempted, no value recorded";
+		const r0 = shard(
+			[{ ...provider("daytona-vm", []), gaps: [shortfall(reason)] }],
+			"2026-06-01T00:00:00.000Z",
+			0,
+		);
+		const r1 = shard(
+			[{ ...provider("daytona-vm", []), gaps: [shortfall(other)] }],
+			"2026-06-01T00:00:00.000Z",
+			1,
+		);
+		const daytona = aggregateRuns([r0, r1]).providers.find((p) => p.providerId === "daytona-vm");
+		expect(daytona?.gaps).toEqual([shortfall(reason), shortfall(other)]);
+	});
+});

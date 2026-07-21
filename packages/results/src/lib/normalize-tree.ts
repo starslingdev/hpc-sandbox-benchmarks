@@ -21,13 +21,15 @@ import {
 	deriveEconomics,
 	describeOffDimensionEmission,
 	getProvider,
+	METRIC_CATALOG,
 	offDimensionEmissions,
 	PROVIDERS,
 	parseRun,
 	SUITE_NAMES,
+	SUITES,
 	TARGET_SPEC,
 } from "@sandbox-benchmarks/schema";
-import type { SampleContribution } from "./extract.ts";
+import type { AttemptedEmptyResult, SampleContribution } from "./extract.ts";
 import { extractProviderDir } from "./extract.ts";
 import { readHostMetadata } from "./host-metadata.ts";
 import { computeSpecMatched, readObservedSpecs } from "./specs.ts";
@@ -76,6 +78,63 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 /** Element-wise sample equality — used to tell a benign duplicate from divergent contamination. */
 function sameSamples(a: readonly number[], b: readonly number[]): boolean {
 	return a.length === b.length && a.every((value, i) => value === b[i]);
+}
+
+/** The result-prefix base implied by a catalogued metric's PTS test (`pts/git` → `pts_git`). */
+function metricLeafBase(metricId: string): string | undefined {
+	const test = METRIC_CATALOG.find((metric) => metric.id === metricId)?.pts?.test;
+	const profile = test?.split("/").at(-1);
+	return profile ? `pts_${profile}` : undefined;
+}
+
+/** Whether a bash marker names the PTS test that owns a metric. Scenario suffixes (fio/pgbench)
+ *  still match their shared test base; the more exact ownership check below handles the suffix. */
+function leafMatchesMetricTest(leaf: string, metricId: string): boolean {
+	const base = metricLeafBase(metricId);
+	return base !== undefined && (leaf === base || leaf.startsWith(`${base}-`));
+}
+
+/** Whether a failed leaf marker already accounts for this exact metric. Use catalog identity first,
+ *  never the composite filename: PTS result-name contamination can put a PyBench Result in
+ *  `pts_git.xml`, and the filename must not let a Git marker silence PyBench's independent loss. */
+function leafOwnsMetric(leaf: string, metricId: string): boolean {
+	const base = metricLeafBase(metricId);
+	if (!base || !leafMatchesMetricTest(leaf, metricId)) return false;
+	if (leaf === base) return true;
+
+	// Multi-scenario leaves share one PTS profile. Match the leaf's scenario tokens against the stable
+	// metric id so one fio/pgbench marker suppresses only its own scenario, not every result of the test.
+	const aliases: Record<string, string> = { rand: "random", seq: "sequential" };
+	const scenario = leaf
+		.slice(base.length + 1)
+		.split("-")
+		.map((token) => aliases[token] ?? token);
+	return scenario.every((token) => metricId.includes(`_${token}`));
+}
+
+/** Recover a legacy flat leaf marker's suite from the catalog contract. A mapping must be unique;
+ *  unknown/ambiguous markers remain untouched rather than being guessed into the wrong suite. */
+function suiteForLeaf(leaf: string): string | undefined {
+	const matches = SUITE_NAMES.filter((suite) =>
+		SUITES[suite].metrics.some((metricId) => leafMatchesMetricTest(leaf, metricId)),
+	);
+	return matches.length === 1 ? matches[0] : undefined;
+}
+
+/**
+ * The single owner of the suite-shortfall gap wording: declared metrics that were attempted (PTS ran
+ * them) and produced no value in any trial. Byte-deterministic — sorted ids, stable filenames, no
+ * timestamps — so the aggregate's (scope, id, outcome, reason) dedupe key folds identical shortfalls
+ * across replicate shards instead of stacking one gap per replicate.
+ */
+export function shortfallReason(suite: string, missing: readonly AttemptedEmptyResult[]): string {
+	// suiteDirs only ever contains registered names, so the lookup can't miss in production; the
+	// fallback keeps this pure-string helper total for tests and future callers.
+	const declared =
+		(SUITES as Partial<Record<string, { metrics: readonly string[] }>>)[suite]?.metrics.length ??
+		missing.length;
+	const list = missing.map((e) => `${e.metricId} (${e.sourceFile})`).join(", ");
+	return `PTS ran but every trial failed for ${missing.length} of ${declared} declared metrics: ${list} — attempted, no value recorded`;
 }
 
 /** Parse a JSON file, returning undefined (never throwing) when it's absent or malformed. */
@@ -149,6 +208,15 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// Host fingerprint from a composite's <System>, first non-empty across the read order (all suites of
 	// one provider ran on the same machine). Merged UNDER the spec probe below so the probe always wins.
 	let systemHost: ObservedSpecs | undefined;
+	// Per-suite shortfall candidates: declared metrics that were attempted (an all-passes-failed
+	// <Result> is the evidence) and that no file in the suite produced a value for. Collected here,
+	// emitted as at most ONE suite gap AFTER the flat read below, once every marker is in `gaps`.
+	const suiteShortfalls = new Map<string, AttemptedEmptyResult[]>();
+	// Which failed markers each suite carries, split by kind (recorded while folding below): a HARNESS
+	// whole-suite marker mutes the suite's shortfall entirely, a folded LEAF marker mutes only its own
+	// leaf's entries — one leaf's recorded failure must not hide a DIFFERENT leaf's silent loss.
+	const foldedFailedLeaves = new Map<string, Set<string>>();
+	const harnessFailedSuites = new Set<string>();
 
 	for (const suite of suiteDirs) {
 		const ext = extractProviderDir(join(dir, suite), providerId);
@@ -170,7 +238,51 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		for (const u of ext.uncatalogued)
 			rawUncatalogued.push({ ...u, sourceFile: `${suite}/${u.sourceFile}` });
 		if (ext.contributions.length > 0) suitesCovered.add(suite);
-		gaps.push(...ext.gaps);
+		// Bash leaf markers carry the LEAF name (pts_fio-rand-read) in `benchmark`; the Run vocabulary
+		// (resultGapSchema) says a suite-scoped gap's id is the SUITE. Fold the leaf into the reason so
+		// the leaderboard's missing-suite derivation (which treats suite-gap ids as suite names) can
+		// neither fabricate a bogus 'suite' nor accuse healthy providers of missing it. Harness-written
+		// markers already carry the suite name, so the fold is the identity for them. Which KIND of
+		// failed marker each suite carries is remembered for the shortfall emission below: a folded
+		// leaf failure must only mute that leaf's own shortfall entries, while a harness whole-suite
+		// failure mutes the suite's shortfall entirely.
+		for (const g of ext.gaps) {
+			if (g.scope === "suite" && g.id !== suite) {
+				if (g.outcome === "failed") {
+					const leaves = foldedFailedLeaves.get(suite) ?? new Set<string>();
+					leaves.add(g.id);
+					foldedFailedLeaves.set(suite, leaves);
+				}
+				gaps.push({ ...g, id: suite, reason: `${g.id}: ${g.reason}` });
+			} else {
+				if (g.scope === "suite" && g.outcome === "failed") harnessFailedSuites.add(suite);
+				gaps.push(g);
+			}
+		}
+		// Shortfall evidence: declared metrics attempted-and-empty here, minus the ones some file in
+		// this suite DID produce (a metric can fail in one composite and succeed in another). Unique by
+		// metricId (first file wins — extraction order is filename-sorted, so deterministic), sorted so
+		// the gap reason is byte-stable.
+		const produced = new Set(ext.contributions.map((c) => c.metricId));
+		const declared = new Set<string>(
+			(SUITES as Partial<Record<string, { metrics: readonly string[] }>>)[suite]?.metrics ?? [],
+		);
+		const missingById = new Map<string, AttemptedEmptyResult>();
+		for (const e of ext.attemptedEmpty) {
+			if (!declared.has(e.metricId) || produced.has(e.metricId)) continue;
+			if (!missingById.has(e.metricId)) {
+				missingById.set(e.metricId, {
+					metricId: e.metricId,
+					sourceFile: `${suite}/${e.sourceFile}`,
+				});
+			}
+		}
+		if (missingById.size > 0) {
+			suiteShortfalls.set(
+				suite,
+				[...missingById.values()].sort((a, b) => a.metricId.localeCompare(b.metricId, "en")),
+			);
+		}
 	}
 	// Reject at the boundary before any further work: a suite emitting a catalogued metric off its
 	// declared Dimensions is a producer/registry drift that would land a number under the wrong
@@ -191,8 +303,68 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	hostMetadata.push(...readHostMetadata(dir));
 	contributions.push(...flat.contributions);
 	rawUncatalogued.push(...flat.uncatalogued);
-	gaps.push(...flat.gaps);
+	for (const g of flat.gaps) {
+		if (g.scope !== "suite") {
+			gaps.push(g);
+			continue;
+		}
+		// A flat HARNESS marker still names a registered suite and must suppress the suite directory's
+		// duplicate shortfall. A flat bash LEAF marker has no directory context, so recover its suite
+		// from the catalog's metric→PTS-test→suite contract and fold it exactly like a nested marker.
+		const suite = registered.has(g.id) ? g.id : suiteForLeaf(g.id);
+		if (!suite) {
+			gaps.push(g);
+			continue;
+		}
+		if (g.id === suite) {
+			if (g.outcome === "failed") harnessFailedSuites.add(suite);
+			gaps.push(g);
+			continue;
+		}
+		if (g.outcome === "failed") {
+			const leaves = foldedFailedLeaves.get(suite) ?? new Set<string>();
+			leaves.add(g.id);
+			foldedFailedLeaves.set(suite, leaves);
+		}
+		gaps.push({ ...g, id: suite, reason: `${g.id}: ${g.reason}` });
+	}
 	if (!systemHost && flat.observedHost) systemHost = flat.observedHost;
+	// (flat.attemptedEmpty is deliberately unused: a legacy flat file has no suite to diff against,
+	// exactly as it earns no suitesCovered credit above.)
+
+	// Suite-shortfall gaps: an all-trials-failed PTS test exits 0 and writes a value-less composite,
+	// which used to leave a green job with no metric AND no gap — an invisible hole (pgbench vanished
+	// from three consecutive published runs this way). Emit at most ONE failed gap per suite, from the
+	// EVIDENCE collected above (attempted-and-empty catalogued Results), never from expectations — so
+	// disk's legitimately-unrun O_DIRECT/buffered twins and PTS's dropped-duplicate Results produce no
+	// false gaps. Emitted after every marker is in `gaps`, with marker-kind-aware dedupe: a HARNESS
+	// whole-suite failed marker mutes the suite's shortfall (the loss is already recorded wholesale); a
+	// folded LEAF failed marker mutes only its OWN leaf's entries (its loss is recorded, but a
+	// different leaf's silent loss in the same suite must still surface); a SKIP marker never
+	// suppresses, because a deliberate non-run of one leaf must not hide that a different leaf was
+	// attempted and lost. Entries whose metric a LEGACY FLAT file produced are dropped too — the
+	// metric has a published value, so claiming it "produced no value" would contradict the dataset.
+	// This check only pushes gaps and must NEVER throw: a normalize-time throw loses the whole shard
+	// (how disk/modal-gvisor's valid hardlink metric was lost in run 29799034615).
+	const producedAnywhere = new Set(contributions.map((c) => c.metricId));
+	for (const suite of suiteDirs) {
+		const collected = suiteShortfalls.get(suite);
+		if (!collected) continue;
+		if (harnessFailedSuites.has(suite)) continue;
+		const mutedLeaves = foldedFailedLeaves.get(suite);
+		const missing = collected.filter((e) => {
+			if (producedAnywhere.has(e.metricId)) return false;
+			if (!mutedLeaves) return true;
+			return ![...mutedLeaves].some((leaf) => leafOwnsMetric(leaf, e.metricId));
+		});
+		if (missing.length === 0) continue;
+		gaps.push({
+			scope: "suite",
+			id: suite,
+			outcome: "failed",
+			reason: shortfallReason(suite, missing),
+		});
+	}
 
 	// De-dupe catalogued metrics by metricId across source files — keep the FIRST (deterministic file
 	// order). In our model one <Result> owns a metric's per-pass samples, so the same metricId in two
