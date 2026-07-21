@@ -281,13 +281,24 @@ export async function createSuiteSandbox(
 			const message = err instanceof Error ? err.message : String(err);
 			const capacity = /quota|rate.?limit|too many|capacity|429/i.test(message);
 			if (!capacity || Date.now() + CREATE_RETRY_DELAY_MS > createDeadline) {
-				writeGapMarker(
-					resultsDir,
-					providerName,
-					suiteName,
-					"failed",
-					`Failed to create sandbox: ${message}`,
-				);
+				// Best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
+				// provider error — the creation failure is the fact worth propagating, the marker is its
+				// paper trail. Log the write failure and rethrow the original either way.
+				try {
+					writeGapMarker(
+						resultsDir,
+						providerName,
+						suiteName,
+						"failed",
+						`Failed to create sandbox: ${message}`,
+					);
+				} catch (markerErr) {
+					console.error(
+						`Could not write the creation-failure gap marker (${
+							markerErr instanceof Error ? markerErr.message : String(markerErr)
+						}); the sandbox-creation error below is unaffected`,
+					);
+				}
 				throw err;
 			}
 			console.log(
