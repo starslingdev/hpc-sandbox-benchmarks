@@ -26,6 +26,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
+import { isBlockingFailure } from "./gates.ts";
 import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
 import type { BakeReport, Log } from "./types.ts";
@@ -37,10 +38,12 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
 	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
 	// skips, so its re-validation or artifact failure is recorded but must NOT abort the publish. Locally
-	// (nothing required) any failure aborts, as a safety net for a hand-run promote.
+	// (nothing required) any failure aborts, as a safety net for a hand-run promote. The blocking rule is
+	// single-sourced in gates.ts so this abort decision and bake.ts's final exit code cannot disagree —
+	// the disagreement that turned run 29896891577 red after it had already published :v5.
 	const required = requiredProviders();
 	const blocks = (r: { provider: string; status: string }): boolean =>
-		r.status === "failed" && (required.length === 0 || required.includes(r.provider));
+		isBlockingFailure(r, required);
 
 	// 1. Refuse to overwrite the immutable public version (D2b). Checked first, before any mutation, so
 	//    a refused promote leaves everything untouched. A registry error here (auth/network) is NOT
