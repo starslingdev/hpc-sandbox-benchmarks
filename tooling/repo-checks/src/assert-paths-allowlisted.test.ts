@@ -1,10 +1,10 @@
 // Drift gate for scripts/assert-paths-allowlisted.sh — the path fence update-leaderboard.yml uses
 // before arming auto-merge. A silent widen (or a broken argv parser) would let a release PR touch
 // `.github/` and still merge.
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
 import { findRepoRoot } from "./lib/workspace.ts";
 
 const ROOT = findRepoRoot();
