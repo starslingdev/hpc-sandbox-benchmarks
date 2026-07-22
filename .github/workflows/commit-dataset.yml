@@ -134,8 +134,12 @@ jobs:
       # unreviewed. If auto-merge can't be armed (e.g. the repo hasn't enabled it), the PR stays open
       # for a maintainer to merge normally.
       - name: Commit the dataset via pull request
+        # Step-level env deliberately routes ALL the gh calls below (pr list, pr create, pr merge)
+        # through DATASET_PR_TOKEN when it is set, so the PR is authored by the PAT owner and its
+        # own checks (ci.yml) actually trigger. An unset secret evaluates to the empty string, so
+        # `||` falls back to the default job token.
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DATASET_PR_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -154,11 +158,12 @@ jobs:
           git commit -m "chore(dataset): commit run ${RUN_ID}"
           git push -u --force origin "$branch"
           # Open the PR only if one isn't already open for this deterministic branch; a re-run reuses it
-          # (the force-push above already refreshed its content). `gh pr create` fails outright (GraphQL
-          # "GitHub Actions is not permitted to create or approve pull requests") when the repo's Settings →
-          # Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull
-          # requests" toggle is off — see docs/ci-secrets.md. The dataset branch is already pushed at that
-          # point, so surface the fix instead of a bare GraphQL error before failing the job.
+          # (the force-push above already refreshed its content). Auth prefers the optional
+          # DATASET_PR_TOKEN (fine-grained PAT), falling back to GITHUB_TOKEN. With only GITHUB_TOKEN,
+          # `gh pr create` requires the repo/org "Allow GitHub Actions to create and approve pull
+          # requests" toggle and the resulting PR does not trigger ci.yml. See docs/ci-secrets.md.
+          # The dataset branch is already pushed at this point, so surface the fixes instead of a bare
+          # GraphQL error before failing the job.
           if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
             if ! gh pr create \
               --base main \
@@ -166,10 +171,13 @@ jobs:
               --title "chore(dataset): commit run ${RUN_ID}" \
               --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied. The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
-                "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
-                "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
-                "A maintainer must either enable it and re-dispatch this workflow with run_id=$RUN_ID," \
-                "or open the PR for '$branch' manually. See docs/ci-secrets.md."
+                "Fix one of: (a) add a fine-grained PAT as environment secret DATASET_PR_TOKEN on the" \
+                "'privileged' environment (Contents + Pull requests read/write on this repo) — if" \
+                "DATASET_PR_TOKEN is already set, check it has not expired or been revoked; or (b)" \
+                "enable 'Allow GitHub Actions to create and approve pull requests' (Settings → Actions" \
+                "→ General → Workflow permissions; if the checkbox is greyed out an org admin must" \
+                "enable the org-level toggle first). Then re-dispatch Commit dataset with" \
+                "run_id=$RUN_ID, or open the PR for '$branch' manually. See docs/ci-secrets.md."
               exit 1
             fi
           fi

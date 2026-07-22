@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { METRIC_CATALOG, paddedSuiteToken, padSuiteList, SUITE_NAMES, SUITES } from "./index.ts";
+import type { Suite } from "./index.ts";
+import {
+	METRIC_CATALOG,
+	paddedSuiteToken,
+	padSuiteList,
+	SUITE_NAMES,
+	SUITES,
+	TARGET_SPEC,
+} from "./index.ts";
 // Not part of the public surface (curation is an implementation detail of the catalog merge); this
 // PR's pinned-subset test reaches in directly to compare its suite's declarations against curated keys.
 import { ptsOverrides } from "./pts-overrides.ts";
@@ -110,6 +118,17 @@ describe("suite registry", () => {
 	it("keeps command timeouts within the requested sandbox lifetime", () => {
 		for (const suite of Object.values(SUITES)) {
 			expect(suite.commandTimeoutMinutes).toBeLessThanOrEqual(suite.timeoutMinutes);
+		}
+	});
+
+	it("keeps every suite disk floor within the provisioned target spec", () => {
+		// minDiskGb floors are calibrated against the provisioned target disk (TARGET_SPEC.diskGb):
+		// a floor above it could never pass on any spec-pinned provider and would silently turn the
+		// suite into a universal skip. Observed free space also runs a few GiB below provisioned
+		// (fs overhead + the baked image), so floors approaching diskGb deserve scrutiny — the
+		// current max is 30 (realworld-mastra).
+		for (const suite of Object.values<Suite>(SUITES)) {
+			expect(suite.minDiskGb ?? 0).toBeLessThanOrEqual(TARGET_SPEC.diskGb);
 		}
 	});
 });
