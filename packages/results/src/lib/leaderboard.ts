@@ -36,6 +36,8 @@ import {
 	kolmogorovSmirnov,
 	METRIC_CATALOG,
 	mannWhitneyU,
+	providerReportedNothing,
+	SUITE_NAMES,
 } from "@sandbox-benchmarks/schema";
 
 /** One provider's standing on one Metric. */
@@ -172,6 +174,12 @@ export interface CoverageGap {
 	disk: boolean;
 }
 
+/** A registered provider whose Run row carries no evidence at all — never dispatched, or lost whole. */
+export interface AbsentProvider {
+	providerId: string;
+	displayName: string;
+}
+
 /** The full comparison surface derived from one Run. */
 export interface Leaderboard {
 	runId: string;
@@ -186,6 +194,14 @@ export interface Leaderboard {
 	comparabilityCaveats: ComparabilityCaveat[];
 	/** Every benchmark that produced no result somewhere, disk gaps first. Empty when coverage is complete. */
 	coverageGaps: CoverageGap[];
+	/**
+	 * Registered providers whose Run row is a zero-evidence pending placeholder (the dataset keeps one
+	 * row per registry provider). Surfaced as one "not present in this run" note rather than per-suite
+	 * `missing` rows: a provider the run never dispatched has not "failed to cover" anything, and its
+	 * phantom rows would bury the real holes (16 of 24 committed coverage rows once accused two
+	 * never-dispatched providers).
+	 */
+	absentProviders: AbsentProvider[];
 }
 
 /**
@@ -201,18 +217,34 @@ function isDiskGap(reason: string): boolean {
 /** Rendering/sort precedence: the structural absences first, the merely-unreported last. */
 const OUTCOME_ORDER: Record<CoverageOutcome, number> = { skipped: 0, failed: 1, missing: 2 };
 
+/** The registry's suite names — the only ids a suite-scope gap may fold into the derivation below. */
+const REGISTERED_SUITES = new Set<string>(SUITE_NAMES);
+
 /**
  * The suites this Run actually exercised — every suite that produced a Metric for SOME provider, or
  * that some provider left a marker for. This is the denominator the missing-suite gaps are derived
  * against, and it is deliberately the Run's OWN evidence rather than the registry's `SUITE_NAMES`: a
  * Run that only ever ran the disk suite has not "failed to cover" the other five, and accusing every
  * provider of five holes would bury the one real gap in noise the reader must then learn to ignore.
+ *
+ * Only REGISTERED suite names fold in, from either source. Gap ids: a legacy bash leaf marker's
+ * pseudo-suite id (e.g. "pts_fast-cli" — the marker body's `benchmark` becomes the gap id) is a
+ * real recorded gap, but it is not a suite, and admitting it here would accuse every OTHER provider
+ * of missing a nonexistent one. (The normalizer now folds leaf ids into their suite; this filter
+ * keeps already-published Runs that predate the fold from corrupting the denominator.)
+ * `suitesCovered`: today's producer only records catalogued suites, but an already-published Run
+ * outlives the registry that validated it — a suite deregistered later would otherwise re-enter the
+ * denominator and accuse every current provider of missing a suite nobody can run anymore.
  */
 function suitesExercised(run: Run): string[] {
 	const suites = new Set<string>();
 	for (const provider of run.providers) {
-		for (const suite of provider.suitesCovered) suites.add(suite);
-		for (const gap of provider.gaps) if (gap.scope === "suite") suites.add(gap.id);
+		for (const suite of provider.suitesCovered) {
+			if (REGISTERED_SUITES.has(suite)) suites.add(suite);
+		}
+		for (const gap of provider.gaps) {
+			if (gap.scope === "suite" && REGISTERED_SUITES.has(gap.id)) suites.add(gap.id);
+		}
 	}
 	return [...suites].sort((a, b) => a.localeCompare(b, "en"));
 }
@@ -231,6 +263,11 @@ function coverageGapsOf(run: Run): CoverageGap[] {
 	const exercised = suitesExercised(run);
 
 	const gaps = run.providers.flatMap((provider): CoverageGap[] => {
+		// A zero-evidence registry row (never dispatched, or every cell lost before reporting) gets the
+		// single "not present in this run" note instead of one derived `missing` row per exercised
+		// suite. Any participation evidence — a gap, a straggler, a spec probe — keeps the provider in
+		// the derivation: it WAS part of the run, so its holes are real.
+		if (providerReportedNothing(provider)) return [];
 		const displayName = getProvider(provider.providerId)?.displayName ?? provider.providerId;
 		const accountedFor = new Set([
 			...provider.suitesCovered,
@@ -449,7 +486,10 @@ function isolationClass(declared: string | undefined): "gvisor" | "container" | 
  * "unknown" (the common case) or any unrecognized raw value never counts, so the declaration wins.
  */
 function buildRoster(run: Run): ProviderRosterEntry[] {
-	return run.providers.map((provider): ProviderRosterEntry => {
+	// "Every provider measured in this Run": a zero-evidence registry placeholder was not measured —
+	// it lands in the absent-providers note instead of a roster row claiming an isolation nobody probed.
+	const measured = run.providers.filter((p) => !providerReportedNothing(p));
+	return measured.map((provider): ProviderRosterEntry => {
 		const meta = getProvider(provider.providerId);
 		const declaredIsolation = meta?.isolation.technology;
 		const detectedIsolation = provider.observedSpecs.detectedIsolation;
@@ -501,6 +541,10 @@ export function buildLeaderboard(run: Run): Leaderboard {
 		targetSpec: run.targetSpec,
 		dimensions,
 		roster: buildRoster(run),
+		absentProviders: run.providers.filter(providerReportedNothing).map((provider) => ({
+			providerId: provider.providerId,
+			displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
+		})),
 		comparabilityCaveats: run.providers.flatMap((provider): ComparabilityCaveat[] =>
 			provider.specMatched === false
 				? [
@@ -720,6 +764,16 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"",
 	];
 	lines.push(...rosterSection(board.roster));
+	if (board.absentProviders.length > 0) {
+		// One line, not per-suite `missing` rows: the Run does not record the dispatch plan
+		// (BENCH_PROVIDERS), so "never dispatched" and "every cell lost before reporting anything" are
+		// indistinguishable here — the wording deliberately covers both.
+		const names = board.absentProviders.map((p) => p.displayName).join(", ");
+		lines.push(
+			`_Not present in this run: ${names} — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._`,
+			"",
+		);
+	}
 	for (const caveat of board.comparabilityCaveats) {
 		lines.push(
 			`> **Comparability warning:** ${caveat.displayName}'s observed compute did not match the requested CPU/RAM target; its observed allocation was **${formatSpec(caveat.observedSpecs)}**. Its measured ranks are not like-for-like with compute-matched providers.`,

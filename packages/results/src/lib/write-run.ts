@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import type { Run, RunIndex } from "@sandbox-benchmarks/schema";
-import { parseRunIndex } from "@sandbox-benchmarks/schema";
+import { parseRunIndex, providerStatusText } from "@sandbox-benchmarks/schema";
 import { normalizeResultsTree } from "./normalize-tree.ts";
 
 /**
@@ -99,7 +99,7 @@ export function summarizeRun(run: Run): string[] {
 		const skipped = provider.gaps.filter((g) => g.outcome === "skipped").length;
 		const failed = provider.gaps.filter((g) => g.outcome === "failed").length;
 		return (
-			`${provider.providerId.padEnd(12)} ${provider.validationStatus.padEnd(10)} ` +
+			`${provider.providerId.padEnd(12)} ${providerStatusText(provider).padEnd(10)} ` +
 			`metrics=${provider.metrics.length} suites=${provider.suitesCovered.length} ` +
 			`skipped=${skipped} failed=${failed} uncatalogued=${provider.uncatalogued.length}`
 		);

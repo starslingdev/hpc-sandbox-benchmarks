@@ -251,9 +251,12 @@ describe("aggregateRuns", () => {
 	});
 
 	it("disqualifies a provider whose specMatched fold has any mismatched shard, regardless of order", () => {
+		// A verdict must ride on observations (schema narrow), as the real probe always produces.
 		const matched = provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
+		matched.observedSpecs = { vcpus: 2, memoryGb: 8 };
 		matched.specMatched = true;
 		const mismatched = provider("daytona-vm", [metric("pybench_milliseconds", [900])]);
+		mismatched.observedSpecs = { vcpus: 1, memoryGb: 8 };
 		mismatched.specMatched = false;
 
 		// false is sticky no matter which shard arrives first.
@@ -273,6 +276,7 @@ describe("aggregateRuns", () => {
 		).toBeUndefined();
 
 		const matchOnly = provider("daytona-vm", [metric("pybench_milliseconds", [900])]);
+		matchOnly.observedSpecs = { vcpus: 2, memoryGb: 8 };
 		matchOnly.specMatched = true;
 		expect(
 			aggregateRuns([noProbe, shard([matchOnly])]).providers.find(

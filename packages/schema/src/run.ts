@@ -235,9 +235,13 @@ export type ResultGap = typeof resultGapSchema.infer;
 
 /**
  * One provider's slice of a Run: its catalogued Metrics, observed specs, coverage gaps and stragglers.
- * The `.narrow` enforces the cross-field invariant documented on {@link validationStatusSchema}: a
- * `validated` ProviderRun must carry at least one Metric, so `{ validationStatus: "validated",
- * metrics: [] }` is rejected at the boundary rather than reaching a consumer that branches on it.
+ * The `.narrow`s enforce two cross-field invariants: a `validated` ProviderRun must carry at least
+ * one Metric (see {@link validationStatusSchema}), so `{ validationStatus: "validated", metrics: [] }`
+ * is rejected at the boundary rather than reaching a consumer that branches on it; and a defined
+ * `specMatched` requires a non-empty `observedSpecs` — the verdict is computed FROM observations, so
+ * a row carrying one without any is a hand-authored contradiction that would otherwise render both as
+ * "not present in this run" ({@link providerReportedNothing}) and under a comparability warning about
+ * measured ranks it doesn't have.
  */
 export const providerRunSchema = type({
 	providerId: "string",
@@ -259,13 +263,53 @@ export const providerRunSchema = type({
 	/** Benchmarks that reported no result here, each tagged with WHY (see {@link resultGapSchema}). */
 	gaps: resultGapSchema.array(),
 	uncatalogued: uncataloguedResultSchema.array(),
-}).narrow(
-	(run, ctx) =>
-		run.validationStatus !== "validated" ||
-		run.metrics.length > 0 ||
-		ctx.mustBe('a ProviderRun with at least one metric when validationStatus is "validated"'),
-);
+})
+	.narrow(
+		(run, ctx) =>
+			run.validationStatus !== "validated" ||
+			run.metrics.length > 0 ||
+			ctx.mustBe('a ProviderRun with at least one metric when validationStatus is "validated"'),
+	)
+	.narrow(
+		(run, ctx) =>
+			run.specMatched === undefined ||
+			Object.keys(run.observedSpecs).length > 0 ||
+			ctx.mustBe("a ProviderRun with observedSpecs when specMatched carries a verdict"),
+	);
 export type ProviderRun = typeof providerRunSchema.infer;
+
+/**
+ * True when a ProviderRun carries NO evidence of participation at all: no metric, no coverage, no
+ * gap, no uncatalogued straggler, no observed-spec reading, no host-metadata record. This is exactly
+ * the shape the normalizer emits for an absent raw directory — a registered provider the run never
+ * dispatched (or whose every cell was lost before reporting anything). It is deliberately stricter
+ * than "no metrics": a straggler, a spec probe, or a host record IS participation evidence, and a
+ * provider that reported any of them belongs in the coverage derivation, not in the absent list.
+ * Consumers (the leaderboard's coverage derivation, the CLI status logs) use it to keep the pending
+ * dataset row first-class while not accusing a never-dispatched provider of per-suite holes.
+ * `specMatched` needs no clause of its own: the schema narrow rejects a verdict without
+ * observations, and observations already count via `observedSpecs`.
+ */
+export function providerReportedNothing(p: ProviderRun): boolean {
+	return (
+		p.metrics.length === 0 &&
+		p.suitesCovered.length === 0 &&
+		p.gaps.length === 0 &&
+		p.uncatalogued.length === 0 &&
+		Object.keys(p.observedSpecs).length === 0 &&
+		(p.hostMetadata?.length ?? 0) === 0
+	);
+}
+
+/**
+ * Display status for a ProviderRun row: the validation status, tagged "(no shard data)" when the
+ * row is a zero-evidence registry placeholder — so a never-dispatched provider stops printing
+ * indistinguishably from a freshly-attempted shard that also reads `pending metrics=0`. Shared by
+ * every human-facing status line (CI job summaries, `summarizeRun`) so the two views can't drift.
+ */
+export function providerStatusText(p: ProviderRun): string {
+	return providerReportedNothing(p) ? `${p.validationStatus} (no shard data)` : p.validationStatus;
+}
 
 /**
  * A full benchmark Run: every provider measured against one pinned target spec at one SHA.

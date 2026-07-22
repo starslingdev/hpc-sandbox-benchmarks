@@ -796,11 +796,12 @@ describe("coverage gaps: the holes nobody recorded", () => {
 		// The case the whole derivation exists for, and the one that was previously invisible: e2b produced
 		// no result AND left no marker, so it appears in no ranked table (no value) and in no recorded gap
 		// (no marker). Without deriving it, a provider that contributed nothing to the run reads as absent
-		// from the comparison rather than as failing to cover it.
+		// from the comparison rather than as failing to cover it. The spec-probe reading is what keeps e2b
+		// a PARTICIPANT here — a row with zero evidence of any kind is "not present in this run" instead.
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk"]),
-				provider("e2b", []),
+				{ ...provider("e2b", []), observedSpecs: { vcpus: 2 } },
 			]),
 		);
 		expect(board.coverageGaps).toEqual([
@@ -925,7 +926,8 @@ describe("coverage gaps: the holes nobody recorded", () => {
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
-					provider("e2b", []),
+					// The spec probe keeps e2b in the derivation (a zero-evidence row would be "not present").
+					{ ...provider("e2b", []), observedSpecs: { vcpus: 2 } },
 				]),
 			),
 		);
@@ -959,6 +961,104 @@ describe("coverage gaps: the holes nobody recorded", () => {
 			"disk/skipped", // ❌ disk leads: a structural absence
 			"cpu-node/failed", // then what broke
 			"pgbench/missing", // then what never said anything at all
+		]);
+	});
+});
+
+describe("absent providers (zero-evidence registry rows) and the registered-suite denominator", () => {
+	const HEADLINE = "node_web_tooling_runs_per_s";
+
+	it("collapses a zero-evidence provider into ONE not-present note, out of gaps and the roster", () => {
+		// The dataset keeps one pending row per registry provider (first-class), but a provider the run
+		// never dispatched has not "failed to cover" anything — per-suite `missing` rows for it once
+		// buried the two real holes under 16 phantom ones in the committed LEADERBOARD.md.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk"]),
+				provider("modal-vm", []),
+			]),
+		);
+		expect(board.coverageGaps.filter((g) => g.providerId === "modal-vm")).toEqual([]);
+		expect(board.absentProviders).toEqual([{ providerId: "modal-vm", displayName: "Modal (VM)" }]);
+		expect(board.roster.map((r) => r.providerId)).toEqual(["daytona-vm"]);
+		const md = renderLeaderboardMarkdown(board);
+		expect(md).toContain(
+			"_Not present in this run: Modal (VM) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._",
+		);
+	});
+
+	it("keeps a provider with ANY participation evidence in the missing-suite derivation", () => {
+		// A recorded gap (and equally a straggler or a spec probe) proves the provider was part of the
+		// run, so its other holes are real derived-missing rows, not a "not present" note.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk"]),
+				provider(
+					"e2b",
+					[],
+					[{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "PTS died" }],
+				),
+			]),
+		);
+		expect(board.absentProviders).toEqual([]);
+		expect(board.coverageGaps.map((g) => `${g.providerId}/${g.id}/${g.outcome}`)).toEqual([
+			"e2b/cpu-node/failed",
+			"e2b/disk/missing",
+		]);
+	});
+
+	it("does not double a recorded suite-shortfall gap with a derived missing row", () => {
+		// The normalizer's shortfall gap carries id === suite, so accountedFor suppresses the derived
+		// row for that suite — the provider stays covered (keep+warn), warned exactly once.
+		const shortfall = {
+			scope: "suite" as const,
+			id: "memory",
+			outcome: "failed" as const,
+			reason:
+				"PTS ran but every trial failed for 2 of 4 declared metrics: stream_type_add (memory/pts_stream.xml), stream_type_triad (memory/pts_stream.xml) — attempted, no value recorded",
+		};
+		const board = buildLeaderboard(
+			run([
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [shortfall], ["cpu-node", "memory"]),
+				provider("e2b", [metric(HEADLINE, [12, 13])], [], ["cpu-node", "memory"]),
+			]),
+		);
+		expect(board.coverageGaps.map((g) => `${g.providerId}/${g.id}/${g.outcome}`)).toEqual([
+			"daytona-vm/memory/failed",
+		]);
+	});
+
+	it("keeps a non-registered suitesCovered name out of the denominator", () => {
+		// A published Run outlives the registry that validated it: a suite covered then but
+		// deregistered since must not accuse every current provider of missing a suite nobody can
+		// run anymore — same rule the gap-id side already enforces.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "retired-suite"]),
+				provider("e2b", [metric(HEADLINE, [12, 13])], [], ["cpu-node"]),
+			]),
+		);
+		expect(board.coverageGaps).toEqual([]);
+	});
+
+	it("keeps a non-registered gap id out of every OTHER provider's derived-missing rows", () => {
+		// A legacy bash leaf marker's pseudo-suite id ("pts_fast-cli") is a real recorded gap for its
+		// own provider, but it is not a suite — folding it into the denominator would accuse every
+		// other provider of missing a nonexistent one.
+		const board = buildLeaderboard(
+			run([
+				provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
+				provider(
+					"e2b",
+					[metric(HEADLINE, [12, 13])],
+					[{ scope: "suite", id: "pts_fast-cli", outcome: "failed", reason: "no numeric value" }],
+					["cpu-node"],
+				),
+			]),
+		);
+		// The recorded gap itself still renders for e2b; daytona is accused of nothing.
+		expect(board.coverageGaps.map((g) => `${g.providerId}/${g.id}/${g.outcome}`)).toEqual([
+			"e2b/pts_fast-cli/failed",
 		]);
 	});
 });

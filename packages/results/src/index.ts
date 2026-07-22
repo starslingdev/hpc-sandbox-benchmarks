@@ -7,6 +7,7 @@
 // normalize a raw tree, write the Run, and summarize it.
 export { aggregateRuns } from "./lib/aggregate.ts";
 export {
+	type AbsentProvider,
 	buildLeaderboard,
 	type ComparabilityCaveat,
 	// Every type reachable from `Leaderboard` is exported with it: a consumer that can hold the value but

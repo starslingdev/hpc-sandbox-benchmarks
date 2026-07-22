@@ -1,11 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import type { ProviderRun } from "./index.ts";
 import {
+	aggregate,
 	harnessGapMarkerJson,
 	isPtsForensicsFile,
 	isPtsResultFile,
 	isSkipMarkerFile,
 	parseGapMarker,
 	parseResultsArtifactName,
+	providerReportedNothing,
 	ptsForensicsFile,
 	resultsArtifactName,
 	sandboxSkipMarkerFile,
@@ -147,6 +150,39 @@ describe("parseGapMarker", () => {
 		});
 	});
 
+	it("reads the bench.sh fail_result shape (a leaf that RAN and errored on every trial)", () => {
+		// The exact body run_pts_benchmark writes beside a value-less composite. The --failed.json
+		// suffix decides the outcome, the body's outcome agrees, and `benchmark` becomes the gap id —
+		// the LEAF name at this layer (the normalizer folds it into the suite).
+		const marker = parseGapMarker(
+			"pts_fio-rand-read--failed.json",
+			{
+				outcome: "failed",
+				benchmark: "pts_fio-rand-read",
+				reason:
+					"PTS batch-run of pts/fio-2.1.0 completed but every trial errored (composite carries no values)",
+			},
+			"modal-gvisor",
+		);
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "pts_fio-rand-read",
+			outcome: "failed",
+			reason:
+				"PTS batch-run of pts/fio-2.1.0 completed but every trial errored (composite carries no values)",
+		});
+	});
+
+	it("rejects the fail_result body under a --skipped.json filename (suffix/body contradiction)", () => {
+		expect(
+			parseGapMarker(
+				"pts_fio-rand-read--skipped.json",
+				{ outcome: "failed", benchmark: "pts_fio-rand-read", reason: "every trial errored" },
+				"modal-gvisor",
+			),
+		).toBeUndefined();
+	});
+
 	it("rejects a marker whose body outcome contradicts the filename suffix (literal trap)", () => {
 		// The two halves disagree, so the marker is corrupt: guessing which to believe is how a crashed
 		// suite gets published as a deliberate skip. Neither direction is resolved by precedence.
@@ -168,5 +204,53 @@ describe("parseGapMarker", () => {
 
 	it("returns undefined when the filename is not a gap marker", () => {
 		expect(parseGapMarker("results.json", { skipped: true }, "daytona")).toBeUndefined();
+	});
+});
+
+// Colocated with the marker tests (both sides of "did this provider report anything?"): the marker
+// files are the evidence trail, and this predicate is what consumers use when NO trail exists.
+describe("providerReportedNothing", () => {
+	const empty = (): ProviderRun => ({
+		providerId: "modal-vm",
+		validationStatus: "pending",
+		observedSpecs: {},
+		metrics: [],
+		suitesCovered: [],
+		gaps: [],
+		uncatalogued: [],
+	});
+
+	it("is true for the zero-evidence placeholder the normalizer emits for an absent raw dir", () => {
+		expect(providerReportedNothing(empty())).toBe(true);
+	});
+
+	it("flips false on EACH single piece of participation evidence", () => {
+		expect(
+			providerReportedNothing({
+				...empty(),
+				validationStatus: "validated",
+				metrics: [{ metricId: "m", samples: [1], aggregates: aggregate([1]) }],
+			}),
+		).toBe(false);
+		expect(providerReportedNothing({ ...empty(), suitesCovered: ["cpu-node"] })).toBe(false);
+		expect(
+			providerReportedNothing({
+				...empty(),
+				gaps: [{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "died" }],
+			}),
+		).toBe(false);
+		expect(
+			providerReportedNothing({
+				...empty(),
+				uncatalogued: [{ id: "pts/x::default::s", value: 1, sourceFile: "pts_x.xml" }],
+			}),
+		).toBe(false);
+		expect(providerReportedNothing({ ...empty(), observedSpecs: { vcpus: 2 } })).toBe(false);
+		expect(
+			providerReportedNothing({
+				...empty(),
+				hostMetadata: [{ source: "mise/system-provider", sourceFile: "s.json", fields: [] }],
+			}),
+		).toBe(false);
 	});
 });

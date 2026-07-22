@@ -24,12 +24,12 @@ cross-check.
 | Provider | Isolation (declared) | Detected |
 | --- | --- | --- |
 | Blaxel | microVM | vm |
-| Daytona (container) | container (Sysbox/OCI) | — |
 | Daytona (VM) | microVM (Linux VM) | vm |
 | E2B | Firecracker microVM | vm |
 | Modal (gVisor) | gVisor container | gvisor |
-| Modal (VM) | microVM (VM runtime) | — |
 | Novita | microVM | vm |
+
+_Not present in this run: Daytona (container), Modal (VM) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._
 
 ## cpu
 
@@ -567,7 +567,7 @@ _Novita is cheapest · Daytona (VM) is ~1.1× higher (lower is better)._
 
 ## Coverage gaps
 
-24 uncovered results across 6 providers (Daytona (container) 8, Daytona (VM) 1, E2B 3, Modal (gVisor) 3, Modal (VM) 8, Novita 1). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
+8 uncovered results across 4 providers (Daytona (VM) 1, E2B 3, Modal (gVisor) 3, Novita 1). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
 
 <details>
 <summary>Full coverage table</summary>
@@ -580,24 +580,8 @@ _Novita is cheapest · Daytona (VM) is ~1.1× higher (lower is better)._
 | E2B | network | **failed** | Step "mise run benchmark:network:all" failed with exit code 1 |
 | Modal (gVisor) | realworld-openclaw | **failed** | Step "mise run benchmark:realworld:pts:openclaw" timed out after 4800s |
 | Novita | network | **failed** | Step "mise run benchmark:network:all" failed with exit code 1 |
-| Daytona (container) | cpu-node | **missing** | No result and no marker — the suite never reported for this provider. |
-| Daytona (container) | disk | **missing** | No result and no marker — the suite never reported for this provider. |
-| Daytona (container) | memory | **missing** | No result and no marker — the suite never reported for this provider. |
-| Daytona (container) | network | **missing** | No result and no marker — the suite never reported for this provider. |
-| Daytona (container) | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
-| Daytona (container) | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
-| Daytona (container) | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
-| Daytona (container) | system | **missing** | No result and no marker — the suite never reported for this provider. |
 | Modal (gVisor) | disk | **missing** | No result and no marker — the suite never reported for this provider. |
 | Modal (gVisor) | memory | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | cpu-node | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | disk | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | memory | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | network | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
-| Modal (VM) | system | **missing** | No result and no marker — the suite never reported for this provider. |
 
 **skipped** — a precondition said no before the benchmark was attempted. A ❌ **disk** skip is the
 loud one: the provider could not supply the disk the suite needs, so the workload does not run on

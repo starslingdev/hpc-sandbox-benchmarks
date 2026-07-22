@@ -155,6 +155,28 @@ describe("Run schema", () => {
 		expect(parseRun(pending).providers[0]?.validationStatus).toBe("pending");
 	});
 
+	it("rejects a specMatched verdict on a ProviderRun that observed nothing", () => {
+		// specMatched is computed FROM observations; a row carrying a verdict with an empty
+		// observedSpecs would render both as "not present in this run" and under a comparability
+		// warning about measured ranks it doesn't have. Unrepresentable beats contradictory.
+		const bad = structuredClone(validRun);
+		const provider = bad.providers[0];
+		if (provider) {
+			provider.validationStatus = "pending";
+			provider.metrics = [];
+			(provider as Record<string, unknown>).observedSpecs = {};
+			(provider as Record<string, unknown>).specMatched = false;
+		}
+		expect(() => parseRun(bad)).toThrow(/observedSpecs when specMatched/);
+	});
+
+	it("accepts a specMatched verdict backed by observations", () => {
+		const good = structuredClone(validRun);
+		const provider = good.providers[0];
+		if (provider) (provider as Record<string, unknown>).specMatched = true;
+		expect(parseRun(good).providers[0]?.specMatched).toBe(true);
+	});
+
 	it("rejects a non-finite sample", () => {
 		const bad = structuredClone(validRun);
 		const metric = bad.providers[0]?.metrics[0];

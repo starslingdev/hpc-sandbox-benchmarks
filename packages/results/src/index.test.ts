@@ -54,7 +54,12 @@ describe("normalizeResultsTree", () => {
 		expect(e2b?.metrics).toEqual([]);
 	});
 
-	it("summarizes one line per provider", () => {
-		expect(summarizeRun(run)).toHaveLength(PROVIDERS.length);
+	it("summarizes one line per provider, tagging zero-evidence rows", () => {
+		const lines = summarizeRun(run);
+		expect(lines).toHaveLength(PROVIDERS.length);
+		// Same status text the CI job summary prints (shared providerStatusText): a never-dispatched
+		// provider must not read like a freshly-attempted shard that also shows `pending metrics=0`.
+		expect(lines.find((l) => l.startsWith("e2b"))).toContain("pending (no shard data)");
+		expect(lines.find((l) => l.startsWith("daytona-vm"))).not.toContain("(no shard data)");
 	});
 });

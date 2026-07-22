@@ -6,6 +6,7 @@
 import type { AnnotationProperties } from "@actions/core";
 import * as core from "@actions/core";
 import type { Run } from "@sandbox-benchmarks/schema";
+import { providerStatusText } from "@sandbox-benchmarks/schema";
 
 export type CellKind = "plain" | "code";
 
@@ -88,7 +89,7 @@ export function providerSummaryRows(run: Run): SummaryRow[] {
 		const failed = provider.gaps.filter((g) => g.outcome === "failed").length;
 		return [
 			renderCell(provider.providerId, "code"),
-			escapeHtml(provider.validationStatus),
+			escapeHtml(providerStatusText(provider)),
 			escapeHtml(String(provider.metrics.length)),
 			escapeHtml(String(provider.suitesCovered.length)),
 			escapeHtml(String(skipped)),
@@ -109,7 +110,7 @@ export async function logProviderStatuses(
 			const skipped = provider.gaps.filter((g) => g.outcome === "skipped").length;
 			const failed = provider.gaps.filter((g) => g.outcome === "failed").length;
 			const line =
-				`${provider.providerId} status=${provider.validationStatus} ` +
+				`${provider.providerId} status=${providerStatusText(provider)} ` +
 				`metrics=${provider.metrics.length} suites=${provider.suitesCovered.length} ` +
 				`skipped=${skipped} failed=${failed} uncatalogued=${provider.uncatalogued.length}`;
 			logInfo(line);
