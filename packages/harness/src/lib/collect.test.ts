@@ -7,7 +7,7 @@ import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import { harnessGapMarkerJson } from "@sandbox-benchmarks/schema";
 import { collectResults, writeGapMarker } from "./collect.ts";
 import type { SandboxHandle } from "./execute.ts";
-import { StepRunner } from "./execute.ts";
+import { MIN, StepRunner } from "./execute.ts";
 
 const work = mkdtempSync(join(tmpdir(), "harness-collect-"));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -16,6 +16,9 @@ afterAll(() => rmSync(work, { recursive: true, force: true }));
 // fakes return their stdout for every command, which the detached cat-poll would misread as a done-file.
 // The detached collect path is covered by execute.test.ts and end-to-end in index.test.ts.
 const UNCAPPED: ProviderTransport = { streaming: false, syncCapMs: null, detachedPoll: false };
+// The LogReadbackError-retry test needs the real detached path (log-file read-back is where the
+// transport failure lives), so it runs capped with an fs-transport fake.
+const CAPPED: ProviderTransport = { streaming: false, syncCapMs: MIN, detachedPoll: true };
 
 // Build the exact stdout the in-sandbox collect command emits: markers around a base64'd tar of a
 // benchmark-results/ directory holding the given files (name → contents).
@@ -83,14 +86,114 @@ describe("collectResults", () => {
 		).rejects.toThrow(/no PTS result or gap marker/);
 	});
 
-	it("throws when the payload markers are missing", async () => {
+	it("retries the collect step on a marker miss and succeeds when a later attempt delivers", async () => {
+		// Regression: collect was single-attempt, so ONE transient read-back failure (empty stdout from
+		// an alive sandbox — Blaxel, 2026-07-19) permanently discarded a completed suite's results even
+		// though re-running the idempotent tar|base64 step would have succeeded.
+		let calls = 0;
+		const payload = collectPayload({ "pts_node-web-tooling.xml": "<xml/>" });
+		const flaky: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: ++calls === 1 ? "" : payload }),
+			destroy: async () => undefined,
+		};
+		const resultsDir = join(work, "flaky");
+		await collectResults(new StepRunner(flaky, UNCAPPED), resultsDir);
+		expect(calls).toBe(2);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(true);
+	});
+
+	it("throws the transport-failure diagnosis when every attempt returns empty stdout", async () => {
+		let calls = 0;
+		const empty: SandboxHandle = {
+			runCommand: async () => {
+				calls++;
+				return { exitCode: 0, stdout: "" };
+			},
+			destroy: async () => undefined,
+		};
+		await expect(
+			collectResults(new StepRunner(empty, UNCAPPED), join(work, "empty-stdout")),
+		).rejects.toThrow(/markers.*transport failure/s);
+		// Every attempt in the retry budget was spent before giving up.
+		expect(calls).toBe(3);
+	});
+
+	it("retries when the completed step's log read-back itself failed (LogReadbackError)", async () => {
+		// The transport-failure THROW from readCompletedLog must be retryable here — the transports
+		// can recover between attempts (the Blaxel shape) — while command failures and timeouts still
+		// propagate. First collect: every fs read fails AND the exec cat fails (exit 1, which must
+		// surface as failure, not as an empty successful read) -> LogReadbackError. Second collect:
+		// the fs API has recovered and delivers the payload.
+		const READBACK_ATTEMPTS = 5; // mirrors execute.ts — first collect burns exactly this many fs reads
+		let logReads = 0;
+		const payload = collectPayload({ "pts_node-web-tooling.xml": "<xml/>" });
+		const flakyFs: SandboxHandle = {
+			runCommand: async (command: string) => {
+				if (command.includes("cat ")) return { exitCode: 1, stdout: "" };
+				return { exitCode: 0, stdout: "launched" };
+			},
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async (path) => path.endsWith(".done"),
+				readFile: async (path) => {
+					if (path.endsWith(".done")) return "0";
+					if (++logReads <= READBACK_ATTEMPTS) throw new Error("fs API down");
+					return payload;
+				},
+			},
+		};
+		const resultsDir = join(work, "flaky-readback");
+		await collectResults(new StepRunner(flakyFs, CAPPED, async () => undefined), resultsDir);
+		expect(logReads).toBeGreaterThan(READBACK_ATTEMPTS);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(true);
+	});
+
+	it("throws the truncation diagnosis when stdout is non-empty but markerless", async () => {
+		// A payload that came back but lost its markers is a different failure (truncated/malformed
+		// payload) from one that never came back at all — the error must not conflate them.
 		const noMarkers: SandboxHandle = {
 			runCommand: async () => ({ exitCode: 0, stdout: "no markers here" }),
 			destroy: async () => undefined,
 		};
 		await expect(
 			collectResults(new StepRunner(noMarkers, UNCAPPED), join(work, "x")),
-		).rejects.toThrow(/markers/);
+		).rejects.toThrow(/markers.*truncated or malformed/s);
+	});
+
+	it("retries when a marker-bounded payload fails to extract, then succeeds", async () => {
+		// A payload that arrived WITH both markers but is corrupt mid-stream (a cut that still landed
+		// END) must be retried like a marker miss — decode + tar extract live inside the retry boundary,
+		// so the idempotent re-collect can deliver an intact tar rather than aborting the suite on the
+		// host-side tar failure.
+		let calls = 0;
+		const good = collectPayload({ "pts_node-web-tooling.xml": "<xml/>" });
+		const corrupt = "noise\n__BENCH_RESULTS_TGZ_BEGIN__\nZZZnotarZZZ\n__BENCH_RESULTS_TGZ_END__\n";
+		const flaky: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: ++calls === 1 ? corrupt : good }),
+			destroy: async () => undefined,
+		};
+		const resultsDir = join(work, "corrupt-then-good");
+		await collectResults(new StepRunner(flaky, UNCAPPED), resultsDir);
+		expect(calls).toBe(2);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(true);
+	});
+
+	it("does not retry a valid tree that simply has no PTS result or marker (deterministic)", async () => {
+		// The content gate is deterministic: a re-collect of the same in-sandbox tree can't conjure a
+		// result, so it must fail on the FIRST attempt rather than burn the whole retry budget on a
+		// re-run that cannot change the outcome.
+		let calls = 0;
+		const empty: SandboxHandle = {
+			runCommand: async () => {
+				calls++;
+				return { exitCode: 0, stdout: collectPayload({ "manifest.ndjson": "{}\n" }) };
+			},
+			destroy: async () => undefined,
+		};
+		await expect(
+			collectResults(new StepRunner(empty, UNCAPPED), join(work, "no-signal-once")),
+		).rejects.toThrow(/no PTS result or gap marker/);
+		expect(calls).toBe(1);
 	});
 });
 

@@ -45,6 +45,12 @@ const POLL_CAP_MS = 10_000;
 const MAX_CONSECUTIVE_POLL_FAILURES = 12;
 /** How much of a timed-out detached step's log to surface — enough to diagnose, not enough to flood. */
 const TIMEOUT_LOG_TAIL_LINES = 50;
+/** Retry budget for reading a COMPLETED detached step's log — the step's only output. One swallowed
+ *  transient fs-API error (Blaxel, 2026-07-19) once turned a finished suite's results into stdout ""
+ *  and the run's 4 valid samples were discarded, so mirror the poll loop's philosophy
+ *  ({@link MAX_CONSECUTIVE_POLL_FAILURES}): tolerate a blip, fail loudly only on a run of failures. */
+const READBACK_ATTEMPTS = 5;
+const READBACK_DELAY_MS = 2_000;
 /** Done-file sentinel for the no-filesystem cat-poll fallback: printed while the file isn't there yet. */
 const RUNNING_SENTINEL = "__RUNNING__";
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -242,6 +248,13 @@ function startHeartbeat(label: string, startedAt: number, timeoutMs: number): ()
  * Runs suite steps against one sandbox, charging each step's elapsed wall time to the current Phase
  * (`phase` is mutated by the orchestrator as the job progresses). One instance per sandbox/suite job.
  */
+/**
+ * A completed detached step whose log no transport could read back. Typed so callers that can
+ * usefully re-run the whole step (collectResults — tar|base64 is idempotent) can tell this
+ * RETRYABLE transport condition apart from a command failure or timeout, which must propagate.
+ */
+export class LogReadbackError extends Error {}
+
 export class StepRunner {
 	/** The phase subsequent steps are charged to. */
 	phase: Phase = "setup";
@@ -382,10 +395,17 @@ export class StepRunner {
 					}
 				}
 				if (exitCode !== undefined) {
-					const stdout = fs
-						? await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read").catch(() => "")
-						: await this.catFile(logPath);
-					return this.finishStep(label, started, { exitCode, stdout }, opts);
+					try {
+						const stdout = await this.readCompletedLog(fs, logPath, label);
+						return this.finishStep(label, started, { exitCode, stdout }, opts);
+					} finally {
+						// The read-back is done — its contents are in memory — so drop the log/done files
+						// now. collectResults re-runs the WHOLE detached step on a transient read-back
+						// failure, and each attempt's log holds the entire base64 results tar; leaving stale
+						// ones behind would pile large files into the sandbox's /tmp across retries, exactly
+						// when the sandbox disk is tight (the case the stdout-streamed collect exists for).
+						await this.removeDetachedFiles(logPath, donePath);
+					}
 				}
 				if (performance.now() > deadline) {
 					// Recover the detached job's own output BEFORE killing it and tearing the sandbox down.
@@ -480,28 +500,76 @@ export class StepRunner {
 		return lines.slice(-TIMEOUT_LOG_TAIL_LINES).join("\n");
 	}
 
-	/** `cat` the log for {@link readLogTail}, preserving a read failure as `null`. Deliberately NOT
-	 *  {@link catFile}: that one folds every failure into `""`, which is right for the poll loop (an
-	 *  absent done-file is not an error) but would make a wedged sandbox indistinguishable from a step
-	 *  that simply printed nothing — the one distinction this diagnostic exists to draw. */
+	/**
+	 * Read a COMPLETED detached step's log back — the step's entire output. The primary transport (fs
+	 * when exposed, else the exec `cat`) is retried through transient blips ({@link READBACK_ATTEMPTS});
+	 * a filesystem API that stays down falls back to the exec transport, which can be healthy while the
+	 * fs API is not (observed on Blaxel). When every transport fails, THROW: folding the failure into
+	 * stdout `""` handed callers that parse the output (collectResults) an empty string, silently
+	 * discarding a finished suite's results while the sandbox was alive and still holding them.
+	 */
+	private async readCompletedLog(
+		fs: SandboxFilesystem | undefined,
+		logPath: string,
+		label: string,
+	): Promise<string> {
+		let lastFailure = "";
+		for (let attempt = 1; attempt <= READBACK_ATTEMPTS; attempt++) {
+			if (fs) {
+				try {
+					return await withTimeout(fs.readFile(logPath), POLL_CAP_MS, "log fs read");
+				} catch (err) {
+					lastFailure = err instanceof Error ? err.message : String(err);
+				}
+			} else {
+				const text = await this.catLogOrNull(logPath);
+				if (text !== null) return text;
+				lastFailure = "log cat read failed";
+			}
+			if (attempt < READBACK_ATTEMPTS) await this.sleep(READBACK_DELAY_MS);
+		}
+		// Cross-transport fallback: the fs API can be freshly wedged while plain exec still answers —
+		// try the other transport before declaring the log unreachable. (No-fs sandboxes already spent
+		// every attempt on exec; there is no other transport to try.)
+		if (fs) {
+			const text = await this.catLogOrNull(logPath);
+			if (text !== null) return text;
+			lastFailure = `${lastFailure}; exec fallback also failed`;
+		}
+		throw new LogReadbackError(
+			`Step "${label}" completed but its log could not be read back (transport failure): ` +
+				`${READBACK_ATTEMPTS} reads failed (last: ${lastFailure}) — the step's output still exists ` +
+				`in the sandbox but no transport could reach it`,
+		);
+	}
+
+	/** `cat` the log over exec for {@link readLogTail} and {@link readCompletedLog}, preserving a read
+	 *  failure as `null` rather than folding it into `""` — an unreadable log (wedged sandbox, dead
+	 *  transport) must stay distinguishable from a step that simply printed nothing. */
 	private async catLogOrNull(logPath: string): Promise<string | null> {
+		// No `|| true`: a failing cat (unreadable/absent log) must surface as null, not as a
+		// successful empty read — `|| true` once collapsed exec-transport failure into stdout "",
+		// which readCompletedLog then accepted as the step's real (empty) output. Exit 0 with empty
+		// stdout remains a legitimate read of a genuinely empty log.
 		return withTimeout(
-			this.sandbox.runCommand(`bash -c ${shellQuote(`cat ${logPath} 2>/dev/null || true`)}`),
+			this.sandbox.runCommand(`bash -c ${shellQuote(`cat ${logPath} 2>/dev/null`)}`),
 			POLL_CAP_MS,
 			"log cat read",
 		)
-			.then((res) => res.stdout ?? "")
+			.then((res) => ((res.exitCode ?? 0) === 0 ? (res.stdout ?? "") : null))
 			.catch(() => null);
 	}
 
-	/** Read the detached step's log over `exec` — the output transport for the no-filesystem path. */
-	private async catFile(logPath: string): Promise<string> {
-		const res = await withTimeout(
-			this.sandbox.runCommand(`bash -c ${shellQuote(`cat ${logPath} 2>/dev/null || true`)}`),
+	/** Best-effort delete a completed detached step's log + done files once their contents have been
+	 *  read back. Bounded so a hung fs can't stall teardown, and it NEVER throws: cleanup must not mask
+	 *  the step's real result, and a sandbox on its way to `destroy()` may already be unreachable — a
+	 *  failed rm just leaves the same orphaned files the sandbox teardown reclaims anyway. */
+	private async removeDetachedFiles(logPath: string, donePath: string): Promise<void> {
+		await withTimeout(
+			this.sandbox.runCommand(`bash -c ${shellQuote(`rm -f ${logPath} ${donePath}`)}`),
 			POLL_CAP_MS,
-			"log cat read",
+			"detached file cleanup",
 		).catch(() => undefined);
-		return res?.stdout ?? "";
 	}
 
 	/** Shared post-step bookkeeping: record the step, echo output (unless silent), enforce exit code. */

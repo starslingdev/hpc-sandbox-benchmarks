@@ -188,6 +188,18 @@ describe("StepRunner.runDetached", () => {
 		expect(runner.stepLog[0]).toMatchObject({ label: "bench", exitCode: 0 });
 	});
 
+	it("deletes the detached log + done files after reading them back", async () => {
+		// Each retried collect starts a fresh detached step whose log holds the entire base64 results
+		// tar; without cleanup those large files pile up in the sandbox's /tmp across retries, exactly
+		// when the disk is tight. The completed step must rm both files once their contents are in hand.
+		const { sandbox, commands } = detachedSandbox({ log: "done", exitCode: "0" });
+		const runner = new StepRunner(sandbox);
+		await runner.runDetached("bench", "mise run benchmark", 60_000);
+		const cleanup = commands.find((c) => c.command.includes("rm -f") && c.command.includes(".log"));
+		expect(cleanup).toBeDefined();
+		expect(cleanup?.command).toContain(".done");
+	});
+
 	it("propagates a non-zero detached exit code as a failure", async () => {
 		const { sandbox } = detachedSandbox({ exitCode: "42" });
 		const runner = new StepRunner(sandbox);
@@ -390,6 +402,80 @@ describe("StepRunner.runDetached", () => {
 		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toBe("recovered fine");
+	});
+
+	it("retries the completed step's log read-back through transient fs blips", async () => {
+		// Regression: the completion read-back was ONE fs attempt with the error folded into stdout ""
+		// (Blaxel, 2026-07-19) — a transient fs-API slowdown silently discarded a finished suite's
+		// results. A blip must be retried, not swallowed.
+		let logReads = 0;
+		const sandbox: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: "launched" }),
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async (path) => path.endsWith(".done"),
+				readFile: async (path) => {
+					if (path.endsWith(".done")) return "0";
+					if (++logReads < 3) throw new Error("fs API slow");
+					return "read back on attempt 3";
+				},
+			},
+		};
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("read back on attempt 3");
+		expect(logReads).toBe(3);
+	});
+
+	it("falls back to the exec transport when the fs log read-back keeps failing", async () => {
+		// The fs API can be wedged while plain exec still answers — the log must come back over `cat`
+		// rather than the whole completed step failing.
+		const commands: string[] = [];
+		const sandbox: SandboxHandle = {
+			runCommand: async (command) => {
+				commands.push(command);
+				if (command.includes("cat")) return { exitCode: 0, stdout: "read back over exec" };
+				return { exitCode: 0, stdout: "launched" };
+			},
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async (path) => path.endsWith(".done"),
+				readFile: async (path) => {
+					if (path.endsWith(".done")) return "0";
+					throw new Error("fs API down"); // every .log read
+				},
+			},
+		};
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("read back over exec");
+		expect(commands.some((c) => c.includes("cat") && c.includes(".log"))).toBe(true);
+	});
+
+	it("throws a distinct transport-failure error when the completed log is unreachable everywhere", async () => {
+		// Regression: with every transport dead this returned stdout "" — collectResults then threw a
+		// misleading marker error and a fully-valid suite run was discarded. The step must fail with a
+		// diagnosis that says the step COMPLETED but its output could not be fetched.
+		const sandbox: SandboxHandle = {
+			runCommand: async (command) => {
+				if (command.includes("cat")) throw new Error("exec transport down too");
+				return { exitCode: 0, stdout: "launched" };
+			},
+			destroy: async () => undefined,
+			filesystem: {
+				exists: async (path) => path.endsWith(".done"),
+				readFile: async (path) => {
+					if (path.endsWith(".done")) return "0";
+					throw new Error("fs API down");
+				},
+			},
+		};
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		await expect(runner.runDetached("bench", "mise run benchmark", 60_000)).rejects.toThrow(
+			/completed but its log could not be read back \(transport failure\)/,
+		);
 	});
 
 	it("distinguishes a wedged from a quiet sandbox on the no-filesystem path too", async () => {
