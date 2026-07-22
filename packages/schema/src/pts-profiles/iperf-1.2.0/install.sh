@@ -23,8 +23,11 @@ set -eu
 #     `sleep 3` with a bounded readiness poll on /proc/net/tcp{,6} (the deleted vendored
 #     network-loopback runner's proven pattern) that falls through after ~10s and lets the client
 #     fail honestly.
-#   * The vendored test-definition.xml pins TimesToRun to 2 (repo rule: trial count stays 2) and
-#     the option matrix to the localhost subset the network suite actually runs.
+#   * The vendored test-definition.xml is BYTE-IDENTICAL to upstream at the pinned REF (the fio
+#     precedent: full option matrix catalogued; the producer leaf pins its combinations via
+#     PRESET_OPTIONS). Its TimesToRun=3 is inert: the harness preamble pins FORCE_TIMES_TO_RUN from
+#     Suite.ptsTimesToRun (k=2 — repo rule: trial count stays 2) and lib/bench.sh pins 1 for bare
+#     runs.
 
 prefix="$(pwd)/iperf-install"
 rm -rf iperf-3.14 "$prefix"

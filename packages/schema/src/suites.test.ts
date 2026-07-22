@@ -66,13 +66,11 @@ describe("suite registry", () => {
 	it("mirrors the unpinned suites' metrics from the generated catalog (no hand-drift)", () => {
 		// These suites' declared metrics are exactly what the catalog lists for their profiles — pin the
 		// declared list to it in BOTH directions (a profile bump that adds/renames a combination fails
-		// here instead of silently stranding the list). stream's Type axis and iperf's Parallel axis are
-		// the matrix cases (iperf is preset-pinned, but its vendored subset IS the two combinations the
-		// leaf runs, so the full-catalog mirror still holds); pybench, sqlite and git declare no
-		// <Option> axes, so the pin holds over their wildcard result. (pgbench is preset-pinned against
-		// a full upstream matrix and now its own suite — gated by the subset test below.)
+		// here instead of silently stranding the list). stream's Type axis is the matrix case; pybench,
+		// sqlite and git declare no <Option> axes, so the pin holds over their wildcard result.
+		// (pgbench and network/iperf are preset-pinned against full upstream matrices — gated by the
+		// subset test below.)
 		const profilesOf = {
-			network: ["pts/iperf", "local/iperf-wan"],
 			memory: ["pts/stream"],
 			system: ["pts/pybench", "pts/sqlite-speedtest", "pts/git"],
 		} as const;
@@ -89,16 +87,18 @@ describe("suite registry", () => {
 	});
 
 	it("pins the PINNED-subset suites to their curated override keys", () => {
-		// disk (fio) and system (pgbench) deliberately declare a SUBSET of their profile's catalogued
-		// combinations — the ones the producer tasks pin via PRESET_OPTIONS — so a catalog mirror
-		// can't gate them. Every declared subset id is also a curated pts-overrides key (only the
-		// producible combinations get short labels), so equality against the override keys catches a
-		// wrong-axis id here: with the full matrix catalogued, a typo'd engine, block size or scale
-		// would otherwise pass the suite contract and just never receive samples.
+		// disk (fio), pgbench, and network (iperf, vendored byte-identical to upstream's full matrix)
+		// deliberately declare a SUBSET of their profile's catalogued combinations — the ones the
+		// producer tasks pin via PRESET_OPTIONS — so a catalog mirror can't gate them. Every declared
+		// subset id is also a curated pts-overrides key (only the producible combinations get short
+		// labels), so equality against the override keys catches a wrong-axis id here: with the full
+		// matrix catalogued, a typo'd engine, block size, parallel count or scale would otherwise pass
+		// the suite contract and just never receive samples.
 		const overrideKeys = Object.keys(ptsOverrides);
 		const subsets = [
 			{ suite: "disk", prefix: "fio_" },
 			{ suite: "pgbench", prefix: "pgbench_" },
+			{ suite: "network", prefix: "iperf_" },
 		] as const;
 		for (const { suite, prefix } of subsets) {
 			const declared: string[] = SUITES[suite].metrics.filter((id) => id.startsWith(prefix)).sort();

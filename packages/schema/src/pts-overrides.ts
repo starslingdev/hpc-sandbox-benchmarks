@@ -89,9 +89,12 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// path — single-stream is the dimension's headline (it took the slot from network_loopback when
 	// the suite moved off the dd|nc leaf; the catalog allows one headline per dimension), and the
 	// 10-stream variant captures per-stream overhead scaling (iperf 3.14 is single-threaded, so it
-	// multiplexes streams in one process rather than across cores). The WAN pair measures both
-	// directions against the closest curated public iperf3 server (chosen per run by RTT probe,
-	// recorded in pts_iperf-wan--server-choices.ndjson provenance).
+	// multiplexes streams in one process rather than across cores). pts/iperf is vendored
+	// byte-identical to upstream, so the generator enumerates its full option matrix (fio-style);
+	// only the two combinations the producer pins are curated here — the rest keep draft labels and
+	// never receive samples. The WAN pair measures both directions against the closest curated
+	// public iperf3 server (chosen per run by RTT probe, recorded in
+	// pts_iperf-wan--server-choices.ndjson provenance).
 	iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1: {
 		headline: true,
 		label: "iperf3 loopback TCP, 1 stream",

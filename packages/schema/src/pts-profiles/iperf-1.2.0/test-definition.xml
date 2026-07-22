@@ -4,10 +4,11 @@
   <TestInformation>
     <Title>iPerf</Title>
     <AppVersion>3.14</AppVersion>
-    <Description>iPerf is a network bandwidth throughput testing software. This vendored subset benchmarks the sandbox's own network stack: the profile's runner starts a local iperf3 server and the client measures TCP throughput over localhost, so the result isolates virtualization/network-stack overhead from Internet weather.</Description>
+    <Description>iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.</Description>
     <ResultScale>Mbits/sec</ResultScale>
     <Proportion>HIB</Proportion>
-    <TimesToRun>2</TimesToRun>
+    <TimesToRun>3</TimesToRun>
+    <PreInstallMessage>This test profile automates the testing of a iperf3 client. Ensure you have a suitable iPerf server running on your network prior to running this test.</PreInstallMessage>
   </TestInformation>
   <TestProfile>
     <Version>1.2.0</Version>
@@ -31,23 +32,13 @@
       <DisplayName>Server Address</DisplayName>
       <Identifier>server-address</Identifier>
       <ArgumentPrefix>-c </ArgumentPrefix>
-      <Menu>
-        <Entry>
-          <Name>localhost</Name>
-          <Value>localhost</Value>
-        </Entry>
-      </Menu>
+      <Message>Use 'localhost' if wishing to benchmark the local system/server performance.</Message>
     </Option>
     <Option>
       <DisplayName>Server Port</DisplayName>
       <Identifier>positive-number</Identifier>
       <ArgumentPrefix>-p </ArgumentPrefix>
-      <Menu>
-        <Entry>
-          <Name>5201</Name>
-          <Value>5201</Value>
-        </Entry>
-      </Menu>
+      <Message>The default iperf3 server port is 5201.</Message>
     </Option>
     <Option>
       <DisplayName>Duration</DisplayName>
@@ -58,6 +49,18 @@
           <Name>10 Seconds</Name>
           <Value>10</Value>
         </Entry>
+        <Entry>
+          <Name>30 Seconds</Name>
+          <Value>30</Value>
+        </Entry>
+        <Entry>
+          <Name>60 Seconds</Name>
+          <Value>60</Value>
+        </Entry>
+        <Entry>
+          <Name>360 Seconds</Name>
+          <Value>360</Value>
+        </Entry>
       </Menu>
     </Option>
     <Option>
@@ -66,7 +69,22 @@
       <Menu>
         <Entry>
           <Name>TCP</Name>
-          <Value> </Value>
+        </Entry>
+        <Entry>
+          <Name>UDP</Name>
+          <Value>-u</Value>
+        </Entry>
+        <Entry>
+          <Name>UDP - 100Mbit Objective</Name>
+          <Value>-u -b 100m</Value>
+        </Entry>
+        <Entry>
+          <Name>UDP - 1000Mbit Objective</Name>
+          <Value>-u -b 1000m</Value>
+        </Entry>
+        <Entry>
+          <Name>UDP - 10000Mbit Objective</Name>
+          <Value>-u -b 10000m</Value>
         </Entry>
       </Menu>
     </Option>
@@ -80,8 +98,32 @@
           <Value>1</Value>
         </Entry>
         <Entry>
+          <Name>5</Name>
+          <Value>5</Value>
+        </Entry>
+        <Entry>
           <Name>10</Name>
           <Value>10</Value>
+        </Entry>
+        <Entry>
+          <Name>20</Name>
+          <Value>20</Value>
+        </Entry>
+        <Entry>
+          <Name>32</Name>
+          <Value>32</Value>
+        </Entry>
+        <Entry>
+          <Name>64</Name>
+          <Value>64</Value>
+        </Entry>
+        <Entry>
+          <Name>128</Name>
+          <Value>128</Value>
+        </Entry>
+        <Entry>
+          <Name>256</Name>
+          <Value>256</Value>
         </Entry>
       </Menu>
     </Option>

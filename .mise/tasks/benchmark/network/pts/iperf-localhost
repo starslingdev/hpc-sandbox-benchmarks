@@ -24,16 +24,25 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 	exit 0
 fi
 
-# The upstream profile free-texts the server address/port and builds with -march=native; the
-# vendored copy pins the localhost subset and repairs the runner (see the profile's install.sh).
-# Stage it and discard the baked upstream install so run_pts_benchmark installs the override; the
-# second pinned run below reuses that install.
+# The vendored profile's test-definition.xml is BYTE-IDENTICAL to upstream (the fio precedent: the
+# full option matrix is catalogued, this leaf pins one combination per variant, unrun combinations
+# never receive samples); only install.sh carries repairs (build under the installed dir, generic
+# -O3 instead of -march=native, the runner's 2>&1/one-off-server/readiness fixes). Stage it and
+# discard the baked upstream install so run_pts_benchmark installs the override; the second pinned
+# run below reuses that install.
 install_vendored_pts_profile "iperf-1.2.0"
 
-# Preset values follow run_pinned_pts's contract: non-numeric values pin by entry NAME ("localhost",
-# "10 Seconds", "TCP"); "5201" and "10" exceed their menus' entry counts so they also pin by name;
-# but parallel "1" would read as a menu INDEX (1 < 2 entries → the "10" entry), so -P 1 pins by
-# INDEX 0 — the fio cpu-threads=0 precedent.
+# Preset values follow run_pinned_pts's contract against the UPSTREAM axes (PTS 10.8.4
+# pts_test_run_options.php / pts_test_option.php):
+#   * server-address and positive-number (Server Port) have no <Menu> — text-entry options, so the
+#     preset value passes through literally ("Using Pre-Set Run Option"): -c localhost, -p 5201.
+#   * duration "10 Seconds" and test "TCP" are non-numeric → pin by entry NAME (4- and 5-entry
+#     menus). TCP's entry carries no <Value>, so it contributes no argument — TCP IS the absence of
+#     the -u UDP flags.
+#   * parallel is the numeric-menu trap: the menu is 1,5,10,20,32,64,128,256 (8 entries), and a
+#     NUMERIC preset below the entry count reads as a 0-based INDEX. "1" would select index 1 =
+#     "5" (-P 5!), so -P 1 pins by INDEX 0 (the fio cpu-threads=0 precedent); "10" is >= 8 so it
+#     falls through to a NAME match on the "10" entry (-P 10).
 #
 # The two variants are independent measurements, so neither aborts the other (`|| true` keeps each
 # variant's own recorded gap while letting the other run); the assert loop below is the single

@@ -64,7 +64,9 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 				const values = new Set(
 					profile.settings
 						.find((option) => option.DisplayName === "Task")
-						?.Menu?.Entry.map((e) => e.Value) ?? [],
+						// `<Value>` is optional in the schema (iperf's TCP entry); realworld Task entries always
+						// carry one, and a missing value maps to "" here so the key-set equality still fails loudly.
+						?.Menu?.Entry.map((e) => e.Value ?? "") ?? [],
 				);
 				const taskCmdKeys = new Set(
 					Object.keys(env)
@@ -84,7 +86,9 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 				const values = new Set(
 					profile.settings
 						.find((option) => option.DisplayName === "Task")
-						?.Menu?.Entry.map((e) => e.Value) ?? [],
+						// `<Value>` is optional in the schema (iperf's TCP entry); realworld Task entries always
+						// carry one, and a missing value maps to "" here so the key-set equality still fails loudly.
+						?.Menu?.Entry.map((e) => e.Value ?? "") ?? [],
 				);
 				const prepKeys = Object.keys(env)
 					.filter((key) => key.startsWith("TASK_PREP_"))

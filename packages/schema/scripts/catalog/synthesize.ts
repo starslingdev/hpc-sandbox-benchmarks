@@ -44,16 +44,33 @@ export function cartesian<T>(groups: readonly (readonly T[])[]): T[][] {
 }
 
 /**
- * The deterministic runtime default for a menu-less virtual axis. PTS expands these axes from the
- * machine at run time (pts_test_run_options.php); the only entry that exists on EVERY machine — and
- * the one our producer tasks pin via PRESET_OPTIONS — is the axis's default: `auto-disk-mount-points`
- * always lists `Default Test Directory` (value ``) first. Any other menu-less identifier is
- * machine-dependent with no stable default, so it throws rather than guessing (silently enumerating a
- * host's mount points would generate machine-dependent catalog bytes and break the drift gate).
+ * The deterministic runtime entry for a menu-less axis. Two shapes land here:
+ *
+ *   * PTS virtual axes expanded from the machine at run time (pts_test_run_options.php): the only
+ *     entry that exists on EVERY machine — and the one our producer tasks pin via PRESET_OPTIONS —
+ *     is the axis's default: `auto-disk-mount-points` always lists `Default Test Directory`
+ *     (value ``) first.
+ *   * Free-TEXT options (iperf's Server Address / Server Port prompt for arbitrary text; the
+ *     runtime `<Description>` embeds whatever was typed). Free text cannot be enumerated, so the
+ *     catalogued entry is the ONE value the producer task pins via PRESET_OPTIONS — `localhost`
+ *     (the network leaf's self-contained topology) and `5201` (iperf3's default port, the same
+ *     leaf's pin). Exactly the fio Disk Target contract: a run pinned to any other value simply
+ *     lands uncatalogued instead of silently mismapping.
+ *
+ * Any other menu-less identifier is machine-dependent with no stable default, so it throws rather
+ * than guessing (silently enumerating a host's mount points would generate machine-dependent
+ * catalog bytes and break the drift gate).
  */
 function virtualEntries(option: PtsOption): readonly PtsEntry[] {
 	if (option.Identifier === "auto-disk-mount-points") {
 		return [{ Name: "Default Test Directory", Value: "" }];
+	}
+	if (option.Identifier === "server-address") {
+		return [{ Name: "localhost", Value: "localhost" }];
+	}
+	// iperf's Server Port axis (upstream reuses the generic `positive-number` identifier for it).
+	if (option.Identifier === "positive-number" && option.DisplayName === "Server Port") {
+		return [{ Name: "5201", Value: "5201" }];
 	}
 	throw new Error(
 		`option "${option.DisplayName}" has no <Menu> and no known runtime default (identifier "${option.Identifier ?? "(absent)"}") — teach virtualEntries its expansion`,
@@ -138,7 +155,9 @@ export function synthesizeResults(profile: PtsProfile): SynthesizedMetric[] {
 		const base = combination
 			.map(({ option, entry }) => `${option.DisplayName}: ${entry.Name}`)
 			.join(" - ");
-		const values = combination.map(({ entry }) => entry.Value);
+		// A `<Value>`-less entry (iperf's TCP) contributes no argument text; normalize to "" so the
+		// MatchToTestArguments inverse check below never sees undefined.
+		const values = combination.map(({ entry }) => entry.Value ?? "");
 		for (const parser of candidateParsers(profile.parsers, values)) {
 			const description = describe(base, parser);
 			const effectiveScale = parser.ResultScale ?? profile.info.ResultScale;
