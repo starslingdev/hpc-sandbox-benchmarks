@@ -588,13 +588,19 @@ function underpoweredFloors(board: Leaderboard): string[] {
  * strings — a `|` would end the cell and a newline would end the row, silently corrupting the table,
  * and GitHub renders raw HTML inside Markdown, so a reason carrying an upstream error page (`<HTML>`,
  * `<PRE>`, `<HR>` from a CloudFront/proxy diagnostic) would inject live markup instead of showing as
- * a plain diagnostic. Neutralize the HTML metacharacters before the structural ones so both stay inert.
+ * a plain diagnostic.
+ *
+ * Order matters: escape each escape-introducing character before the character it guards. `&` goes
+ * first so the HTML entities we emit for `<`/`>` aren't themselves re-encoded, and the backslash is
+ * doubled before we backslash-escape `|` — otherwise a reason containing `\|` would leave a lone `\`
+ * in front of our escape, unescaping the pipe and breaking the cell anyway.
  */
 function escapeCell(text: string): string {
 	return text
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
 		.replace(/>/g, "&gt;")
+		.replace(/\\/g, "\\\\")
 		.replace(/\|/g, "\\|")
 		.replace(/\s*\n\s*/g, " ");
 }

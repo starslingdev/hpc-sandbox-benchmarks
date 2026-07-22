@@ -816,6 +816,30 @@ describe("coverage gaps", () => {
 		expect(md).not.toContain("<HTML>");
 		expect(md).not.toContain("<PRE>");
 	});
+
+	it("doubles a backslash before the pipe it guards so a `\\|` in the reason can't unescape the delimiter", () => {
+		// Escaping `|` -> `\|` is only safe if a backslash already in the reason is doubled first;
+		// otherwise `\|` would render as an escaped-backslash plus a bare pipe, splitting the row.
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider(
+						"e2b",
+						[],
+						[
+							{
+								scope: "suite",
+								id: "cpu-node",
+								outcome: "failed",
+								reason: String.raw`before \| after`,
+							},
+						],
+					),
+				]),
+			),
+		);
+		expect(md).toContain(String.raw`| E2B | cpu-node | **failed** | before \\\| after |`);
+	});
 });
 
 describe("coverage gaps: the holes nobody recorded", () => {
