@@ -119,12 +119,47 @@ describe("metric catalog", () => {
 		expect(getMetric("not_a_metric")).toBeUndefined();
 	});
 
-	it("keeps the controlled Loopback TCP measurement as the network headline", () => {
+	it("keeps the controlled localhost iperf3 measurement as the network headline", () => {
 		const metric = headlineMetric("network");
-		expect(metric.id).toBe("network_loopback_seconds");
-		expect(metric.label).toBe("Loopback TCP (10GB)");
-		expect(metric.direction).toBe("LIB");
-		expect(metric.pts).toEqual({ test: "pts/network-loopback" });
+		expect(metric.id).toBe(
+			"iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+		);
+		expect(metric.label).toBe("iperf3 loopback TCP, 1 stream");
+		expect(metric.direction).toBe("HIB");
+		// The vendored subset's pinned axes travel in the runtime description the catalog joins on.
+		expect(metric.pts).toEqual({
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 1",
+		});
+		// The third pinned localhost combination — the UDP datagram-path discriminator — resolves
+		// through the same full-matrix enumeration with its curated label.
+		const udp = getMetric(
+			"iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+		);
+		expect(udp?.label).toBe("iperf3 loopback UDP, 10G objective");
+		expect(udp?.pts?.description).toBe(
+			"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		);
+	});
+
+	it("resolves the WAN iperf3 pair via the local/ join key with per-direction descriptions", () => {
+		const download = getMetric("iperf_wan_direction_download");
+		const upload = getMetric("iperf_wan_direction_upload");
+		expect(download?.pts).toEqual({ test: "local/iperf-wan", description: "Direction: Download" });
+		expect(upload?.pts).toEqual({ test: "local/iperf-wan", description: "Direction: Upload" });
+		expect(download?.direction).toBe("HIB");
+		expect(upload?.label).toBe("iperf3 WAN upload");
+	});
+
+	it("keeps the retired-from-suite network profiles catalogued for manual runs (sans headline)", () => {
+		// fast-cli and network-loopback left the SUITE, not the repo: their profiles stay vendored and
+		// manually runnable, so their metrics stay catalogued — but the network headline moved to the
+		// localhost iperf3 metric above.
+		const loopback = getMetric("network_loopback_seconds");
+		expect(loopback?.label).toBe("Loopback TCP (10GB)");
+		expect(loopback?.headline).toBe(false);
+		expect(getMetric("fast_cli_internet_download_speed")?.label).toBe("fast.com download");
 	});
 
 	it("resolves fio's scale-pinned twin metrics for one description (disk dimension)", () => {

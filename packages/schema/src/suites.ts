@@ -169,28 +169,32 @@ export const SUITES = {
 		],
 		commands: ["mise run benchmark:disk:all"],
 	},
-	// The network dimension: fast-cli performs sustained real-world download/upload transfers through
-	// Netflix's fast.com CDN and reports idle/loaded latency; loopback TCP (10GB via nc) is the paired
-	// self-contained synthetic that isolates the sandbox's network stack from Internet weather. The
-	// suite task also runs latency/DNS and a small GitHub control-download probe as raw provenance.
-	// setupNode installs the fast.com CLI. Long-synthetic tier (k=2, R=3): replicate sandboxes capture the
-	// placement/peering variance a single fast.com transfer can't.
+	// The network dimension, iperf composition (benchmark:network:suite): iperf3 over localhost
+	// isolates the sandbox's network stack/virtualization overhead (virtio/KVM vs gVisor netstack vs
+	// host namespaces) from Internet weather, and iperf3 against the closest curated public server
+	// (local/iperf-wan; chosen at run time by TCP-connect RTT probe, recorded as provenance)
+	// measures WAN throughput both directions with real byte accounting. These supersede the
+	// fast-cli + dd|nc loopback leaves IN THE SUITE (run 29937467891: Chrome's page-scrape
+	// measurement was structurally unreliable on fast datacenter paths — every trial on
+	// daytona-vm/novita/blaxel died in the memory watchdog and the surviving numbers were
+	// buffer-fill transients); the old leaves and profiles stay runnable manually via
+	// benchmark:network:all. The suite task also runs latency/DNS and a small GitHub
+	// control-download probe as raw provenance. Long-synthetic tier (k=2, R=3).
 	network: {
 		setupPts: true,
-		setupNode: true,
-		commandTimeoutMinutes: 45,
-		timeoutMinutes: 55,
+		commandTimeoutMinutes: 30,
+		timeoutMinutes: 40,
 		ptsTimesToRun: 2,
 		defaultReplicas: 3,
 		dimensions: ["network"],
 		metrics: [
-			"fast_cli_internet_download_speed",
-			"fast_cli_internet_upload_speed",
-			"fast_cli_internet_latency",
-			"fast_cli_internet_loaded_latency_bufferbloat",
-			"network_loopback_seconds",
+			"iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+			"iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+			"iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+			"iperf_wan_direction_download",
+			"iperf_wan_direction_upload",
 		],
-		commands: ["mise run benchmark:network:all"],
+		commands: ["mise run benchmark:network:suite"],
 	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
 	// each a repo-local PTS profile with a Task option axis. Real-world tier: k=1 in-sandbox pass (the
