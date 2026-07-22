@@ -42,7 +42,7 @@ export type Pins = typeof pinsSchema.infer;
  * forgotten pin fails the build loudly rather than silently. `satisfies` keeps every key present and
  * typed.
  *
- * Sourced 2026-06-17 from current upstream releases (`mise latest <tool>` for the mise-managed tools;
+ * Sourced 2026-07-21 from current upstream releases (`mise latest <tool>` for the mise-managed tools;
  * the PTS .deb sha256 self-computed — PTS ships none). To refresh: bump the version, and for PTS
  * re-run `curl -fsSL .../phoronix-test-suite_<ver>_all.deb | sha256sum`; for mise pull the per-arch
  * lines from `.../releases/download/v<ver>/SHASUMS256.txt`. Tool versions are exact (not floating
@@ -52,22 +52,24 @@ export const rawPins = {
 	// > mise release version (installed from its immutable GitHub release in 00-apt.sh — mise's apt
 	// > repo is rolling and only serves the latest, so we pin the release). Matches the CI mise-action
 	// > pin for a single mise across build + checks.
-	miseVersion: "2026.5.16",
+	miseVersion: "2026.7.11",
 	// > sha256 of the mise release binary per arch (from the release's SHASUMS256.txt): the asset is
 	// > arch-specific, so 00-apt.sh verifies the download against the line matching the build arch.
-	miseSha256X64: "fb2d7bf1a3751398a5c336a3565cd3c60af9b41952abe6fd62e2f2f0d5f06b60",
-	miseSha256Arm64: "a068f29d8821ab0707f1a006721b5ab0baa80acaafc5a7b71e04371287108b92",
+	miseSha256X64: "d31578a16ae2708385249b439c95533068e04b9507a118e905aa6768905671fc",
+	miseSha256Arm64: "e3cb3bf4795f494a0e9be3f69ee1464de9d12a991589f126035eebd973c17796",
 	// > node 22 LTS (exact).
-	nodeVersion: "22.22.3",
+	nodeVersion: "22.23.1",
 	// > python 3.13 (exact; mise-managed standalone build, not distro python).
 	pythonVersion: "3.13.14",
-	// > pnpm 10 (exact).
-	pnpmVersion: "10.34.3",
+	// > pnpm 10 (exact; staying on the 10.x line — pnpm 11 is a major bump out of scope for a routine
+	// > pin refresh).
+	pnpmVersion: "10.34.5",
 	hyperfineVersion: "1.20.0",
 	// > minio/warp (mise ubi backend → github releases). Pinned to 1.3.1: minio stopped attaching
-	// > binaries to warp's GitHub releases at 1.4.0+, so newer tags have no asset ubi can install.
+	// > binaries to warp's GitHub releases at 1.4.0+ (still true through 1.5.0), so newer tags have no
+	// > asset ubi can install.
 	warpVersion: "1.3.1",
-	jcVersion: "1.25.6",
+	jcVersion: "1.25.7",
 	// > quarto-cli (mise aqua backend).
 	quartoVersion: "1.9.38",
 	// > Phoronix Test Suite release + self-computed sha256 of phoronix-test-suite_10.8.4_all.deb.
