@@ -14,7 +14,10 @@ OUT_DIR="${REPO_ROOT}/.scratch/selftest-out"
 # /out and mask a regression (the whole point of the selftest is a hermetic pass/fail).
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
+# SYS_ADMIN (not --privileged): the payload's cgroup dance remounts /sys/fs/cgroup read-write —
+# Docker Desktop mounts cgroup2 read-only even under the default private cgroupns.
 exec docker run --rm \
+	--cap-add SYS_ADMIN \
 	-v "${REPO_ROOT}:/repo:ro" \
 	-v "${OUT_DIR}:/out" \
 	node:22-bookworm@sha256:a25c9934ff6382cd4f08b6bc26c82bf4ea69b1e6f8dabfb2ead457374127c365 \

@@ -34,7 +34,9 @@ trap 'export_artifacts' EXIT
 echo "=== [selftest] install PTS + php ==="
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq php-cli php-xml >/dev/null
+# procps: the runner's timeout sweep (pkill/ps) and this payload's leak assertion (pgrep) need it;
+# installed explicitly instead of trusting the base image's package set.
+apt-get install -y -qq php-cli php-xml procps >/dev/null
 curl -fsSL --retry 3 -o /tmp/pts.deb \
 	"https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${PTS_VERSION}/phoronix-test-suite_${PTS_VERSION}_all.deb"
 dpkg -i /tmp/pts.deb >/dev/null 2>&1 || apt-get install -y -qq -f >/dev/null
@@ -46,6 +48,8 @@ corepack enable
 mkdir -p "$COUNTS" "$FIXTURE" "$RESULTS"
 cd "$FIXTURE"
 cp "$SELFTEST_SRC/fixture-package.json" package.json
+mkdir -p scripts
+cp "$SELFTEST_SRC/fixture-hang.mjs" scripts/hang.mjs
 printf 'node_modules/\ndist/\n' > .gitignore
 pnpm install --silent
 git init -q .
@@ -68,6 +72,36 @@ sed -e "s|@PIN_SHA@|${PIN_SHA}|g" -e "s|@FIXTURE@|${FIXTURE}|g" "$SELFTEST_SRC/t
 # production profiles ship.
 cp /repo/packages/schema/src/pts-profiles/local/realworld-mastra-1.0.0/results-definition.xml \
 	"$PROFILE/results-definition.xml"
+
+echo "=== [selftest] cgroup v2 init-leaf dance ==="
+# The runner's memory-cap path needs +memory enabled in this container's cgroup subtree. Two
+# blockers, handled in order: (1) the mount may be read-only (Docker Desktop; native-Linux Docker
+# with a private cgroupns mounts it rw) — remounted below; (2) the no-internal-processes rule:
+# enabling +memory in the namespaced root's subtree_control fails EBUSY while processes sit in
+# that root (--privileged does NOT fix this). Move every root-cgroup process into an init leaf
+# first, then enable. Hard-fail when impossible: this selftest is a local dev tool, and silently
+# skipping the containment assertion would make it worthless.
+if [ ! -f /sys/fs/cgroup/cgroup.controllers ]; then
+	echo "FAIL: /sys/fs/cgroup is not cgroup v2 — the selftest needs Docker with cgroup v2 (default on modern Linux and Docker Desktop)" >&2
+	exit 1
+fi
+if ! mkdir -p /sys/fs/cgroup/init 2>/dev/null; then
+	# Docker Desktop (macOS/Windows) mounts cgroup2 READ-ONLY even with a private cgroupns
+	# (verified on Docker Desktop 29.3.1); native-Linux Docker mounts it rw. The remount needs
+	# CAP_SYS_ADMIN in the container.
+	mount -o remount,rw /sys/fs/cgroup 2>/dev/null || {
+		echo "FAIL: /sys/fs/cgroup is read-only and remount was denied — run the selftest container with --cap-add SYS_ADMIN (Docker Desktop mounts cgroup2 ro; the remount needs the cap)" >&2
+		exit 1
+	}
+	mkdir -p /sys/fs/cgroup/init
+fi
+while read -r pid; do
+	echo "$pid" > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || true # tolerate per-PID races
+done < /sys/fs/cgroup/cgroup.procs
+echo +memory > /sys/fs/cgroup/cgroup.subtree_control || {
+	echo "FAIL: could not enable the memory controller in the container's cgroup root" >&2
+	exit 1
+}
 
 echo "=== [selftest] run the production path ==="
 export REPO_ROOT="$WORK"
@@ -104,4 +138,42 @@ count() { if [ -f "$COUNTS/$1" ]; then wc -l < "$COUNTS/$1" | tr -d ' '; else ec
 	exit 1
 }
 echo "execution-count assertions OK (build=3 lint=2 test=1 build-cache=0 turbo-survived=2)"
+
+# Containment proofs (per-command timeout + cgroup memory cap):
+#   hang: warm-up runs once, timeout kills it, set -e aborts before the measured pass = 1.
+[ "$(count hang)" = "1" ] || {
+	echo "FAIL: hang executed $(count hang)x, expected 1 (timeout must abort after the warm-up)" >&2
+	exit 1
+}
+# The hang fixture's detached grandchild escapes timeout's process-group kill AND carries no
+# workspace path in its argv, so the runner's argv-matching pkill cannot see it — only the
+# cgroup-membership / cwd sweep layers can reap it, and this asserts one of them did. Explicit
+# if — a bare `! pgrep` is exempt from set -e and would assert nothing.
+if pgrep -f 'setInterval' >/dev/null; then
+	echo "FAIL: a hang-fixture process survived (group kill + pkill sweep both missed it):" >&2
+	pgrep -af 'setInterval' >&2 || true
+	exit 1
+fi
+# Prove the cap path — not the oom_score_adj fallback — engaged: the runner emits exactly one
+# bench-cgroup stderr line per invocation, which lands in $LOG_FILE and is saved by PTS under
+# test-results/*/test-logs.
+grep -rq "bench-cgroup: capped at 268435456 bytes" /var/lib/phoronix-test-suite/test-results || {
+	echo "FAIL: no 'bench-cgroup: capped at 268435456 bytes' line in PTS test logs — the cgroup cap path never engaged" >&2
+	exit 1
+}
+# ...and that the OOM probe actually RAN inside the cgroup: the probe verifies its own membership
+# before allocating and prints this marker when placement failed. Capped-but-not-placed would
+# otherwise pass every assertion above while proving nothing about task containment.
+if grep -rq "OOM-PROBE-NOT-CONTAINED" /var/lib/phoronix-test-suite/test-results; then
+	echo "FAIL: the OOM probe ran OUTSIDE the bench-task cgroup — cap engaged but task placement is broken" >&2
+	exit 1
+fi
+# ...and that the cap KILLED, not merely engaged: the runner dumps the bench cgroup's
+# memory.events on a killed task, and only a genuine cgroup OOM increments oom_kill — exit 137
+# alone cannot distinguish the cgroup OOM killer from timeout's kill-after escalation.
+grep -rEq "bench-cgroup: memory\.events oom_kill [1-9]" /var/lib/phoronix-test-suite/test-results || {
+	echo "FAIL: no oom_kill increment in the bench cgroup's memory.events — the 256 MiB cap never actually OOM-killed the probe" >&2
+	exit 1
+}
+echo "containment assertions OK (hang=1, no leaked processes, cgroup cap engaged + probe placed + oom_kill observed)"
 echo "SELFTEST PASS"

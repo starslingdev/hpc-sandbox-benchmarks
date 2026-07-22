@@ -29,10 +29,15 @@ copies a real profile's, so the selftest exercises the actual parser definition.
       <DisplayName>Task</DisplayName>
       <Identifier>task</Identifier>
       <Menu>
+        <!--Hang and OOM Probe fail BY DESIGN (per-command timeout / cgroup memory cap): both sit
+        mid-menu so later tasks — including Prepped's prep-exclusion window, the suite's strongest
+        assertion — must survive a preceding failure, proving batch continuation.-->
         <Entry><Name>Git Clone</Name><Value>git_clone</Value></Entry>
         <Entry><Name>Cold Install</Name><Value>cold_install</Value></Entry>
         <Entry><Name>Build</Name><Value>build</Value></Entry>
+        <Entry><Name>Hang</Name><Value>hang</Value></Entry>
         <Entry><Name>Plain</Name><Value>plain</Value></Entry>
+        <Entry><Name>OOM Probe</Name><Value>oom_probe</Value></Entry>
         <Entry><Name>Prepped</Name><Value>prepped</Value></Entry>
       </Menu>
     </Option>
