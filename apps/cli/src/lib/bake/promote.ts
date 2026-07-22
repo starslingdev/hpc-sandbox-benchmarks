@@ -26,6 +26,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
+import { IMAGE_REPORT, isBlockingFailure } from "./gates.ts";
 import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
 import type { BakeReport, Log } from "./types.ts";
@@ -37,10 +38,12 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
 	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
 	// skips, so its re-validation or artifact failure is recorded but must NOT abort the publish. Locally
-	// (nothing required) any failure aborts, as a safety net for a hand-run promote.
+	// (nothing required) any failure aborts, as a safety net for a hand-run promote. The blocking rule is
+	// single-sourced in gates.ts so this abort decision and bake.ts's final exit code cannot disagree —
+	// the disagreement that turned run 29896891577 red after it had already published :v5.
 	const required = requiredProviders();
 	const blocks = (r: { provider: string; status: string }): boolean =>
-		r.status === "failed" && (required.length === 0 || required.includes(r.provider));
+		isBlockingFailure(r, required);
 
 	// 1. Refuse to overwrite the immutable public version (D2b). Checked first, before any mutation, so
 	//    a refused promote leaves everything untouched. A registry error here (auth/network) is NOT
@@ -65,13 +68,13 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		} catch (err) {
 			const reason = `could not verify whether ${config.toolchainImageVersion} is already published, so refusing to publish: ${err instanceof Error ? err.message : String(err)}`;
 			log(`<<< promote refused — ${reason}`);
-			reports.push({ provider: "image", status: "failed", reason });
+			reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 			return reports;
 		}
 		if (alreadyPublished) {
 			const reason = `${config.toolchainImageVersion} already exists — the public version is immutable; bump the version or dispatch with force_republish to publish again`;
 			log(`<<< promote refused — ${reason}`);
-			reports.push({ provider: "image", status: "failed", reason });
+			reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 			return reports;
 		}
 	}
@@ -84,7 +87,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	} catch (err) {
 		const reason = `could not resolve immutable digest for ${config.toolchainImageCandidate}: ${err instanceof Error ? err.message : String(err)}`;
 		log(`<<< promote aborted — ${reason} (nothing published)`);
-		reports.push({ provider: "image", status: "failed", reason });
+		reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 		return reports;
 	}
 	const candidateRefs: CandidateRefs = {
@@ -218,7 +221,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		);
 		// Push a structured failure (like the step-1 and step-4 aborts) so the emitted JSON is
 		// self-describing — a consumer sees the failed promote without re-deriving it from `--require`.
-		reports.push({ provider: "image", status: "failed", reason });
+		reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 		return reports;
 	}
 
@@ -227,12 +230,16 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	const imageStart = performance.now();
 	try {
 		await promoteImage(log, pinnedCandidateImage);
-		reports.push({ provider: "image", status: "ok", durationMs: performance.now() - imageStart });
+		reports.push({
+			provider: IMAGE_REPORT,
+			status: "ok",
+			durationMs: performance.now() - imageStart,
+		});
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : String(err);
 		log(`<<< image: promote failed — ${reason}`);
 		reports.push({
-			provider: "image",
+			provider: IMAGE_REPORT,
 			status: "failed",
 			reason,
 			durationMs: performance.now() - imageStart,

@@ -3,8 +3,10 @@
 // by booting a sandbox from the just-baked artifact and running the shared smoke spec. This is the
 // iteration loop: edit Dockerfile/templates → `bake --build-push` → `bake` → repeat. Everything hits
 // the mutable candidate (`:v1-candidate`, `…-v1-candidate`); the public `:v1` is untouched until
-// `promote` (next PR). Providers without credentials are skipped; exits non-zero iff a baked provider
-// failed to validate. bun auto-loads .env, so local creds are picked up.
+// `promote` (next PR). Providers without credentials are skipped. Exit code is required-aware (gates.ts):
+// non-zero iff a REQUIRED provider (`--require`/REQUIRE_PROVIDERS) failed or skipped — or, locally with
+// nothing required, any failure; a best-effort provider's failure only WARNS. bun auto-loads .env, so
+// local creds are picked up.
 //
 // The provider loop + skip-vs-fail contract is shared with bench-smoke/promote (providers-run.ts);
 // the boot+smoke lifecycle (probe results captured before teardown) is shared too (smoke-run.ts).
@@ -13,8 +15,10 @@ import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harnes
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
+import { fail, logWarning } from "../lib/actions-log.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "../lib/bake/daytona.ts";
 import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
+import { blockingFailures, nonBlockingFailures } from "../lib/bake/gates.ts";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
 import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
@@ -22,7 +26,7 @@ import { promoteAll } from "../lib/bake/promote.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
 import { candidateCreateOptions } from "../lib/bake/validate.ts";
 import { selectProviders } from "../lib/matrix.ts";
-import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
+import { forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
 
 // Each provider's candidate bake, bound to the candidate artifact name but NOT the mutable image
@@ -52,6 +56,34 @@ function writeReport(report: unknown): void {
 	const file = process.env.BAKE_REPORT_FILE;
 	if (file) writeFileSync(file, json);
 	else process.stdout.write(json);
+}
+
+/**
+ * Surface a gate's outcome through @actions/core: WARN each best-effort (non-blocking) failure, then
+ * FAIL the process naming the blocking ones. Shared by the promote and candidate-bake exit paths so the
+ * two can't drift in how they report the same gate (the whole point of gates.ts is that the rule is
+ * single-sourced — this keeps its *surfacing* single-sourced too). Returns only when nothing blocks;
+ * `fail` exits non-zero otherwise.
+ */
+function reportGateOutcome(
+	reports: BakeReport[],
+	required: string[],
+	labels: {
+		warn: (r: BakeReport) => string;
+		warnTitle: string;
+		failVerb: string;
+		failTitle: string;
+	},
+): void {
+	for (const r of nonBlockingFailures(reports, required)) {
+		logWarning(labels.warn(r), { title: labels.warnTitle });
+	}
+	const blocking = blockingFailures(reports, required);
+	if (blocking.length > 0) {
+		fail(`${labels.failVerb}: ${blocking.map((b) => b.provider).join(", ")}`, {
+			properties: { title: labels.failTitle },
+		});
+	}
 }
 
 /**
@@ -98,6 +130,7 @@ if (import.meta.main) {
 	if (process.argv.includes("--promote")) {
 		// `--force` republishes over an existing (immutable) version — dev regeneration, set only by a
 		// manual toolchain-image.yml dispatch. Automated pushes never pass it, so :v1 stays immutable there.
+		const required = requiredProviders();
 		const promoted = await promoteAll(log, process.argv.includes("--force"));
 		writeReport({
 			version: {
@@ -109,13 +142,21 @@ if (import.meta.main) {
 			},
 			reports: promoted,
 		});
-		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona-vm,modal-gvisor`)
-		// runs INSIDE promoteAll before the immutable base is written, and every abort path (version already
-		// published, candidate re-validation failed, artifact failed, unmet requirements) pushes a structured
-		// `{ status: "failed" }` report. So a single `some(failed)` is the whole exit contract — re-deriving
-		// `unmet` here would mislabel an early abort (e.g. "version already exists") as a provider-credentials
-		// failure, since the early `reports` carry no provider "ok" entries.
-		process.exit(promoted.some((r) => r.status === "failed") ? 1 : 0);
+		// Warn each best-effort failure, fail on any blocking one. A best-effort (non-required) provider
+		// that failed to promote is recorded and warned, but must NOT fail a release whose required set +
+		// base retag succeeded — exactly what shipped :v5 in run 29896891577 while the job still went red.
+		// A blocking failure is a required provider OR the IMAGE_REPORT commit-point/abort sentinel
+		// (promoteAll pushes one for every abort: version-already-published, re-validation failed, required
+		// artifact failed), so those still fail the job. This is the SAME gate promoteAll gated its publish
+		// on, so exit code and publish can't drift.
+		reportGateOutcome(promoted, required, {
+			warn: (r) =>
+				`${r.provider} did not promote — recorded, not blocking ${config.toolchainImageVersion} (best-effort provider): ${r.reason ?? "failed"}`,
+			warnTitle: "Non-required provider not promoted",
+			failVerb: "promote failed",
+			failTitle: "Promote failed",
+		});
+		process.exit(0);
 	}
 
 	// Optional per-provider restriction for the CI matrix fan-out (one cell per provider). Parsed before
@@ -216,17 +257,31 @@ if (import.meta.main) {
 		reports,
 	});
 
-	if (anyFailed(runs)) process.exit(1);
-
-	// D1: at the publish boundary (CI passes `--require e2b,daytona-vm,modal-gvisor`) a required provider that was
-	// skipped for a missing/misnamed secret — or failed to validate — must fail the bake loudly, so a
-	// candidate is never blessed while a provider was silently never built. Lenient locally (none required).
+	// The CI fan-out hands EVERY cell the full required set (`--require e2b,daytona-vm,modal-gvisor`) and
+	// restricts the run to one provider (`--provider <p>` → `only`). So a non-required cell's failure is
+	// best-effort: WARN via @actions/core and exit 0 (the release ships without it) — the workflow no
+	// longer swallows a non-zero exit with a hardcoded `|| echo "::warning::"`. A required cell's failure
+	// blocks, exactly as before. Locally (nothing required) any failure blocks, the hand-run safety net.
 	const required = requiredProviders();
-	const unmet = unmetRequirements(reports, required);
-	if (required.length > 0 && unmet.length > 0) {
-		log(
-			`error: required providers did not pass: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`,
-		);
-		process.exit(1);
+	reportGateOutcome(reports, required, {
+		warn: (r) =>
+			`${r.provider} did not pass its bake/verify — recorded, not blocking the release (best-effort provider): ${r.reason ?? "failed"}`,
+		warnTitle: "Non-required provider not validated",
+		failVerb: "bake failed",
+		failTitle: "Bake failed",
+	});
+
+	// D1: at the publish boundary a required provider that was SKIPPED for a missing/misnamed secret (a
+	// pure skip, which the blocking-failure check above does not catch) must fail the bake loudly, so a
+	// candidate is never blessed while a provider was silently never built. Scope the gate to the
+	// providers THIS invocation ran (`only`): a single matrix cell isn't responsible for the required
+	// providers it never touched — otherwise a non-required cell would report every other required
+	// provider as "unmet". Locally (no `only`, none required) this is a no-op.
+	const scopedRequired = only ? required.filter((id) => only.some((p) => p === id)) : required;
+	const unmet = unmetRequirements(reports, scopedRequired);
+	if (scopedRequired.length > 0 && unmet.length > 0) {
+		fail(`required providers did not pass: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`, {
+			properties: { title: "Required provider skipped" },
+		});
 	}
 }
