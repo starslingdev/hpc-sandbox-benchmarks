@@ -32,6 +32,14 @@ fi
 
 install_local_pts_profile "iperf-wan-1.0.0"
 
+# The runner's chosen-server cache pins BOTH directions of THIS leaf execution to one path, and its
+# NDJSON provenance must describe exactly the trials copied into this run's results tree — but both
+# files live in the persistent installed-profile dir, which survives suite re-runs in a long-lived
+# sandbox (fresh CI sandboxes never see this; manual re-runs do). Scope them to this execution:
+# clear both here, after install (which may re-stage the profile) and before the first trial.
+profile_dir="$(pts_user_dir)/installed-tests/local/iperf-wan-1.0.0"
+rm -f "${profile_dir}/chosen-server" "${profile_dir}/server-choices.ndjson"
+
 # Direction pins by entry NAME (non-numeric). The two directions are independent measurements, so
 # neither aborts the other (`|| true` keeps each direction's own recorded gap while letting the
 # other run); the assert loop below is the single arbiter that reds the job. Download first: -R is
@@ -42,7 +50,7 @@ run_pinned_pts "local/iperf-wan-1.0.0" "pts_iperf-wan-upload" "iperf-wan.directi
 # Server-choice provenance: the runner appends one NDJSON record per successful trial (host, port,
 # provider, site, probe RTT, figure). Best-effort copy — the composites are the metrics; a missing
 # file just means no trial succeeded and the asserts below already tell that story.
-choices="$(pts_user_dir)/installed-tests/local/iperf-wan-1.0.0/server-choices.ndjson"
+choices="${profile_dir}/server-choices.ndjson"
 if [ -f "$choices" ]; then
 	cp "$choices" "$(results_dir)/pts_iperf-wan--server-choices.ndjson" 2>/dev/null || true
 	echo "Server-choice provenance: pts_iperf-wan--server-choices.ndjson"
