@@ -35,6 +35,7 @@ import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
+import { isBlockingFailure } from "./gates.ts";
 import {
 	imageDigest,
 	imageExistsInRegistry,
@@ -154,8 +155,8 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	// A scoped backfill is inherently strict: every provider explicitly named is required even if a
 	// direct local caller omitted the redundant `--require` flag.
 	const required = effectivePromotionRequirements(requiredProviders(), only);
-	const blocks = (r: { provider: string; status: string }): boolean =>
-		r.status === "failed" && (required.length === 0 || required.includes(r.provider));
+	const blocks = (report: { provider: string; status: string }): boolean =>
+		isBlockingFailure(report, required);
 
 	// 1. Refuse to overwrite the immutable public version (D2b). Checked first, before any mutation, so
 	//    a refused promote leaves everything untouched. A registry error here (auth/network) is NOT
