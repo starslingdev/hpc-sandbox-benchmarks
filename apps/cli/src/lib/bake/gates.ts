@@ -21,6 +21,9 @@ import { PROVIDER_IDS } from "@sandbox-benchmarks/schema/providers";
  *  (e.g. `image`) that always blocks — it can only mean the release plumbing failed. */
 const REGISTERED_PROVIDER_IDS: ReadonlySet<string> = new Set(PROVIDER_IDS);
 
+/** Synthetic id used for promotion's release-plumbing outcomes (including the image commit point). */
+export const IMAGE_REPORT = "image";
+
 /** The minimal report shape the gate reads — structural so both a bake/promote {@link
  *  import("./types.ts").BakeReport} and a raw provider-run fit without coupling. */
 export interface GateReport {
@@ -30,11 +33,7 @@ export interface GateReport {
 
 /** True when this report is a failure that must fail the job (block the release). See the module note. */
 export function isBlockingFailure(report: GateReport, required: readonly string[]): boolean {
-	if (report.status !== "failed") return false;
-	// A synthetic sentinel (not a registered provider) is the release itself — always blocking.
-	if (!REGISTERED_PROVIDER_IDS.has(report.provider)) return true;
-	// A real provider blocks iff required — or, in the lenient local default (nothing required), always.
-	return required.length === 0 || required.includes(report.provider);
+	return report.status === "failed" && isBlockingId(report.provider, required);
 }
 
 /** True when a report outcome blocks the release. In addition to blocking failures, an explicitly
@@ -69,12 +68,7 @@ export function nonBlockingFailures<T extends GateReport>(
 	reports: readonly T[],
 	required: readonly string[],
 ): T[] {
-	return reports.filter(
-		(r) =>
-			r.status === "failed" &&
-			REGISTERED_PROVIDER_IDS.has(r.provider) &&
-			!isBlockingFailure(r, required),
-	);
+	return reports.filter((r) => r.status === "failed" && !isBlockingFailure(r, required));
 }
 
 /** Whether a failure of this report's id WOULD block — independent of its current status. Lets the

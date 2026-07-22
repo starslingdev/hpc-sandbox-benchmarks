@@ -35,7 +35,7 @@ import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
-import { isBlockingFailure } from "./gates.ts";
+import { IMAGE_REPORT, isBlockingFailure } from "./gates.ts";
 import {
 	imageDigest,
 	imageExistsInRegistry,
@@ -93,8 +93,8 @@ export function fullPromotionResult(reports: BakeReport[]): PromoteResult {
 	return {
 		reports,
 		ok:
-			reports.some((report) => report.provider === "image" && report.status === "ok") &&
-			!reports.some((report) => report.provider === "image" && report.status === "failed"),
+			reports.some((report) => report.provider === IMAGE_REPORT && report.status === "ok") &&
+			!reports.some((report) => report.provider === IMAGE_REPORT && report.status === "failed"),
 	};
 }
 
@@ -146,7 +146,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	 *  below returns, so the refusal contract is written once. */
 	const refuse = (reason: string, verb = "refused"): PromoteResult => {
 		log(`<<< promote ${verb} — ${reason}`);
-		reports.push({ provider: "image", status: "failed", reason });
+		reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 		return { reports, ok: false };
 	};
 	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
@@ -376,7 +376,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		log(`!!! promote aborted before publish: ${reason}; ${baseUntouched} ${rerunHint}`);
 		// Push a structured failure (like the step-1 and step-4 aborts) so the emitted JSON is
 		// self-describing — a consumer sees the failed promote without re-deriving it from `--require`.
-		reports.push({ provider: "image", status: "failed", reason });
+		reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 		return { reports, ok: false };
 	}
 
@@ -395,12 +395,16 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	const imageStart = performance.now();
 	try {
 		await promoteImage(log, pinnedBaseImage);
-		reports.push({ provider: "image", status: "ok", durationMs: performance.now() - imageStart });
+		reports.push({
+			provider: IMAGE_REPORT,
+			status: "ok",
+			durationMs: performance.now() - imageStart,
+		});
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : String(err);
 		log(`<<< image: promote failed — ${reason}`);
 		reports.push({
-			provider: "image",
+			provider: IMAGE_REPORT,
 			status: "failed",
 			reason,
 			durationMs: performance.now() - imageStart,
