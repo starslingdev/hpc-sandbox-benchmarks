@@ -19,8 +19,13 @@ const outputBuilder = new CompactBuilderFactory({
 }) as unknown as X2jOptions["OutputBuilder"];
 const parser = new XMLParser({ OutputBuilder: outputBuilder });
 
-/** One `<Option>/<Menu>/<Entry>`: a selectable benchmark argument value. `Message` is advisory. */
-export const entrySchema = type({ Name: "string", Value: "string", "Message?": "string" });
+/**
+ * One `<Option>/<Menu>/<Entry>`: a selectable benchmark argument value. `Message` is advisory.
+ * `Value` is optional, matching PTS: an entry may carry no `<Value>` at all (iperf's `TCP` entry —
+ * the choice contributes NO argument, unlike its `-u` UDP siblings), and PTS still selects it by
+ * name. Synthesis treats a missing value as `""` wherever it needs the argument text.
+ */
+export const entrySchema = type({ Name: "string", "Value?": "string", "Message?": "string" });
 export type PtsEntry = typeof entrySchema.infer;
 
 /** One `<TestSettings>/<Option>`: a tunable axis (e.g. Resolution) with its menu of `<Entry>` values. */

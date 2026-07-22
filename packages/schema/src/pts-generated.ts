@@ -17366,6 +17366,2729 @@ const chunk4: MetricDef[] = [
 		sourceUrl: "https://github.com/ColinIanKing/stress-ng",
 	},
 	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_1000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_100mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+];
+
+const chunk5: MetricDef[] = [
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: UDP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_tcp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: TCP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_10000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_1000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_100mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_30_seconds_test_udp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 30 Seconds - Test: UDP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_tcp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: TCP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_10000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_1000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_100mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_360_seconds_test_udp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 360 Seconds - Test: UDP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_tcp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: TCP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_10000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 10000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_1000mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 1000Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_100mbit_objective_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - 100Mbit Objective - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_128",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 128",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 128",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_20",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 20",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 20",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_256",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 256",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 256",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_32",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 32",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 32",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_5",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 5",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 5",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_60_seconds_test_udp_parallel_64",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 64",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This test profile is used for automated testing of an iperf client and requires you have access to an iperf server.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 60 Seconds - Test: UDP - Parallel: 64",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
 		id: "network_loopback_seconds",
 		dimension: "network",
 		unit: "Seconds",
@@ -17871,9 +20594,6 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
-];
-
-const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_only",
 		dimension: "system",
@@ -19203,6 +21923,9 @@ const chunk5: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
+];
+
+const chunk6: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_1_clients_50_mode_read_write",
 		dimension: "system",
@@ -20115,4 +22838,11 @@ const chunk5: MetricDef[] = [
 	},
 ];
 
-export const ptsGenerated: MetricDef[] = [...chunk1, ...chunk2, ...chunk3, ...chunk4, ...chunk5];
+export const ptsGenerated: MetricDef[] = [
+	...chunk1,
+	...chunk2,
+	...chunk3,
+	...chunk4,
+	...chunk5,
+	...chunk6,
+];
