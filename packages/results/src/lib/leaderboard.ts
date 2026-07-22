@@ -585,10 +585,18 @@ function underpoweredFloors(board: Leaderboard): string[] {
 
 /**
  * Make free-form text safe inside a Markdown table cell. Skip reasons are the harness's verbatim
- * strings — a `|` would end the cell and a newline would end the row, silently corrupting the table.
+ * strings — a `|` would end the cell and a newline would end the row, silently corrupting the table,
+ * and GitHub renders raw HTML inside Markdown, so a reason carrying an upstream error page (`<HTML>`,
+ * `<PRE>`, `<HR>` from a CloudFront/proxy diagnostic) would inject live markup instead of showing as
+ * a plain diagnostic. Neutralize the HTML metacharacters before the structural ones so both stay inert.
  */
 function escapeCell(text: string): string {
-	return text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+	return text
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/\|/g, "\\|")
+		.replace(/\s*\n\s*/g, " ");
 }
 
 /** Format a metric value compactly: integers as-is, otherwise up to 4 significant digits, trimmed. */
