@@ -11,3 +11,8 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 fi
 
 run_pts_benchmark "pts/sqlite-speedtest-1.0.1" "pts_sqlite-speedtest"
+
+# PTS exits 0 and writes a composite even when every trial failed — the silent-green shape that hid
+# pybench/pgbench for three runs. suites.ts declares one sqlite metric (sqlite_speedtest_seconds); a
+# recorded skip marker passes (keep+warn).
+assert_pts_numeric_values pts_sqlite-speedtest 1

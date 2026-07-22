@@ -52,6 +52,13 @@ describe("sandbox preamble", () => {
 		expect(PREAMBLE).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
 	});
 
+	it("never disables the mise python — baked images have no distro python3 to fall back to", () => {
+		// Regression pin: MISE_DISABLE_TOOLS=python turned every python3 on a baked image into
+		// "mise ERROR python3 is not a valid shim" (pybench ran green with zero metrics on every
+		// baked provider) because the images ship only the mise-shimmed python, no distro python3.
+		expect(PREAMBLE).not.toContain("MISE_DISABLE_TOOLS");
+	});
+
 	// buildPreamble omits the trial vars entirely under BENCH_PASSES=1 (contract-verification mode), so
 	// these trial-count assertions only hold outside it — skip in that mode rather than fail a contract run.
 	it.skipIf(process.env.BENCH_PASSES === "1")(

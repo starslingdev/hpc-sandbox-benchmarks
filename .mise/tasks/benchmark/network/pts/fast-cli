@@ -31,15 +31,7 @@ run_pts_benchmark "pts/fast-cli-1.0.0" "pts_fast-cli"
 
 # PTS returns zero and writes a composite even when every trial failed. Treat the suite as successful
 # only when its four result parsers each emitted a numeric value; this caught missing Chrome libraries
-# that would otherwise turn into an apparently green job with no usable metrics.
-result_xml="$(results_dir)/pts_fast-cli.xml"
-if [ ! -s "$result_xml" ] || ! awk '
-	match($0, /<Value>[^<]*<\/Value>/) {
-		value = substr($0, RSTART + 7, RLENGTH - 15)
-		if (value ~ /^[0-9]+([.][0-9]+)?$/) numeric++
-	}
-	END { exit numeric == 4 ? 0 : 1 }
-' "$result_xml"; then
-	echo "ERROR: pts/fast-cli did not produce four numeric metrics" >&2
-	exit 1
-fi
+# that would otherwise turn into an apparently green job with no usable metrics. The shared helper adds
+# skip-marker tolerance the old inline awk lacked: a leaf whose run_pts_benchmark recorded an honest
+# --skipped.json gap stays green-with-recorded-skip instead of hard-failing.
+assert_pts_numeric_values pts_fast-cli 4

@@ -41,11 +41,62 @@ fi
 # Compiling every provider down to a fixed baseline (e.g. -march=x86-64-v3) would *hide* a difference we
 # exist to measure. Caveat for readers of the leaderboard: STREAM is DRAM-bandwidth-bound, so once past
 # the L3 ceiling SIMD width contributes little — expect the ISA to show up as a small effect, if at all.
+#
+# gVisor is the one exception: gcc's -march=native feature-detects via CPUID, which gVisor does not
+# fully virtualize — it leaks HOST features (AVX-512) that gVisor's exposed CPU will not execute, so
+# the native binary dies with SIGILL on the first 512-bit instruction (run 29799034615: "Illegal
+# instruction", all four subtests, both trials, modal-gvisor). x86-64-v3 exactly matches modal-gvisor's
+# advertised flag set (avx/avx2/fma/bmi1/bmi2/f16c/movbe/abm/xsave present, zero avx512*) — it IS the
+# rentable ISA there, so compiling to it hides nothing. Same probe as setup.ts's detectedIsolation.
 STREAM_ARRAY_SIZE=150000000
-export CFLAGS_OVERRIDE="-O3 -march=native -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_SIZE}"
+march=native
+if grep -qi gvisor /proc/version 2>/dev/null; then
+	march=x86-64-v3
+fi
+export CFLAGS_OVERRIDE="-O3 -march=${march} -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_SIZE}"
+
+# Recompile the baked profile in place so the override above actually applies: run_pts_benchmark skips
+# reinstall for a profile PTS reports installed, so on baked images the bake-runner's binary ran —
+# compiled with upstream's default `-O3 -march=native` on the CI runner (AVX-512, the modal-gvisor
+# SIGILL) and a bake-host-derived array size (134217728, not the 150000000 pinned above). Mirrors the
+# fast-cli repair-in-place, with one deliberate difference: the vendored install.sh MUST run under
+# bash, not sh — it is #!/bin/bash, and dash aborts fatally at $((L3_CACHE_SIZE * 4)) when getconf
+# prints a non-number ("Illegal number: undefined", reproduced in the v3 image), silently leaving the
+# stale AVX-512 binary in place. Offline-safe: the tarball, stream.c, bzip2 and cc are all baked.
+# ~1.6s; the first cc fails on the 3.35GiB .bss and the script's built-in -mcmodel=medium retry lands.
+# If the recompile leaves a stale binary anyway, the count guard below turns the job red with a
+# recorded gap. The stock-image path (blaxel) is unchanged: run_pts_benchmark's not-installed branch
+# batch-installs with the same exported CFLAGS_OVERRIDE.
+profile="stream-1.3.4"
+pts_init
+if _pts_is_installed "pts/${profile}"; then
+	installed_dir="$(pts_user_dir)/installed-tests/pts/${profile}"
+	recompile_stamp="$(mktemp)"
+	(
+		cd "$installed_dir"
+		bash "${REPO_ROOT}/packages/schema/src/pts-profiles/${profile}/install.sh"
+	)
+	# The vendored script mirrors upstream, which exits 0 even when BOTH cc attempts fail — and a
+	# stale baked binary that still RUNS (native ISA on a compatible host) would pass the count
+	# guard while measuring the WRONG working set (the bake host's array size, not the 150e6 pin).
+	# The stamp is older than any binary cc just wrote, so not-newer == not rebuilt: refuse to
+	# measure rather than publish numbers for a configuration we did not compile.
+	if [ ! "${installed_dir}/stream-bin" -nt "$recompile_stamp" ]; then
+		rm -f "$recompile_stamp"
+		echo "ERROR: stream in-place recompile left a stale binary (stream-bin not rebuilt)" >&2
+		fail_result "stream in-place recompile failed; the stale baked binary would measure the wrong array size/ISA" "pts_stream"
+		exit 1
+	fi
+	rm -f "$recompile_stamp"
+fi
 
 # Version-pinned to the vendored catalog profile AND the toolchain bake (ptsInstallTests): a
 # versionless name resolves to whatever upstream's latest is at run time, which would bypass the
 # baked pre-install and rebuild STREAM in every sandbox (and could drift the option matrix from the
 # vendored stream-1.3.4 the catalog was generated from — versionless join is pts/stream either way).
 run_pts_benchmark "pts/stream-1.3.4" "pts_stream"
+
+# PTS exits 0 and writes a composite even when every trial failed — the modal-gvisor SIGILL above ran
+# green with zero metrics for exactly that reason. suites.ts declares 4 memory metrics
+# (Copy/Scale/Add/Triad); a recorded skip marker passes (keep+warn).
+assert_pts_numeric_values pts_stream 4

@@ -19,7 +19,26 @@ source "${REPO_ROOT}/lib/bench.sh"
 # Version-pinned to the vendored profile (and its recorded fixture) so an upstream pgbench release
 # can't silently unmap the catalogued descriptions. "100"/"50" pin by NAME (they exceed the menus'
 # entry counts, so the numeric-index trap in run_pinned_pts's contract doesn't bite).
+#
+# The two modes are independent measurements, so neither aborts the other: run_pinned_pts now
+# propagates run_pts_benchmark's non-zero all-empty result, and under this script's `set -e` an
+# unguarded read-only failure would exit before read-write ran — dropping a mode that may well have
+# measured, and leaving read-write with no marker at all. `|| true` keeps each mode's own recorded
+# gap (run_pts_benchmark already wrote its --failed.json before returning) while letting the other
+# mode run; the assert loop below is the single arbiter that then reds the job.
 run_pinned_pts "pts/pgbench-1.15.0" "pts_pgbench-read-only" \
-	"pgbench.scaling-factor=100;pgbench.clients=50;pgbench.run-mode=Read Only"
+	"pgbench.scaling-factor=100;pgbench.clients=50;pgbench.run-mode=Read Only" || true
 run_pinned_pts "pts/pgbench-1.15.0" "pts_pgbench-read-write" \
-	"pgbench.scaling-factor=100;pgbench.clients=50;pgbench.run-mode=Read Write"
+	"pgbench.scaling-factor=100;pgbench.clients=50;pgbench.run-mode=Read Write" || true
+
+# PTS exits 0 and writes a composite even when every trial failed (empty <Value> elements): each mode
+# must post its TPS + Average Latency pair — 2 numeric values per prefix, totalling the 4 pgbench
+# metrics suites.ts declares. Guard-only, deliberately NO fast-cli-style vendored install.sh
+# repair-in-place: rebuilding postgres in-sandbox costs multiple minutes per replica across providers
+# (pins.ts bakes it for exactly that reason) — this only converts the ICU/pkg-config half-install's
+# silence (launcher present, pg_/ payload absent, green job with zero metrics) into a loud, recorded
+# failure; the bake-side pkg-config fix restores the metrics. A --skipped.json marker passes: an
+# honest recorded gap is the designed keep+warn shape.
+for prefix in pts_pgbench-read-only pts_pgbench-read-write; do
+	assert_pts_numeric_values "$prefix" 2
+done

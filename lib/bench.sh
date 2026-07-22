@@ -77,6 +77,21 @@ skip_result() {
 	echo "SKIPPED: ${reason}"
 }
 
+# Record that a leaf RAN and errored — the failure sibling of skip_result, writing the
+# `--failed.json` marker the normalizer folds into a suite-scope failed gap (the filename suffix
+# decides the outcome; the body carries the leaf identity and reason). Best-effort write: the marker
+# is the paper trail for a failure the caller is about to propagate anyway, so a results-dir hiccup
+# must not replace that failure with a filesystem error.
+# Usage: fail_result <reason> [name]
+fail_result() {
+	local reason="$1" name="${2:-}"
+	[ -n "$name" ] || name="$(task_result_name)"
+	printf '{"schema_version":"1.0","outcome":"failed","benchmark":"%s","reason":"%s"}\n' \
+		"$(_json_escape "$name")" "$(_json_escape "$reason")" \
+		>"$(results_dir)/${name}--failed.json" 2>/dev/null || true
+	echo "FAILED: ${reason}"
+}
+
 # Append one measurement to manifest.ndjson — a uniform machine-readable log every timing helper
 # writes, independent of the tool-specific output the benchmark itself produces.
 _manifest_record() {
@@ -330,12 +345,15 @@ ensure_pts() {
 			# ensure_pts's contract is to return 1 gracefully so the caller can skip. This is the
 			# last-resort stock-image path; keep the package set aligned with setup.ts and 00-apt.sh.
 			# php for PTS itself, the build toolchain for the source-built profiles, libaio-dev (fio's
-			# Linux AIO engine), libicu-dev (postgres), tcl (sqlite), stress-ng (hardlink), and probes.
+			# Linux AIO engine), libicu-dev + pkg-config (postgres — 17's configure discovers ICU
+			# exclusively via PKG_CHECK_MODULES, so without a pkg-config binary the headers are
+			# invisible and the build aborts "ICU library not found"), tcl (sqlite), stress-ng
+			# (hardlink), and probes.
 			(curl -fsSL "$deb_url" -o "$tmp_deb" &&
 				${SUDO:-} apt-get -o Acquire::Retries=3 update -qq &&
 				${SUDO:-} apt-get install -y -qq php-cli php-xml build-essential autoconf flex bison bc \
-					libelf-dev libssl-dev libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping \
-					tcl stress-ng unzip procps &&
+					libelf-dev libssl-dev libaio-dev libicu-dev pkg-config dnsutils jq netcat-openbsd \
+					iputils-ping tcl stress-ng unzip procps &&
 				${SUDO:-} dpkg -i "$tmp_deb") || true
 			rm -f "$tmp_deb"
 		fi
@@ -428,6 +446,46 @@ install_vendored_pts_profile() {
 	echo "Staged vendored PTS override: ${profile_dst} (removed ${installed_dst})"
 }
 
+# Count the <Value> elements in a PTS composite whose content is a plain number. Failed PTS trials
+# leave empty <Value></Value> elements behind while batch-run still exits 0, so this count is the
+# only in-sandbox signal separating a measured composite from an all-trials-failed one. Always
+# succeeds; an unreadable/missing file counts as 0 (callers gate on -s separately).
+_pts_numeric_value_count() {
+	awk '
+		match($0, /<Value>[^<]*<\/Value>/) {
+			value = substr($0, RSTART + 7, RLENGTH - 15)
+			if (value ~ /^[0-9]+([.][0-9]+)?$/) numeric++
+		}
+		END { print numeric + 0 }
+	' "$1" 2>/dev/null || echo 0
+}
+
+# Exact-count result guard for single-test leaves: the copied composite must carry exactly
+# <expected> numeric values (per-leaf counts mirror packages/schema/src/suites.ts metrics[]). A
+# recorded --skipped.json marker passes — run_pts_benchmark/run_pinned_pts already recorded an
+# honest gap (PTS missing, batch-setup failed, install failed, no composite), and
+# green-with-recorded-skip is the designed keep+warn shape. Any other shortfall records a per-leaf
+# --failed.json marker and fails the leaf (non-zero) so the job goes red with a recorded gap that
+# names THIS prefix — not just the whole-suite failure the harness derives from the exit code —
+# instead of silently green with partial metrics (the missing-Chrome-libs incident fast-cli's
+# original inline guard caught, generalized). The marker mirrors run_pts_benchmark's all-empty
+# path so a shortfall caught here and one caught there leave the same shape of evidence.
+# Usage: assert_pts_numeric_values <results-prefix> <expected-count>
+assert_pts_numeric_values() {
+	local prefix="$1" expected="$2"
+	local dir
+	dir="$(results_dir)"
+	if [ -f "${dir}/${prefix}--skipped.json" ]; then
+		return 0
+	fi
+	local xml="${dir}/${prefix}.xml"
+	if [ ! -s "$xml" ] || [ "$(_pts_numeric_value_count "$xml")" -ne "$expected" ]; then
+		echo "ERROR: ${prefix} did not produce ${expected} numeric metric value(s)" >&2
+		fail_result "${prefix} did not produce ${expected} numeric metric value(s)" "$prefix"
+		return 1
+	fi
+}
+
 # Install and run one PTS test, capturing timing via bench_cmd and copying the result XML to
 # benchmark-results/<prefix>.xml (the contract the results extractor reads).
 # Usage: run_pts_benchmark <test-name> <results-prefix>
@@ -476,8 +534,18 @@ run_pts_benchmark() {
 	# nothing, silently copy the PREVIOUS leaf's composite under this leaf's prefix — masking the
 	# failure AND suppressing the skip marker. (A merged-into result dir still matches: PTS rewrites
 	# composite.xml, updating its mtime past the stamp.)
+	# errexit does not protect this scaffolding: run_pts_benchmark is reached through run_pinned_pts's
+	# `run_pts_benchmark ... || rc=$?`, and bash disables errexit for the whole dynamic extent of a
+	# function invoked in a `||`/`if` condition. So a failed mktemp would NOT abort here — run_stamp
+	# would be empty, `find … -newer ""` would error out to no match, and the leaf would record a benign
+	# "produced no composite.xml" skip for what is really a broken sandbox. Guard it explicitly and fail
+	# the leaf loudly (red job + recorded gap) instead.
 	local run_stamp
-	run_stamp="$(mktemp)"
+	if ! run_stamp="$(mktemp)"; then
+		echo "ERROR: could not create pre-run stamp for ${test_name} (mktemp failed)" >&2
+		fail_result "mktemp failed before PTS run of ${test_name}" "$prefix"
+		return 1
+	fi
 
 	bench_cmd "PTS: ${test_name}" "$prefix" phoronix-test-suite batch-run "$test_name"
 
@@ -497,7 +565,9 @@ run_pts_benchmark() {
 	fi
 	rm -f "$run_stamp"
 	if [ -n "$xml_found" ] && [ -f "$xml_found" ]; then
-		cp "$xml_found" "$(results_dir)/${prefix}.xml" 2>/dev/null || true
+		local copied_xml
+		copied_xml="$(results_dir)/${prefix}.xml"
+		cp "$xml_found" "$copied_xml" 2>/dev/null || true
 		echo "Structured result: ${prefix}.xml (from $(dirname "$xml_found"))"
 		# Preserve PTS's own structured system record too. composite.xml carries Hardware/Software as
 		# comma-delimited prose; result-file-to-json expands those into component maps and also retains
@@ -520,6 +590,23 @@ run_pts_benchmark() {
 		# matches). `|| true` so a /var/lib perms hiccup can't abort this `set -e` measurement leaf.
 		tar -czf "$(results_dir)/${prefix}--forensics.tar.gz" \
 			-C "$(dirname "$result_dir")" "$(basename "$result_dir")" 2>/dev/null || true
+		# PTS batch-run exits 0 and still writes a composite even when EVERY trial failed — the
+		# <Value> elements are simply empty, the extractor drops them without record, and the job
+		# stays green with zero metrics (pgbench shipped that shape for three consecutive runs).
+		# TOTAL loss fails the leaf loudly: the harness then writes the sandbox failed marker and the
+		# job goes red with a recorded gap, the designed shape. A PARTIAL shortfall must NOT fail
+		# here — realworld suites legitimately post empty Values for individual failed tasks (the
+		# normalizer's shortfall cross-check records those as gaps); single-test leaves layer the
+		# stricter assert_pts_numeric_values on top. A failed cp lands here too: a composite that
+		# never reached results_dir is the same silent hole.
+		if [ ! -s "$copied_xml" ] || [ "$(_pts_numeric_value_count "$copied_xml")" -eq 0 ]; then
+			echo "ERROR: ${test_name} wrote a composite but no Result carries a numeric value (all trials failed)" >&2
+			# The per-leaf marker keeps the LEAF identity in the recorded gap (the normalizer folds it
+			# under the suite with the leaf in the reason) even when the harness also records the
+			# whole-suite failure this non-zero return triggers.
+			fail_result "PTS batch-run of ${test_name} completed but every trial errored (composite carries no values)" "$prefix"
+			return 1
+		fi
 	else
 		echo "No PTS composite.xml found under ${pts_base}/"
 		ls -la "$pts_base"/ 2>/dev/null || true
@@ -613,8 +700,13 @@ run_pinned_pts() {
 		return 0
 	fi
 
-	run_pts_benchmark "$test_name" "$prefix"
+	# run_pts_benchmark now fails on an all-empty composite. Capture its status so the pin vars are
+	# unset on BOTH paths (a bare call would leak them past a failure in a non-errexit caller — and
+	# the unset returning 0 would swallow the failure entirely).
+	local rc=0
+	run_pts_benchmark "$test_name" "$prefix" || rc=$?
 	unset PRESET_OPTIONS PTS_RUN_ALL_TEST_COMBINATIONS
+	return "$rc"
 }
 
 # Run ONE pinned pts/fio scenario; Direct comes from fio_direct_choice above.

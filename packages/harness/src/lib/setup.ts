@@ -122,7 +122,9 @@ export function setupSteps(suite: Suite): SetupStep[] {
 		// out of lockstep with it.
 		const ptsDeps =
 			"php-cli php-xml build-essential autoconf flex bison bc libelf-dev libssl-dev " +
-			"libaio-dev libicu-dev dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps " +
+			// pkg-config rides with libicu-dev: postgres 17's configure discovers ICU exclusively via
+			// PKG_CHECK_MODULES, so without the binary pgbench's build aborts "ICU library not found".
+			"libaio-dev libicu-dev pkg-config dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps " +
 			"fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 " +
 			"libcairo2 libcups2 libdbus-1-3 libdrm2 libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 " +
 			"libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 " +

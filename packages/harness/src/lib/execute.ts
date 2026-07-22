@@ -182,8 +182,13 @@ const PREAMBLE_HEAD = [
 	// lookups exhaust GitHub's anonymous API quota before a benchmark starts. Suite runtime tools are
 	// installed explicitly by setupSteps (node/pnpm/PTS) or by the base-package fallback instead.
 	"export MISE_TASK_RUN_AUTO_INSTALL=0",
-	// The precompiled-python index is jdx.dev-only (no GitHub fallback) — use the distro python3.
-	"export MISE_DISABLE_TOOLS=python",
+	// No MISE_DISABLE_TOOLS=python here: baked images ship NO distro python3 — 10-mise.sh symlinks the
+	// mise shims into /usr/local/bin, so python3 resolves to the baked mise python (pinned 3.13.14,
+	// pre-installed, offline; MISE_DATA_DIR/MISE_CONFIG_DIR are Dockerfile ENV). Disabling the tool
+	// turned every python3 into "mise ERROR python3 is not a valid shim" (pybench: zero metrics on
+	// every baked provider, green jobs). Stock images resolve distro python3 (installed by setup.ts's
+	// base-package fallback), with no jdx.dev download risk — python appears in no active mise config
+	// there (the repo mise.toml pins only dev linters) and MISE_TASK_RUN_AUTO_INSTALL=0 stays set.
 	// Distro pythons are PEP 668 externally-managed, but PTS profiles pip-install their harness —
 	// fine in a throwaway sandbox; the baked image sets the same.
 	"export PIP_BREAK_SYSTEM_PACKAGES=1",

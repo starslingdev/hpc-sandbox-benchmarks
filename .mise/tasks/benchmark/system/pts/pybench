@@ -11,3 +11,9 @@ if ! command -v phoronix-test-suite &>/dev/null; then
 fi
 
 run_pts_benchmark "pts/pybench-1.1.3" "pts_pybench"
+
+# PTS exits 0 and writes a composite even when every trial failed — the harness's former
+# MISE_DISABLE_TOOLS=python export broke `python3` on every baked provider ("mise ERROR python3 is
+# not a valid shim") and pybench ran green with zero metrics for three runs. suites.ts declares one
+# pybench metric (pybench_milliseconds); a recorded skip marker passes (keep+warn).
+assert_pts_numeric_values pts_pybench 1

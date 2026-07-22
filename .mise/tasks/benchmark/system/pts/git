@@ -13,3 +13,8 @@ fi
 # The matrix used to carry only an old pts_git skip fixture: no registered suite actually invoked
 # the profile. Pin the vendored version so its GTK corpus and command sequence cannot drift.
 run_pts_benchmark "pts/git-1.1.0" "pts_git"
+
+# PTS exits 0 and writes a composite even when every trial failed — the silent-green shape that hid
+# pybench/pgbench for three runs. suites.ts declares one git metric (git_seconds); a recorded skip
+# marker passes (keep+warn).
+assert_pts_numeric_values pts_git 1
