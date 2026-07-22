@@ -787,6 +787,82 @@ describe("coverage gaps", () => {
 		);
 		expect(md).toContain("| E2B | cpu-node | **failed** | exit 1 \\| killed see step log |");
 	});
+
+	it("neutralizes raw HTML in the verbatim gap reason so an upstream error page can't inject markup", () => {
+		// Some providers hand back a full HTML error page (CloudFront/proxy 403 etc.) as the failure
+		// reason. GitHub renders raw HTML inside Markdown, so left un-escaped a `<PRE>`/`<HR>` would go
+		// live and shred the coverage table. The cell must show the tags as literal text instead.
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider(
+						"e2b",
+						[],
+						[
+							{
+								scope: "suite",
+								id: "cpu-node",
+								outcome: "failed",
+								reason: "<HTML><HR>403 ERROR</PRE> Request ID: Sxj&#x3D;&#x3D;</HTML>",
+							},
+						],
+					),
+				]),
+			),
+		);
+		expect(md).toContain(
+			"| E2B | cpu-node | **failed** | &lt;HTML&gt;&lt;HR&gt;403 ERROR&lt;/PRE&gt; Request ID: Sxj&amp;#x3D;&amp;#x3D;&lt;/HTML&gt; |",
+		);
+		expect(md).not.toContain("<HTML>");
+		expect(md).not.toContain("<PRE>");
+	});
+
+	it("doubles a backslash before the pipe it guards so a `\\|` in the reason can't unescape the delimiter", () => {
+		// Escaping `|` -> `\|` is only safe if a backslash already in the reason is doubled first;
+		// otherwise `\|` would render as an escaped-backslash plus a bare pipe, splitting the row.
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider(
+						"e2b",
+						[],
+						[
+							{
+								scope: "suite",
+								id: "cpu-node",
+								outcome: "failed",
+								reason: String.raw`before \| after`,
+							},
+						],
+					),
+				]),
+			),
+		);
+		expect(md).toContain(String.raw`| E2B | cpu-node | **failed** | before \\\| after |`);
+	});
+
+	it("folds a newline-spanning whitespace run to one space but leaves a newline-free run intact", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider(
+						"e2b",
+						[],
+						[
+							{
+								scope: "suite",
+								id: "cpu-node",
+								outcome: "failed",
+								// "exit 1" keeps its double space; the "  \n  " straddling the newline collapses to one.
+								reason: "exit  1  \n  see log",
+							},
+						],
+					),
+				]),
+			),
+		);
+		expect(md).toContain("| E2B | cpu-node | **failed** | exit  1 see log |");
+	});
 });
 
 describe("coverage gaps: the holes nobody recorded", () => {
