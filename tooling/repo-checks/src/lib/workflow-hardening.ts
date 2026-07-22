@@ -36,11 +36,11 @@ export const CREDENTIALED_CHECKOUTS: Readonly<Record<string, string>> = {
 	// branch (it grants `contents: write` for exactly this), so it must keep the persisted token. It is
 	// the reusable workflow bench-matrix.yml's publish job calls, and a maintainer dispatches to backfill.
 	"commit-dataset.yml::commit": "commits + pushes the promoted dataset back to the branch",
-	// update-leaderboard.yml's leaderboard job regenerates LEADERBOARD.md and `git push`es it back to the
-	// branch (also `contents: write`), so it too must keep the persisted token. A maintainer dispatches it
-	// to move the public comparison surface to a chosen committed dataset run.
+	// update-leaderboard.yml's leaderboard job regenerates LEADERBOARD.md and `git push`es via a
+	// checkout that persists the release GitHub App installation token (not GITHUB_TOKEN). A maintainer
+	// dispatches it to move the public comparison surface to a chosen committed dataset run.
 	"update-leaderboard.yml::leaderboard":
-		"commits + pushes the regenerated leaderboard back to the branch",
+		"commits + pushes the regenerated leaderboard via the release App token",
 };
 
 /** Built-in / non-environment tokens that may appear as `${{ secrets.* }}` without requiring the
