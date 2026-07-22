@@ -243,6 +243,14 @@ const CREATE_RETRY_DELAY_MS = 2 * MIN;
  *  destroyed). Generous: a cold provider image can take minutes to provision. */
 const CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
 
+/**
+ * Prefix on a creation-failure gap marker's reason. The single source of truth for BOTH sides of the
+ * contract: {@link createSuiteSandbox} builds the marker reason from it, and bench-suite matches on it
+ * to confirm the marker it expected actually survived. Exported so a wording change can't drift the two
+ * apart silently — an edit here moves both the writer and the verifier at once.
+ */
+export const CREATE_FAILURE_PREFIX = "Failed to create sandbox: ";
+
 /** The cell {@link createSuiteSandbox} creates for, plus where a creation failure must be recorded. */
 export interface CreateSuiteSandboxContext {
 	suite: Suite;
@@ -318,7 +326,7 @@ export async function createSuiteSandbox(
 						providerName,
 						suiteName,
 						"failed",
-						`Failed to create sandbox: ${message}`,
+						`${CREATE_FAILURE_PREFIX}${message}`,
 					);
 				} catch (markerErr) {
 					console.error(

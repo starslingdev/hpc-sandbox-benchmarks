@@ -8,6 +8,7 @@
 import { join } from "node:path";
 import * as core from "@actions/core";
 import {
+	CREATE_FAILURE_PREFIX,
 	requiredProviders,
 	runSuite,
 	SuiteUsageError,
@@ -354,7 +355,7 @@ if (import.meta.main) {
 					g.scope === "suite" &&
 					g.id === suite &&
 					g.outcome === "failed" &&
-					(g.reason === message || g.reason === `Failed to create sandbox: ${message}`),
+					(g.reason === message || g.reason === `${CREATE_FAILURE_PREFIX}${message}`),
 			);
 		const detail = gapRecorded
 			? `Suite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ${message}`
