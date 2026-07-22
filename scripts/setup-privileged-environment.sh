@@ -55,6 +55,11 @@ echo
 echo "Secret checklist:"
 echo "  E2B_API_KEY, DAYTONA_API_KEY, DAYTONA_TARGET,"
 echo "  MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, NOVITA_API_KEY,"
-echo "  BL_API_KEY, BL_WORKSPACE"
+echo "  BL_API_KEY, BL_WORKSPACE,"
+echo "  RELEASE_APP_ID, RELEASE_APP_PRIVATE_KEY  (leaderboard release GitHub App)"
+echo
+echo "Also required outside this Environment (see docs/ci-secrets.md):"
+echo "  - Allow auto-merge; main ruleset: code-owner review on, approving-review count 0"
+echo "  - Release GitHub App installed on this repo (Contents + Pull requests write)"
 echo
 echo "Full runbook: docs/ci-secrets.md"

@@ -18,8 +18,12 @@ name: Update leaderboard
 # so a caller on a non-main ref would hit a silent job-skip. Keeping it dispatch-only removes that
 # footgun; the dispatcher always picks the ref (main), and Environment `privileged` gates it regardless.
 #
-# Environment `privileged` lives on the job here (the release surface, `contents: write`) so the approval
-# gate is enforced at this layer.
+# Environment `privileged` lives on the job here (the release surface) so the approval gate is enforced
+# at this layer. The job mints a short-lived GitHub App installation token (RELEASE_APP_ID +
+# RELEASE_APP_PRIVATE_KEY) to push the branch and open/auto-merge the PR — not `secrets.GITHUB_TOKEN` —
+# so the PR is authored by the App and `ci.yml` actually runs (GitHub suppresses workflow runs for
+# GITHUB_TOKEN-authored PRs). Path allowlisting refuses to arm auto-merge unless the PR touches only
+# LEADERBOARD.md. See docs/ci-secrets.md rule 7 / operator setup.
 on:
   workflow_dispatch:
     inputs:
@@ -53,21 +57,36 @@ jobs:
       github.repository == 'starslingdev/hpc-sandbox-benchmarks'
     runs-on: ubuntu-24.04
     environment: privileged
-    # contents: write to commit + push the leaderboard branch; pull-requests: write to open the PR. No
-    # actions: read here — the leaderboard renders from the committed dataset, not from run artifacts.
+    # contents/pull-requests write on the job token are unused for the push/PR path (the App token does
+    # that work). Keep them off so a future step cannot accidentally fall back to GITHUB_TOKEN for a
+    # privileged mutation. The App installation carries Contents + Pull requests on this repo only.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     # The dispatch input reaches the shell only through the environment, never interpolated into a
     # `run:` command.
     env:
       RUN_ID: ${{ inputs.run_id }}
     steps:
-      # This job commits + `git push`es LEADERBOARD.md, so it keeps the default persisted job token
-      # (contents: write above authorizes it). Don't add persist-credentials: false here or the push at
-      # the end of the job loses its credentials.
+      # Mint an installation token for the release GitHub App. Secrets live only on Environment
+      # `privileged` (required reviewers + main-only), so fork PRs and unprivileged jobs never see them.
+      - name: Mint release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Least privilege on the installation token (zizmor github-app). Must stay a subset of the
+          # App's configured permissions: Contents + Pull requests write, Metadata read.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-metadata: read
+
+      # Persist the App token as the remote credentials so the later `git push` authenticates as the
+      # App (not GITHUB_TOKEN). Do not set persist-credentials: false here.
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -104,23 +123,27 @@ jobs:
       - name: Regenerate leaderboard
         run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$TARGET_RUN_ID.json" LEADERBOARD.md
 
-      # main is protected by a "changes must be made through a pull request" ruleset, so this job can't
-      # push LEADERBOARD.md straight to main — a direct push is rejected with GH013. Commit through a
-      # short-lived branch + pull request and enable GitHub-native auto-merge (`--auto`): the PR merges
-      # itself only once branch protection is satisfied — required status checks green and any required
-      # reviews in. `--auto` waits for those rules, it does not bypass them. If auto-merge can't be armed
-      # (e.g. the repo hasn't enabled it), the PR stays open for a maintainer to merge normally.
+      # main is protected by a pull-request ruleset, so this job can't push LEADERBOARD.md straight to
+      # main. Commit through a short-lived branch + PR authored by the release App, then arm
+      # GitHub-native auto-merge (`--auto`). Auto-merge still waits for required checks / code-owner
+      # rules — it does not bypass them. Path allowlisting (staged + PR) ensures we only ever land
+      # LEADERBOARD.md this way; see docs/ci-secrets.md.
       - name: Update the leaderboard via pull request
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Prefer the App's real slug from the token action so commit attribution matches the installed App.
+          slug="${APP_SLUG:-sandbox-benchmarks-release}"
+          git config user.name "${slug}[bot]"
+          git config user.email "${slug}[bot]@users.noreply.github.com"
           git add LEADERBOARD.md
           if git diff --cached --quiet; then
             echo "LEADERBOARD.md already reflects run $TARGET_RUN_ID; nothing to commit"
             exit 0
           fi
+          # Refuse to commit (and later auto-merge) anything except the public leaderboard artifact.
+          ./scripts/assert-paths-allowlisted.sh staged -- LEADERBOARD.md
           branch="leaderboard/update-${TARGET_RUN_ID}"
           # Always (re)build the bot branch from the freshly rendered content and force-push FIRST, so a
           # re-dispatch refreshes an already-open PR rather than leaving it stale (e.g. if the renderer or
@@ -130,27 +153,33 @@ jobs:
           git commit -m "chore(leaderboard): update from run ${TARGET_RUN_ID}"
           git push -u --force origin "$branch"
           # Open the PR only if one isn't already open for this deterministic branch; a re-dispatch reuses
-          # it (the force-push above already refreshed its content). `gh pr create` fails outright (GraphQL
-          # "GitHub Actions is not permitted to create or approve pull requests") when the repo's Settings →
-          # Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull
-          # requests" toggle is off — see docs/ci-secrets.md. The branch is already pushed at that point, so
-          # surface the fix instead of a bare GraphQL error before failing the job.
+          # it (the force-push above already refreshed its content). Auth is the release App installation
+          # token (not GITHUB_TOKEN), so this does not depend on the repo's "Allow GitHub Actions to
+          # create and approve pull requests" toggle — see docs/ci-secrets.md.
           if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
             if ! gh pr create \
               --base main \
               --head "$branch" \
               --title "chore(leaderboard): update from run ${TARGET_RUN_ID}" \
-              --body "Automated LEADERBOARD.md regeneration from committed dataset run \`${TARGET_RUN_ID}\`. Auto-merge lands it once branch protection is satisfied."; then
+              --body "Automated LEADERBOARD.md regeneration from committed dataset run \`${TARGET_RUN_ID}\`. Opened by the release GitHub App so \`ci.yml\` runs; auto-merge lands it once branch protection is satisfied."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
-                "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
-                "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
-                "A maintainer must either enable it and re-dispatch this workflow with run_id=$TARGET_RUN_ID," \
-                "or open the PR for '$branch' manually. See docs/ci-secrets.md."
+                "Check that the release GitHub App is installed on this repository with Contents + Pull" \
+                "requests write, and that RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY are set on Environment" \
+                "privileged. See docs/ci-secrets.md."
               exit 1
             fi
           fi
+          # Re-check the PR file list (not just the local index) before arming auto-merge, so a raced
+          # push that added other paths cannot slip through.
+          ./scripts/assert-paths-allowlisted.sh pr "$branch" -- LEADERBOARD.md
           # (Re-)arm GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
-          # required reviews land), never bypassing branch protection. Best-effort — if the repo hasn't
-          # enabled auto-merge, leave the PR open for a maintainer.
-          gh pr merge "$branch" --squash --delete-branch --auto \
-            || echo "auto-merge not armed; leaderboard PR left open for a maintainer to merge"
+          # required code-owner reviews for owned paths — LEADERBOARD.md is intentionally unowned). Fail
+          # the job if auto-merge cannot be armed so a silent fallback does not strand the update.
+          if ! gh pr merge "$branch" --squash --delete-branch --auto; then
+            echo "::error::auto-merge could not be armed for '$branch'." \
+              "Enable Settings → General → Pull Requests → Allow auto-merge, and ensure the main ruleset" \
+              "does not require a human approving review for unowned paths (prefer: required approving" \
+              "review count 0 + Require review from Code Owners). Do NOT add github-actions as a ruleset" \
+              "bypass. See docs/ci-secrets.md."
+            exit 1
+          fi
