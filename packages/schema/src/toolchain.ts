@@ -4,13 +4,14 @@
 // tag is immutable: a change to the toolchain image means bumping TOOLCHAIN_VERSION.
 
 export const TOOLCHAIN_IMAGE_NAME = "sandbox-benchmarks-toolchain";
-// v4: image-content fix over v3 (which was the 4 vCPU / 8 GiB target-spec bump). Adds pkg-config so
-// PostgreSQL 17's configure can discover ICU via PKG_CHECK_MODULES — every v3 image shipped pgbench
-// as a launcher-only half-install (pg_/ payload missing; zero pgbench metrics ever recorded) — and
-// bakes fio with --disable-native so the binary survives reduced-ISA sandboxes (modal-gvisor exposes
-// only AVX2; the builder-native fio SIGILLed in ~30ms). Re-bake all providers before the runs that
-// consume v4.
-export const TOOLCHAIN_VERSION = "v4";
+// v5: routine mise-managed toolchain pin refresh over v4 (packages/templates/src/lib/pins.ts —
+// unchanged since 2026-06-17). Bumps mise 2026.5.16 → 2026.7.11 (+ its per-arch binary sha256s,
+// re-sourced from the new release's SHASUMS256.txt; the CI mise-action pin in ci.yml/ci-lint.yml
+// moves in lockstep so build and checks share one mise), node 22.22.3 → 22.23.1, and pnpm
+// 10.34.3 → 10.34.5 (staying on the 10.x line — pnpm 11 is a major bump, out of scope here). jc
+// 1.25.6 → 1.25.7. hyperfine, quarto, python, warp, and the PTS pins were already current at their
+// latest upstream release and are unchanged. Re-bake all providers before the runs that consume v5.
+export const TOOLCHAIN_VERSION = "v5";
 
 // The apt packages PTS needs beyond a stock image — PTS's own php runtime, the compiler toolchain
 // for the source-built profiles, and fast-cli's Chrome runtime libs. ONE canonical list: the
