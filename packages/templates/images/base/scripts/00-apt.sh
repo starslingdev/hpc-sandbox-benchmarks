@@ -23,6 +23,13 @@ apt-get update
 # > the set to exactly what the benchmark suites need.
 # > libaio-dev: fio's libaio engine (the disk suite's pinned scenarios) — needed at bake time, when
 # > 20-pts.sh pre-builds fio. libicu-dev: postgres's configure hard-requires ICU (pgbench pre-build).
+# > pkg-config: PostgreSQL 17's configure locates ICU exclusively via PKG_CHECK_MODULES(icu-uc
+# > icu-i18n), so libicu-dev is invisible to it without a pkg-config binary — configure aborts with
+# > "ICU library not found" while PTS still marks pgbench installed (its upstream install.sh has no
+# > set -e and writes the launcher unconditionally), which is how every image since #144 shipped
+# > pgbench without its pg_/ payload. On Debian 13 `pkg-config` resolves to pkgconf's transitional
+# > package; keep this name so the two runtime mirrors (lib/bench.sh ensure_pts, and the schema
+# > toolchain contract's PTS_APT_DEPS that setup.ts interpolates) stay aligned.
 # > dnsutils + jq: the benchmark:system:provider probe (Team Cymru DNS whois via dig, ipinfo JSON via
 # > jq). netcat-openbsd: the pts/network-loopback runner (`dd | nc`). iputils-ping: the
 # > benchmark:network:latency probe (slim base images ship no ping).
@@ -36,7 +43,7 @@ apt-get install -y --no-install-recommends \
 	curl git ca-certificates \
 	build-essential autoconf \
 	php-cli php-xml \
-	flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev \
+	flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev pkg-config \
 	dnsutils jq netcat-openbsd iputils-ping \
 	fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
 	libcairo2 libcups2 libdbus-1-3 libdrm2 libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 \

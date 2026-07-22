@@ -67,6 +67,31 @@ export function ptsInstalledTestsSmokeCheck(installTests: string): SmokeCheck {
 }
 
 /**
+ * Build the pgbench payload probe from an install list, or null when no pgbench profile is pinned
+ * (mirrors ptsInstalledTestsSmokeCheck's expectedCount===0 handling — no speculative probe when the
+ * pin is gone). PTS marks a profile installed by the launcher file its install.sh writes, and
+ * pgbench's upstream install.sh (plain sh, no set -e) writes it even when configure/make failed —
+ * so the count probe above passed while the 2026-07 ICU/pkg-config half-install shipped without its
+ * pg_/ payload. Probe the exact binary the generated launcher executes, and the initdb'd data dir's
+ * mode: postgres's checkDataDir() refuses to start when the data dir carries any group/other bits,
+ * so the bake's blanket a+rwX (runtime-user writability) must leave pg_/data/db re-tightened to
+ * 0700 — a state a packaging step could silently undo while the binary stays executable. Exported
+ * for tests.
+ */
+export function pgbenchPayloadSmokeCheck(installTests: string): SmokeCheck | null {
+	const entry = installTests.split(/\s+/).find((test) => /^pgbench-/.test(test));
+	if (!entry) return null;
+	const installRoot = `/var/lib/phoronix-test-suite/installed-tests/pts/${entry}`;
+	return {
+		name: "pgbench-payload",
+		cmd: `test -x ${installRoot}/pg_/bin/pgbench && test "$(stat -c %a ${installRoot}/pg_/data/db)" = 700 && echo pgbench-payload-ok`,
+		expect: "pgbench-payload-ok",
+	};
+}
+
+const pgbenchPayloadCheck = pgbenchPayloadSmokeCheck(pins.ptsInstallTests);
+
+/**
  * The probes, in run order. Expects are pinned to the same pins.ts that built the image, so this
  * asserts the *exact* toolchain is present — not merely that "a" node/python exists.
  */
@@ -88,6 +113,12 @@ export const smokeChecks: readonly SmokeCheck[] = [
 	// Exact count is deliberate: a mutable-tag cache once made E2B/Novita validate an old two-profile
 	// image while the current candidate held nine. The sentinel also avoids substring false positives.
 	ptsInstalledTestsSmokeCheck(pins.ptsInstallTests),
+	// The installed-count probe above trusts PTS's own install bookkeeping, which a launcher-only
+	// pgbench half-install satisfies. This one asserts the built postgres payload itself — in BOTH
+	// consumers, so the docker-level smoke proves the bake built it and the in-sandbox smoke proves
+	// it survived provider packaging (e2b envd injection / daytona snapshot / modal fromRegistry —
+	// the same drift class that dropped fast-cli's Chrome libs).
+	...(pgbenchPayloadCheck ? [pgbenchPayloadCheck] : []),
 	// The enforced verification manifest is present (proves the base build's 99-manifest step ran)…
 	{ name: "manifest", cmd: "cat /toolchain-manifest.json", expect: TOOLCHAIN_IMAGE_NAME },
 	// …and declares the expected toolchain version, so a stale/wrong-version manifest fails loudly.

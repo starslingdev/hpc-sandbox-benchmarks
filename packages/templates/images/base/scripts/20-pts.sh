@@ -45,6 +45,30 @@ read -ra pts_tests <<< "${PTS_INSTALL_TESTS}"
 # > future profiles: provider snapshot registries must import the complete compressed image.
 # > network-loopback has no downloads and no-ops here harmlessly.
 phoronix-test-suite make-download-cache "${pts_tests[@]}"
+
+# > fio's configure defaults to -march=native — native to the BAKE machine, which is wrong on both
+# > counts for a baked image: it is not the run machine's ISA and it is not portable. Modal's gVisor
+# > sandboxes expose only AVX2 (no avx512*), so a builder-native binary dies in ~30ms and the disk
+# > suite records empty fio results. Disk I/O measurement is ISA-insensitive, so pin the baked fio
+# > to the compiler's portable default. The fio profile version comes from PTS_INSTALL_TESTS (the
+# > single source of the pin), so a fio bump can never leave this patch pointing at a stale path —
+# > exactly one fio entry is expected; zero or several is a pin-list bug this bake refuses to guess
+# > around.
+fio_pin=""
+for t in "${pts_tests[@]}"; do
+	case "$t" in
+	fio-*)
+		[ -z "$fio_pin" ] || { echo "ERROR: multiple fio entries in PTS_INSTALL_TESTS (${PTS_INSTALL_TESTS})" >&2; exit 1; }
+		fio_pin="$t"
+		;;
+	esac
+done
+[ -n "$fio_pin" ] || { echo "ERROR: no fio entry in PTS_INSTALL_TESTS (${PTS_INSTALL_TESTS}) — the --disable-native patch has nothing to apply to" >&2; exit 1; }
+fio_install="/var/lib/phoronix-test-suite/test-profiles/pts/${fio_pin}/install.sh"
+[ -f "${fio_install}" ] || { echo "ERROR: fio profile not staged at ${fio_install}" >&2; exit 1; }
+sed -i 's|\./configure |./configure --disable-native |' "${fio_install}"
+grep -q -- '--disable-native' "${fio_install}" || { echo "ERROR: --disable-native patch did not land in fio install.sh" >&2; exit 1; }
+
 # > PTS exits 0 even when an install fails, so verify each requested profile actually reports installed.
 # > A versionless entry anchors on "<test>-<version>" (versions start with a digit); a version-pinned
 # > entry ("fio-2.1.0") already ends in its version, so it anchors on a following non-name character
@@ -54,6 +78,21 @@ phoronix-test-suite batch-install "${pts_tests[@]}"
 installed="$(phoronix-test-suite list-installed-tests)"
 for t in "${pts_tests[@]}"; do
 	echo "${installed}" | grep -qE "(^|/)${t}(-[0-9]|[[:space:]]|$)" || { echo "ERROR: pre-install of ${t} failed" >&2; exit 1; }
+done
+
+# > list-installed-tests only proves the launcher file a profile's install.sh wrote exists — and
+# > pgbench's upstream install.sh (plain sh, no set -e) writes it even when configure/make failed,
+# > so the 2026-07 ICU/pkg-config half-install (launcher present, pg_/ payload absent) passed the
+# > loop above and the image published. Assert the payload the generated launcher actually executes
+# > (its line 21 runs pg_/bin/pgbench), so a launcher-only half-install fails the bake loudly —
+# > this script runs under set -Eeuxo pipefail inside docker build.
+for t in "${pts_tests[@]}"; do
+	case "${t}" in
+	pgbench*)
+		[ -x "/var/lib/phoronix-test-suite/installed-tests/pts/${t}/pg_/bin/pgbench" ] ||
+			{ echo "ERROR: ${t} installed without its built postgres payload (pg_/bin/pgbench missing)" >&2; exit 1; }
+		;;
+	esac
 done
 
 # > batch-install copies each staged archive into its installed-test tree. Keeping the byte-identical
@@ -81,3 +120,21 @@ fi
 # > ephemeral benchmark state writable so that user can create batch config and result XML beside the
 # > read-mostly installed profiles. Provider isolation is the outer security boundary for this image.
 chmod -R a+rwX /var/lib/phoronix-test-suite
+
+# > That blanket chmod would ship pgbench broken: its install.sh initdb'd pg_/data/db as 0700, and
+# > postgres's checkDataDir() FATALs at startup when the data dir has any group/other mode bits (the
+# > profile's run-as-root patch strips the euid checks, not this one) — the launcher's pg_ctl start
+# > would fail and the leaf would record empty results, while the payload check above still passes
+# > (a+rwX never clears the x bit). Re-tighten the data dir AFTER the blanket chmod and assert the
+# > final mode, so a reorder of these steps fails the bake, not the sandbox run.
+for t in "${pts_tests[@]}"; do
+	case "${t}" in
+	pgbench*)
+		pgdata="/var/lib/phoronix-test-suite/installed-tests/pts/${t}/pg_/data/db"
+		[ -d "${pgdata}" ] || { echo "ERROR: ${t} has no initdb'd data dir at ${pgdata}" >&2; exit 1; }
+		chmod -R go-rwx "${pgdata}"
+		[ "$(stat -c '%a' "${pgdata}")" = "700" ] ||
+			{ echo "ERROR: ${t} data dir mode is $(stat -c '%a' "${pgdata}"), postgres requires 0700" >&2; exit 1; }
+		;;
+	esac
+done

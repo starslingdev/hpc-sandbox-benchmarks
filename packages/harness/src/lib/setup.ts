@@ -9,6 +9,7 @@
  *   BENCH_REPO_TOKEN  Token for cloning a private repo; stripped from the remote right after clone.
  */
 import type { Suite } from "@sandbox-benchmarks/schema";
+import { PTS_APT_DEPS } from "@sandbox-benchmarks/schema";
 import { MIN } from "./execute.ts";
 
 export const REPO_URL =
@@ -111,31 +112,13 @@ export function setupSteps(suite: Suite): SetupStep[] {
 		// image deliberately cleans /var/lib/apt/lists, while a stock-image provider must compile every
 		// profile locally; in either case PTS's own dependency install needs a usable package index.
 		// Best-effort lets a healthy baked image proceed when a provider cannot reach its distro mirror.
-		// Keep this set aligned with packages/templates/images/base/scripts/00-apt.sh.
-		//
-		// The fonts/GTK/X11 block is fast-cli's Puppeteer/Chrome runtime dependencies. Without them, a
-		// stock-image provider (e.g. modal, which takes this fallback path rather than the baked image)
-		// downloads a fresh Chrome via npm install that fails immediately with "error while loading
-		// shared libraries: libglib-2.0.so.0: cannot open shared object file" — a same-day-observed live
-		// failure (run 29587815350, modal/network) with zero fast-cli metrics produced. 00-apt.sh already
-		// bakes these for the pre-baked image path; this was the one runtime fallback that had drifted
-		// out of lockstep with it.
-		const ptsDeps =
-			"php-cli php-xml build-essential autoconf flex bison bc libelf-dev libssl-dev " +
-			// pkg-config rides with libicu-dev: postgres 17's configure discovers ICU exclusively via
-			// PKG_CHECK_MODULES, so without the binary pgbench's build aborts "ICU library not found".
-			"libaio-dev libicu-dev pkg-config dnsutils jq netcat-openbsd iputils-ping tcl stress-ng unzip procps " +
-			"fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 " +
-			"libcairo2 libcups2 libdbus-1-3 libdrm2 libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 " +
-			"libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 " +
-			"libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 " +
-			"libxext6 libxfixes3 libxi6 libxkbcommon0 libxrandr2 libxrender1 libxss1 libxtst6 " +
-			"xdg-utils";
+		// The package list is the canonical PTS_APT_DEPS from the schema toolchain contract — the shell
+		// consumers (00-apt.sh, lib/bench.sh) are gated against the same constant by repo-checks.
 		steps.push({
 			label: "ensure PTS build deps + fresh apt index",
 			script:
 				"$SUDO apt-get -o Acquire::Retries=3 update -qq || true; " +
-				`$SUDO apt-get install -y -qq ${ptsDeps} || echo "WARNING: apt dep refresh failed (best-effort); relying on the baked image"`,
+				`$SUDO apt-get install -y -qq ${PTS_APT_DEPS} || echo "WARNING: apt dep refresh failed (best-effort); relying on the baked image"`,
 			timeoutMs: 15 * MIN,
 		});
 		steps.push({
