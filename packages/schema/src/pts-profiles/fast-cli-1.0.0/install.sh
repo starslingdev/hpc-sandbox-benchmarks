@@ -46,11 +46,16 @@ fi
 #     so it exits nonzero and PTS records a failed trial instead of banking a truncated row.
 #   * The download plateau is latched WHILE the upload phase is still zero, so the end-of-run re-purposing
 #     of #speed-value can no longer zero it out.
-#   * Completion is fast.com's own `succeeded`/isDone signal OR a stability fallback: once loaded-latency
-#     (bufferbloat) has been present for SETTLE_MS past a minimum window, every phase (download -> upload
-#     -> loaded latency) has finished, so the readings are final. The fallback exists because on the
-#     fastest paths fast.com never flips the `succeeded` class, and gating on isDone alone would fail
-#     providers that are in fact measuring cleanly.
+#   * Completion is fast.com's own `succeeded`/isDone signal OR a stability fallback. The fallback exists
+#     because on the fastest paths fast.com never flips the `succeeded` class, and gating on isDone alone
+#     would fail providers that are in fact measuring cleanly. Bufferbloat-hold alone is NOT finality:
+#     fast.com renders #bufferbloat-value DURING the download phase, ~10s before the first upload byte on
+#     a healthy path (live probes 2026-07-21: bufferbloat positive at ~5-6s, upload first positive at
+#     ~15-17s; the 29799034615 trials showed bufferbloat 6-11 with uploaded:0). So the fallback requires
+#     the upload phase to have started AND its displayed max to have been stable for SETTLE_MS, on top of
+#     the bufferbloat hold and MIN_MS, and only before the backstop instant. A run whose upload never
+#     starts or never stabilizes runs to BACKSTOP_MS and exits 1 as a failed trial (the designed
+#     failed-measurement shape).
 #
 # The generator is read by hand (never `for await`, whose implicit break would call the generator's
 # .return() and trigger the hanging browser.close()); the driver then HARD-exits without closing the
@@ -84,7 +89,7 @@ const BACKSTOP_MS =
 		? Number(backstopRaw)
 		: 180000;
 const MIN_MS = positiveEnv("FAST_CLI_MIN_MS", 20000); // no settle before this much measuring has happened
-const SETTLE_MS = positiveEnv("FAST_CLI_SETTLE_MS", 5000); // bufferbloat must persist this long to settle
+const SETTLE_MS = positiveEnv("FAST_CLI_SETTLE_MS", 5000); // bufferbloat must hold AND upload max must be stable this long to settle
 const POLL_MS = 500; // memory sampling cadence
 
 // --- Memory accounting -----------------------------------------------------------------------------
@@ -164,6 +169,7 @@ let stopReason = null;
 let downloadPhaseMax = 0; // max download seen WHILE upload was still 0 (the true download plateau)
 let downloadAnyMax = 0; // fallback if the upload phase never begins
 let uploadMax = 0;
+let uploadMaxChangedAt = 0; // 0 = the upload phase never produced a positive reading
 let latencyLast = 0;
 let bufferBloatLast = 0;
 let bufferBloatSince = 0;
@@ -186,11 +192,25 @@ function stopWhen(reason, predicate) {
 	});
 }
 const memoryStop = stopWhen("__memory__", () => memoryUsedFraction() * 100 >= MEM_STOP_PCT);
-// Stability fallback for the fastest paths, where `succeeded` never flips: bufferbloat is the last phase
-// fast.com measures, so once it has held for SETTLE_MS past a minimum window the run is final.
+// Stability fallback for the fastest paths, where `succeeded` never flips. fast.com renders
+// #bufferbloat-value DURING the download phase (~10s before the first upload byte on a healthy path;
+// live probes 2026-07-21, and the 29799034615 trials showed bufferbloat 6-11 with uploaded:0), so a
+// bufferbloat hold alone is NOT finality — it can finalize with uploadSpeed=0 before the upload phase
+// was given a chance. Settle therefore also requires the upload phase to have STARTED and its displayed
+// max to have STOPPED INCREASING for SETTLE_MS (mere positivity would bank an early-ramp value: the
+// display keeps ramping for 2-10s after the first positive byte), and it can never fire at/after the
+// backstop instant, so a timer tie at the ceiling is labeled backstop, honestly. A run whose upload
+// never starts or never stabilizes runs to BACKSTOP_MS and exits 1 as a failed trial.
 const settleStop = stopWhen("__settle__", () => {
 	const now = Date.now();
-	return bufferBloatSince && now - start >= MIN_MS && now - bufferBloatSince >= SETTLE_MS;
+	return (
+		now - start < BACKSTOP_MS &&
+		uploadMaxChangedAt !== 0 &&
+		now - uploadMaxChangedAt >= SETTLE_MS &&
+		bufferBloatSince &&
+		now - start >= MIN_MS &&
+		now - bufferBloatSince >= SETTLE_MS
+	);
 });
 const backstop = new Promise((resolve) => {
 	setTimeout(() => resolve("__backstop__"), BACKSTOP_MS).unref?.();
@@ -223,7 +243,13 @@ try {
 		last = step.value;
 		const download = convertToMbps(step.value.downloadSpeed ?? 0, step.value.downloadUnit ?? "Mbps");
 		const upload = convertToMbps(step.value.uploadSpeed ?? 0, step.value.uploadUnit ?? "Mbps");
-		uploadMax = Math.max(uploadMax, upload);
+		// Stamp the stability clock ONLY on a strict increase of the displayed max: yields where just the
+		// uploaded-bytes counter changes, fluctuations at/below the max, or a late 0 reading (the page
+		// re-purposes and clears elements) must not extend the settle window, and uploadMax stays monotone.
+		if (upload > uploadMax) {
+			uploadMax = upload;
+			uploadMaxChangedAt = Date.now();
+		}
 		// Latch the download plateau only while the upload phase hasn't started (uploadMax still 0); once
 		// it has, fast.com re-purposes #speed-value so later download readings are noise.
 		if (uploadMax === 0) downloadPhaseMax = Math.max(downloadPhaseMax, download);
