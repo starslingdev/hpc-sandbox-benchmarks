@@ -59,6 +59,34 @@ function writeReport(report: unknown): void {
 }
 
 /**
+ * Surface a gate's outcome through @actions/core: WARN each best-effort (non-blocking) failure, then
+ * FAIL the process naming the blocking ones. Shared by the promote and candidate-bake exit paths so the
+ * two can't drift in how they report the same gate (the whole point of gates.ts is that the rule is
+ * single-sourced — this keeps its *surfacing* single-sourced too). Returns only when nothing blocks;
+ * `fail` exits non-zero otherwise.
+ */
+function reportGateOutcome(
+	reports: BakeReport[],
+	required: string[],
+	labels: {
+		warn: (r: BakeReport) => string;
+		warnTitle: string;
+		failVerb: string;
+		failTitle: string;
+	},
+): void {
+	for (const r of nonBlockingFailures(reports, required)) {
+		logWarning(labels.warn(r), { title: labels.warnTitle });
+	}
+	const blocking = blockingFailures(reports, required);
+	if (blocking.length > 0) {
+		fail(`${labels.failVerb}: ${blocking.map((b) => b.provider).join(", ")}`, {
+			properties: { title: labels.failTitle },
+		});
+	}
+}
+
+/**
  * The provider ids a `--provider <ids>` (or `--provider=<ids>`) flag restricts the bake+validate loop
  * to — a comma-separated list, so the CI matrix passes one id per cell (`--provider e2b`) and each
  * provider bakes in its own job. Absent → undefined (drive every registered provider, the local
@@ -114,28 +142,20 @@ if (import.meta.main) {
 			},
 			reports: promoted,
 		});
-		// A best-effort (non-required) provider that failed to promote is recorded and WARNED, but must
-		// NOT fail a release whose required set + base retag succeeded — exactly what shipped :v5 in run
-		// 29896891577 while the job still went red. Warn via @actions/core so it lands in the annotations
-		// panel (never a hardcoded `::warning::` string).
-		for (const r of nonBlockingFailures(promoted, required)) {
-			logWarning(
+		// Warn each best-effort failure, fail on any blocking one. A best-effort (non-required) provider
+		// that failed to promote is recorded and warned, but must NOT fail a release whose required set +
+		// base retag succeeded — exactly what shipped :v5 in run 29896891577 while the job still went red.
+		// A blocking failure is a required provider OR the IMAGE_REPORT commit-point/abort sentinel
+		// (promoteAll pushes one for every abort: version-already-published, re-validation failed, required
+		// artifact failed), so those still fail the job. This is the SAME gate promoteAll gated its publish
+		// on, so exit code and publish can't drift.
+		reportGateOutcome(promoted, required, {
+			warn: (r) =>
 				`${r.provider} did not promote — recorded, not blocking ${config.toolchainImageVersion} (best-effort provider): ${r.reason ?? "failed"}`,
-				{ title: "Non-required provider not promoted" },
-			);
-		}
-		// The exit contract is the shared blocking gate — NOT `some(r => r.status === "failed")`, which
-		// counted the non-required failure above as fatal. A blocking failure is a required provider OR
-		// the `image` commit-point/abort sentinel: promoteAll pushes `{ provider: "image", status:
-		// "failed" }` for every abort (version-already-published, re-validation failed, required artifact
-		// failed), and gates.ts classes any non-provider id as always-blocking, so those still fail the
-		// job. This is the SAME rule promoteAll gated its publish on, so exit code and publish can't drift.
-		const blocking = blockingFailures(promoted, required);
-		if (blocking.length > 0) {
-			fail(`promote failed: ${blocking.map((b) => b.provider).join(", ")}`, {
-				properties: { title: "Promote failed" },
-			});
-		}
+			warnTitle: "Non-required provider not promoted",
+			failVerb: "promote failed",
+			failTitle: "Promote failed",
+		});
 		process.exit(0);
 	}
 
@@ -243,18 +263,13 @@ if (import.meta.main) {
 	// longer swallows a non-zero exit with a hardcoded `|| echo "::warning::"`. A required cell's failure
 	// blocks, exactly as before. Locally (nothing required) any failure blocks, the hand-run safety net.
 	const required = requiredProviders();
-	for (const r of nonBlockingFailures(reports, required)) {
-		logWarning(
+	reportGateOutcome(reports, required, {
+		warn: (r) =>
 			`${r.provider} did not pass its bake/verify — recorded, not blocking the release (best-effort provider): ${r.reason ?? "failed"}`,
-			{ title: "Non-required provider not validated" },
-		);
-	}
-	const blocking = blockingFailures(reports, required);
-	if (blocking.length > 0) {
-		fail(`bake failed: ${blocking.map((b) => b.provider).join(", ")}`, {
-			properties: { title: "Bake failed" },
-		});
-	}
+		warnTitle: "Non-required provider not validated",
+		failVerb: "bake failed",
+		failTitle: "Bake failed",
+	});
 
 	// D1: at the publish boundary a required provider that was SKIPPED for a missing/misnamed secret (a
 	// pure skip, which the blocking-failure check above does not catch) must fail the bake loudly, so a

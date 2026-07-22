@@ -26,7 +26,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
-import { isBlockingFailure } from "./gates.ts";
+import { IMAGE_REPORT, isBlockingFailure } from "./gates.ts";
 import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
 import type { BakeReport, Log } from "./types.ts";
@@ -68,13 +68,13 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		} catch (err) {
 			const reason = `could not verify whether ${config.toolchainImageVersion} is already published, so refusing to publish: ${err instanceof Error ? err.message : String(err)}`;
 			log(`<<< promote refused — ${reason}`);
-			reports.push({ provider: "image", status: "failed", reason });
+			reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 			return reports;
 		}
 		if (alreadyPublished) {
 			const reason = `${config.toolchainImageVersion} already exists — the public version is immutable; bump the version or dispatch with force_republish to publish again`;
 			log(`<<< promote refused — ${reason}`);
-			reports.push({ provider: "image", status: "failed", reason });
+			reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 			return reports;
 		}
 	}
@@ -87,7 +87,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	} catch (err) {
 		const reason = `could not resolve immutable digest for ${config.toolchainImageCandidate}: ${err instanceof Error ? err.message : String(err)}`;
 		log(`<<< promote aborted — ${reason} (nothing published)`);
-		reports.push({ provider: "image", status: "failed", reason });
+		reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 		return reports;
 	}
 	const candidateRefs: CandidateRefs = {
@@ -221,7 +221,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		);
 		// Push a structured failure (like the step-1 and step-4 aborts) so the emitted JSON is
 		// self-describing — a consumer sees the failed promote without re-deriving it from `--require`.
-		reports.push({ provider: "image", status: "failed", reason });
+		reports.push({ provider: IMAGE_REPORT, status: "failed", reason });
 		return reports;
 	}
 
@@ -230,12 +230,16 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	const imageStart = performance.now();
 	try {
 		await promoteImage(log, pinnedCandidateImage);
-		reports.push({ provider: "image", status: "ok", durationMs: performance.now() - imageStart });
+		reports.push({
+			provider: IMAGE_REPORT,
+			status: "ok",
+			durationMs: performance.now() - imageStart,
+		});
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : String(err);
 		log(`<<< image: promote failed — ${reason}`);
 		reports.push({
-			provider: "image",
+			provider: IMAGE_REPORT,
 			status: "failed",
 			reason,
 			durationMs: performance.now() - imageStart,
