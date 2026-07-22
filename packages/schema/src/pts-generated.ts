@@ -20089,6 +20089,30 @@ const chunk5: MetricDef[] = [
 		sourceUrl: "https://software.es.net/iperf/",
 	},
 	{
+		id: "iperf_wan_direction_download",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label: "iPerf WAN - Direction: Download",
+		description:
+			"Measures sustained WAN TCP throughput with iperf3 against the closest reachable server from a curated public list (servers.json, committed with this profile). The runner probes TCP-connect RTT to every listed server at run time, picks the lowest-RTT reachable non-backup server, retries across its port range on single-client busy collisions, and records the chosen server per trial as provenance. Eight parallel streams so high bandwidth-delay-product paths are not understated by a single TCP congestion window; the reported figure is receiver-side goodput.",
+		pts: { test: "local/iperf-wan", description: "Direction: Download" },
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_wan_direction_upload",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label: "iPerf WAN - Direction: Upload",
+		description:
+			"Measures sustained WAN TCP throughput with iperf3 against the closest reachable server from a curated public list (servers.json, committed with this profile). The runner probes TCP-connect RTT to every listed server at run time, picks the lowest-RTT reachable non-backup server, retries across its port range on single-client busy collisions, and records the chosen server per trial as provenance. Eight parallel streams so high bandwidth-delay-product paths are not understated by a single TCP congestion window; the reported figure is receiver-side goodput.",
+		pts: { test: "local/iperf-wan", description: "Direction: Upload" },
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
 		id: "network_loopback_seconds",
 		dimension: "network",
 		unit: "Seconds",
@@ -21896,6 +21920,9 @@ const chunk5: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
+];
+
+const chunk6: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_1_clients_50_mode_read_only",
 		dimension: "system",
@@ -21923,9 +21950,6 @@ const chunk5: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
-];
-
-const chunk6: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_1_clients_50_mode_read_write",
 		dimension: "system",
