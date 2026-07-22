@@ -29,7 +29,7 @@ jobs:
       # Third-party actions are pinned to a commit SHA (the tag comment is for humans only) so a
       # moved/compromised tag can't silently change what runs in CI.
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The gate only reads code (it never pushes), so don't leave the job token in .git/config.
           persist-credentials: false
@@ -46,7 +46,7 @@ jobs:
       # Installs the version-pinned tools from mise.toml (typos) with checksum verification, and
       # caches them. mise itself is version-pinned for reproducibility.
       - name: Set up mise tools
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           version: 2026.7.11
           install: true

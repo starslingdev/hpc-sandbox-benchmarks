@@ -85,7 +85,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Builds and smokes the image locally — no git push, so don't persist the job token.
           persist-credentials: false
@@ -147,7 +147,7 @@ jobs:
       publish-target: ${{ steps.plan.outputs.publish-target }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Reads code and probes the registry via docker/login — never git push.
           persist-credentials: false
@@ -227,7 +227,7 @@ jobs:
       candidate-digest-ref: ${{ steps.build.outputs.candidate-digest-ref }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Publishes to GHCR via docker/login-action, never git push — don't persist the job token.
           persist-credentials: false
@@ -299,7 +299,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Boots the just-baked candidate via provider SDKs — no git push, no ghcr push. Don't persist.
           persist-credentials: false
@@ -410,7 +410,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Publishes to GHCR via docker/login-action, never git push — don't persist the job token.
           persist-credentials: false
