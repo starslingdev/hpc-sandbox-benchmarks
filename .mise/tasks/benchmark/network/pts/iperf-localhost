@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#MISE description="PTS: iperf3 localhost TCP throughput (10s; 1 and 10 parallel streams)"
+# Measurement leaf: -e guards the scaffolding; the measured runs are isolated by run_pts_benchmark
+# (via run_pinned_pts, which owns the per-prefix skip markers and pins each variant's option
+# combination through PRESET_OPTIONS).
+#
+# Fully in-sandbox: the vendored profile's runner starts a local iperf3 server and the client
+# measures TCP over localhost, so the number isolates the sandbox's network stack/virtualization
+# overhead (virtio/KVM vs gVisor netstack vs host namespaces) from Internet weather — the suite's
+# successor to the dd|nc network-loopback leaf (which stays runnable manually). Two variants from
+# one vendored install (the pgbench one-leaf precedent — a second leaf would re-stage the vendored
+# profile and pay the iperf build twice): -P 1 is single-stream stack throughput, -P 10 adds
+# per-stream overhead scaling (iperf 3.14 is single-threaded, so this scales streams within one
+# process, not across cores).
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+# install_vendored_pts_profile needs PTS on PATH before run_pinned_pts's own guard can run, so guard
+# here with a skip marker per prefix (the exact negatives of the two composites this leaf produces).
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_iperf-tcp-p1"
+	skip_result "phoronix-test-suite not installed" "pts_iperf-tcp-p10"
+	exit 0
+fi
+
+# The upstream profile free-texts the server address/port and builds with -march=native; the
+# vendored copy pins the localhost subset and repairs the runner (see the profile's install.sh).
+# Stage it and discard the baked upstream install so run_pts_benchmark installs the override; the
+# second pinned run below reuses that install.
+install_vendored_pts_profile "iperf-1.2.0"
+
+# Preset values follow run_pinned_pts's contract: non-numeric values pin by entry NAME ("localhost",
+# "10 Seconds", "TCP"); "5201" and "10" exceed their menus' entry counts so they also pin by name;
+# but parallel "1" would read as a menu INDEX (1 < 2 entries → the "10" entry), so -P 1 pins by
+# INDEX 0 — the fio cpu-threads=0 precedent.
+#
+# The two variants are independent measurements, so neither aborts the other (`|| true` keeps each
+# variant's own recorded gap while letting the other run); the assert loop below is the single
+# arbiter that reds the job.
+run_pinned_pts "pts/iperf-1.2.0" "pts_iperf-tcp-p1" \
+	"iperf.server-address=localhost;iperf.positive-number=5201;iperf.duration=10 Seconds;iperf.test=TCP;iperf.parallel=0" || true
+run_pinned_pts "pts/iperf-1.2.0" "pts_iperf-tcp-p10" \
+	"iperf.server-address=localhost;iperf.positive-number=5201;iperf.duration=10 Seconds;iperf.test=TCP;iperf.parallel=10" || true
+
+# PTS exits 0 and writes a composite even when every trial failed (empty <Value> elements): each
+# variant must post its one throughput result. A --skipped.json marker passes — an honest recorded
+# gap is the designed keep+warn shape.
+for prefix in pts_iperf-tcp-p1 pts_iperf-tcp-p10; do
+	assert_pts_numeric_values "$prefix" 1
+done

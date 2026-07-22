@@ -17366,6 +17366,64 @@ const chunk4: MetricDef[] = [
 		sourceUrl: "https://github.com/ColinIanKing/stress-ng",
 	},
 	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 1",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This vendored subset benchmarks the sandbox's own network stack: the profile's runner starts a local iperf3 server and the client measures TCP throughput over localhost, so the result isolates virtualization/network-stack overhead from Internet weather.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 1",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label:
+			"iPerf - Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 10",
+		description:
+			"iPerf is a network bandwidth throughput testing software. This vendored subset benchmarks the sandbox's own network stack: the profile's runner starts a local iperf3 server and the client measures TCP throughput over localhost, so the result isolates virtualization/network-stack overhead from Internet weather.",
+		pts: {
+			test: "pts/iperf",
+			description:
+				"Server Address: localhost - Server Port: 5201 - Duration: 10 Seconds - Test: TCP - Parallel: 10",
+		},
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_wan_direction_download",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label: "iPerf WAN - Direction: Download",
+		description:
+			"Measures sustained WAN TCP throughput with iperf3 against the closest reachable server from a curated public list (servers.json, committed with this profile). The runner probes TCP-connect RTT to every listed server at run time, picks the lowest-RTT reachable non-backup server, retries across its port range on single-client busy collisions, and records the chosen server per trial as provenance. Eight parallel streams so high bandwidth-delay-product paths are not understated by a single TCP congestion window; the reported figure is receiver-side goodput.",
+		pts: { test: "local/iperf-wan", description: "Direction: Download" },
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
+		id: "iperf_wan_direction_upload",
+		dimension: "network",
+		unit: "Mbits/sec",
+		direction: "HIB",
+		headline: false,
+		label: "iPerf WAN - Direction: Upload",
+		description:
+			"Measures sustained WAN TCP throughput with iperf3 against the closest reachable server from a curated public list (servers.json, committed with this profile). The runner probes TCP-connect RTT to every listed server at run time, picks the lowest-RTT reachable non-backup server, retries across its port range on single-client busy collisions, and records the chosen server per trial as provenance. Eight parallel streams so high bandwidth-delay-product paths are not understated by a single TCP congestion window; the reported figure is receiver-side goodput.",
+		pts: { test: "local/iperf-wan", description: "Direction: Upload" },
+		sourceUrl: "https://software.es.net/iperf/",
+	},
+	{
 		id: "network_loopback_seconds",
 		dimension: "network",
 		unit: "Seconds",
@@ -17811,6 +17869,9 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
+];
+
+const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_10000_clients_800_mode_read_only",
 		dimension: "system",
@@ -17871,9 +17932,6 @@ const chunk4: MetricDef[] = [
 		},
 		sourceUrl: "https://www.postgresql.org/",
 	},
-];
-
-const chunk5: MetricDef[] = [
 	{
 		id: "pgbench_scaling_factor_1000_clients_1000_mode_read_only",
 		dimension: "system",

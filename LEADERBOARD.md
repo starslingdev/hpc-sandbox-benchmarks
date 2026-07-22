@@ -221,20 +221,6 @@ _Daytona (VM) leads · ~1.2× Blaxel on median (higher is better)._
 
 ## network
 
-### Loopback TCP (10GB) _(headline)_
-
-Seconds · lower is better
-
-_Blaxel leads · Daytona (VM) is ~1.1× higher (lower is better)._
-
-| Rank | Provider | Loopback TCP (10GB) (Seconds) | 95% bootstrap interval | n | Note |
-| ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Blaxel | 4.393 | 4.253 – 4.533 | 2 | — |
-| 2 | Daytona (VM) | 4.785 | 4.675 – 4.895 | 2 | n too small |
-| 3 | Novita | 8.637 | 8.39 – 8.884 | 2 | n too small |
-| 4 | E2B | 10.65 | 10.16 – 11.15 | 2 | n too small |
-| 5 | Modal (gVisor) | 43.16 | 41.41 – 44.9 | 2 | n too small |
-
 ### fast.com download
 
 Mbit/s · higher is better
@@ -282,6 +268,20 @@ _Modal (gVisor) leads · ~255.0× Daytona (VM) on median (higher is better)._
 | 1 | Modal (gVisor) | 25.5 | 18 – 33 | 2 |
 | 2 | Daytona (VM) | 0.1 | — | 1 |
 | 3 | Blaxel | 0.075 | 0.068 – 0.082 | 2 |
+
+### Loopback TCP (10GB)
+
+Seconds · lower is better
+
+_Blaxel leads · Daytona (VM) is ~1.1× higher (lower is better)._
+
+| Rank | Provider | Loopback TCP (10GB) (Seconds) | 95% bootstrap interval | n | Note |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 1 | Blaxel | 4.393 | 4.253 – 4.533 | 2 | — |
+| 2 | Daytona (VM) | 4.785 | 4.675 – 4.895 | 2 | n too small |
+| 3 | Novita | 8.637 | 8.39 – 8.884 | 2 | n too small |
+| 4 | E2B | 10.65 | 10.16 – 11.15 | 2 | n too small |
+| 5 | Modal (gVisor) | 43.16 | 41.41 – 44.9 | 2 | n too small |
 
 ## system
 
@@ -697,11 +697,6 @@ correction is applied across providers or metrics.
 | memory | STREAM Scale | Blaxel | 0.33 (n too small) | 0.097 |
 | memory | STREAM Scale | Novita | 0.33 (n too small) | 0.097 |
 | memory | STREAM Scale | E2B | 0.33 (n too small) | 0.097 |
-| network | Loopback TCP (10GB) | Blaxel | — | — |
-| network | Loopback TCP (10GB) | Daytona (VM) | 0.33 (n too small) | 0.097 |
-| network | Loopback TCP (10GB) | Novita | 0.33 (n too small) | 0.097 |
-| network | Loopback TCP (10GB) | E2B | 0.33 (n too small) | 0.097 |
-| network | Loopback TCP (10GB) | Modal (gVisor) | 0.33 (n too small) | 0.097 |
 | network | fast.com download | Modal (gVisor) | — | — |
 | network | fast.com download | Daytona (VM) | — | — |
 | network | fast.com download | Blaxel | — | — |
@@ -714,6 +709,11 @@ correction is applied across providers or metrics.
 | network | fast.com upload | Modal (gVisor) | — | — |
 | network | fast.com upload | Daytona (VM) | — | — |
 | network | fast.com upload | Blaxel | — | — |
+| network | Loopback TCP (10GB) | Blaxel | — | — |
+| network | Loopback TCP (10GB) | Daytona (VM) | 0.33 (n too small) | 0.097 |
+| network | Loopback TCP (10GB) | Novita | 0.33 (n too small) | 0.097 |
+| network | Loopback TCP (10GB) | E2B | 0.33 (n too small) | 0.097 |
+| network | Loopback TCP (10GB) | Modal (gVisor) | 0.33 (n too small) | 0.097 |
 | system | PyBench | Blaxel | — | — |
 | system | Git common operations | Daytona (VM) | — | — |
 | system | Git common operations | Blaxel | 0.33 (n too small) | 0.097 |

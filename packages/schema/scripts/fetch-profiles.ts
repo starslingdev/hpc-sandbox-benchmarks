@@ -54,10 +54,20 @@ const PROFILES = [
 	// Network dimension — single-result (sys.time monitor, no <Option> matrix), so it generates one
 	// description-less wildcard entry (zero byte-match risk). 1.0.3 carries the repo's deterministic
 	// netcat-openbsd runner override (install.sh) — the upstream dd|nc runner races its listener.
+	// Retained for manual runs; the network SUITE now measures the localhost stack via iperf below.
 	"network-loopback-1.0.3",
 	// Network dimension — a real Internet transfer through Netflix's fast.com CDN. The profile emits
-	// download/upload throughput plus idle/loaded latency from fast-cli's JSON output.
+	// download/upload throughput plus idle/loaded latency from fast-cli's JSON output. Retained for
+	// manual runs; the network SUITE now measures WAN throughput via local/iperf-wan (run 29937467891:
+	// the Chrome-driven fast.com measurement was structurally unreliable on fast datacenter paths).
 	"fast-cli-1.0.0",
+	// Network dimension — iperf3 driven as a client against a runner-local server. The vendored copy
+	// is a deliberate LOCALHOST SUBSET of upstream (see IPERF_LOCALHOST_TEST_SETTINGS below): the
+	// free-text server-address/port axes become pinned single-entry menus (the catalog synthesizer
+	// cannot enumerate free text, and the pinned menus make the localhost topology part of the metric
+	// identity) and the duration/test/parallel menus are trimmed to the two combinations the network
+	// suite runs (TCP 10s, -P 1 and -P 10).
+	"iperf-1.2.0",
 	// System dimension — PostgreSQL via its integrated pgbench, fully in-sandbox (the profile builds
 	// postgres 17.0 and runs server + client locally, so every provider measures the same topology).
 	// The producer pins one (Scaling Factor, Clients) point per mode via PRESET_OPTIONS; two parsers
@@ -78,8 +88,115 @@ const TWO_TRIAL_PROFILES = new Set([
 	"pybench-1.1.3",
 	"sqlite-speedtest-1.0.1",
 	"fast-cli-1.0.0",
+	"iperf-1.2.0",
 	"git-1.1.0",
 ]);
+
+// The pinned <TestSettings> block for the vendored iperf localhost subset. Kept in the vendoring
+// tool (like the TimesToRun patch) so a refresh stays byte-for-byte idempotent instead of silently
+// restoring upstream's free-text server axes and full duration/test/parallel matrix. Every entry
+// carries an explicit <Value> (the catalog parser requires one; " " is the pgbench precedent for a
+// no-argument entry).
+const IPERF_LOCALHOST_TEST_SETTINGS = `  <TestSettings>
+    <Default>
+      <PostArguments>-V -f m </PostArguments>
+    </Default>
+    <Option>
+      <DisplayName>Server Address</DisplayName>
+      <Identifier>server-address</Identifier>
+      <ArgumentPrefix>-c </ArgumentPrefix>
+      <Menu>
+        <Entry>
+          <Name>localhost</Name>
+          <Value>localhost</Value>
+        </Entry>
+      </Menu>
+    </Option>
+    <Option>
+      <DisplayName>Server Port</DisplayName>
+      <Identifier>positive-number</Identifier>
+      <ArgumentPrefix>-p </ArgumentPrefix>
+      <Menu>
+        <Entry>
+          <Name>5201</Name>
+          <Value>5201</Value>
+        </Entry>
+      </Menu>
+    </Option>
+    <Option>
+      <DisplayName>Duration</DisplayName>
+      <Identifier>duration</Identifier>
+      <ArgumentPrefix>-t </ArgumentPrefix>
+      <Menu>
+        <Entry>
+          <Name>10 Seconds</Name>
+          <Value>10</Value>
+        </Entry>
+      </Menu>
+    </Option>
+    <Option>
+      <DisplayName>Test</DisplayName>
+      <Identifier>test</Identifier>
+      <Menu>
+        <Entry>
+          <Name>TCP</Name>
+          <Value> </Value>
+        </Entry>
+      </Menu>
+    </Option>
+    <Option>
+      <DisplayName>Parallel</DisplayName>
+      <Identifier>parallel</Identifier>
+      <ArgumentPrefix>-P </ArgumentPrefix>
+      <Menu>
+        <Entry>
+          <Name>1</Name>
+          <Value>1</Value>
+        </Entry>
+        <Entry>
+          <Name>10</Name>
+          <Value>10</Value>
+        </Entry>
+      </Menu>
+    </Option>
+  </TestSettings>`;
+
+// Vendored-subset description: upstream's "requires you have access to an iperf server" is wrong for
+// the self-hosted localhost runner, and the Description feeds the catalog verbatim.
+const IPERF_LOCALHOST_DESCRIPTION =
+	"iPerf is a network bandwidth throughput testing software. This vendored subset benchmarks the " +
+	"sandbox's own network stack: the profile's runner starts a local iperf3 server and the client " +
+	"measures TCP throughput over localhost, so the result isolates virtualization/network-stack " +
+	"overhead from Internet weather.";
+
+/**
+ * Rewrite upstream iperf-1.2.0 into the repo's localhost subset (see the PROFILES entry). Applied
+ * after the TimesToRun patch; each replacement is anchored so a silent upstream reshape fails loudly
+ * here rather than vendoring a half-patched profile.
+ */
+function patchIperfLocalhostSubset(contents: string): string {
+	const patched = contents
+		.replace(/<Description>[\s\S]*?<\/Description>/, () => {
+			return `<Description>${IPERF_LOCALHOST_DESCRIPTION}</Description>`;
+		})
+		// The self-hosted runner makes upstream's "ensure you have a server running" prompt noise.
+		.replace(/\n\s*<PreInstallMessage>[\s\S]*?<\/PreInstallMessage>/, "")
+		.replace(/ {2}<TestSettings>[\s\S]*?<\/TestSettings>/, () => IPERF_LOCALHOST_TEST_SETTINGS);
+	for (const marker of [IPERF_LOCALHOST_DESCRIPTION, "<Name>10 Seconds</Name>"]) {
+		if (!patched.includes(marker)) {
+			throw new Error(`iperf-1.2.0 subset patch did not land (missing ${JSON.stringify(marker)})`);
+		}
+	}
+	if (patched.includes("PreInstallMessage")) {
+		throw new Error("iperf-1.2.0 subset patch left the PreInstallMessage behind");
+	}
+	return patched;
+}
+
+// Repo-local test-definition transforms beyond the TimesToRun patch, keyed by profile.
+const TEST_DEFINITION_PATCHES: Record<string, (contents: string) => string> = {
+	"iperf-1.2.0": patchIperfLocalhostSubset,
+};
 
 // Only these definition files feed the generator; siblings (downloads.xml, install.sh) are ignored.
 // `required` distinguishes the essential `test-definition.xml` (a missing one is a hard failure, not
@@ -151,6 +268,9 @@ async function vendorProfile(commitSha: string, profile: string): Promise<void> 
 			let contents = await fetchBlobText(sha);
 			if (name === "test-definition.xml" && TWO_TRIAL_PROFILES.has(profile)) {
 				contents = contents.replace(/<TimesToRun>\d+<\/TimesToRun>/, "<TimesToRun>2</TimesToRun>");
+			}
+			if (name === "test-definition.xml") {
+				contents = TEST_DEFINITION_PATCHES[profile]?.(contents) ?? contents;
 			}
 			await Bun.write(`${OUT_DIR}/${profile}/${name}`, contents);
 			console.log(`✓ ${profile}/${name}`);

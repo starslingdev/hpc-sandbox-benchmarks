@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite local profile: WAN throughput via iperf3 against curated public servers-->
+<PhoronixTestSuite>
+  <ResultsParser>
+    <OutputTemplate>IPERF WAN RESULT: #_RESULT_# Mbits/sec</OutputTemplate>
+    <LineHint>IPERF WAN RESULT</LineHint>
+  </ResultsParser>
+</PhoronixTestSuite>

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#MISE description="PTS: iperf3 WAN TCP throughput vs closest curated public server (10s, 8 streams, both directions)"
+# Measurement leaf: -e guards the scaffolding; the measured runs are isolated by run_pts_benchmark
+# (via run_pinned_pts, which owns the per-prefix skip markers and pins each direction through
+# PRESET_OPTIONS).
+#
+# The suite's successor to the fast-cli leaf (which stays runnable manually): run 29937467891 showed
+# the Chrome-driven fast.com measurement is structurally unreliable on fast datacenter paths (memory
+# watchdog killed every trial on daytona-vm/novita/blaxel; the surviving numbers were buffer-fill
+# transients). iperf3 against a curated public server measures WAN throughput with real byte
+# accounting. The profile's runner (local/iperf-wan-1.0.0/runner.sh) probes TCP-connect RTT to every
+# listed server, picks the closest reachable non-backup one, retries across its port range on
+# single-client busy collisions, and appends the per-trial choice to server-choices.ndjson — copied
+# into the results tree below, because WAN numbers are uninterpretable without the chosen server.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+# install_local_pts_profile needs PTS on PATH before run_pinned_pts's own guard can run, so guard
+# here with a skip marker per prefix (the exact negatives of the two composites this leaf produces).
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_iperf-wan-download"
+	skip_result "phoronix-test-suite not installed" "pts_iperf-wan-upload"
+	exit 0
+fi
+# The runner parses servers.json and iperf3's JSON output with jq (baked; also in PTS_APT_DEPS).
+if ! command -v jq &>/dev/null; then
+	skip_result "jq not installed (required for iperf-wan server selection)" "pts_iperf-wan-download"
+	skip_result "jq not installed (required for iperf-wan server selection)" "pts_iperf-wan-upload"
+	exit 0
+fi
+
+install_local_pts_profile "iperf-wan-1.0.0"
+
+# Direction pins by entry NAME (non-numeric). The two directions are independent measurements, so
+# neither aborts the other (`|| true` keeps each direction's own recorded gap while letting the
+# other run); the assert loop below is the single arbiter that reds the job. Download first: -R is
+# the direction fast-cli's loss hurt most (provider ingress).
+run_pinned_pts "local/iperf-wan-1.0.0" "pts_iperf-wan-download" "iperf-wan.direction=Download" || true
+run_pinned_pts "local/iperf-wan-1.0.0" "pts_iperf-wan-upload" "iperf-wan.direction=Upload" || true
+
+# Server-choice provenance: the runner appends one NDJSON record per successful trial (host, port,
+# provider, site, probe RTT, figure). Best-effort copy — the composites are the metrics; a missing
+# file just means no trial succeeded and the asserts below already tell that story.
+choices="$(pts_user_dir)/installed-tests/local/iperf-wan-1.0.0/server-choices.ndjson"
+if [ -f "$choices" ]; then
+	cp "$choices" "$(results_dir)/pts_iperf-wan--server-choices.ndjson" 2>/dev/null || true
+	echo "Server-choice provenance: pts_iperf-wan--server-choices.ndjson"
+	cat "$choices"
+fi
+
+# PTS exits 0 and writes a composite even when every trial failed (empty <Value> elements): each
+# direction must post its one throughput result. A --skipped.json marker passes — an honest recorded
+# gap is the designed keep+warn shape.
+for prefix in pts_iperf-wan-download pts_iperf-wan-upload; do
+	assert_pts_numeric_values "$prefix" 1
+done

@@ -87,6 +87,10 @@ export const rawPins = {
 	// > results), and the drift gate skips versionless names by construction, so they were the one hole in
 	// > it. The catalog joins on a versionless key, so pinning the leaf changes nothing downstream.
 	// > (c-ray/compress-zstd were dropped with the cpu-generic suite; pyperformance likewise runs nowhere.)
+	// > iperf-1.2.0 joined for the network suite's iperf composition: the bake pre-installs the
+	// > upstream profile (and caches its tarball); the leaf stages the repo's vendored localhost
+	// > subset over it and rebuilds from the cached source at run time (the network-loopback
+	// > override pattern). fast-cli/network-loopback stay baked for the manual composition.
 	ptsInstallTests:
-		"node-web-tooling-1.0.1 pybench-1.1.3 sqlite-speedtest-1.0.1 fio-2.1.0 network-loopback-1.0.3 fast-cli-1.0.0 pgbench-1.15.0 git-1.1.0 stream-1.3.4",
+		"node-web-tooling-1.0.1 pybench-1.1.3 sqlite-speedtest-1.0.1 fio-2.1.0 network-loopback-1.0.3 fast-cli-1.0.0 iperf-1.2.0 pgbench-1.15.0 git-1.1.0 stream-1.3.4",
 } satisfies Record<keyof Pins, string>;

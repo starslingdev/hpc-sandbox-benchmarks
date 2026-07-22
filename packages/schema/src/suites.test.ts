@@ -64,14 +64,15 @@ describe("suite registry", () => {
 	});
 
 	it("mirrors the unpinned suites' metrics from the generated catalog (no hand-drift)", () => {
-		// These suites batch-run their profiles WITHOUT PRESET_OPTIONS, so whatever the catalog lists for
-		// the test is exactly what the suite emits — pin the declared list to it in BOTH directions (a
-		// profile bump that adds/renames a combination fails here instead of silently stranding the
-		// list). stream's Type axis and fast-cli's four results are the matrix cases; pybench, sqlite,
-		// git and network-loopback declare no <Option> axes, so the pin holds over their wildcard result.
-		// (pgbench is preset-pinned and now its own suite — gated by the subset test below.)
+		// These suites' declared metrics are exactly what the catalog lists for their profiles — pin the
+		// declared list to it in BOTH directions (a profile bump that adds/renames a combination fails
+		// here instead of silently stranding the list). stream's Type axis and iperf's Parallel axis are
+		// the matrix cases (iperf is preset-pinned, but its vendored subset IS the two combinations the
+		// leaf runs, so the full-catalog mirror still holds); pybench, sqlite and git declare no
+		// <Option> axes, so the pin holds over their wildcard result. (pgbench is preset-pinned against
+		// a full upstream matrix and now its own suite — gated by the subset test below.)
 		const profilesOf = {
-			network: ["pts/network-loopback", "pts/fast-cli"],
+			network: ["pts/iperf", "local/iperf-wan"],
 			memory: ["pts/stream"],
 			system: ["pts/pybench", "pts/sqlite-speedtest", "pts/git"],
 		} as const;
