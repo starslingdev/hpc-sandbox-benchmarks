@@ -341,9 +341,21 @@ if (import.meta.main) {
 		// the marker can be lost before normalize), leaving this shard's Run EMPTY for the cell. Saying
 		// "recorded as a failed gap" then would launder the loss — the aggregate would show a bare
 		// pending provider while every job log claims the gap exists — so check the normalized Run itself.
+		//
+		// Match the gap's REASON against THIS run's error, not just its (scope, id, outcome): the harness
+		// records the marker reason verbatim (`message`) for a post-run failure, or under the
+		// `Failed to create sandbox: ` prefix for a creation failure. A bare shape check would also accept
+		// a stale `--failed.json` from an earlier error, or an independently-derived suite gap (a disk
+		// shortfall, a dedup twin) — none of which prove the marker THIS run tried to write survived.
 		const gapRecorded = normalized.providers
 			.find((p) => p.providerId === provider)
-			?.gaps.some((g) => g.scope === "suite" && g.id === suite && g.outcome === "failed");
+			?.gaps.some(
+				(g) =>
+					g.scope === "suite" &&
+					g.id === suite &&
+					g.outcome === "failed" &&
+					(g.reason === message || g.reason === `Failed to create sandbox: ${message}`),
+			);
 		const detail = gapRecorded
 			? `Suite "${suite}" failed on ${provider} — recorded as a failed gap in ${outFile}: ${message}`
 			: `Suite "${suite}" failed on ${provider} but no gap could be recorded in ${outFile} ` +

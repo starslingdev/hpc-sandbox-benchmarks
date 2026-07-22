@@ -394,11 +394,12 @@ describe("runSuite (resolution + credential gate)", () => {
 describe("createSuiteSandbox (creation-failure marker)", () => {
 	// The daytona-container incident shape: creation itself throws, so no sandbox — and no result —
 	// ever exists for the cell. The marker is the shard's ONLY record of the failure.
-	const createCtx = (resultsDir: string) => ({
+	const createCtx = (resultsDir: string, overrides: { createTimeoutMs?: number } = {}) => ({
 		suite: suite({}),
 		suiteName: "cpu-node",
 		providerName: "daytona-container",
 		resultsDir,
+		...overrides,
 	});
 	const MARKER = "sandbox-daytona-container-cpu-node--failed.json";
 
@@ -406,7 +407,7 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		const resultsDir = freshDir();
 		const handle = makeSandbox({ destroyed: { hit: false } });
 		const compute = { sandbox: { create: async () => handle } };
-		await expect(createSuiteSandbox(compute, createCtx(resultsDir))).resolves.toBe(handle);
+		await expect(createSuiteSandbox(() => compute, createCtx(resultsDir))).resolves.toBe(handle);
 		expect(existsSync(join(resultsDir, MARKER))).toBe(false);
 	});
 
@@ -418,7 +419,7 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 					Promise.reject(new Error("Snapshot toolchain-v3-container is not available")),
 			},
 		};
-		await expect(createSuiteSandbox(compute, createCtx(resultsDir))).rejects.toThrow(
+		await expect(createSuiteSandbox(() => compute, createCtx(resultsDir))).rejects.toThrow(
 			/Snapshot .* is not available/,
 		);
 		// The marker carries the WHY into the raw tree the caller normalizes — without it the shard's
@@ -431,12 +432,50 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		});
 	});
 
+	it("writes a FAILED marker when adapter construction (the factory) throws before create", async () => {
+		const resultsDir = freshDir();
+		// A computesdk provider can throw while BUILDING the adapter — before `sandbox.create` is ever
+		// reached. That path produced the same empty Run this marker guards against, so it must be recorded.
+		const factory = (): { sandbox: { create(): Promise<SandboxHandle> } } => {
+			throw new Error("provider config invalid: DAYTONA_REGION unset");
+		};
+		await expect(createSuiteSandbox(factory, createCtx(resultsDir))).rejects.toThrow(
+			/DAYTONA_REGION unset/,
+		);
+		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8"))).toEqual({
+			provider: "daytona-container",
+			suite: "cpu-node",
+			outcome: "failed",
+			reason: "Failed to create sandbox: provider config invalid: DAYTONA_REGION unset",
+		});
+	});
+
+	it("destroys a sandbox that resolves after the create attempt timed out (no leak)", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const handle = makeSandbox({ destroyed });
+		// create outlives the (tiny, injected) attempt timeout: withTimeout only races, so the handle it
+		// eventually yields is orphaned. The leak guard must destroy it — a Daytona sandbox with
+		// autoStopInterval: 0 would otherwise run for its full lifetime with no one to tear it down.
+		const compute = {
+			sandbox: {
+				create: (): Promise<SandboxHandle> => new Promise((r) => setTimeout(() => r(handle), 30)),
+			},
+		};
+		await expect(
+			createSuiteSandbox(() => compute, createCtx(resultsDir, { createTimeoutMs: 5 })),
+		).rejects.toThrow(/Sandbox creation timed out/);
+		// Let the late create settle and the attached cleanup run.
+		await new Promise((r) => setTimeout(r, 60));
+		expect(destroyed.hit).toBe(true);
+	});
+
 	it("folds into a suite-scope FAILED gap through the extractor's marker reader", async () => {
 		const resultsDir = freshDir();
 		const compute = {
 			sandbox: { create: (): Promise<SandboxHandle> => Promise.reject(new Error("boom")) },
 		};
-		await expect(createSuiteSandbox(compute, createCtx(resultsDir))).rejects.toThrow("boom");
+		await expect(createSuiteSandbox(() => compute, createCtx(resultsDir))).rejects.toThrow("boom");
 		// parseGapMarker is the single reader the results extractor routes every marker through, so
 		// this proves the written bytes normalize into the suite-scope failed gap on the shard Run.
 		const gap = parseGapMarker(
