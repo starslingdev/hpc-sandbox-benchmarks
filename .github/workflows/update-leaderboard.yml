@@ -98,14 +98,11 @@ jobs:
 
       # Keep LEADERBOARD.md byte-identical to what the renderer produces from the chosen committed Run —
       # the same command the leaderboard-artifact-sync gate names in its failure message.
+      # No Biome pre-flight here: Biome does not process Markdown (`files.ignoreUnknown` + no markdown
+      # language), so `biome check LEADERBOARD.md` reports "No files were processed" and exits 1. The
+      # real content gate is leaderboard-artifact-sync on the PR (byte-identity with the renderer).
       - name: Regenerate leaderboard
         run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$TARGET_RUN_ID.json" LEADERBOARD.md
-
-      # Fast pre-flight of the same gate the PR runs (`biome check .`), scoped to the file this job
-      # writes. Biome leaves the rendered Markdown untouched, so this catches only a genuine formatting
-      # regression; fail here (before any PR is opened) rather than leave a doomed PR.
-      - name: Confirm the leaderboard passes Biome (the PR lint gate)
-        run: bunx biome check LEADERBOARD.md --error-on-warnings
 
       # main is protected by a "changes must be made through a pull request" ruleset, so this job can't
       # push LEADERBOARD.md straight to main — a direct push is rejected with GH013. Commit through a
@@ -143,7 +140,7 @@ jobs:
               --base main \
               --head "$branch" \
               --title "chore(leaderboard): update from run ${TARGET_RUN_ID}" \
-              --body "Automated LEADERBOARD.md regeneration from committed dataset run \`${TARGET_RUN_ID}\`. Biome was pre-flighted green; auto-merge lands it once branch protection is satisfied."; then
+              --body "Automated LEADERBOARD.md regeneration from committed dataset run \`${TARGET_RUN_ID}\`. Auto-merge lands it once branch protection is satisfied."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
                 "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
                 "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
