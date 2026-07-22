@@ -594,6 +594,11 @@ function underpoweredFloors(board: Leaderboard): string[] {
  * first so the HTML entities we emit for `<`/`>` aren't themselves re-encoded, and the backslash is
  * doubled before we backslash-escape `|` — otherwise a reason containing `\|` would leave a lone `\`
  * in front of our escape, unescaping the pipe and breaking the cell anyway.
+ *
+ * The final pass folds any whitespace run that spans a newline down to a single space (a newline
+ * would otherwise end the table row). It scans each maximal `\s+` run once rather than matching
+ * `\s*\n\s*`, whose optional runs on both sides of a required `\n` backtrack quadratically on a long
+ * newline-free whitespace stretch in an attacker-influenced reason.
  */
 function escapeCell(text: string): string {
 	return text
@@ -602,7 +607,7 @@ function escapeCell(text: string): string {
 		.replace(/>/g, "&gt;")
 		.replace(/\\/g, "\\\\")
 		.replace(/\|/g, "\\|")
-		.replace(/\s*\n\s*/g, " ");
+		.replace(/\s+/g, (ws) => (ws.includes("\n") ? " " : ws));
 }
 
 /** Format a metric value compactly: integers as-is, otherwise up to 4 significant digits, trimmed. */

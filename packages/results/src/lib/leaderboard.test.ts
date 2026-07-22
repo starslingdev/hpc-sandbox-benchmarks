@@ -840,6 +840,29 @@ describe("coverage gaps", () => {
 		);
 		expect(md).toContain(String.raw`| E2B | cpu-node | **failed** | before \\\| after |`);
 	});
+
+	it("folds a newline-spanning whitespace run to one space but leaves a newline-free run intact", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([
+					provider(
+						"e2b",
+						[],
+						[
+							{
+								scope: "suite",
+								id: "cpu-node",
+								outcome: "failed",
+								// "exit 1" keeps its double space; the "  \n  " straddling the newline collapses to one.
+								reason: "exit  1  \n  see log",
+							},
+						],
+					),
+				]),
+			),
+		);
+		expect(md).toContain("| E2B | cpu-node | **failed** | exit  1 see log |");
+	});
 });
 
 describe("coverage gaps: the holes nobody recorded", () => {
