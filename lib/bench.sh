@@ -366,6 +366,40 @@ ensure_pts() {
 	return 0
 }
 
+# Seed PTS's download cache with one profile source file, fetched with retries and a SHA256-verified
+# mirror fallback. PTS's own downloader is single-shot per URL: one upstream hiccup during
+# `batch-install` fails the whole profile install, which the leaf then records as a suite-wide gap
+# (run 29964910698: downloads.es.net refused 4 of 6 providers' single-shot fetches within one
+# minute while the other 2 succeeded). A baked toolchain image already ships the file in this cache
+# (the bake pre-installs the profile), making this a verified no-op; the seed exists for stock-image
+# providers (blaxel installs every profile at run time) and for validation runs on a not-yet-rebaked
+# toolchain. Never fatal: on total failure PTS's own downloader still gets its chance, and the
+# leaf's existing skip/assert machinery owns the failure story.
+# Usage: seed_pts_download_cache <file-name> <sha256> <url> [mirror-url...]
+seed_pts_download_cache() {
+	local filename="$1" sha256="$2" cache tmp url
+	shift 2
+	pts_init
+	cache="$(pts_user_dir)/download-cache"
+	mkdir -p "$cache"
+	if [ -f "${cache}/${filename}" ] && echo "${sha256}  ${cache}/${filename}" | sha256sum -c - &>/dev/null; then
+		echo "PTS download cache already holds ${filename} (sha256 verified)"
+		return 0
+	fi
+	tmp="${cache}/.${filename}.part"
+	for url in "$@"; do
+		if curl -fsSL --retry 8 --retry-all-errors --retry-delay 3 --max-time 300 -o "$tmp" "$url" &&
+			echo "${sha256}  ${tmp}" | sha256sum -c - &>/dev/null; then
+			mv "$tmp" "${cache}/${filename}"
+			echo "Seeded PTS download cache: ${filename} <- ${url}"
+			return 0
+		fi
+		rm -f "$tmp"
+		echo "WARNING: could not seed ${filename} from ${url} (trying next source, else PTS's own downloader)" >&2
+	done
+	return 0
+}
+
 # Install a repo-local PTS profile (packages/schema/src/pts-profiles/local/<name>) into PTS's
 # local-profile dir, so `phoronix-test-suite batch-install local/<name>` can find it — PTS won't fetch
 # a repo-local profile itself. The dir depends on the run user ($HOME/.phoronix-test-suite vs
