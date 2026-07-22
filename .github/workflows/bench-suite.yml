@@ -53,7 +53,7 @@ jobs:
       # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
       # moved/compromised tag can't silently change what runs.
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # This cell only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
           # checkout's credentials), so don't persist the job token in .git/config.
