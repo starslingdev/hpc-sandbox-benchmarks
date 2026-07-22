@@ -135,10 +135,13 @@ describe("@sandbox-benchmarks/providers", () => {
 		// underneath the harness; runSuite's finally block remains the cleanup authority.
 		expect(daytona?.createOptions?.autoStopInterval).toBe(0);
 
-		// The container variant shares the account key but boots its own snapshot in its own region.
+		// The container variant shares the account key and region but boots its own snapshot. The
+		// region pin must NOT ride createOptions — the native SDK ignores createParams.target (only the
+		// client-level target reaches the wire), so a reintroduced `target` createOption here would be
+		// dead code masquerading as a region pin; daytona-target.ts owns the real channel.
 		const container = providers.find((p) => p.name === "daytona-container");
 		expect(container?.createOptions?.snapshotId).toBe(config.daytonaContainer.snapshot);
-		expect(container?.createOptions?.target).toBe("us");
+		expect(container?.createOptions).not.toHaveProperty("target");
 
 		// No adapter override — requiredEnvVars falls back to the schema meta's static list. Pin the
 		// concrete value rather than only comparing the two lookups against each other: if both `find`s

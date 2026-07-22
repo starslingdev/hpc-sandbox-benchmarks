@@ -21,7 +21,7 @@
 // Dual-class: this bakes BOTH isolation variants. Snapshot registration pins the class explicitly
 // (`DaytonaBakeOptions.sandboxClass`) rather than relying on the transient-push API's container
 // default — daytona-vm bakes SandboxClass.LINUX_VM in us-west-2, daytona-container bakes
-// SandboxClass.CONTAINER in region `us`. The class is a property of the snapshot, so the two variants
+// SandboxClass.CONTAINER in the same region. The class is a property of the snapshot, so the two variants
 // are necessarily separate snapshots.
 import type { RegistryPushAccessDto } from "@daytona/api-client";
 import { Configuration, DockerRegistryApi } from "@daytona/api-client";
@@ -329,11 +329,11 @@ async function logCreateFailure(
 
 /** The per-variant knobs a Daytona bake needs beyond the shared toolchain image: the account key, the
  *  region to bake in, and the sandbox class the snapshot pins. `daytona-vm` bakes LINUX_VM in us-west-2;
- *  `daytona-container` bakes CONTAINER in `us`. Both come from the config gatekeeper's per-variant
+ *  `daytona-container` bakes CONTAINER in us-west-2. Both come from the config gatekeeper's per-variant
  *  {@link DaytonaConfig} plus the variant's fixed class — never read here from process.env. */
 export interface DaytonaBakeOptions {
 	apiKey?: string;
-	/** Runner target/region (e.g. `us-west-2` for VM, `us` for container). */
+	/** Runner target/region (us-west-2 for both variants). */
 	target?: string;
 	/** Sandbox class baked into the snapshot — determines which runners can host it. */
 	sandboxClass: SandboxClass;
@@ -485,7 +485,7 @@ export function bakeDaytonaVmSnapshot(name: string, image: string, log: Log): Pr
 	});
 }
 
-/** Bake the daytona-container snapshot `name`: CONTAINER class in the daytona-container region (`us`). */
+/** Bake the daytona-container snapshot `name`: CONTAINER class in the daytona-container region (us-west-2). */
 export function bakeDaytonaContainerSnapshot(name: string, image: string, log: Log): Promise<void> {
 	return bakeDaytonaSnapshot(name, image, log, {
 		apiKey: config.daytonaContainer.apiKey,

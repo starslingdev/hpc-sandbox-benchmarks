@@ -14,7 +14,7 @@ export interface CandidateRefs {
 	toolchainImageCandidate: string;
 	/** daytona-vm runner target (us-west-2; undefined → account default). */
 	daytonaVmTarget?: string;
-	/** daytona-container runner target (`us`; undefined → account default). */
+	/** daytona-container runner target (us-west-2; undefined → account default). */
 	daytonaContainerTarget?: string;
 }
 

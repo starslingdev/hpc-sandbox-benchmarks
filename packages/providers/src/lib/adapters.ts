@@ -13,6 +13,7 @@ import type { CreateSandboxOptions } from "computesdk";
 import { blaxelWithVolumeAndKeepAlive } from "./blaxel-volume.ts";
 import type { DaytonaConfig } from "./config.ts";
 import { config } from "./config.ts";
+import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
@@ -23,19 +24,22 @@ const MODAL_APP_NAME = "sandbox-benchmarks";
 /**
  * The Daytona VM and container variants share one adapter shape — the same account API key and the
  * same create-time policy — and differ only in the account config the config gatekeeper resolved:
- * region (`us-west-2` vs `us`) and which pre-baked snapshot to boot. The sandbox class (LINUX_VM vs
- * CONTAINER) is fixed inside each variant's snapshot at bake time, so nothing selects it here. `target`
- * and autoStopInterval ride the wrapper's provider-options passthrough into Daytona's native
- * createParams; the universal `timeout` is only the create-call deadline, so disable native auto-stop
- * and rely on the harness's guaranteed teardown. Never read process.env here.
+ * region target and which pre-baked snapshot to boot. The sandbox class (LINUX_VM vs CONTAINER) is
+ * fixed inside each variant's snapshot at bake time, so nothing selects it here. The region CANNOT
+ * ride createOptions: the native SDK's create() honors only the CLIENT-level target (constructor
+ * config or the DAYTONA_TARGET env fallback), and the wrapper builds its client from the apiKey
+ * alone — so daytonaClientTarget's env-pin around create is the only channel through this wrapper
+ * (race-free: each CI job runs exactly one provider). autoStopInterval does ride the wrapper's
+ * provider-options passthrough into Daytona's native createParams; the universal `timeout` is only
+ * the create-call deadline, so disable native auto-stop and rely on the harness's guaranteed
+ * teardown. Never read process.env here.
  */
 function daytonaAdapter(cfg: DaytonaConfig): ProviderAdapter {
 	return {
-		createCompute: () => daytona({ apiKey: cfg.apiKey }),
+		createCompute: () => daytonaClientTarget(daytona({ apiKey: cfg.apiKey }), cfg.target),
 		createOptions: {
 			snapshotId: cfg.snapshot,
 			autoStopInterval: 0,
-			...(cfg.target ? { target: cfg.target } : {}),
 		},
 	};
 }

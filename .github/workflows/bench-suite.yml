@@ -89,9 +89,9 @@ jobs:
           DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
           # Each Daytona variant pins its region via a variant-specific secret so operators can
           # retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET (us-west-2
-          # default), daytona-container reads DAYTONA_CONTAINER_TARGET (`us` default).
+          # default), daytona-container reads DAYTONA_CONTAINER_TARGET (us-west-2 default).
           DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           # Both Modal variants share the account tokens; scope them to either cell.
           MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}

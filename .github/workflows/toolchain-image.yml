@@ -324,13 +324,13 @@ jobs:
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           # Both Daytona isolation variants share the account key and bake in their own region.
           DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
-          # Each Daytona variant bakes in its own region, pinned by a variant-specific secret so
+          # Both Daytona variants bake in us-west-2, pinned by a variant-specific secret so
           # operators can retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET
           # (LINUX_VM snapshot, us-west-2 default), daytona-container reads DAYTONA_CONTAINER_TARGET
-          # (`us` default). Both default so an unsynced secret can't leave a snapshot in the account's
+          # (us-west-2 default). Both default so an unsynced secret can't leave a snapshot in the account's
           # default region and fail the bake at snapshot creation.
           DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
           # Both Modal variants share the account tokens; the bake is a no-op for each (the image is
           # pushed once and booted directly), but validate still boots each to prove reachability.
           MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
@@ -436,7 +436,7 @@ jobs:
           # Both Daytona variants may be promoted in one payload, so thread each variant's region
           # secret (daytona-vm ⇒ DAYTONA_TARGET, daytona-container ⇒ DAYTONA_CONTAINER_TARGET).
           DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
-          DAYTONA_CONTAINER_TARGET: ${{ secrets.DAYTONA_CONTAINER_TARGET || 'us' }}
+          DAYTONA_CONTAINER_TARGET: ${{ secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2' }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}

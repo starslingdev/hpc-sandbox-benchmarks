@@ -10,7 +10,7 @@ const refs: CandidateRefs = {
 	novitaTemplateCandidate: "tc-v1-novita-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
 	daytonaVmTarget: "us-west-2",
-	daytonaContainerTarget: "us",
+	daytonaContainerTarget: "us-west-2",
 };
 
 describe("candidateCreateOptions", () => {
@@ -28,7 +28,7 @@ describe("candidateCreateOptions", () => {
 	it("points daytona-container at its own candidate snapshot + region target", () => {
 		expect(candidateCreateOptions("daytona-container", refs)).toEqual({
 			snapshotId: "snap-v1-container-candidate",
-			target: "us",
+			target: "us-west-2",
 		});
 	});
 
