@@ -58,14 +58,17 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    Biome formats JSON, so an unformatted Run document would fail the PR — and aborts before opening a
    doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the existing open PR instead of
    colliding on the deterministic branch. `update-leaderboard.yml` lands `LEADERBOARD.md` the same way
-   (a `leaderboard/update-<run-id>` PR, Biome-preflighted, auto-merge armed).
+   (a `leaderboard/update-<run-id>` PR, auto-merge armed). Biome is not pre-flighted on that path —
+   it does not process Markdown — so content correctness is the `leaderboard-artifact-sync` gate.
 
    > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
    > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI check
    > is a *required* status, auto-merge waits for a check that never runs, and a maintainer completes
-   > the merge (their merge to `main` runs `ci.yml` normally); the in-job pre-flight guarantees the
-   > content is already clean. For fully hands-off auto-merge, open the PR with a GitHub App
-   > installation token or PAT instead of `GITHUB_TOKEN` so the PR's own checks run.
+   > the merge (their merge to `main` runs `ci.yml` normally). For dataset PRs the in-job Biome
+   > pre-flight already guarantees the JSON is clean; for leaderboard PRs the renderer is deterministic
+   > and `leaderboard-artifact-sync` is what `ci.yml` enforces on merge. For fully hands-off auto-merge,
+   > open the PR with a GitHub App installation token or PAT instead of `GITHUB_TOKEN` so the PR's own
+   > checks run.
 6. **Backfilling a failed dataset commit.** The commit logic is the reusable `commit-dataset.yml`, so
    when a matrix run's dataset commit fails (or was never reached) a maintainer can re-run it standalone:
    **Actions → Commit dataset → Run workflow**, passing the original run's id — or, from a
