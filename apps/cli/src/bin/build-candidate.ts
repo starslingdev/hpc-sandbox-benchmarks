@@ -12,6 +12,7 @@
 //     GitHub would reject it. stdout is left to carry the (inherited) build log, and
 //   • argv[1] (optional): a build-metadata.json diagnostic artifact with the same facts.
 import { config } from "@sandbox-benchmarks/providers";
+import { logWarning, withGroup } from "../lib/actions-log.ts";
 import { buildAndPushCandidate, imageRepo, resolveImageDigest } from "../lib/bake/image.ts";
 import type { Log } from "../lib/bake/types.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
@@ -23,7 +24,7 @@ if (import.meta.main) {
 	// and the run log read it) and exit non-zero, rather than letting an unhandled rejection print a
 	// stack trace. Mirrors the `--build-push` path in bake.ts.
 	try {
-		await buildAndPushCandidate(log);
+		await withGroup("Build + push candidate base", () => buildAndPushCandidate(log));
 	} catch (err) {
 		log(`<<< build/push failed — ${err instanceof Error ? err.message : String(err)}`);
 		process.exit(1);
@@ -38,8 +39,9 @@ if (import.meta.main) {
 		digest = await resolveImageDigest(config.toolchainImageCandidate);
 		digestRef = `${repo}@${digest}`;
 	} catch (err) {
-		log(
-			`::warning::could not resolve candidate digest (${err instanceof Error ? err.message : String(err)}); recording the tag instead.`,
+		logWarning(
+			`could not resolve candidate digest (${err instanceof Error ? err.message : String(err)}); recording the tag instead.`,
+			{ title: "Candidate digest unresolved" },
 		);
 	}
 

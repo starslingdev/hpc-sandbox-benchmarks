@@ -130,6 +130,26 @@ async function reportCell(opts: {
 			message: annotationMessage,
 		},
 	});
+
+	// A non-required cell can "succeed" (exit 0) while its provider skipped or produced zero catalogued
+	// metrics — e.g. a lapsed/misnamed credential on the matrix lane, where no `--require` /
+	// REQUIRE_PROVIDERS gate fails it (the bench-matrix fan-out sets none). writeJobSummary annotates
+	// only failures, so that provider would silently vanish from the dataset/leaderboard behind a green
+	// cell. Surface the drop as a run warning; it fires only on the anomaly, so a steady-state run where
+	// every provider validates stays quiet.
+	const providerValidated =
+		provider?.validationStatus === "validated" && provider.metrics.length > 0;
+	if (!opts.failed && !providerValidated) {
+		const reason = provider
+			? `validation=${provider.validationStatus}, ${provider.metrics.length} catalogued metric(s)`
+			: "absent from the Run";
+		logWarning(
+			`${title} produced no validated metrics (${reason}) — provider dropped from this run`,
+			{
+				title: `${opts.provider} not validated`,
+			},
+		);
+	}
 }
 
 type CellReport = Parameters<typeof reportCell>[0];

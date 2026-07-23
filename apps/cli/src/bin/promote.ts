@@ -93,6 +93,9 @@ if (import.meta.main) {
 		tables: [{ heading: "Provider status", rows: providerSummaryRows(run) }],
 		annotation: {
 			failed: false,
+			// Terminal, low-frequency, non-matrix event — surface the successful publish as a run notice
+			// (the documented use of noticeOnSuccess), not only a job-summary row.
+			noticeOnSuccess: true,
 			title: `Promote ${run.runId}`,
 			message: `promoted=${run.runId} validatedProviders=${validated}`,
 		},

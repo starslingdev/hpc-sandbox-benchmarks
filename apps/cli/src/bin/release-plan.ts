@@ -19,6 +19,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
+import { logWarning } from "../lib/actions-log.ts";
 import { imageExistsInRegistry, imageRepo } from "../lib/bake/image.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
 
@@ -183,9 +184,10 @@ if (import.meta.main) {
 	try {
 		alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
 	} catch (err) {
-		console.error(
-			`::warning::could not probe whether ${config.toolchainImageVersion} is already published ` +
+		logWarning(
+			`could not probe whether ${config.toolchainImageVersion} is already published ` +
 				`(${err instanceof Error ? err.message : String(err)}); proceeding — promote does the authoritative guard.`,
+			{ title: "Immutability probe inconclusive" },
 		);
 	}
 

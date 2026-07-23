@@ -59,6 +59,10 @@ if (import.meta.main) {
 		[env("IMAGE") && `image=${env("IMAGE")}`, env("PUBLISHED") && `published=${env("PUBLISHED")}`]
 			.filter(Boolean)
 			.join(" · ") || phase;
+	// Failures always annotate. On success, annotate ONLY the terminal `publish` phase: the bake phase
+	// fans out one cell per provider, so a per-phase success notice would post ~N notices per release —
+	// the matrix-cell spam actions-log.ts's writeJobSummary deliberately suppresses. Every phase still
+	// gets its full job summary above.
 	if (isFailure(status)) core.error(detail, { title });
-	else core.notice(detail, { title });
+	else if (phase === "publish") core.notice(detail, { title });
 }
