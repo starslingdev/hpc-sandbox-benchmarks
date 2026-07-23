@@ -372,10 +372,10 @@ export async function runSuiteOnSandbox(
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
 	let suiteError: unknown;
 	try {
-		// Resolve the PTS pass policy from the suite's own default (converge for the synthetic suites, a
-		// fixed single pass for realworld) and the BENCH_PTS_PASSES override. Constructed inside the try so
-		// a bad policy (buildPreamble rejects a fixed k < 1) is still torn down by the finally below; a
-		// throw before the try would leak the already-created sandbox.
+		// Resolve the PTS pass policy from the suite's own default (converge only on the light system/memory
+		// suites; a fixed count everywhere else) and the BENCH_PTS_PASSES override. Constructed inside the
+		// try so a bad policy (buildPreamble rejects a fixed k < 1) is still torn down by the finally below;
+		// a throw before the try would leak the already-created sandbox.
 		const runner = new StepRunner(sandbox, transport, undefined, resolvePtsPassPolicy(suite));
 		runner.phase = "setup";
 		if (suite.minDiskGb) {

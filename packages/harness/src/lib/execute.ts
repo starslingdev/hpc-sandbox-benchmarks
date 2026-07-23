@@ -177,8 +177,9 @@ export const DEFAULT_PTS_TIMES_TO_RUN = 2;
  *    PTS's own cap. This is the "let PTS decide" mode that buys tighter within-machine intervals on noisy
  *    cases at the cost of a variable (and potentially long) runtime.
  *
- * Resolved per run by {@link resolvePtsPassPolicy}: a suite's configured `Suite.ptsTimesToRun` is the
- * default, and the `BENCH_PTS_PASSES` dispatch input overrides it (a number, or `converge`).
+ * Resolved per run by {@link resolvePtsPassPolicy}: each suite's own default (converge where it declares
+ * `Suite.ptsConverge` — the light system/memory suites — else fixed at `Suite.ptsTimesToRun`), which the
+ * `BENCH_PTS_PASSES` dispatch input overrides (a number, or `converge`).
  */
 export type PtsPassPolicy =
 	| { readonly mode: "fixed"; readonly times: number }
@@ -209,12 +210,12 @@ export interface SuitePassConfig {
  *  - `BENCH_PTS_PASSES=converge` (any casing) → converge, forced on EVERY suite (the global override).
  *  - `BENCH_PTS_PASSES=<n>` (a positive integer) → fixed at that many passes, forced on every suite.
  *  - unset/blank → the suite's OWN default: `converge` where the suite declares {@link SuitePassConfig.ptsConverge}
- *    (the synthetic suites), else fixed at its `ptsTimesToRun` (or {@link DEFAULT_PTS_TIMES_TO_RUN}).
+ *    (the light synthetic suites — system, memory), else fixed at its `ptsTimesToRun` (or {@link DEFAULT_PTS_TIMES_TO_RUN}).
  *
- * So a bare run converges the suites built to converge (synthetic) while the realworld suites keep their
- * single fixed cold-start pass, and a dispatch can still force one policy across the board. A non-empty
- * override that is neither `converge` nor a positive integer THROWS, so a typo'd dispatch input fails the
- * run loudly instead of silently reverting.
+ * So a bare run converges the suites built to converge (the light, budget-safe synthetic suites) while
+ * the I/O, network, and realworld suites keep their fixed pass count, and a dispatch can still force one
+ * policy across the board. A non-empty override that is neither `converge` nor a positive integer THROWS,
+ * so a typo'd dispatch input fails the run loudly instead of silently reverting.
  */
 export function resolvePtsPassPolicy(
 	suite: SuitePassConfig,

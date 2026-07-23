@@ -37,9 +37,9 @@ on:
           ]
       pts_passes:
         # The within-machine axis, matched to bench-matrix.yml so a policy can be smoke-tested on one cell
-        # before spending the whole matrix. Blank uses the suite's own policy (synthetic suites converge,
-        # realworld runs one fixed cold-start pass); a whole number forces that many passes; "converge"
-        # forces PTS's convergence. Passed through the environment below (BENCH_PTS_PASSES); harness-validated.
+        # before spending the whole matrix. Blank uses the suite's own policy (the light synthetic suites
+        # system + memory converge; the I/O/network suites and realworld keep a fixed count); a whole number
+        # forces that many; "converge" forces PTS's convergence. Passed via BENCH_PTS_PASSES; harness-validated.
         description: 'PTS passes per case: blank = suite default policy, a number, or "converge".'
         required: false
         type: string

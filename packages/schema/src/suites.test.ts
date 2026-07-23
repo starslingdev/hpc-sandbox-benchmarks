@@ -35,8 +35,11 @@ describe("suite registry", () => {
 
 	it("declares the per-tier pass policy and replicate count (R)", () => {
 		// Real-world captures cold-start once (k=1, no in-sandbox convergence) across many sandboxes
-		// (R=12, data-informed so the between-machine CIs separate providers); the long synthetics let PTS
-		// converge the in-sandbox passes across R=3. cpu-generic is retired; pgbench is split out of system.
+		// (R=12, data-informed so the between-machine CIs separate providers). The synthetics run k=2 fixed
+		// across R=3, and PTS convergence is enabled ONLY on the light, budget-safe suites (system, memory);
+		// the I/O + network suites and the heavy cpu-node build keep a fixed count (convergence there
+		// re-introduces fio's DynamicRunCount runaway, breaks iperf's fixed-trial rule, or overruns the
+		// budget). cpu-generic is retired; pgbench is split out of system.
 		for (const name of [
 			"realworld-mastra",
 			"realworld-better-auth",
@@ -50,10 +53,12 @@ describe("suite registry", () => {
 			expect(suite.defaultReplicas).toBe(12);
 		}
 		for (const name of ["cpu-node", "system", "pgbench", "memory", "disk", "network"] as const) {
-			expect(SUITES[name].ptsConverge).toBe(true);
 			expect(SUITES[name].ptsTimesToRun).toBe(2);
 			expect(SUITES[name].defaultReplicas).toBe(3);
 		}
+		// Convergence is enabled only where it is cheap, stable, and budget-safe.
+		const converging: string[] = SUITE_NAMES.filter((name) => (SUITES[name] as Suite).ptsConverge);
+		expect(converging.sort()).toEqual(["memory", "system"]);
 	});
 
 	it("mirrors each realworld suite's metrics from the generated catalog (no hand-drift)", () => {
