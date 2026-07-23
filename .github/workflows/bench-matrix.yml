@@ -16,9 +16,9 @@ name: Bench matrix
 #     suite's Suite.defaultReplicas — synthetic R=3, realworld R=12; a number scales every suite). More
 #     replicates → tighter intervals on a provider's fleet variation, at proportional runner cost.
 #   * `pts_passes` — timed PTS passes per case INSIDE a sandbox, the WITHIN-machine axis (blank = each
-#     suite's own policy: the light synthetic suites system + memory converge, while every other suite
-#     (cpu-node, disk, pgbench, network, realworld) keeps a fixed count; a number or `converge` forces one
-#     policy across every suite).
+#     suite's own policy: only the memory suite converges, while every other suite (cpu-node, system, disk,
+#     pgbench, network, realworld) keeps a fixed count; a number or `converge` forces one policy across
+#     every suite).
 #
 # Off the PR path (real sandbox time + provider credentials); main is the default, while an explicit
 # allow_branch dispatch supports pre-merge validation. Every benchmark cell remains gated by Environment
@@ -58,15 +58,15 @@ on:
         # schema. plan-replicates rejects a non-positive/non-integer value, so a typo fails the plan.
         default: ''
       pts_passes:
-        description: 'Timed PTS passes per test INSIDE each sandbox — the within-machine axis. Blank = each suite''s default policy (the light synthetic suites system + memory converge; every other suite — cpu-node, disk, pgbench, network, realworld — runs a fixed count). A whole number forces that many on every suite; "converge" forces PTS''s own statistical convergence everywhere.'
+        description: 'Timed PTS passes per test INSIDE each sandbox — the within-machine axis. Blank = each suite''s default policy (only the memory suite converges; every other suite — cpu-node, system, disk, pgbench, network, realworld — runs a fixed count). A whole number forces that many on every suite; "converge" forces PTS''s own statistical convergence everywhere.'
         required: false
         type: string
-        # Blank uses each suite's declared policy: system + memory converge (Suite.ptsConverge — let PTS's
-        # DynamicRunCount tighten the within-machine interval, cheap+bounded there), while disk/pgbench/
-        # network + cpu-node + realworld keep a fixed count (convergence re-introduces fio's DynamicRunCount
-        # runaway, breaks iperf's fixed-trial rule, or overruns budgets sized for a fixed pass count; their
-        # spread is the replicas axis). A number or "converge" is the GLOBAL override applied to every
-        # suite. resolvePtsPassPolicy rejects any other non-numeric value.
+        # Blank uses each suite's declared policy: only memory converges (Suite.ptsConverge — STREAM is a
+        # cheap, bounded loop where DynamicRunCount tightens the within-machine interval safely), while
+        # every other suite keeps a fixed count (convergence re-introduces fio's DynamicRunCount runaway on
+        # disk, timed system out on modal-gvisor in run #49, breaks iperf's fixed-trial rule, or overruns
+        # budgets sized for a fixed pass count; their spread is the replicas axis). A number or "converge"
+        # is the GLOBAL override applied to every suite. resolvePtsPassPolicy rejects any other non-numeric value.
         default: ''
       allow_branch:
         description: 'Allow benchmark cells on a non-main ref (publish remains main-only).'
