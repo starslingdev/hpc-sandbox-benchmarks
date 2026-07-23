@@ -111,8 +111,8 @@ jobs:
           # The replicate index this shard represents — stamped onto its Run so the aggregate folds the R
           # sandboxes of one (provider, suite) into per-metric replicate breakdowns rather than colliding.
           BENCH_REPLICATE: ${{ matrix.replicate }}
-          # PTS passes-per-case policy: blank = the suite's fixed count, a number overrides it, or
-          # "converge" hands the count to PTS's convergence. Read by the harness preamble.
+          # PTS passes-per-case policy: blank = the suite's own policy (system/memory converge, the rest
+          # fixed), a number or "converge" overrides every suite. Read by the harness preamble.
           BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
           # Scope every provider credential to the cell that actually uses it: a cell receives ONLY
           # the secret(s) for its own `matrix.provider`, so a compromised adapter or suite can't read
