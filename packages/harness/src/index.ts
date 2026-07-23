@@ -372,16 +372,11 @@ export async function runSuiteOnSandbox(
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
 	let suiteError: unknown;
 	try {
-		// Resolve the PTS pass policy from the suite's configured count and the BENCH_PTS_PASSES override
-		// (a fixed count, or `converge` to let PTS's own convergence decide). Constructed inside the try so
-		// a bad policy (buildPreamble rejects a fixed k < 1) is still torn down by the finally below; a
-		// throw before the try would leak the already-created sandbox.
-		const runner = new StepRunner(
-			sandbox,
-			transport,
-			undefined,
-			resolvePtsPassPolicy(suite.ptsTimesToRun),
-		);
+		// Resolve the PTS pass policy from the suite's own default (converge on cpu-node + memory; a fixed
+		// count on every other suite) and the BENCH_PTS_PASSES override. Constructed inside the
+		// try so a bad policy (buildPreamble rejects a fixed k < 1) is still torn down by the finally below;
+		// a throw before the try would leak the already-created sandbox.
+		const runner = new StepRunner(sandbox, transport, undefined, resolvePtsPassPolicy(suite));
 		runner.phase = "setup";
 		if (suite.minDiskGb) {
 			// Measure free space where the disk-heavy suites actually write, not the sandbox root. The

@@ -36,11 +36,11 @@ on:
             realworld-openclaw,
           ]
       pts_passes:
-        # The within-machine axis, matched to bench-matrix.yml so convergence can be smoke-tested on one
-        # cell before spending the whole matrix. Blank keeps the suite's fixed count (Suite.ptsTimesToRun);
-        # a whole number forces that many timed passes; "converge" hands the count to PTS's own statistical
-        # convergence. Passed through the environment below (BENCH_PTS_PASSES); the harness validates it.
-        description: 'PTS passes per case: blank = suite default, a number, or "converge".'
+        # The within-machine axis, matched to bench-matrix.yml so a policy can be smoke-tested on one cell
+        # before spending the whole matrix. Blank uses the suite's own policy (the cpu-node and memory
+        # suites converge; every other suite keeps a fixed count); a whole number
+        # forces that many; "converge" forces PTS's convergence. Passed via BENCH_PTS_PASSES; harness-validated.
+        description: 'PTS passes per case: blank = suite default policy, a number, or "converge".'
         required: false
         type: string
         default: ''
