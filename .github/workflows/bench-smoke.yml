@@ -35,6 +35,15 @@ on:
             realworld-better-auth,
             realworld-openclaw,
           ]
+      pts_passes:
+        # The within-machine axis, matched to bench-matrix.yml so convergence can be smoke-tested on one
+        # cell before spending the whole matrix. Blank keeps the suite's fixed count (Suite.ptsTimesToRun);
+        # a whole number forces that many timed passes; "converge" hands the count to PTS's own statistical
+        # convergence. Passed through the environment below (BENCH_PTS_PASSES); the harness validates it.
+        description: 'PTS passes per case: blank = suite default, a number, or "converge".'
+        required: false
+        type: string
+        default: ''
 
 # Least privilege: the job only reads the checked-out code and uploads an artifact.
 permissions:
@@ -89,6 +98,9 @@ jobs:
           # shell. `$GITHUB_RUN_ID` is built-in.
           BENCH_PROVIDER: ${{ inputs.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
+          # PTS passes-per-case policy (blank = suite default, a number, or "converge"); read by the
+          # harness preamble. A smoke run is single-sandbox, so there is no replicate axis here.
+          BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
           # The point of a smoke run is to prove the lane end to end. Without this, a missing or
           # misnamed provider secret is recorded as a skip and the job still exits 0 having
           # benchmarked nothing — assert the dispatched provider actually reached "validated".

@@ -1,13 +1,23 @@
 name: Bench matrix
 
-# Fan the live benchmark out across the provider × suite matrix using GitHub's native reusable-workflow
-# nesting. `plan` emits both axes; a single suite-matrix job calls the reusable bench-suite.yml once per
-# suite (`name: ${{ matrix.suite }}`), and that reusable fans out providers (`name: ${{ matrix.provider
-# }}`) — so each cell displays as "<suite> / <provider>" (e.g. "system / e2b") and provider cells nest
-# under their suite in the Actions UI. Adding a suite is a schema change only: the suite axis is
-# `fromJSON(needs.plan.outputs.suites)`, kept in lockstep by the workflow-registry-sync gate. The
-# `suites` dispatch input narrows that axis to a subset (blank = every registered suite) — the
-# targeted/pre-merge knob, so a validation dispatch can run just one suite instead of the whole matrix.
+# Fan the live benchmark out across the provider × suite × replicate matrix using GitHub's native
+# reusable-workflow nesting. `plan` emits all three axes; a single suite-matrix job calls the reusable
+# bench-suite.yml once per suite (`name: ${{ matrix.suite }}`), and that reusable fans out
+# provider × replicate — so each cell displays as "<suite> / <provider> (replicate N)" (e.g.
+# "system / e2b (replicate 0)") and cells nest under their suite in the Actions UI. Adding a suite is a
+# schema change only: the suite axis is `fromJSON(needs.plan.outputs.suites)`, kept in lockstep by the
+# workflow-registry-sync gate.
+#
+# Three configurable inputs tune the statistics, all defaulting to the schema/per-suite config so a bare
+# dispatch reproduces the configured run:
+#   * `suites`   — narrow the suite axis to a subset (blank = every registered suite): the targeted/
+#     pre-merge knob, so a validation dispatch can run just one suite instead of the whole matrix.
+#   * `replicas` — replicate sandboxes per (provider, suite) cell, the BETWEEN-machine axis (blank = each
+#     suite's Suite.defaultReplicas; a number scales every suite). More replicates → tighter intervals on
+#     a provider's fleet variation, at proportional runner cost.
+#   * `pts_passes` — timed PTS passes per case INSIDE a sandbox, the WITHIN-machine axis (blank = each
+#     suite's fixed count; a number, or `converge` to let PTS's own statistical convergence decide).
+#
 # Off the PR path (real sandbox time + provider credentials); main is the default, while an explicit
 # allow_branch dispatch supports pre-merge validation. Every benchmark cell remains gated by Environment
 # `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md, declared inside
@@ -35,6 +45,22 @@ on:
         # axis to just those suites — the pre-merge/targeted knob so a validation dispatch needn't spend
         # the whole matrix. `plan-suites` rejects any name that is not in the registry, so a typo fails
         # the plan.
+        default: ''
+      replicas:
+        description: 'Replicate sandboxes per provider × suite cell — the between-machine axis (captures a provider fleet''s variation). Blank = each suite''s configured default (Suite.defaultReplicas); a whole number overrides every suite. Higher = tighter intervals at proportional runner cost; 1 = a quick single-sandbox pass.'
+        required: false
+        type: string
+        # Blank keeps each suite's schema default (long-synthetic suites R=3, realworld R=5). A number
+        # scales ALL suites at once — this is the global override; per-category defaults live in the
+        # schema. plan-replicates rejects a non-positive/non-integer value, so a typo fails the plan.
+        default: ''
+      pts_passes:
+        description: 'Timed PTS passes per test INSIDE each sandbox — the within-machine axis. Blank = each suite''s configured fixed count; a whole number forces that many on every suite; "converge" lets PTS''s own statistical convergence decide (tighter within-machine intervals, variable/longer runtime).'
+        required: false
+        type: string
+        # Blank keeps each suite's fixed count (Suite.ptsTimesToRun: realworld k=1, long-synthetic k=2).
+        # "converge" removes the manual FORCE_TIMES_TO_RUN pin and hands the pass count to PTS's
+        # DynamicRunCount. The harness (resolvePtsPassPolicy) rejects any other non-numeric value.
         default: ''
       allow_branch:
         description: 'Allow benchmark cells on a non-main ref (publish remains main-only).'
@@ -66,6 +92,10 @@ jobs:
     outputs:
       providers: ${{ steps.plan.outputs.providers }}
       suites: ${{ steps.plan.outputs.suites }}
+      # A JSON object mapping each selected suite to its replicate index array (e.g.
+      # {"cpu-node":[0,1,2],...}). The suite-matrix job indexes it by matrix.suite to get that suite's
+      # own replicate axis, so per-category replicate counts stay registry-driven like the suite axis.
+      replicates: ${{ steps.plan.outputs.replicates }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,13 +115,17 @@ jobs:
       - name: Plan
         id: plan
         # The dispatch inputs reach the planners through the environment, never interpolated into the
-        # shell, so a crafted input can't inject into the runner command.
+        # shell, so a crafted input can't inject into the runner command. plan-replicates reads the SAME
+        # BENCH_SUITES selection as plan-suites, so its map is keyed by exactly the emitted suite axis;
+        # BENCH_REPLICAS scales the per-suite counts (blank = each suite's Suite.defaultReplicas).
         env:
           BENCH_PROVIDERS: ${{ inputs.providers }}
           BENCH_SUITES: ${{ inputs.suites }}
+          BENCH_REPLICAS: ${{ inputs.replicas }}
         run: |
           bun apps/cli/src/bin/plan-providers.ts
           bun apps/cli/src/bin/plan-suites.ts
+          bun apps/cli/src/bin/plan-replicates.ts
 
   # One matrix cell per selected suite → reusable workflow call. GitHub nests the reusable's provider
   # matrix under each suite name, so the Actions UI shows expandable "<suite>" groups with "<provider>"
@@ -115,6 +149,11 @@ jobs:
     with:
       providers: ${{ needs.plan.outputs.providers }}
       suite: ${{ matrix.suite }}
+      # Hand this suite its own replicate slice out of the plan's per-suite map (keyed by matrix.suite),
+      # re-serialized to the JSON string the reusable workflow's `replicate` axis parses with fromJSON.
+      replicates: ${{ toJSON(fromJSON(needs.plan.outputs.replicates)[matrix.suite]) }}
+      # Forward the PTS passes-per-case override unchanged (blank = suite default, a number, or converge).
+      pts_passes: ${{ inputs.pts_passes }}
     secrets: inherit
 
   # Collect every shard Run, aggregate into one candidate, gate it (promote), and commit the machine-

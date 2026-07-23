@@ -1,14 +1,19 @@
 name: Benchmark suite (reusable)
 
-# One suite, fanned out across a provider matrix. bench-matrix.yml calls this once per suite via its
-# suite-matrix job (`name: ${{ matrix.suite }}`), passing the plan's selected provider list — so N
-# providers nest under one suite label in the Actions UI and cells display as "<suite> / <provider>".
+# One suite, fanned out across a provider × replicate matrix. bench-matrix.yml calls this once per suite
+# via its suite-matrix job (`name: ${{ matrix.suite }}`), passing the plan's selected provider list AND
+# that suite's replicate index array — so cells display as "<suite> / <provider> (replicate N)" and every
+# provider's replicate sandboxes nest under one suite label in the Actions UI. The replicate axis is the
+# BETWEEN-MACHINE knob: R sandboxes of one (provider, suite) capture a provider's fleet variation (two can
+# land on different host hardware), which the aggregate folds into per-metric replicate breakdowns.
 # Factoring the shared cell here (checkout → run → upload, plus the per-provider credential wiring)
 # keeps that block in ONE place instead of copy-pasted into every suite job, mirroring
 # runner-benchmarking's reusable bench-suite.yml.
 #
-# The artifact name (bench-<suite>-<provider>-<run_id>) is load-bearing: commit-dataset.yml downloads
-# the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep.
+# The artifact name (bench-<suite>-<provider>-r<replicate>-<run_id>) is load-bearing: commit-dataset.yml
+# downloads the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep.
+# The `-r<replicate>` segment keeps each replicate's shard a distinct artifact even though every shard of
+# one run shares the same runId file (data/runs/<run_id>.json); the aggregate keys them by --replicate.
 #
 # Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md) lives on
 # the fan-out job here: a `uses:` caller can't declare `environment:`, so the approval gate and the
@@ -26,6 +31,22 @@ on:
         description: 'Suite to run — the bench-suite.ts arg and the artifact-name key. A registered SUITE_NAMES value.'
         required: true
         type: string
+      replicates:
+        description: >-
+          JSON array of replicate sandbox indices for THIS suite, e.g. "[0,1,2]" — the between-machine
+          fan-out axis. plan-replicates emits it per suite (Suite.defaultReplicas, or the BENCH_REPLICAS
+          override); the caller passes each suite its own slice. One matrix cell runs per (provider,
+          replicate), each tagged with `--replicate <idx>` so the aggregate folds them by index.
+        required: true
+        type: string
+      pts_passes:
+        description: >-
+          PTS passes-per-case override for the harness (BENCH_PTS_PASSES) — the within-machine axis.
+          Blank = each suite's configured fixed count; a positive integer forces that many timed passes
+          on every suite; "converge" lets PTS's own statistical convergence (DynamicRunCount) decide.
+        required: false
+        type: string
+        default: ''
 
 # Least privilege: the fan-out only reads the checked-out code and uploads artifacts.
 permissions:
@@ -33,9 +54,11 @@ permissions:
 
 jobs:
   bench:
-    # Display as "<caller suite job> / <provider>", e.g. "system / e2b" — the provider cells nest
-    # under their suite's job name in the Actions UI (GitHub-native reusable-workflow nesting).
-    name: ${{ matrix.provider }}
+    # Display as "<caller suite job> / <provider> (replicate N)", e.g. "system / e2b (replicate 0)" —
+    # the replicate cells nest under their suite's job name in the Actions UI (GitHub-native
+    # reusable-workflow nesting). The replicate suffix keeps each of a provider's R sandboxes a
+    # distinct, legible cell (a bare `${{ matrix.provider }}` would render them all identically).
+    name: ${{ matrix.provider }} (replicate ${{ matrix.replicate }})
     environment: privileged
     # The ephemeral self-hosted label is reaped after 70 minutes even while a step is healthy. The
     # full CPU-generic and real-world matrices legitimately exceed that on slower providers, leaving
@@ -45,10 +68,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
-      # One cell's failure (a flaky provider) must not cancel the rest of the matrix.
+      # One cell's failure (a flaky provider, or one bad replicate) must not cancel the rest of the matrix.
       fail-fast: false
       matrix:
         provider: ${{ fromJSON(inputs.providers) }}
+        # The between-machine axis: R replicate sandboxes per provider, expanded into provider × replicate
+        # cells. The array is this suite's slice of plan-replicates' map (Suite.defaultReplicas / the
+        # BENCH_REPLICAS override), so a suite runs exactly the replicate count its category configures.
+        replicate: ${{ fromJSON(inputs.replicates) }}
     steps:
       # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
       # moved/compromised tag can't silently change what runs.
@@ -69,8 +96,8 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
 
       # Drive the provider SDK to create a sandbox, run the suite, collect results, and normalize. The
-      # cell's provider is a matrix value and its suite the reusable input, both passed through the
-      # environment (never interpolated into the shell) so neither can inject into the runner command.
+      # cell's provider + replicate are matrix values and its suite the reusable input, all passed through
+      # the environment (never interpolated into the shell) so none can inject into the runner command.
       # On success/failure the bin also writes a compact job summary + run annotation (clean Results).
       - name: Run suite and normalize
         env:
@@ -80,6 +107,12 @@ jobs:
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_PROVIDER: ${{ matrix.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
+          # The replicate index this shard represents — stamped onto its Run so the aggregate folds the R
+          # sandboxes of one (provider, suite) into per-metric replicate breakdowns rather than colliding.
+          BENCH_REPLICATE: ${{ matrix.replicate }}
+          # PTS passes-per-case policy: blank = the suite's fixed count, a number overrides it, or
+          # "converge" hands the count to PTS's convergence. Read by the harness preamble.
+          BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
           # Scope every provider credential to the cell that actually uses it: a cell receives ONLY
           # the secret(s) for its own `matrix.provider`, so a compromised adapter or suite can't read
           # another provider's credential out of the environment. A non-matching provider evaluates to
@@ -99,14 +132,16 @@ jobs:
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
+        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicate "$BENCH_REPLICATE"
 
       - name: Upload Run + raw results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          # Per-cell artifact name so every (provider, suite) shard uploads independently.
-          name: bench-${{ inputs.suite }}-${{ matrix.provider }}-${{ github.run_id }}
+          # Per-cell artifact name so every (provider, suite, replicate) shard uploads independently — the
+          # `-r<replicate>` segment is what keeps R replicates of one cell from colliding on one name (they
+          # all write the same data/runs/<run_id>.json). commit-dataset.yml matches these by `bench-*-<run_id>`.
+          name: bench-${{ inputs.suite }}-${{ matrix.provider }}-r${{ matrix.replicate }}-${{ github.run_id }}
           path: data/
           # A successful run always writes data/runs/<id>.json (even an all-skipped Run), so an empty
           # data/ means the job is genuinely broken — fail the upload rather than bury a warning.

@@ -25,9 +25,16 @@ export const EXPECTED_SUITE_MATRIX_EXPR = "${{ fromJSON(needs.plan.outputs.suite
 /** The expression that makes each caller cell's display name the suite id (native nesting parent). */
 // biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
 export const EXPECTED_SUITE_NAME_EXPR = "${{ matrix.suite }}";
-/** The expression that makes each reusable fan-out cell's display name the provider id (nesting child). */
+/** The provider id half of the fan-out cell's display name. */
 // biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
-export const EXPECTED_PROVIDER_NAME_EXPR = "${{ matrix.provider }}";
+const PROVIDER_NAME_EXPR = "${{ matrix.provider }}";
+/** The replicate-index suffix on the fan-out cell's display name. */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
+const REPLICATE_NAME_SUFFIX = " (replicate ${{ matrix.replicate }})";
+/** The expression that makes each reusable fan-out cell's display name the provider id + replicate index
+ *  (the nesting child): "<provider> (replicate N)". The replicate suffix keeps each of a provider's R
+ *  replicate sandboxes a distinct, legible cell — a bare `matrix.provider` would render them identically. */
+export const EXPECTED_PROVIDER_NAME_EXPR = `${PROVIDER_NAME_EXPR}${REPLICATE_NAME_SUFFIX}`;
 
 /**
  * The bench-matrix suite-matrix caller — exactly one job whose `uses` targets the reusable

@@ -3,8 +3,10 @@ import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import type { SandboxHandle } from "./execute.ts";
 import {
 	buildPreamble,
+	DEFAULT_PTS_TIMES_TO_RUN,
 	MIN,
 	PREAMBLE,
+	resolvePtsPassPolicy,
 	StepRunner,
 	selectTransport,
 	shellQuote,
@@ -72,18 +74,63 @@ describe("sandbox preamble", () => {
 	it.skipIf(process.env.BENCH_PASSES === "1")(
 		"pins the PTS repeat count (k) a suite requests",
 		() => {
-			expect(buildPreamble(1)).toContain("FORCE_TIMES_TO_RUN=1");
-			expect(buildPreamble(3)).toContain("FORCE_TIMES_TO_RUN=3");
+			expect(buildPreamble({ mode: "fixed", times: 1 })).toContain("FORCE_TIMES_TO_RUN=1");
+			expect(buildPreamble({ mode: "fixed", times: 3 })).toContain("FORCE_TIMES_TO_RUN=3");
 			// The variance-driven policy stays disabled at every k so a noisy provider can't stretch a suite.
-			expect(buildPreamble(3)).toContain("PTS_RESPECT_TIMES_TO_RUN=1");
+			expect(buildPreamble({ mode: "fixed", times: 3 })).toContain("PTS_RESPECT_TIMES_TO_RUN=1");
 		},
 	);
 
-	it("rejects a non-positive or fractional k (would emit an empty/bogus FORCE_TIMES_TO_RUN)", () => {
+	it.skipIf(process.env.BENCH_PASSES === "1")(
+		"hands the pass count to PTS's convergence in converge mode (no forced/respect pins)",
+		() => {
+			const preamble = buildPreamble({ mode: "converge" });
+			// The marker tells lib/bench.sh not to fall back to forcing a single pass.
+			expect(preamble).toContain("BENCH_PTS_CONVERGE=1");
+			// Neither pin is set, so PTS's DynamicRunCount governs the pass count.
+			expect(preamble).not.toContain("FORCE_TIMES_TO_RUN");
+			expect(preamble).not.toContain("PTS_RESPECT_TIMES_TO_RUN");
+		},
+	);
+
+	it("rejects a non-positive or fractional fixed k (would emit an empty/bogus FORCE_TIMES_TO_RUN)", () => {
 		// Throws before touching the env, so this holds in every mode including BENCH_PASSES=1.
-		expect(() => buildPreamble(0)).toThrow(/positive integer/);
-		expect(() => buildPreamble(-1)).toThrow(/positive integer/);
-		expect(() => buildPreamble(1.5)).toThrow(/positive integer/);
+		expect(() => buildPreamble({ mode: "fixed", times: 0 })).toThrow(/positive integer/);
+		expect(() => buildPreamble({ mode: "fixed", times: -1 })).toThrow(/positive integer/);
+		expect(() => buildPreamble({ mode: "fixed", times: 1.5 })).toThrow(/positive integer/);
+	});
+});
+
+describe("resolvePtsPassPolicy", () => {
+	it("defaults to the suite's fixed count, or the harness default when the suite pins none", () => {
+		expect(resolvePtsPassPolicy(3, {})).toEqual({ mode: "fixed", times: 3 });
+		expect(resolvePtsPassPolicy(undefined, {})).toEqual({
+			mode: "fixed",
+			times: DEFAULT_PTS_TIMES_TO_RUN,
+		});
+		// A blank/whitespace override is treated as unset, not an error.
+		expect(resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "  " })).toEqual({
+			mode: "fixed",
+			times: 2,
+		});
+	});
+
+	it("honors a converge override (any casing), ignoring the suite's fixed count", () => {
+		expect(resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "converge" })).toEqual({ mode: "converge" });
+		expect(resolvePtsPassPolicy(5, { BENCH_PTS_PASSES: "Converge" })).toEqual({ mode: "converge" });
+	});
+
+	it("honors a numeric override, overriding every suite's configured count", () => {
+		expect(resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "10" })).toEqual({
+			mode: "fixed",
+			times: 10,
+		});
+	});
+
+	it("throws on an override that is neither converge nor a positive integer", () => {
+		expect(() => resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "lots" })).toThrow(/BENCH_PTS_PASSES/);
+		expect(() => resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "0" })).toThrow(/positive integer/);
+		expect(() => resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "2.5" })).toThrow(/positive integer/);
 	});
 });
 
@@ -127,7 +174,7 @@ describe("StepRunner", () => {
 				},
 				destroy: async () => undefined,
 			};
-			const runner = new StepRunner(sandbox, undefined, undefined, 3);
+			const runner = new StepRunner(sandbox, undefined, undefined, { mode: "fixed", times: 3 });
 			await runner.run("echo", "echo hi", 5_000);
 			expect(commands[0]).toContain("FORCE_TIMES_TO_RUN=3");
 			expect(commands[0]).not.toContain("FORCE_TIMES_TO_RUN=2");

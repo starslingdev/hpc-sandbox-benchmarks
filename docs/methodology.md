@@ -91,17 +91,24 @@ without being Daytona-specific.
 
 ## The dataset pipeline
 
-1. **Run** — `bench-suite <provider> <suite>` boots a sandbox, runs the suite's mise tasks, pulls the
-   raw tree (`data/raw/<runId>/<provider>/<suite>/`), and normalizes it into a Run document.
-2. **Matrix** — the `bench-matrix` workflow plans both axes, then one suite-matrix job calls the
-   reusable `bench-suite` workflow per suite (GitHub-native nesting: `<suite> / <provider>`), fanning
-   out over the providers `plan-providers` selects; every (provider, suite) cell uploads its shard Run
-   as an artifact.
+1. **Run** — `bench-suite <provider> <suite> <runId> --replicate <idx>` boots a sandbox, runs the
+   suite's mise tasks, pulls the raw tree (`data/raw/<runId>/<provider>/<suite>/`), and normalizes it
+   into a Run document stamped with its replicate index.
+2. **Matrix** — the `bench-matrix` workflow plans three axes (`plan-providers` / `plan-suites` /
+   `plan-replicates`), then one suite-matrix job calls the reusable `bench-suite` workflow per suite
+   (GitHub-native nesting: `<suite> / <provider> (replicate N)`), fanning out over the selected
+   providers × that suite's replicate sandboxes; every `(provider, suite, replicate)` cell uploads its
+   shard Run as an artifact. Two axes are the statistical knobs — **replicates** (R sandboxes per cell,
+   the between-machine axis: `replicas` blank = each suite's `Suite.defaultReplicas`, or a number to
+   override every suite) and **PTS passes** (the within-machine axis: `pts_passes` blank = each suite's
+   fixed count, a number, or `converge` to let PTS's own statistical convergence decide). Both default
+   to the per-suite schema config, so a bare dispatch reproduces the configured run.
 3. **Aggregate → promote → commit** — the `commit-dataset` workflow (the matrix's `publish` job calls
-   it) collects every shard, `aggregate`s them into one candidate Run (measured metrics unioned,
-   economics re-derived from the merged set), then `promote`s it (gate: ≥1 validated provider) into the
-   committed dataset at `data/dataset/` with a newest-first index, and opens a PR to land it on `main`.
-   This step commits only the machine-readable dataset — it never touches `LEADERBOARD.md`.
+   it) collects every shard, `aggregate`s them into one candidate Run (measured metrics unioned, the ≥2
+   replicate sandboxes of one `(provider, suite)` folded into per-metric replicate breakdowns, economics
+   re-derived from the merged set), then `promote`s it (gate: ≥1 validated provider) into the committed
+   dataset at `data/dataset/` with a newest-first index, and opens a PR to land it on `main`. This step
+   commits only the machine-readable dataset — it never touches `LEADERBOARD.md`.
 4. **Leaderboard** — the `update-leaderboard` workflow renders a chosen committed Run into a ranked
    Markdown table per dimension (`leaderboard`) and opens a PR to update `LEADERBOARD.md`. It is a
    deliberate, maintainer-dispatched step (default: the newest committed run), so the dataset can grow a
