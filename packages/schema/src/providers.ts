@@ -305,7 +305,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"Local e2e validation wiring; not yet a committed run. memory=8192 hits the 4 vCPU / 8 GiB target (specMatched=true is that vCPU/memory check only); the 40 GiB volume (mounted at the PTS data dir) separately lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping.",
+				"Now carries committed runs and is in the default matrix set. memory=8192 hits the 4 vCPU / 8 GiB target (specMatched=true is that vCPU/memory check only); the 40 GiB volume (mounted at the PTS data dir) separately lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping.",
 		},
 		// memory=8192 lands on the target's 8 GiB / 4 vCPU point because the target's vCPU was chosen to
 		// sit on Blaxel's RAM/CPU coupling curve (specMatched only judges that pair). The 40 GiB volume
@@ -351,7 +351,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"New isolation variant sharing Modal credentials/pricing with modal-gvisor; adds experimentalOptions {vm_runtime:true} at create. Not yet a committed run.",
+				"Isolation variant sharing Modal credentials/pricing with modal-gvisor; adds experimentalOptions {vm_runtime:true} at create. Now carries committed runs and is in the default matrix set.",
 		},
 		specPinning: "settable",
 		transport: modalTransport,

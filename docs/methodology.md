@@ -99,7 +99,9 @@ without being Daytona-specific.
    (GitHub-native nesting: `<suite> / <provider> (replicate N)`), fanning out over the selected
    providers × that suite's replicate sandboxes; every `(provider, suite, replicate)` cell uploads its
    shard Run as an artifact. Two axes are the statistical knobs, both defaulting to the per-suite schema
-   config so a bare dispatch is already powered for tight, non-overlapping intervals:
+   config so a bare dispatch already carries the intended statistical power for separating providers
+   (subject to the genuine near-tie limit noted below — no sample size resolves providers that are truly
+   within a few percent):
    - **replicates** — R sandboxes per cell, the between-machine axis (`replicas` blank = each suite's
      `Suite.defaultReplicas`: synthetic R=3, realworld **R=12**, sized from the committed dataset's
      observed between-machine variance so realworld provider CIs separate; a number overrides every suite).
