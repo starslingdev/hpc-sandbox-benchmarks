@@ -34,14 +34,20 @@ RESULT_FILE="$(results_dir)/$(task_result_name).json"
 # --- Public egress IP --------------------------------------------------------
 # DNS echoes first: no quota, and they answer over :53 where an HTTP egress proxy may not exist.
 # Each is capped so a blackholed resolver cannot stall the leg. HTTP echoes are the fallback.
-# Keep only the first line that IS an IPv4 address. Validation must happen PER LEG: dig prints
-# multi-record answers (edns-client-subnet lines) and even failure diagnostics (";; communications
-# error …") to stdout under +short, and a proxy can serve HTML to curl — any non-empty garbage
-# accepted here would short-circuit the remaining legs and yield no IP on a working network.
+# Keep only the first line that IS an address of the leg's family. Validation must happen PER LEG:
+# dig prints multi-record answers (edns-client-subnet lines) and even failure diagnostics (";;
+# communications error …") to stdout under +short, and a proxy can serve HTML to curl — any
+# non-empty garbage accepted here would short-circuit the remaining legs and yield no IP on a
+# working network.
 _first_ipv4() { tr -d '"' | grep -m1 -xE '[0-9]{1,3}(\.[0-9]{1,3}){3}' || true; }
+# Permissive on purpose (accepts some malformed colon runs): this only picks a candidate line out of
+# echo output; cymru_lookup's nibble expansion is the strict validator before anything is queried.
+_first_ipv6() { tr -d '"' | grep -m1 -xiE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' || true; }
 public_ip() {
-	# -4 on every leg: the Cymru lookup and ipinfo geo below describe an IPv4 egress, and a v6 echo
-	# would make one row's identity fields describe two different addresses.
+	# One family per probe run: every identity field (ASN, prefix, geo) must describe the SAME
+	# address. IPv4 legs run first; the IPv6 legs are a whole-identity fallback for sandboxes with no
+	# public IPv4 path at all (e.g. Blaxel egresses through a globally-routed IPv6) — the Cymru and
+	# ipinfo lookups below follow whichever family answered here.
 	local ip=""
 	if command -v dig &>/dev/null; then
 		ip="$(dig -4 @ns1.google.com TXT o-o.myaddr.l.google.com +short +time=2 +tries=1 2>/dev/null | _first_ipv4)"
@@ -50,25 +56,61 @@ public_ip() {
 	fi
 	[ -z "$ip" ] && ip="$(curl -s -4 --max-time 3 https://ifconfig.me 2>/dev/null | _first_ipv4)"
 	[ -z "$ip" ] && ip="$(curl -s -4 --max-time 3 https://ipinfo.io/ip 2>/dev/null | _first_ipv4)"
+	if [ -z "$ip" ]; then
+		if command -v dig &>/dev/null; then
+			# Both echoes report the QUERY's source address, so over -6 transport they return the
+			# public IPv6. (No OpenDNS leg: myip.opendns.com only answers for A-record resolvers.)
+			ip="$(dig -6 @ns1.google.com TXT o-o.myaddr.l.google.com +short +time=2 +tries=1 2>/dev/null | _first_ipv6)"
+			[ -z "$ip" ] && ip="$(dig -6 @2606:4700:4700::1111 ch txt whoami.cloudflare +short +time=2 +tries=1 2>/dev/null | _first_ipv6)"
+		fi
+		[ -z "$ip" ] && ip="$(curl -s -6 --max-time 3 https://ifconfig.me 2>/dev/null | _first_ipv6)"
+		[ -z "$ip" ] && ip="$(curl -s -6 --max-time 3 https://ipinfo.io/ip 2>/dev/null | _first_ipv6)"
+	fi
 	printf '%s' "$ip"
 }
 PUBLIC_IP="$(public_ip)"
 
 # --- ASN + org, from Team Cymru DNS whois ------------------------------------
-# <reversed-ip>.origin.asn.cymru.com TXT => "31898 | 161.153.0.0/17 | US | arin | 2024-07-01"
+# <reversed-ip>.origin.asn.cymru.com  TXT => "31898 | 161.153.0.0/17 | US | arin | 2024-07-01"
+# <reversed-nibbles>.origin6.asn.cymru.com  (same shape, for an IPv6 egress)
 # AS<n>.asn.cymru.com          TXT      => "31898 | US | arin | ... | ORACLE-BMC-31898 - Oracle Corporation, US"
 ASN=""
 ORG_NAME=""
 PREFIX=""
 ASN_SOURCE="unavailable"
-cymru_lookup() {
-	local ip="$1" rev origin asn name
-	command -v dig &>/dev/null || return 1
-	# IPv4 only: the IPv6 nibble form is a different zone and we have no v6-only sandboxes. Bail
-	# rather than silently querying a malformed name.
-	[[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
-	rev="$(printf '%s' "$ip" | awk -F. '{print $4"."$3"."$2"."$1}')"
-	origin="$(dig +short +time=2 +tries=1 "${rev}.origin.asn.cymru.com" TXT 2>/dev/null | tr -d '"' | head -1)"
+# Print the origin6 QNAME labels for an IPv6 literal — its 32 nibbles, reversed, dot-separated —
+# or fail on anything that is not a plain global IPv6 address (zone suffixes, v4-mapped forms,
+# malformed groups). This is the strict validator behind _first_ipv6's permissive line-picker.
+_v6_nibbles() {
+	local ip="$1" left="" right="" hex="" group i
+	local -a lparts=() rparts=() groups=()
+	[[ "$ip" == *:* ]] || return 1
+	if [[ "$ip" == *"::"* ]]; then
+		left="${ip%%::*}"
+		right="${ip#*::}"
+	else
+		left="$ip"
+	fi
+	[ -n "$left" ] && IFS=: read -ra lparts <<<"$left"
+	[ -n "$right" ] && IFS=: read -ra rparts <<<"$right"
+	local fill=$((8 - ${#lparts[@]} - ${#rparts[@]}))
+	# "::" must stand for at least one zero group, and a full address must have exactly eight.
+	if [[ "$ip" == *"::"* ]]; then [ "$fill" -ge 1 ] || return 1; else [ "$fill" -eq 0 ] || return 1; fi
+	groups=("${lparts[@]}")
+	for ((i = 0; i < fill; i++)); do groups+=("0"); done
+	groups+=("${rparts[@]}")
+	for group in "${groups[@]}"; do
+		[[ "$group" =~ ^[0-9a-fA-F]{1,4}$ ]] || return 1
+		hex+="$(printf '%04x' "0x$group")"
+	done
+	local out=""
+	for ((i = ${#hex} - 1; i >= 0; i--)); do out+="${hex:i:1}."; done
+	printf '%s' "${out%.}"
+}
+# Shared tail of both families' lookups: parse the origin TXT, then resolve the AS name.
+_cymru_from_origin() {
+	local qname="$1" origin asn name
+	origin="$(dig +short +time=2 +tries=1 "$qname" TXT 2>/dev/null | tr -d '"' | head -1)"
 	# Require the answer's documented shape ("31898 | 161.153.0.0/17 | …"): dig prints resolver
 	# failure diagnostics (";; communications error …") to STDOUT even under +short, and treating one
 	# as an answer would record asn="AS;;" with asn_source=cymru while blocking the ipinfo fallback.
@@ -86,13 +128,28 @@ cymru_lookup() {
 	ORG_NAME="$name"
 	ASN_SOURCE="cymru"
 }
+cymru_lookup() {
+	local ip="$1" rev nib
+	command -v dig &>/dev/null || return 1
+	# Dispatch by family — the IPv6 nibble form is a different zone (origin6). Bail on anything
+	# that is neither, rather than silently querying a malformed name.
+	if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		rev="$(printf '%s' "$ip" | awk -F. '{print $4"."$3"."$2"."$1}')"
+		_cymru_from_origin "${rev}.origin.asn.cymru.com"
+	else
+		nib="$(_v6_nibbles "$ip")" || return 1
+		_cymru_from_origin "${nib}.origin6.asn.cymru.com"
+	fi
+}
 [ -n "$PUBLIC_IP" ] && { cymru_lookup "$PUBLIC_IP" || true; }
 
 # --- Geo, best-effort, from ipinfo -------------------------------------------
 # 3s cap: an unreachable metadata service must not stall a benchmark leg.
-# -4 like every other leg: the Cymru lookup and this geo record must describe the SAME (IPv4) egress,
-# or a dual-stack sandbox reports an ASN for one address and a city for another.
-IPINFO="$(curl -s -4 --max-time 3 https://ipinfo.io 2>/dev/null || echo '{}')"
+# Same family as the echoed egress address: the Cymru lookup and this geo record must describe the
+# SAME address, or a dual-stack sandbox reports an ASN for one address and a city for another.
+CURL_FAMILY="-4"
+[[ "$PUBLIC_IP" == *:* ]] && CURL_FAMILY="-6"
+IPINFO="$(curl -s "$CURL_FAMILY" --max-time 3 https://ipinfo.io 2>/dev/null || echo '{}')"
 jq_get() { printf '%s' "$IPINFO" | jq -r "$1 // \"\"" 2>/dev/null || printf ''; }
 
 # A quota'd or errored ipinfo returns a body with `.error` (or no `.ip` at all). Distinguish that
@@ -104,8 +161,16 @@ if ! command -v jq &>/dev/null; then
 	GEO_SOURCE="no-jq"
 	IPINFO='{}'
 elif [ -n "$(jq_get .error.title)" ] || [ -z "$(jq_get .ip)" ]; then
-	GEO_SOURCE="unavailable"
-	IPINFO='{}'
+	# When no echo pinned a family the first fetch tried IPv4; retry IPv6 once before declaring geo
+	# unavailable — a v6-only sandbox reaches ipinfo only that way, and with PUBLIC_IP empty there is
+	# no other address for these fields to disagree with. A pinned family is never second-guessed.
+	if [ -z "$PUBLIC_IP" ]; then
+		IPINFO="$(curl -s -6 --max-time 3 https://ipinfo.io 2>/dev/null || echo '{}')"
+	fi
+	if [ -n "$(jq_get .error.title)" ] || [ -z "$(jq_get .ip)" ]; then
+		GEO_SOURCE="unavailable"
+		IPINFO='{}'
+	fi
 fi
 
 CITY="$(jq_get .city)"
