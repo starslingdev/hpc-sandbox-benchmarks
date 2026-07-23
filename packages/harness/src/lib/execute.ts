@@ -213,9 +213,9 @@ export interface SuitePassConfig {
  *    (the light synthetic suites — system, memory), else fixed at its `ptsTimesToRun` (or {@link DEFAULT_PTS_TIMES_TO_RUN}).
  *
  * So a bare run converges the suites built to converge (the light, budget-safe synthetic suites) while
- * the I/O, network, and realworld suites keep their fixed pass count, and a dispatch can still force one
- * policy across the board. A non-empty override that is neither `converge` nor a positive integer THROWS,
- * so a typo'd dispatch input fails the run loudly instead of silently reverting.
+ * every other suite (cpu-node, the I/O + network suites, and realworld) keeps its fixed pass count, and a
+ * dispatch can still force one policy across the board. A non-empty override that is neither `converge` nor
+ * a positive integer THROWS, so a typo'd dispatch input fails the run loudly instead of silently reverting.
  */
 export function resolvePtsPassPolicy(
 	suite: SuitePassConfig,

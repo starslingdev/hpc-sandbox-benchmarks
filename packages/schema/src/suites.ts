@@ -104,8 +104,11 @@ export const SUITES = {
 	// The system dimension (pybench + sqlite + git): PyBench (Python interpreter) + SQLite Speedtest
 	// (single-result wildcards) + common Git operations over a fixed GTK checkout. PostgreSQL (pgbench)
 	// is its own leg below — split out so its ~1.5 GB dataset and long runtime don't gate the quick
-	// system probes. Long-synthetic tier, PTS CONVERGES in-sandbox (R=3): pybench/sqlite/git are light,
-	// stable, few-minute passes, so DynamicRunCount settles quickly and stays well inside the 55-min budget.
+	// system probes. Long-synthetic tier, PTS CONVERGES in-sandbox (R=3): pybench and git are light and
+	// stable. SQLite Speedtest touches I/O, so on a noisy provider its variance can add a few DynamicRunCount
+	// passes — but each pass is short and the 55-min budget (sized for k=2) has multiples of headroom, so
+	// convergence stays inside it; a converge-enabled calibration dispatch should confirm this on slow
+	// providers before the bare default is fully trusted (budgets are provisional ceilings anyway).
 	system: {
 		setupPts: true,
 		commandTimeoutMinutes: 55,
@@ -235,8 +238,8 @@ export const SUITES = {
 	// isn't a cold install) × R=12 replicate sandboxes (n = 12 per case) — replicas, not repeats, carry
 	// the between-machine variance users actually experience. R was raised 5→12 from the committed
 	// dataset's between-run variance: at R=5 the headline cold-install/build metrics' 95% CI half-width
-	// ran ~8% (median) to ~18% (p75 of metric×provider series); R=12 brings that to ~5%/~11%, separating
-	// providers that differ by more than ~12% (near-ties under ~5% stay ties at any practical R). Budgets
+	// ran ~8% (median) to ~18% (p75 of metric×provider series); R=12 brings that to ~5%/~12% (√(5/12)≈0.65×),
+	// separating providers that differ by more than ~12% (near-ties under ~5% stay ties at any practical R). Budgets
 	// are provisional ceilings re-derived after a calibration dispatch. mastra's task matrix is the narrowest (scoped to
 	// packages/core) but its monorepo has the largest install/build footprint — hence the biggest
 	// minDiskGb. better-auth and openclaw run their full task matrices including a cold pnpm install

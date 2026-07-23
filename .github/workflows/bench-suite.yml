@@ -42,9 +42,9 @@ on:
       pts_passes:
         description: >-
           PTS passes-per-case override for the harness (BENCH_PTS_PASSES) — the within-machine axis.
-          Blank = each suite's own policy (the light synthetic suites system + memory converge; the
-          I/O/network suites and realworld keep a fixed count); a positive integer forces that many passes
-          on every suite; "converge" forces PTS's own convergence (DynamicRunCount) on every suite.
+          Blank = each suite's own policy (the light synthetic suites system + memory converge; every
+          other suite keeps a fixed count); a positive integer forces that many passes on every suite;
+          "converge" forces PTS's own convergence (DynamicRunCount) on every suite.
         required: false
         type: string
         default: ''
