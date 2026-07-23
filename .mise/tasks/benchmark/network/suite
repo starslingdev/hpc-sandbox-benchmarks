@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#MISE description="Run the network suite (PTS iperf3 localhost + WAN + latency/DNS/download probes)"
+# Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
+# (error-mode conventions: lib/bench.sh). This is the composition the network SUITE runs
+# (packages/schema suites.ts points at it); benchmark:network:all keeps the previous
+# fast-cli + network-loopback composition for manual runs.
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "========================================"
+echo "  NETWORK BENCHMARKS (iperf composition)"
+echo "========================================"
+
+# The catalogued metrics: iperf3 against localhost isolates the sandbox's network stack (virtio vs
+# gVisor netstack vs host namespaces) from Internet weather, and iperf3 against the closest curated
+# public server measures WAN throughput with real byte accounting — the successors to the
+# network-loopback and fast-cli leaves (run 29937467891: the Chrome-driven fast.com measurement was
+# structurally unreliable on fast datacenter paths; both old leaves remain runnable manually via
+# benchmark:network:all).
+ensure_pts || true
+
+run_task benchmark:network:pts:iperf-localhost
+run_task benchmark:network:pts:iperf-wan
+
+# Tolerant probes (raw JSON provenance, no catalogued metrics): where does this sandbox's traffic
+# actually go, and how fast? Endpoint-specific connection timings and a small GitHub control
+# transfer for diagnosis.
+run_task benchmark:network:latency
+run_task benchmark:network:dns
+run_task benchmark:network:download
+
+summary

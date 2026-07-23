@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#MISE description="PTS: iperf3 localhost throughput (10s; TCP 1/10 streams + UDP 10G-objective)"
+# Measurement leaf: -e guards the scaffolding; the measured runs are isolated by run_pts_benchmark
+# (via run_pinned_pts, which owns the per-prefix skip markers and pins each variant's option
+# combination through PRESET_OPTIONS).
+#
+# Fully in-sandbox: the vendored profile's runner starts a local iperf3 server and the client
+# measures over localhost, so the number isolates the sandbox's network stack/virtualization
+# overhead (virtio/KVM vs gVisor netstack vs host namespaces) from Internet weather — the suite's
+# successor to the dd|nc network-loopback leaf (which stays runnable manually). Three variants from
+# one vendored install (the pgbench one-leaf precedent — a second leaf would re-stage the vendored
+# profile and pay the iperf build twice): TCP -P 1 is single-stream stack throughput, TCP -P 10
+# adds per-stream overhead scaling (iperf 3.14 is single-threaded, so this scales streams within
+# one process, not across cores), and UDP at the 10000Mbit objective exercises the datagram path —
+# the one UDP menu point that discriminates on localhost (KVM stacks saturate the objective while
+# gVisor's netstack undershoots; the lower objectives are constants everywhere and plain UDP
+# defaults to a meaningless 1 Mbit/s, so neither is pinned).
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+# install_vendored_pts_profile needs PTS on PATH before run_pinned_pts's own guard can run, so guard
+# here with a skip marker per prefix (the exact negatives of the three composites this leaf produces).
+if ! command -v phoronix-test-suite &>/dev/null; then
+	skip_result "phoronix-test-suite not installed" "pts_iperf-tcp-p1"
+	skip_result "phoronix-test-suite not installed" "pts_iperf-tcp-p10"
+	skip_result "phoronix-test-suite not installed" "pts_iperf-udp-10g"
+	exit 0
+fi
+
+# The vendored profile's test-definition.xml is BYTE-IDENTICAL to upstream (the fio precedent: the
+# full option matrix is catalogued, this leaf pins one combination per variant, unrun combinations
+# never receive samples); only install.sh carries repairs (build under the installed dir, generic
+# -O3 instead of -march=native, the runner's 2>&1/one-off-server/readiness fixes). Stage it and
+# discard the baked upstream install so run_pts_benchmark installs the override; the second pinned
+# run below reuses that install.
+install_vendored_pts_profile "iperf-1.2.0"
+
+# The v6-baked image ships iperf-3.14.tar.gz in the PTS download cache already; on stock images and
+# on a not-yet-rebaked toolchain, seed it ourselves with retries + a byte-identical mirror — PTS's
+# own downloader is single-shot, and run 29964910698 lost 4 of 6 providers' cells to one
+# downloads.es.net hiccup it would have retried through.
+seed_pts_download_cache "iperf-3.14.tar.gz" \
+	"723fcc430a027bc6952628fa2a3ac77584a1d0bd328275e573fc9b206c155004" \
+	"https://downloads.es.net/pub/iperf/iperf-3.14.tar.gz" \
+	"https://sources.buildroot.net/iperf3/iperf-3.14.tar.gz"
+
+# Preset values follow run_pinned_pts's contract against the UPSTREAM axes (PTS 10.8.4
+# pts_test_run_options.php / pts_test_option.php):
+#   * server-address and positive-number (Server Port) have no <Menu> — text-entry options, so the
+#     preset value passes through literally ("Using Pre-Set Run Option"): -c localhost, -p 5201.
+#   * duration "10 Seconds", test "TCP" and test "UDP - 10000Mbit Objective" are non-numeric → pin
+#     by entry NAME (4- and 5-entry menus). TCP's entry carries no <Value>, so it contributes no
+#     argument — TCP IS the absence of the -u UDP flags; the UDP entry contributes "-u -b 10000m".
+#   * parallel is the numeric-menu trap: the menu is 1,5,10,20,32,64,128,256 (8 entries), and a
+#     NUMERIC preset below the entry count reads as a 0-based INDEX. "1" would select index 1 =
+#     "5" (-P 5!), so -P 1 pins by INDEX 0 (the fio cpu-threads=0 precedent); "10" is >= 8 so it
+#     falls through to a NAME match on the "10" entry (-P 10).
+#
+# The three variants are independent measurements, so none aborts the others (`|| true` keeps each
+# variant's own recorded gap while letting the rest run); the assert loop below is the single
+# arbiter that reds the job.
+run_pinned_pts "pts/iperf-1.2.0" "pts_iperf-tcp-p1" \
+	"iperf.server-address=localhost;iperf.positive-number=5201;iperf.duration=10 Seconds;iperf.test=TCP;iperf.parallel=0" || true
+run_pinned_pts "pts/iperf-1.2.0" "pts_iperf-tcp-p10" \
+	"iperf.server-address=localhost;iperf.positive-number=5201;iperf.duration=10 Seconds;iperf.test=TCP;iperf.parallel=10" || true
+run_pinned_pts "pts/iperf-1.2.0" "pts_iperf-udp-10g" \
+	"iperf.server-address=localhost;iperf.positive-number=5201;iperf.duration=10 Seconds;iperf.test=UDP - 10000Mbit Objective;iperf.parallel=0" || true
+
+# PTS exits 0 and writes a composite even when every trial failed (empty <Value> elements): each
+# variant must post its one throughput result. A --skipped.json marker passes — an honest recorded
+# gap is the designed keep+warn shape.
+for prefix in pts_iperf-tcp-p1 pts_iperf-tcp-p10 pts_iperf-udp-10g; do
+	assert_pts_numeric_values "$prefix" 1
+done
