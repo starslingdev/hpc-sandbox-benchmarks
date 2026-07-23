@@ -84,13 +84,38 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio rand write 4KB, buffered (MB/s)" },
 
-	// Network dimension: loopback remains the stable headline that separates sandbox network-stack
-	// overhead from Internet/CDN weather; fast.com adds sustained real-world transfer measurements.
+	// Network dimension. The suite's composition is the five iperf metrics: localhost isolates
+	// sandbox network-stack/virtualization overhead (virtio/KVM vs gVisor netstack) with no Internet
+	// path — single-stream is the dimension's headline (it took the slot from network_loopback when
+	// the suite moved off the dd|nc leaf; the catalog allows one headline per dimension), and the
+	// 10-stream variant captures per-stream overhead scaling (iperf 3.14 is single-threaded, so it
+	// multiplexes streams in one process rather than across cores). pts/iperf is vendored
+	// byte-identical to upstream, so the generator enumerates its full option matrix (fio-style);
+	// only the three combinations the producer pins are curated here — the rest keep draft labels and
+	// never receive samples. The WAN pair measures both directions against the closest curated
+	// public iperf3 server (chosen per run by RTT probe, recorded in
+	// pts_iperf-wan--server-choices.ndjson provenance).
+	iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1: {
+		headline: true,
+		label: "iperf3 loopback TCP, 1 stream",
+	},
+	iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10: {
+		label: "iperf3 loopback TCP, 10 streams",
+	},
+	// UDP at the 10000Mbit objective is the one UDP menu point that discriminates on localhost: KVM
+	// stacks saturate the objective while gVisor's netstack undershoots. The lower objectives read
+	// as constants on every provider and plain UDP defaults to 1 Mbit/s, so neither is pinned.
+	iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1:
+		{ label: "iperf3 loopback UDP, 10G objective" },
+	iperf_wan_direction_download: { label: "iperf3 WAN download" },
+	iperf_wan_direction_upload: { label: "iperf3 WAN upload" },
+	// Retained profiles the suite no longer runs (manual benchmark:network:all composition): labels
+	// kept so manual results stay readable; loopback's former headline moved to iperf above.
 	fast_cli_internet_download_speed: { label: "fast.com download" },
 	fast_cli_internet_upload_speed: { label: "fast.com upload" },
 	fast_cli_internet_latency: { label: "fast.com latency" },
 	fast_cli_internet_loaded_latency_bufferbloat: { label: "fast.com loaded latency" },
-	network_loopback_seconds: { headline: true, label: "Loopback TCP (10GB)" },
+	network_loopback_seconds: { label: "Loopback TCP (10GB)" },
 
 	// System dimension: the synthetic Git profile complements the realworld repo tasks by isolating a
 	// fixed command sequence over a fixed GTK corpus.
