@@ -54,10 +54,22 @@ const PROFILES = [
 	// Network dimension — single-result (sys.time monitor, no <Option> matrix), so it generates one
 	// description-less wildcard entry (zero byte-match risk). 1.0.3 carries the repo's deterministic
 	// netcat-openbsd runner override (install.sh) — the upstream dd|nc runner races its listener.
+	// Retained for manual runs; the network SUITE now measures the localhost stack via iperf below.
 	"network-loopback-1.0.3",
 	// Network dimension — a real Internet transfer through Netflix's fast.com CDN. The profile emits
-	// download/upload throughput plus idle/loaded latency from fast-cli's JSON output.
+	// download/upload throughput plus idle/loaded latency from fast-cli's JSON output. Retained for
+	// manual runs; the network SUITE now measures WAN throughput via local/iperf-wan (run 29937467891:
+	// the Chrome-driven fast.com measurement was structurally unreliable on fast datacenter paths).
 	"fast-cli-1.0.0",
+	// Network dimension — iperf3 driven as a client against a runner-local server (the localhost
+	// leaf) and, via local/iperf-wan, against curated public servers. Vendored BYTE-IDENTICAL to
+	// upstream (the fio-2.1.0 precedent: full option matrix enumerated into the catalog, the
+	// producer pins one combination per scenario via PRESET_OPTIONS, unrun combinations never
+	// receive samples). The free-text server-address/port axes are catalogued through
+	// virtualEntries' deterministic pins (scripts/catalog/synthesize.ts); TimesToRun stays
+	// upstream's 3 — inert for published runs, where the harness preamble pins FORCE_TIMES_TO_RUN
+	// from Suite.ptsTimesToRun (k=2) and lib/bench.sh pins 1 for bare runs.
+	"iperf-1.2.0",
 	// System dimension — PostgreSQL via its integrated pgbench, fully in-sandbox (the profile builds
 	// postgres 17.0 and runs server + client locally, so every provider measures the same topology).
 	// The producer pins one (Scaling Factor, Clients) point per mode via PRESET_OPTIONS; two parsers
