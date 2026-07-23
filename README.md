@@ -74,7 +74,8 @@ docs/       methodology, ADRs, CI & secrets
 | `@repo/test-utils`          | schema                                          | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
 
-`results` deliberately depends on `schema` only — it must normalize without any provider SDK, and
+`results` deliberately depends on `schema` alone among workspace packages — it must normalize
+without any provider SDK, and
 `@repo/repo-checks` enforces that no package reaches across boundaries or into another package's
 private `lib/`.
 
