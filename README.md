@@ -2,7 +2,7 @@
 
 Compare top sandbox providers on the same pinned machine shape for real developer and CI/CD workloads.
 
-**Same target everywhere:** 2 vCPU · 8 GiB RAM · 40 GB disk. One headline metric per dimension, ranked with honest statistics.
+**Same target everywhere:** 4 vCPU · 8 GiB RAM · 40 GB disk. One headline metric per dimension, ranked with honest statistics.
 
 ## Why real-world workflows?
 
@@ -45,7 +45,7 @@ workspace sources natively. There is no compile step: `bun install` → `typeche
 packages/   importable libraries   — scope @sandbox-benchmarks/*
   schema/       shared types + arktype schemas (bottom of the DAG)
   providers/    provider adapters → schema + computesdk
-  templates/    per-provider template builders (one export subpath each)
+  templates/    per-provider template builders + toolchain Docker images (images/)
   harness/      benchmark timing → providers + schema
   results/      normalization → schema only (no provider SDKs)
 apps/
@@ -54,6 +54,10 @@ tooling/        dev-only            — scope @repo/*
   tsconfig/     shared source-first TS configs (config-only)
   test-utils/   provider conformance suite factory
   repo-checks/  boundary + package-meta invariant tests
+lib/        in-sandbox benchmark runner (bench.sh) + vendored PTS profiles
+data/       committed benchmark dataset (published run results)
+scripts/    maintainer scripts (dataset backfill, leaderboard update)
+docs/       methodology, ADRs, CI & secrets
 ```
 
 ## Dependency DAG (enforced)
@@ -61,11 +65,11 @@ tooling/        dev-only            — scope @repo/*
 | Member                      | Internal deps (`workspace:*`)                   | External (catalog)                  |
 |-----------------------------|-------------------------------------------------|-------------------------------------|
 | `@sandbox-benchmarks/schema`     | —                                               | `arktype`                           |
-| `@sandbox-benchmarks/providers`  | schema                                          | `computesdk` (`catalog:computesdk`) |
+| `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
 | `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
 | `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
-| `@sandbox-benchmarks/results`    | schema                                          | —                                   |
-| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results  | `dotenv`                            |
+| `@sandbox-benchmarks/results`    | schema                                          | `arktype`, XML tooling (`catalog:xml`) |
+| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results  | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
 | `@repo/tsconfig`            | —                                               | —                                   |
 | `@repo/test-utils`          | schema                                          | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
@@ -87,28 +91,37 @@ private `lib/`.
 | `bun run lint:fix:unsafe` | `biome check . --fix --unsafe` — also applies behavior-changing fixes; review the diff. |
 | `bun run spell`      | `typos` — source-code spell check (run it before pushing).              |
 | `bun run spell:fix`  | `typos --write-changes` — apply typos' suggested corrections.            |
+| `bun run lint:shell` | `shellcheck` on the repo's shell scripts (toolchain images, `lib/`, mise tasks). |
+| `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
+| `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
+| `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 
 ## Toolchain (mise)
 
 Non-Bun tools are version-pinned in [`mise.toml`](mise.toml) and managed with
-[mise](https://mise.jdx.dev). Today that's [`typos`](https://github.com/crate-ci/typos), the
-spell checker behind `bun run spell`. After cloning, run `mise install` (and `mise trust` once) so
-the pinned binaries are available; `bun run spell` invokes typos through `mise exec`, so it always
-uses the pinned version. mise fetches from official release sources with checksum verification — no
-npm republisher and no install-time postinstall.
+[mise](https://mise.jdx.dev): [`typos`](https://github.com/crate-ci/typos) (spell check),
+`shellcheck` + `hadolint` (shell/Dockerfile lint for the toolchain images), and
+`actionlint` + `zizmor` (workflow lint + security audit, run by the `ci-lint` workflow). After
+cloning, run `mise install` (and `mise trust` once) so the pinned binaries are available; the
+`bun run` wrappers invoke these tools through `mise exec`, so they always use the pinned versions.
+mise fetches from official release sources with checksum verification — no npm republisher and no
+install-time postinstall.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs the command contract on every pull request and every push to
 `main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
-`bun run typecheck` → `bun run test` → `bun run spell` (typos, set up via
-[mise](https://mise.jdx.dev)). The same checks run locally, so green-on-your-machine means
-green-in-CI.
+`bun run lint:shell` → `bun run lint:docker` → `bun run typecheck` → `bun run test` →
+`bun run check:catalog-drift` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
+A separate `ci-lint.yml` lints the workflows themselves (actionlint + zizmor). The same checks run
+locally, so green-on-your-machine means green-in-CI.
 
-Fork PRs get the hosted CI gate only. Self-hosted jobs and anything that needs provider credentials
-run only from this repository, on `main`, behind Environment [`privileged`](./docs/ci-secrets.md).
+CI runs on a maintainer-controlled runner, so it never executes fork-PR code — the gate runs only
+for pushes and same-repo pull requests. Anything that needs provider credentials additionally runs
+only from `main`, behind Environment [`privileged`](./docs/ci-secrets.md); pull requests never
+receive provider secrets.
 
 ## Git hooks (pre-commit)
 
