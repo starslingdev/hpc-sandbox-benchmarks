@@ -1,4 +1,4 @@
-name: CI Lint
+name: Workflow lint
 
 # Lints the GitHub Actions layer itself — the workflows under .github/workflows:
 #   - actionlint: workflow syntax, expressions, runner labels (via the .github/actionlint.yaml

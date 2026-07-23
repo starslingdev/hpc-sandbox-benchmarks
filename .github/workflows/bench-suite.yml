@@ -1,4 +1,4 @@
-name: Benchmark suite (reusable)
+name: Bench suite (reusable)
 
 # One suite, fanned out across a provider matrix. bench-matrix.yml calls this once per suite via its
 # suite-matrix job (`name: ${{ matrix.suite }}`), passing the plan's selected provider list — so N

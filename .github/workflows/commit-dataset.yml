@@ -103,7 +103,9 @@ jobs:
         run: |
           shopt -s nullglob
           shards=(shards/*/runs/"$RUN_ID".json)
-          if [ ${#shards[@]} -eq 0 ]; then echo "no shard Run documents found for run $RUN_ID" >&2; exit 1; fi
+          # `::error::` (the @actions/core error surface from shell) so a missing-shards abort annotates
+          # the run, not just a bare stderr line buried in the step log.
+          if [ ${#shards[@]} -eq 0 ]; then echo "::error::no shard Run documents found for run $RUN_ID"; exit 1; fi
           bun apps/cli/src/bin/aggregate.ts "$RUN_ID" data/candidate "${shards[@]}"
           bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset
 
@@ -141,7 +143,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/dataset
           if git diff --cached --quiet; then
-            echo "dataset for run $RUN_ID unchanged; nothing to commit"
+            # A no-op outcome (nothing to commit) as a `::notice::` so the benign result is visible in
+            # the run's annotations, not silent.
+            echo "::notice::dataset for run $RUN_ID unchanged; nothing to commit"
             exit 0
           fi
           branch="dataset/publish-${RUN_ID}"
@@ -176,5 +180,7 @@ jobs:
           # Queue GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
           # required reviews land), never bypassing branch protection. Best-effort — if the repo hasn't
           # enabled auto-merge, leave the PR open for a maintainer.
+          # A degraded-but-acceptable outcome as a `::warning::` so a maintainer sees the PR needs a
+          # manual merge in the annotations panel, without failing the job.
           gh pr merge "$branch" --squash --delete-branch --auto \
-            || echo "auto-merge not armed; dataset PR left open for a maintainer to merge"
+            || echo "::warning::auto-merge not armed; dataset PR left open for a maintainer to merge"
