@@ -11,6 +11,7 @@
     "plan-matrix": "./src/bin/plan-matrix.ts",
     "plan-providers": "./src/bin/plan-providers.ts",
     "plan-suites": "./src/bin/plan-suites.ts",
+    "plan-replicates": "./src/bin/plan-replicates.ts",
     "build-template": "./src/bin/build-template.ts",
     "normalize": "./src/bin/normalize.ts",
     "aggregate": "./src/bin/aggregate.ts",

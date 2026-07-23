@@ -7,7 +7,7 @@ import type { ProviderTransport, RawRun, ResultGap, Suite } from "@sandbox-bench
 import { HARNESS_METRIC_IDS, isPtsResultFile, SUITES } from "@sandbox-benchmarks/schema";
 import { collectResults, writeGapMarker } from "./lib/collect.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
-import { MIN, StepRunner, withTimeout } from "./lib/execute.ts";
+import { MIN, resolvePtsPassPolicy, StepRunner, withTimeout } from "./lib/execute.ts";
 import { time } from "./lib/internal.ts";
 import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
@@ -372,10 +372,16 @@ export async function runSuiteOnSandbox(
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
 	let suiteError: unknown;
 	try {
-		// Thread the suite's in-sandbox repeat count (k) into the preamble; absent → the harness default.
-		// Constructed inside the try so a bad k (buildPreamble rejects k < 1) is still torn down by the
-		// finally below; a throw before the try would leak the already-created sandbox.
-		const runner = new StepRunner(sandbox, transport, undefined, suite.ptsTimesToRun);
+		// Resolve the PTS pass policy from the suite's configured count and the BENCH_PTS_PASSES override
+		// (a fixed count, or `converge` to let PTS's own convergence decide). Constructed inside the try so
+		// a bad policy (buildPreamble rejects a fixed k < 1) is still torn down by the finally below; a
+		// throw before the try would leak the already-created sandbox.
+		const runner = new StepRunner(
+			sandbox,
+			transport,
+			undefined,
+			resolvePtsPassPolicy(suite.ptsTimesToRun),
+		);
 		runner.phase = "setup";
 		if (suite.minDiskGb) {
 			// Measure free space where the disk-heavy suites actually write, not the sandbox root. The

@@ -3,7 +3,7 @@
 // SUITES) are the single source of truth — the matrix can never name a provider or suite that isn't
 // registered.
 import type { ProviderId, SuiteName } from "@sandbox-benchmarks/schema";
-import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
+import { PROVIDERS, SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
 
 /** One CI cell: a single (provider, suite) benchmark run. */
 export interface MatrixEntry {
@@ -66,6 +66,59 @@ export function selectProviders(raw: string | undefined): ProviderId[] {
  */
 export function selectSuites(raw: string | undefined): SuiteName[] {
 	return selectRegistryIds(raw, SUITE_NAMES, "suite");
+}
+
+/**
+ * The replicate count a suite runs when a dispatch gives no override: its schema-declared
+ * {@link Suite.defaultReplicas} (the between-machine axis, configurable per test category), or a single
+ * sandbox when the suite declares none. Replicates capture a provider's fleet variation — two sandboxes
+ * of one (provider, suite) can land on different host hardware — which the in-sandbox PTS passes can't see.
+ */
+export const SINGLE_REPLICATE = 1;
+
+/** The replicate count for one suite: the `BENCH_REPLICAS` override when set, else the suite's default. */
+export function replicaCountForSuite(suite: SuiteName, override?: number): number {
+	if (override !== undefined) return override;
+	return SUITES[suite].defaultReplicas ?? SINGLE_REPLICATE;
+}
+
+/**
+ * Parse the `BENCH_REPLICAS` dispatch override into a positive integer, or `undefined` when blank/unset
+ * (each suite then keeps its own {@link Suite.defaultReplicas}). A non-positive or non-integer value
+ * THROWS — a typo'd `--replicas 0` would otherwise fan out zero sandboxes (a silently empty run), and a
+ * fractional one is meaningless — so the plan fails loudly instead of guessing. This is the single global
+ * knob that scales EVERY suite's replicate count up (tighter between-machine intervals) or down (a quick
+ * pass) without editing each suite's schema default.
+ */
+export function parseReplicasOverride(raw: string | undefined): number | undefined {
+	const trimmed = (raw ?? "").trim();
+	if (trimmed === "") return undefined;
+	const count = Number(trimmed);
+	if (!Number.isInteger(count) || count < 1) {
+		throw new Error(`replicas override must be a positive integer; got "${raw}"`);
+	}
+	return count;
+}
+
+/**
+ * The per-suite replicate index arrays the CI matrix fans out over, keyed by suite name — e.g.
+ * `{ "cpu-node": [0, 1, 2], "realworld-mastra": [0, 1, 2, 3, 4] }`. Each suite maps to `[0..R-1]`, where
+ * R is the `BENCH_REPLICAS` override (`replicasRaw`) when set, else that suite's schema default. The
+ * suite set matches {@link selectSuites} exactly (same `BENCH_SUITES` parsing), so the map is keyed by
+ * precisely the suites the plan's suite axis emits — the reusable bench-suite.yml indexes it by
+ * `matrix.suite` to get its own replicate axis. `suitesRaw`/`replicasRaw` are the raw dispatch strings.
+ */
+export function planReplicateMap(
+	suitesRaw: string | undefined,
+	replicasRaw: string | undefined,
+): Record<string, number[]> {
+	const override = parseReplicasOverride(replicasRaw);
+	const map: Record<string, number[]> = {};
+	for (const suite of selectSuites(suitesRaw)) {
+		const count = replicaCountForSuite(suite, override);
+		map[suite] = Array.from({ length: count }, (_, index) => index);
+	}
+	return map;
 }
 
 /**

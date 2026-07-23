@@ -283,12 +283,18 @@ _configure_pts_batch() {
 	# name would let a failed later leaf collect an earlier leaf's merged composite as its own.
 	export TEST_RESULTS_DESCRIPTION=ci
 	export TEST_RESULTS_IDENTIFIER=ci
-	# FORCE_TIMES_TO_RUN=1 pins contract-verification runs to a single pass. Published sandbox runs
-	# export PTS_RESPECT_TIMES_TO_RUN=1 plus a per-suite FORCE_TIMES_TO_RUN (k) in the harness preamble
-	# (Suite.ptsTimesToRun: realworld k=1, long synthetic k=2), while disabling PTS's adaptive
-	# variance policy (which otherwise expanded noisy fio cases to 20-40 runs and exhausted the suite).
+	# Pass-count policy, set by the harness preamble (buildPreamble → ptsTrialVars):
+	#   * Fixed count (published runs): the preamble exports PTS_RESPECT_TIMES_TO_RUN=1 plus a per-suite
+	#     FORCE_TIMES_TO_RUN (k) — a pinned pass count with PTS's adaptive variance policy disabled (it
+	#     otherwise expanded noisy fio cases to 20-40 runs and exhausted the suite). Nothing to do here.
+	#   * Convergence (BENCH_PTS_CONVERGE=1): let PTS's own DynamicRunCount decide the pass count — run a
+	#     minimum, then keep going while the standard deviation exceeds PTS's threshold. Clear any forced
+	#     count / respect flag so neither pins it, and DynamicRunCount (on by PTS default) governs.
+	#   * Neither set (contract-verification / bare host runs): force a single pass.
 	# Between-sandbox variance is captured by REPLICATE sandboxes, not by more in-sandbox passes.
-	if [ -z "${PTS_RESPECT_TIMES_TO_RUN:-}" ]; then
+	if [ -n "${BENCH_PTS_CONVERGE:-}" ]; then
+		unset FORCE_TIMES_TO_RUN PTS_RESPECT_TIMES_TO_RUN
+	elif [ -z "${PTS_RESPECT_TIMES_TO_RUN:-}" ]; then
 		export FORCE_TIMES_TO_RUN=1
 	fi
 	# batch-setup answers: SaveResults, OpenBrowser, UploadResults, PromptForTestIdentifier,

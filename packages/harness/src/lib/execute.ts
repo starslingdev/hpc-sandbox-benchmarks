@@ -168,6 +168,65 @@ function parseExitCode(raw: string): number {
 export const DEFAULT_PTS_TIMES_TO_RUN = 2;
 
 /**
+ * How many timed PTS passes each test case runs INSIDE one sandbox (the within-machine axis). Two modes:
+ *
+ *  - `fixed` — force exactly `times` passes and disable PTS's own variance policy (the historical
+ *    default; a noisy provider can't stretch a suite to 20-40 passes). `times` is a positive integer.
+ *  - `converge` — hand the pass count to PTS's built-in statistical convergence (DynamicRunCount): run a
+ *    minimum, then keep going while the standard deviation across passes exceeds PTS's threshold, up to
+ *    PTS's own cap. This is the "let PTS decide" mode that buys tighter within-machine intervals on noisy
+ *    cases at the cost of a variable (and potentially long) runtime.
+ *
+ * Resolved per run by {@link resolvePtsPassPolicy}: a suite's configured `Suite.ptsTimesToRun` is the
+ * default, and the `BENCH_PTS_PASSES` dispatch input overrides it (a number, or `converge`).
+ */
+export type PtsPassPolicy =
+	| { readonly mode: "fixed"; readonly times: number }
+	| { readonly mode: "converge" };
+
+/** The fixed default policy (k = {@link DEFAULT_PTS_TIMES_TO_RUN}) — the {@link buildPreamble} /
+ *  {@link StepRunner} default and the value the preamble tests pin. */
+export const DEFAULT_PTS_PASS_POLICY: PtsPassPolicy = {
+	mode: "fixed",
+	times: DEFAULT_PTS_TIMES_TO_RUN,
+};
+
+/** The literal token the `BENCH_PTS_PASSES` override uses to request PTS's convergence logic. */
+export const PTS_CONVERGE_TOKEN = "converge";
+
+/**
+ * Resolve the {@link PtsPassPolicy} for a run from the suite's configured fixed count and the
+ * `BENCH_PTS_PASSES` override (read from `env`, defaulting to `process.env` — the same env-driven seam
+ * {@link buildPreamble} uses for `BENCH_PASSES`). Precedence, most specific first:
+ *
+ *  - `BENCH_PTS_PASSES=converge` (any casing) → converge mode (let PTS's DynamicRunCount decide).
+ *  - `BENCH_PTS_PASSES=<n>` (a positive integer) → fixed at that many passes, overriding every suite.
+ *  - unset/blank → the suite's own `ptsTimesToRun` (fixed), or {@link DEFAULT_PTS_TIMES_TO_RUN}.
+ *
+ * A non-empty override that is neither `converge` nor a positive integer THROWS, so a typo'd dispatch
+ * input fails the run loudly instead of silently reverting to the default pass count.
+ */
+export function resolvePtsPassPolicy(
+	suiteTimesToRun: number | undefined,
+	env: Record<string, string | undefined> = process.env,
+): PtsPassPolicy {
+	const raw = (env.BENCH_PTS_PASSES ?? "").trim();
+	if (raw === "") {
+		return { mode: "fixed", times: suiteTimesToRun ?? DEFAULT_PTS_TIMES_TO_RUN };
+	}
+	if (raw.toLowerCase() === PTS_CONVERGE_TOKEN) {
+		return { mode: "converge" };
+	}
+	const times = Number(raw);
+	if (!Number.isInteger(times) || times < 1) {
+		throw new Error(
+			`BENCH_PTS_PASSES must be a positive integer or "${PTS_CONVERGE_TOKEN}"; got "${raw}"`,
+		);
+	}
+	return { mode: "fixed", times };
+}
+
+/**
  * The static head of the in-sandbox preamble: env + PATH re-established on every step (each runCommand is
  * a fresh shell). `$SUDO` covers both root images (no prefix) and non-root images with sudo. The
  * toolchain image (packages/templates/images) installs mise globally under /mise, so prefer it when
@@ -204,32 +263,47 @@ const PREAMBLE_HEAD = [
 ];
 
 /**
- * The full preamble string for a step, pinning `ptsTimesToRun` (k) timed PTS passes per case. PTS's
- * variance-driven policy is disabled (PTS_RESPECT_TIMES_TO_RUN=1) so a noisy provider can't stretch a
- * suite to 20-40 passes; between-sandbox variance is captured by REPLICATE sandboxes (aggregate.ts), not
- * more in-sandbox passes, and the leaderboard LABELS underpowered comparisons rather than buying
- * significance with extra runs. BENCH_PASSES=1 keeps contract-verification runs at one pass via
- * lib/bench.sh. Suites pin k per tier (realworld k=1, long synthetic k=2).
+ * The trial-count env exports for a step's preamble, chosen by the {@link PtsPassPolicy}:
+ *
+ *  - contract-verification (`BENCH_PASSES=1`) → nothing; lib/bench.sh forces a single pass. This wins
+ *    over any policy so a smoke run stays one pass regardless of the dispatch inputs.
+ *  - `converge` → export the `BENCH_PTS_CONVERGE` marker and set NEITHER `FORCE_TIMES_TO_RUN` nor
+ *    `PTS_RESPECT_TIMES_TO_RUN`, so PTS's DynamicRunCount governs the pass count. The marker tells
+ *    lib/bench.sh's `_configure_pts_batch` NOT to fall back to forcing one pass.
+ *  - `fixed` → the historical pins: `PTS_RESPECT_TIMES_TO_RUN=1` (disable PTS's variance policy so a
+ *    noisy provider can't stretch a suite to 20-40 passes) + `FORCE_TIMES_TO_RUN=<k>`.
  */
-export function buildPreamble(ptsTimesToRun: number = DEFAULT_PTS_TIMES_TO_RUN): string {
-	// A non-positive or fractional k would emit `FORCE_TIMES_TO_RUN=0` (a silently empty benchmark) or a
-	// bogus value into the shell — fail loudly instead, the same fail-fast posture analysis.ts takes.
-	if (!Number.isInteger(ptsTimesToRun) || ptsTimesToRun < 1) {
-		throw new Error(
-			`buildPreamble() requires ptsTimesToRun to be a positive integer; got ${ptsTimesToRun}`,
-		);
+function ptsTrialVars(policy: PtsPassPolicy): string[] {
+	if (process.env.BENCH_PASSES === "1") return [];
+	if (policy.mode === "converge") {
+		return ["export BENCH_PTS_CONVERGE=1"];
+	}
+	return ["export PTS_RESPECT_TIMES_TO_RUN=1", `export FORCE_TIMES_TO_RUN=${policy.times}`];
+}
+
+/**
+ * The full preamble string for a step, applying a {@link PtsPassPolicy} for the timed PTS passes per
+ * case. Between-sandbox variance is captured by REPLICATE sandboxes (aggregate.ts), not by more
+ * in-sandbox passes, and the leaderboard LABELS underpowered comparisons rather than buying significance
+ * silently. Suites pin a fixed k per tier (realworld k=1, long synthetic k=2); a dispatch can override
+ * to a different fixed count or to `converge` (see {@link resolvePtsPassPolicy}).
+ */
+export function buildPreamble(policy: PtsPassPolicy = DEFAULT_PTS_PASS_POLICY): string {
+	// A non-positive or fractional fixed k would emit `FORCE_TIMES_TO_RUN=0` (a silently empty benchmark)
+	// or a bogus value into the shell — fail loudly instead, the same fail-fast posture analysis.ts takes.
+	// Validate before the BENCH_PASSES short-circuit so a bad policy is rejected in every mode.
+	if (policy.mode === "fixed" && (!Number.isInteger(policy.times) || policy.times < 1)) {
+		throw new Error(`buildPreamble() requires a positive integer pass count; got ${policy.times}`);
 	}
 	return [
 		...PREAMBLE_HEAD,
-		...(process.env.BENCH_PASSES === "1"
-			? []
-			: ["export PTS_RESPECT_TIMES_TO_RUN=1", `export FORCE_TIMES_TO_RUN=${ptsTimesToRun}`]),
+		...ptsTrialVars(policy),
 		'if [ "$(id -u)" = 0 ]; then SUDO=""; elif command -v sudo >/dev/null 2>&1; then SUDO="sudo -E"; else SUDO=""; fi',
 	].join("; ");
 }
 
-/** The preamble at the default repeat count (k = 2) — the StepRunner default and the value the preamble
- *  tests pin; a per-suite k is threaded through {@link StepRunner}. */
+/** The preamble at the default fixed repeat count (k = 2) — the StepRunner default and the value the
+ *  preamble tests pin; a per-suite policy is threaded through {@link StepRunner}. */
 export const PREAMBLE = buildPreamble();
 
 /** Print liveness every 2 min while a long step runs — exec transports buffer output, so without
@@ -260,7 +334,7 @@ export class StepRunner {
 	phase: Phase = "setup";
 	/** Every executed step with its phase, elapsed ms, and exit code. */
 	readonly stepLog: StepLogEntry[] = [];
-	/** The in-sandbox preamble prepended to every step, pinned to this suite's PTS repeat count (k). */
+	/** The in-sandbox preamble prepended to every step, carrying this run's PTS pass policy. */
 	private readonly preamble: string;
 
 	constructor(
@@ -270,11 +344,12 @@ export class StepRunner {
 		/** The inter-poll sleep used by {@link runDetached}; injectable so tests can assert the backoff
 		 *  schedule without real waiting. */
 		private readonly sleep: (ms: number) => Promise<void> = delay,
-		/** The suite's in-sandbox repeat count (k) — how many timed PTS passes each case runs. Omitted →
-		 *  {@link DEFAULT_PTS_TIMES_TO_RUN}, so a StepRunner built without one keeps the old behaviour. */
-		ptsTimesToRun: number = DEFAULT_PTS_TIMES_TO_RUN,
+		/** How many timed PTS passes each case runs, or `converge` for PTS's own convergence. Omitted →
+		 *  {@link DEFAULT_PTS_PASS_POLICY} (fixed k=2), so a StepRunner built without one keeps the old
+		 *  behaviour. Resolved from the suite + `BENCH_PTS_PASSES` by {@link resolvePtsPassPolicy}. */
+		passPolicy: PtsPassPolicy = DEFAULT_PTS_PASS_POLICY,
 	) {
-		this.preamble = buildPreamble(ptsTimesToRun);
+		this.preamble = buildPreamble(passPolicy);
 	}
 
 	/**
