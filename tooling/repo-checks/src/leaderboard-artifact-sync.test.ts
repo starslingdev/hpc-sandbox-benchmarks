@@ -7,7 +7,7 @@
 // This is only sound because the leaderboard is deterministic: the bootstrap is seeded from stable
 // Run/Metric/provider identity (see schema/analysis.ts `seededRng`), and `generatedAt` is read from the
 // Run document rather than the clock. A Math.random() bootstrap would make this gate flake on every run.
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
@@ -99,6 +99,40 @@ function auditMedianInterval(
 	};
 }
 
+/**
+ * Independently reproduce the seeded 10k HIERARCHICAL median bootstrap the renderer uses once a Metric
+ * carries a replicate breakdown (≥2 sandboxes): each resample draws R replicates WITH REPLACEMENT, then
+ * within each drawn replicate draws its own Samples with replacement, pools the lot, and takes the median.
+ * Mirrors schema/analysis.ts `hierarchicalBootstrapMedianInterval` — including the single shared RNG's
+ * exact draw order (replicate index, then that replicate's sample indices, R times) — so the reproduced
+ * bounds are byte-identical to the committed table rather than merely statistically close.
+ */
+function auditHierarchicalMedianInterval(
+	replicates: readonly (readonly number[])[],
+	seed: string,
+): { lo: number; hi: number } | null {
+	// The pooled union is what the displayed median ranks on; a single pooled Sample has no spread, so the
+	// renderer degenerates to a point interval (rendered "—"), matching auditMedianInterval's n=1 return.
+	if (replicates.reduce((sum, replicate) => sum + replicate.length, 0) === 1) return null;
+	const rng = auditRng(seed);
+	const R = replicates.length;
+	const medians = new Array<number>(10_000);
+	for (let iteration = 0; iteration < medians.length; iteration++) {
+		const pool: number[] = [];
+		for (let r = 0; r < R; r++) {
+			const chosen = replicates[Math.floor(rng() * R)] as readonly number[];
+			for (let i = 0; i < chosen.length; i++)
+				pool.push(chosen[Math.floor(rng() * chosen.length)] as number);
+		}
+		medians[iteration] = auditPercentile(pool, 0.5);
+	}
+	const tail = (1 - 0.95) / 2;
+	return {
+		lo: auditPercentile(medians, tail),
+		hi: auditPercentile(medians, 1 - tail),
+	};
+}
+
 function formatValue(value: number): string {
 	return Number.isInteger(value)
 		? String(value)
@@ -127,10 +161,13 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 		const result = provider.metrics.find(({ metricId }) => metricId === metric.id);
 		if (!result) return [];
 		const value = auditPercentile(result.samples, 0.5);
-		const interval = auditMedianInterval(
-			result.samples,
-			`${run.runId}:${metric.id}:${provider.providerId}`,
-		);
+		// Mirror the renderer's branch: once a Metric merged ≥2 replicate sandboxes it takes the
+		// hierarchical bootstrap (between-sandbox variance), else the ordinary percentile bootstrap.
+		const seed = `${run.runId}:${metric.id}:${provider.providerId}`;
+		const replicates = result.replicates?.map((replicate) => replicate.samples);
+		const interval = replicates
+			? auditHierarchicalMedianInterval(replicates, seed)
+			: auditMedianInterval(result.samples, seed);
 		return [
 			{
 				providerId: provider.providerId,
@@ -178,7 +215,32 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 		} else {
 			const mw = mannWhitneyU(previousCandidate.result.samples, candidate.result.samples);
 			const shape = kolmogorovSmirnov(previousCandidate.result.samples, candidate.result.samples);
-			if (!canSeparate(mw)) {
+			// The pooled Mann-Whitney above stays the descriptive `p vs. above` / `p (KS)` columns. The
+			// VERDICT (note + shared rank), however, follows the renderer: once EITHER side carries a
+			// replicate breakdown, the decider is the cluster-level rank permutation — Mann-Whitney U on
+			// each side's per-sandbox medians, whole sandboxes the exchangeable unit — mirroring
+			// bootstrapMedianDifferenceInterval. A side without replicates enters as one cluster of its
+			// pooled Samples, so a mixed-R pair is judged the same honest way. No RNG: the verdict is the
+			// exact cluster permutation, never the bootstrapped difference interval.
+			const previousReplicates = previousCandidate.result.replicates?.map((r) => r.samples);
+			const candidateReplicates = candidate.result.replicates?.map((r) => r.samples);
+			if (previousReplicates || candidateReplicates) {
+				const cluster = mannWhitneyU(
+					(previousReplicates ?? [previousCandidate.result.samples]).map((c) =>
+						auditPercentile(c, 0.5),
+					),
+					(candidateReplicates ?? [candidate.result.samples]).map((c) => auditPercentile(c, 0.5)),
+				);
+				// The between-sandbox floor already meets α (2/C(6,3)=0.1 at R=3) → underpowered, never a
+				// tie; else the cluster test's own p decides separation.
+				if (cluster.minAttainablePValue >= DEFAULT_ALPHA) {
+					note = identical ? "n too small, equal medians" : "n too small";
+					if (identical) rank = previousRow.rank;
+				} else if (cluster.pValue >= DEFAULT_ALPHA) {
+					rank = previousRow.rank;
+					note = "tied";
+				}
+			} else if (!canSeparate(mw)) {
 				note = identical ? "n too small, equal medians" : "n too small";
 				if (identical) rank = previousRow.rank;
 			} else if (mw.pValue >= DEFAULT_ALPHA) {
@@ -319,6 +381,15 @@ function loadCommittedRun(): {
 		throw error;
 	}
 }
+
+// This gate renders the WHOLE committed board — up to twice, for the determinism check — and both the
+// renderer and this file's independent audit run a seeded 10 000-resample bootstrap per provider/Metric.
+// That is legitimately slow and scales with the dataset: the replicate fan-out took one run from ~400 to
+// ~2 500 retained observations, and the hierarchical bootstrap pools R sandboxes per resample. Bun's 5 s
+// default would time these out on the committed data (and worse on a loaded CI runner) even though nothing
+// is wrong, so give the file a generous ceiling — high enough to absorb further dataset growth, still low
+// enough to catch a genuine non-terminating bootstrap.
+setDefaultTimeout(120_000);
 
 describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	it("stores internally consistent Aggregates for every raw Sample distribution", () => {
