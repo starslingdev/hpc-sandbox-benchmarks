@@ -178,8 +178,8 @@ export const DEFAULT_PTS_TIMES_TO_RUN = 2;
  *    cases at the cost of a variable (and potentially long) runtime.
  *
  * Resolved per run by {@link resolvePtsPassPolicy}: each suite's own default (converge where it declares
- * `Suite.ptsConverge` — only `memory` — else fixed at `Suite.ptsTimesToRun`), which the `BENCH_PTS_PASSES`
- * dispatch input overrides (a number, or `converge`).
+ * `Suite.ptsConverge` — cpu-node and memory — else fixed at `Suite.ptsTimesToRun`), which the
+ * `BENCH_PTS_PASSES` dispatch input overrides (a number, or `converge`).
  */
 export type PtsPassPolicy =
 	| { readonly mode: "fixed"; readonly times: number }
@@ -210,12 +210,12 @@ export interface SuitePassConfig {
  *  - `BENCH_PTS_PASSES=converge` (any casing) → converge, forced on EVERY suite (the global override).
  *  - `BENCH_PTS_PASSES=<n>` (a positive integer) → fixed at that many passes, forced on every suite.
  *  - unset/blank → the suite's OWN default: `converge` where the suite declares {@link SuitePassConfig.ptsConverge}
- *    (only `memory`), else fixed at its `ptsTimesToRun` (or {@link DEFAULT_PTS_TIMES_TO_RUN}).
+ *    (cpu-node and memory), else fixed at its `ptsTimesToRun` (or {@link DEFAULT_PTS_TIMES_TO_RUN}).
  *
- * So a bare run converges only `memory` (the one budget-safe suite) while every other suite (cpu-node, the
- * system + I/O + network suites, and realworld) keeps its fixed pass count, and a dispatch can still force
- * one policy across the board. A non-empty override that is neither `converge` nor a positive integer
- * THROWS, so a typo'd dispatch input fails the run loudly instead of silently reverting.
+ * So a bare run converges cpu-node + memory (the budget-safe, quick-to-settle suites) while every other
+ * suite (the system + I/O + network suites, and realworld) keeps its fixed pass count, and a dispatch can
+ * still force one policy across the board. A non-empty override that is neither `converge` nor a positive
+ * integer THROWS, so a typo'd dispatch input fails the run loudly instead of silently reverting.
  */
 export function resolvePtsPassPolicy(
 	suite: SuitePassConfig,

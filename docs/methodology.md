@@ -103,13 +103,14 @@ without being Daytona-specific.
    - **replicates** — R sandboxes per cell, the between-machine axis (`replicas` blank = each suite's
      `Suite.defaultReplicas`: synthetic R=3, realworld **R=12**, sized from the committed dataset's
      observed between-machine variance so realworld provider CIs separate; a number overrides every suite).
-   - **PTS passes** — the within-machine axis (`pts_passes` blank = each suite's own policy). Only the
-     `memory` suite (STREAM — a cheap, bounded loop) **converges** via PTS's `DynamicRunCount`; every other
-     suite keeps a **fixed** pass count, because convergence there re-introduces fio's runaway (20–40 runs)
-     on `disk`, timed `system` out at its budget on modal-gvisor (SQLite's I/O variance) in a converge run,
-     breaks `iperf`'s fixed-trial rule on `network`, is a heavy per-pass build on `cpu-node`, or is a k=1
-     cold-start whose install/build IS the metric (realworld). Everything fixed carries its spread via
-     replicates, not in-sandbox repeats; a number or `converge` forces one policy across every suite.
+   - **PTS passes** — the within-machine axis (`pts_passes` blank = each suite's own policy). The `memory`
+     and `cpu-node` suites **converge** via PTS's `DynamicRunCount` — both are cheap or CPU-bound enough that
+     convergence settles near its ~3-pass minimum without a runaway. Every other suite keeps a **fixed** pass
+     count, because convergence there re-introduces fio's runaway (20–40 runs) on `disk`, timed `system` out
+     at its budget on modal-gvisor (SQLite's I/O variance) in a converge run, breaks `iperf`'s fixed-trial
+     rule on `network`, or is a k=1 cold-start whose install/build IS the metric (realworld). Everything
+     fixed carries its spread via replicates, not in-sandbox repeats; a number or `converge` forces one
+     policy across every suite.
 3. **Aggregate → promote → commit** — the `commit-dataset` workflow (the matrix's `publish` job calls
    it) collects every shard, `aggregate`s them into one candidate Run (measured metrics unioned, the ≥2
    replicate sandboxes of one `(provider, suite)` folded into per-metric replicate breakdowns, economics

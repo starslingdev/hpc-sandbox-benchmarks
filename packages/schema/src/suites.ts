@@ -42,16 +42,17 @@ export interface Suite {
 	 * Let PTS's own statistical convergence (DynamicRunCount) choose the in-sandbox pass count instead of
 	 * pinning it to {@link ptsTimesToRun}: run a minimum, then keep going while the standard deviation
 	 * across passes exceeds PTS's threshold, up to PTS's cap. This is the WITHIN-machine tightening knob,
-	 * set only on `memory` — STREAM is a tiny, tight bandwidth loop, so DynamicRunCount settles fast and
-	 * even a long convergence fits its 30-min budget many times over. It is deliberately LEFT OFF wherever
-	 * a variable pass count is unsafe or wrong: the I/O suites (disk — fio's DynamicRunCount blew up to
-	 * 20-40 runs and exhausted the suite historically; pgbench — each pass re-runs an expensive scale-100
-	 * init), the system suite (SQLite's I/O variance timed convergence out at its 55-min budget on
+	 * set on the two suites whose passes converge cheaply and predictably: `memory` (STREAM is a tiny,
+	 * tight bandwidth loop) and `cpu-node` (CPU-bound, so low within-machine variance settles DynamicRunCount
+	 * near its ~3-pass minimum — no runaway, and its budget is bumped for headroom). It is deliberately LEFT
+	 * OFF wherever a variable pass count is unsafe or wrong: the I/O suites (disk — fio's DynamicRunCount
+	 * blew up to 20-40 runs and exhausted the suite historically; pgbench — each pass re-runs an expensive
+	 * scale-100 init), the system suite (SQLite's I/O variance timed convergence out at its 55-min budget on
 	 * modal-gvisor in run #49), the network suite (a documented "trial count stays 2" rule + per-run WAN
-	 * server reselection), the heavy cpu-node build, and the realworld suites (k=1 — the cold install/build
-	 * IS the metric). Those take their tightness from {@link defaultReplicas} replicate sandboxes instead.
-	 * The `pts_passes` dispatch input (BENCH_PTS_PASSES) overrides this per run — a fixed number, or
-	 * `converge` to force convergence on every suite (accepting the budget risk on the I/O + system suites).
+	 * server reselection), and the realworld suites (k=1 — the cold install/build IS the metric). Those take
+	 * their tightness from {@link defaultReplicas} replicate sandboxes instead. The `pts_passes` dispatch
+	 * input (BENCH_PTS_PASSES) overrides this per run — a fixed number, or `converge` to force convergence
+	 * on every suite (accepting the budget risk on the I/O + system suites).
 	 */
 	ptsConverge?: boolean;
 	/**
@@ -88,14 +89,17 @@ export const SUITES = {
 	"cpu-node": {
 		setupPts: true,
 		setupNode: true,
-		// Long-synthetic tier: k=2 FIXED in-sandbox passes × R=3 replicate sandboxes (between-machine).
-		// Convergence is deliberately OFF: node-web-tooling is a heavy multi-minute build per pass, so the
-		// 60-min command budget is sized for a fixed k=2 — letting PTS's DynamicRunCount add passes could
-		// overrun it. Its between-machine spread rides the R=3 replicates; a calibration dispatch can
-		// re-derive a converge-safe budget before enabling it. Budgets are provisional ceilings.
-		commandTimeoutMinutes: 60,
-		timeoutMinutes: 70,
+		// Long-synthetic tier, PTS CONVERGES in-sandbox (R=3): node-web-tooling is CPU-bound, so its
+		// within-machine variance is low and DynamicRunCount settles near its ~3-pass minimum rather than
+		// expanding toward a runaway tail (the I/O suites' failure mode) — and ~3 passes is exactly what
+		// cpu-node ran before PR #129 lowered it to k=2, so the budget has handled it. The command/sandbox
+		// budgets are bumped 60→75 / 70→85 (still under realworld's 90) for headroom on the extra
+		// convergence pass on slower providers; gVisor taxes I/O, not CPU, so cpu-node isn't exposed to
+		// the SQLite-style overrun that timed `system` out. Between-machine spread still rides R=3.
+		commandTimeoutMinutes: 75,
+		timeoutMinutes: 85,
 		ptsTimesToRun: 2,
+		ptsConverge: true,
 		defaultReplicas: 3,
 		// cpu-node runs only `benchmark:cpu:node` (node-web-tooling); it is the sole cpu-dimension suite.
 		dimensions: ["cpu"],
@@ -146,9 +150,9 @@ export const SUITES = {
 		commands: ["mise run benchmark:pgbench:all"],
 	},
 	// The memory dimension: STREAM (Copy/Scale/Add/Triad). Short — STREAM runs in a couple of minutes.
-	// Long-synthetic tier, and the ONLY suite that PTS CONVERGES in-sandbox by default (R=3): STREAM is a
-	// tight, cheap bandwidth loop, so DynamicRunCount settles fast and even a long convergence fits the
-	// 30-min budget many times over (unlike system, whose SQLite leg timed convergence out in run #49).
+	// Long-synthetic tier, PTS CONVERGES in-sandbox (R=3) — one of the two converging suites (with cpu-node):
+	// STREAM is a tight, cheap bandwidth loop, so DynamicRunCount settles fast and even a long convergence
+	// fits the 30-min budget many times over (unlike system, whose SQLite leg timed convergence out in run #49).
 	// Three replicate sandboxes capture the between-machine bandwidth spread STREAM Copy is notorious for
 	// under noisy virtualization (STREAM's between-machine CV is the highest of the synthetics, so R=3
 	// leaves it the widest-interval headline — convergence tightens within-machine, replicas the rest).

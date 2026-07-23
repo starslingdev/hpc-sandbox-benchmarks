@@ -35,12 +35,12 @@ describe("suite registry", () => {
 
 	it("declares the per-tier pass policy and replicate count (R)", () => {
 		// Real-world captures cold-start once (k=1, no in-sandbox convergence) across many sandboxes
-		// (R=12, data-informed so the between-machine CIs separate providers). The synthetics run k=2 fixed
-		// across R=3, and PTS convergence is enabled ONLY on `memory` (STREAM is a tiny, budget-safe loop);
-		// every other synthetic keeps a fixed count — convergence there re-introduces fio's DynamicRunCount
-		// runaway (disk), overran the budget live on modal-gvisor (system/SQLite, run #49), breaks iperf's
-		// fixed-trial rule (network), or is a heavy per-pass build (cpu-node). cpu-generic is retired;
-		// pgbench is split out of system.
+		// (R=12, data-informed so the between-machine CIs separate providers). The synthetics run R=3, and
+		// PTS convergence is enabled on the two suites that converge cheaply and predictably: `memory`
+		// (STREAM, a tiny budget-safe loop) and `cpu-node` (CPU-bound, so DynamicRunCount settles near its
+		// ~3-pass minimum — no runaway). The rest keep a fixed count — convergence there re-introduces fio's
+		// runaway (disk), overran the budget live on modal-gvisor (system/SQLite, run #49), or breaks iperf's
+		// fixed-trial rule (network). cpu-generic is retired; pgbench is split out of system.
 		for (const name of [
 			"realworld-mastra",
 			"realworld-better-auth",
@@ -57,9 +57,9 @@ describe("suite registry", () => {
 			expect(SUITES[name].ptsTimesToRun).toBe(2);
 			expect(SUITES[name].defaultReplicas).toBe(3);
 		}
-		// Convergence is enabled only on memory — the one suite proven cheap, stable, and budget-safe.
+		// Convergence is enabled on the two suites that converge cheaply and predictably: cpu-node + memory.
 		const converging: string[] = SUITE_NAMES.filter((name) => (SUITES[name] as Suite).ptsConverge);
-		expect(converging).toEqual(["memory"]);
+		expect(converging.sort()).toEqual(["cpu-node", "memory"]);
 	});
 
 	it("mirrors each realworld suite's metrics from the generated catalog (no hand-drift)", () => {

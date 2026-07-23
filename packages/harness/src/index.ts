@@ -372,8 +372,8 @@ export async function runSuiteOnSandbox(
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
 	let suiteError: unknown;
 	try {
-		// Resolve the PTS pass policy from the suite's own default (converge only on `memory`; a fixed count
-		// on every other suite) and the BENCH_PTS_PASSES override. Constructed inside the
+		// Resolve the PTS pass policy from the suite's own default (converge on cpu-node + memory; a fixed
+		// count on every other suite) and the BENCH_PTS_PASSES override. Constructed inside the
 		// try so a bad policy (buildPreamble rejects a fixed k < 1) is still torn down by the finally below;
 		// a throw before the try would leak the already-created sandbox.
 		const runner = new StepRunner(sandbox, transport, undefined, resolvePtsPassPolicy(suite));
