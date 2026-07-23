@@ -21,7 +21,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Ensure candidate package is public
+    - name: Probe candidate package visibility
       shell: bash
       # Inputs reach the script as env (a composite `run` step gets no INPUT_* vars). The script does a
       # real fetch + JSON parse and reports via core.setFailed/warning so the outcome is a run annotation.

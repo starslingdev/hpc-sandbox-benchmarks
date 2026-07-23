@@ -1,4 +1,5 @@
 name: Commit dataset
+run-name: "Commit dataset — run ${{ inputs.run_id }}"
 
 # Aggregate a Bench matrix run's per-cell shards into one candidate, gate it (promote), and commit the
 # promoted dataset JSON onto main. This is the purely-mechanical half of the old publish-dataset.yml:

@@ -79,7 +79,7 @@ jobs:
       # Catalog drift gate — re-run the PTS catalog generator against the vendored profiles and fail
       # if the committed pts-generated.ts drifts (un-regenerated profile bump or a hand edit). Diffs
       # pts-generated.ts only; pts-overrides.ts curation is excluded.
-      - name: Catalog drift
+      - name: Check catalog drift
         run: bun run check:catalog-drift
 
       # Spelling gate — typos (pinned in mise.toml); misspellings fail the build.

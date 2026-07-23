@@ -103,12 +103,19 @@ jobs:
         run: |
           set -euo pipefail
           name="$(bun packages/templates/src/pins.ts | sed -n 's/^IMAGE_NAME=//p')"
+          # Fold the two noisiest commands (the PTS compile + the smoke boot) into collapsible log
+          # groups so the PR log stays scannable. Under `set -e` a failure leaves its group open, but
+          # the step still fails with the error inside it.
+          echo "::group::Build base image"
           bash packages/templates/images/build.sh
+          echo "::endgroup::"
           # build.sh tags the base locally as ${name}:dev — smoke that, no registry involved. Generate
           # the script in its own assignment first so a non-zero exit of the generator fails the job
           # (not swallowed inside docker's command substitution, which would smoke an empty script).
           smoke_script="$(bun packages/templates/src/smoke.ts --bash)"
+          echo "::group::Docker smoke"
           docker run --rm "${name}:dev" bash -lc "$smoke_script"
+          echo "::endgroup::"
       - name: Release summary
         if: always()
         uses: ./.github/actions/release-summary
@@ -161,7 +168,7 @@ jobs:
           force-republish: ${{ inputs.force_republish }}
       # The one privileged step in plan: the immutability probe (`docker manifest inspect`) needs a
       # GHCR session. GITHUB_TOKEN with packages: read suffices.
-      - name: GHCR session
+      - name: Log in to GHCR
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -224,7 +231,6 @@ jobs:
       contents: read
       packages: write
     outputs:
-      digest: ${{ steps.build.outputs.digest }}
       candidate-digest-ref: ${{ steps.build.outputs.candidate-digest-ref }}
     steps:
       - name: Checkout
@@ -236,7 +242,7 @@ jobs:
         uses: ./.github/actions/setup-toolchain
         with:
           buildx: "true"
-      - name: GHCR session
+      - name: Log in to GHCR
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -419,11 +425,11 @@ jobs:
         uses: ./.github/actions/setup-toolchain
         with:
           buildx: "true"
-      - name: GHCR session
+      - name: Log in to GHCR
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote candidate → version
+      - name: Revalidate + promote candidate
         id: promote
         env:
           REQUIRED: ${{ needs.plan.outputs.required }}

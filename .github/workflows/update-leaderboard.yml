@@ -1,4 +1,5 @@
 name: Update leaderboard
+run-name: "Update leaderboard — ${{ inputs.run_id || 'newest committed run' }}"
 
 # Regenerate the public LEADERBOARD.md from an ALREADY-COMMITTED dataset run and land it on main via a
 # pull request. This is the deliberate, human-facing half of the old publish-dataset.yml: commit-dataset.yml
@@ -100,7 +101,7 @@ jobs:
 
       # Keep LEADERBOARD.md byte-identical to what the renderer produces from the chosen committed Run —
       # the same command the leaderboard-artifact-sync gate names in its failure message.
-      - name: Regenerate leaderboard
+      - name: Render LEADERBOARD.md
         run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$TARGET_RUN_ID.json" LEADERBOARD.md
 
       # Fast pre-flight of the same gate the PR runs (`biome check .`), scoped to the file this job

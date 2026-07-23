@@ -1,4 +1,5 @@
 name: Bench smoke
+run-name: "Bench smoke — ${{ inputs.suite }} on ${{ inputs.provider }}"
 
 # Manually-dispatched live benchmark: spins up a real provider sandbox, runs one suite, normalizes
 # the result into a Run document, and uploads it as an artifact. Off the PR path (it costs real

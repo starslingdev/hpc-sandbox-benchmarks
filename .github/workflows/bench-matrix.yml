@@ -1,4 +1,5 @@
 name: Bench matrix
+run-name: "Bench matrix — suites: ${{ inputs.suites || 'all' }}, providers: ${{ inputs.providers || 'all' }}"
 
 # Fan the live benchmark out across the provider × suite matrix using GitHub's native reusable-workflow
 # nesting. `plan` emits both axes; a single suite-matrix job calls the reusable bench-suite.yml once per
@@ -82,7 +83,7 @@ jobs:
       # log through @actions/core (foldable groups + notices). An unregistered provider or suite name
       # fails the step, so a typo fails the plan instead of quietly publishing a dataset with it
       # missing or running nothing.
-      - name: Plan
+      - name: Plan providers + suites
         id: plan
         # The dispatch inputs reach the planners through the environment, never interpolated into the
         # shell, so a crafted input can't inject into the runner command.
