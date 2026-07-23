@@ -103,34 +103,52 @@ describe("sandbox preamble", () => {
 
 describe("resolvePtsPassPolicy", () => {
 	it("defaults to the suite's fixed count, or the harness default when the suite pins none", () => {
-		expect(resolvePtsPassPolicy(3, {})).toEqual({ mode: "fixed", times: 3 });
-		expect(resolvePtsPassPolicy(undefined, {})).toEqual({
+		expect(resolvePtsPassPolicy({ ptsTimesToRun: 3 }, {})).toEqual({ mode: "fixed", times: 3 });
+		expect(resolvePtsPassPolicy({}, {})).toEqual({
 			mode: "fixed",
 			times: DEFAULT_PTS_TIMES_TO_RUN,
 		});
 		// A blank/whitespace override is treated as unset, not an error.
-		expect(resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "  " })).toEqual({
+		expect(resolvePtsPassPolicy({ ptsTimesToRun: 2 }, { BENCH_PTS_PASSES: "  " })).toEqual({
 			mode: "fixed",
 			times: 2,
 		});
 	});
 
-	it("honors a converge override (any casing), ignoring the suite's fixed count", () => {
-		expect(resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "converge" })).toEqual({ mode: "converge" });
-		expect(resolvePtsPassPolicy(5, { BENCH_PTS_PASSES: "Converge" })).toEqual({ mode: "converge" });
+	it("converges by default for a suite that declares ptsConverge", () => {
+		// The synthetic suites carry ptsConverge — a bare run hands their pass count to PTS's convergence.
+		expect(resolvePtsPassPolicy({ ptsConverge: true, ptsTimesToRun: 2 }, {})).toEqual({
+			mode: "converge",
+		});
 	});
 
-	it("honors a numeric override, overriding every suite's configured count", () => {
-		expect(resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "10" })).toEqual({
+	it("honors a converge override (any casing), forcing it even on a fixed suite", () => {
+		expect(resolvePtsPassPolicy({ ptsTimesToRun: 2 }, { BENCH_PTS_PASSES: "converge" })).toEqual({
+			mode: "converge",
+		});
+		expect(resolvePtsPassPolicy({ ptsTimesToRun: 5 }, { BENCH_PTS_PASSES: "Converge" })).toEqual({
+			mode: "converge",
+		});
+	});
+
+	it("honors a numeric override, overriding a suite's converge default", () => {
+		// A dispatch pinning a fixed count wins over the suite's own converge policy.
+		expect(resolvePtsPassPolicy({ ptsConverge: true }, { BENCH_PTS_PASSES: "10" })).toEqual({
 			mode: "fixed",
 			times: 10,
 		});
 	});
 
 	it("throws on an override that is neither converge nor a positive integer", () => {
-		expect(() => resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "lots" })).toThrow(/BENCH_PTS_PASSES/);
-		expect(() => resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "0" })).toThrow(/positive integer/);
-		expect(() => resolvePtsPassPolicy(2, { BENCH_PTS_PASSES: "2.5" })).toThrow(/positive integer/);
+		expect(() => resolvePtsPassPolicy({ ptsTimesToRun: 2 }, { BENCH_PTS_PASSES: "lots" })).toThrow(
+			/BENCH_PTS_PASSES/,
+		);
+		expect(() => resolvePtsPassPolicy({ ptsTimesToRun: 2 }, { BENCH_PTS_PASSES: "0" })).toThrow(
+			/positive integer/,
+		);
+		expect(() => resolvePtsPassPolicy({ ptsTimesToRun: 2 }, { BENCH_PTS_PASSES: "2.5" })).toThrow(
+			/positive integer/,
+		);
 	});
 });
 

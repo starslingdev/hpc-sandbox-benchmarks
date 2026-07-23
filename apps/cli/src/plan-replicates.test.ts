@@ -76,7 +76,7 @@ describe("parseReplicasOverride", () => {
 
 describe("replicaCountForSuite", () => {
 	it("uses the suite's schema default when no override is given", () => {
-		expect(replicaCountForSuite("realworld-mastra")).toBe(5);
+		expect(replicaCountForSuite("realworld-mastra")).toBe(12);
 		expect(replicaCountForSuite("cpu-node")).toBe(3);
 	});
 

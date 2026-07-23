@@ -98,11 +98,15 @@ without being Daytona-specific.
    `plan-replicates`), then one suite-matrix job calls the reusable `bench-suite` workflow per suite
    (GitHub-native nesting: `<suite> / <provider> (replicate N)`), fanning out over the selected
    providers × that suite's replicate sandboxes; every `(provider, suite, replicate)` cell uploads its
-   shard Run as an artifact. Two axes are the statistical knobs — **replicates** (R sandboxes per cell,
-   the between-machine axis: `replicas` blank = each suite's `Suite.defaultReplicas`, or a number to
-   override every suite) and **PTS passes** (the within-machine axis: `pts_passes` blank = each suite's
-   fixed count, a number, or `converge` to let PTS's own statistical convergence decide). Both default
-   to the per-suite schema config, so a bare dispatch reproduces the configured run.
+   shard Run as an artifact. Two axes are the statistical knobs, both defaulting to the per-suite schema
+   config so a bare dispatch is already powered for tight, non-overlapping intervals:
+   - **replicates** — R sandboxes per cell, the between-machine axis (`replicas` blank = each suite's
+     `Suite.defaultReplicas`: synthetic R=3, realworld **R=12**, sized from the committed dataset's
+     observed between-machine variance so realworld provider CIs separate; a number overrides every suite).
+   - **PTS passes** — the within-machine axis (`pts_passes` blank = each suite's own policy: the synthetic
+     suites **converge** via PTS's `DynamicRunCount`, while the realworld suites run one fixed cold-start
+     pass — the install/build IS the metric, so their spread is carried by replicates, not in-sandbox
+     repeats; a number or `converge` forces one policy across every suite).
 3. **Aggregate → promote → commit** — the `commit-dataset` workflow (the matrix's `publish` job calls
    it) collects every shard, `aggregate`s them into one candidate Run (measured metrics unioned, the ≥2
    replicate sandboxes of one `(provider, suite)` folded into per-metric replicate breakdowns, economics

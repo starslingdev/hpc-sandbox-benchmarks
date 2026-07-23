@@ -194,36 +194,51 @@ export const DEFAULT_PTS_PASS_POLICY: PtsPassPolicy = {
 /** The literal token the `BENCH_PTS_PASSES` override uses to request PTS's convergence logic. */
 export const PTS_CONVERGE_TOKEN = "converge";
 
+/** The slice of a suite {@link resolvePtsPassPolicy} reads to pick its pass policy — its fixed count and
+ *  whether it converges by default. Structural so the harness needn't import the whole `Suite` type. */
+export interface SuitePassConfig {
+	readonly ptsTimesToRun?: number;
+	readonly ptsConverge?: boolean;
+}
+
 /**
- * Resolve the {@link PtsPassPolicy} for a run from the suite's configured fixed count and the
+ * Resolve the {@link PtsPassPolicy} for a run from the suite's own default policy and the
  * `BENCH_PTS_PASSES` override (read from `env`, defaulting to `process.env` — the same env-driven seam
  * {@link buildPreamble} uses for `BENCH_PASSES`). Precedence, most specific first:
  *
- *  - `BENCH_PTS_PASSES=converge` (any casing) → converge mode (let PTS's DynamicRunCount decide).
- *  - `BENCH_PTS_PASSES=<n>` (a positive integer) → fixed at that many passes, overriding every suite.
- *  - unset/blank → the suite's own `ptsTimesToRun` (fixed), or {@link DEFAULT_PTS_TIMES_TO_RUN}.
+ *  - `BENCH_PTS_PASSES=converge` (any casing) → converge, forced on EVERY suite (the global override).
+ *  - `BENCH_PTS_PASSES=<n>` (a positive integer) → fixed at that many passes, forced on every suite.
+ *  - unset/blank → the suite's OWN default: `converge` where the suite declares {@link SuitePassConfig.ptsConverge}
+ *    (the synthetic suites), else fixed at its `ptsTimesToRun` (or {@link DEFAULT_PTS_TIMES_TO_RUN}).
  *
- * A non-empty override that is neither `converge` nor a positive integer THROWS, so a typo'd dispatch
- * input fails the run loudly instead of silently reverting to the default pass count.
+ * So a bare run converges the suites built to converge (synthetic) while the realworld suites keep their
+ * single fixed cold-start pass, and a dispatch can still force one policy across the board. A non-empty
+ * override that is neither `converge` nor a positive integer THROWS, so a typo'd dispatch input fails the
+ * run loudly instead of silently reverting.
  */
 export function resolvePtsPassPolicy(
-	suiteTimesToRun: number | undefined,
+	suite: SuitePassConfig,
 	env: Record<string, string | undefined> = process.env,
 ): PtsPassPolicy {
 	const raw = (env.BENCH_PTS_PASSES ?? "").trim();
-	if (raw === "") {
-		return { mode: "fixed", times: suiteTimesToRun ?? DEFAULT_PTS_TIMES_TO_RUN };
+	if (raw !== "") {
+		// The dispatch override wins over the suite's own default policy, on every suite.
+		if (raw.toLowerCase() === PTS_CONVERGE_TOKEN) {
+			return { mode: "converge" };
+		}
+		const times = Number(raw);
+		if (!Number.isInteger(times) || times < 1) {
+			throw new Error(
+				`BENCH_PTS_PASSES must be a positive integer or "${PTS_CONVERGE_TOKEN}"; got "${raw}"`,
+			);
+		}
+		return { mode: "fixed", times };
 	}
-	if (raw.toLowerCase() === PTS_CONVERGE_TOKEN) {
+	// No override: the suite's own policy.
+	if (suite.ptsConverge) {
 		return { mode: "converge" };
 	}
-	const times = Number(raw);
-	if (!Number.isInteger(times) || times < 1) {
-		throw new Error(
-			`BENCH_PTS_PASSES must be a positive integer or "${PTS_CONVERGE_TOKEN}"; got "${raw}"`,
-		);
-	}
-	return { mode: "fixed", times };
+	return { mode: "fixed", times: suite.ptsTimesToRun ?? DEFAULT_PTS_TIMES_TO_RUN };
 }
 
 /**

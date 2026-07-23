@@ -34,8 +34,21 @@ export interface Suite {
 	 * In-sandbox repeat count (k): how many timed PTS passes each case runs (FORCE_TIMES_TO_RUN), threaded
 	 * into the harness preamble. Absent → the harness default ({@link DEFAULT_PTS_TIMES_TO_RUN}, k=2).
 	 * Captures WITHIN-machine noise cheaply; between-machine variance is the {@link defaultReplicas} axis.
+	 * Ignored when {@link ptsConverge} is set (convergence chooses the count itself); still the documented
+	 * fixed fallback the suite would use if convergence were turned off.
 	 */
 	ptsTimesToRun?: number;
+	/**
+	 * Let PTS's own statistical convergence (DynamicRunCount) choose the in-sandbox pass count instead of
+	 * pinning it to {@link ptsTimesToRun}: run a minimum, then keep going while the standard deviation
+	 * across passes exceeds PTS's threshold, up to PTS's cap. This is the WITHIN-machine tightening knob —
+	 * the default for the synthetic suites, where repeating a fixed workload converges cheaply. The
+	 * realworld suites deliberately leave this off: their measured phase is a cold install/build (k=1, the
+	 * cold-start IS the metric), so between-machine spread is captured by {@link defaultReplicas} replicate
+	 * sandboxes, not by re-running the install inside one sandbox. The `pts_passes` dispatch input
+	 * (BENCH_PTS_PASSES) overrides this per run — a fixed number, or `converge` to force it everywhere.
+	 */
+	ptsConverge?: boolean;
 	/**
 	 * Replicate sandboxes (R) to run per (provider, suite) — the between-sandbox axis the CI matrix fans
 	 * out. R replicates capture host placement / noisy-neighbour variance the in-sandbox repeats can't.
@@ -70,11 +83,13 @@ export const SUITES = {
 	"cpu-node": {
 		setupPts: true,
 		setupNode: true,
-		// Long-synthetic tier: k=2 in-sandbox passes × R=3 replicate sandboxes (n = 6 per case). Budgets
-		// are provisional ceilings re-derived after a calibration dispatch.
+		// Long-synthetic tier: PTS converges the in-sandbox passes (within-machine) × R=3 replicate
+		// sandboxes (between-machine). Budgets are provisional ceilings re-derived after a calibration
+		// dispatch; ptsTimesToRun (k=2) is the documented fixed fallback if convergence is turned off.
 		commandTimeoutMinutes: 60,
 		timeoutMinutes: 70,
 		ptsTimesToRun: 2,
+		ptsConverge: true,
 		defaultReplicas: 3,
 		// cpu-node runs only `benchmark:cpu:node` (node-web-tooling); it is the sole cpu-dimension suite.
 		dimensions: ["cpu"],
@@ -84,13 +99,14 @@ export const SUITES = {
 	// The system dimension (pybench + sqlite + git): PyBench (Python interpreter) + SQLite Speedtest
 	// (single-result wildcards) + common Git operations over a fixed GTK checkout. PostgreSQL (pgbench)
 	// is its own leg below — split out so its ~1.5 GB dataset and long runtime don't gate the quick
-	// system probes. Long-synthetic tier (k=2, R=3).
+	// system probes. Long-synthetic tier (PTS converges in-sandbox; R=3).
 	system: {
 		setupPts: true,
 		commandTimeoutMinutes: 55,
 		timeoutMinutes: 65,
 		minDiskGb: 5,
 		ptsTimesToRun: 2,
+		ptsConverge: true,
 		defaultReplicas: 3,
 		dimensions: ["system"],
 		metrics: ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
@@ -101,13 +117,14 @@ export const SUITES = {
 	// (same topology on every provider). At k=2 it makes four timed passes (two per mode), each with its
 	// own scale-100 `pgbench -i`; that and the ~1.5 GB dataset set the budget and disk floor. Requires the
 	// baked image (postgres pre-built, libicu-dev present); on a stock image the from-source postgres
-	// build lands inside this budget too. Long-synthetic tier (k=2, R=3).
+	// build lands inside this budget too. Long-synthetic tier (PTS converges in-sandbox; R=3).
 	pgbench: {
 		setupPts: true,
 		commandTimeoutMinutes: 75,
 		timeoutMinutes: 85,
 		minDiskGb: 5,
 		ptsTimesToRun: 2,
+		ptsConverge: true,
 		defaultReplicas: 3,
 		dimensions: ["system"],
 		metrics: [
@@ -119,13 +136,15 @@ export const SUITES = {
 		commands: ["mise run benchmark:pgbench:all"],
 	},
 	// The memory dimension: STREAM (Copy/Scale/Add/Triad). Short — STREAM runs in a couple of minutes.
-	// Long-synthetic tier (k=2, R=3): three replicate sandboxes capture the between-machine bandwidth
-	// spread STREAM Copy is notorious for under noisy virtualization.
+	// Long-synthetic tier (PTS converges in-sandbox; R=3): three replicate sandboxes capture the
+	// between-machine bandwidth spread STREAM Copy is notorious for under noisy virtualization (STREAM's
+	// between-machine CV is the highest of the synthetics, so R=3 leaves it the widest-interval headline).
 	memory: {
 		setupPts: true,
 		commandTimeoutMinutes: 30,
 		timeoutMinutes: 40,
 		ptsTimesToRun: 2,
+		ptsConverge: true,
 		defaultReplicas: 3,
 		dimensions: ["memory"],
 		metrics: ["stream_type_copy", "stream_type_scale", "stream_type_add", "stream_type_triad"],
@@ -146,6 +165,7 @@ export const SUITES = {
 		timeoutMinutes: 75,
 		minDiskGb: 4,
 		ptsTimesToRun: 2,
+		ptsConverge: true,
 		defaultReplicas: 3,
 		dimensions: ["disk"],
 		metrics: [
@@ -179,12 +199,13 @@ export const SUITES = {
 	// daytona-vm/novita/blaxel died in the memory watchdog and the surviving numbers were
 	// buffer-fill transients); the old leaves and profiles stay runnable manually via
 	// benchmark:network:all. The suite task also runs latency/DNS and a small GitHub
-	// control-download probe as raw provenance. Long-synthetic tier (k=2, R=3).
+	// control-download probe as raw provenance. Long-synthetic tier (PTS converges in-sandbox; R=3).
 	network: {
 		setupPts: true,
 		commandTimeoutMinutes: 30,
 		timeoutMinutes: 40,
 		ptsTimesToRun: 2,
+		ptsConverge: true,
 		defaultReplicas: 3,
 		dimensions: ["network"],
 		metrics: [
@@ -198,9 +219,13 @@ export const SUITES = {
 	},
 	// The realworld dimension (ENG-135/136/137/138): real OSS repos run through their own CI tasks,
 	// each a repo-local PTS profile with a Task option axis. Real-world tier: k=1 in-sandbox pass (the
-	// cold-start IS the metric) × R=5 replicate sandboxes (n = 5 per case) — replicas, not repeats,
-	// carry the between-machine variance users actually experience. Budgets are provisional ceilings
-	// re-derived after a calibration dispatch. mastra's task matrix is the narrowest (scoped to
+	// cold-start IS the metric — NO in-sandbox convergence; re-running the install inside one sandbox
+	// isn't a cold install) × R=12 replicate sandboxes (n = 12 per case) — replicas, not repeats, carry
+	// the between-machine variance users actually experience. R was raised 5→12 from the committed
+	// dataset's between-run variance: at R=5 the headline cold-install/build metrics' 95% CI half-width
+	// ran ~8% (median) to ~18% (p75 of metric×provider series); R=12 brings that to ~5%/~11%, separating
+	// providers that differ by more than ~12% (near-ties under ~5% stay ties at any practical R). Budgets
+	// are provisional ceilings re-derived after a calibration dispatch. mastra's task matrix is the narrowest (scoped to
 	// packages/core) but its monorepo has the largest install/build footprint — hence the biggest
 	// minDiskGb. better-auth and openclaw run their full task matrices including a cold pnpm install
 	// and a full build.
@@ -211,7 +236,7 @@ export const SUITES = {
 		timeoutMinutes: 90,
 		minDiskGb: 30,
 		ptsTimesToRun: 1,
-		defaultReplicas: 5,
+		defaultReplicas: 12,
 		dimensions: ["realworld"],
 		metrics: [
 			"realworld_mastra_task_git_clone",
@@ -233,7 +258,7 @@ export const SUITES = {
 		timeoutMinutes: 90,
 		minDiskGb: 10,
 		ptsTimesToRun: 1,
-		defaultReplicas: 5,
+		defaultReplicas: 12,
 		dimensions: ["realworld"],
 		metrics: [
 			"realworld_better_auth_task_git_clone",
@@ -256,7 +281,7 @@ export const SUITES = {
 		timeoutMinutes: 90,
 		minDiskGb: 25,
 		ptsTimesToRun: 1,
-		defaultReplicas: 5,
+		defaultReplicas: 12,
 		dimensions: ["realworld"],
 		metrics: [
 			"realworld_openclaw_task_git_clone",

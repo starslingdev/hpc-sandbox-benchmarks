@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { Suite } from "./index.ts";
 import { METRIC_CATALOG, paddedSuiteToken, padSuiteList, SUITE_NAMES, SUITES } from "./index.ts";
 // Not part of the public surface (curation is an implementation detail of the catalog merge); this
 // PR's pinned-subset test reaches in directly to compare its suite's declarations against curated keys.
@@ -32,12 +33,24 @@ describe("suite registry", () => {
 		]);
 	});
 
-	it("declares the per-tier in-sandbox repeat count (k) and replicate count (R)", () => {
-		// Real-world captures cold-start once (k=1) across more sandboxes (R=5); the long synthetics take
-		// two in-sandbox passes (k=2) across R=3. cpu-generic is retired; pgbench is split out of system.
-		expect(SUITES["realworld-mastra"].ptsTimesToRun).toBe(1);
-		expect(SUITES["realworld-mastra"].defaultReplicas).toBe(5);
+	it("declares the per-tier pass policy and replicate count (R)", () => {
+		// Real-world captures cold-start once (k=1, no in-sandbox convergence) across many sandboxes
+		// (R=12, data-informed so the between-machine CIs separate providers); the long synthetics let PTS
+		// converge the in-sandbox passes across R=3. cpu-generic is retired; pgbench is split out of system.
+		for (const name of [
+			"realworld-mastra",
+			"realworld-better-auth",
+			"realworld-openclaw",
+		] as const) {
+			// Suite-typed view: the realworld literals omit ptsConverge entirely (satisfies narrows the
+			// const), so read it through the interface to assert it stays off — realworld does NOT converge.
+			const suite: Suite = SUITES[name];
+			expect(suite.ptsTimesToRun).toBe(1);
+			expect(suite.ptsConverge).toBeUndefined();
+			expect(suite.defaultReplicas).toBe(12);
+		}
 		for (const name of ["cpu-node", "system", "pgbench", "memory", "disk", "network"] as const) {
+			expect(SUITES[name].ptsConverge).toBe(true);
 			expect(SUITES[name].ptsTimesToRun).toBe(2);
 			expect(SUITES[name].defaultReplicas).toBe(3);
 		}
