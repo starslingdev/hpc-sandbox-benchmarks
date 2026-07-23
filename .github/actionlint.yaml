@@ -3,10 +3,10 @@
 # without them actionlint flags every `runs-on:` as an unknown label. Keep this list in sync with the
 # labels used across .github/workflows/.
 #
-# `-2` is the default for the I/O-bound majority of jobs; `-16` is for the jobs whose wall time is
+# `-2` is the default for the I/O-bound majority of jobs; `-8` is for the jobs whose wall time is
 # dominated by a parallel compile (the toolchain base-image build, where PTS builds its benchmark
 # profiles from source).
 self-hosted-runner:
   labels:
     - starsling-ubuntu-24.04-2
-    - starsling-ubuntu-24.04-16
+    - starsling-ubuntu-24.04-8
