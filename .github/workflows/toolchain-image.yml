@@ -73,12 +73,13 @@ jobs:
   pr-gate:
     name: Build base + docker smoke
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    # 16 cores, not the repo-standard 2: this job runs a real base-image build, whose dominant cost is
+    # 8 vCPUs, not the repo-standard 2: this job runs a real base-image build, whose dominant cost is
     # `phoronix-test-suite batch-install` compiling the benchmark profiles from source. That compile is
     # embarrassingly parallel (the PTS profile installers build with `make -j$(nproc)`), so it scales
     # with cores where the rest of the release — which only waits on registries and provider APIs — does
-    # not. Only this job and `build` do local compute; the others stay on the 2-core standard.
-    runs-on: starsling-ubuntu-24.04-16
+    # not. Only this job and `build` do local compute; the others stay on the 2-core standard. The 16-core
+    # runner scaled the compile better still, but its queue times were prohibitive, so we run on 8.
+    runs-on: starsling-ubuntu-24.04-8
     # Every job caps its wall time. The default is GitHub's 6-hour ceiling, and each of these jobs makes
     # calls that can hang rather than fail (a registry pull, a provider SDK, a remote builder) — a hang
     # would otherwise hold a self-hosted runner for hours. Sized to a few times the observed run.
@@ -213,9 +214,9 @@ jobs:
     name: Build + push candidate
     needs: plan
     if: needs.plan.outputs.skip != 'true'
-    # 16 cores — the same compile-bound base-image build as pr-gate (see the note there), and it sits on
+    # 8 vCPUs — the same compile-bound base-image build as pr-gate (see the note there), and it sits on
     # the critical path of every release: nothing bakes until the candidate is pushed.
-    runs-on: starsling-ubuntu-24.04-16
+    runs-on: starsling-ubuntu-24.04-8
     # The heavy phase: a full base-image build (apt, mise, the PTS install) plus the push.
     timeout-minutes: 60
     environment: privileged
