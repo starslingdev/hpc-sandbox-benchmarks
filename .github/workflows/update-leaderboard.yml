@@ -101,11 +101,15 @@ jobs:
       - name: Regenerate leaderboard
         run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$TARGET_RUN_ID.json" LEADERBOARD.md
 
-      # Fast pre-flight of the same gate the PR runs (`biome check .`), scoped to the file this job
-      # writes. Biome leaves the rendered Markdown untouched, so this catches only a genuine formatting
-      # regression; fail here (before any PR is opened) rather than leave a doomed PR.
+      # Pre-flight the exact gate the PR must pass — `biome check . --error-on-warnings`, the same
+      # command ci.yml's lint job runs — so a genuine formatting/lint regression fails here, before any
+      # PR is opened, rather than leaving a doomed PR. This MUST be the repo-wide invocation, NOT
+      # `biome check LEADERBOARD.md`: Biome has no Markdown handler under this config (files.ignoreUnknown),
+      # so handing it only the rendered Markdown makes it process zero files and exit non-zero
+      # ("No files were processed in the specified paths") — which failed every dispatch of this job. The
+      # repo-wide check simply skips LEADERBOARD.md, exactly as the PR's lint gate does.
       - name: Confirm the leaderboard passes Biome (the PR lint gate)
-        run: bunx biome check LEADERBOARD.md --error-on-warnings
+        run: bunx biome check . --error-on-warnings
 
       # main is protected by a "changes must be made through a pull request" ruleset, so this job can't
       # push LEADERBOARD.md straight to main — a direct push is rejected with GH013. Commit through a
