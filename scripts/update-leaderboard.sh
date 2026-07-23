@@ -21,9 +21,17 @@ REF="main"
 
 RUN_ID="${1:-}"
 # Optional, but if given it must be a numeric GitHub run id (blank = newest committed run).
+#
+# COMPOSITE runs are deliberately out of scope here. The dataset can hold a Run spliced from two CI
+# runs, named `<baseRunId>+<otherRunId>` (see data/dataset/index.json) — an id no GitHub run has, so
+# this dispatch wrapper rejects it. update-leaderboard.yml itself has no such constraint: render a
+# composite from the Actions UI (Actions -> Update leaderboard -> Run workflow), or locally with
+#   bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md
 if [ -n "$RUN_ID" ] && ! printf '%s' "$RUN_ID" | grep -qE '^[0-9]+$'; then
   echo "run-id must be a numeric GitHub run id when provided (got '${RUN_ID}')" >&2
   echo "Usage: scripts/update-leaderboard.sh [run-id]   (omit to render from the newest committed run)" >&2
+  echo "Composite run ids (<runA>+<runB>) are not dispatchable here — use the Actions UI or render" >&2
+  echo "locally: bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md" >&2
   exit 2
 fi
 
