@@ -38,6 +38,11 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	blaxel: async (_image, log) => {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},
+	// Box has no custom-image upload (one curated platform image; customization is the fork pattern).
+	// The adapter boots the stock image and setup steps install the toolchain, like Blaxel.
+	"ascii-box": async (_image, log) => {
+		log("ascii-box boots the stock platform image — no candidate artifact to bake");
+	},
 	novita: (image, log) => bakeNovitaTemplate(config.novitaTemplateCandidate, image, log),
 };
 

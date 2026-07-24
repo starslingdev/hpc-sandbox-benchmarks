@@ -18,7 +18,8 @@ export type ProviderId =
 	| "modal-gvisor"
 	| "modal-vm"
 	| "blaxel"
-	| "novita";
+	| "novita"
+	| "ascii-box";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -394,6 +395,49 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// options applies the E2B SDK's default 60s command timeout, and onStdout/onStderr are never
 			// passed through. The compat API exposes the same filesystem + `background`, so detached+poll
 			// is the long-step path.
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
+	"ascii-box": {
+		displayName: "Ascii Box",
+		website: "https://box.ascii.dev",
+		// No @computesdk/* wrapper exists for Box; the harness adapter (packages/providers
+		// ascii-box.ts) drives the public REST API (create/get/list/stop/sshkey) directly and execs
+		// over SSH. The REST exec endpoint is capped at 60s per command, so SSH is the exec channel.
+		sdkPackage: "none (local REST+SSH adapter)",
+		requiredEnvVars: ["BOX_API_KEY"],
+		isolation: {
+			technology: "dedicated VM (Hetzner CX33)",
+			notes:
+				"Each box is a full KVM VM (not a microVM or container share of one): a Hetzner Cloud CX33 instance — 4 SHARED vCPUs, 8 GiB RAM, 75 GB local NVMe (~55 GiB free after the base image), x86_64, EU regions. One fixed machine size: the vCPU/RAM target matches it exactly; disk exceeds the 40 GB target and is recorded as actuals (disk is a workload-capacity gate, not a ranking axis). vCPUs are Hetzner shared cores, so sustained all-core load contends with neighbours — read CPU-bound ranks with that in mind.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// Flat $0.00001/s per box while running ($0.036/hr at the only size), billed per second;
+			// stopped boxes are free. There is no per-vCPU/per-GiB rate card, so the flat rate is
+			// normalized to $0.009/vCPU-hr × 4 vCPU with memory at $0 — hourlyCostAtTargetSpec lands
+			// exactly on the published $0.036/hr rather than inventing a memory price.
+			usdPerVcpuHour: 0.009,
+			notes:
+				"Published flat rate (exact): $0.00001/s machine time per box ($0.036/hr), per-second billing while running, stopped boxes free. One machine size only (4 shared vCPU / 8 GiB / 75 GB NVMe). Includes dedicated IPv4, 50 GB snapshot storage, 2 TB egress/box/mo. Normalized as $0.009/vCPU-hr + $0/GiB-hr to reproduce the flat rate at the target spec.",
+			sourceUrl: "https://docs.ascii.dev/box/billing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Local REST+SSH adapter (no @computesdk wrapper). Boxes are created with ttlSeconds:null (no auto-stop) and noEnv:true (no account secrets injected). Teardown = stop: user-initiated hard delete is disabled platform-side, so stopped boxes are archived (free) rather than destroyed.",
+		},
+		// One fixed machine size; nothing is settable per-create. The vCPU/RAM target lands exactly on
+		// the only size, so specMatched covers the pair without a comparability caveat.
+		specPinning: "fixed",
+		transport: {
+			// Exec runs over SSH (the REST exec endpoint caps at 60s/command, unusable for suite
+			// steps). A raw SSH round-trip has no server-side cap, but a multi-minute step on one TCP
+			// connection is one dropped session away from losing the whole suite, so steps budgeted
+			// past 60s take the detached+poll path (nohup double-fork + done-file poll over SSH),
+			// which survives reconnects. No incremental stdout streaming either way.
 			streaming: false,
 			syncCapMs: 60_000,
 			detachedPoll: true,

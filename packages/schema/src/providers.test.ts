@@ -22,6 +22,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		// Deliberately hardcoded: downstream tests (e.g. results' normalizeResultsTree) assert their
 		// output against PROVIDERS, so this pin is what makes an accidental registry removal loud.
 		expect(PROVIDERS.map((p) => p.id).sort()).toEqual([
+			"ascii-box",
 			"blaxel",
 			"daytona-container",
 			"daytona-vm",

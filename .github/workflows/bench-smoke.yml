@@ -11,7 +11,7 @@ on:
         description: Provider to benchmark
         type: choice
         default: daytona-vm
-        options: [daytona-vm, daytona-container, e2b, modal-gvisor, modal-vm, blaxel, novita]
+        options: [daytona-vm, daytona-container, e2b, modal-gvisor, modal-vm, blaxel, novita, ascii-box]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
@@ -124,6 +124,7 @@ jobs:
           BL_API_KEY: ${{ inputs.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ inputs.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ inputs.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          BOX_API_KEY: ${{ inputs.provider == 'ascii-box' && secrets.BOX_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results

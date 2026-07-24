@@ -10,6 +10,7 @@ import { modal } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions } from "computesdk";
+import { asciiBoxCompute } from "./ascii-box.ts";
 import { blaxelWithVolumeAndKeepAlive } from "./blaxel-volume.ts";
 import type { DaytonaConfig } from "./config.ts";
 import { config } from "./config.ts";
@@ -133,5 +134,14 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// template name); cpu/memory are pinned at template create, not per-sandbox.
 		createCompute: () => novitaCompute(config.novita.apiKey),
 		createOptions: { snapshotId: config.novitaTemplate },
+	},
+	"ascii-box": {
+		// Box (box.ascii.dev) — a local REST+SSH adapter (no @computesdk wrapper): boxes boot the
+		// platform's single machine size (4 shared vCPU / 8 GiB / 75 GB NVMe, the vCPU/RAM target
+		// exactly) with no auto-stop and no account env. Setup steps install the toolchain on the
+		// stock Ubuntu image (same stock-image path as Blaxel — no baked template). Credentials come
+		// from BOX_API_KEY; read lazily from process.env like the e2b/blaxel factories.
+		createCompute: () => asciiBoxCompute(process.env.BOX_API_KEY),
+		createOptions: {},
 	},
 };

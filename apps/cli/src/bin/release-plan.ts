@@ -59,6 +59,8 @@ function providerArtifact(id: ProviderId): string {
 			return "boots the candidate image directly (no baked artifact)";
 		case "blaxel":
 			return "boots the stock base image (no baked artifact)";
+		case "ascii-box":
+			return "boots the stock platform image (no baked artifact)";
 	}
 }
 

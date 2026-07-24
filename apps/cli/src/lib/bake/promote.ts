@@ -148,6 +148,9 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 				case "blaxel":
 					log("    blaxel boots the stock base image — nothing to promote");
 					break;
+				case "ascii-box":
+					log("    ascii-box boots the stock platform image — nothing to promote");
+					break;
 				case "novita":
 					await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedCandidateImage, (m) =>
 						log(`    ${m}`),

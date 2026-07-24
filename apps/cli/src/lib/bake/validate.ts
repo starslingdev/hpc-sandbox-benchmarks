@@ -47,6 +47,9 @@ export function candidateCreateOptions(
 		case "blaxel":
 			// Stock base image — no candidate artifact to point at.
 			return {};
+		case "ascii-box":
+			// Stock platform image — no candidate artifact to point at (fork-based templates only).
+			return {};
 		case "novita":
 			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.
 			return { snapshotId: refs.novitaTemplateCandidate };
