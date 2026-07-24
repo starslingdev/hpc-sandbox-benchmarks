@@ -114,11 +114,17 @@ export function setupSteps(suite: Suite): SetupStep[] {
 		// Best-effort lets a healthy baked image proceed when a provider cannot reach its distro mirror.
 		// The package list is the canonical PTS_APT_DEPS from the schema toolchain contract — the shell
 		// consumers (00-apt.sh, lib/bench.sh) are gated against the same constant by repo-checks.
+		// libasound2 became libasound2t64 on Ubuntu 24.04 (the 64-bit time_t transition), and ONE
+		// unresolvable package aborts the entire install — taking libaio-dev (fio) and stress-ng
+		// (hardlink) down with it on noble images — so resolve the right name with an install dry-run
+		// probe first (apt-cache show is not authoritative: a transitional record can exist with no
+		// install candidate).
 		steps.push({
 			label: "ensure PTS build deps + fresh apt index",
 			script:
 				"$SUDO apt-get -o Acquire::Retries=3 update -qq || true; " +
-				`$SUDO apt-get install -y -qq ${PTS_APT_DEPS} || echo "WARNING: apt dep refresh failed (best-effort); relying on the baked image"`,
+				"ALSA_PKG=$(apt-get install -y -qq --dry-run libasound2 >/dev/null 2>&1 && echo libasound2 || echo libasound2t64); " +
+				`$SUDO apt-get install -y -qq ${PTS_APT_DEPS.replace(/\blibasound2\b/, '"$ALSA_PKG"')} || echo "WARNING: apt dep refresh failed (best-effort); relying on the baked image"`,
 			timeoutMs: 15 * MIN,
 		});
 		steps.push({
