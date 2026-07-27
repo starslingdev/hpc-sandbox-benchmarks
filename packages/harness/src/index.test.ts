@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import type { Suite } from "@sandbox-benchmarks/schema";
-import { parseGapMarker } from "@sandbox-benchmarks/schema";
+import { parseGapMarker, sandboxFailureMarkerFile } from "@sandbox-benchmarks/schema";
 import {
 	benchmarkLifecycle,
 	createSuiteSandbox,
@@ -21,6 +21,7 @@ import {
 } from "./index.ts";
 import type { CommandResult, SandboxHandle } from "./lib/execute.ts";
 import type { LifecycleCompute } from "./lib/lifecycle.ts";
+import { READINESS_CMD } from "./lib/readiness.ts";
 
 // A transport capability for the test fixtures — capped-with-detach, matching a single-round-trip
 // provider; none of these tests exercise real exec, so the exact values are inert here.
@@ -300,6 +301,8 @@ function makeSandbox(opts: {
 	benchmarkFails?: boolean;
 	collectFails?: boolean;
 	collectFiles?: Record<string, string>;
+	/** Never answer the readiness probe — a sandbox whose image never finishes pulling. */
+	neverReady?: boolean;
 	destroyed: { hit: boolean };
 }): SandboxHandle {
 	// Results of detached steps, keyed by their /tmp/<tag> so the cat-polls can read them back.
@@ -320,6 +323,8 @@ function makeSandbox(opts: {
 		command.match(new RegExp(`/tmp/(bench-[0-9a-f-]+)\\.${ext}`))?.[1];
 	return {
 		async runCommand(command) {
+			// Readiness probe: issued raw (not through StepRunner), so it arrives unwrapped by the preamble.
+			if (command === READINESS_CMD) return { exitCode: opts.neverReady ? 1 : 0 };
 			// Detached launch (double-fork, so it carries nohup): compute the wrapped step's result and
 			// stash it under its tag for the cat-polls. The launch itself just acknowledges.
 			if (command.includes("nohup")) {
@@ -503,6 +508,35 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), resultsDir));
 		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(true);
 		expect(destroyed.hit).toBe(true);
+	});
+
+	it("fails a sandbox that never becomes ready, before charging the wait to the first step", async () => {
+		// The namespace regression: create() resolves while the image is still pulling, so the FIRST step
+		// absorbed the wait and reported it as its own timeout ("check free disk timed out after 60s" —
+		// nothing to do with disk). The readiness gate must own that wait and name it, and a sandbox that
+		// never answers must still be torn down and recorded as a failed cell, not a disk skip.
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const sandbox = makeSandbox({ destroyed, neverReady: true });
+		await expect(
+			runSuiteOnSandbox(sandbox, {
+				...ctx(suite({}), resultsDir),
+				readiness: {
+					maxAttempts: 3,
+					retryDelayMs: 0,
+					probeTimeoutMs: 5,
+					delay: () => Promise.resolve(),
+				},
+			}),
+		).rejects.toThrow(/never ready/);
+		expect(destroyed.hit).toBe(true);
+		const marker = join(resultsDir, sandboxFailureMarkerFile("daytona-vm", "cpu-node"));
+		expect(parseGapMarker(marker, JSON.parse(readFileSync(marker, "utf8")), "daytona-vm")).toEqual({
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "failed",
+			reason: expect.stringMatching(/never ready/),
+		});
 	});
 
 	it("tears the sandbox down when an invalid ptsTimesToRun (k < 1) fails preamble construction", async () => {

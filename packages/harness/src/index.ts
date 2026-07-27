@@ -11,6 +11,8 @@ import { MIN, resolvePtsPassPolicy, StepRunner, withTimeout } from "./lib/execut
 import { time } from "./lib/internal.ts";
 import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
+import type { WaitUntilReadyOptions } from "./lib/readiness.ts";
+import { neverReadyReason, waitUntilReady } from "./lib/readiness.ts";
 import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
 
 // Re-export the lifecycle measurement surface so consumers import it from the package root, never
@@ -346,6 +348,20 @@ export async function createSuiteSandbox(
 	}
 }
 
+/**
+ * Readiness budget for the suite path, which must cover a COLD IMAGE PULL and not just a container
+ * handshake: the toolchain image is ~1.5 GiB compressed across 7 layers, and a provider that pulls it
+ * at create time (Namespace) is fetching all of it while the harness holds a resolved handle. Sized
+ * generously in wall time because the alternative is a false failure on a sandbox that was merely slow
+ * to arrive, and it costs a ready provider exactly one probe. The lifecycle driver keeps its own
+ * tighter default — there, how long readiness takes is the measurement, not an obstacle.
+ */
+const SUITE_READINESS = {
+	maxAttempts: 30,
+	retryDelayMs: 2_000,
+	probeTimeoutMs: 20_000,
+} as const;
+
 /** The already-resolved context {@link runSuiteOnSandbox} runs against. */
 export interface SuiteRunContext {
 	suite: Suite;
@@ -354,6 +370,9 @@ export interface SuiteRunContext {
 	resultsDir: string;
 	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
 	transport: ProviderTransport;
+	/** Readiness budget override. Defaults to {@link SUITE_READINESS}; tests inject a fast one so a
+	 *  never-ready case doesn't really sleep out the live budget. */
+	readiness?: WaitUntilReadyOptions;
 }
 
 /**
@@ -378,6 +397,17 @@ export async function runSuiteOnSandbox(
 		// a throw before the try would leak the already-created sandbox.
 		const runner = new StepRunner(sandbox, transport, undefined, resolvePtsPassPolicy(suite));
 		runner.phase = "setup";
+		// Wait for the sandbox to become usable before the first real step. `create()` resolving means
+		// ALLOCATED, not ready: a provider that cold-pulls its image at create time (Namespace takes the
+		// toolchain OCI ref straight through `options.image` — it has no template to pre-bake) is still
+		// fetching image layers when its handle resolves, and an exec against a not-yet-running container
+		// hangs instead of erroring. Without this gate the pull is charged to whatever step happens to run
+		// first, which reports the pull as that step's timeout — a 60s "check free disk" failure that had
+		// nothing to do with disk. Pre-baked providers answer the first probe and pay one round-trip.
+		const readiness = ctx.readiness ?? SUITE_READINESS;
+		if (!(await waitUntilReady(sandbox, readiness))) {
+			throw new Error(neverReadyReason(readiness.maxAttempts ?? SUITE_READINESS.maxAttempts));
+		}
 		if (suite.minDiskGb) {
 			// Measure free space where the disk-heavy suites actually write, not the sandbox root. The
 			// heavy PTS data (realworld clones/builds, pgbench cluster, fio test files, installed-tests)
@@ -454,6 +484,14 @@ export async function runSuiteOnSandbox(
 				`Suite "${suiteName}" on ${providerName} produced no pts_*.xml — PTS likely failed silently`,
 			);
 		}
+	} catch (err) {
+		// Everything before the benchmark — the readiness gate, the disk probe, every setup step — used to
+		// throw straight past the marker-writing exit below, because only the benchmark and collect blocks
+		// recorded into `suiteError`. A cell that died in setup therefore left NO trace in the raw tree:
+		// the published Run could not tell "this provider broke during setup" from "never scheduled", and
+		// the job log was the only evidence. Route those throws through the same single exit; the disk
+		// gate's deliberate `return` (a skip, already marked) is untouched.
+		suiteError = err;
 	} finally {
 		await destroySandbox(sandbox);
 	}
