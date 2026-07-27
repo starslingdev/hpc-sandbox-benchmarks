@@ -21,9 +21,8 @@
 import type { Aggregates, HarnessMetricId, RawRun, ResultGap } from "@sandbox-benchmarks/schema";
 import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import { now as defaultNow, time } from "./internal.ts";
+import { neverReadyReason, waitUntilReady } from "./readiness.ts";
 
-/** The trivial command whose first successful (exitCode 0) return marks the sandbox ready. */
-const READINESS_CMD = "echo ok";
 /** Writes exactly 64KiB (65536 bytes) to stdout — exec overhead including output streaming. Uses `tr`
  *  rather than `base64` so the stream is exactly 64KiB, matching the metric's name (base64 expands the
  *  input ~33%, overstating the payload). */
@@ -166,26 +165,18 @@ export async function measureLifecycle(
 		// Readiness: retry a trivial exec until it returns exitCode 0 — the FIRST success marks a usable
 		// sandbox. cold_start (t0→ready) is the honest cold start spawn alone can't see; first_exec
 		// (create→ready) isolates the readiness wait. A probe that throws counts as not-ready and retries.
-		let readyAt: number | undefined;
-		for (let attempt = 1; attempt <= readinessMaxAttempts; attempt++) {
-			let ready = false;
-			try {
-				ready = (await sandbox.runCommand(READINESS_CMD)).exitCode === 0;
-			} catch {
-				ready = false;
-			}
-			if (ready) {
-				readyAt = clock();
-				break;
-			}
-			if (attempt < readinessMaxAttempts) await delay(readinessRetryDelayMs);
-		}
+		const ready = await waitUntilReady(sandbox, {
+			maxAttempts: readinessMaxAttempts,
+			retryDelayMs: readinessRetryDelayMs,
+			delay,
+		});
+		const readyAt = ready ? clock() : undefined;
 		if (readyAt === undefined) {
 			// Never went ready: record both readiness Metrics as FAILURES rather than fabricate a timing.
 			// The sandbox was spawned and probed to exhaustion and never came up — that is the loudest
 			// reliability signal this harness can produce, and calling it a "skip" would file it as a
 			// deliberate omission.
-			const reason = `sandbox never ready: no successful "${READINESS_CMD}" in ${readinessMaxAttempts} attempts`;
+			const reason = neverReadyReason(readinessMaxAttempts);
 			fail(HARNESS_METRIC_IDS.firstExec, reason);
 			fail(HARNESS_METRIC_IDS.coldStart, reason);
 		} else {
