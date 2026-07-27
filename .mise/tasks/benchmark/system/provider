@@ -40,9 +40,24 @@ RESULT_FILE="$(results_dir)/$(task_result_name).json"
 # non-empty garbage accepted here would short-circuit the remaining legs and yield no IP on a
 # working network.
 _first_ipv4() { tr -d '"' | grep -m1 -xE '[0-9]{1,3}(\.[0-9]{1,3}){3}' || true; }
-# Permissive on purpose (accepts some malformed colon runs): this only picks a candidate line out of
-# echo output; cymru_lookup's nibble expansion is the strict validator before anything is queried.
-_first_ipv6() { tr -d '"' | grep -m1 -xiE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' || true; }
+# A public egress address must be global unicast — 2000::/3, i.e. a leading hextet of four hex digits
+# starting with 2 or 3. Rejects the forms an echo leg can plausibly hand back that are NOT an egress
+# address: `::` (unspecified), `::1` (a proxy answering on loopback), fe80::/10 link-local, fc00::/7
+# ULA, ff00::/8 multicast, and ::ffff:0:0/96 v4-mapped. Deliberately tests only the leading hextet so
+# it needs no expansion and can run during discovery — _v6_nibbles is defined further down, after
+# PUBLIC_IP is already resolved, so it is not callable from here.
+_is_global_v6() { [[ "${1%%:*}" =~ ^[23][0-9a-fA-F]{3}$ ]]; }
+# Permissive line-picker (accepts some malformed colon runs) followed by the global-unicast filter.
+# The filter is what keeps a bad leg from ending discovery: a non-global echo must fall through to the
+# remaining legs rather than pin the whole identity to an address with no public egress. Scanning all
+# candidate lines (no -m1) means a diagnostic line preceding the real answer can't mask it either.
+# cymru_lookup's nibble expansion remains the strict structural validator before anything is queried.
+_first_ipv6() {
+	local line
+	tr -d '"' | grep -xiE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | while IFS= read -r line; do
+		_is_global_v6 "$line" && { printf '%s' "$line"; break; }
+	done
+}
 public_ip() {
 	# One family per probe run: every identity field (ASN, prefix, geo) must describe the SAME
 	# address. IPv4 legs run first; the IPv6 legs are a whole-identity fallback for sandboxes with no
@@ -85,6 +100,11 @@ _v6_nibbles() {
 	local ip="$1" left="" right="" hex="" group i
 	local -a lparts=() rparts=() groups=()
 	[[ "$ip" == *:* ]] || return 1
+	# Enforce the "global" half of this function's contract; the structural checks below enforce the
+	# "plain IPv6 address" half. Without it `::`, `::1` and fe80::/10 all expand happily, and a
+	# caller reaching here by some path other than _first_ipv6 would query Cymru for a non-egress
+	# address.
+	_is_global_v6 "$ip" || return 1
 	if [[ "$ip" == *"::"* ]]; then
 		left="${ip%%::*}"
 		right="${ip#*::}"
