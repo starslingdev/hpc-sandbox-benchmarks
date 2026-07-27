@@ -165,18 +165,18 @@ export async function measureLifecycle(
 		// Readiness: retry a trivial exec until it returns exitCode 0 — the FIRST success marks a usable
 		// sandbox. cold_start (t0→ready) is the honest cold start spawn alone can't see; first_exec
 		// (create→ready) isolates the readiness wait. A probe that throws counts as not-ready and retries.
-		const ready = await waitUntilReady(sandbox, {
+		const readiness = await waitUntilReady(sandbox, {
 			maxAttempts: readinessMaxAttempts,
 			retryDelayMs: readinessRetryDelayMs,
 			delay,
 		});
-		const readyAt = ready ? clock() : undefined;
+		const readyAt = readiness.ready ? clock() : undefined;
 		if (readyAt === undefined) {
 			// Never went ready: record both readiness Metrics as FAILURES rather than fabricate a timing.
 			// The sandbox was spawned and probed to exhaustion and never came up — that is the loudest
 			// reliability signal this harness can produce, and calling it a "skip" would file it as a
 			// deliberate omission.
-			const reason = neverReadyReason(readinessMaxAttempts);
+			const reason = neverReadyReason(readiness.attempts);
 			fail(HARNESS_METRIC_IDS.firstExec, reason);
 			fail(HARNESS_METRIC_IDS.coldStart, reason);
 		} else {

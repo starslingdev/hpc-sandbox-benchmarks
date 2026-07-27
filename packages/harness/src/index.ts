@@ -404,10 +404,8 @@ export async function runSuiteOnSandbox(
 		// hangs instead of erroring. Without this gate the pull is charged to whatever step happens to run
 		// first, which reports the pull as that step's timeout — a 60s "check free disk" failure that had
 		// nothing to do with disk. Pre-baked providers answer the first probe and pay one round-trip.
-		const readiness = ctx.readiness ?? SUITE_READINESS;
-		if (!(await waitUntilReady(sandbox, readiness))) {
-			throw new Error(neverReadyReason(readiness.maxAttempts ?? SUITE_READINESS.maxAttempts));
-		}
+		const readiness = await waitUntilReady(sandbox, ctx.readiness ?? SUITE_READINESS);
+		if (!readiness.ready) throw new Error(neverReadyReason(readiness.attempts));
 		if (suite.minDiskGb) {
 			// Measure free space where the disk-heavy suites actually write, not the sandbox root. The
 			// heavy PTS data (realworld clones/builds, pgbench cluster, fio test files, installed-tests)

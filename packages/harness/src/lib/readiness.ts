@@ -69,16 +69,29 @@ export function neverReadyReason(maxAttempts: number): string {
 	return `sandbox never ready: no successful "${READINESS_CMD}" in ${maxAttempts} attempts`;
 }
 
+/** The outcome of a readiness wait, including the bound actually probed. */
+export interface ReadinessResult {
+	ready: boolean;
+	/**
+	 * The EFFECTIVE attempt bound — post-normalization, so it is what was really probed rather than
+	 * what the caller asked for. Callers report this in {@link neverReadyReason}: a raw override would
+	 * let the diagnostic claim "in 0 attempts" (clamped to 1) or "in NaN attempts" (defaulted to
+	 * {@link DEFAULT_READINESS_ATTEMPTS}), which is exactly the wrong thing for the one string whose
+	 * whole job is to say what was tried.
+	 */
+	attempts: number;
+}
+
 /**
- * Probe until the sandbox answers. Resolves `true` on the first successful probe, `false` once the
- * attempts are exhausted — never throws, so a caller decides whether not-ready is a failed metric (the
- * lifecycle driver) or a dead cell (the suite runner). A probe that throws, or that outlasts
+ * Probe until the sandbox answers. Resolves `ready: true` on the first successful probe, `false` once
+ * the attempts are exhausted — never throws, so a caller decides whether not-ready is a failed metric
+ * (the lifecycle driver) or a dead cell (the suite runner). A probe that throws, or that outlasts
  * `probeTimeoutMs`, counts as not-ready and is retried.
  */
 export async function waitUntilReady(
 	sandbox: ReadinessProbeSandbox,
 	options: WaitUntilReadyOptions = {},
-): Promise<boolean> {
+): Promise<ReadinessResult> {
 	const maxAttempts = finiteOr(options.maxAttempts, DEFAULT_READINESS_ATTEMPTS, 1);
 	const retryDelayMs = finiteOr(options.retryDelayMs, DEFAULT_READINESS_RETRY_DELAY_MS, 0);
 	const probeTimeoutMs = finiteOr(options.probeTimeoutMs, DEFAULT_READINESS_PROBE_TIMEOUT_MS, 1);
@@ -95,11 +108,11 @@ export async function waitUntilReady(
 				probeTimeoutMs,
 				`readiness probe timed out after ${Math.round(probeTimeoutMs / 1000)}s`,
 			);
-			if (result.exitCode === 0) return true;
+			if (result.exitCode === 0) return { ready: true, attempts: maxAttempts };
 		} catch {
 			// Not ready — fall through to the retry.
 		}
 		if (attempt < maxAttempts) await delay(retryDelayMs);
 	}
-	return false;
+	return { ready: false, attempts: maxAttempts };
 }

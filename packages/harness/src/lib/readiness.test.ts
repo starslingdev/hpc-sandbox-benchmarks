@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { neverReadyReason, READINESS_CMD, waitUntilReady } from "./readiness.ts";
+import {
+	DEFAULT_READINESS_ATTEMPTS,
+	neverReadyReason,
+	READINESS_CMD,
+	waitUntilReady,
+} from "./readiness.ts";
 
 /** A fake whose probes resolve/hang/fail on demand, recording every command it was asked to run. */
 function fakeSandbox(outcomes: Array<"ok" | "fail" | "throw" | "hang">) {
@@ -26,19 +31,19 @@ const noDelay = () => Promise.resolve();
 describe("waitUntilReady", () => {
 	it("probes once when the sandbox is already up", async () => {
 		const { sandbox, commands } = fakeSandbox(["ok"]);
-		expect(await waitUntilReady(sandbox, { delay: noDelay })).toBe(true);
+		expect((await waitUntilReady(sandbox, { delay: noDelay })).ready).toBe(true);
 		expect(commands).toEqual([READINESS_CMD]);
 	});
 
 	it("retries a non-zero or throwing probe until the sandbox answers", async () => {
 		const { sandbox, commands } = fakeSandbox(["fail", "throw", "ok"]);
-		expect(await waitUntilReady(sandbox, { delay: noDelay })).toBe(true);
+		expect((await waitUntilReady(sandbox, { delay: noDelay })).ready).toBe(true);
 		expect(commands.length).toBe(3);
 	});
 
 	it("gives up at maxAttempts rather than spinning", async () => {
 		const { sandbox, commands } = fakeSandbox(["fail", "fail", "fail", "fail"]);
-		expect(await waitUntilReady(sandbox, { maxAttempts: 3, delay: noDelay })).toBe(false);
+		expect((await waitUntilReady(sandbox, { maxAttempts: 3, delay: noDelay })).ready).toBe(false);
 		expect(commands.length).toBe(3);
 	});
 
@@ -48,21 +53,37 @@ describe("waitUntilReady", () => {
 		// An unbounded probe would wait forever on attempt 1; a bounded one must cut it and try again.
 		const { sandbox, commands } = fakeSandbox(["hang", "hang", "ok"]);
 		expect(
-			await waitUntilReady(sandbox, { probeTimeoutMs: 5, retryDelayMs: 0, delay: noDelay }),
+			(await waitUntilReady(sandbox, { probeTimeoutMs: 5, retryDelayMs: 0, delay: noDelay })).ready,
 		).toBe(true);
 		expect(commands.length).toBe(3);
 	});
 
 	it("reports never-ready as a bounded, self-describing reason", async () => {
 		const { sandbox } = fakeSandbox(["hang"]);
-		expect(await waitUntilReady(sandbox, { maxAttempts: 1, probeTimeoutMs: 5 })).toBe(false);
+		expect((await waitUntilReady(sandbox, { maxAttempts: 1, probeTimeoutMs: 5 })).ready).toBe(
+			false,
+		);
 		expect(neverReadyReason(1)).toContain(READINESS_CMD);
 		expect(neverReadyReason(1)).toMatch(/never ready/);
 	});
 
 	it("falls back to a finite bound when handed a non-finite one", async () => {
 		const { sandbox, commands } = fakeSandbox(["fail", "fail", "ok"]);
-		expect(await waitUntilReady(sandbox, { maxAttempts: Number.NaN, delay: noDelay })).toBe(true);
+		const result = await waitUntilReady(sandbox, { maxAttempts: Number.NaN, delay: noDelay });
+		expect(result.ready).toBe(true);
 		expect(commands.length).toBe(3);
+		// The reported bound is the NORMALIZED one, not the caller's: a diagnostic that says "in NaN
+		// attempts" (or "in 0 attempts" for a clamped 0) describes a probe run that never happened.
+		expect(result.attempts).toBe(DEFAULT_READINESS_ATTEMPTS);
+		expect(neverReadyReason(result.attempts)).not.toMatch(/NaN/);
+	});
+
+	it("reports the clamped bound when asked for fewer than one attempt", async () => {
+		const { sandbox, commands } = fakeSandbox(["fail"]);
+		const result = await waitUntilReady(sandbox, { maxAttempts: 0, delay: noDelay });
+		expect(result.ready).toBe(false);
+		// Clamped to a single real probe — so the reason must say 1, matching what was actually tried.
+		expect(commands.length).toBe(1);
+		expect(result.attempts).toBe(1);
 	});
 });
