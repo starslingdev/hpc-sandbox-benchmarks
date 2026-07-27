@@ -23,6 +23,18 @@ import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import { now as defaultNow, time } from "./internal.ts";
 import { neverReadyReason, waitUntilReady } from "./readiness.ts";
 
+/**
+ * Per-probe ceiling for THIS driver's readiness loop, deliberately far tighter than the suite path's.
+ *
+ * The two callers want opposite things. The suite path must absorb a cold multi-GiB image pull, so it
+ * accepts a long per-probe wait. Here, how long readiness takes IS the measurement, over
+ * `readinessMaxAttempts` (40) × `readinessRetryDelayMs` (250ms) ≈ a 10s window — and this driver runs
+ * once per cold-start iteration (5 by default). Inheriting the readiness module's generous default
+ * would let an all-hanging probe run turn one iteration into ~13.5 minutes and a default benchmark into
+ * over an hour before producing any result. A healthy probe answers in tens of ms, so 2s is slack
+ * enough to be sure the sandbox isn't up while keeping the pathological case ~90s per iteration.
+ */
+const READINESS_PROBE_TIMEOUT_MS = 2_000;
 /** Writes exactly 64KiB (65536 bytes) to stdout — exec overhead including output streaming. Uses `tr`
  *  rather than `base64` so the stream is exactly 64KiB, matching the metric's name (base64 expands the
  *  input ~33%, overstating the payload). */
@@ -168,6 +180,7 @@ export async function measureLifecycle(
 		const readiness = await waitUntilReady(sandbox, {
 			maxAttempts: readinessMaxAttempts,
 			retryDelayMs: readinessRetryDelayMs,
+			probeTimeoutMs: READINESS_PROBE_TIMEOUT_MS,
 			delay,
 		});
 		const readyAt = readiness.ready ? clock() : undefined;
@@ -179,6 +192,22 @@ export async function measureLifecycle(
 			const reason = neverReadyReason(readiness.attempts);
 			fail(HARNESS_METRIC_IDS.firstExec, reason);
 			fail(HARNESS_METRIC_IDS.coldStart, reason);
+			// Stop here. Every probe below execs against this sandbox, and those calls are UNBOUNDED — on a
+			// sandbox that never answered, the first of them can hang indefinitely and undo the bounded gate
+			// above. Bail out, but keep the accounting honest: each Metric this abandons gets a FAILED gap
+			// naming the readiness outage, because the alternative (no Sample, no gap) reads downstream as
+			// "never scheduled" rather than "the sandbox never came up". `finally` still tears down and
+			// still samples teardown — the returned arrays are the same references it appends to.
+			for (const metricId of [
+				HARNESS_METRIC_IDS.exec,
+				HARNESS_METRIC_IDS.execPayload64k,
+				HARNESS_METRIC_IDS.controlPlaneInfo,
+				HARNESS_METRIC_IDS.controlPlaneList,
+				HARNESS_METRIC_IDS.snapshot,
+			]) {
+				fail(metricId, reason);
+			}
+			return { samples, gaps };
 		} else {
 			sample(HARNESS_METRIC_IDS.firstExec, floor(readyAt - createdAt));
 			sample(HARNESS_METRIC_IDS.coldStart, floor(readyAt - t0));

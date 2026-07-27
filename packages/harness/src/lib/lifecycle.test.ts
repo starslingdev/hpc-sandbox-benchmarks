@@ -40,13 +40,17 @@ function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls
 		sandboxId: "sb-1",
 		async runCommand(command) {
 			calls.order.push(`exec:${command}`);
-			if (opts.failExec) throw new Error("exec boom");
-			// The readiness loop probes "echo ok"; report it not-ready (exitCode 1) for the first
-			// `notReadyFor` attempts so the cold-start retry path is exercised without a real SDK.
+			// Readiness is resolved BEFORE failExec so the two are independently controllable: the driver
+			// now stops at an unready sandbox, so "ready, but the measured exec throws" (failExec) and
+			// "never became ready" (notReadyFor) are different scenarios and a fake that conflated them
+			// could not express the first at all.
 			if (command === "echo ok") {
 				readinessProbes += 1;
-				if (opts.notReadyFor && readinessProbes <= opts.notReadyFor) return { exitCode: 1 };
+				return {
+					exitCode: opts.notReadyFor && readinessProbes <= opts.notReadyFor ? 1 : 0,
+				};
 			}
+			if (opts.failExec) throw new Error("exec boom");
 			return { exitCode: 0 };
 		},
 		async getInfo() {
@@ -252,12 +256,11 @@ describe("measureLifecycle", () => {
 	});
 
 	it("turns a mid-chain exec failure into a failed gap and still tears down", async () => {
-		// A throwing runCommand also fails every readiness probe, so cap attempts + inject a no-op delay
-		// to keep the retry loop fast.
+		// A READY sandbox whose measured exec throws — the mid-chain best-effort contract. (A sandbox that
+		// never goes ready is the separate case below; the driver stops there rather than probing on.)
 		const { compute, calls } = fakeCompute({ failExec: true });
 		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
-			readinessMaxAttempts: 2,
 			now: fastClock(),
 			delay: noDelay,
 		});
@@ -265,10 +268,44 @@ describe("measureLifecycle", () => {
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.exec]).toBeUndefined();
 		expect(reasonFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("exec boom");
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("failed");
-		// A never-ready sandbox fails both readiness Metrics.
-		expect(reasonFor(gaps, HARNESS_METRIC_IDS.coldStart)).toMatch(/never ready/);
-		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.coldStart)).toBe("failed");
+		// Readiness succeeded here, so the cold-start Metrics are real Samples, not gaps.
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.coldStart]).toBe(1);
 		// Teardown still ran and was sampled.
+		expect(calls.order).toContain("destroy");
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);
+	});
+
+	it("stops probing an unready sandbox, but still fails every abandoned Metric and tears down", async () => {
+		// Every probe below readiness execs against the sandbox and those calls are unbounded, so on a
+		// sandbox that never answered the first of them can hang forever — undoing the bounded readiness
+		// gate. The driver must bail out instead. Accounting still has to be complete: an abandoned Metric
+		// with no Sample AND no gap reads downstream as "never scheduled", not "the sandbox never came up".
+		const { compute, calls } = fakeCompute({ notReadyFor: 99, withSnapshot: true, withList: true });
+		const { samples, gaps } = await measureLifecycle(compute, {
+			provider: "e2b",
+			readinessMaxAttempts: 2,
+			now: fastClock(),
+			delay: noDelay,
+		});
+		// Bailed out: only the readiness probes ran — no exec, no getInfo, no list, no snapshot.
+		expect(calls.order.filter((c) => c === "exec:echo ok").length).toBe(2);
+		expect(calls.order.some((c) => c === "getInfo" || c === "list")).toBe(false);
+		expect(calls.order.some((c) => c.startsWith("snapshot:"))).toBe(false);
+		// ...yet every Metric it abandoned carries a FAILED gap naming the readiness outage.
+		for (const metricId of [
+			HARNESS_METRIC_IDS.coldStart,
+			HARNESS_METRIC_IDS.firstExec,
+			HARNESS_METRIC_IDS.exec,
+			HARNESS_METRIC_IDS.execPayload64k,
+			HARNESS_METRIC_IDS.controlPlaneInfo,
+			HARNESS_METRIC_IDS.controlPlaneList,
+			HARNESS_METRIC_IDS.snapshot,
+		]) {
+			expect(outcomeFor(gaps, metricId)).toBe("failed");
+			expect(reasonFor(gaps, metricId)).toMatch(/never ready/);
+		}
+		// The bookends survive the early return: spawn was sampled before it, teardown by the `finally`.
+		expect(countByOp(samples)[HARNESS_METRIC_IDS.spawn]).toBe(1);
 		expect(calls.order).toContain("destroy");
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);
 	});
