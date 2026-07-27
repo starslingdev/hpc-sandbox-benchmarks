@@ -280,6 +280,8 @@ describe("measureLifecycle", () => {
 		// sandbox that never answered the first of them can hang forever — undoing the bounded readiness
 		// gate. The driver must bail out instead. Accounting still has to be complete: an abandoned Metric
 		// with no Sample AND no gap reads downstream as "never scheduled", not "the sandbox never came up".
+		// Snapshot + list present and payload on by default, so every abandoned op is one this config
+		// WOULD have attempted — the all-failed case. The skip-preserving case is the test below.
 		const { compute, calls } = fakeCompute({ notReadyFor: 99, withSnapshot: true, withList: true });
 		const { samples, gaps } = await measureLifecycle(compute, {
 			provider: "e2b",
@@ -308,6 +310,34 @@ describe("measureLifecycle", () => {
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.spawn]).toBe(1);
 		expect(calls.order).toContain("destroy");
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);
+	});
+
+	it("keeps disabled and unsupported operations SKIPPED on a never-ready sandbox", async () => {
+		// A readiness outage must not relabel decisions as provider failures. Payload is off, and this fake
+		// exposes neither list nor snapshot — none of those calls was ever going to happen, so reporting
+		// them as failures would publish a control-plane outage that did not occur, and the leaderboard
+		// would read it as provider unreliability.
+		const { compute } = fakeCompute({ notReadyFor: 99 });
+		const { gaps } = await measureLifecycle(compute, {
+			provider: "e2b",
+			payload: false,
+			snapshot: false,
+			readinessMaxAttempts: 2,
+			now: fastClock(),
+			delay: noDelay,
+		});
+		for (const [metricId, pattern] of [
+			[HARNESS_METRIC_IDS.execPayload64k, /disabled/],
+			[HARNESS_METRIC_IDS.controlPlaneList, /no sandbox list operation/],
+			[HARNESS_METRIC_IDS.snapshot, /disabled/],
+		] as const) {
+			expect(outcomeFor(gaps, metricId)).toBe("skipped");
+			expect(reasonFor(gaps, metricId)).toMatch(pattern);
+		}
+		// The genuinely-prevented ops are still failures — the outage is not swallowed either.
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("failed");
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.controlPlaneInfo)).toBe("failed");
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.coldStart)).toBe("failed");
 	});
 
 	it("fails every failed control-plane probe but keeps measuring", async () => {

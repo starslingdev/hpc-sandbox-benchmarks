@@ -35,6 +35,16 @@ import { neverReadyReason, waitUntilReady } from "./readiness.ts";
  * enough to be sure the sandbox isn't up while keeping the pathological case ~90s per iteration.
  */
 const READINESS_PROBE_TIMEOUT_MS = 2_000;
+/**
+ * Reasons an operation produced no Sample by DECISION rather than by outage — the `skip` arm's wording.
+ * Named because two paths file them now (the live chain and the never-ready bail-out), and a probe
+ * filed under the wrong arm, or under drifted wording, is exactly the misreport the skip/fail split
+ * exists to prevent.
+ */
+const PAYLOAD_DISABLED = "64KiB payload exec disabled for this run";
+const NO_LIST_OP = "provider SDK exposes no sandbox list operation";
+const SNAPSHOT_DISABLED = "snapshot measurement disabled for this run";
+const NO_SNAPSHOT_OP = "provider SDK exposes no snapshot operation";
 /** Writes exactly 64KiB (65536 bytes) to stdout — exec overhead including output streaming. Uses `tr`
  *  rather than `base64` so the stream is exactly 64KiB, matching the metric's name (base64 expands the
  *  input ~33%, overstating the payload). */
@@ -194,19 +204,27 @@ export async function measureLifecycle(
 			fail(HARNESS_METRIC_IDS.coldStart, reason);
 			// Stop here. Every probe below execs against this sandbox, and those calls are UNBOUNDED — on a
 			// sandbox that never answered, the first of them can hang indefinitely and undo the bounded gate
-			// above. Bail out, but keep the accounting honest: each Metric this abandons gets a FAILED gap
+			// above. Bail out, but keep the accounting honest: a Metric this abandons gets a FAILED gap
 			// naming the readiness outage, because the alternative (no Sample, no gap) reads downstream as
 			// "never scheduled" rather than "the sandbox never came up". `finally` still tears down and
 			// still samples teardown — the returned arrays are the same references it appends to.
-			for (const metricId of [
-				HARNESS_METRIC_IDS.exec,
-				HARNESS_METRIC_IDS.execPayload64k,
-				HARNESS_METRIC_IDS.controlPlaneInfo,
-				HARNESS_METRIC_IDS.controlPlaneList,
-				HARNESS_METRIC_IDS.snapshot,
-			]) {
-				fail(metricId, reason);
-			}
+			//
+			// Crucially, only for what this configuration WOULD have attempted. A disabled payload, an SDK
+			// with no list, an absent snapshot manager: those are the same decisions they always were, and
+			// the readiness outage doesn't turn them into provider failures. Blanket-failing them would
+			// publish a control-plane outage for calls that were never going to happen — the exact
+			// skip/fail inversion the two helpers above exist to prevent.
+			fail(HARNESS_METRIC_IDS.exec, reason);
+			// One gap, not `controlPlaneSamples` of them: the live path records a gap per failed probe, but
+			// no probe ran here and N copies of one fact is noise, not fidelity.
+			fail(HARNESS_METRIC_IDS.controlPlaneInfo, reason);
+			if (wantPayload) fail(HARNESS_METRIC_IDS.execPayload64k, reason);
+			else skip(HARNESS_METRIC_IDS.execPayload64k, PAYLOAD_DISABLED);
+			if (compute.sandbox.list) fail(HARNESS_METRIC_IDS.controlPlaneList, reason);
+			else skip(HARNESS_METRIC_IDS.controlPlaneList, NO_LIST_OP);
+			if (!wantSnapshot) skip(HARNESS_METRIC_IDS.snapshot, SNAPSHOT_DISABLED);
+			else if (!compute.snapshot) skip(HARNESS_METRIC_IDS.snapshot, NO_SNAPSHOT_OP);
+			else fail(HARNESS_METRIC_IDS.snapshot, reason);
 			return { samples, gaps };
 		} else {
 			sample(HARNESS_METRIC_IDS.firstExec, floor(readyAt - createdAt));
@@ -220,7 +238,7 @@ export async function measureLifecycle(
 		if (wantPayload) {
 			await step(HARNESS_METRIC_IDS.execPayload64k, () => sandbox.runCommand(PAYLOAD_CMD));
 		} else {
-			skip(HARNESS_METRIC_IDS.execPayload64k, "64KiB payload exec disabled for this run");
+			skip(HARNESS_METRIC_IDS.execPayload64k, PAYLOAD_DISABLED);
 		}
 
 		// Control-plane read: getInfo, sampled within this one (cheap) sandbox to build a distribution
@@ -239,16 +257,16 @@ export async function measureLifecycle(
 				await step(HARNESS_METRIC_IDS.controlPlaneList, () => listSandboxes());
 			}
 		} else {
-			skip(HARNESS_METRIC_IDS.controlPlaneList, "provider SDK exposes no sandbox list operation");
+			skip(HARNESS_METRIC_IDS.controlPlaneList, NO_LIST_OP);
 		}
 
 		// Snapshot: when requested and the SDK exposes a snapshot manager. Best-effort delete afterwards
 		// so a measured snapshot never leaks into the account.
 		const snapshots = compute.snapshot;
 		if (!wantSnapshot) {
-			skip(HARNESS_METRIC_IDS.snapshot, "snapshot measurement disabled for this run");
+			skip(HARNESS_METRIC_IDS.snapshot, SNAPSHOT_DISABLED);
 		} else if (!snapshots) {
-			skip(HARNESS_METRIC_IDS.snapshot, "provider SDK exposes no snapshot operation");
+			skip(HARNESS_METRIC_IDS.snapshot, NO_SNAPSHOT_OP);
 		} else {
 			try {
 				const snap = await time(() => snapshots.create(sandbox.sandboxId));
