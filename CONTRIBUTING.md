@@ -88,10 +88,17 @@ steps 1–5 are compile errors, and step 6 is the `workflow-registry-sync` gate 
    normalize"* step env of **both** `bench-smoke.yml` and `bench-suite.yml` (same value expression modulo
    each lane's `inputs.provider` / `matrix.provider` selector). It also covers the release lane: wire the
    same keys into `toolchain-image.yml`'s `bake` and `publish` credential blocks, or declare the provider
-   in `RELEASE_LANE_EXEMPT` with the reason it needs no release-lane boot. Across all four blocks it
-   further checks that each guard names a *registered* provider that actually requires the key, and that
-   every lane draws the credential from the same `secrets.*` name — a typo'd guard would otherwise pass
-   every presence check while handing the provider an empty string on every run.
+   in `RELEASE_LANE_EXEMPT` with the reason it needs no release-lane boot.
+
+   Across all four blocks the gate also requires each credential expression to **exactly match a form it
+   generates from the registry** — `${{ <selector>.provider == '<id>' && secrets.<KEY> || '' }}`, its
+   parenthesized multi-owner variant, or the unconditional `${{ secrets.<KEY> }}`. Copy the shape from an
+   existing provider and only the id and key change. It is a whitelist rather than a set of checks against
+   known-bad spellings, because a mis-shaped expression passes every presence check while handing the
+   provider an empty (or over-broad) credential, which reads downstream as "that provider has no results".
+   A credential that genuinely cannot use a canonical form needs a `CREDENTIAL_EXPR_EXCEPTIONS` entry with
+   its reason — `NSC_TOKEN_FILE` is the one today, since namespace mints its token from OIDC and references
+   no stored secret at all.
 7. **Nothing enforces the default matrix.** `bench-matrix.yml`'s `providers` input default is free text;
    a new provider is dispatchable immediately but stays out of the default run until added there. Leave
    it out (and out of `RELEASE_REQUIRED_PROVIDERS`) until a committed run validates it — that is the
