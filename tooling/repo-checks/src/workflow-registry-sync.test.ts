@@ -423,9 +423,32 @@ describe("checkCredentialExpressions", () => {
 			...allLanes,
 			[PROMOTE_LABEL]: { ...promoteEnv, NOVITA_API_KEY: `\${{ secrets.NOVITA_API_KEY_OLD }}` },
 		});
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("NOVITA_API_KEY: lanes disagree");
-		expect(errors[0]).toContain("NOVITA_API_KEY_OLD");
+		// Two DIFFERENT defects in one expression, each named on its own terms: the lanes now disagree
+		// (rule b), and the odd one out is also not named for its credential (rule f).
+		expect(errors).toHaveLength(2);
+		expect(errors.some((e) => e.includes("NOVITA_API_KEY: lanes disagree"))).toBe(true);
+		expect(errors.some((e) => e.includes("not named for this credential"))).toBe(true);
+		expect(errors.every((e) => e.includes("NOVITA_API_KEY_OLD"))).toBe(true);
+	});
+
+	// Rule (f) — rule (b) is a CONSISTENCY check, so a typo repeated in every block agrees with itself.
+	// The registry is the authority: anchor each credential to its identically-named secret.
+	test("flags a secret typo repeated across every lane, which rule (b) cannot see", () => {
+		const typo = `\${{ matrix.provider == 'novita' && secrets.NOVITA_API_KE || '' }}`;
+		const errors = checkCredentialExpressions({
+			"a.yml": { NOVITA_API_KEY: typo },
+			"b.yml": { NOVITA_API_KEY: typo },
+		});
+		// Reported per lane, and NOT as a cross-lane disagreement — the lanes agree perfectly, which is
+		// exactly why (b) misses it.
+		expect(errors).toHaveLength(2);
+		expect(errors.every((e) => e.includes("secrets.NOVITA_API_KE"))).toBe(true);
+		expect(errors.some((e) => e.includes("lanes disagree"))).toBe(false);
+	});
+
+	test("accepts zero secrets.* references — NSC_TOKEN_FILE is minted from OIDC, not stored", () => {
+		expect(referencedSecretNames(bakeEnv.NSC_TOKEN_FILE as string)).toEqual([]);
+		expect(checkCredentialExpressions({ [BAKE_LABEL]: bakeEnv })).toEqual([]);
 	});
 
 	// Rules (c) and (d) exist for the cases where the guard is entirely well-formed by rules (a)/(b) —

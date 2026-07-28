@@ -34,10 +34,10 @@
 //      never validated, with a green release.
 //   8. A credential is not merely present but plausibly CORRECT, across every credential block in the
 //      repo: each provider id a credential expression guards on is registered AND owns that credential,
-//      every lane wiring a key draws it from the same `secrets.*` name, no guard is negated, every
-//      conditional ends in the `|| ''` fallback, and an unreadable scoping form fails closed. A mistyped
-//      guard satisfies invariants 3/7 while supplying an empty string forever, which reads downstream as
-//      "that provider has no results" rather than "the guard never matched".
+//      every lane draws a key from the same `secrets.*` name AND that name is the key itself, no guard
+//      is negated, every conditional ends in the `|| ''` fallback, and an unreadable scoping form fails
+//      closed. A mistyped guard or secret satisfies invariants 3/7 while supplying an empty string
+//      forever, which reads downstream as "that provider has no results", not "the wiring never matched".
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -402,6 +402,10 @@ export function referencedSecretNames(expr: string): string[] {
  *   c. No NEGATED provider comparison (`.provider !=`), which releases a credential to every provider
  *      except its owner. Rule (a) cannot see this: it only reads `==` guards, so the inverted id is
  *      never inspected and (a)/(b) both pass.
+ *   f. The `secrets.*` a credential draws from is NAMED for that credential. Rule (b) only checks the
+ *      lanes agree, so one typo repeated in every block agrees with itself and passes — GitHub then
+ *      supplies "" for a nonexistent secret and the provider skips forever. The registry is the
+ *      authority, not the other lanes.
  *   d. A conditional credential (one containing `&&`) ENDS in `|| ''`. This closes the last two ways a
  *      registered-and-owning guard still yields the wrong value — inverted branches (`&& '' ||
  *      secrets.X`, leaking the secret to every non-matching cell) and a missing fallback (`&&
@@ -481,6 +485,23 @@ export function checkCredentialExpressions(
 						"it the secret either lands in the fallback branch (leaking to every other provider) or " +
 						'the cell renders the literal "false", which is non-empty and reads as a real credential',
 				);
+			}
+			// Rule (f): the secret a credential draws from must be NAMED for that credential. Rule (b) only
+			// checks the lanes AGREE, so a typo repeated in every block (`secrets.NOVITA_API_KE` everywhere)
+			// agrees with itself and passes — GitHub then supplies "" for a secret that does not exist, and
+			// the provider skips forever. The registry is the authority here: every credential in this repo
+			// is sourced from the identically-named secret, so anchor to the key instead of to the other
+			// lanes. Zero `secrets.*` references is fine (NSC_TOKEN_FILE is minted from OIDC, not stored).
+			for (const secretName of referencedSecretNames(expr)) {
+				if (secretName !== key) {
+					errors.push(
+						`${key} in ${lane}: drawn from \`secrets.${secretName}\`, which is not named for this ` +
+							`credential — every credential here is sourced from the identically-named secret, so ` +
+							`this reads as a typo. GitHub silently supplies "" for a secret that does not exist, ` +
+							`so the provider would skip on every run. Use \`secrets.${key}\`, or rename the ` +
+							"credential to match the secret if the mismatch is deliberate",
+					);
+				}
 			}
 			const secretSet = referencedSecretNames(expr).join(",");
 			lanesBySecretSet.set(secretSet, [...(lanesBySecretSet.get(secretSet) ?? []), lane]);
