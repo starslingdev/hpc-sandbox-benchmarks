@@ -22,7 +22,7 @@
  */
 import type { Leaderboard, LeaderboardMetric, LeaderboardRow } from "@sandbox-benchmarks/results";
 import { formatInterval, formatValue, metricTakeaway, rowNote } from "@sandbox-benchmarks/results";
-import { metrics } from "../../theme.ts";
+import { metrics, type_ } from "../../theme.ts";
 import type { ColumnSpec, SolvedColumn } from "./columns.ts";
 import { solveColumns, textWidth } from "./columns.ts";
 
@@ -39,13 +39,20 @@ export interface TableRowView {
 	readonly cells: readonly string[];
 	/** Interval span to plot, or `null` when there is no interval to draw (n = 1, or not measured). */
 	readonly span: Span | null;
-	/** True only for a rank-1 row the statistics actually separate from the row below. See rule 2. */
-	readonly highlighted: boolean;
-	/** True when this row's rank is established against the row above (`verdict === "separated"`). */
-	readonly established: boolean;
-	/** True for a provider in the run that produced no value for this metric. See rule 3. */
-	readonly notMeasured: boolean;
+	/**
+	 * How the row is emphasised — one discriminant rather than three booleans, so the illegal
+	 * combinations (a crowned row that was never measured, say) cannot be represented.
+	 *
+	 *  - `lead`      — rank 1, and the statistics support saying so. See rule 2.
+	 *  - `separated` — this row's rank is established against the row above (`verdict === "separated"`).
+	 *  - `muted`     — ranked, but the comparison to the row above is tied, underpowered or untested.
+	 *  - `gap`       — the provider produced no value for this metric. See rule 3.
+	 */
+	readonly emphasis: RowEmphasis;
 }
+
+/** See {@link TableRowView.emphasis}. */
+export type RowEmphasis = "lead" | "separated" | "muted" | "gap";
 
 export interface TableView {
 	readonly metricId: string;
@@ -55,8 +62,6 @@ export interface TableView {
 	readonly footnote: string;
 	readonly columns: readonly SolvedColumn[];
 	readonly rows: readonly TableRowView[];
-	/** True when at least one row has an interval worth plotting. */
-	readonly hasSpans: boolean;
 	/**
 	 * Canvas width, solved to fit the widest thing the figure contains — the table, or one of the
 	 * prose lines above and below it.
@@ -105,19 +110,7 @@ function domainOf(rows: readonly LeaderboardRow[]): { lo: number; hi: number } |
 	return { lo, hi };
 }
 
-export interface TableViewInput {
-	readonly board: Leaderboard;
-	readonly entry: LeaderboardMetric;
-	readonly cellFontSize: number;
-	readonly headerFontSize: number;
-	readonly titleFontSize: number;
-	readonly subtitleFontSize: number;
-	readonly footnoteFontSize: number;
-	readonly padX: number;
-}
-
-export function buildTableView(input: TableViewInput): TableView {
-	const { board, entry } = input;
+export function buildTableView(board: Leaderboard, entry: LeaderboardMetric): TableView {
 	const { metric, rows } = entry;
 	const highlightLeader = leaderIsEstablished(rows);
 	const domain = domainOf(rows);
@@ -147,9 +140,12 @@ export function buildTableView(input: TableViewInput): TableView {
 				rowNote(r),
 			],
 			span,
-			highlighted: highlightLeader && r.rank === 1,
-			established: r.verdict === "separated",
-			notMeasured: false,
+			emphasis:
+				highlightLeader && r.rank === 1
+					? "lead"
+					: r.verdict === "separated"
+						? "separated"
+						: "muted",
 		};
 	});
 
@@ -158,20 +154,14 @@ export function buildTableView(input: TableViewInput): TableView {
 			providerId: p.providerId,
 			cells: ["—", p.displayName, "not measured", "—", "0", "coverage gap"],
 			span: null,
-			highlighted: false,
-			established: false,
-			notMeasured: true,
+			emphasis: "gap",
 		});
 	}
 
 	const columns = solveColumns(
 		COLUMNS,
 		viewRows.map((r) => r.cells),
-		{
-			cellFontSize: input.cellFontSize,
-			headerFontSize: input.headerFontSize,
-			padX: input.padX,
-		},
+		{ cellFontSize: type_.cell, headerFontSize: type_.columnHeader, padX: metrics.cellPadX },
 	);
 
 	const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
@@ -179,22 +169,22 @@ export function buildTableView(input: TableViewInput): TableView {
 	const subtitle = `${metric.unit} · ${better} · run ${board.runId}`;
 	// Byte-identical to the sentence the Markdown prints above the same table.
 	const takeaway = metricTakeaway(metric.dimension, metric, rows);
-	const hasSpans = viewRows.some((r) => r.span !== null);
+	const withSpans = viewRows.some((r) => r.span !== null);
 	// Don't explain a bar the figure doesn't draw. A metric whose rows are single exact observations
 	// (a published price, say) has no interval to plot, and a legend describing one would be the
 	// figure's only false claim.
-	const footnote = hasSpans
+	const footnote = withSpans
 		? "bar = 95% bootstrap interval, tick = median · rows share a rank when the test could not separate them"
 		: "single observation per provider — no interval to plot · rows share a rank when the test could not separate them";
 
 	const tableWidth =
 		columns.reduce((sum, c) => sum + c.width, 0) +
-		(hasSpans ? metrics.spanWidth + 2 * metrics.cellPadX : 0);
+		(withSpans ? metrics.spanWidth + 2 * metrics.cellPadX : 0);
 	const proseWidth = Math.max(
-		textWidth(title, input.titleFontSize),
-		textWidth(subtitle, input.subtitleFontSize),
-		textWidth(takeaway, input.subtitleFontSize),
-		textWidth(footnote, input.footnoteFontSize),
+		textWidth(title, type_.title),
+		textWidth(subtitle, type_.subtitle),
+		textWidth(takeaway, type_.subtitle),
+		textWidth(footnote, type_.footnote),
 	);
 
 	return {
@@ -205,7 +195,12 @@ export function buildTableView(input: TableViewInput): TableView {
 		footnote,
 		columns,
 		rows: viewRows,
-		hasSpans,
 		width: Math.max(tableWidth, proseWidth) + 2 * metrics.pad,
 	};
+}
+
+/** Whether the figure plots interval bars at all. Derived rather than stored: a `hasSpans` field
+ *  could disagree with `rows`, and it is what the layout branches on. */
+export function hasSpans(view: TableView): boolean {
+	return view.rows.some((r) => r.span !== null);
 }

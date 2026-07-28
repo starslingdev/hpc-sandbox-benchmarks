@@ -6,4 +6,4 @@
 // `verbatimModuleSyntax` rejects a value re-export of it (TS1205).
 
 export type { JSX } from "./lib/jsx/runtime.ts";
-export { Fragment, jsx, jsxs } from "./lib/jsx/runtime.ts";
+export { jsx, jsxs } from "./lib/jsx/runtime.ts";

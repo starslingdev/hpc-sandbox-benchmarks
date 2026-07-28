@@ -19,7 +19,7 @@
  *    `bun build --target=bun` emit dev-runtime calls regardless of `jsx: "react-jsx"`, so the module
  *    tsc typechecks against (`jsx`/`jsxs`) is not the module Bun runs. Both must exist and agree.
  */
-import type { Child, Element, ElementProps, FC, ImgProps } from "./types.ts";
+import type { Element, ElementProps, FC } from "./types.ts";
 
 /** Drop `undefined` style values. React tolerates them; satori throws
  *  `undefined is not an object (evaluating 'inputValue.trim')` from deep inside its CSS parser,
@@ -64,19 +64,9 @@ export function jsxDEV(
 	return jsx(type, props, key);
 }
 
-/**
- * NOTE: a fragment is NOT transparent here — satori has no fragment concept, so `<>…</>` must
- * become a real element, and any real element is a box that participates in layout. It is emitted as
- * a `flexDirection: column` div, which is right for stacking figure sections and wrong for anything
- * expecting a passthrough. Prefer an explicit `<div>` in components where the layout matters.
- */
-export function Fragment(props: { children?: Child }): Element {
-	return {
-		type: "div",
-		props: { style: { display: "flex", flexDirection: "column" }, children: props.children },
-		key: null,
-	};
-}
+// No `Fragment` export, deliberately: satori has no fragment concept, so `<>…</>` could only ever
+// become a real div — a box that silently participates in layout where the author expected a
+// passthrough. Omitting it makes `<>` a compile error and forces an explicit `<div>`.
 
 export declare namespace JSX {
 	/** Must be a type alias — an empty interface crashes tsc 6.0.3. See the module comment. */
@@ -92,10 +82,9 @@ export declare namespace JSX {
 	interface IntrinsicAttributes {
 		key?: string | number | undefined;
 	}
-	/** Only what satori can lay out. No table tags — satori has no table layout. */
+	/** Only what these components use. No table tags — satori has no table layout at all. */
 	interface IntrinsicElements {
 		div: ElementProps;
 		span: ElementProps;
-		img: ImgProps;
 	}
 }

@@ -6,11 +6,20 @@
 // This one writes a directory. `--check` renders into memory and diffs against what is on disk,
 // which is the same code path CI runs, so "stale figures" fails the same way locally and in CI.
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as core from "@actions/core";
 import type { FigureManifest, Theme } from "@sandbox-benchmarks/figures";
-import { dark, light, planReport, renderBoardFigures, toPng } from "@sandbox-benchmarks/figures";
+import {
+	diffFigureDir,
+	fontDigests,
+	MANIFEST_FILE,
+	planReport,
+	renderBoardFigures,
+	sha256Hex,
+	themes,
+	toPng,
+} from "@sandbox-benchmarks/figures";
 import { buildLeaderboard } from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
 import { fail, inActions, logInfo, withGroup, writeJobSummary } from "../lib/actions-log.ts";
@@ -38,13 +47,12 @@ examples:
 
 Next: embed them with  leaderboard <run.json> LEADERBOARD.md`;
 
-const THEMES: Record<string, Theme> = { dark, light };
-
 /** Flags that consume a separate operand — one source of truth for the discovery filter and the
- *  positional scan below, so they cannot enumerate different sets. */
-const VALUE_FLAGS = ["--theme"];
+ *  positional scan below, so they cannot enumerate different sets. Exported so the tests assert
+ *  against the real vocabulary rather than a retyped copy (a copy had already dropped `--png`). */
+export const VALUE_FLAGS = ["--theme"];
 /** Bin-private boolean flags, declared so the shared discovery layer's closed set stays closed. */
-const BOOLEAN_FLAGS = ["--check", "--png"];
+export const BOOLEAN_FLAGS = ["--check", "--png"];
 
 export interface FiguresArgs {
 	runFile: string | undefined;
@@ -75,23 +83,18 @@ export function parseFiguresArgs(argv: readonly string[]): FiguresArgs {
 		if (arg.startsWith("-")) continue;
 		positionals.push(arg);
 	}
-	const theme = THEMES[themeName];
+	const theme: Theme | undefined = themes[themeName as keyof typeof themes];
 	return {
 		runFile: positionals[0],
 		outDir: positionals[1],
-		theme: theme ?? dark,
+		theme: theme ?? themes.dark,
 		check: argv.includes("--check"),
 		png: argv.includes("--png"),
+		// Enumerate from the registry, so a theme added to the package is immediately selectable here.
 		error: theme
 			? undefined
-			: `unknown --theme ${JSON.stringify(themeName)} (expected dark or light)`,
+			: `unknown --theme ${JSON.stringify(themeName)} (expected ${Object.keys(themes).join(" or ")})`,
 	};
-}
-
-async function sha256(bytes: Uint8Array | string): Promise<string> {
-	const data = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
-	const digest = await crypto.subtle.digest("SHA-256", data as unknown as ArrayBuffer);
-	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 if (import.meta.main) {
@@ -115,8 +118,7 @@ if (import.meta.main) {
 			exitCode: 2,
 		});
 	}
-	const runFile = args.runFile as string;
-	const outDir = args.outDir as string;
+	const { runFile, outDir } = args;
 
 	const run = await withGroup(`Load Run ${runFile}`, async () => {
 		const parsed = parseRun(JSON.parse(readFileSync(runFile, "utf8")));
@@ -131,29 +133,9 @@ if (import.meta.main) {
 		return rendered;
 	});
 
-	const fonts = await Promise.all(
-		["DejaVuSansMono.ttf", "DejaVuSansMono-Bold.ttf"].map(async (file) => ({
-			file,
-			sha256: await sha256(
-				new Uint8Array(
-					await Bun.file(
-						join(
-							import.meta.dir,
-							"..",
-							"..",
-							"..",
-							"..",
-							"packages",
-							"figures",
-							"assets",
-							"fonts",
-							file,
-						),
-					).arrayBuffer(),
-				),
-			),
-		})),
-	);
+	// From the package that owns the faces — never a second copy of the list, or the manifest would
+	// keep describing the old set after a face changed and the gate would pass while being wrong.
+	const fonts = await fontDigests();
 
 	const manifest: FigureManifest = {
 		runId: plan.runId,
@@ -161,56 +143,29 @@ if (import.meta.main) {
 		generatedAt: plan.generatedAt,
 		fonts,
 		files: await Promise.all(
-			figures.map(async (f) => ({
-				path: f.plan.fileName,
-				dimension: f.plan.dimension,
-				metricId: f.plan.metricId,
-				bytes: new TextEncoder().encode(f.svg).length,
-				sha256: await sha256(f.svg),
-			})),
+			figures.map(async (f) => ({ path: f.plan.fileName, sha256: await sha256Hex(f.svg) })),
 		),
 	};
 	const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
 
+	// One expected-content map drives both the write path and the check path, so `--check` can never
+	// disagree with what a subsequent write would produce.
+	const expected = new Map<string, string>([
+		...figures.map((f) => [f.plan.fileName, f.svg] as const),
+		[MANIFEST_FILE, manifestJson],
+	]);
+
 	if (args.check) {
-		// Set equality first: a per-file diff proves every file that SHOULD exist is right, and says
-		// nothing about an orphan left behind when a dimension stopped being emitted.
-		const expected = new Set([...figures.map((f) => f.plan.fileName), "manifest.json"]);
-		let onDisk: string[] = [];
+		// Same comparison the CI gate runs — see @sandbox-benchmarks/figures' figure-dir module.
+		let stale: string[];
 		try {
-			onDisk = readdirSync(outDir).filter((f) => f.endsWith(".svg") || f === "manifest.json");
+			stale = diffFigureDir(outDir, expected);
 		} catch {
 			fail(`figures --check: ${outDir} does not exist. Regenerate: figures ${runFile} ${outDir}`, {
 				properties: { title: "figures stale" },
 				exitCode: 1,
 			});
 		}
-		const stale: string[] = [];
-		for (const orphan of onDisk.filter((f) => !expected.has(f))) {
-			stale.push(`${orphan}: on disk but not in the plan (orphaned figure)`);
-		}
-		for (const f of figures) {
-			const path = join(outDir, f.plan.fileName);
-			const actual = (() => {
-				try {
-					return readFileSync(path, "utf8");
-				} catch {
-					return null;
-				}
-			})();
-			if (actual === null) stale.push(`${f.plan.fileName}: missing`);
-			else if (actual !== f.svg)
-				stale.push(`${f.plan.fileName}: differs from the current renderer`);
-		}
-		const committedManifest = (() => {
-			try {
-				return readFileSync(join(outDir, "manifest.json"), "utf8");
-			} catch {
-				return null;
-			}
-		})();
-		if (committedManifest !== manifestJson) stale.push("manifest.json: differs");
-
 		if (stale.length > 0) {
 			fail(
 				`figures are stale:\n  ${stale.join("\n  ")}\nRegenerate: bun apps/cli/src/bin/figures.ts ${runFile} ${outDir}`,
@@ -222,16 +177,17 @@ if (import.meta.main) {
 	}
 
 	mkdirSync(outDir, { recursive: true });
-	for (const f of figures) {
-		writeFileSync(join(outDir, f.plan.fileName), f.svg);
-		if (args.png) {
+	for (const [name, content] of expected) writeFileSync(join(outDir, name), content);
+	if (args.png) {
+		// Previews only — PNG is never committed (CI and the publish job run on different runners, so
+		// its bytes cannot be gated honestly).
+		for (const f of figures) {
 			writeFileSync(
 				join(outDir, f.plan.fileName.replace(/\.svg$/, ".png")),
 				await toPng(f.svg, { width: f.view.width * 2 }),
 			);
 		}
 	}
-	writeFileSync(join(outDir, "manifest.json"), manifestJson);
 	logInfo(`Wrote ${figures.length} figures → ${outDir}`);
 
 	if (inActions()) {

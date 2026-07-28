@@ -2,22 +2,11 @@
 // statistics support — see the module comment on ./metric-table.ts for why that is the whole point.
 import { describe, expect, it } from "bun:test";
 import { formatValue, metricTakeaway } from "@sandbox-benchmarks/results";
-import { metrics, type_ } from "../../theme.ts";
 import { board, entry, METRIC, row } from "./__fixtures__/board.ts";
-import type { TableViewInput } from "./metric-table.ts";
-import { buildTableView } from "./metric-table.ts";
-
-const SIZES = {
-	cellFontSize: type_.cell,
-	headerFontSize: type_.columnHeader,
-	titleFontSize: type_.title,
-	subtitleFontSize: type_.subtitle,
-	footnoteFontSize: type_.footnote,
-	padX: metrics.cellPadX,
-} satisfies Omit<TableViewInput, "board" | "entry">;
+import { buildTableView, hasSpans } from "./metric-table.ts";
 
 const view = (rows: Parameters<typeof entry>[0], extraProviders: string[] = []) =>
-	buildTableView({ board: board(rows, extraProviders), entry: entry(rows), ...SIZES });
+	buildTableView(board(rows, extraProviders), entry(rows));
 
 describe("rule 2 — no lead highlight the statistics do not support", () => {
 	it("crowns rank 1 when the runner-up is separated", () => {
@@ -25,7 +14,7 @@ describe("rule 2 — no lead highlight the statistics do not support", () => {
 			row({ providerId: "a", value: 20, rank: 1 }),
 			row({ providerId: "b", value: 10, rank: 2, verdict: "separated" }),
 		]);
-		expect(v.rows[0]?.highlighted).toBe(true);
+		expect(v.rows[0]?.emphasis).toBe("lead");
 	});
 
 	it("does NOT crown when the runner-up is underpowered — the test could not have separated them", () => {
@@ -33,7 +22,7 @@ describe("rule 2 — no lead highlight the statistics do not support", () => {
 			row({ providerId: "a", value: 20, rank: 1 }),
 			row({ providerId: "b", value: 10, rank: 2, verdict: "underpowered" }),
 		]);
-		expect(v.rows.every((r) => !r.highlighted)).toBe(true);
+		expect(v.rows.every((r) => r.emphasis !== "lead")).toBe(true);
 	});
 
 	it("does NOT crown when the runner-up is a statistical tie", () => {
@@ -41,7 +30,7 @@ describe("rule 2 — no lead highlight the statistics do not support", () => {
 			row({ providerId: "a", value: 20, rank: 1 }),
 			row({ providerId: "b", value: 19, rank: 2, verdict: "tied" }),
 		]);
-		expect(v.rows.every((r) => !r.highlighted)).toBe(true);
+		expect(v.rows.every((r) => r.emphasis !== "lead")).toBe(true);
 	});
 
 	it("does NOT crown a shared rank 1 — a cohort is not a winner", () => {
@@ -49,11 +38,11 @@ describe("rule 2 — no lead highlight the statistics do not support", () => {
 			row({ providerId: "a", value: 20, rank: 1 }),
 			row({ providerId: "b", value: 20, rank: 1, verdict: "tied", tiedWithAbove: "statistical" }),
 		]);
-		expect(v.rows.every((r) => !r.highlighted)).toBe(true);
+		expect(v.rows.every((r) => r.emphasis !== "lead")).toBe(true);
 	});
 
 	it("does NOT crown a sole provider — it leads nothing", () => {
-		expect(view([row({ providerId: "a" })]).rows[0]?.highlighted).toBe(false);
+		expect(view([row({ providerId: "a" })]).rows[0]?.emphasis).not.toBe("lead");
 	});
 
 	it("marks a shared rank with `=` so the table cannot read as a strict ordering", () => {
@@ -115,7 +104,7 @@ describe("rule 1 — every bar is an interval, never a bare median", () => {
 			}),
 		]);
 		expect(v.rows[0]?.span).toBeNull();
-		expect(v.hasSpans).toBe(false);
+		expect(hasSpans(v)).toBe(false);
 	});
 
 	it("survives a degenerate domain without dividing by zero", () => {
@@ -141,7 +130,7 @@ describe("rule 3 — a provider that was not measured gets an explicit row", () 
 	it("renders an unmeasured provider rather than omitting it", () => {
 		const v = view([row({ providerId: "a" })], ["ghost"]);
 		const ghost = v.rows.find((r) => r.providerId === "ghost");
-		expect(ghost?.notMeasured).toBe(true);
+		expect(ghost?.emphasis).toBe("gap");
 		expect(ghost?.cells).toContain("not measured");
 	});
 

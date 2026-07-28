@@ -7,7 +7,6 @@ import type { Leaderboard } from "@sandbox-benchmarks/results";
 import type { FigurePlan, ReportPlan } from "../../plan.ts";
 import { planReport } from "../../plan.ts";
 import type { Theme } from "../../theme.ts";
-import { metrics, type_ } from "../../theme.ts";
 import type { TableView } from "../view/metric-table.ts";
 import { buildTableView } from "../view/metric-table.ts";
 import type { Svg } from "./svg.ts";
@@ -34,16 +33,7 @@ export function viewForFigure(board: Leaderboard, plan: FigurePlan): TableView {
 				`The plan and the board must come from the same Leaderboard.`,
 		);
 	}
-	return buildTableView({
-		board,
-		entry,
-		cellFontSize: type_.cell,
-		headerFontSize: type_.columnHeader,
-		titleFontSize: type_.title,
-		subtitleFontSize: type_.subtitle,
-		footnoteFontSize: type_.footnote,
-		padX: metrics.cellPadX,
-	});
+	return buildTableView(board, entry);
 }
 
 export async function renderBoardFigures(

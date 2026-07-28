@@ -1,7 +1,7 @@
 // `figures` is the first bin with a value-taking flag AND bin-private boolean flags, so its argv
 // parsing is the first that can bind a flag operand as a positional. These assertions pin that.
 import { describe, expect, it } from "bun:test";
-import { HELP, parseFiguresArgs } from "./bin/figures.ts";
+import { BOOLEAN_FLAGS, HELP, parseFiguresArgs, VALUE_FLAGS } from "./bin/figures.ts";
 import { handleDiscovery } from "./lib/discovery.ts";
 
 describe("parseFiguresArgs", () => {
@@ -44,17 +44,17 @@ describe("parseFiguresArgs", () => {
 describe("figures discovery", () => {
 	it("accepts its bin-private flags", () => {
 		expect(
-			handleDiscovery(["run.json", "out", "--check"], HELP, ["--theme"], ["--check", "--png"]),
+			handleDiscovery(["run.json", "out", "--check"], HELP, VALUE_FLAGS, BOOLEAN_FLAGS),
 		).toBeNull();
 	});
 
 	it("still rejects a genuinely unknown flag", () => {
-		const result = handleDiscovery(["--bogus"], HELP, ["--theme"], ["--check", "--png"]);
+		const result = handleDiscovery(["--bogus"], HELP, VALUE_FLAGS, BOOLEAN_FLAGS);
 		expect(result?.ok).toBe(false);
 		expect(result?.text).toContain("Unknown flag: --bogus");
 	});
 
 	it("prints usage for --help", () => {
-		expect(handleDiscovery(["--help"], HELP, ["--theme"], ["--check"])?.ok).toBe(true);
+		expect(handleDiscovery(["--help"], HELP, VALUE_FLAGS, BOOLEAN_FLAGS)?.ok).toBe(true);
 	});
 });

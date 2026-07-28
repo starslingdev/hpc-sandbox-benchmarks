@@ -115,6 +115,11 @@ jobs:
 
       # Fail here rather than opening a PR the figures-artifact-sync gate would reject. Same binary a
       # developer runs locally, so the two cannot diverge.
+      #
+      # This is NOT redundant with the regenerate step above, despite re-deriving the same board: the
+      # write path only writes the figures the current run plans, it never DELETES. A dimension that
+      # stopped being emitted leaves its old SVG on disk, and this `--check` is the only thing between
+      # that orphan and a merged PR. Costs ~9 s on a maintainer-dispatched job.
       - name: Confirm the figures are in sync
         run: bun apps/cli/src/bin/figures.ts "data/dataset/runs/$TARGET_RUN_ID.json" docs/leaderboard --check
 

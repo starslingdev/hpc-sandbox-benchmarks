@@ -22,13 +22,9 @@ export const figureManifestSchema = type({
 	generatedAt: "string > 0",
 	/** Identity of every bundled face, so a reflow caused by a font swap is attributable. */
 	fonts: type({ file: "string > 0", sha256 }).array(),
-	files: type({
-		path: "string > 0",
-		dimension: "string > 0",
-		metricId: "string > 0",
-		bytes: "number.integer >= 0",
-		sha256,
-	}).array(),
+	/** One entry per emitted figure. `path` + digest only: dimension and metric id are already in the
+	 *  plan, and a `bytes` field would be a third copy of something the file itself states. */
+	files: type({ path: "string > 0", sha256 }).array(),
 });
 
 export type FigureManifest = typeof figureManifestSchema.infer;

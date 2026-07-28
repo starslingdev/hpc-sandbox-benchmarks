@@ -11,6 +11,7 @@ import type { Theme } from "../../theme.ts";
 import { metrics, type_ } from "../../theme.ts";
 import type { SolvedColumn } from "../view/columns.ts";
 import type { TableRowView, TableView } from "../view/metric-table.ts";
+import { hasSpans } from "../view/metric-table.ts";
 
 function Cell({
 	column,
@@ -62,7 +63,7 @@ function Span({ row, theme }: { row: TableRowView; theme: Theme }) {
 					color: theme.colors.gap,
 				}}
 			>
-				{row.notMeasured ? "no result" : "single trial"}
+				{row.emphasis === "gap" ? "no result" : "single trial"}
 			</div>
 		);
 	}
@@ -70,7 +71,7 @@ function Span({ row, theme }: { row: TableRowView; theme: Theme }) {
 	const width = Math.max(2, Math.round((row.span.hi - row.span.lo) * track));
 	// Clamp so a 2px tick at the extreme end of the domain stays within the track.
 	const tick = Math.min(track - 2, Math.max(0, Math.round(row.span.median * track)));
-	const fill = row.highlighted || row.established ? theme.colors.bar : theme.colors.barMuted;
+	const fill = row.emphasis === "muted" ? theme.colors.barMuted : theme.colors.bar;
 	return (
 		<div
 			style={{
@@ -112,12 +113,23 @@ function Span({ row, theme }: { row: TableRowView; theme: Theme }) {
 	);
 }
 
-function Row({ row, view, theme }: { row: TableRowView; view: TableView; theme: Theme }) {
-	const base = row.notMeasured
-		? theme.colors.gap
-		: row.highlighted
-			? theme.colors.lead
-			: theme.colors.fg;
+function Row({
+	row,
+	view,
+	spans,
+	theme,
+}: {
+	row: TableRowView;
+	view: TableView;
+	spans: boolean;
+	theme: Theme;
+}) {
+	const base: string = {
+		lead: theme.colors.lead,
+		separated: theme.colors.fg,
+		muted: theme.colors.fg,
+		gap: theme.colors.gap,
+	}[row.emphasis];
 	return (
 		<div
 			style={{
@@ -135,15 +147,16 @@ function Row({ row, view, theme }: { row: TableRowView; view: TableView; theme: 
 					// The note column is always secondary: a verdict is a caveat, not a headline.
 					color={column.id === "note" ? theme.colors.dim : base}
 					fontSize={type_.cell}
-					bold={row.highlighted && column.id !== "note"}
+					bold={row.emphasis === "lead" && column.id !== "note"}
 				/>
 			))}
-			{view.hasSpans ? <Span row={row} theme={theme} /> : null}
+			{spans ? <Span row={row} theme={theme} /> : null}
 		</div>
 	);
 }
 
 export function MetricTable({ view, theme }: { view: TableView; theme: Theme }) {
+	const spans = hasSpans(view);
 	return (
 		<div
 			style={{
@@ -199,7 +212,7 @@ export function MetricTable({ view, theme }: { view: TableView; theme: Theme }) 
 						fontSize={type_.columnHeader}
 					/>
 				))}
-				{view.hasSpans ? (
+				{spans ? (
 					<div
 						style={{
 							display: "flex",
@@ -216,7 +229,7 @@ export function MetricTable({ view, theme }: { view: TableView; theme: Theme }) 
 			</div>
 
 			{view.rows.map((row) => (
-				<Row key={row.providerId} row={row} view={view} theme={theme} />
+				<Row key={row.providerId} row={row} view={view} spans={spans} theme={theme} />
 			))}
 
 			<div

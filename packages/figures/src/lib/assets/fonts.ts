@@ -20,10 +20,18 @@ import { dirname, join } from "node:path";
 
 /** Satori's font descriptor, restated locally so this module does not re-export a dependency's type. */
 export interface FontFace {
+	/** Bundled file name. Carried so provenance can be recorded without re-listing the faces. */
+	readonly file: string;
 	readonly name: string;
 	readonly data: ArrayBuffer;
 	readonly weight: 400 | 700;
 	readonly style: "normal";
+}
+
+/** One bundled face's identity, for the figure manifest. */
+export interface FontDigest {
+	readonly file: string;
+	readonly sha256: string;
 }
 
 const ASSETS = join(dirname(import.meta.dir), "..", "..", "assets", "fonts");
@@ -49,6 +57,7 @@ export async function loadFonts(): Promise<readonly FontFace[]> {
 			);
 		}
 		faces.push({
+			file: face.file,
 			name: face.name,
 			data: await file.arrayBuffer(),
 			weight: face.weight,
@@ -57,6 +66,30 @@ export async function loadFonts(): Promise<readonly FontFace[]> {
 	}
 	cache = faces;
 	return faces;
+}
+
+/**
+ * SHA-256 of every bundled face, in load order, for the manifest's provenance record.
+ *
+ * Derived from {@link loadFonts} rather than from a second face list: a consumer that restated the
+ * filenames would keep recording the old set after a face was added here, and the gate that checks
+ * the manifest would then pass while describing a render that no longer happens.
+ */
+export async function fontDigests(): Promise<FontDigest[]> {
+	const faces = await loadFonts();
+	return Promise.all(
+		faces.map(async (face) => ({
+			file: face.file,
+			sha256: await sha256Hex(face.data),
+		})),
+	);
+}
+
+/** Lowercase hex SHA-256. One implementation, so the producer and the gate cannot encode differently. */
+export async function sha256Hex(bytes: ArrayBuffer | string): Promise<string> {
+	const data = typeof bytes === "string" ? new TextEncoder().encode(bytes).buffer : bytes;
+	const digest = await crypto.subtle.digest("SHA-256", data as ArrayBuffer);
+	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**

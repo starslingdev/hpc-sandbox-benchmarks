@@ -8,8 +8,6 @@
 // Run/Metric/provider identity (see schema/analysis.ts `seededRng`), and `generatedAt` is read from the
 // Run document rather than the clock. A Math.random() bootstrap would make this gate flake on every run.
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { figureRefs } from "@sandbox-benchmarks/figures/plan";
 import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
 import type { MetricDef, Run } from "@sandbox-benchmarks/schema";
@@ -21,17 +19,11 @@ import {
 	getProvider,
 	kolmogorovSmirnov,
 	mannWhitneyU,
-	parseRun,
 } from "@sandbox-benchmarks/schema";
+import { committedBoard, loadCommittedRun } from "./lib/committed-board.ts";
 import { findRepoRoot } from "./lib/workspace.ts";
 
-const ROOT = findRepoRoot();
-const ARTIFACT = join(ROOT, "LEADERBOARD.md");
-/** The Run the artifact is rendered from must be the COMMITTED dataset (`data/dataset/runs/`), which
- *  `promote` writes. `data/runs/` is a gitignored raw scratch tree: it exists on a dev machine, is
- *  absent in CI, and can hold a stale/partial Run — rendering from it once silently dropped the whole
- *  `economics` dimension from this file. */
-const runFile = (runId: string) => join(ROOT, "data", "dataset", "runs", `${runId}.json`);
+const _ROOT = findRepoRoot();
 const regenCmd = (runId: string) =>
 	`bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/${runId}.json LEADERBOARD.md`;
 
@@ -342,47 +334,6 @@ function parseMetricTables(markdown: string, emitted: Map<string, MetricDef>) {
 	return { rows, pairwise };
 }
 
-/** The Run id the committed artifact was generated from, read out of its own header line:
- *  "Run `<id>` · commit `<sha>` · generated <iso>". Parsed rather than hardcoded so regenerating the
- *  leaderboard from a newer Run doesn't require editing this gate too. */
-function runIdOf(markdown: string): string {
-	const match = markdown.match(/^Run `([^`]+)`/m);
-	if (!match?.[1]) {
-		throw new Error("LEADERBOARD.md has no `Run <id>` header line — cannot locate its source Run");
-	}
-	return match[1];
-}
-
-/**
- * Load the Run the committed artifact names. Called INSIDE each test, never at module scope: a throw
- * during module initialisation aborts the whole file before Bun collects any test, so a missing source
- * Run would take the determinism test below down with it — silencing the check precisely in the
- * scenario it exists to catch (an artifact rendered from the gitignored `data/runs/`).
- */
-function loadCommittedRun(): {
-	committed: string;
-	runId: string;
-	run: ReturnType<typeof parseRun>;
-} {
-	const committed = readFileSync(ARTIFACT, "utf8");
-	const runId = runIdOf(committed);
-	const source = runFile(runId);
-	try {
-		return { committed, runId, run: parseRun(JSON.parse(readFileSync(source, "utf8"))) };
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			// A named Run that isn't in the committed dataset means the artifact was rendered from the
-			// gitignored raw tree — say so, rather than failing later with a bare ENOENT. try/catch
-			// rather than an existsSync pre-check, so there is no TOCTOU gap.
-			throw new Error(
-				`LEADERBOARD.md names Run "${runId}", but ${source} is not committed. The artifact must be ` +
-					`rendered from the published dataset (data/dataset/runs/), not the gitignored data/runs/.`,
-			);
-		}
-		throw error;
-	}
-}
-
 // This gate renders the WHOLE committed board — up to twice, for the determinism check — and both the
 // renderer and this file's independent audit run a seeded 10 000-resample bootstrap per provider/Metric.
 // That is legitimately slow and scales with the dataset: the replicate fan-out took one run from ~400 to
@@ -411,11 +362,11 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	});
 
 	it("is byte-identical to a fresh render of the Run it names", () => {
-		const { committed, runId, run } = loadCommittedRun();
+		const { committed, runId } = loadCommittedRun();
 		// The committed surface embeds one figure per dimension, so the re-derivation must pass the
 		// same refs the `leaderboard` bin does. They come from `@sandbox-benchmarks/figures/plan`,
 		// which is satori-free — this gate never loads a renderer or a rasterizer.
-		const board = buildLeaderboard(run);
+		const board = committedBoard();
 		const rendered = renderLeaderboardMarkdown(board, { figures: figureRefs(board) });
 		if (committed !== rendered) {
 			// Name the remedy in the failure, rather than leaving whoever hits this to work it out.
@@ -440,7 +391,7 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 
 	it("renders one row for every provider/Metric record in the source Run", () => {
 		const { run } = loadCommittedRun();
-		const board = buildLeaderboard(run);
+		const board = committedBoard();
 		const expected = run.providers
 			.flatMap((provider) =>
 				provider.metrics

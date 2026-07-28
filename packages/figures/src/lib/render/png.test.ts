@@ -2,23 +2,14 @@
 // every file in one process, so an un-memoized init only fails when two files rasterize — exactly
 // the shape that passes as `bun test png.test.ts` and fails as `bun run test`.
 import { describe, expect, it } from "bun:test";
-import { dark, metrics, type_ } from "../../theme.ts";
+import { dark } from "../../theme.ts";
 import { board, entry, row } from "../view/__fixtures__/board.ts";
 import { buildTableView } from "../view/metric-table.ts";
 import { toPng } from "./png.ts";
 import { renderTableSvg } from "./svg.ts";
 
 const rows = [row({ providerId: "alpha", value: 20, rank: 1 })];
-const view = buildTableView({
-	board: board(rows),
-	entry: entry(rows),
-	cellFontSize: type_.cell,
-	headerFontSize: type_.columnHeader,
-	titleFontSize: type_.title,
-	subtitleFontSize: type_.subtitle,
-	footnoteFontSize: type_.footnote,
-	padX: metrics.cellPadX,
-});
+const view = buildTableView(board(rows), entry(rows));
 
 describe("toPng", () => {
 	it("rasterizes to a real PNG", async () => {

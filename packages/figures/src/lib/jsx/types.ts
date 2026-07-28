@@ -9,7 +9,7 @@
  *    a property these components do not use. Adding one is a two-line change; the CLOSED set is the
  *    whole point, because satori lays out with Yoga and silently mis-renders anything it cannot
  *    honour (`z-index` warns and continues; `calc()` warns and falls back to a wrong width).
- *  - {@link JSX.IntrinsicElements} lists only the three tags satori can lay out. `<table>`/`<tr>`/`<td>`
+ *  - {@link JSX.IntrinsicElements} lists only the tags these components use. `<table>`/`<tr>`/`<td>`
  *    are absent ON PURPOSE: satori has no table layout at all, so a table built from table tags
  *    renders as a vertical pile. A ranked table here is flex rows of fixed-width cells.
  */
@@ -38,9 +38,6 @@ export interface Style {
 	flexDirection?: "row" | "column";
 	alignItems?: "flex-start" | "center" | "flex-end" | "baseline" | "stretch";
 	justifyContent?: "flex-start" | "center" | "flex-end" | "space-between";
-	flexGrow?: number;
-	flexShrink?: number;
-	flexBasis?: Length | "auto";
 	gap?: number;
 
 	/** Absolute positioning is how the interval bar and its median tick are placed on a shared track:
@@ -51,10 +48,7 @@ export interface Style {
 
 	width?: Length;
 	height?: Length;
-	minWidth?: Length;
-	maxWidth?: Length;
 	padding?: number;
-	paddingTop?: number;
 	paddingBottom?: number;
 	paddingLeft?: number;
 	paddingRight?: number;
@@ -66,22 +60,11 @@ export interface Style {
 	backgroundColor?: string;
 	borderRadius?: number;
 	borderBottom?: string;
-	borderTop?: string;
-	borderLeft?: string;
-	opacity?: number;
 
 	color?: string;
 	fontFamily?: string;
 	fontSize?: number;
 	fontWeight?: 400 | 700;
-	lineHeight?: number;
-	letterSpacing?: number;
-	textAlign?: "left" | "center" | "right";
-	/** Only ever set together, and never on a numeric column — a truncated number reads as a real
-	 *  number that is wrong by orders of magnitude (`12345678…` for `123456789012345678`). */
-	whiteSpace?: "nowrap";
-	overflow?: "hidden";
-	textOverflow?: "ellipsis";
 }
 
 /** Props every intrinsic element accepts.
@@ -93,14 +76,4 @@ export interface ElementProps {
 	key?: string | number;
 	style?: Style;
 	children?: Child;
-}
-
-/** `<img>` needs explicit dimensions — satori cannot ask a decoder for them. */
-export interface ImgProps {
-	key?: string | number;
-	style?: Style;
-	/** A `data:` URI. A remote URL would make the render non-hermetic and non-deterministic. */
-	src: string;
-	width: number;
-	height: number;
 }

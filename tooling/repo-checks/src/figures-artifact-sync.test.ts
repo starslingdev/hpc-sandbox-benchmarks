@@ -17,60 +17,44 @@
  * run), not rendering (~0.3 s for all 7 figures), so the board is built ONCE for the whole file.
  */
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { dark, parseFigureManifest, renderBoardFigures } from "@sandbox-benchmarks/figures";
+import {
+	committedFigureFiles,
+	dark,
+	fontDigests,
+	MANIFEST_FILE,
+	parseFigureManifest,
+	renderBoardFigures,
+} from "@sandbox-benchmarks/figures";
 import { figureRefs, planReport } from "@sandbox-benchmarks/figures/plan";
-import type { Leaderboard } from "@sandbox-benchmarks/results";
-import { buildLeaderboard } from "@sandbox-benchmarks/results";
-import { parseRun } from "@sandbox-benchmarks/schema";
+import { ARTIFACT, committedBoard, loadCommittedRun } from "./lib/committed-board.ts";
 import { findRepoRoot } from "./lib/workspace.ts";
 
 setDefaultTimeout(120_000);
 
 const ROOT = findRepoRoot();
 const FIGURE_DIR = join(ROOT, "docs", "leaderboard");
-const ARTIFACT = join(ROOT, "LEADERBOARD.md");
 
 const regenCmd = (runId: string) =>
 	`bun apps/cli/src/bin/figures.ts data/dataset/runs/${runId}.json docs/leaderboard && ` +
 	`bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/${runId}.json LEADERBOARD.md`;
 
-/** The run id LEADERBOARD.md declares in its header line. */
-function committedRunId(): string {
-	const markdown = readFileSync(ARTIFACT, "utf8");
-	const match = /^Run `([^`]+)`/m.exec(markdown);
-	if (!match?.[1]) throw new Error("Could not read the run id from LEADERBOARD.md's header");
-	return match[1];
-}
+const svgFiles = () => committedFigureFiles(FIGURE_DIR).filter((f) => f.endsWith(".svg"));
 
-let cached: { board: Leaderboard; runId: string } | undefined;
-function boardOnce(): { board: Leaderboard; runId: string } {
-	if (!cached) {
-		const runId = committedRunId();
-		const run = parseRun(
-			JSON.parse(readFileSync(join(ROOT, "data", "dataset", "runs", `${runId}.json`), "utf8")),
-		);
-		cached = { board: buildLeaderboard(run), runId };
-	}
-	return cached;
-}
+const manifest = () =>
+	parseFigureManifest(JSON.parse(readFileSync(join(FIGURE_DIR, MANIFEST_FILE), "utf8")));
 
 describe("committed figures stay in sync with the renderer", () => {
 	it("the file set on disk is exactly the planned set (no missing, no orphans)", () => {
-		const { board } = boardOnce();
-		const expected = new Set([
-			...planReport(board).figures.map((f) => f.fileName),
-			"manifest.json",
-		]);
-		const onDisk = new Set(
-			readdirSync(FIGURE_DIR).filter((f) => f.endsWith(".svg") || f === "manifest.json"),
-		);
-		expect([...onDisk].sort()).toEqual([...expected].sort());
+		const board = committedBoard();
+		const expected = [...planReport(board).figures.map((f) => f.fileName), MANIFEST_FILE].sort();
+		expect(committedFigureFiles(FIGURE_DIR)).toEqual(expected);
 	});
 
 	it("every committed figure is byte-identical to a fresh render", async () => {
-		const { board, runId } = boardOnce();
+		const board = committedBoard();
+		const { runId } = loadCommittedRun();
 		const { figures } = await renderBoardFigures(board, { theme: dark });
 		for (const figure of figures) {
 			const committed = readFileSync(join(FIGURE_DIR, figure.plan.fileName), "utf8");
@@ -85,33 +69,21 @@ describe("committed figures stay in sync with the renderer", () => {
 	});
 
 	it("the manifest parses and names the same run as LEADERBOARD.md", () => {
-		const { runId } = boardOnce();
-		const manifest = parseFigureManifest(
-			JSON.parse(readFileSync(join(FIGURE_DIR, "manifest.json"), "utf8")),
-		);
+		const { runId } = loadCommittedRun();
 		// The cross-check that catches a half-landed regeneration: figures from one run beside a
 		// Markdown surface describing another.
-		expect(manifest.runId).toBe(runId);
+		expect(manifest().runId).toBe(runId);
 	});
 
-	it("the manifest's font digests match the committed font files", async () => {
-		const manifest = parseFigureManifest(
-			JSON.parse(readFileSync(join(FIGURE_DIR, "manifest.json"), "utf8")),
-		);
-		expect(manifest.fonts.length).toBeGreaterThan(0);
-		for (const font of manifest.fonts) {
-			const bytes = await Bun.file(
-				join(ROOT, "packages", "figures", "assets", "fonts", font.file),
-			).arrayBuffer();
-			const digest = await crypto.subtle.digest("SHA-256", bytes);
-			const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-			// A font swap reflows every figure; the manifest is what makes that attributable.
-			expect(hex).toBe(font.sha256);
-		}
+	it("the manifest records every bundled face, with the digest it actually renders from", async () => {
+		// Compared against the package's OWN face list, not against the files the manifest happens to
+		// name — otherwise adding a face would leave the manifest describing the old set and this
+		// assertion would still pass, validating the record against itself.
+		expect(manifest().fonts).toEqual(await fontDigests());
 	});
 
 	it("LEADERBOARD.md embeds exactly the planned figures, with alt text", () => {
-		const { board } = boardOnce();
+		const board = committedBoard();
 		const markdown = readFileSync(ARTIFACT, "utf8");
 		const embedded = [...markdown.matchAll(/^!\[([^\]]*)\]\(([^)]+)\)$/gm)].map((m) => ({
 			alt: m[1] ?? "",
@@ -125,7 +97,7 @@ describe("committed figures stay in sync with the renderer", () => {
 	});
 
 	it("figures are pretty-printed, so a regeneration produces a reviewable diff", () => {
-		for (const file of readdirSync(FIGURE_DIR).filter((f) => f.endsWith(".svg"))) {
+		for (const file of svgFiles()) {
 			const svg = readFileSync(join(FIGURE_DIR, file), "utf8");
 			// Satori emits one line; committed as-is, a one-digit change reports as the whole file
 			// changed and GitHub refuses to render the diff.
@@ -135,7 +107,7 @@ describe("committed figures stay in sync with the renderer", () => {
 	});
 
 	it("figures embed glyphs as paths — no <text>, which is font-dependent and sanitiser-fragile", () => {
-		for (const file of readdirSync(FIGURE_DIR).filter((f) => f.endsWith(".svg"))) {
+		for (const file of svgFiles()) {
 			expect(readFileSync(join(FIGURE_DIR, file), "utf8")).not.toContain("<text");
 		}
 	});

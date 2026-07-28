@@ -4,4 +4,4 @@
 // `Cannot find module '@sandbox-benchmarks/figures/jsx-dev-runtime'`.
 
 export type { JSX } from "./lib/jsx/runtime.ts";
-export { Fragment, jsxDEV } from "./lib/jsx/runtime.ts";
+export { jsxDEV } from "./lib/jsx/runtime.ts";

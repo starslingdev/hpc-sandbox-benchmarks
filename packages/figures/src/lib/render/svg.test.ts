@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { dark, metrics, type_ } from "../../theme.ts";
+import { dark, metrics } from "../../theme.ts";
 import { board, entry, row } from "../view/__fixtures__/board.ts";
 import { buildTableView } from "../view/metric-table.ts";
 import { renderTableSvg } from "./svg.ts";
@@ -8,18 +8,7 @@ const rows = [
 	row({ providerId: "alpha", value: 20, rank: 1 }),
 	row({ providerId: "beta", value: 10, rank: 2, verdict: "separated" }),
 ];
-const view = (over: Partial<Parameters<typeof buildTableView>[0]> = {}) =>
-	buildTableView({
-		board: board(rows),
-		entry: entry(rows),
-		cellFontSize: type_.cell,
-		headerFontSize: type_.columnHeader,
-		titleFontSize: type_.title,
-		subtitleFontSize: type_.subtitle,
-		footnoteFontSize: type_.footnote,
-		padX: metrics.cellPadX,
-		...over,
-	});
+const view = () => buildTableView(board(rows), entry(rows));
 
 describe("renderTableSvg", () => {
 	it("emits one element per line so a regenerated figure produces a readable diff", async () => {
@@ -53,16 +42,7 @@ describe("renderTableSvg", () => {
 
 	it("throws naming the character when a string needs a glyph the bundled fonts don't cover", async () => {
 		const exotic = [row({ providerId: "深度算力", value: 20, rank: 1 })];
-		const v = buildTableView({
-			board: board(exotic),
-			entry: entry(exotic),
-			cellFontSize: type_.cell,
-			headerFontSize: type_.columnHeader,
-			titleFontSize: type_.title,
-			subtitleFontSize: type_.subtitle,
-			footnoteFontSize: type_.footnote,
-			padX: metrics.cellPadX,
-		});
+		const v = buildTableView(board(exotic), entry(exotic));
 		// Satori would silently paint tofu boxes and exit 0; a published figure of `□□□□` is worse
 		// than a failed build.
 		expect(renderTableSvg(v, { theme: dark })).rejects.toThrow(/U\+6DF1/);
