@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
+import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import type { SandboxHandle } from "./execute.ts";
 import {
 	buildPreamble,
@@ -42,6 +43,19 @@ describe("selectTransport", () => {
 
 	it("stays synchronous past the cap when the provider can't detach (no durable alternative)", () => {
 		expect(selectTransport(CAPPED_NO_DETACH, 5 * MIN)).toBe("sync");
+	});
+
+	it("detaches a suite-length step on namespace, whose sync exec is capped in practice", () => {
+		// Regression guard against the declaration this fixes, read from the REAL registry rather than a
+		// fixture — a fixture would keep passing if the registry regressed. namespace was declared
+		// uncapped + detachedPoll:false, which routed a 55-minute benchmark through one synchronous exec;
+		// live run 30314097333 lost it at 4m18.8s with two of three PTS profiles done. A suite-length step
+		// must detach here, while a short step must still take the cheap synchronous path.
+		const namespaceTransport = PROVIDERS.find((p) => p.id === "namespace")?.transport;
+		expect(namespaceTransport).toBeDefined();
+		if (!namespaceTransport) return;
+		expect(selectTransport(namespaceTransport, 55 * MIN)).toBe("detached");
+		expect(selectTransport(namespaceTransport, MIN)).toBe("sync");
 	});
 });
 
@@ -381,6 +395,45 @@ describe("StepRunner.runDetached", () => {
 		expect(commands[0]?.background).toBe(true);
 		expect(commands[0]?.command).toContain("nohup");
 		// Completion is observed by cat-ing the done-file (the no-filesystem fallback), then the log.
+		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".done"))).toBe(
+			true,
+		);
+		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".log"))).toBe(
+			true,
+		);
+	});
+
+	it("degrades to the exec poll when the filesystem is PRESENT but unsupported", async () => {
+		// The live namespace failure this guards: computesdk gives an adapter with no `filesystem` table
+		// its UnsupportedFileSystem stub, so `filesystem` is truthy and every call throws. The poll picked
+		// the fs path and 12 straight throws killed the step as a "dead sandbox" — while plain exec was
+		// answering fine the whole time. A present-but-broken fs must degrade to cat, not fail the step,
+		// and the degradation must NOT consume the consecutive-failure budget meant for real outages.
+		const { sandbox, commands } = catPollSandbox({
+			readyAfter: 1,
+			log: "ran via cat",
+			exitCode: "0",
+		});
+		let fsCalls = 0;
+		const unsupported = () => {
+			fsCalls++;
+			return Promise.reject(
+				new Error("Filesystem operations are not supported by namespace's sandbox environment."),
+			);
+		};
+		const withBrokenFs: SandboxHandle = {
+			...sandbox,
+			filesystem: { exists: unsupported, readFile: unsupported },
+		};
+		const runner = new StepRunner(withBrokenFs, CAPPED, async () => undefined);
+
+		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("ran via cat");
+		// Discovered by use, then abandoned: exactly one fs attempt, never retried.
+		expect(fsCalls).toBe(1);
+		// Completion and the log read-back both came over exec instead.
 		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".done"))).toBe(
 			true,
 		);
