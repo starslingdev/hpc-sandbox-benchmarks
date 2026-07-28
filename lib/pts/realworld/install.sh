@@ -18,13 +18,14 @@ SRC_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 # wrapper name is a fixed constant -- no versionless-dir derivation.
 EXE_NAME="realworld-run"
 
-if [ ! -f "${SRC_DIR}/target.env" ] || [ ! -f "${SRC_DIR}/realworld-runner.sh" ]; then
-	echo "ERROR: target.env or realworld-runner.sh missing next to install.sh (${SRC_DIR})" >&2
+if [ ! -f "${SRC_DIR}/target.env" ] || [ ! -f "${SRC_DIR}/realworld-runner.sh" ] || [ ! -f "${SRC_DIR}/realworld-env.sh" ]; then
+	echo "ERROR: target.env, realworld-runner.sh, or realworld-env.sh missing next to install.sh (${SRC_DIR})" >&2
 	echo 1 > ~/install-exit-status
 	exit 1
 fi
 cp "${SRC_DIR}/target.env" .
 cp "${SRC_DIR}/realworld-runner.sh" .
+cp "${SRC_DIR}/realworld-env.sh" .
 chmod +x realworld-runner.sh
 
 cat <<EOF > "$EXE_NAME"
@@ -45,6 +46,14 @@ chmod +x "$EXE_NAME"
 export XDG_CACHE_HOME="${PWD}/.cache"
 export COREPACK_HOME="${PWD}/.corepack"
 export npm_config_store_dir="${PWD}/.pnpm-store"
+
+# Make the harness-provisioned mise Node win over ambient nvm/distro nodes: PTS may invoke
+# install.sh with an older nvm Node first on PATH and often strips MISE_*. Shared with
+# realworld-runner.sh via realworld-env.sh (single source of truth — see it for the full
+# rationale). install.sh deliberately keeps PTS's HOME as-is; only the mise/PATH side effects
+# are needed here so the node-version gate below sees the right Node.
+# shellcheck source=/dev/null
+. ./realworld-env.sh
 
 if ! command -v node >/dev/null 2>&1; then
 	echo "ERROR: node not found (the sandbox harness's setupNode step provisions it)" >&2

@@ -22,6 +22,20 @@ WORK_DIR="${SCRIPT_DIR}/work"
 export XDG_CACHE_HOME="${SCRIPT_DIR}/.cache"
 export COREPACK_HOME="${SCRIPT_DIR}/.corepack"
 export npm_config_store_dir="${SCRIPT_DIR}/.pnpm-store"
+# PTS points HOME at the installed-test dir (often with a trailing slash) for the executable
+# wrapper and strips MISE_*. realworld-env.sh resolves the real user home into REALWORLD_HOME and
+# makes the harness mise Node win on PATH — shared with install.sh so the two can't drift.
+# shellcheck source=/dev/null
+. "${SCRIPT_DIR}/realworld-env.sh"
+# Reset HOME to the real user home (no trailing slash). Upstream suites call os.homedir() and then
+# build tilde paths via `path.join(home, name).replace(home, '~')` — a trailing-slash HOME makes
+# that replace produce `~.name` instead of `~/.name`, and openclaw's path-normalization tests
+# compare `os.homedir()` to `path.resolve`-normalized forms that strip the slash. Caches stay
+# pinned to SCRIPT_DIR (above). The PTS wrapper still writes ~/test-exit-status under PTS's HOME in
+# the parent shell; this export only affects the runner and its children.
+# shellcheck disable=SC2154 # REALWORLD_HOME is set by the sourced realworld-env.sh above.
+HOME="${REALWORLD_HOME}"
+export HOME
 export CI=true
 export TZ=UTC
 export LC_ALL=C.UTF-8
