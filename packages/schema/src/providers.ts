@@ -427,24 +427,32 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"Local e2e validation wiring; not yet a committed run. The wrapper's `methods.sandbox` declares no `filesystem` table, so computesdk falls back to its UnsupportedFileSystem (every filesystem op throws) — realworld suites that read/write through `sandbox.filesystem` skip on this provider.",
+				"Validated live end-to-end (system suite, 3/3 metrics) once the exec transport was corrected below. The wrapper's `methods.sandbox` declares no `filesystem` table, so computesdk falls back to its UnsupportedFileSystem (a truthy stub whose every op throws) — realworld suites that read/write through `sandbox.filesystem` skip on this provider. That is a WRAPPER limit, not a platform one: the official @namespacelabs/sdk exposes ComputeService.GetSSHConfig (per-instance scoped private key + username + endpoint), so an SSH-backed filesystem could close the gap. Deliberately not taken — it means managing keys and bypassing the @computesdk/* wrapper this repo standardizes on — so the gap is a known, closable choice rather than a provider incapability.",
 		},
 		// virtualCpu/memoryMegabytes are independent, uncoupled knobs on the factory config (unlike
 		// blaxel's memory-derived cpu/disk), so the 4 vCPU / 8 GiB target spec is exactly expressible.
 		specPinning: "settable",
 		transport: {
-			// `runCommand` POSTs to the CommandService's RunCommandSync RPC and awaits the full response
-			// with no client-side timeout — but there is no evidence (SDK default, docs, or a measured
-			// probe) of a server-side cap either, unlike e2b's documented 60s or Daytona's measured 408.
-			// Declaring a guessed cap here would trip the schema's own invariant (a finite syncCapMs
-			// requires detachedPoll: true), and there IS no detached alternative — see below — so the
-			// honest declaration is uncapped, and every step, however long, stays synchronous.
+			// `runCommand` POSTs to the CommandService's RunCommandSync RPC and awaits the full response.
+			// This was declared uncapped ("no evidence of a server-side cap") until a live smoke produced
+			// the evidence: run 30314097333 lost `mise run benchmark:system:all` at 4m18.8s to a bare
+			// "Namespace command execution failed: The operation timed out." after two of the suite's three
+			// PTS profiles had completed — pybench and sqlite-speedtest wrote their XML, git did not.
+			//
+			// 120s, not the ~259s observed: the measurement is a single data point, and the bare message
+			// (no HTTP status) does not distinguish a Namespace-side cap from a client fetch timeout in the
+			// SDK's `fetch`. Detaching makes that distinction moot — every exec becomes short — so the cap
+			// is set well under the observation rather than tuned to it. Short steps stay synchronous; only
+			// a step BUDGETED past 120s detaches, which is the suite benchmark and the setup installs.
 			streaming: false,
-			syncCapMs: null,
-			// No `filesystem` table on the wrapper (see isolation notes) means no pollable done-file for
-			// the harness's background+poll pattern — the durable long-step path other providers get is
-			// simply unavailable here.
-			detachedPoll: false,
+			syncCapMs: 120_000,
+			// A finite cap requires a durable alternative, and this provider does have one. The earlier
+			// "no filesystem table means no pollable done-file" reasoning was wrong about the harness:
+			// StepRunner.runDetached observes completion through the sandbox filesystem only WHEN one is
+			// exposed, and otherwise `cat`s the done-file over exec (pollDoneViaCat) — a fallback that
+			// exists for exactly this case, an adapter with no filesystem API. Each poll is a sub-second
+			// exec, far under the cap, so a multi-minute benchmark survives as a sequence of short calls.
+			detachedPoll: true,
 		},
 	},
 };
