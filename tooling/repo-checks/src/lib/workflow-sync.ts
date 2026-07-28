@@ -31,7 +31,12 @@
 //      provider is explicitly declared in {@link RELEASE_LANE_EXEMPT}. Invariant 3 covers only the two
 //      bench lanes, so before this a new provider could be fully wired for benchmarking and still be a
 //      silent missing-credentials skip through bake and promote — its toolchain artifact never built and
-//      never validated, with a green release. That is the one gap this gate did not close.
+//      never validated, with a green release.
+//   8. A credential is not merely present but plausibly CORRECT, across every credential block in the
+//      repo: each provider id a credential expression guards on is registered AND owns that credential,
+//      and every lane wiring a key draws it from the same `secrets.*` name. A mistyped guard satisfies
+//      invariants 3/7 while supplying an empty string forever, which reads downstream as "that provider
+//      has no results" rather than "the guard never matched".
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -259,19 +264,34 @@ export const RELEASE_LANE_EXEMPT: Readonly<Record<string, string>> = Object.free
 		"unwired and its bake cell takes the missing-credentials skip",
 });
 
-/** Every exemption key names a registered provider (no stale/typo'd exemptions). `exempt` is injectable
- *  so the failure message is unit-testable without mutating the real declaration. */
+/**
+ * Every exemption names a registered provider AND carries a non-blank reason. The reason is the entire
+ * cost of the bypass: an exemption is a permanent, silent opt-out of Invariant 7, so an empty or
+ * whitespace-only string would let one land undocumented — passing the gate while telling the next
+ * reader nothing about why this provider needs no release-lane boot. `exempt` is injectable so both
+ * failure messages are unit-testable without mutating the real declaration.
+ */
 export function checkReleaseLaneExemptions(
 	exempt: Readonly<Record<string, string>> = RELEASE_LANE_EXEMPT,
 ): string[] {
 	const registered = new Set(providerIds());
-	return Object.keys(exempt)
-		.filter((id) => !registered.has(id))
-		.map(
-			(id) =>
+	const errors: string[] = [];
+	for (const [id, reason] of Object.entries(exempt)) {
+		if (!registered.has(id)) {
+			errors.push(
 				`RELEASE_LANE_EXEMPT names "${id}", which is not in PROVIDERS ` +
-				`(packages/schema/src/providers.ts) — drop the stale exemption or fix the id`,
-		);
+					`(packages/schema/src/providers.ts) — drop the stale exemption or fix the id`,
+			);
+		}
+		if (reason.trim() === "") {
+			errors.push(
+				`RELEASE_LANE_EXEMPT["${id}"] has a blank reason — an exemption is a permanent opt-out of ` +
+					"the release-lane credential invariant, so it must state why this provider needs no " +
+					"release-lane boot (see the blaxel entry)",
+			);
+		}
+	}
+	return errors;
 }
 
 /**
@@ -325,6 +345,83 @@ export function checkReleaseCredentialEnv(
 	return errors;
 }
 
+/** A `<selector>.provider == 'id'` guard inside a credential expression, capturing the guarded id. */
+const PROVIDER_GUARD_RE = /\b(?:inputs|matrix)\.provider\s*==\s*'([^']*)'/g;
+/** A `secrets.NAME` reference inside a credential expression. */
+const SECRET_REF_RE = /\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)/g;
+
+/** Provider ids a credential expression guards on, in source order (empty when it guards on something
+ *  else, e.g. namespace's `steps.nsc-token.outcome`, or on nothing at all). */
+export function guardedProviderIds(expr: string): string[] {
+	return [...expr.matchAll(PROVIDER_GUARD_RE)].map((m) => m[1] as string);
+}
+
+/** The distinct `secrets.*` names a credential expression draws from, sorted for set comparison. */
+export function referencedSecretNames(expr: string): string[] {
+	return [...new Set([...expr.matchAll(SECRET_REF_RE)].map((m) => m[1] as string))].sort();
+}
+
+/**
+ * Invariant 8: a credential is not just PRESENT but plausibly CORRECT. Invariants 3 and 7 check that a
+ * key appears in a lane's env, which a mistyped expression satisfies while supplying an empty string
+ * forever — `matrix.provider == 'namespac'` is never true, so the provider takes a missing-credentials
+ * skip on every run and the gate stays green. Two rules, both derived from the registry:
+ *
+ *   a. Every provider id a credential guards on is REGISTERED and OWNS that credential. A typo'd id
+ *      can never match (permanent empty), and an id that doesn't require the key means the guard is
+ *      wired to the wrong provider — e.g. `E2B_API_KEY` released only on a daytona cell.
+ *   b. Every lane wiring a key draws it from the SAME `secrets.*` name(s). This catches a mistyped or
+ *      swapped secret reference in one lane without demanding identical guard expressions, so the
+ *      release lane's `publish` block may still pass credentials unconditionally (no guard at all)
+ *      while its secret source is held to the same source of truth as the bench lanes.
+ *
+ * Both rules skip a lane that omits the key: presence is Invariants 3/7's job, and reporting the same
+ * omission twice would bury the actionable message. A key with no `secrets.*` reference anywhere (e.g.
+ * `NSC_TOKEN_FILE`, minted from OIDC into a step output) trivially agrees with itself under (b).
+ */
+export function checkCredentialExpressions(
+	envByLane: Record<string, Record<string, string>>,
+): string[] {
+	const errors: string[] = [];
+	const registered = new Set(providerIds());
+	for (const [key, owners] of requiredCredentialKeys()) {
+		const ownerSet = new Set(owners);
+		// Canonical secret-name set -> the lanes that use it; >1 entry means the lanes disagree on source.
+		const lanesBySecretSet = new Map<string, string[]>();
+		for (const [lane, env] of Object.entries(envByLane)) {
+			const expr = env[key];
+			if (expr === undefined) continue;
+			for (const guarded of guardedProviderIds(expr)) {
+				if (!registered.has(guarded)) {
+					errors.push(
+						`${key} in ${lane}: guarded on provider "${guarded}", which is not in PROVIDERS ` +
+							"(packages/schema/src/providers.ts) — that guard can never be true, so the credential " +
+							"is always empty and the provider silently skips every run",
+					);
+				} else if (!ownerSet.has(guarded)) {
+					errors.push(
+						`${key} in ${lane}: guarded on provider "${guarded}", which does not require ${key} ` +
+							`(its requiredEnvVars owners are ${owners.join(", ")}) — the secret is released to the ` +
+							"wrong provider's cell, so its real owner runs without it",
+					);
+				}
+			}
+			const secretSet = referencedSecretNames(expr).join(",");
+			lanesBySecretSet.set(secretSet, [...(lanesBySecretSet.get(secretSet) ?? []), lane]);
+		}
+		if (lanesBySecretSet.size > 1) {
+			const detail = [...lanesBySecretSet]
+				.map(([secrets, lanes]) => `${lanes.join(" + ")} use ${secrets || "(no secrets.* ref)"}`)
+				.join("; ");
+			errors.push(
+				`${key}: lanes disagree on which secret supplies it (${detail}) — every lane must draw a ` +
+					"credential from the same secret, or one of them hands the provider the wrong value",
+			);
+		}
+	}
+	return errors;
+}
+
 /** Invariant 5: every live-run job has margin beyond the longest registered sandbox lifetime. */
 export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>): string[] {
 	const longestSuite = Math.max(...Object.values(SUITES).map((suite) => suite.timeoutMinutes));
@@ -352,17 +449,29 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 	const release = readWorkflow(RELEASE_WORKFLOW, root);
 	const bakeLabel = `${RELEASE_WORKFLOW} (${BAKE_JOB})`;
 	const promoteLabel = `${RELEASE_WORKFLOW} (${PUBLISH_JOB})`;
+	const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
+	const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
+	const bakeEnv = stepEnv(release, BAKE_JOB, BAKE_STEP, bakeLabel);
+	const promoteEnv = stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, promoteLabel);
 	return [
 		...checkProviderInput(dispatchInput(smoke, "provider", SMOKE_WORKFLOW)),
 		...checkSuiteInput(dispatchInput(smoke, "suite", SMOKE_WORKFLOW)),
 		...checkCredentialEnv({
-			[SMOKE_WORKFLOW]: stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW),
-			[SUITE_WORKFLOW]: stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW),
+			[SMOKE_WORKFLOW]: smokeEnv,
+			[SUITE_WORKFLOW]: suiteEnv,
 		}),
 		...checkReleaseLaneExemptions(),
 		...checkReleaseCredentialEnv({
-			[bakeLabel]: stepEnv(release, BAKE_JOB, BAKE_STEP, bakeLabel),
-			[promoteLabel]: stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, promoteLabel),
+			[bakeLabel]: bakeEnv,
+			[promoteLabel]: promoteEnv,
+		}),
+		// Invariant 8 spans every credential block in the repo — the two bench lanes and both release-lane
+		// jobs — because a typo'd guard or a swapped secret is the same silent-skip bug wherever it lands.
+		...checkCredentialExpressions({
+			[SMOKE_WORKFLOW]: smokeEnv,
+			[SUITE_WORKFLOW]: suiteEnv,
+			[bakeLabel]: bakeEnv,
+			[promoteLabel]: promoteEnv,
 		}),
 		...checkWorkflowTimeouts({
 			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),

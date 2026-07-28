@@ -87,7 +87,10 @@ Then work through the steps. `bun run typecheck && bun run test` catches every s
    normalize"* step env of **both** `bench-smoke.yml` and `bench-suite.yml` (same value expression modulo
    each lane's `inputs.provider` / `matrix.provider` selector). It also covers the release lane: wire the
    same keys into `toolchain-image.yml`'s `bake` and `publish` credential blocks, or declare the provider
-   in `RELEASE_LANE_EXEMPT` with the reason it needs no release-lane boot.
+   in `RELEASE_LANE_EXEMPT` with the reason it needs no release-lane boot. Across all four blocks it
+   further checks that each guard names a *registered* provider that actually requires the key, and that
+   every lane draws the credential from the same `secrets.*` name — a typo'd guard would otherwise pass
+   every presence check while handing the provider an empty string on every run.
 7. **Nothing enforces the default matrix.** `bench-matrix.yml`'s `providers` input default is free text;
    a new provider is dispatchable immediately but stays out of the default run until added there. Leave
    it out (and out of `RELEASE_REQUIRED_PROVIDERS`) until a committed run validates it — that is the

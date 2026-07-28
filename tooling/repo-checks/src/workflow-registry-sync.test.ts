@@ -19,6 +19,7 @@ import {
 	BAKE_JOB,
 	BAKE_STEP,
 	checkCredentialEnv,
+	checkCredentialExpressions,
 	checkProviderInput,
 	checkReleaseCredentialEnv,
 	checkReleaseLaneExemptions,
@@ -30,6 +31,7 @@ import {
 	EXPECTED_PROVIDER_NAME_EXPR,
 	EXPECTED_SUITE_MATRIX_EXPR,
 	EXPECTED_SUITE_NAME_EXPR,
+	guardedProviderIds,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
 	matrixSuiteCaller,
@@ -39,6 +41,7 @@ import {
 	RELEASE_WORKFLOW,
 	RUN_STEP,
 	readWorkflow,
+	referencedSecretNames,
 	requiredCredentialKeys,
 	runCheck,
 	SMOKE_JOB,
@@ -336,7 +339,7 @@ describe("checkReleaseCredentialEnv (the toolchain release lane)", () => {
 });
 
 describe("checkReleaseLaneExemptions", () => {
-	test("the real exemption list names only registered providers", () => {
+	test("the real exemption list names only registered providers, each with a reason", () => {
 		expect(checkReleaseLaneExemptions()).toEqual([]);
 	});
 
@@ -345,6 +348,87 @@ describe("checkReleaseLaneExemptions", () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain('names "fly"');
 		expect(errors[0]).toContain("not in PROVIDERS");
+	});
+
+	test("flags a blank reason — an exemption is a permanent bypass, so it must be justified", () => {
+		expect(checkReleaseLaneExemptions({ blaxel: "" })[0]).toContain("blank reason");
+		// Whitespace-only is the same undocumented bypass, just harder to spot in review.
+		expect(checkReleaseLaneExemptions({ blaxel: "   \n" })[0]).toContain("blank reason");
+	});
+
+	test("reports an unregistered id and its blank reason independently", () => {
+		expect(checkReleaseLaneExemptions({ fly: "  " })).toHaveLength(2);
+	});
+});
+
+describe("checkCredentialExpressions", () => {
+	// Every credential block in the repo: both bench lanes and both release-lane jobs.
+	const allLanes = {
+		[SMOKE_WORKFLOW]: smokeEnv,
+		[SUITE_WORKFLOW]: suiteEnv,
+		[BAKE_LABEL]: bakeEnv,
+		[PROMOTE_LABEL]: promoteEnv,
+	};
+
+	test("guardedProviderIds extracts both lanes' selector forms, and nothing from a non-provider guard", () => {
+		expect(guardedProviderIds(smokeEnv.E2B_API_KEY as string)).toEqual(["e2b"]);
+		expect(guardedProviderIds(suiteEnv.DAYTONA_API_KEY as string)).toEqual([
+			"daytona-vm",
+			"daytona-container",
+		]);
+		// namespace's token file is gated on the mint step's outcome, not on a provider literal.
+		expect(guardedProviderIds(promoteEnv.NSC_TOKEN_FILE as string)).toEqual([]);
+	});
+
+	test("referencedSecretNames extracts the secret source, deduped and sorted", () => {
+		expect(referencedSecretNames(suiteEnv.E2B_API_KEY as string)).toEqual(["E2B_API_KEY"]);
+		// Minted from OIDC into a step output — no stored secret to reference at all.
+		expect(referencedSecretNames(bakeEnv.NSC_TOKEN_FILE as string)).toEqual([]);
+	});
+
+	test("every real credential block is internally consistent", () => {
+		expect(checkCredentialExpressions(allLanes)).toEqual([]);
+	});
+
+	test("flags a typo'd provider guard, which would silently skip forever", () => {
+		// The exact bug presence-only checking cannot see: 'namespac' never matches, so NSC_TOKEN_FILE is
+		// empty on every run and namespace reads downstream as "no results" rather than "never ran".
+		const errors = checkCredentialExpressions({
+			[BAKE_LABEL]: {
+				...bakeEnv,
+				NSC_TOKEN_FILE: `\${{ matrix.provider == 'namespac' && 'x' || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('guarded on provider "namespac"');
+		expect(errors[0]).toContain("can never be true");
+	});
+
+	test("flags a credential released to a provider that does not require it", () => {
+		const errors = checkCredentialExpressions({
+			[SUITE_WORKFLOW]: {
+				...suiteEnv,
+				E2B_API_KEY: `\${{ matrix.provider == 'daytona-vm' && secrets.E2B_API_KEY || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('guarded on provider "daytona-vm"');
+		expect(errors[0]).toContain("does not require E2B_API_KEY");
+	});
+
+	test("flags lanes that draw one credential from different secrets", () => {
+		const errors = checkCredentialExpressions({
+			...allLanes,
+			[PROMOTE_LABEL]: { ...promoteEnv, NOVITA_API_KEY: `\${{ secrets.NOVITA_API_KEY_OLD }}` },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NOVITA_API_KEY: lanes disagree");
+		expect(errors[0]).toContain("NOVITA_API_KEY_OLD");
+	});
+
+	test("a lane that omits a key is left to invariants 3/7, not double-reported here", () => {
+		const { E2B_API_KEY: _, ...drifted } = suiteEnv;
+		expect(checkCredentialExpressions({ [SUITE_WORKFLOW]: drifted })).toEqual([]);
 	});
 });
 
