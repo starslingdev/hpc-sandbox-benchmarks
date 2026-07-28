@@ -42,6 +42,7 @@ import {
 	RUN_STEP,
 	readWorkflow,
 	referencedSecretNames,
+	releaseLaneLabel,
 	requiredCredentialKeys,
 	runCheck,
 	SMOKE_JOB,
@@ -60,8 +61,9 @@ const providerInput = dispatchInput(smoke, "provider", SMOKE_WORKFLOW);
 const suiteInput = dispatchInput(smoke, "suite", SMOKE_WORKFLOW);
 const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
 const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
-const BAKE_LABEL = `${RELEASE_WORKFLOW} (${BAKE_JOB})`;
-const PROMOTE_LABEL = `${RELEASE_WORKFLOW} (${PUBLISH_JOB})`;
+// The same helper runCheck uses, so a label change can't silently desync the gate from its tests.
+const BAKE_LABEL = releaseLaneLabel(BAKE_JOB);
+const PROMOTE_LABEL = releaseLaneLabel(PUBLISH_JOB);
 const bakeEnv = stepEnv(release, BAKE_JOB, BAKE_STEP, BAKE_LABEL);
 const promoteEnv = stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, PROMOTE_LABEL);
 const releaseEnv = { [BAKE_LABEL]: bakeEnv, [PROMOTE_LABEL]: promoteEnv };
@@ -424,6 +426,118 @@ describe("checkCredentialExpressions", () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("NOVITA_API_KEY: lanes disagree");
 		expect(errors[0]).toContain("NOVITA_API_KEY_OLD");
+	});
+
+	// Rules (c) and (d) exist for the cases where the guard is entirely well-formed by rules (a)/(b) —
+	// registered owner, matching secret name — yet the surrounding logic still yields the wrong value.
+	test("flags a negated provider guard, which releases the secret to every OTHER provider", () => {
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ matrix.provider != 'e2b' && secrets.E2B_API_KEY || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NEGATED provider comparison");
+	});
+
+	test("flags inverted branches, where the secret sits in the fallback", () => {
+		// Rule (a) sees a registered owning guard and rule (b) sees the right secret name — only the
+		// terminal-`|| ''` rule catches that the branches are the wrong way round.
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ matrix.provider == 'e2b' && '' || secrets.E2B_API_KEY }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("does not end in");
+	});
+
+	test('flags a missing fallback, where a non-matching cell renders the string "false"', () => {
+		// GitHub renders a false `&&` chain as "false" — non-empty, so missingCreds treats it as a real
+		// credential and the provider fails mid-run instead of taking a clean skip.
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("does not end in");
+	});
+
+	test("does not require a fallback on an unconditional credential (publish's form)", () => {
+		// `publish` passes secrets with no `&&` at all, so rule (d) must not fire on it.
+		expect(
+			checkCredentialExpressions({
+				"synthetic.yml": { E2B_API_KEY: `\${{ secrets.E2B_API_KEY }}` },
+			}),
+		).toEqual([]);
+	});
+
+	test("accepts a guarded credential with an inner default, as daytona's region uses", () => {
+		// The inner `||` must not be mistaken for the terminal fallback.
+		expect(
+			checkCredentialExpressions({
+				"synthetic.yml": {
+					E2B_API_KEY: `\${{ matrix.provider == 'e2b' && (secrets.E2B_API_KEY || 'x') || '' }}`,
+				},
+			}),
+		).toEqual([]);
+	});
+
+	// GHA treats `x == y` and `y == x` identically, so the mirrored spelling must be read too — reading
+	// only one order would leave the reversed form validated by nothing but rule (e)'s generic message.
+	test("reads a reversed-operand guard in both directions", () => {
+		expect(
+			guardedProviderIds(`\${{ 'e2b' == matrix.provider && secrets.E2B_API_KEY || '' }}`),
+		).toEqual(["e2b"]);
+	});
+
+	test("names a typo'd id in a reversed guard, rather than falling back to the generic message", () => {
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ 'e2bb' == matrix.provider && secrets.E2B_API_KEY || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('guarded on provider "e2bb"');
+	});
+
+	test("accepts a valid reversed guard rather than rejecting it as unreadable", () => {
+		expect(
+			checkCredentialExpressions({
+				"synthetic.yml": {
+					E2B_API_KEY: `\${{ 'e2b' == matrix.provider && secrets.E2B_API_KEY || '' }}`,
+				},
+			}),
+		).toEqual([]);
+	});
+
+	test("flags a reversed NEGATED guard too", () => {
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ 'e2b' != matrix.provider && secrets.E2B_API_KEY || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NEGATED provider comparison");
+	});
+
+	test("fails CLOSED on a provider-scoping form it cannot read, rather than passing vacuously", () => {
+		// `contains(...)` mentions the selector but yields no readable id, so rule (a) would have nothing
+		// to check — the blind-spot class the invariant exists to remove.
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ contains(matrix.provider, 'e2b') && secrets.E2B_API_KEY || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("cannot validate");
+	});
+
+	test("does not fire the fail-closed rule on an expression that never mentions a provider", () => {
+		// namespace's token file is gated on the mint step, and publish passes secrets unconditionally —
+		// neither references the selector, so neither is an unreadable scope.
+		expect(checkCredentialExpressions({ [PROMOTE_LABEL]: promoteEnv })).toEqual([]);
 	});
 
 	test("a lane that omits a key is left to invariants 3/7, not double-reported here", () => {

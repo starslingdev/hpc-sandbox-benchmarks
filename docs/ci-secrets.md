@@ -117,9 +117,16 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
    | `DAYTONA_CONTAINER_TARGET` | optional; `daytona-container`'s region — workflows default to `us-west-2` |
    | `MODAL_TOKEN_ID` | toolchain bake, bench matrix/smoke (shared by both isolation variants) |
    | `MODAL_TOKEN_SECRET` | toolchain bake, bench matrix/smoke (shared by both isolation variants) |
-   | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
+   | `NOVITA_API_KEY` | toolchain bake + publish, bench matrix/smoke — optional, but see below |
    | `BL_API_KEY` | bench matrix/smoke only (see the blaxel note below) |
    | `BL_WORKSPACE` | bench matrix/smoke only (see the blaxel note below) |
+
+   **"Optional" means the release still completes, not that nothing is lost.** Only the providers in
+   `RELEASE_REQUIRED_PROVIDERS` (`e2b`, `daytona-vm`, `modal-gvisor`) gate a toolchain release, so
+   omitting `NOVITA_API_KEY` does not fail it — but novita's bake cell then takes the
+   missing-credentials skip, and that version's novita template is never built or validated. The first
+   bench run against it boots a template that does not exist. Set the secret unless you intend novita to
+   sit out this version entirely.
 
    Two providers are deliberately absent from that table, and the `workflow-registry-sync` drift gate
    enforces both shapes so neither can drift into a silent skip:

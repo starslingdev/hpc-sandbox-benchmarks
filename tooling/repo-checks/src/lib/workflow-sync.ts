@@ -34,9 +34,10 @@
 //      never validated, with a green release.
 //   8. A credential is not merely present but plausibly CORRECT, across every credential block in the
 //      repo: each provider id a credential expression guards on is registered AND owns that credential,
-//      and every lane wiring a key draws it from the same `secrets.*` name. A mistyped guard satisfies
-//      invariants 3/7 while supplying an empty string forever, which reads downstream as "that provider
-//      has no results" rather than "the guard never matched".
+//      every lane wiring a key draws it from the same `secrets.*` name, no guard is negated, every
+//      conditional ends in the `|| ''` fallback, and an unreadable scoping form fails closed. A mistyped
+//      guard satisfies invariants 3/7 while supplying an empty string forever, which reads downstream as
+//      "that provider has no results" rather than "the guard never matched".
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -345,15 +346,39 @@ export function checkReleaseCredentialEnv(
 	return errors;
 }
 
-/** A `<selector>.provider == 'id'` guard inside a credential expression, capturing the guarded id. */
+/** The label an error uses for one release-lane job — shared with the gate's tests so the
+ *  error-message contract lives in one place. */
+export function releaseLaneLabel(job: string): string {
+	return `${RELEASE_WORKFLOW} (${job})`;
+}
+
+// Equality against the provider selector, in BOTH operand orders — GHA treats `x == y` and `y == x`
+// identically, so reading only one order would let the mirrored spelling slip past rule (a) (it would
+// still fail closed under rule (e), but as a generic "unreadable form" rather than naming the bad id).
+/** `<selector>.provider == 'id'` — selector first. */
 const PROVIDER_GUARD_RE = /\b(?:inputs|matrix)\.provider\s*==\s*'([^']*)'/g;
+/** `'id' == <selector>.provider` — literal first, the mirrored spelling. */
+const PROVIDER_GUARD_REVERSED_RE = /'([^']*)'\s*==\s*(?:inputs|matrix)\.provider\b/g;
+/** Any reference to the provider selector, however it is compared — used by rule (e) to tell "no
+ *  provider scoping at all" (fine: publish, or an OIDC step guard) from "scoped in a form we can't
+ *  read" (not fine). */
+const PROVIDER_MENTION_RE = /\b(?:inputs|matrix)\.provider\b/;
 /** A `secrets.NAME` reference inside a credential expression. */
 const SECRET_REF_RE = /\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)/g;
+/** A NEGATED provider comparison in either operand order — always an inverted scope. */
+const NEGATED_GUARD_RE =
+	/\b(?:inputs|matrix)\.provider\s*!=|'[^']*'\s*!=\s*(?:inputs|matrix)\.provider\b/;
+/** A conditional credential must terminate in the empty-string fallback, so a non-selected cell gets
+ *  "" (which the config gatekeeper reads as unset) rather than a truthy value. */
+const EMPTY_FALLBACK_RE = /\|\|\s*''\s*\}\}\s*$/;
 
 /** Provider ids a credential expression guards on, in source order (empty when it guards on something
  *  else, e.g. namespace's `steps.nsc-token.outcome`, or on nothing at all). */
 export function guardedProviderIds(expr: string): string[] {
-	return [...expr.matchAll(PROVIDER_GUARD_RE)].map((m) => m[1] as string);
+	return [
+		...[...expr.matchAll(PROVIDER_GUARD_RE)].map((m) => m[1] as string),
+		...[...expr.matchAll(PROVIDER_GUARD_REVERSED_RE)].map((m) => m[1] as string),
+	];
 }
 
 /** The distinct `secrets.*` names a credential expression draws from, sorted for set comparison. */
@@ -374,8 +399,21 @@ export function referencedSecretNames(expr: string): string[] {
  *      swapped secret reference in one lane without demanding identical guard expressions, so the
  *      release lane's `publish` block may still pass credentials unconditionally (no guard at all)
  *      while its secret source is held to the same source of truth as the bench lanes.
+ *   c. No NEGATED provider comparison (`.provider !=`), which releases a credential to every provider
+ *      except its owner. Rule (a) cannot see this: it only reads `==` guards, so the inverted id is
+ *      never inspected and (a)/(b) both pass.
+ *   d. A conditional credential (one containing `&&`) ENDS in `|| ''`. This closes the last two ways a
+ *      registered-and-owning guard still yields the wrong value — inverted branches (`&& '' ||
+ *      secrets.X`, leaking the secret to every non-matching cell) and a missing fallback (`&&
+ *      secrets.X`, where a non-matching cell renders GitHub's `false`: a NON-empty string the config
+ *      gatekeeper accepts as a real credential, so the provider fails mid-run instead of skipping).
  *
- * Both rules skip a lane that omits the key: presence is Invariants 3/7's job, and reporting the same
+ * Rules (a)–(d) are deliberately targeted rather than a general GHA expression evaluator: a truth-table
+ * evaluator over the `==`/`&&`/`||`/`format()` subset would be the fully general answer, but it is a new
+ * subsystem with its own parse-failure policy, and (c)+(d) already cover every way the surrounding logic
+ * can invert or break the scoping of the shapes this repo actually uses.
+ *
+ * Every rule skips a lane that omits the key: presence is Invariants 3/7's job, and reporting the same
  * omission twice would bury the actionable message. A key with no `secrets.*` reference anywhere (e.g.
  * `NSC_TOKEN_FILE`, minted from OIDC into a step output) trivially agrees with itself under (b).
  */
@@ -391,20 +429,58 @@ export function checkCredentialExpressions(
 		for (const [lane, env] of Object.entries(envByLane)) {
 			const expr = env[key];
 			if (expr === undefined) continue;
-			for (const guarded of guardedProviderIds(expr)) {
-				if (!registered.has(guarded)) {
+			const guarded = guardedProviderIds(expr);
+			// Rule (e): fail CLOSED on a scoping form the gate can't read. An expression that references
+			// `.provider` but yields no `== 'id'` guard — `contains(...)`, a `format()` chain, a lookup
+			// table — leaves rule (a) with nothing to inspect, so it would pass vacuously: exactly the
+			// silent-blind-spot class this invariant exists to remove. `!=` lands here too and is reported
+			// by rule (c) instead, which names the actual defect, so don't double-report it.
+			if (guarded.length === 0 && PROVIDER_MENTION_RE.test(expr) && !NEGATED_GUARD_RE.test(expr)) {
+				errors.push(
+					`${key} in ${lane}: references \`.provider\` but in a form this gate cannot validate — ` +
+						"only `<inputs|matrix>.provider == 'id'` is recognized, so the guarded ids can't be " +
+						"checked against the registry. Rewrite it in that form, or extend PROVIDER_GUARD_RE " +
+						"(deliberately failing closed rather than passing an unreadable scope)",
+				);
+			}
+			for (const guardedId of guarded) {
+				if (!registered.has(guardedId)) {
 					errors.push(
-						`${key} in ${lane}: guarded on provider "${guarded}", which is not in PROVIDERS ` +
+						`${key} in ${lane}: guarded on provider "${guardedId}", which is not in PROVIDERS ` +
 							"(packages/schema/src/providers.ts) — that guard can never be true, so the credential " +
 							"is always empty and the provider silently skips every run",
 					);
-				} else if (!ownerSet.has(guarded)) {
+				} else if (!ownerSet.has(guardedId)) {
 					errors.push(
-						`${key} in ${lane}: guarded on provider "${guarded}", which does not require ${key} ` +
+						`${key} in ${lane}: guarded on provider "${guardedId}", which does not require ${key} ` +
 							`(its requiredEnvVars owners are ${owners.join(", ")}) — the secret is released to the ` +
 							"wrong provider's cell, so its real owner runs without it",
 					);
 				}
+			}
+			// Rule (c): a negated provider comparison inverts the scope — the credential is released to
+			// every provider EXCEPT its owner. `guardedProviderIds` only matches `==`, so without this the
+			// id would never be inspected and rules (a)/(b) would both pass.
+			if (NEGATED_GUARD_RE.test(expr)) {
+				errors.push(
+					`${key} in ${lane}: scoped with a NEGATED provider comparison (\`.provider !=\`) — that ` +
+						"releases the credential to every provider except the one that needs it. Scope it with " +
+						"`==` against each owning provider instead",
+				);
+			}
+			// Rule (d): a conditional credential must end in `|| ''`. This catches the two remaining ways a
+			// registered-and-owning guard still yields the wrong value: inverted branches (`&& '' ||
+			// secrets.X`, which leaks the secret to every NON-matching cell) and a missing fallback (`&&
+			// secrets.X` with no `||`, where a non-matching cell renders GitHub's `false` — a NON-empty
+			// string the config gatekeeper accepts as a real credential instead of treating as unset, so the
+			// provider fails mid-run rather than taking a clean skip).
+			if (expr.includes("&&") && !EMPTY_FALLBACK_RE.test(expr)) {
+				errors.push(
+					`${key} in ${lane}: conditional credential does not end in \`|| ''\` — a non-selected cell ` +
+						"must resolve to the empty string (which the config gatekeeper reads as unset). Without " +
+						"it the secret either lands in the fallback branch (leaking to every other provider) or " +
+						'the cell renders the literal "false", which is non-empty and reads as a real credential',
+				);
 			}
 			const secretSet = referencedSecretNames(expr).join(",");
 			lanesBySecretSet.set(secretSet, [...(lanesBySecretSet.get(secretSet) ?? []), lane]);
@@ -447,8 +523,8 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 	const suiteWf = readWorkflow(SUITE_WORKFLOW, root);
 	// The release lane's two credentialed jobs each own their own credential block (see Invariant 7).
 	const release = readWorkflow(RELEASE_WORKFLOW, root);
-	const bakeLabel = `${RELEASE_WORKFLOW} (${BAKE_JOB})`;
-	const promoteLabel = `${RELEASE_WORKFLOW} (${PUBLISH_JOB})`;
+	const bakeLabel = releaseLaneLabel(BAKE_JOB);
+	const promoteLabel = releaseLaneLabel(PUBLISH_JOB);
 	const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
 	const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 	const bakeEnv = stepEnv(release, BAKE_JOB, BAKE_STEP, bakeLabel);

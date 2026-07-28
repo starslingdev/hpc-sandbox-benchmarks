@@ -48,7 +48,8 @@ Start by picking the **archetype**, because it decides most of the work below:
 | **B. Stock vendor image** | `blaxel` | The vendor's own base image; setup steps run fallbacks instead of the baked toolchain |
 | **C. Baked artifact** | `e2b`, `daytona-vm`, `daytona-container`, `novita` | A provider-side template/snapshot built FROM the toolchain image |
 
-Then work through the steps. `bun run typecheck && bun run test` catches every step except 6 and 7.
+Then work through the steps. `bun run typecheck && bun run test` catches every one except 7 and 8 —
+steps 1–5 are compile errors, and step 6 is the `workflow-registry-sync` gate under `bun run test`.
 
 1. **Identity & economics** — add the id to `ProviderId` and a `REGISTRY` entry in
    [`packages/schema/src/providers.ts`](./packages/schema/src/providers.ts): `displayName`, `website`,
