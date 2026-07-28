@@ -51,9 +51,10 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a
    pull request" ruleset, so `commit-dataset.yml`'s `commit` job cannot push the promoted dataset
    straight to `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>`
-   PR instead (hence `pull-requests: write`) and arms GitHub-native auto-merge (`gh pr merge --auto`),
-   which merges only once branch protection is satisfied — required status checks green and any
-   required reviews in. It never bypasses those rules. As a fast pre-flight, the job first runs the
+   PR instead (hence `pull-requests: write`) and merges it the same way the leaderboard flow does
+   (rule 7): `gh pr merge --auto` first so a future required check would be waited on, then a direct
+   merge — today's ruleset has no required status checks, so the PR is immediately mergeable and
+   GitHub still enforces the ruleset on the merge call. As a fast pre-flight, the job first runs the
    Biome gate on the generated dataset (`biome check data/dataset`, the same rules ci.yml runs) —
    Biome formats JSON, so an unformatted Run document would fail the PR — and aborts before opening a
    doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the existing open PR instead of
