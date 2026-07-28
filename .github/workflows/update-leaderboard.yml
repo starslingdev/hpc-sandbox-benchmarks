@@ -143,6 +143,10 @@ jobs:
           git switch -C "$branch"
           git commit -m "chore(leaderboard): update from run ${TARGET_RUN_ID}"
           git push -u --force origin "$branch"
+          # Pin the exact commit this run validated: the merge below passes it via --match-head-commit,
+          # so a concurrent push that swaps the branch head between now and the merge fails the merge
+          # instead of landing content this run never checked.
+          head_sha="$(git rev-parse HEAD)"
           # Open the PR only if one isn't already open for this deterministic branch; a re-dispatch reuses
           # it (the force-push above already refreshed its content). `gh pr create` fails outright (GraphQL
           # "GitHub Actions is not permitted to create or approve pull requests") when the repo's Settings →
@@ -154,7 +158,7 @@ jobs:
               --base main \
               --head "$branch" \
               --title "chore(leaderboard): update from run ${TARGET_RUN_ID}" \
-              --body "Automated LEADERBOARD.md regeneration from committed dataset run \`${TARGET_RUN_ID}\`. Biome was pre-flighted green; merged automatically once the ruleset's review rules are satisfied (LEADERBOARD.md is unowned, so none apply)."; then
+              --body "Automated LEADERBOARD.md regeneration from committed dataset run \`${TARGET_RUN_ID}\`. Biome was pre-flighted green; the workflow merges this PR directly right after opening it (LEADERBOARD.md is unowned, so no review rules apply — if this PR is still open, that merge failed and a maintainer must finish it)."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
                 "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
                 "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
@@ -166,21 +170,19 @@ jobs:
           # Re-check the PR file list (not just the local index) before merging, so a raced push that
           # added other paths cannot slip through.
           ./scripts/assert-paths-allowlisted.sh pr "$branch" -- LEADERBOARD.md
-          # Merge as the bot. The main ruleset requires no status checks and code-owner review is its only
-          # review requirement, so a leaderboard-only PR (LEADERBOARD.md is unowned) is immediately
-          # mergeable and the direct merge lands it; GitHub still enforces the ruleset on this call — it
-          # is not a bypass. Try GitHub-native auto-merge (`--auto`) first so that IF the repo later adds
-          # required checks or reviews the PR waits for them instead of failing here; `--auto` itself
-          # errors when the PR is already clean or the repo hasn't enabled auto-merge, in which case the
-          # direct merge covers today's posture. Fail loudly if neither lands it (e.g. an unresolved
-          # review thread or a review requirement now applies) so the update is never silently stranded.
-          if ! gh pr merge "$branch" --squash --delete-branch --auto 2>/dev/null; then
-            if ! gh pr merge "$branch" --squash --delete-branch; then
-              echo "::error::could not merge '$branch'. The ruleset blocks it (unresolved review thread," \
-                "a required review, or a required status check a GITHUB_TOKEN-authored PR cannot run)." \
-                "A maintainer must finish the merge. Do NOT add github-actions as a ruleset bypass —" \
-                "prefer: required approving review count 0 + Require review from Code Owners, with" \
-                "LEADERBOARD.md unowned. See docs/ci-secrets.md."
-              exit 1
-            fi
+          # Merge as the bot with a direct merge — deliberately NOT `gh pr merge --auto`. On a
+          # GITHUB_TOKEN-authored PR a required status check never runs, so if one were ever added,
+          # `--auto` would exit 0 after merely ARMING auto-merge for a merge that can never complete —
+          # a green job hiding a forever-open leaderboard PR. A direct merge either lands the PR right
+          # now (today's posture: no required checks, and LEADERBOARD.md is unowned so no code-owner
+          # review applies) or fails this job red. GitHub still enforces the ruleset on the merge
+          # call — this is not a bypass.
+          if ! gh pr merge "$branch" --squash --delete-branch --match-head-commit "$head_sha"; then
+            echo "::error::could not merge '$branch'. The ruleset blocks it (unresolved review thread," \
+              "a required review, or a required status check — which a GITHUB_TOKEN-authored PR can" \
+              "never run; landing bot PRs under required checks needs an App/PAT, see" \
+              "docs/ci-secrets.md). A maintainer must finish the merge. Do NOT add github-actions as a" \
+              "ruleset bypass — prefer: required approving review count 0 + Require review from Code" \
+              "Owners, with LEADERBOARD.md unowned."
+            exit 1
           fi

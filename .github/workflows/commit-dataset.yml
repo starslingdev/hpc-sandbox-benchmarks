@@ -135,12 +135,11 @@ jobs:
 
       # main is protected by a "changes must be made through a pull request" ruleset (the public-repo
       # hardening in #176/#177), so this job can't push the promoted dataset straight to main — a direct
-      # push is rejected with GH013. Commit through a short-lived branch + pull request and enable
-      # GitHub-native auto-merge (`--auto`): the PR merges itself only once branch protection is
-      # satisfied — required status checks (the PR's Biome/CI gate) green and any required reviews in.
-      # `--auto` waits for those rules, it does not bypass them, so the dataset never lands unlinted or
-      # unreviewed. If auto-merge can't be armed (e.g. the repo hasn't enabled it), the PR stays open
-      # for a maintainer to merge normally.
+      # push is rejected with GH013. Commit through a short-lived branch + pull request as the
+      # github-actions bot, then merge it. The merge never bypasses the ruleset: it succeeds only
+      # because the ruleset requires no status checks and code-owner review is its sole review
+      # requirement, with data/dataset/ intentionally unowned (see docs/ci-secrets.md operator setup);
+      # the in-job Biome pre-flight above already guarantees the content is clean.
       - name: Commit the dataset via pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,6 +160,10 @@ jobs:
           git switch -C "$branch"
           git commit -m "chore(dataset): commit run ${RUN_ID}"
           git push -u --force origin "$branch"
+          # Pin the exact commit this run validated: the merge below passes it via --match-head-commit,
+          # so a concurrent push that swaps the branch head between now and the merge fails the merge
+          # instead of landing content this run never checked.
+          head_sha="$(git rev-parse HEAD)"
           # Open the PR only if one isn't already open for this deterministic branch; a re-run reuses it
           # (the force-push above already refreshed its content). `gh pr create` fails outright (GraphQL
           # "GitHub Actions is not permitted to create or approve pull requests") when the repo's Settings →
@@ -172,7 +175,7 @@ jobs:
               --base main \
               --head "$branch" \
               --title "chore(dataset): commit run ${RUN_ID}" \
-              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied. The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
+              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; the workflow merges this PR directly right after opening it (data/dataset/ is unowned, so no review rules apply — if this PR is still open, that merge failed and a maintainer must finish it). The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
                 "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
                 "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
@@ -181,8 +184,19 @@ jobs:
               exit 1
             fi
           fi
-          # Queue GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
-          # required reviews land), never bypassing branch protection. Best-effort — if the repo hasn't
-          # enabled auto-merge, leave the PR open for a maintainer.
-          gh pr merge "$branch" --squash --delete-branch --auto \
-            || echo "auto-merge not armed; dataset PR left open for a maintainer to merge"
+          # Merge as the bot with a direct merge — deliberately NOT `gh pr merge --auto`. On a
+          # GITHUB_TOKEN-authored PR a required status check never runs, so if one were ever added,
+          # `--auto` would exit 0 after merely ARMING auto-merge for a merge that can never complete —
+          # a green publish job hiding a forever-open dataset PR. A direct merge either lands the PR
+          # right now (today's posture: no required checks, and data/dataset/ is unowned so no
+          # code-owner review applies) or fails this job red. GitHub still enforces the ruleset on the
+          # merge call — this is not a bypass.
+          if ! gh pr merge "$branch" --squash --delete-branch --match-head-commit "$head_sha"; then
+            echo "::error::could not merge '$branch'. The ruleset blocks it (unresolved review" \
+              "thread, a required review, or a required status check — which a GITHUB_TOKEN-authored" \
+              "PR can never run; landing bot PRs under required checks needs an App/PAT, see" \
+              "docs/ci-secrets.md). A maintainer must finish the merge. Do NOT add github-actions as" \
+              "a ruleset bypass — prefer: required approving review count 0 + Require review from" \
+              "Code Owners, with data/dataset/ unowned."
+            exit 1
+          fi

@@ -51,9 +51,11 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a
    pull request" ruleset, so `commit-dataset.yml`'s `commit` job cannot push the promoted dataset
    straight to `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>`
-   PR instead (hence `pull-requests: write`) and arms GitHub-native auto-merge (`gh pr merge --auto`),
-   which merges only once branch protection is satisfied — required status checks green and any
-   required reviews in. It never bypasses those rules. As a fast pre-flight, the job first runs the
+   PR instead (hence `pull-requests: write`) and merges it the same way the leaderboard flow does
+   (rule 7): a direct `gh pr merge` — GitHub still enforces the ruleset on that call; it succeeds
+   because the ruleset has no required status checks and `data/dataset/` is unowned. Deliberately not
+   `--auto`: arming auto-merge on a `GITHUB_TOKEN` PR whose required check will never run would leave
+   the PR stranded behind a green job. As a fast pre-flight, the job first runs the
    Biome gate on the generated dataset (`biome check data/dataset`, the same rules ci.yml runs) —
    Biome formats JSON, so an unformatted Run document would fail the PR — and aborts before opening a
    doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the existing open PR instead of
@@ -62,13 +64,13 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 
    > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
    > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI
-   > check ever becomes a *required* status on the main ruleset, auto-merge waits for a check that
-   > never runs, and a maintainer completes the merge (their merge to `main` runs `ci.yml` normally).
-   > Today the ruleset requires no status checks, so this caveat only bites if one is added — the
-   > in-job Biome pre-flights already guarantee the generated content is clean either way. For fully
-   > hands-off merging *with* required checks, the PR would need to be opened with a GitHub App
-   > installation token or PAT instead of `GITHUB_TOKEN`; we deliberately avoid provisioning one until
-   > that trade-off is actually needed.
+   > check ever becomes a *required* status on the main ruleset, the direct merge fails and the
+   > publish job goes red — a maintainer completes the merge (their merge to `main` runs `ci.yml`
+   > normally). Today the ruleset requires no status checks, so this caveat only bites if one is
+   > added — the in-job Biome pre-flights already guarantee the generated content is clean either
+   > way. For fully hands-off merging *with* required checks, the PR would need to be opened with a
+   > GitHub App installation token or PAT instead of `GITHUB_TOKEN`; we deliberately avoid
+   > provisioning one until that trade-off is actually needed.
 6. **Backfilling a failed dataset commit.** The commit logic is the reusable `commit-dataset.yml`, so
    when a matrix run's dataset commit fails (or was never reached) a maintainer can re-run it standalone:
    **Actions → Commit dataset → Run workflow**, passing the original run's id — or, from a
@@ -96,11 +98,11 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
       pull requests" toggle, see operator setup).
    2. Runs `scripts/assert-paths-allowlisted.sh` on the staged index **and** the PR file list; anything
       other than `LEADERBOARD.md` aborts before any merge is attempted.
-   3. Merges the PR (`gh pr merge --auto` first so a future required check would be waited on, then a
-      direct `gh pr merge` — today's ruleset has no required status checks, so the PR is immediately
-      mergeable). GitHub still enforces the ruleset on the merge call; this is not a bypass — it
-      succeeds only because code-owner review is the sole review requirement and `LEADERBOARD.md` is
-      intentionally unowned.
+   3. Merges the PR with a direct `gh pr merge` (deliberately not `--auto`: on a `GITHUB_TOKEN` PR a
+      required check never runs, so arming auto-merge could only ever strand the PR behind a green
+      job). GitHub still enforces the ruleset on the merge call; this is not a bypass — it succeeds
+      only because the ruleset has no required status checks, code-owner review is the sole review
+      requirement, and `LEADERBOARD.md` is intentionally unowned.
 
    Because the render is deterministic, the resulting `LEADERBOARD.md` is exactly what
    `leaderboard-artifact-sync` expects, so subsequent CI stays green. The job also pre-flights the
@@ -163,9 +165,9 @@ Configure the `main` ruleset so the bot-authored dataset/leaderboard PRs can mer
    code-owner review is not required for leaderboard-only PRs.
 3. **Do not** add `github-actions` (or a broad actor) as a ruleset bypass. The bot does not need
    bypass when code-owner review is the only review requirement and `LEADERBOARD.md` is unowned.
-4. Optional: **Settings → General → Pull Requests → Allow auto-merge** — on. The workflow tries
-   `gh pr merge --auto` first and falls back to a direct merge, so this only matters if a required
-   check is ever (re)introduced.
+4. **Settings → General → Pull Requests → Allow auto-merge** is not needed by these flows: the
+   workflows use a direct `gh pr merge`, never `--auto` (arming auto-merge on a `GITHUB_TOKEN` PR
+   whose required check can never run would strand it behind a green job).
 
 With that posture: a fork/public PR that touches `/.github/` still needs `@dbworku`; a
 `leaderboard/update-*` PR that only changes `LEADERBOARD.md` merges as soon as the workflow opens it.
