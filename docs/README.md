@@ -11,5 +11,6 @@
 
 ## Historical / design notes
 
+- [Rich leaderboard rendering](./leaderboard-rich-render-design.md) — proposal: a `report` package rendering the leaderboard to figures with Satori + JSX components
 - [PTS catalog and analysis design](./pts-catalog-and-analysis-design.md) — early design notes (historical; prefer ADRs + methodology for current truth)
 - [Evidence: Daytona exec transport](./evidence/daytona-exec-transport.md) — research notes on Daytona exec limits
