@@ -610,6 +610,19 @@ function escapeCell(text: string): string {
 		.replace(/\s+/g, (ws) => (ws.includes("\n") ? " " : ws));
 }
 
+/**
+ * Escape an image's alt text for `![alt](path)`.
+ *
+ * NOT {@link escapeCell}: that is a table-cell escaper, so it would turn `&` into `&amp;` inside alt
+ * text where the entity is not interpreted, and it does not touch the two characters that actually
+ * matter here. A `]` in a metric label would terminate the alt span early and leave the rest of the
+ * label as literal text beside a broken image. No catalogued label contains one today — this is
+ * defence for a catalog generated from upstream PTS profiles, which grows without our review.
+ */
+function escapeAltText(text: string): string {
+	return text.replace(/([\\[\]])/g, "\\$1");
+}
+
 /** Format a metric value compactly: integers as-is, otherwise up to 4 significant digits, trimmed. */
 export function formatValue(value: number): string {
 	if (Number.isInteger(value)) return String(value);
@@ -837,7 +850,7 @@ export function renderLeaderboardMarkdown(
 		// The figure leads the section; the tables below it stay the authoritative, accessible surface.
 		const figure = figureFor.get(dimension);
 		if (figure) {
-			lines.push(`![${escapeCell(figure.altText)}](${figure.path})`, "");
+			lines.push(`![${escapeAltText(figure.altText)}](${figure.path})`, "");
 		}
 		for (const { metric, rows: metricRows } of metrics) {
 			const better = metric.direction === "HIB" ? "higher is better" : "lower is better";

@@ -13,7 +13,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** The manifest's file name, and the one non-`.svg` artifact the directory is allowed to contain. */
+/** The manifest's file name — the one non-figure artifact the directory is expected to contain. */
 export const MANIFEST_FILE = "manifest.json";
 
 /**

@@ -1,8 +1,10 @@
 // Discover the precise mise tasks a suite runs — pure domain planning for metadata-rich summaries.
 // Sources (automated, no hard-coded per-suite leaf lists):
 //   1. SUITES[suite].commands — what the harness actually steps
-//   2. `mise task info <name> --json` — description + task file path
-//   3. Conventional `.mise/tasks/<colon-path>` fallback when mise is unavailable
+//   2. The task file's own `#MISE description=` header — the same string `mise task info` reports,
+//      read directly so this path needs neither the mise binary nor 33 subprocess spawns
+//   3. Conventional `.mise/tasks/<colon-path>` path resolution, with `mise task info --json` as the
+//      fallback for both the file path and the description when the convention does not resolve
 //   4. Orchestrator file `run_task` lines — leaf expansion (mise `depends` is unused here)
 //   5. Leaf file PTS helper calls + lib/bench.sh pins — profile / results-prefix metadata
 //   6. Schema Metric Catalog — declared metrics with PTS test ids / labels
@@ -163,6 +165,21 @@ interface MiseTaskInfo {
 	file: string;
 }
 
+/**
+ * The `#MISE description="…"` header mise itself reads out of a task file.
+ *
+ * Read directly rather than shelling out: it is a static string sitting in a file we already open
+ * for pin mining, `mise task info` costs one subprocess PER TASK (33 of them for a full plan), and
+ * the binary is a `mise.toml` pin that a contributor may not have installed. Reading the file makes
+ * task metadata work identically with and without mise — the production code already degraded
+ * gracefully here, but it degraded to an empty description, which is how a test asserting on one
+ * came to fail on any machine without the toolchain.
+ */
+export function parseMiseDescriptionHeader(script: string): string {
+	const match = /^#MISE\s+description\s*=\s*(["'])([\s\S]*?)\1\s*$/m.exec(script);
+	return match?.[2] ?? "";
+}
+
 /** Parse `mise task info --json` stdout into the fields we surface. Pure for testing. */
 export function parseMiseTaskInfoJson(json: string): MiseTaskInfo | undefined {
 	let raw: unknown;
@@ -276,13 +293,23 @@ export async function describeSuiteTasks(
 	const pushTask = async (taskName: string, role: "command" | "leaf"): Promise<string> => {
 		if (seen.has(taskName)) return "";
 		seen.add(taskName);
-		const info = await miseTaskInfo(taskName, root);
-		const file = resolveTaskFile(taskName, info?.file, root);
-		const script = file ? readRepoFile(root, file) : undefined;
+		// Try the conventional path first and only shell out to mise when it does not resolve, so the
+		// common case costs zero subprocesses and works without the binary installed.
+		let file = resolveTaskFile(taskName, undefined, root);
+		let script = file ? readRepoFile(root, file) : undefined;
+		let description = script ? parseMiseDescriptionHeader(script) : "";
+		if (!file || !description) {
+			const info = await miseTaskInfo(taskName, root);
+			if (info) {
+				file = resolveTaskFile(taskName, info.file, root);
+				script = file ? readRepoFile(root, file) : undefined;
+				description = description || parseMiseDescriptionHeader(script ?? "") || info.description;
+			}
+		}
 		const pins = script ? ptsPinsFromScript(script, { fioProfile, realworldVersion }) : [];
 		tasks.push({
 			task: taskName,
-			description: info?.description ?? "",
+			description,
 			file,
 			role,
 			ptsProfile: joinPins(pins, "ptsProfile"),

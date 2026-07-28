@@ -8,6 +8,7 @@ import {
 	describeSuiteTasks,
 	fioProfileFromBenchSh,
 	miseTaskFromCommand,
+	parseMiseDescriptionHeader,
 	parseMiseTaskInfoJson,
 	ptsPinsFromScript,
 	realworldVersionFromBenchSh,
@@ -177,6 +178,14 @@ describe("describeSuiteTasks", () => {
 		}
 	});
 
+	it("reads task descriptions without the mise binary, straight from the file header", async () => {
+		// The regression this pins: `mise task info` is a mise.toml pin a contributor may not have
+		// installed, and when it is absent the description silently degraded to "". Every task file
+		// carries the same string in a `#MISE description=` header, so this path needs no subprocess.
+		const plan = await describeSuiteTasks("disk", root);
+		expect(plan.tasks.every((t) => t.description.length > 0)).toBe(true);
+	});
+
 	it("surfaces disk fio leaves with mise descriptions and the fio profile pin", async () => {
 		const plan = await describeSuiteTasks("disk", root);
 		const fio = plan.tasks.find((t) => t.task === "benchmark:disk:pts:fio-seq-read");
@@ -185,6 +194,21 @@ describe("describeSuiteTasks", () => {
 		expect(fio?.ptsProfile).toBe("pts/fio-2.1.0");
 		expect(fio?.resultsPrefix).toBe("pts_fio-seq-read");
 		expect(fio?.file).toBe(".mise/tasks/benchmark/disk/pts/fio-seq-read");
+	});
+
+	it("parses the #MISE description header, and tolerates a file without one", () => {
+		expect(
+			parseMiseDescriptionHeader('#MISE description="PTS: fio sequential read"\nset -e\n'),
+		).toBe("PTS: fio sequential read");
+		// Single quotes are equally valid in the header.
+		expect(parseMiseDescriptionHeader("#MISE description='local: hardlink'\n")).toBe(
+			"local: hardlink",
+		);
+		// A description containing an escaped-looking quote must not truncate at the inner quote.
+		expect(parseMiseDescriptionHeader(`#MISE description="says 'hi' loudly"\n`)).toBe(
+			"says 'hi' loudly",
+		);
+		expect(parseMiseDescriptionHeader("#!/usr/bin/env bash\nset -e\n")).toBe("");
 	});
 
 	it("joins multi-pin leaves (pgbench) into comma-separated summary fields", async () => {

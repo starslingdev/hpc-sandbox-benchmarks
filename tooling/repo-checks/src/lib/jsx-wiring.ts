@@ -35,19 +35,29 @@ export function authorsTsx(member: Member): boolean {
 /**
  * Every member whose tsconfig must declare `jsx`/`jsxImportSource` INLINE — derived, never listed.
  *
- * A member needs them if it authors `.tsx`, or if it depends (directly) on a member that does: this
- * repo is source-first, so a consumer's program pulls the dependency's `.tsx` files in directly and
- * must be configured to parse them. Deriving the set is what makes the invariant catch the NEXT
- * package to import the figures package — a hardcoded list would simply not contain it, and the
- * failure it guards is a runtime `Cannot find module 'react/jsx-dev-runtime'`.
+ * A member needs them if it authors `.tsx`, or if it depends on one that does — TRANSITIVELY. This
+ * repo is source-first with no build step, so a consumer's program pulls the dependency's actual
+ * `.tsx` files in, and that reach does not stop at the first hop: if A depends on B and B's public
+ * entry re-exports a component, A's program contains the `.tsx` too.
+ *
+ * Deriving the set is what makes the invariant catch the NEXT package to import the figures package
+ * — a hardcoded list would simply not contain it, and the failure it guards is a RUNTIME
+ * `Cannot find module 'react/jsx-dev-runtime'`, not a typecheck error.
  */
 export function membersNeedingJsx(members: readonly Member[]): Member[] {
-	const authors = new Set(members.filter(authorsTsx).map((m) => m.name));
-	return members.filter(
-		(m) =>
-			authors.has(m.name) ||
-			Object.keys({ ...m.pkg.dependencies, ...m.pkg.devDependencies }).some((dep) =>
-				authors.has(dep),
-			),
-	);
+	const needs = new Set(members.filter(authorsTsx).map((m) => m.name));
+	// Fixed point: keep adding members that depend on something already in the set. The graph is a
+	// small DAG (boundary.test.ts enforces acyclicity), so this terminates in a couple of passes.
+	for (let changed = true; changed; ) {
+		changed = false;
+		for (const member of members) {
+			if (needs.has(member.name)) continue;
+			const deps = Object.keys({ ...member.pkg.dependencies, ...member.pkg.devDependencies });
+			if (deps.some((dep) => needs.has(dep))) {
+				needs.add(member.name);
+				changed = true;
+			}
+		}
+	}
+	return members.filter((m) => needs.has(m.name));
 }
