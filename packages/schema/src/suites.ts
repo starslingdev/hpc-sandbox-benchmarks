@@ -311,7 +311,7 @@ export const SUITES = {
 			"realworld_openclaw_task_typecheck",
 			"realworld_openclaw_task_shrinkwrap_check",
 			"realworld_openclaw_task_test_unit_fast",
-			"realworld_openclaw_task_build",
+			"realworld_openclaw_task_test_types",
 		],
 		commands: ["mise run benchmark:realworld:pts:openclaw"],
 	},

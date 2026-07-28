@@ -191,5 +191,8 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 		dimension: "realworld",
 		label: "OpenClaw: test (unit, fast)",
 	},
-	realworld_openclaw_task_build: { dimension: "realworld", label: "OpenClaw: build" },
+	realworld_openclaw_task_test_types: {
+		dimension: "realworld",
+		label: "OpenClaw: typecheck (test tree)",
+	},
 };
