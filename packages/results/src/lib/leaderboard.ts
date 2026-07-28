@@ -611,7 +611,7 @@ function escapeCell(text: string): string {
 }
 
 /** Format a metric value compactly: integers as-is, otherwise up to 4 significant digits, trimmed. */
-function formatValue(value: number): string {
+export function formatValue(value: number): string {
 	if (Number.isInteger(value)) return String(value);
 	// toPrecision(4) then strip trailing zeros / a trailing dot (e.g. 0.2304, 12.35, 1234).
 	return Number.parseFloat(value.toPrecision(4)).toString();
@@ -624,7 +624,7 @@ function formatPValue(p: number): string {
 }
 
 /** Compact note for the main table's Note column — empty when nothing needs calling out. */
-function rowNote(r: LeaderboardRow): string {
+export function rowNote(r: LeaderboardRow): string {
 	const equalValues = r.tiedWithAbove === "identical-value";
 	if (r.pVsPrevious === null) {
 		return equalValues ? "equal values" : "";
@@ -644,14 +644,18 @@ function formatPairwiseP(r: LeaderboardRow): string {
 	return note ? `${p} (${note})` : p;
 }
 
-function formatInterval(r: LeaderboardRow): string {
+export function formatInterval(r: LeaderboardRow): string {
 	return r.interval.resamples === 0
 		? "—"
 		: `${formatValue(r.interval.lo)} – ${formatValue(r.interval.hi)}`;
 }
 
 /** One-line takeaway above each Metric table (leader vs next, or sole provider). */
-function metricTakeaway(dimension: Dimension, metric: MetricDef, rows: LeaderboardRow[]): string {
+export function metricTakeaway(
+	dimension: Dimension,
+	metric: MetricDef,
+	rows: LeaderboardRow[],
+): string {
 	const leader = rows[0];
 	if (!leader) return "";
 	const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
@@ -749,7 +753,31 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 }
 
 /** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
-export function renderLeaderboardMarkdown(board: Leaderboard): string {
+/** A generated figure to embed under its dimension heading. */
+export interface FigureRef {
+	/** The dimension whose section this figure belongs above. */
+	dimension: string;
+	/** Repo-relative path, as it should appear in the Markdown. */
+	path: string;
+	/** Alt text. The tables below remain the accessible surface; this is the image's own description. */
+	altText: string;
+}
+
+export interface RenderLeaderboardOptions {
+	/**
+	 * Figures to embed, one per dimension. Passed IN rather than rendered here so that `results`
+	 * stays the sole author of LEADERBOARD.md — the byte-diff gate re-derives this file from
+	 * `renderLeaderboardMarkdown(buildLeaderboard(run))`, and a second package writing into the same
+	 * document would put that gate's central assertion out of reach.
+	 */
+	figures?: readonly FigureRef[];
+}
+
+export function renderLeaderboardMarkdown(
+	board: Leaderboard,
+	options: RenderLeaderboardOptions = {},
+): string {
+	const figureFor = new Map((options.figures ?? []).map((f) => [f.dimension, f]));
 	// Render the board's OWN target, not the global constant, so the header can never claim the pinned
 	// spec while the comparability warnings below report another one.
 	const spec = formatSpec(board.targetSpec);
@@ -806,6 +834,11 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	for (const { dimension, metrics } of board.dimensions) {
 		lines.push(`## ${dimension}`, "");
+		// The figure leads the section; the tables below it stay the authoritative, accessible surface.
+		const figure = figureFor.get(dimension);
+		if (figure) {
+			lines.push(`![${escapeCell(figure.altText)}](${figure.path})`, "");
+		}
 		for (const { metric, rows: metricRows } of metrics) {
 			const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
 			const notes = metricRows.map(rowNote);

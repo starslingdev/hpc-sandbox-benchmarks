@@ -9,7 +9,15 @@
 # output: provider spec probes, request IDs, and verbatim upstream error pages (e.g. a CloudFront
 # diagnostic whose token reads as `Ba`) are recorded as-emitted — not ours to reword — so exclude the
 # whole tree and anything published under it.
-extend-exclude = ["bun.lock", "packages/schema/src/pts-profiles/**", "data/dataset/**"]
+extend-exclude = [
+  "bun.lock",
+  "packages/schema/src/pts-profiles/**",
+  "data/dataset/**",
+  # Generated figures: SVG glyph-outline coordinates and bundled font binaries are not prose,
+  # and `bun run spell` scans the whole repo on every commit (lefthook.yml).
+  "docs/leaderboard/**",
+  "packages/figures/assets/fonts/**",
+]
 
 [default.extend-words]
 # Domain term: a parsed result not (yet) in the Metric Catalog. International spelling, used as the

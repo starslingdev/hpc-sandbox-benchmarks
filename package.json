@@ -31,6 +31,10 @@
       "xml": {
         "@nodable/compact-builder": "1.0.9",
         "@nodable/flexible-xml-parser": "1.2.2"
+      },
+      "render": {
+        "@resvg/resvg-wasm": "2.6.2",
+        "satori": "0.29.0"
       }
     }
   },

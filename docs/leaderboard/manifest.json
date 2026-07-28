@@ -1,0 +1,66 @@
+{
+  "runId": "30019301067",
+  "sha": "702d8f4082525c7b8f81fdd959f07d7c8e5e4306",
+  "generatedAt": "2026-07-23T16:40:10.630Z",
+  "fonts": [
+    {
+      "file": "DejaVuSansMono.ttf",
+      "sha256": "c805f9436dbc268644c1d9584f01a601a653e028e08fd74b9b949f6cf8304d88"
+    },
+    {
+      "file": "DejaVuSansMono-Bold.ttf",
+      "sha256": "3a3c502eeff669a231549e80df9f7c49de109bafe303170409e905d0b31a38fe"
+    }
+  ],
+  "files": [
+    {
+      "path": "cpu.svg",
+      "dimension": "cpu",
+      "metricId": "node_web_tooling_runs_per_s",
+      "bytes": 186538,
+      "sha256": "ae5ddcd707b95b0e17ac4f245ce879b25aa3c4989c5476befc708f9e80961814"
+    },
+    {
+      "path": "disk.svg",
+      "dimension": "disk",
+      "metricId": "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+      "bytes": 225893,
+      "sha256": "e1c55039476827ecc58b51d30b5aa6260fce568045e9ed4d73f1c8daa6df691c"
+    },
+    {
+      "path": "memory.svg",
+      "dimension": "memory",
+      "metricId": "stream_type_triad",
+      "bytes": 204517,
+      "sha256": "daed7328da877ebc9116ba65f4a951a076ba1b03d102d54d5927018b6991a4e8"
+    },
+    {
+      "path": "network.svg",
+      "dimension": "network",
+      "metricId": "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+      "bytes": 205740,
+      "sha256": "c5cf8961e3a01d5ae96904b0ad2099853747874525fb29e35a618bcb8c74c690"
+    },
+    {
+      "path": "system.svg",
+      "dimension": "system",
+      "metricId": "pybench_milliseconds",
+      "bytes": 181868,
+      "sha256": "6225d210018bef616a89d8f3ae55f2ef60973cd9132bd94850e4f8b2f3546568"
+    },
+    {
+      "path": "realworld.svg",
+      "dimension": "realworld",
+      "metricId": "realworld_mastra_task_cold_install",
+      "bytes": 174771,
+      "sha256": "06e3ecb3aa508b14e7f999fcc3dd2cfb719ea2b68ae42b983ccb930189fcdf2e"
+    },
+    {
+      "path": "economics.svg",
+      "dimension": "economics",
+      "metricId": "usd_per_hour",
+      "bytes": 151982,
+      "sha256": "01bdcd9c8f881d291e8ae9863197008c11e90ca2c74b40daaffaacceae5e89e2"
+    }
+  ]
+}

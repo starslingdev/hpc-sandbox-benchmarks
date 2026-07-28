@@ -31,6 +31,19 @@ bun run lint         # biome check; warnings fail
 bun run spell        # typos (via mise)
 ```
 
+The published comparison surface has two byte-identical gates — `LEADERBOARD.md` and the figures it
+embeds under `docs/leaderboard/`. If either goes stale (you changed the ranking, the Markdown
+renderer, the figure renderer, the theme, or a bundled font), regenerate both, in this order:
+
+```sh
+bun apps/cli/src/bin/figures.ts     data/dataset/runs/<id>.json docs/leaderboard
+bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md
+bun apps/cli/src/bin/figures.ts     data/dataset/runs/<id>.json docs/leaderboard --check   # what CI runs
+```
+
+Use `<id>` from the `Run \`…\`` line at the top of `LEADERBOARD.md`. To look at a figure without
+touching the repo, render it somewhere else: `… figures.ts <run.json> /tmp/preview --png`.
+
 PTS-catalog changes also have a drift gate:
 
 ```sh

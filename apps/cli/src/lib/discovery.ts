@@ -86,7 +86,8 @@ export interface DiscoveryResult {
  *   - any other `-…`     → an "Unknown flag" error (`!ok`) so the caller exits non-zero, even when
  *                          paired with a valid action (the unknown flag is never silently dropped)
  * A bin with its own value-taking flag (e.g. bench-suite's `--require <ids>`) declares it in
- * `valueFlags` so the closed set stays closed for every other bin rather than growing a union of
+ * `valueFlags`, and a bin with its own boolean flag (e.g. figures' `--check`) declares it in
+ * `booleanFlags`, so the closed set stays closed for every other bin rather than growing a union of
  * every bin's private vocabulary. Both `--flag <v>` and `--flag=<v>` spellings are accepted.
  * Centralising the dispatch keeps the flag vocabulary consistent and makes a bin's discovery output
  * unit-testable without spawning a process.
@@ -97,6 +98,7 @@ export function handleDiscovery(
 	argv: readonly string[],
 	help: string,
 	valueFlags: readonly string[] = [],
+	booleanFlags: readonly string[] = [],
 ): DiscoveryResult | null {
 	// `--help` is the escape hatch: it wins even alongside other flags, so `--help --anything` prints
 	// usage rather than an error.
@@ -108,6 +110,7 @@ export function handleDiscovery(
 		(a) =>
 			a.startsWith("-") &&
 			!RECOGNISED_FLAGS.has(a) &&
+			!booleanFlags.includes(a) &&
 			!valueFlags.some((f) => a === f || a.startsWith(`${f}=`)),
 	);
 	if (unknown) return { text: `Unknown flag: ${unknown}\n\n${help}`, ok: false };

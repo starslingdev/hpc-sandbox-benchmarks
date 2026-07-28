@@ -34,6 +34,8 @@ _Not present in this run: Daytona (container) — registered providers that repo
 
 ## cpu
 
+![cpu headline: Node.js web tooling (runs/s), 6 providers ranked, run 30019301067](docs/leaderboard/cpu.svg)
+
 ### Node.js web tooling _(headline)_
 
 runs/s · higher is better
@@ -50,6 +52,8 @@ _Blaxel leads · ~1.1× Daytona (VM) on median (higher is better)._
 | 6 | Modal (gVisor) | 9.56 | 8.95 – 10.36 | 33 | n too small |
 
 ## disk
+
+![disk headline: fio rand read 4KB, O_DIRECT (IOPS) (IOPS), 6 providers ranked, run 30019301067](docs/leaderboard/disk.svg)
 
 ### fio rand read 4KB, O_DIRECT (IOPS) _(headline)_
 
@@ -187,6 +191,8 @@ _Daytona (VM) leads · ~1.3× Blaxel on median (higher is better)._
 
 ## memory
 
+![memory headline: STREAM Triad (MB/s), 6 providers ranked, run 30019301067](docs/leaderboard/memory.svg)
+
 ### STREAM Triad _(headline)_
 
 MB/s · higher is better
@@ -248,6 +254,8 @@ _Daytona (VM) leads · ~1.8× Blaxel on median (higher is better)._
 | 6 | E2B | 43027 | 42340 – 43330 | 15 | n too small |
 
 ## network
+
+![network headline: iperf3 loopback TCP, 1 stream (Mbits/sec), 6 providers ranked, run 30019301067](docs/leaderboard/network.svg)
 
 ### iperf3 loopback TCP, 1 stream _(headline)_
 
@@ -325,6 +333,8 @@ _Novita leads · ~1.1× Modal (VM) on median (higher is better)._
 | 6 | Modal (gVisor) | 157.6 | 52.98 – 2970 | 6 | n too small |
 
 ## system
+
+![system headline: PyBench (Milliseconds), 6 providers ranked, run 30019301067](docs/leaderboard/system.svg)
 
 ### PyBench _(headline)_
 
@@ -432,6 +442,8 @@ _Daytona (VM) leads · Blaxel is ~1.2× higher (lower is better)._
 | 6 | Modal (gVisor) | 429.7 | 390.6 – 480.4 | 6 | n too small |
 
 ## realworld
+
+![realworld headline: Mastra: cold install (Seconds), 5 providers ranked, run 30019301067](docs/leaderboard/realworld.svg)
 
 ### Mastra: cold install _(headline)_
 
@@ -682,6 +694,8 @@ _Daytona (VM) and Blaxel share the top on this metric (lower is better)._
 | 5 | Modal (gVisor) | 91.16 | 73.44 – 116.7 | 8 | — |
 
 ## economics
+
+![economics headline: Hourly cost (USD/hr), 5 providers ranked, run 30019301067](docs/leaderboard/economics.svg)
 
 ### Hourly cost _(headline)_
 

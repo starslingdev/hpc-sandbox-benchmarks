@@ -14,12 +14,21 @@ export {
 	// cannot name the type of `leaderboard.coverageGaps` can't write a function that takes one.
 	type CoverageGap,
 	type CoverageOutcome,
+	// The presentation formatters are public so a SECOND rendered surface (the figures) prints the
+	// same strings as the Markdown. Two renderers with two copies of `toPrecision(4)` is exactly how
+	// a table and a figure come to disagree about the same run.
+	type FigureRef,
+	formatInterval,
+	formatValue,
 	type Leaderboard,
 	type LeaderboardDimension,
 	type LeaderboardMetric,
 	type LeaderboardRow,
+	metricTakeaway,
 	type ProviderRosterEntry,
+	type RenderLeaderboardOptions,
 	renderLeaderboardMarkdown,
+	rowNote,
 } from "./lib/leaderboard.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
 export {

@@ -1,4 +1,8 @@
 {
   "extends": "@repo/tsconfig/base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "@sandbox-benchmarks/figures"
+  },
   "include": ["src"]
 }

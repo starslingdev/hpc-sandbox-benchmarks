@@ -96,10 +96,27 @@ jobs:
           fi
           echo "TARGET_RUN_ID=$target" >> "$GITHUB_ENV"
 
+      # Figures FIRST: LEADERBOARD.md embeds one per dimension, and both artifacts are byte-gated
+      # against the same committed Run. Rendering them in the other order would open a PR whose
+      # Markdown references figures that had not been regenerated yet.
+      #
+      # NOTE ON BLAST RADIUS: this step executes satori + a ~2.5 MB wasm rasterizer inside a job that
+      # holds the `privileged` environment's provider secrets and a persisted write token (see the
+      # checkout step above). That is a deliberate, reviewed trade — the alternative is a separate
+      # unprivileged render job handing figures over as an artifact, which is the right move if this
+      # step ever grows beyond rendering committed data.
+      - name: Regenerate figures
+        run: bun apps/cli/src/bin/figures.ts "data/dataset/runs/$TARGET_RUN_ID.json" docs/leaderboard
+
       # Keep LEADERBOARD.md byte-identical to what the renderer produces from the chosen committed Run —
       # the same command the leaderboard-artifact-sync gate names in its failure message.
       - name: Regenerate leaderboard
         run: bun apps/cli/src/bin/leaderboard.ts "data/dataset/runs/$TARGET_RUN_ID.json" LEADERBOARD.md
+
+      # Fail here rather than opening a PR the figures-artifact-sync gate would reject. Same binary a
+      # developer runs locally, so the two cannot diverge.
+      - name: Confirm the figures are in sync
+        run: bun apps/cli/src/bin/figures.ts "data/dataset/runs/$TARGET_RUN_ID.json" docs/leaderboard --check
 
       # Pre-flight the exact gate the PR must pass — `biome check . --error-on-warnings`, the same
       # command ci.yml's lint job runs — so a genuine formatting/lint regression fails here, before any
@@ -123,9 +140,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add LEADERBOARD.md
+          # BOTH paths must be staged. Staging only LEADERBOARD.md meant a change that altered the
+          # figures but not the tables (a theme tweak, a renderer fix, a font bump) left the Markdown
+          # byte-identical, tripped the early exit below, and reported success while publishing
+          # nothing — with the figures gate then failing on main.
+          git add LEADERBOARD.md docs/leaderboard
           if git diff --cached --quiet; then
-            echo "LEADERBOARD.md already reflects run $TARGET_RUN_ID; nothing to commit"
+            echo "LEADERBOARD.md and docs/leaderboard already reflect run $TARGET_RUN_ID; nothing to commit"
             exit 0
           fi
           branch="leaderboard/update-${TARGET_RUN_ID}"

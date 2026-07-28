@@ -1,0 +1,9 @@
+# Generated leaderboard figures. `-diff` stops git from trying to produce a textual diff and
+# `linguist-generated` collapses them in GitHub pull requests: the files are machine-authored SVG in
+# which every glyph is an outline path, so a one-digit change to a benchmark value rewrites most of
+# the file and no reviewer can read the result. The review surface for a figure change is the
+# regenerated image and the byte-diff gate in @repo/repo-checks, not the diff.
+docs/leaderboard/*.svg -diff linguist-generated=true
+
+# Bundled font binaries.
+packages/figures/assets/fonts/*.ttf binary

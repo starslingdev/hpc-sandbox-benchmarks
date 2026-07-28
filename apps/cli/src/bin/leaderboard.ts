@@ -6,6 +6,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import * as core from "@actions/core";
+import { figureRefs } from "@sandbox-benchmarks/figures/plan";
 import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
 import { fail, inActions, logInfo, withGroup, writeJobSummary } from "../lib/actions-log.ts";
@@ -76,7 +77,9 @@ if (import.meta.main) {
 		}
 		return built;
 	});
-	const markdown = renderLeaderboardMarkdown(board);
+	// Figure refs come from the same plan `figures` renders from, so the Markdown can never point at a
+	// figure that was not generated. Imported from the `/plan` entry point, which is satori-free.
+	const markdown = renderLeaderboardMarkdown(board, { figures: figureRefs(board) });
 
 	if (outFile) {
 		mkdirSync(dirname(outFile), { recursive: true });

@@ -81,9 +81,16 @@ export function listMembers(root: string = findRepoRoot()): Member[] {
 	return members.sort((a, b) => a.relPath.localeCompare(b.relPath));
 }
 
-/** Every `.ts` file under a member's `src/`, as absolute paths. */
+/**
+ * Every `.ts`/`.tsx` file under a member's `src/`, as absolute paths.
+ *
+ * `.tsx` is NOT optional here. Bun's `Glob("**​/*.ts")` does not match `.tsx`, so while this globbed
+ * only `.ts` every component file in `packages/figures` was invisible to the import-boundary check —
+ * a component could have reached into another package's private `lib/`, or imported an undeclared
+ * dependency, and CI would have stayed green.
+ */
 export function memberSourceFiles(member: Member): string[] {
-	const glob = new Glob("**/*.ts");
+	const glob = new Glob("**/*.{ts,tsx}");
 	return [...glob.scanSync({ cwd: join(member.dir, "src"), onlyFiles: true })].map((rel) =>
 		join(member.dir, "src", rel),
 	);

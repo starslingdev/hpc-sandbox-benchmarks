@@ -1,0 +1,28 @@
+{
+  "name": "@sandbox-benchmarks/figures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./plan": "./src/plan.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./jsx-dev-runtime": "./src/jsx-dev-runtime.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@resvg/resvg-wasm": "catalog:render",
+    "@sandbox-benchmarks/results": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*",
+    "arktype": "catalog:",
+    "satori": "catalog:render"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  }
+}

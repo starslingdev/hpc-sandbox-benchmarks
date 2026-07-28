@@ -10,6 +10,7 @@
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { figureRefs } from "@sandbox-benchmarks/figures/plan";
 import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
 import type { MetricDef, Run } from "@sandbox-benchmarks/schema";
 import {
@@ -411,7 +412,11 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 
 	it("is byte-identical to a fresh render of the Run it names", () => {
 		const { committed, runId, run } = loadCommittedRun();
-		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run));
+		// The committed surface embeds one figure per dimension, so the re-derivation must pass the
+		// same refs the `leaderboard` bin does. They come from `@sandbox-benchmarks/figures/plan`,
+		// which is satori-free — this gate never loads a renderer or a rasterizer.
+		const board = buildLeaderboard(run);
+		const rendered = renderLeaderboardMarkdown(board, { figures: figureRefs(board) });
 		if (committed !== rendered) {
 			// Name the remedy in the failure, rather than leaving whoever hits this to work it out.
 			throw new Error(
@@ -426,9 +431,11 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		// Loads independently of the test above: each resolves the Run itself, so one failing reports
 		// its own diagnosis instead of aborting the file and taking the other down with it.
 		const { run } = loadCommittedRun();
-		expect(renderLeaderboardMarkdown(buildLeaderboard(run))).toBe(
-			renderLeaderboardMarkdown(buildLeaderboard(run)),
-		);
+		const render = () => {
+			const board = buildLeaderboard(run);
+			return renderLeaderboardMarkdown(board, { figures: figureRefs(board) });
+		};
+		expect(render()).toBe(render());
 	});
 
 	it("renders one row for every provider/Metric record in the source Run", () => {
