@@ -19,7 +19,21 @@ WORK_DIR="${SCRIPT_DIR}/work"
 
 # Fixed env, never ambient-HOME-dependent, so PTS's env quirks (it runs tests under varying HOME
 # handling) can't leak cache state across runs or providers.
+#
+# XDG_DATA_HOME is what actually relocates the pnpm content-addressable store. npm_config_store_dir
+# does NOT: pnpm 11 dropped the npm_config_* env bridge for pnpm-specific settings and honors only
+# --store-dir, PNPM_HOME, and XDG_DATA_HOME (probed against 11.8.0). Every realworld repo pins pnpm 11
+# through packageManager (mastra 11.8.0, better-auth 11.1.1, openclaw 11.2.2) and pnpm 10 self-switches
+# to it, so before this line the store lived at the ambient ~/.local/share/pnpm/store and survived the
+# cold reset below untouched -- making every published cold_install a WARM install. Measured on mastra:
+# 57.0s with the surviving store (pnpm downloaded nothing) vs 87.9s genuinely cold (`resolved 4032,
+# reused 0, downloaded 3948`). npm_config_store_dir is kept for any pnpm 10 that still reads it.
+# Second effect, deliberate: this moves the store (5.2 GiB for mastra) off the ambient HOME and under
+# SCRIPT_DIR -- i.e. inside the PTS data dir, the exact path packages/harness measures for a suite's
+# minDiskGb. On Blaxel that dir is the 40 GiB volume while `/` is a small RAM-overlay tmpfs, so the
+# heaviest artifact of the run now lands on the volume the gate actually cleared it against.
 export XDG_CACHE_HOME="${SCRIPT_DIR}/.cache"
+export XDG_DATA_HOME="${SCRIPT_DIR}/.local-share"
 export COREPACK_HOME="${SCRIPT_DIR}/.corepack"
 export npm_config_store_dir="${SCRIPT_DIR}/.pnpm-store"
 export CI=true
@@ -231,9 +245,29 @@ cold_install)
 	cd "$WORK_DIR"
 	git checkout -f -q "$PIN_SHA"
 	git clean -xdff
-	rm -rf "$npm_config_store_dir" "$XDG_CACHE_HOME"
+	# Ask the pnpm that will actually run -- packageManager self-switch and all -- where its store is,
+	# instead of assuming a layout. The store path is version-dependent (.../store/v10 vs /v11) and a
+	# repo may override it outright in pnpm-workspace.yaml, and guessing it wrong is precisely how this
+	# reset silently degraded into a warm install. Runs before start_ns, so its cost is unmeasured.
+	store_path="$(pnpm store path 2>/dev/null | tail -1 || true)"
+	# Only the STORE is removed, never all of $XDG_DATA_HOME: .../pnpm/.tools holds the self-switched
+	# pnpm binary, and wiping that would drag a pnpm-toolchain download into the measured window --
+	# the same trap install.sh's warm-the-caches comment calls out.
+	rm -rf "$npm_config_store_dir" "$XDG_CACHE_HOME" "${XDG_DATA_HOME}/pnpm/store"
+	# Belt-and-braces for a store configured outside XDG_DATA_HOME. Pattern-guarded so a surprising
+	# `pnpm store path` (empty, relative, an error string) can never turn into a stray rm -rf.
+	case "$store_path" in
+	/*/store | /*/store/*) rm -rf "$store_path" ;;
+	esac
 	if [ -d node_modules ]; then
 		echo "cold_install: node_modules survived the cold reset" >&2
+		exit 1
+	fi
+	# "Provably cold" has to cover the package store too, not just node_modules. Without this the
+	# warm-install regression is invisible: the sample still records, just 35% low and missing the
+	# registry-download phase entirely. A future pnpm that relocates its store again fails loudly here.
+	if [ -n "$store_path" ] && [ -d "$store_path" ]; then
+		echo "cold_install: pnpm store survived the cold reset at ${store_path}" >&2
 		exit 1
 	fi
 	start_ns=$(date +%s%N)

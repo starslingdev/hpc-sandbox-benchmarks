@@ -43,6 +43,11 @@ chmod +x "$EXE_NAME"
 # of a batch pay a pnpm-toolchain download inside its sample. The runner's cold_install branch
 # still wipes the store + XDG cache before measuring, so this never warms a cold-install sample.
 export XDG_CACHE_HOME="${PWD}/.cache"
+# Must stay in lockstep with realworld-runner.sh's export block: XDG_DATA_HOME is the var that actually
+# moves pnpm 11's store (npm_config_store_dir is ignored there). Omitting it here would leave this warm
+# install populating the ambient ~/.local/share store while the runner reads an empty one, so the first
+# measured task of the batch would pay a full install it was never meant to include.
+export XDG_DATA_HOME="${PWD}/.local-share"
 export COREPACK_HOME="${PWD}/.corepack"
 export npm_config_store_dir="${PWD}/.pnpm-store"
 
