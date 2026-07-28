@@ -308,6 +308,7 @@ export const SUITES = {
 			"realworld_openclaw_task_cold_install",
 			"realworld_openclaw_task_lint_oxlint",
 			"realworld_openclaw_task_lint_format",
+			"realworld_openclaw_task_lint_extensions",
 			"realworld_openclaw_task_typecheck",
 			"realworld_openclaw_task_shrinkwrap_check",
 			"realworld_openclaw_task_test_unit_fast",
