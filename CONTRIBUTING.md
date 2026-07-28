@@ -94,7 +94,7 @@ steps 1–5 are compile errors, and step 6 is the `workflow-registry-sync` gate 
    generates from the registry** — `${{ <selector>.provider == '<id>' && secrets.<KEY> || '' }}`, its
    parenthesized multi-owner variant, or the unconditional `${{ secrets.<KEY> }}`. Copy the shape from an
    existing provider and only the id and key change. It is a whitelist rather than a set of checks against
-   known-bad spellings, because a mis-shaped expression passes every presence check while handing the
+   known-bad spellings, because a malformed expression passes every presence check while handing the
    provider an empty (or over-broad) credential, which reads downstream as "that provider has no results".
    A credential that genuinely cannot use a canonical form needs a `CREDENTIAL_EXPR_EXCEPTIONS` entry with
    its reason — `NSC_TOKEN_FILE` is the one today, since namespace mints its token from OIDC and references

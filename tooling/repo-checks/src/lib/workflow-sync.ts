@@ -34,7 +34,7 @@
 //      never validated, with a green release.
 //   8. Every credential expression, in all four credential blocks, EXACTLY matches one of the forms
 //      GENERATED for that credential from the registry (declared exceptions aside). Invariants 3/7 only
-//      check a key is present, which a mistyped or mis-shaped expression satisfies while supplying an
+//      check a key is present, which a mistyped or malformed expression satisfies while supplying an
 //      empty or over-broad credential — read downstream as "that provider has no results", not "the
 //      wiring never matched". A whitelist rather than a set of rules against known-bad forms: see
 //      checkCredentialExpressions for why the rule-based version had an unbounded tail.
