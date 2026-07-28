@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
-import { PROVIDERS } from "@sandbox-benchmarks/schema";
+import { getProvider } from "@sandbox-benchmarks/schema";
 import type { SandboxHandle } from "./execute.ts";
 import {
 	buildPreamble,
@@ -51,11 +51,11 @@ describe("selectTransport", () => {
 		// uncapped + detachedPoll:false, which routed a 55-minute benchmark through one synchronous exec;
 		// live run 30314097333 lost it at 4m18.8s with two of three PTS profiles done. A suite-length step
 		// must detach here, while a short step must still take the cheap synchronous path.
-		const namespaceTransport = PROVIDERS.find((p) => p.id === "namespace")?.transport;
-		expect(namespaceTransport).toBeDefined();
-		if (!namespaceTransport) return;
-		expect(selectTransport(namespaceTransport, 55 * MIN)).toBe("detached");
-		expect(selectTransport(namespaceTransport, MIN)).toBe("sync");
+		// getProvider's literal-id overload returns non-optional, so there is no `if (!x) return` guard —
+		// which matters: such a guard would make this regression test silently PASS if the entry vanished.
+		const { transport } = getProvider("namespace");
+		expect(selectTransport(transport, 55 * MIN)).toBe("detached");
+		expect(selectTransport(transport, MIN)).toBe("sync");
 	});
 });
 
@@ -378,6 +378,15 @@ describe("StepRunner.runDetached", () => {
 		return { sandbox, commands };
 	}
 
+	/** Both completion and the log read-back went over the exec `cat` poll, not a filesystem API. */
+	function expectPolledOverExec(commands: Array<{ command: string }>): void {
+		for (const suffix of [".done", ".log"]) {
+			expect(commands.some((c) => c.command.includes("cat") && c.command.includes(suffix))).toBe(
+				true,
+			);
+		}
+	}
+
 	it("polls the done-file over exec when the sandbox has no filesystem", async () => {
 		const { sandbox, commands } = catPollSandbox({
 			readyAfter: 2,
@@ -395,12 +404,7 @@ describe("StepRunner.runDetached", () => {
 		expect(commands[0]?.background).toBe(true);
 		expect(commands[0]?.command).toContain("nohup");
 		// Completion is observed by cat-ing the done-file (the no-filesystem fallback), then the log.
-		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".done"))).toBe(
-			true,
-		);
-		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".log"))).toBe(
-			true,
-		);
+		expectPolledOverExec(commands);
 	});
 
 	it("degrades to the exec poll when the filesystem is PRESENT but unsupported", async () => {
@@ -421,11 +425,10 @@ describe("StepRunner.runDetached", () => {
 				new Error("Filesystem operations are not supported by namespace's sandbox environment."),
 			);
 		};
-		const withBrokenFs: SandboxHandle = {
-			...sandbox,
-			filesystem: { exists: unsupported, readFile: unsupported },
-		};
-		const runner = new StepRunner(withBrokenFs, CAPPED, async () => undefined);
+		// Attach to the same handle `commands` records through, rather than a spread copy — one object, so
+		// the assertions below can't be reading a different fake than the one the runner drove.
+		sandbox.filesystem = { exists: unsupported, readFile: unsupported };
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
 
 		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
 
@@ -434,12 +437,7 @@ describe("StepRunner.runDetached", () => {
 		// Discovered by use, then abandoned: exactly one fs attempt, never retried.
 		expect(fsCalls).toBe(1);
 		// Completion and the log read-back both came over exec instead.
-		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".done"))).toBe(
-			true,
-		);
-		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".log"))).toBe(
-			true,
-		);
+		expectPolledOverExec(commands);
 	});
 
 	it("propagates a non-zero exit from the cat-polled done-file", async () => {

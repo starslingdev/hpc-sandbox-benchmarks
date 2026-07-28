@@ -44,16 +44,24 @@ export type SpecPinning = "settable" | "fixed" | "unknown";
  *     server-side HTTP 408 on multi-minute synchronous execs while the process keeps running
  *     (`docs/evidence/daytona-exec-transport.md`); E2B's `commands.run` defaults to a 60s command
  *     timeout the computesdk wrapper never overrides.
- *   - `detachedPoll` — can the provider run a step fully detached (background exec + a pollable
- *     filesystem), the durable path for steps that would outlast `syncCapMs`? Without it there is no
+ *   - `detachedPoll` — can the provider run a step fully detached (background exec + OBSERVABLE
+ *     completion), the durable path for steps that would outlast `syncCapMs`? Without it there is no
  *     alternative, so such a step stays synchronous and best-effort.
+ *
+ *     Observable does NOT require a filesystem API. `StepRunner.runDetached` polls the done-file over
+ *     the sandbox filesystem where one works and `cat`s it over exec where none does, so an adapter
+ *     with no `filesystem` table still detaches. Reading this as "needs a filesystem" is what produced
+ *     namespace's wrong `detachedPoll: false` — which stranded a 55-minute benchmark on a synchronous
+ *     exec that its own server cut at ~4m19s. If a provider can background a command and answer a
+ *     later exec, it can detach.
  */
 export interface ProviderTransport {
 	/** Does the `@computesdk/*` adapter stream stdout/stderr chunks (`onStdout`/`onStderr`)? */
 	streaming: boolean;
 	/** Conservative bound (ms) on a safe single synchronous exec round-trip; `null` when uncapped. */
 	syncCapMs: number | null;
-	/** Can a step run detached (background exec + filesystem poll), the durable long-step path? */
+	/** Can a step run detached (background exec + observable completion — filesystem poll where exposed,
+	 *  `cat` over exec otherwise), the durable long-step path? */
 	detachedPoll: boolean;
 }
 
@@ -427,7 +435,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"Validated live end-to-end (system suite, 3/3 metrics) once the exec transport was corrected below. The wrapper's `methods.sandbox` declares no `filesystem` table, so computesdk falls back to its UnsupportedFileSystem (a truthy stub whose every op throws) — realworld suites that read/write through `sandbox.filesystem` skip on this provider. That is a WRAPPER limit, not a platform one: the official @namespacelabs/sdk exposes ComputeService.GetSSHConfig (per-instance scoped private key + username + endpoint), so an SSH-backed filesystem could close the gap. Deliberately not taken — it means managing keys and bypassing the @computesdk/* wrapper this repo standardizes on — so the gap is a known, closable choice rather than a provider incapability.",
+				"Validated live end-to-end (system suite, 3/3 metrics) once the exec transport was corrected below. The wrapper's `methods.sandbox` declares no `filesystem` table, so computesdk falls back to its UnsupportedFileSystem (a truthy stub whose every op throws) — realworld suites that read/write through `sandbox.filesystem` skip on this provider. That is a WRAPPER limit, not a platform one: the official @namespacelabs/sdk exposes ComputeService.GetSSHConfig (per-instance scoped private key + username + endpoint), so an SSH-backed filesystem could close the gap. Deliberately not taken — it means managing keys and bypassing the @computesdk/* wrapper this repo standardizes on.",
 		},
 		// virtualCpu/memoryMegabytes are independent, uncoupled knobs on the factory config (unlike
 		// blaxel's memory-derived cpu/disk), so the 4 vCPU / 8 GiB target spec is exactly expressible.
@@ -446,12 +454,12 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// a step BUDGETED past 120s detaches, which is the suite benchmark and the setup installs.
 			streaming: false,
 			syncCapMs: 120_000,
-			// A finite cap requires a durable alternative, and this provider does have one. The earlier
-			// "no filesystem table means no pollable done-file" reasoning was wrong about the harness:
-			// StepRunner.runDetached observes completion through the sandbox filesystem only WHEN one is
-			// exposed, and otherwise `cat`s the done-file over exec (pollDoneViaCat) — a fallback that
-			// exists for exactly this case, an adapter with no filesystem API. Each poll is a sub-second
-			// exec, far under the cap, so a multi-minute benchmark survives as a sequence of short calls.
+			// A finite cap requires a durable alternative, and this provider has one despite exposing no
+			// filesystem: StepRunner.runDetached polls the done-file over exec (pollDoneViaCat) when the
+			// filesystem is absent OR is computesdk's throwing UnsupportedFileSystem stub, which is what
+			// this adapter gets — so this declaration depends on that degradation path (isUnsupportedFilesystem).
+			// Each poll is a sub-second exec far under the cap, so a multi-minute benchmark survives as a
+			// sequence of short calls.
 			detachedPoll: true,
 		},
 	},
