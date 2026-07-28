@@ -364,30 +364,76 @@ describe("checkReleaseLaneExemptions", () => {
 });
 
 describe("checkCredentialExpressions (registry-generated whitelist)", () => {
+	// Each lane's provider selector, matching runCheck: only `publish` has no provider axis.
 	const allLanes = {
-		[SMOKE_WORKFLOW]: smokeEnv,
-		[SUITE_WORKFLOW]: suiteEnv,
-		[BAKE_LABEL]: bakeEnv,
-		[PROMOTE_LABEL]: promoteEnv,
+		[SMOKE_WORKFLOW]: { env: smokeEnv, scoping: "inputs" as const },
+		[SUITE_WORKFLOW]: { env: suiteEnv, scoping: "matrix" as const },
+		[BAKE_LABEL]: { env: bakeEnv, scoping: "matrix" as const },
+		[PROMOTE_LABEL]: { env: promoteEnv, scoping: "unconditional" as const },
 	};
+	/** A synthetic single-lane input, defaulting to the fan-out scoping most cases exercise. */
+	const lane = (
+		env: Record<string, string>,
+		scoping: "inputs" | "matrix" | "unconditional" = "matrix",
+	) => ({
+		"synthetic.yml": { env, scoping },
+	});
 
 	test("every real credential block matches a generated form", () => {
 		expect(checkCredentialExpressions(allLanes)).toEqual([]);
 	});
 
-	test("generates the three canonical forms for a single-owner credential", () => {
-		const forms = canonicalCredentialExpressions("E2B_API_KEY", ["e2b"]);
+	test("generates exactly one form per lane, chosen by that lane's selector", () => {
 		// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
-		expect(forms).toEqual([
-			"${{ secrets.E2B_API_KEY }}",
+		expect(canonicalCredentialExpressions("E2B_API_KEY", ["e2b"], "inputs")).toEqual([
 			"${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}",
+		]);
+		expect(canonicalCredentialExpressions("E2B_API_KEY", ["e2b"], "matrix")).toEqual([
 			"${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}",
+		]);
+		expect(canonicalCredentialExpressions("E2B_API_KEY", ["e2b"], "unconditional")).toEqual([
+			"${{ secrets.E2B_API_KEY }}",
 		]);
 		// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
 	});
 
+	// The security property the per-cell scoping exists to provide: a fan-out cell must receive ONLY its
+	// own provider's credential, so the unconditional form belongs to `publish` alone.
+	test("rejects the unconditional form in a provider-scoped lane", () => {
+		const errors = checkCredentialExpressions(lane({ E2B_API_KEY: `\${{ secrets.E2B_API_KEY }}` }));
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('"matrix" lane');
+	});
+
+	test("rejects a scoped form in the unconditional lane, where the guard can never match", () => {
+		// `publish` has no matrix and no dispatch input, so a guard there yields an empty credential.
+		const errors = checkCredentialExpressions(
+			lane(
+				{ E2B_API_KEY: `\${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}` },
+				"unconditional",
+			),
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('"unconditional" lane');
+	});
+
+	test("rejects the wrong selector in a scoped lane — it silently never matches", () => {
+		// `inputs.provider` does not exist in a fan-out, so this is empty on every cell.
+		const errors = checkCredentialExpressions(
+			lane(
+				{ E2B_API_KEY: `\${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}` },
+				"matrix",
+			),
+		);
+		expect(errors).toHaveLength(1);
+	});
+
 	test("parenthesizes the guard for a credential shared by isolation variants", () => {
-		const forms = canonicalCredentialExpressions("MODAL_TOKEN_ID", ["modal-gvisor", "modal-vm"]);
+		const forms = canonicalCredentialExpressions(
+			"MODAL_TOKEN_ID",
+			["modal-gvisor", "modal-vm"],
+			"matrix",
+		);
 		expect(forms).toContain(
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal, not a JS template.
 			"${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}",
@@ -395,7 +441,7 @@ describe("checkCredentialExpressions (registry-generated whitelist)", () => {
 	});
 
 	test("a declared exception replaces the canonical forms entirely", () => {
-		const forms = canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"]);
+		const forms = canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "matrix");
 		expect(forms).toHaveLength(1);
 		expect(forms[0]).toContain("steps.nsc-token.outcome");
 		// The generated provider-scoped form must NOT also be accepted for an excepted credential.
@@ -404,11 +450,11 @@ describe("checkCredentialExpressions (registry-generated whitelist)", () => {
 
 	test("normalizes whitespace, so a pure reflow does not fail the gate", () => {
 		expect(
-			checkCredentialExpressions({
-				"synthetic.yml": {
+			checkCredentialExpressions(
+				lane({
 					E2B_API_KEY: `\${{   matrix.provider == 'e2b'   &&   secrets.E2B_API_KEY   ||   ''   }}`,
-				},
-			}),
+				}),
+			),
 		).toEqual([]);
 	});
 
@@ -439,9 +485,9 @@ describe("checkCredentialExpressions (registry-generated whitelist)", () => {
 
 	for (const [label, expr] of REJECTED) {
 		test(`rejects ${label}`, () => {
-			const errors = checkCredentialExpressions({ "synthetic.yml": { E2B_API_KEY: expr } });
+			const errors = checkCredentialExpressions(lane({ E2B_API_KEY: expr }));
 			expect(errors).toHaveLength(1);
-			expect(errors[0]).toContain("not one of the forms generated");
+			expect(errors[0]).toContain("not the form generated");
 			// The message must show both sides, so the fix is mechanical rather than a puzzle.
 			expect(errors[0]).toContain("actual:");
 			expect(errors[0]).toContain("expected:");
@@ -451,25 +497,25 @@ describe("checkCredentialExpressions (registry-generated whitelist)", () => {
 	test("rejects a uniform typo — agreeing across every lane is no longer a defence", () => {
 		const typo = `\${{ matrix.provider == 'novita' && secrets.NOVITA_API_KE || '' }}`;
 		const errors = checkCredentialExpressions({
-			"a.yml": { NOVITA_API_KEY: typo },
-			"b.yml": { NOVITA_API_KEY: typo },
+			"a.yml": { env: { NOVITA_API_KEY: typo }, scoping: "matrix" },
+			"b.yml": { env: { NOVITA_API_KEY: typo }, scoping: "matrix" },
 		});
 		expect(errors).toHaveLength(2);
 	});
 
 	test("rejects an excepted credential wired to anything but its exact declared expression", () => {
-		const errors = checkCredentialExpressions({
-			"synthetic.yml": {
-				NSC_TOKEN_FILE: `\${{ steps.nsc-token.outcome == 'success' && 'x' || '' }}`,
-			},
-		});
+		const errors = checkCredentialExpressions(
+			lane({ NSC_TOKEN_FILE: `\${{ steps.nsc-token.outcome == 'success' && 'x' || '' }}` }),
+		);
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("declared exception");
 	});
 
 	test("a lane that omits a key is left to invariants 3/7, not double-reported here", () => {
 		const { E2B_API_KEY: _, ...drifted } = suiteEnv;
-		expect(checkCredentialExpressions({ [SUITE_WORKFLOW]: drifted })).toEqual([]);
+		expect(
+			checkCredentialExpressions({ [SUITE_WORKFLOW]: { env: drifted, scoping: "matrix" } }),
+		).toEqual([]);
 	});
 });
 

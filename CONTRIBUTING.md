@@ -90,10 +90,14 @@ steps 1–5 are compile errors, and step 6 is the `workflow-registry-sync` gate 
    same keys into `toolchain-image.yml`'s `bake` and `publish` credential blocks, or declare the provider
    in `RELEASE_LANE_EXEMPT` with the reason it needs no release-lane boot.
 
-   Across all four blocks the gate also requires each credential expression to **exactly match a form it
-   generates from the registry** — `${{ <selector>.provider == '<id>' && secrets.<KEY> || '' }}`, its
-   parenthesized multi-owner variant, or the unconditional `${{ secrets.<KEY> }}`. Copy the shape from an
-   existing provider and only the id and key change. It is a whitelist rather than a set of checks against
+   Across all four blocks the gate also requires each credential expression to **exactly match the single
+   form it generates from the registry for that lane** — `${{ <selector>.provider == '<id>' &&
+   secrets.<KEY> || '' }}` (or its parenthesized multi-owner variant) in the provider-scoped lanes, with
+   `<selector>` being `inputs` in the smoke dispatch and `matrix` in a fan-out; and the unconditional
+   `${{ secrets.<KEY> }}` only in the release lane's `publish`, which is a serial transaction with no
+   provider axis. Copy the shape from an existing provider in the same lane and only the id and key change.
+   The lane matters: the unconditional form in a fan-out would hand one provider's secret to every cell,
+   and a guard in `publish` would never match, so each is rejected where it does not belong. It is a whitelist rather than a set of checks against
    known-bad spellings, because a malformed expression passes every presence check while handing the
    provider an empty (or over-broad) credential, which reads downstream as "that provider has no results".
    A credential that genuinely cannot use a canonical form needs a `CREDENTIAL_EXPR_EXCEPTIONS` entry with

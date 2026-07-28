@@ -378,29 +378,44 @@ function normalizeExpr(expr: string): string {
 }
 
 /**
- * The EXACT expressions a credential may be wired to, generated from the registry — the whitelist that
- * Invariant 8 compares against. Three canonical forms, plus a declared exception if one exists:
+ * How a lane selects the provider a credential is scoped to, and therefore which single expression is
+ * correct there. Carrying the SELECTOR rather than a scoped/unscoped boolean makes the whitelist tight in
+ * both directions, because the wrong selector fails the same way an absent guard does — silently:
  *
- *   • `${{ secrets.KEY }}` — unconditional, for a job that is a serial transaction over every provider
- *     (the release lane's `publish`) rather than a per-provider fan-out.
- *   • `${{ <sel>.provider == 'P' && secrets.KEY || '' }}` — scoped to a single owning provider.
- *   • `${{ (<sel>.provider == 'P1' || <sel>.provider == 'P2') && secrets.KEY || '' }}` — scoped to a
- *     vendor's isolation variants, which share one credential.
- *
- * Both selectors (`inputs.provider` in the smoke dispatch, `matrix.provider` in a fan-out) are generated,
- * so a lane may use whichever fits it. Owner order follows the registry, which is where the expected
- * multi-owner spelling comes from.
+ *   • `"inputs"` — the smoke dispatch, scoped on the dispatched `inputs.provider`.
+ *   • `"matrix"` — a per-provider fan-out (the bench suite, the release bake matrix), scoped on
+ *     `matrix.provider`. `inputs.provider` does not exist here, so it would evaluate empty on every cell.
+ *   • `"unconditional"` — a job with no provider axis at all: the release lane's `publish` is a SERIAL
+ *     transaction over every provider, so there is nothing to scope on and a guard would never match.
  */
-export function canonicalCredentialExpressions(key: string, owners: readonly string[]): string[] {
+export type LaneScoping = "inputs" | "matrix" | "unconditional";
+
+/**
+ * The EXACT expression a credential may be wired to IN A GIVEN LANE — the whitelist Invariant 8 compares
+ * against. Returns a single form (an array only so a declared exception can carry its own literal):
+ *
+ *   • scoped, single owner: `${{ <sel>.provider == 'P' && secrets.KEY || '' }}`
+ *   • scoped, shared by a vendor's isolation variants:
+ *     `${{ (<sel>.provider == 'P1' || <sel>.provider == 'P2') && secrets.KEY || '' }}`
+ *   • unconditional: `${{ secrets.KEY }}`
+ *
+ * The form is chosen by the LANE, not offered as a menu. Accepting the unconditional form in a
+ * provider-scoped lane would let a fan-out hand one provider's secret to every cell — the blast-radius
+ * property the per-cell scoping exists to provide — and accepting a scoped form in `publish` would
+ * guarantee an empty credential, since it has no provider axis to match. Owner order follows the registry,
+ * which is where the expected multi-owner spelling comes from.
+ */
+export function canonicalCredentialExpressions(
+	key: string,
+	owners: readonly string[],
+	scoping: LaneScoping,
+): string[] {
 	const exception = CREDENTIAL_EXPR_EXCEPTIONS[key];
 	if (exception !== undefined) return [normalizeExpr(exception.expression)];
-	const forms = [`\${{ secrets.${key} }}`];
-	for (const selector of ["inputs", "matrix"]) {
-		const tests = owners.map((id) => `${selector}.provider == '${id}'`).join(" || ");
-		const guard = owners.length > 1 ? `(${tests})` : tests;
-		forms.push(`\${{ ${guard} && secrets.${key} || '' }}`);
-	}
-	return forms.map(normalizeExpr);
+	if (scoping === "unconditional") return [normalizeExpr(`\${{ secrets.${key} }}`)];
+	const tests = owners.map((id) => `${scoping}.provider == '${id}'`).join(" || ");
+	const guard = owners.length > 1 ? `(${tests})` : tests;
+	return [normalizeExpr(`\${{ ${guard} && secrets.${key} || '' }}`)];
 }
 
 /** Every exception names a real credential key and carries a non-blank reason — the same anti-rot check
@@ -448,20 +463,20 @@ export function checkCredentialExprExceptions(
  * "clever" expression should be hard to land.
  */
 export function checkCredentialExpressions(
-	envByLane: Record<string, Record<string, string>>,
+	lanes: Record<string, { env: Record<string, string>; scoping: LaneScoping }>,
 ): string[] {
 	const errors: string[] = [];
 	for (const [key, owners] of requiredCredentialKeys()) {
-		const allowed = canonicalCredentialExpressions(key, owners);
-		for (const [lane, env] of Object.entries(envByLane)) {
+		for (const [lane, { env, scoping }] of Object.entries(lanes)) {
+			const allowed = canonicalCredentialExpressions(key, owners, scoping);
 			const expr = env[key];
 			// Presence is Invariants 3/7's job; reporting the same omission twice buries the useful message.
 			if (expr === undefined) continue;
 			if (!allowed.includes(normalizeExpr(expr))) {
 				const exception = CREDENTIAL_EXPR_EXCEPTIONS[key];
 				errors.push(
-					`${key} in ${lane}: credential expression is not one of the forms generated for it from ` +
-						`the registry.\n    actual:   ${normalizeExpr(expr)}\n` +
+					`${key} in ${lane}: credential expression is not the form generated for it from the ` +
+						`registry for a "${scoping}" lane.\n    actual:   ${normalizeExpr(expr)}\n` +
 						allowed.map((form) => `    expected: ${form}`).join("\n") +
 						(exception === undefined
 							? "\n  Any other spelling is rejected on purpose — a guard that gates nothing, a " +
@@ -523,11 +538,13 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 		}),
 		// Invariant 8 spans every credential block in the repo — the two bench lanes and both release-lane
 		// jobs — because a typo'd guard or a swapped secret is the same silent-skip bug wherever it lands.
+		// Each lane declares how it selects a provider, so the expected expression is derived per lane —
+		// see LaneScoping. `publish` is the only unconditional one: a serial transaction, no provider axis.
 		...checkCredentialExpressions({
-			[SMOKE_WORKFLOW]: smokeEnv,
-			[SUITE_WORKFLOW]: suiteEnv,
-			[bakeLabel]: bakeEnv,
-			[promoteLabel]: promoteEnv,
+			[SMOKE_WORKFLOW]: { env: smokeEnv, scoping: "inputs" },
+			[SUITE_WORKFLOW]: { env: suiteEnv, scoping: "matrix" },
+			[bakeLabel]: { env: bakeEnv, scoping: "matrix" },
+			[promoteLabel]: { env: promoteEnv, scoping: "unconditional" },
 		}),
 		...checkWorkflowTimeouts({
 			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),
