@@ -160,11 +160,15 @@ Configure the `main` ruleset so the bot-authored dataset/leaderboard PRs can mer
      rule 5), so a required check would strand every bot PR on a maintainer merge. The bot-landed
      content is guarded instead by the in-job Biome pre-flights, the deterministic renderer, and the
      path allowlist.
-2. Keep [`.github/CODEOWNERS`](../.github/CODEOWNERS) owning `/.github/` (and the other sensitive
-   paths listed there) and **do not** add a blanket `*` owner — `LEADERBOARD.md` must stay unowned so
-   code-owner review is not required for leaderboard-only PRs.
+2. Keep [`.github/CODEOWNERS`](../.github/CODEOWNERS) owning **everything by default** (`*` owner)
+   with ownerless overrides for exactly the bot-landed artifacts (`/LEADERBOARD.md`,
+   `/data/dataset/` — a CODEOWNERS entry with no owner un-owns its paths; last match wins). Those
+   two must stay unowned so code-owner review is not required for the bot's PRs; everything else —
+   in particular the leaderboard renderer and its backing packages, whose output a `privileged` job
+   commits — must stay owned so no code change can merge without maintainer review.
 3. **Do not** add `github-actions` (or a broad actor) as a ruleset bypass. The bot does not need
-   bypass when code-owner review is the only review requirement and `LEADERBOARD.md` is unowned.
+   bypass when code-owner review is the only review requirement and its two landing paths are
+   unowned.
 4. **Settings → General → Pull Requests → Allow auto-merge** is not needed by these flows: the
    workflows use a direct `gh pr merge`, never `--auto` (arming auto-merge on a `GITHUB_TOKEN` PR
    whose required check can never run would strand it behind a green job).

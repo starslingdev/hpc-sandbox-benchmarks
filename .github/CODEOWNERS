@@ -2,16 +2,14 @@
 # enables "Require review from Code Owners". See
 # https://docs.github.com/en/repositories/managing-your-repos-settings-and-features/customizing-your-repository/about-code-owners
 #
-# Deliberately NO blanket `*` owner: the update-leaderboard workflow (the github-actions bot) lands
-# only LEADERBOARD.md, and that path must stay unowned so its PR can merge without a human approving
-# review. Security-sensitive surfaces below still require @dbworku when code-owner review is enforced.
-# See docs/ci-secrets.md (operator setup — ruleset posture).
+# Everything is owned by default and the LAST matching entry wins; an entry with NO owner un-owns
+# its paths. Exactly two surfaces are deliberately unowned — the artifacts the github-actions bot
+# lands hands-off (docs/ci-secrets.md rules 5 and 7). A PR touching only those needs no code-owner
+# review; anything else — code, workflows, docs — requires @dbworku. In particular the leaderboard
+# renderer and its backing packages must stay owned: their output is committed by a job inside the
+# `privileged` environment, so unreviewed renderer changes would run with release credentials.
+* @dbworku
 
-# Security-sensitive surfaces — the CI/secrets posture and its enforcing gate. Changes here alter
-# what runs with credentials or what the hardening invariants allow, so they always want maintainer eyes.
-/.github/                                       @dbworku
-/tooling/repo-checks/                           @dbworku
-/scripts/setup-privileged-environment.sh        @dbworku
-/scripts/assert-paths-allowlisted.sh            @dbworku
-/SECURITY.md                                    @dbworku
-/docs/ci-secrets.md                             @dbworku
+# Bot-landed release artifacts — no owner, so the bot's direct merge needs no human review.
+/LEADERBOARD.md
+/data/dataset/
