@@ -26,6 +26,12 @@
 //      lifetime by a fixed margin, so a suite budget increase cannot leave an otherwise healthy job to
 //      be killed by Actions first.
 //   6. Nesting wiring (suite-matrix caller + reusable provider job name) — see workflow-nesting.ts.
+//   7. Every provider's requiredEnvVars is present in the credential env of BOTH credentialed jobs of
+//      the toolchain release lane (toolchain-image.yml's `bake` cell and `publish` promote step), or the
+//      provider is explicitly declared in {@link RELEASE_LANE_EXEMPT}. Invariant 3 covers only the two
+//      bench lanes, so before this a new provider could be fully wired for benchmarking and still be a
+//      silent missing-credentials skip through bake and promote — its toolchain artifact never built and
+//      never validated, with a green release. That is the one gap this gate did not close.
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -38,9 +44,14 @@ import {
 } from "./workflow-nesting.ts";
 import type { DispatchInput } from "./workflow-yaml.ts";
 import {
+	BAKE_JOB,
+	BAKE_STEP,
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
+	PROMOTE_STEP,
+	PUBLISH_JOB,
+	RELEASE_WORKFLOW,
 	RUN_STEP,
 	readWorkflow,
 	SMOKE_JOB,
@@ -63,9 +74,14 @@ export {
 } from "./workflow-nesting.ts";
 export type { DispatchInput } from "./workflow-yaml.ts";
 export {
+	BAKE_JOB,
+	BAKE_STEP,
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
+	PROMOTE_STEP,
+	PUBLISH_JOB,
+	RELEASE_WORKFLOW,
 	RUN_STEP,
 	readWorkflow,
 	SMOKE_JOB,
@@ -220,6 +236,95 @@ export function checkCredentialEnv(
 	return errors;
 }
 
+/**
+ * Providers deliberately NOT wired into the toolchain release lane, each with the reason — the explicit
+ * escape hatch for Invariant 7. A provider belongs here only when the release lane has nothing to do
+ * with it: it bakes no artifact AND its boot proves nothing the lane needs.
+ *
+ * Note that "bakes no artifact" alone is NOT sufficient: `namespace` and both `modal` variants also bake
+ * nothing (they boot the toolchain image directly), yet all three are wired, because the bake cell's
+ * validate boot and promote's re-validation are what prove the published image is actually reachable and
+ * runnable on that provider. `blaxel` is the sole exemption because it boots a stock VENDOR base image
+ * instead of the toolchain image, so booting it during a release would validate nothing about the bytes
+ * being released.
+ *
+ * Keyed by provider id — typed as a plain string record so a test can inject a synthetic list, and
+ * validated against the registry by {@link checkReleaseLaneExemptions} instead, so a typo'd or removed
+ * id can't sit here silently exempting nothing.
+ */
+export const RELEASE_LANE_EXEMPT: Readonly<Record<string, string>> = Object.freeze({
+	blaxel:
+		"boots a stock vendor base image, not the toolchain image — it bakes no candidate artifact and " +
+		"booting it would validate nothing about the bytes being released, so the release lane leaves it " +
+		"unwired and its bake cell takes the missing-credentials skip",
+});
+
+/** Every exemption key names a registered provider (no stale/typo'd exemptions). `exempt` is injectable
+ *  so the failure message is unit-testable without mutating the real declaration. */
+export function checkReleaseLaneExemptions(
+	exempt: Readonly<Record<string, string>> = RELEASE_LANE_EXEMPT,
+): string[] {
+	const registered = new Set(providerIds());
+	return Object.keys(exempt)
+		.filter((id) => !registered.has(id))
+		.map(
+			(id) =>
+				`RELEASE_LANE_EXEMPT names "${id}", which is not in PROVIDERS ` +
+				`(packages/schema/src/providers.ts) — drop the stale exemption or fix the id`,
+		);
+}
+
+/**
+ * Invariant 7: every provider requiredEnvVar is present in the credential env of BOTH credentialed
+ * release-lane jobs, unless every provider that owns the key is declared in {@link RELEASE_LANE_EXEMPT}.
+ *
+ * Presence only — deliberately NOT the cross-lane value-expression equality of Invariant 4. The two
+ * release jobs legitimately scope credentials differently: `bake` is a per-provider fan-out and guards
+ * each secret on `matrix.provider` like the bench lanes, while `publish` is a serial transaction over
+ * every provider and so passes them unconditionally. Requiring one expression across both would demand
+ * they be wrong somewhere.
+ *
+ * `envByStep` keys are human labels (workflow + job) so an error names the file AND which of its two
+ * blocks drifted. `exempt` is injectable for the same reason as {@link checkReleaseLaneExemptions}.
+ */
+export function checkReleaseCredentialEnv(
+	envByStep: Record<string, Record<string, string>>,
+	exempt: Readonly<Record<string, string>> = RELEASE_LANE_EXEMPT,
+): string[] {
+	const errors: string[] = [];
+	const steps = Object.keys(envByStep);
+	for (const [key, owners] of requiredCredentialKeys()) {
+		// biome-ignore lint/style/noNonNullAssertion: keys come from Object.keys(envByStep).
+		const present = steps.filter((step) => key in envByStep[step]!);
+		// A key is exempt only when EVERY provider needing it is exempt: a key shared by an exempt and a
+		// wired provider is still required (the wired one needs it), so partial exemption never excuses it.
+		if (owners.every((id) => id in exempt)) {
+			// The exemption claims the lane doesn't wire this. If it does, the declaration is a false
+			// comment the next reader will trust — fail so the entry is dropped along with the wire-up.
+			if (present.length > 0) {
+				errors.push(
+					`${key}: provider ${owners.join(", ")} is declared RELEASE_LANE_EXEMPT ("deliberately ` +
+						`not wired into the release lane") but ${key} IS wired into ${present.join(" and ")} — ` +
+						"the wiring and the exemption disagree; remove the RELEASE_LANE_EXEMPT entry",
+				);
+			}
+			continue;
+		}
+		// biome-ignore lint/style/noNonNullAssertion: keys come from Object.keys(envByStep).
+		const missing = steps.filter((step) => !(key in envByStep[step]!));
+		if (missing.length > 0) {
+			errors.push(
+				`${key}: required by provider ${owners.join(", ")} (packages/schema/src/providers.ts ` +
+					`requiredEnvVars) but missing from the credential env of ${missing.join(" and ")} — the ` +
+					"release lane would record it as a missing-credentials skip, so its toolchain artifact is " +
+					"never baked or validated while the release still goes green. Wire the secret, or add the " +
+					"provider to RELEASE_LANE_EXEMPT with the reason it needs no release-lane boot.",
+			);
+		}
+	}
+	return errors;
+}
+
 /** Invariant 5: every live-run job has margin beyond the longest registered sandbox lifetime. */
 export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>): string[] {
 	const longestSuite = Math.max(...Object.values(SUITES).map((suite) => suite.timeoutMinutes));
@@ -243,12 +348,21 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 	// The matrix lane's credential block + run-job timeout live in the reusable bench-suite.yml that
 	// every suite job calls, so the "matrix side" of Invariants 3–5 reads that file.
 	const suiteWf = readWorkflow(SUITE_WORKFLOW, root);
+	// The release lane's two credentialed jobs each own their own credential block (see Invariant 7).
+	const release = readWorkflow(RELEASE_WORKFLOW, root);
+	const bakeLabel = `${RELEASE_WORKFLOW} (${BAKE_JOB})`;
+	const promoteLabel = `${RELEASE_WORKFLOW} (${PUBLISH_JOB})`;
 	return [
 		...checkProviderInput(dispatchInput(smoke, "provider", SMOKE_WORKFLOW)),
 		...checkSuiteInput(dispatchInput(smoke, "suite", SMOKE_WORKFLOW)),
 		...checkCredentialEnv({
 			[SMOKE_WORKFLOW]: stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW),
 			[SUITE_WORKFLOW]: stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW),
+		}),
+		...checkReleaseLaneExemptions(),
+		...checkReleaseCredentialEnv({
+			[bakeLabel]: stepEnv(release, BAKE_JOB, BAKE_STEP, bakeLabel),
+			[promoteLabel]: stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, promoteLabel),
 		}),
 		...checkWorkflowTimeouts({
 			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),

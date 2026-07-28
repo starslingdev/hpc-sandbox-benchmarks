@@ -16,8 +16,12 @@
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import {
+	BAKE_JOB,
+	BAKE_STEP,
 	checkCredentialEnv,
 	checkProviderInput,
+	checkReleaseCredentialEnv,
+	checkReleaseLaneExemptions,
 	checkSuiteInput,
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
@@ -29,6 +33,10 @@ import {
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
 	matrixSuiteCaller,
+	PROMOTE_STEP,
+	PUBLISH_JOB,
+	RELEASE_LANE_EXEMPT,
+	RELEASE_WORKFLOW,
 	RUN_STEP,
 	readWorkflow,
 	requiredCredentialKeys,
@@ -44,10 +52,16 @@ import {
 const smoke = readWorkflow(SMOKE_WORKFLOW);
 const matrix = readWorkflow(MATRIX_WORKFLOW);
 const suiteWf = readWorkflow(SUITE_WORKFLOW);
+const release = readWorkflow(RELEASE_WORKFLOW);
 const providerInput = dispatchInput(smoke, "provider", SMOKE_WORKFLOW);
 const suiteInput = dispatchInput(smoke, "suite", SMOKE_WORKFLOW);
 const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
 const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
+const BAKE_LABEL = `${RELEASE_WORKFLOW} (${BAKE_JOB})`;
+const PROMOTE_LABEL = `${RELEASE_WORKFLOW} (${PUBLISH_JOB})`;
+const bakeEnv = stepEnv(release, BAKE_JOB, BAKE_STEP, BAKE_LABEL);
+const promoteEnv = stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, PROMOTE_LABEL);
+const releaseEnv = { [BAKE_LABEL]: bakeEnv, [PROMOTE_LABEL]: promoteEnv };
 
 describe("parsers against the real workflow files", () => {
 	test("dispatchInput extracts the smoke provider choice (type + options + default)", () => {
@@ -234,6 +248,103 @@ describe("checkCredentialEnv", () => {
 			[SUITE_WORKFLOW]: suiteEnv,
 		});
 		expect(errors).toEqual([]);
+	});
+});
+
+describe("checkReleaseCredentialEnv (the toolchain release lane)", () => {
+	test("stepEnv extracts both release-lane credential blocks", () => {
+		// The bake cell scopes each secret on matrix.provider; promote passes them unconditionally
+		// (it is a serial transaction over every provider, not a fan-out) — hence presence-only checks.
+		expect(bakeEnv).toContainKey("E2B_API_KEY");
+		expect(bakeEnv.E2B_API_KEY).toContain("matrix.provider == 'e2b'");
+		expect(promoteEnv).toContainKey("E2B_API_KEY");
+		expect(promoteEnv.E2B_API_KEY).not.toContain("matrix.provider");
+	});
+
+	test("the real release lane wires every non-exempt provider's credentials", () => {
+		expect(checkReleaseCredentialEnv(releaseEnv)).toEqual([]);
+	});
+
+	test("blaxel is exempt, so its absent keys are not flagged", () => {
+		// The invariant's whole escape hatch: blaxel boots a stock vendor image, so BL_* are absent from
+		// both blocks by design. If this ever starts failing, blaxel got wired and the exemption is stale.
+		expect(RELEASE_LANE_EXEMPT).toContainKey("blaxel");
+		expect(bakeEnv).not.toContainKey("BL_API_KEY");
+		expect(promoteEnv).not.toContainKey("BL_API_KEY");
+	});
+
+	test("flags a required key dropped from the bake cell, naming provider and job", () => {
+		const { NOVITA_API_KEY: _, ...drifted } = bakeEnv;
+		const errors = checkReleaseCredentialEnv({
+			[BAKE_LABEL]: drifted,
+			[PROMOTE_LABEL]: promoteEnv,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NOVITA_API_KEY");
+		expect(errors[0]).toContain("required by provider novita");
+		expect(errors[0]).toContain(BAKE_LABEL);
+		expect(errors[0]).not.toContain(PROMOTE_LABEL);
+	});
+
+	test("flags a required key dropped from the promote transaction", () => {
+		// The gap this invariant closes: a provider fully wired for benchmarking whose release-lane
+		// artifact is never validated, with the release still green.
+		const { NSC_TOKEN_FILE: _, ...drifted } = promoteEnv;
+		const errors = checkReleaseCredentialEnv({
+			[BAKE_LABEL]: bakeEnv,
+			[PROMOTE_LABEL]: drifted,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NSC_TOKEN_FILE");
+		expect(errors[0]).toContain("required by provider namespace");
+		expect(errors[0]).toContain(PROMOTE_LABEL);
+	});
+
+	test("a partial exemption does not excuse a key a wired provider still needs", () => {
+		// MODAL_TOKEN_ID is owned by both Modal variants. Exempting only one leaves the other needing it,
+		// so the key stays required — otherwise one exemption would silently unwire a sibling variant.
+		const { MODAL_TOKEN_ID: _, ...drifted } = bakeEnv;
+		// Layered onto the real list, not replacing it — dropping blaxel's exemption would add unrelated
+		// BL_* errors and stop this asserting what it names.
+		const errors = checkReleaseCredentialEnv(
+			{ [BAKE_LABEL]: drifted, [PROMOTE_LABEL]: promoteEnv },
+			{ ...RELEASE_LANE_EXEMPT, "modal-vm": "synthetic partial exemption" },
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("MODAL_TOKEN_ID");
+		expect(errors[0]).toContain("modal-gvisor, modal-vm");
+	});
+
+	test("flags a stale exemption whose provider IS in fact wired", () => {
+		// Keeps the declaration honest in the other direction: an exemption that claims "deliberately not
+		// wired" while the secret is threaded is a false comment the next reader would trust.
+		const errors = checkReleaseCredentialEnv(releaseEnv, {
+			...RELEASE_LANE_EXEMPT,
+			novita: "synthetic stale exemption",
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NOVITA_API_KEY");
+		expect(errors[0]).toContain("declared RELEASE_LANE_EXEMPT");
+		expect(errors[0]).toContain("IS wired");
+	});
+
+	test("tolerates the blocks' non-credential runtime context vars", () => {
+		expect(bakeEnv).toContainKey("PROVIDER");
+		expect(promoteEnv).toContainKey("BAKE_REPORT_FILE");
+		expect(checkReleaseCredentialEnv(releaseEnv)).toEqual([]);
+	});
+});
+
+describe("checkReleaseLaneExemptions", () => {
+	test("the real exemption list names only registered providers", () => {
+		expect(checkReleaseLaneExemptions()).toEqual([]);
+	});
+
+	test("flags an exemption for a provider that is not in the registry", () => {
+		const errors = checkReleaseLaneExemptions({ fly: "retired provider left behind" });
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('names "fly"');
+		expect(errors[0]).toContain("not in PROVIDERS");
 	});
 });
 

@@ -12,6 +12,7 @@ and toolchain publish must not trigger on `push`.
 
 | Workflow | Job | Why |
 | --- | --- | --- |
+| `toolchain-image.yml` | `bake` | Provider secrets (each matrix cell boots that provider's sandbox to validate its candidate) |
 | `toolchain-image.yml` | `publish` | Provider bake secrets + `packages: write` (GHCR release) |
 | `bench-suite.yml` | `bench` | Provider API keys (reusable fan-out `bench-matrix.yml`'s suite-matrix job calls) |
 | `commit-dataset.yml` | `commit` | Dataset JSON commit (`contents: write` + `pull-requests: write`) |
@@ -111,13 +112,34 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
    | Secret | Used by |
    | --- | --- |
    | `E2B_API_KEY` | toolchain bake, bench matrix/smoke |
-   | `DAYTONA_API_KEY` | toolchain bake, bench matrix/smoke |
-   | `DAYTONA_TARGET` | optional; workflows default to `us-west-2` |
-   | `MODAL_TOKEN_ID` | toolchain bake, bench matrix/smoke |
-   | `MODAL_TOKEN_SECRET` | toolchain bake, bench matrix/smoke |
+   | `DAYTONA_API_KEY` | toolchain bake, bench matrix/smoke (shared by both isolation variants) |
+   | `DAYTONA_TARGET` | optional; `daytona-vm`'s region — workflows default to `us-west-2` |
+   | `DAYTONA_CONTAINER_TARGET` | optional; `daytona-container`'s region — workflows default to `us-west-2` |
+   | `MODAL_TOKEN_ID` | toolchain bake, bench matrix/smoke (shared by both isolation variants) |
+   | `MODAL_TOKEN_SECRET` | toolchain bake, bench matrix/smoke (shared by both isolation variants) |
    | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
-   | `BL_API_KEY` | bench matrix/smoke only |
-   | `BL_WORKSPACE` | bench matrix/smoke only |
+   | `BL_API_KEY` | bench matrix/smoke only (see the blaxel note below) |
+   | `BL_WORKSPACE` | bench matrix/smoke only (see the blaxel note below) |
+
+   Two providers are deliberately absent from that table, and the `workflow-registry-sync` drift gate
+   enforces both shapes so neither can drift into a silent skip:
+
+   - **`namespace` needs no stored secret at all.** It federates through GitHub's OIDC identity: each
+     job that boots a Namespace instance runs `namespacelabs/nscloud-setup` (which exchanges the job's
+     OIDC token for a workspace login) and then mints a scoped, revocable token file via
+     `nsc token create`, exported as `NSC_TOKEN_FILE`. The grant is the minimal instance verb set the
+     harness needs (`create`, `list`, `get`, `destroy`, `exec`) and the token name carries
+     `run_attempt`, so a re-run cannot collide with its first attempt's token. This requires a one-time
+     **trust relationship** (this repo → the Namespace tenant) registered on the Namespace side; until
+     that exists, every mint step fails and the provider degrades to the standard
+     missing-credentials skip. Each such job scopes `id-token: write` to itself (never workflow-wide),
+     and `bench-matrix.yml`'s suite job must also grant it, since a called workflow's token can never
+     exceed its caller's.
+   - **`blaxel` is wired for benchmarking only.** It boots a stock vendor base image rather than the
+     toolchain image, so it bakes no candidate artifact and booting it during a release would validate
+     nothing about the bytes being released. `BL_*` is therefore absent from the toolchain lane by
+     design — declared in `RELEASE_LANE_EXEMPT` (`tooling/repo-checks/src/lib/workflow-sync.ts`), which
+     is the only sanctioned way for a provider to skip the release lane's credential invariant.
 
 5. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
    the candidate base anonymously (Org → Packages → package settings).
