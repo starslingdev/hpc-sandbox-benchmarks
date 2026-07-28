@@ -21,7 +21,21 @@ WORK_DIR="${SCRIPT_DIR}/work"
 # handling) can't leak cache state across runs or providers.
 export XDG_CACHE_HOME="${SCRIPT_DIR}/.cache"
 export COREPACK_HOME="${SCRIPT_DIR}/.corepack"
+# pnpm's content-addressable STORE is what makes an install cold or warm, and pinning it is the
+# whole reason cold_install can claim to measure a cold install. Two knobs, because which one bites
+# depends on the pnpm each profile's packageManager field pins:
+#   * npm_config_store_dir -- the npm-style config key. pnpm 11 NO LONGER READS IT (verified against
+#     pnpm 11.2.2: `npm_config_store_dir=/tmp/x pnpm store path` still answers
+#     ~/.local/share/pnpm/store/v11). Kept for older pnpm, which does honour it.
+#   * XDG_DATA_HOME -- what pnpm 11 actually derives its default store from
+#     (<XDG_DATA_HOME>/pnpm/store/v<n>), so this is the knob that lands today.
+# Before this was pinned, every "cold" install on every realworld profile was a warm store hit: the
+# reset wiped ${SCRIPT_DIR}/.pnpm-store, a directory pnpm 11 never created, while the real 2.8 GB
+# store sat untouched in $HOME (openclaw cold_install: 10.7s, "reused 1129, downloaded 0").
+# Pinning it under SCRIPT_DIR also keeps the wipe inside the profile dir -- the runner must never
+# delete a developer's or provider image's shared $HOME store.
 export npm_config_store_dir="${SCRIPT_DIR}/.pnpm-store"
+export XDG_DATA_HOME="${SCRIPT_DIR}/.local-share"
 export CI=true
 export TZ=UTC
 export LC_ALL=C.UTF-8
@@ -231,9 +245,29 @@ cold_install)
 	cd "$WORK_DIR"
 	git checkout -f -q "$PIN_SHA"
 	git clean -xdff
-	rm -rf "$npm_config_store_dir" "$XDG_CACHE_HOME"
+	# Wiping XDG_DATA_HOME (not just the legacy .pnpm-store path) is what actually removes pnpm 11's
+	# store -- see the env pins above. Both are inside SCRIPT_DIR, so the blast radius is this
+	# profile's install dir and nothing else. Runs on EVERY invocation of this branch, so trial 2..N
+	# of a multi-run PTS batch are each as cold as trial 1 (verified locally, two consecutive trials
+	# per profile, all six reporting `reused 0`).
+	# This costs real wall time the warm-store bug used to hide -- measured here: openclaw 10.9s ->
+	# ~70s, better-auth ~60s, mastra ~170-265s, plus a full re-download of the store (2.3-5.2 GB) per
+	# trial. All well inside the suites' 80-minute command budgets, but it is why cold_install samples
+	# jump by roughly an order of magnitude against every dataset committed before this fix.
+	rm -rf "$npm_config_store_dir" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 	if [ -d node_modules ]; then
 		echo "cold_install: node_modules survived the cold reset" >&2
+		exit 1
+	fi
+	# Absent node_modules alone never proved coldness: a surviving store repopulates it from local
+	# disk with zero downloads, which is exactly the bug the pins above fix. Ask pnpm where its store
+	# IS and refuse to measure if anything is still there, so a future change in pnpm's resolution
+	# fails loudly here instead of silently reporting warm installs as cold. Probe failure is not
+	# fatal (the selftest fixture and any pnpm-less profile must still run) -- this asserts only on
+	# positive proof of a surviving store, and runs before start_ns so it never enters the sample.
+	resolved_store="$(pnpm store path 2>/dev/null || true)"
+	if [ -n "$resolved_store" ] && [ -e "$resolved_store" ]; then
+		echo "cold_install: pnpm store survived the cold reset at ${resolved_store} — refusing to time a warm install" >&2
 		exit 1
 	fi
 	start_ns=$(date +%s%N)

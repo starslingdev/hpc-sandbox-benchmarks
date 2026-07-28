@@ -42,9 +42,15 @@ chmod +x "$EXE_NAME"
 # what the runner reads: a fresh COREPACK_HOME would otherwise make the first measured pnpm task
 # of a batch pay a pnpm-toolchain download inside its sample. The runner's cold_install branch
 # still wipes the store + XDG cache before measuring, so this never warms a cold-install sample.
+# XDG_DATA_HOME is load-bearing, not cosmetic: pnpm 11 ignores npm_config_store_dir and derives its
+# store from <XDG_DATA_HOME>/pnpm/store/v<n> (see the matching pins in realworld-runner.sh). Without
+# it this warm install would populate the shared $HOME store, which the runner's cold reset cannot
+# wipe (and must not, since it is not ours) -- every measured cold_install would then be a warm
+# store hit.
 export XDG_CACHE_HOME="${PWD}/.cache"
 export COREPACK_HOME="${PWD}/.corepack"
 export npm_config_store_dir="${PWD}/.pnpm-store"
+export XDG_DATA_HOME="${PWD}/.local-share"
 
 if ! command -v node >/dev/null 2>&1; then
 	echo "ERROR: node not found (the sandbox harness's setupNode step provisions it)" >&2
