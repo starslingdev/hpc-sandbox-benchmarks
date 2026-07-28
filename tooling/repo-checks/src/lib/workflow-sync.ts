@@ -363,14 +363,21 @@ const PROVIDER_GUARD_REVERSED_RE = /'([^']*)'\s*==\s*(?:inputs|matrix)\.provider
  *  provider scoping at all" (fine: publish, or an OIDC step guard) from "scoped in a form we can't
  *  read" (not fine). */
 const PROVIDER_MENTION_RE = /\b(?:inputs|matrix)\.provider\b/;
-/** A `secrets.NAME` reference inside a credential expression. */
-const SECRET_REF_RE = /\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)/g;
+/** A secrets reference in either GHA form: `secrets.NAME` and the equally-valid `secrets['NAME']` /
+ *  `secrets["NAME"]`. Reading only the dot form would classify a bracket-form typo as "no secret
+ *  reference at all" — which rule (f) treats as legal (the OIDC case), so the typo would pass. */
+const SECRET_REF_RE = /\bsecrets(?:\.([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([^'"]*)['"]\s*\])/g;
 /** A NEGATED provider comparison in either operand order — always an inverted scope. */
 const NEGATED_GUARD_RE =
 	/\b(?:inputs|matrix)\.provider\s*!=|'[^']*'\s*!=\s*(?:inputs|matrix)\.provider\b/;
 /** A conditional credential must terminate in the empty-string fallback, so a non-selected cell gets
  *  "" (which the config gatekeeper reads as unset) rather than a truthy value. */
 const EMPTY_FALLBACK_RE = /\|\|\s*''\s*\}\}\s*$/;
+/** The canonical shape of a PROVIDER-SCOPED credential: `${{ <guard> && <value> || '' }}`. Captured in
+ *  two groups so the guard can be checked to hold the provider comparison and the value to hold the
+ *  secret — the operand positions are the whole point, since `<guard> || secrets.X` reads the same to a
+ *  keyword scan but hands the secret to every cell where the guard is FALSE. */
+const SCOPED_SHAPE_RE = /^\$\{\{\s*(.+?)\s*&&\s*(.+?)\s*\|\|\s*''\s*\}\}$/;
 
 /** Provider ids a credential expression guards on, in source order (empty when it guards on something
  *  else, e.g. namespace's `steps.nsc-token.outcome`, or on nothing at all). */
@@ -381,45 +388,67 @@ export function guardedProviderIds(expr: string): string[] {
 	];
 }
 
-/** The distinct `secrets.*` names a credential expression draws from, sorted for set comparison. */
+/** The distinct secret names a credential expression draws from, sorted for set comparison. Covers both
+ *  the dot and bracket reference forms (group 1 vs group 2 of {@link SECRET_REF_RE}). */
 export function referencedSecretNames(expr: string): string[] {
-	return [...new Set([...expr.matchAll(SECRET_REF_RE)].map((m) => m[1] as string))].sort();
+	return [
+		...new Set([...expr.matchAll(SECRET_REF_RE)].map((m) => (m[1] ?? m[2]) as string)),
+	].sort();
 }
 
 /**
  * Invariant 8: a credential is not just PRESENT but plausibly CORRECT. Invariants 3 and 7 check that a
  * key appears in a lane's env, which a mistyped expression satisfies while supplying an empty string
  * forever — `matrix.provider == 'namespac'` is never true, so the provider takes a missing-credentials
- * skip on every run and the gate stays green. Two rules, both derived from the registry:
+ * skip on every run and the gate stays green. Seven rules, every one derived from the registry rather than
+ * from the other lanes — each closes a way a credential can be present and still wrong.
+ *
+ * WHO is the credential scoped to:
  *
  *   a. Every provider id a credential guards on is REGISTERED and OWNS that credential. A typo'd id
  *      can never match (permanent empty), and an id that doesn't require the key means the guard is
  *      wired to the wrong provider — e.g. `E2B_API_KEY` released only on a daytona cell.
- *   b. Every lane wiring a key draws it from the SAME `secrets.*` name(s). This catches a mistyped or
- *      swapped secret reference in one lane without demanding identical guard expressions, so the
- *      release lane's `publish` block may still pass credentials unconditionally (no guard at all)
- *      while its secret source is held to the same source of truth as the bench lanes.
  *   c. No NEGATED provider comparison (`.provider !=`), which releases a credential to every provider
  *      except its owner. Rule (a) cannot see this: it only reads `==` guards, so the inverted id is
  *      never inspected and (a)/(b) both pass.
- *   f. The `secrets.*` a credential draws from is NAMED for that credential. Rule (b) only checks the
- *      lanes agree, so one typo repeated in every block agrees with itself and passes — GitHub then
- *      supplies "" for a nonexistent secret and the provider skips forever. The registry is the
- *      authority, not the other lanes.
- *   d. A conditional credential (one containing `&&`) ENDS in `|| ''`. This closes the last two ways a
+ *   e. An unreadable scoping form fails CLOSED. An expression referencing `.provider` with no readable
+ *      guard (`contains(...)`, a `format()` chain) leaves (a) nothing to inspect, so it would pass
+ *      vacuously — the blind-spot class this invariant exists to remove.
+ *
+ * WHERE the value comes from:
+ *
+ *   b. Every lane wiring a key draws it from the SAME `secrets.*` name(s) — a swapped reference in one
+ *      lane, caught without demanding identical guard expressions, so `publish` keeps its unconditional
+ *      form. Kept alongside (f) for the one shape (f) permits: one lane sourcing a key from a secret
+ *      while another sources it from a step output.
+ *   f. That name IS the credential's own. (b) only checks the lanes AGREE, so one typo repeated in every
+ *      block agrees with itself and passes — GitHub then supplies "" for a nonexistent secret and the
+ *      provider skips forever. The registry is the authority, not the other lanes.
+ *
+ * WHAT a non-selected cell resolves to:
+ *
+ *   g. A provider-scoped credential matches the canonical `${{ <guard> && <value> || '' }}` shape, with
+ *      the provider comparison in the guard and the secret in the value. Every other rule scans for
+ *      TOKENS, which cannot tell `guard && secret || ''` from `guard || secret` — the latter has a valid
+ *      owning guard that gates nothing and releases the secret wherever the guard is FALSE. Appending
+ *      `|| ''` does not save it, so operand POSITION is the property, not the terminal token.
+ *   d. A conditional credential (one containing `&&`) ENDS in `|| ''`. Applies to the credentials (g)
+ *      does not judge — those gated on something other than a provider, e.g. NSC_TOKEN_FILE on the mint
+ *      step's outcome. This closes the last two ways a
  *      registered-and-owning guard still yields the wrong value — inverted branches (`&& '' ||
  *      secrets.X`, leaking the secret to every non-matching cell) and a missing fallback (`&&
  *      secrets.X`, where a non-matching cell renders GitHub's `false`: a NON-empty string the config
  *      gatekeeper accepts as a real credential, so the provider fails mid-run instead of skipping).
  *
- * Rules (a)–(d) are deliberately targeted rather than a general GHA expression evaluator: a truth-table
+ * These are deliberately targeted rather than a general GHA expression evaluator. A truth-table
  * evaluator over the `==`/`&&`/`||`/`format()` subset would be the fully general answer, but it is a new
- * subsystem with its own parse-failure policy, and (c)+(d) already cover every way the surrounding logic
- * can invert or break the scoping of the shapes this repo actually uses.
+ * subsystem with its own parse-failure policy, and (c)+(d) cover every way the surrounding logic can
+ * invert or break the scoping of the shapes this repo uses — with (e) as the hedge, failing anything
+ * outside those shapes rather than passing it.
  *
  * Every rule skips a lane that omits the key: presence is Invariants 3/7's job, and reporting the same
  * omission twice would bury the actionable message. A key with no `secrets.*` reference anywhere (e.g.
- * `NSC_TOKEN_FILE`, minted from OIDC into a step output) trivially agrees with itself under (b).
+ * `NSC_TOKEN_FILE`, minted from OIDC into a step output) is legal under both (b) and (f).
  */
 export function checkCredentialExpressions(
 	envByLane: Record<string, Record<string, string>>,
@@ -478,13 +507,52 @@ export function checkCredentialExpressions(
 			// secrets.X` with no `||`, where a non-matching cell renders GitHub's `false` — a NON-empty
 			// string the config gatekeeper accepts as a real credential instead of treating as unset, so the
 			// provider fails mid-run rather than taking a clean skip).
-			if (expr.includes("&&") && !EMPTY_FALLBACK_RE.test(expr)) {
+			// Scoped on something other than a provider (namespace's `steps.nsc-token.outcome`): rule (g)
+			// below owns provider-scoped shapes, so only apply (d) to the rest to avoid double-reporting.
+			if (!PROVIDER_MENTION_RE.test(expr) && expr.includes("&&") && !EMPTY_FALLBACK_RE.test(expr)) {
 				errors.push(
 					`${key} in ${lane}: conditional credential does not end in \`|| ''\` — a non-selected cell ` +
 						"must resolve to the empty string (which the config gatekeeper reads as unset). Without " +
 						"it the secret either lands in the fallback branch (leaking to every other provider) or " +
 						'the cell renders the literal "false", which is non-empty and reads as a real credential',
 				);
+			}
+			// Rule (g): OPERAND POSITIONS, for a provider-scoped credential. Every rule above scans for
+			// tokens, which cannot tell `guard && secret || ''` from `guard || secret` — the latter has a
+			// perfectly valid owning guard that gates nothing, and hands the secret to every cell where the
+			// guard is FALSE. It also slips rule (d), which only triggers on `&&`. Appending `|| ''` does not
+			// save it either (`guard || secret || ''` still returns the secret), so the fallback alone is not
+			// the property that matters: the secret must sit in the guard's TRUTHY branch. Require the
+			// canonical shape and check what landed in each operand. Skipped when rule (e) already fired —
+			// an unreadable guard can't be positionally judged.
+			if (PROVIDER_MENTION_RE.test(expr) && guarded.length > 0) {
+				const shape = SCOPED_SHAPE_RE.exec(expr);
+				if (shape === null) {
+					errors.push(
+						`${key} in ${lane}: provider-scoped credential is not in the canonical ` +
+							// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression shape quoted for the reader, not a JS template.
+							"`${{ <guard> && <value> || '' }}` shape — the guard must gate the value and a " +
+							"non-selected cell must fall through to the empty string. As written the secret may " +
+							"be released regardless of the guard",
+					);
+				} else {
+					const [, guardPart = "", valuePart = ""] = shape;
+					if (!PROVIDER_MENTION_RE.test(guardPart)) {
+						errors.push(
+							`${key} in ${lane}: the provider comparison is not in the guard position (left of ` +
+								"`&&`), so it does not gate the credential",
+						);
+					}
+					if (
+						referencedSecretNames(expr).length > 0 &&
+						referencedSecretNames(valuePart).length === 0
+					) {
+						errors.push(
+							`${key} in ${lane}: the secret is not in the guarded branch (right of \`&&\`) — a cell ` +
+								"whose provider does not match would still receive it",
+						);
+					}
+				}
 			}
 			// Rule (f): the secret a credential draws from must be NAMED for that credential. Rule (b) only
 			// checks the lanes AGREE, so a typo repeated in every block (`secrets.NOVITA_API_KE` everywhere)

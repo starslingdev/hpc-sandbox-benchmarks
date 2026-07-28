@@ -464,15 +464,15 @@ describe("checkCredentialExpressions", () => {
 	});
 
 	test("flags inverted branches, where the secret sits in the fallback", () => {
-		// Rule (a) sees a registered owning guard and rule (b) sees the right secret name — only the
-		// terminal-`|| ''` rule catches that the branches are the wrong way round.
+		// Rule (a) sees a registered owning guard and rules (b)/(f) see the right secret name. Only the
+		// positional rule catches that the branches are the wrong way round.
 		const errors = checkCredentialExpressions({
 			"synthetic.yml": {
 				E2B_API_KEY: `\${{ matrix.provider == 'e2b' && '' || secrets.E2B_API_KEY }}`,
 			},
 		});
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("does not end in");
+		expect(errors[0]).toContain("not in the canonical");
 	});
 
 	test('flags a missing fallback, where a non-matching cell renders the string "false"', () => {
@@ -484,7 +484,68 @@ describe("checkCredentialExpressions", () => {
 			},
 		});
 		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("not in the canonical");
+	});
+
+	test("flags a missing fallback on a NON-provider-scoped conditional (rule d's own lane)", () => {
+		// Rule (g) only judges provider-scoped shapes, so rule (d) still owns a credential gated on
+		// something else — namespace's token file is guarded on the mint step's outcome, not a provider.
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				NSC_TOKEN_FILE: `\${{ steps.nsc-token.outcome == 'success' && 'x' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("does not end in");
+	});
+
+	// Rule (g) — the token-scanning rules above cannot distinguish `guard && secret || ''` from
+	// `guard || secret`: both contain a valid owning guard and the right secret name, but the second
+	// gates nothing and releases the secret wherever the guard is FALSE.
+	test("flags a guard ORed with the secret, which gates nothing", () => {
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ matrix.provider == 'e2b' || secrets.E2B_API_KEY }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("not in the canonical");
+	});
+
+	test("a trailing `|| ''` does not rescue an ORed guard — the fallback is not the property", () => {
+		// `guard || secret || ''` ends in the fallback and still returns the secret whenever the guard is
+		// false, which is why rule (g) checks operand POSITION rather than just the terminal token.
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				E2B_API_KEY: `\${{ matrix.provider == 'e2b' || secrets.E2B_API_KEY || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("not in the canonical");
+	});
+
+	// Rule (f) reads both GHA secret-reference forms: `secrets.NAME` and `secrets['NAME']`. Dot-only
+	// scanning would classify a bracket-form typo as "no secret reference", which (f) treats as legal.
+	test("reads bracket-form secret references, so a bracket typo cannot pose as no-secret", () => {
+		expect(referencedSecretNames(`\${{ secrets['E2B_API_KEY'] }}`)).toEqual(["E2B_API_KEY"]);
+		expect(referencedSecretNames(`\${{ secrets["E2B_API_KEY"] }}`)).toEqual(["E2B_API_KEY"]);
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				NOVITA_API_KEY: `\${{ matrix.provider == 'novita' && secrets['NOVITA_API_KE'] || '' }}`,
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("not named for this credential");
+	});
+
+	test("accepts a correct bracket-form reference", () => {
+		expect(
+			checkCredentialExpressions({
+				"synthetic.yml": {
+					NOVITA_API_KEY: `\${{ matrix.provider == 'novita' && secrets['NOVITA_API_KEY'] || '' }}`,
+				},
+			}),
+		).toEqual([]);
 	});
 
 	test("does not require a fallback on an unconditional credential (publish's form)", () => {
