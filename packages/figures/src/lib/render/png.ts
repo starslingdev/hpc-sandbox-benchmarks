@@ -17,22 +17,29 @@
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import type { Svg } from "./svg.ts";
 
-/** Resolved path to the wasm binary. It is NOT in the package's `exports` map, so it is reached by
- *  path; the explicit existence check turns a silent upstream layout change into a named failure. */
-const WASM_PATH = Bun.resolveSync("@resvg/resvg-wasm/index_bg.wasm", import.meta.dir);
-
 let ready: Promise<void> | undefined;
 
+/**
+ * Resolve and load the wasm binary, once.
+ *
+ * The path is resolved INSIDE this function, not at module scope: the file is not in
+ * `@resvg/resvg-wasm`'s `exports` map, so `resolveSync` throws if a release moves it — and at module
+ * scope that throw would fire on import, taking down anything that merely loads the package's
+ * barrel, before the explanatory error below could ever run.
+ */
 function wasmReady(): Promise<void> {
 	ready ??= (async () => {
-		const file = Bun.file(WASM_PATH);
-		if (!(await file.exists())) {
+		let path: string;
+		try {
+			path = Bun.resolveSync("@resvg/resvg-wasm/index_bg.wasm", import.meta.dir);
+		} catch (cause) {
 			throw new Error(
-				`@sandbox-benchmarks/figures: resvg wasm not found at ${WASM_PATH}. The file is not in ` +
-					`@resvg/resvg-wasm's exports map, so a release that moves it breaks this path — pin or update it.`,
+				"@sandbox-benchmarks/figures: could not resolve @resvg/resvg-wasm/index_bg.wasm. It is not " +
+					"in that package's exports map, so a release that moves it breaks this path — pin or update it.",
+				{ cause },
 			);
 		}
-		await initWasm(await file.arrayBuffer());
+		await initWasm(await Bun.file(path).arrayBuffer());
 	})();
 	return ready;
 }

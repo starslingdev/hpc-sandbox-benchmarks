@@ -26,6 +26,7 @@ import {
 	MANIFEST_FILE,
 	parseFigureManifest,
 	renderBoardFigures,
+	sha256Hex,
 } from "@sandbox-benchmarks/figures";
 import { figureRefs, planReport } from "@sandbox-benchmarks/figures/plan";
 import { ARTIFACT, committedBoard, loadCommittedRun } from "./lib/committed-board.ts";
@@ -80,6 +81,16 @@ describe("committed figures stay in sync with the renderer", () => {
 		// name — otherwise adding a face would leave the manifest describing the old set and this
 		// assertion would still pass, validating the record against itself.
 		expect(manifest().fonts).toEqual(await fontDigests());
+	});
+
+	it("the manifest's per-figure digests match the files beside it", async () => {
+		// Without this, `files[]` is a written-but-unread record: it could claim any digest and the
+		// suite would stay green, which is the failure mode the manifest exists to prevent.
+		const files = manifest().files;
+		expect(files.map((f) => f.path).sort()).toEqual(svgFiles());
+		for (const file of files) {
+			expect(await sha256Hex(readFileSync(join(FIGURE_DIR, file.path), "utf8"))).toBe(file.sha256);
+		}
 	});
 
 	it("LEADERBOARD.md embeds exactly the planned figures, with alt text", () => {

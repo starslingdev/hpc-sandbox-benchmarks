@@ -16,10 +16,16 @@ import { join } from "node:path";
 /** The manifest's file name, and the one non-`.svg` artifact the directory is allowed to contain. */
 export const MANIFEST_FILE = "manifest.json";
 
-/** What belongs in a figure directory. The single definition of "an orphan", used by both callers. */
+/**
+ * Everything in a figure directory. The single definition of "what is there", used by both callers.
+ *
+ * Deliberately NOT filtered to `*.svg` — the directory is entirely generated, so anything else in it
+ * is an orphan and should be reported as one. A `.svg`-only filter would silently tolerate a PNG
+ * left behind by `--png`, which is a preview format that must never be committed.
+ */
 export function committedFigureFiles(dir: string): string[] {
 	return readdirSync(dir)
-		.filter((file) => file.endsWith(".svg") || file === MANIFEST_FILE)
+		.filter((file) => !file.startsWith("."))
 		.sort();
 }
 
