@@ -22656,7 +22656,7 @@ const chunk6: MetricDef[] = [
 		headline: false,
 		label: "Mastra CI Tasks - Task: Build Core",
 		description:
-			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider. test:core is packages/core's unit + typecheck vitest projects, matching the upstream CI job that runs without provider secrets; the e2e project runs in a separate upstream job that injects provider API keys, so it is out of scope here.",
 		pts: { test: "local/realworld-mastra", description: "Task: Build Core" },
 		sourceUrl: "https://github.com/mastra-ai/mastra",
 	},
@@ -22668,7 +22668,7 @@ const chunk6: MetricDef[] = [
 		headline: false,
 		label: "Mastra CI Tasks - Task: Cold Install",
 		description:
-			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider. test:core is packages/core's unit + typecheck vitest projects, matching the upstream CI job that runs without provider secrets; the e2e project runs in a separate upstream job that injects provider API keys, so it is out of scope here.",
 		pts: { test: "local/realworld-mastra", description: "Task: Cold Install" },
 		sourceUrl: "https://github.com/mastra-ai/mastra",
 	},
@@ -22680,7 +22680,7 @@ const chunk6: MetricDef[] = [
 		headline: false,
 		label: "Mastra CI Tasks - Task: Git Clone",
 		description:
-			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider. test:core is packages/core's unit + typecheck vitest projects, matching the upstream CI job that runs without provider secrets; the e2e project runs in a separate upstream job that injects provider API keys, so it is out of scope here.",
 		pts: { test: "local/realworld-mastra", description: "Task: Git Clone" },
 		sourceUrl: "https://github.com/mastra-ai/mastra",
 	},
@@ -22692,7 +22692,7 @@ const chunk6: MetricDef[] = [
 		headline: false,
 		label: "Mastra CI Tasks - Task: Lint Format",
 		description:
-			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider. test:core is packages/core's unit + typecheck vitest projects, matching the upstream CI job that runs without provider secrets; the e2e project runs in a separate upstream job that injects provider API keys, so it is out of scope here.",
 		pts: { test: "local/realworld-mastra", description: "Task: Lint Format" },
 		sourceUrl: "https://github.com/mastra-ai/mastra",
 	},
@@ -22704,7 +22704,7 @@ const chunk6: MetricDef[] = [
 		headline: false,
 		label: "Mastra CI Tasks - Task: Test Core",
 		description:
-			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.",
+			"Runs a scoped slice of mastra-ai/mastra's own CI tasks -- clone, cold install, lint:format, build:core, test:core -- against a pinned main-HEAD checkout, timing each phase per sandbox provider. test:core is packages/core's unit + typecheck vitest projects, matching the upstream CI job that runs without provider secrets; the e2e project runs in a separate upstream job that injects provider API keys, so it is out of scope here.",
 		pts: { test: "local/realworld-mastra", description: "Task: Test Core" },
 		sourceUrl: "https://github.com/mastra-ai/mastra",
 	},
