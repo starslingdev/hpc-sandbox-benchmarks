@@ -6,13 +6,14 @@
 //   3. Conventional `.mise/tasks/<colon-path>` path resolution, with `mise task info --json` as the
 //      fallback for both the file path and the description when the convention does not resolve
 //   4. Orchestrator file `run_task` lines — leaf expansion (mise `depends` is unused here)
-//   5. Leaf file PTS helper calls + lib/bench.sh pins — profile / results-prefix metadata
+//   5. Leaf file PTS helper calls + `lib/bench.sh` + `lib/bench/*.sh` pins — profile /
+//      results-prefix metadata, mined by function name rather than by file
 //   6. Schema Metric Catalog — declared metrics with PTS test ids / labels
 //
 // Actions HTML table rendering lives in suite-summary.ts so this module stays free of Toolkit/
 // presentation concerns. Callers pass an explicit `root` (tests) or default to process.cwd()
 // (CI / local bins already run from the monorepo root).
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import type { SuiteName } from "@sandbox-benchmarks/schema";
 import { getMetric, SUITES } from "@sandbox-benchmarks/schema";
@@ -138,8 +139,40 @@ function bashFunctionBody(source: string, name: string): string | undefined {
 }
 
 /**
- * The fio profile pin inside `run_fio_pts` in lib/bench.sh (e.g. `pts/fio-2.1.0`). Automated so a
- * bump in bench.sh shows up in summaries without a parallel edit here.
+ * Read the bench helpers as one string: the `lib/bench.sh` facade plus every module it sources from
+ * `lib/bench/`.
+ *
+ * The pins are mined by function name, not by file, so this deliberately does not care WHICH module
+ * a helper lives in — the helpers were one 835-line file and are now six, and a future move between
+ * modules must not silently drop a pin from the summaries. Returns "" when nothing is readable, so
+ * the callers' "optional enrichment" contract is unchanged.
+ */
+export function readBenchHelpers(root: string): string {
+	const parts: string[] = [];
+	for (const rel of ["lib/bench.sh", ...benchModuleFiles(root)]) {
+		try {
+			parts.push(readFileSync(resolve(root, rel), "utf8"));
+		} catch {
+			// A missing module is not fatal here: the pins are enrichment, not a contract.
+		}
+	}
+	return parts.join("\n");
+}
+
+function benchModuleFiles(root: string): string[] {
+	try {
+		return readdirSync(resolve(root, "lib", "bench"))
+			.filter((f) => f.endsWith(".sh"))
+			.sort()
+			.map((f) => `lib/bench/${f}`);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The fio profile pin inside `run_fio_pts` (e.g. `pts/fio-2.1.0`). Automated so a bump in the bench
+ * helpers shows up in summaries without a parallel edit here.
  */
 export function fioProfileFromBenchSh(benchSh: string): string | undefined {
 	const body = bashFunctionBody(benchSh, "run_fio_pts");
@@ -279,12 +312,10 @@ export async function describeSuiteTasks(
 
 	let fioProfile: string | undefined;
 	let realworldVersion: string | undefined;
-	try {
-		const benchSh = readFileSync(resolve(root, "lib/bench.sh"), "utf8");
+	const benchSh = readBenchHelpers(root);
+	if (benchSh) {
 		fioProfile = fioProfileFromBenchSh(benchSh);
 		realworldVersion = realworldVersionFromBenchSh(benchSh);
-	} catch {
-		// Optional enrichment — keep expanding tasks without bench.sh pins.
 	}
 
 	const tasks: SuiteTask[] = [];

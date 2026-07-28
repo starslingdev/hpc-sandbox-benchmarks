@@ -11,6 +11,7 @@ import {
 	parseMiseDescriptionHeader,
 	parseMiseTaskInfoJson,
 	ptsPinsFromScript,
+	readBenchHelpers,
 	realworldVersionFromBenchSh,
 	runTaskChildren,
 } from "./suite-tasks.ts";
@@ -112,8 +113,10 @@ run_pts_benchmark "pts/new-1.0.0" "pts_new"
 });
 
 describe("fioProfileFromBenchSh", () => {
-	it("mines the fio version pin from run_fio_pts in lib/bench.sh", () => {
-		const benchSh = readFileSync(join(root, "lib/bench.sh"), "utf8");
+	it("mines the fio version pin from run_fio_pts, wherever the helper lives", () => {
+		// Reads the facade PLUS lib/bench/*.sh: the pins are mined by function name, so splitting the
+		// helpers across modules must not drop them from the summaries.
+		const benchSh = readBenchHelpers(root);
 		expect(fioProfileFromBenchSh(benchSh)).toBe("pts/fio-2.1.0");
 	});
 
@@ -142,7 +145,7 @@ run_fio_pts() {
 
 describe("realworldVersionFromBenchSh", () => {
 	it("mines the realworld profile version from run_realworld_pts", () => {
-		const benchSh = readFileSync(join(root, "lib/bench.sh"), "utf8");
+		const benchSh = readBenchHelpers(root);
 		expect(realworldVersionFromBenchSh(benchSh)).toBe("1.0.0");
 	});
 });

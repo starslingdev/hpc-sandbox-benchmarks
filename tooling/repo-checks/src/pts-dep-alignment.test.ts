@@ -16,12 +16,26 @@
 // must never drift is the core PTS build-dep set below — the packages the source-built profiles
 // need at compile time plus PTS's own php runtime.
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PTS_APT_DEPS } from "@sandbox-benchmarks/schema";
 import { findRepoRoot } from "./lib/workspace.ts";
 
 const root = findRepoRoot();
+
+/** The bench helpers, facade first: `lib/bench.sh` plus every module it sources. */
+function benchHelperPaths(): string[] {
+	let modules: string[] = [];
+	try {
+		modules = readdirSync(join(root, "lib", "bench"))
+			.filter((f) => f.endsWith(".sh"))
+			.sort()
+			.map((f) => `lib/bench/${f}`);
+	} catch {
+		// Pre-split layout, or a checkout without the modules — the facade alone is then the source.
+	}
+	return ["lib/bench.sh", ...modules];
+}
 
 // The invariant: every member must appear in all three apt lists. php for PTS itself, the compiler
 // toolchain for the source-built profiles, libaio-dev (fio's Linux AIO engine), libicu-dev +
@@ -48,7 +62,34 @@ const CORE_PTS_BUILD_DEPS = [
  * with `apt-get`/`install`/`-y`-style tokens, and a subset check ignores extras by construction.
  */
 function shellInstallTokens(path: string, start: RegExp): string[] {
-	const lines = readFileSync(join(root, path), "utf8").split("\n");
+	return tokensFromLines(readFileSync(join(root, path), "utf8").split("\n"), start, path);
+}
+
+/**
+ * The same scan across several candidate files, for a helper set that is split across modules.
+ *
+ * The check is about a COMMAND existing somewhere in the bench helpers, not about which file holds
+ * it — pinning it to one path is how a refactor that moves the install line turns a real alignment
+ * gate into a "no line matches" crash.
+ */
+function shellInstallTokensAcross(
+	paths: readonly string[],
+	start: RegExp,
+	label: string,
+): string[] {
+	for (const path of paths) {
+		let lines: string[];
+		try {
+			lines = readFileSync(join(root, path), "utf8").split("\n");
+		} catch {
+			continue;
+		}
+		if (lines.some((line) => start.test(line))) return tokensFromLines(lines, start, path);
+	}
+	throw new Error(`${label}: no line matches ${start} in any of ${paths.join(", ")}`);
+}
+
+function tokensFromLines(lines: string[], start: RegExp, path: string): string[] {
 	const index = lines.findIndex((line) => start.test(line));
 	if (index === -1) throw new Error(`${path}: no line matches ${start}`);
 	const collected: string[] = [];
@@ -71,8 +112,9 @@ const sources: { path: string; tokens: () => string[] }[] = [
 			),
 	},
 	{
-		path: "lib/bench.sh",
-		tokens: (): string[] => shellInstallTokens("lib/bench.sh", /apt-get install -y -qq /),
+		path: "lib/bench.sh + lib/bench/*.sh",
+		tokens: (): string[] =>
+			shellInstallTokensAcross(benchHelperPaths(), /apt-get install -y -qq /, "bench helpers"),
 	},
 	{
 		// The canonical constant itself, imported — not re-parsed from source. The runtime refresh
