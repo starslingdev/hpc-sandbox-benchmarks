@@ -1,5 +1,5 @@
-// The integrity rules. These are the assertions that keep a figure from claiming more than the
-// statistics support — see the module comment on ./metric-table.ts for why that is the whole point.
+// Assembly: cells, columns, canvas width, and that the rules in ./emphasis.ts and ./spans.ts are
+// actually applied. The rules themselves are asserted in their own files.
 import { describe, expect, it } from "bun:test";
 import { formatValue, metricTakeaway } from "@sandbox-benchmarks/results";
 import { board, entry, METRIC, row } from "./__fixtures__/board.ts";
@@ -8,121 +8,42 @@ import { buildTableView, hasSpans } from "./metric-table.ts";
 const view = (rows: Parameters<typeof entry>[0], extraProviders: string[] = []) =>
 	buildTableView(board(rows, extraProviders), entry(rows));
 
-describe("rule 2 — no lead highlight the statistics do not support", () => {
-	it("crowns rank 1 when the runner-up is separated", () => {
-		const v = view([
+describe("the rules reach the assembled view", () => {
+	// The rules themselves are covered in ./emphasis.test.ts and ./spans.test.ts; these pin that
+	// buildTableView actually applies them, which is the wiring those files cannot see.
+	it("applies the crowning rule to the assembled rows", () => {
+		const crowned = view([
 			row({ providerId: "a", value: 20, rank: 1 }),
 			row({ providerId: "b", value: 10, rank: 2, verdict: "separated" }),
 		]);
-		expect(v.rows[0]?.emphasis).toBe("lead");
-	});
+		expect(crowned.rows[0]?.emphasis).toBe("lead");
 
-	it("does NOT crown when the runner-up is underpowered — the test could not have separated them", () => {
-		const v = view([
+		const uncrowned = view([
 			row({ providerId: "a", value: 20, rank: 1 }),
 			row({ providerId: "b", value: 10, rank: 2, verdict: "underpowered" }),
 		]);
-		expect(v.rows.every((r) => r.emphasis !== "lead")).toBe(true);
+		expect(uncrowned.rows.every((r) => r.emphasis !== "lead")).toBe(true);
 	});
 
-	it("does NOT crown when the runner-up is a statistical tie", () => {
-		const v = view([
-			row({ providerId: "a", value: 20, rank: 1 }),
-			row({ providerId: "b", value: 19, rank: 2, verdict: "tied" }),
-		]);
-		expect(v.rows.every((r) => r.emphasis !== "lead")).toBe(true);
-	});
-
-	it("does NOT crown a shared rank 1 — a cohort is not a winner", () => {
-		const v = view([
-			row({ providerId: "a", value: 20, rank: 1 }),
-			row({ providerId: "b", value: 20, rank: 1, verdict: "tied", tiedWithAbove: "statistical" }),
-		]);
-		expect(v.rows.every((r) => r.emphasis !== "lead")).toBe(true);
-	});
-
-	it("does NOT crown a sole provider — it leads nothing", () => {
-		expect(view([row({ providerId: "a" })]).rows[0]?.emphasis).not.toBe("lead");
-	});
-
-	it("marks a shared rank with `=` so the table cannot read as a strict ordering", () => {
+	it("plots interval spans, and labels a shared rank", () => {
 		const v = view([
 			row({ providerId: "a", value: 20, rank: 1 }),
 			row({ providerId: "b", value: 20, rank: 1, tiedWithAbove: "identical-value" }),
 		]);
 		expect(v.rows[1]?.cells[0]).toBe("=1");
-	});
-});
-
-describe("rule 1 — every bar is an interval, never a bare median", () => {
-	it("plots lo/hi/median as fractions of the metric's domain", () => {
-		const v = view([
-			row({
-				providerId: "a",
-				value: 20,
-				rank: 1,
-				interval: { median: 20, lo: 18, hi: 22, level: 0.95, resamples: 10_000 },
-			}),
-			row({
-				providerId: "b",
-				value: 10,
-				rank: 2,
-				interval: { median: 10, lo: 8, hi: 12, level: 0.95, resamples: 10_000 },
-			}),
-		]);
-		// Domain is the union of the intervals: [8, 22].
-		expect(v.rows[0]?.span).toEqual({ lo: (18 - 8) / 14, hi: 1, median: (20 - 8) / 14 });
-		expect(v.rows[1]?.span).toEqual({ lo: 0, hi: (12 - 8) / 14, median: (10 - 8) / 14 });
+		expect(v.rows[0]?.span).not.toBeNull();
 	});
 
-	it("makes overlapping intervals overlap on screen", () => {
-		const v = view([
-			row({
-				providerId: "a",
-				value: 19.8,
-				rank: 1,
-				interval: { median: 19.8, lo: 18.51, hi: 20.56, level: 0.95, resamples: 10_000 },
-			}),
-			row({
-				providerId: "b",
-				value: 18.6,
-				rank: 2,
-				verdict: "underpowered",
-				interval: { median: 18.6, lo: 18.21, hi: 18.88, level: 0.95, resamples: 10_000 },
-			}),
-		]);
-		const [a, b] = v.rows;
-		// b's upper bound sits above a's lower bound — the reader sees the ambiguity the ranking has.
-		expect(b?.span?.hi).toBeGreaterThan(a?.span?.lo ?? 0);
-	});
-
-	it("draws no bar when there is no interval to draw (n = 1)", () => {
+	it("draws no bars, and says so in the footnote, when no row has an interval", () => {
 		const v = view([
 			row({
 				providerId: "a",
 				interval: { median: 10, lo: 10, hi: 10, level: 0.95, resamples: 0 },
 			}),
 		]);
-		expect(v.rows[0]?.span).toBeNull();
 		expect(hasSpans(v)).toBe(false);
-	});
-
-	it("survives a degenerate domain without dividing by zero", () => {
-		const v = view([
-			row({
-				providerId: "a",
-				value: 5,
-				interval: { median: 5, lo: 5, hi: 5, level: 0.95, resamples: 10 },
-			}),
-			row({
-				providerId: "b",
-				value: 5,
-				interval: { median: 5, lo: 5, hi: 5, level: 0.95, resamples: 10 },
-			}),
-		]);
-		for (const r of v.rows) {
-			expect(Number.isFinite(r.span?.median ?? Number.NaN)).toBe(true);
-		}
+		// A legend describing a bar the figure does not draw would be its only false claim.
+		expect(v.footnote).toContain("no interval to plot");
 	});
 });
 

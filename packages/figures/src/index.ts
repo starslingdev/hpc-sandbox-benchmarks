@@ -16,7 +16,8 @@
  * would make every refactor of the layout a breaking change. Anything not here is reachable by
  * relative import inside the package.
  */
-export { type FontDigest, fontDigests, sha256Hex } from "./lib/assets/fonts.ts";
+export { type FontDigest, fontDigests } from "./lib/assets/fonts.ts";
+export { sha256Hex } from "./lib/digest.ts";
 export { committedFigureFiles, diffFigureDir, MANIFEST_FILE } from "./lib/figure-dir.ts";
 export { type RenderedFigure, renderBoardFigures } from "./lib/render/board.ts";
 export { type FigureManifest, parseFigureManifest } from "./lib/render/manifest.ts";

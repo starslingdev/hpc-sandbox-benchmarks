@@ -21,7 +21,8 @@
  */
 import satori from "satori";
 import type { Theme } from "../../theme.ts";
-import { assertGlyphCoverage, loadFonts } from "../assets/fonts.ts";
+import { assertGlyphCoverage } from "../assets/coverage.ts";
+import { loadFonts } from "../assets/fonts.ts";
 import { MetricTable } from "../components/MetricTable.tsx";
 import type { TableView } from "../view/metric-table.ts";
 

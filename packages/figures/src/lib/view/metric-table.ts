@@ -1,58 +1,40 @@
 /**
  * `LeaderboardMetric` → a fully-formatted, fully-decided view model. Pure data: no JSX, no satori,
- * no filesystem. Everything a figure can get wrong is decided here, where it is assertable by an
- * ordinary unit test.
+ * no filesystem. Everything a figure can get wrong is decided before a pixel exists, where it is
+ * assertable by an ordinary unit test.
  *
- * INTEGRITY IS THE POINT. The Markdown surface is engineered to avoid claiming more than the
- * statistics support — it declines to print a ratio when the leader's margin is under 5%, it says
- * "share the top" rather than naming a winner when rank 1 is a cohort, and it labels a comparison
- * the trial count could never have decided as `n too small` rather than as a tie. A figure is read
- * faster and trusted more than a table, so a figure that looks more confident than the table it sits
- * above is a worse regression than no figure at all. Three rules follow, and each is enforced here:
+ * This module ASSEMBLES; it does not adjudicate. The two decisions that carry the figure's honesty
+ * live beside their own rationale and their own tests:
  *
- *  1. NO BAR ENCODES A MEDIAN ALONE. Every bar is the 95% bootstrap INTERVAL drawn as a span, with
- *     the median as a tick inside it. Two providers whose intervals overlap are then visibly
- *     overlapping — which is the actual finding. A bar chart of medians would draw Blaxel at 100%
- *     and Daytona at 94% on the cpu headline, where the test could not separate them at all.
- *  2. NO LEAD HIGHLIGHT THE STATISTICS DO NOT SUPPORT. Rank 1 is highlighted only when it is a
- *     UNIQUE rank AND the row below it is `separated`. On the current committed board every
- *     non-leading row is `underpowered`, so nothing is crowned — matching the prose.
- *  3. A PROVIDER THAT WAS NOT MEASURED GETS AN EXPLICIT ROW. Never omitted, never a zero-length bar.
- *     "A gap is a missing result, never a tie or a zero."
+ *   ./emphasis.ts  which row (if any) may be highlighted, and how a shared rank is labelled
+ *   ./spans.ts     what a bar represents — the interval, never the median alone
+ *
+ * The third rule is here, because it is about which rows EXIST rather than how they are drawn: a
+ * provider in the run that produced no value for this metric gets an explicit "not measured" row.
+ * Never omitted, never a zero-length bar — "a gap is a missing result, never a tie or a zero".
  */
-import type { Leaderboard, LeaderboardMetric, LeaderboardRow } from "@sandbox-benchmarks/results";
+import type { Leaderboard, LeaderboardMetric } from "@sandbox-benchmarks/results";
 import { formatInterval, formatValue, metricTakeaway, rowNote } from "@sandbox-benchmarks/results";
 import { metrics, type_ } from "../../theme.ts";
 import type { ColumnSpec, SolvedColumn } from "./columns.ts";
 import { solveColumns, textWidth } from "./columns.ts";
+import type { RowEmphasis } from "./emphasis.ts";
+import { emphasisOf, leaderIsEstablished, rankLabel } from "./emphasis.ts";
+import type { Span } from "./spans.ts";
+import { domainOf, spanOf } from "./spans.ts";
 
-/** Where a row's interval sits within the metric's plotted domain, as fractions in [0, 1]. */
-export interface Span {
-	readonly lo: number;
-	readonly hi: number;
-	readonly median: number;
-}
+export type { RowEmphasis } from "./emphasis.ts";
+export type { Span } from "./spans.ts";
 
 export interface TableRowView {
 	readonly providerId: string;
 	/** Formatted cells, index-aligned with {@link TableView.columns}. */
 	readonly cells: readonly string[];
-	/** Interval span to plot, or `null` when there is no interval to draw (n = 1, or not measured). */
+	/** Interval to plot, or `null` when there is nothing to plot. See ./spans.ts. */
 	readonly span: Span | null;
-	/**
-	 * How the row is emphasised — one discriminant rather than three booleans, so the illegal
-	 * combinations (a crowned row that was never measured, say) cannot be represented.
-	 *
-	 *  - `lead`      — rank 1, and the statistics support saying so. See rule 2.
-	 *  - `separated` — this row's rank is established against the row above (`verdict === "separated"`).
-	 *  - `muted`     — ranked, but the comparison to the row above is tied, underpowered or untested.
-	 *  - `gap`       — the provider produced no value for this metric. See rule 3.
-	 */
+	/** How the row is emphasised. See ./emphasis.ts. */
 	readonly emphasis: RowEmphasis;
 }
-
-/** See {@link TableRowView.emphasis}. */
-export type RowEmphasis = "lead" | "separated" | "muted" | "gap";
 
 export interface TableView {
 	readonly metricId: string;
@@ -83,73 +65,29 @@ const COLUMNS: readonly ColumnSpec[] = [
 	{ id: "note", header: "NOTE", align: "left" },
 ];
 
-/** Rule 2. A crown requires a unique rank AND a separated runner-up. */
-function leaderIsEstablished(rows: readonly LeaderboardRow[]): boolean {
-	const [first, second] = rows;
-	if (!first || !second) return false; // a sole provider leads nothing
-	if (second.rank === first.rank) return false; // shared rank 1: a cohort, not a winner
-	return second.verdict === "separated";
-}
-
-/**
- * Plot domain: the union of every interval on the metric, so overlapping intervals overlap on
- * screen. Bounds come from the intervals rather than the medians precisely so that a row whose
- * interval is wide reads as uncertain instead of as a precise value.
- */
-function domainOf(rows: readonly LeaderboardRow[]): { lo: number; hi: number } | null {
-	const usable = rows.filter((r) => r.interval.resamples > 0);
-	if (usable.length === 0) return null;
-	let lo = Number.POSITIVE_INFINITY;
-	let hi = Number.NEGATIVE_INFINITY;
-	for (const r of usable) {
-		lo = Math.min(lo, r.interval.lo, r.value);
-		hi = Math.max(hi, r.interval.hi, r.value);
-	}
-	// A degenerate domain (every interval identical) would divide by zero; give it a nominal width.
-	if (!(hi > lo)) return { lo: lo - 0.5, hi: hi + 0.5 };
-	return { lo, hi };
-}
-
 export function buildTableView(board: Leaderboard, entry: LeaderboardMetric): TableView {
 	const { metric, rows } = entry;
-	const highlightLeader = leaderIsEstablished(rows);
+	const leaderEstablished = leaderIsEstablished(rows);
 	const domain = domainOf(rows);
+
+	const viewRows: TableRowView[] = rows.map((r) => ({
+		providerId: r.providerId,
+		cells: [
+			rankLabel(r),
+			r.displayName,
+			formatValue(r.value),
+			formatInterval(r),
+			String(r.n),
+			rowNote(r),
+		],
+		span: spanOf(r, domain),
+		emphasis: emphasisOf(r, leaderEstablished),
+	}));
+
+	// Every provider measured in this RUN gets a row on every metric figure, so one that produced
+	// nothing here is visibly absent-with-a-reason rather than quietly missing.
 	const measured = new Set(rows.map((r) => r.providerId));
-
-	// Rule 3: every provider measured in this RUN gets a row on every metric figure, so a provider
-	// that produced nothing here is visibly absent-with-a-reason rather than quietly missing.
-	const absent = board.roster.filter((p) => !measured.has(p.providerId));
-
-	const viewRows: TableRowView[] = rows.map((r) => {
-		const span: Span | null =
-			domain === null || r.interval.resamples === 0
-				? null
-				: {
-						lo: (r.interval.lo - domain.lo) / (domain.hi - domain.lo),
-						hi: (r.interval.hi - domain.lo) / (domain.hi - domain.lo),
-						median: (r.value - domain.lo) / (domain.hi - domain.lo),
-					};
-		return {
-			providerId: r.providerId,
-			cells: [
-				r.tiedWithAbove !== null ? `=${r.rank}` : String(r.rank),
-				r.displayName,
-				formatValue(r.value),
-				formatInterval(r),
-				String(r.n),
-				rowNote(r),
-			],
-			span,
-			emphasis:
-				highlightLeader && r.rank === 1
-					? "lead"
-					: r.verdict === "separated"
-						? "separated"
-						: "muted",
-		};
-	});
-
-	for (const p of absent) {
+	for (const p of board.roster.filter((p) => !measured.has(p.providerId))) {
 		viewRows.push({
 			providerId: p.providerId,
 			cells: ["—", p.displayName, "not measured", "—", "0", "coverage gap"],
