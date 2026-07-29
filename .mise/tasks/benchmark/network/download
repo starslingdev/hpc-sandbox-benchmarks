@@ -21,7 +21,7 @@
 #
 # The probe runs curl ONCE, writing the native `%{json}` write-out as the structured result and
 # rendering the human-readable log line from that JSON — a second curl for display would double the
-# ~10MB transfer (and the two could disagree on a flaky path, which is exactly when this probe matters).
+# payload (and the two could disagree on a flaky path, which is exactly when this probe matters).
 #
 # Sustained throughput is ALL this measures. Connection setup used to be a second curl against
 # github.com here; benchmark:network:latency now probes that host with three fresh connections and a
@@ -70,19 +70,6 @@ if [[ "$DOWNLOAD_URL" == https://api.github.com/* ]]; then
 	fi
 fi
 
-# Render selected write-out fields from a curl %{json} result file, tolerating a missing jq (the
-# toolchain image ships it; elsewhere the raw JSON line is still meaningful provenance).
-summarize() {
-	local file="$1" template="$2"
-	if [ ! -s "$file" ]; then
-		echo "(probe produced no result)"
-	elif command -v jq &>/dev/null; then
-		jq -r "$template" "$file" 2>/dev/null || cat "$file"
-	else
-		cat "$file"
-	fi
-}
-
 # The probe IS curl — without it there is nothing to measure, so record the skip marker the
 # normalizer expects (skip_result in lib/bench.sh) rather than exiting silently.
 if ! command -v curl &>/dev/null; then
@@ -95,7 +82,7 @@ echo "Downloading ${DOWNLOAD_URL}"
 [ -n "$GITHUB_API_NOTE" ] && echo "(${GITHUB_API_NOTE})"
 echo "(capped at ${DOWNLOAD_MAX_SECONDS}s — a transfer cut short still reports a valid rate)"
 
-SPEED_JSON="$(results_dir)/$(task_result_name "speed").json"
+SPEED_JSON="$(result_path "$(task_result_name "speed")")"
 HEADERS_TMP="$(mktemp)"
 trap 'rm -f "$HEADERS_TMP"' EXIT
 
@@ -106,37 +93,45 @@ first_header() {
 	grep -i "^${1}:" "$HEADERS_TMP" 2>/dev/null | head -n 1 | cut -d: -f2- | tr -d '\r' | xargs
 }
 
-# Fold the GitHub facts that live in HEADERS, not in curl's write-out, into the record — the quota
-# state at the moment of measurement is what tells a later reader whether a slow or tiny result was
-# the network or the throttle. Passthrough when jq is absent or nothing GitHub-shaped was seen: the
-# native record alone is still valid provenance, which is the contract json_result enforces.
-augment_with_api_headers() {
-	local remaining reset used
+# Fold the throttling state into the record. It lives in RESPONSE HEADERS, which curl's write-out
+# does not carry, and it is what tells a later reader whether a small or slow result was the network
+# or the budget — unrecoverable after the fact from the artifact alone.
+#
+# stdin is consumed FIRST, and that ordering is load-bearing: bash starts every stage of a pipeline
+# at once, so a stage that reads the header file before draining stdin runs at t≈0, before curl has
+# written a single header, and would silently find an empty quota on every run. Reading the record
+# first blocks until curl has finished and its -D dump is complete.
+#
+# The header names are GitHub's spelling of a convention many hosts share, so nothing here is gated
+# on the host: a mirror or registry that throttles DOWNLOAD_URL is exactly as worth recording, and
+# the field is named for the mechanism rather than for one vendor. Passthrough when jq is absent or
+# no budget was advertised — the native record alone is still valid provenance.
+augment_with_ratelimit() {
+	local record remaining reset used
+	record="$(cat)"
 	remaining="$(first_header x-ratelimit-remaining)"
 	reset="$(first_header x-ratelimit-reset)"
 	used="$(first_header x-ratelimit-used)"
 	if ! command -v jq &>/dev/null || [ -z "$remaining" ]; then
-		cat
+		printf '%s' "$record"
 		return 0
 	fi
-	jq -c --arg remaining "$remaining" --arg reset "$reset" --arg used "$used" \
-		'. + {github_api: {ratelimit_remaining: $remaining, ratelimit_reset: $reset, ratelimit_used: $used}}'
+	printf '%s' "$record" | jq -c --arg remaining "$remaining" --arg reset "$reset" --arg used "$used" \
+		'. + {ratelimit: {remaining: $remaining, reset: $reset, used: $used}}'
 }
 
 # -sS, and stderr NOT discarded: the %{json} write-out goes to stdout (piped onward), so curl's
 # diagnostic on stderr can't corrupt the result — and it is the whole story when the probe fails
 # (DNS vs TLS vs proxy refusal), which is precisely what a network probe exists to record.
 curl "${curl_args[@]}" -D "$HEADERS_TMP" "$DOWNLOAD_URL" |
-	augment_with_api_headers |
+	augment_with_ratelimit |
 	json_result "$(task_result_name "speed")"
 # The ends of the pipeline are reported separately, because they answer different questions. curl
 # emits its write-out record even when the transfer fails, so a non-zero curl with a written record
 # is a RECORDED failure — the artifact carries the exit code and error message. Only json_result's
-# own failure (the LAST element, after the header-augmentation stage) means no artifact exists at
-# all. Captured in one statement: any command in between, an assignment included, would reset
-# PIPESTATUS before the second read.
+# own failure (the last stage) means no artifact exists at all. Captured in one statement: any
+# command in between, an assignment included, would reset PIPESTATUS before the second read.
 probe_status=("${PIPESTATUS[@]}")
-install_status="${probe_status[${#probe_status[@]} - 1]}"
 # Exit 28 is --max-time doing its job on a slow link, and it is NOT a failed measurement: the rate
 # is computed over the bytes that did arrive in the time allowed, which is exactly the reading this
 # probe wants. That is what makes a large payload safe — a fast link finishes it, a slow link
@@ -146,29 +141,38 @@ if [ "${probe_status[0]}" -eq 28 ]; then
 elif [ "${probe_status[0]}" -ne 0 ]; then
 	echo "(download probe failed — curl exited ${probe_status[0]})"
 fi
-[ "$install_status" -ne 0 ] && echo "(no structured record written)"
 
-summarize "$SPEED_JSON" \
-	'"HTTP \(.http_code) | \(.size_download) bytes | \(.time_total)s total | \(.speed_download) bytes/sec"
-	 + " (\((.speed_download / 1048576 * 100 | round) / 100) MiB/s)"'
-
-# An HTTP error is a SUCCESSFUL transfer as far as curl is concerned — a 403 page is a few hundred
-# bytes delivered promptly, which the line above renders as a very fast download of a very small
-# file. Only the status code separates that from the real payload, so say it outright, and name the
-# throttle specifically when the headers identify one: "rate-limited" and "slow" are different
-# findings about a provider, and a benchmark that confuses them is worse than one that stays silent.
-if command -v jq &>/dev/null; then
-	http_code="$(jq -r '.http_code // 0' "$SPEED_JSON" 2>/dev/null || echo 0)"
-	if [[ "$http_code" =~ ^[0-9]+$ ]] && [ "$http_code" -ge 400 ]; then
-		echo "(HTTP ${http_code}: an error response, not the payload — the rate above measures nothing)"
-	fi
+# Read back only what THIS run installed. json_result deliberately leaves the previous artifact in
+# place when it refuses one, so summarizing unconditionally would reprint a stale run's rate as if
+# it were this one's — a reused sandbox is exactly where that lie would be believed.
+if [ "${probe_status[2]}" -ne 0 ]; then
+	echo "(no structured record written)"
+elif ! command -v jq &>/dev/null; then
+	cat "$SPEED_JSON"
+else
+	# One pass, two outputs. An HTTP error is a SUCCESSFUL transfer as far as curl is concerned — a
+	# 403 page is a few hundred bytes delivered promptly, which the summary line alone renders as a
+	# very fast download of a very small file. Only the status code separates that from the real
+	# payload, so the same program that reports the rate also disowns it.
+	jq -r '
+		"HTTP \(.http_code) | \(.size_download) bytes | \(.time_total)s total | \(.speed_download) bytes/sec"
+			+ " (\((.speed_download / 1048576 * 100 | round) / 100) MiB/s)",
+		(
+			select((.http_code // 0 | numbers) >= 400)
+			| "(HTTP \(.http_code): an error response, not the payload — the rate above measures nothing)"
+		)
+	' "$SPEED_JSON" 2>/dev/null || cat "$SPEED_JSON"
 fi
+
+# "Throttled" and "slow" are different findings about a provider, and a benchmark that confuses them
+# is worse than one that stays silent. These headers are read AFTER the pipeline, where the -D dump
+# is complete.
 ratelimit_remaining="$(first_header x-ratelimit-remaining)"
 if [ "$ratelimit_remaining" = "0" ]; then
 	reset_at="$(first_header x-ratelimit-reset)"
 	# Epoch seconds; `date -d @` is GNU-only, so fall back to the raw stamp rather than print nothing.
 	reset_human="$(date -u -d "@${reset_at}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "epoch ${reset_at}")"
-	echo "(GitHub API rate limit EXHAUSTED — this is a throttle, not a slow link; resets ${reset_human})"
+	echo "(rate limit EXHAUSTED — this is a throttle, not a slow link; resets ${reset_human})"
 elif [ -n "$ratelimit_remaining" ]; then
-	echo "(GitHub API quota remaining: ${ratelimit_remaining})"
+	echo "(rate limit remaining: ${ratelimit_remaining})"
 fi

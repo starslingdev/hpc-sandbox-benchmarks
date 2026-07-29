@@ -89,11 +89,16 @@ skip_remaining_samples() {
 	echo "(no response on the first sample — skipping the remaining $((SAMPLES - 1)) for this endpoint)"
 }
 
-RESULT="$(results_dir)/$(task_result_name).json"
+RESULT="$(result_path "$(task_result_name)")"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 ENDPOINTS_NDJSON="${TMP_DIR}/endpoints.ndjson"
 : >"$ENDPOINTS_NDJSON"
+# Scratch paths reused by every sample: curl's own redirects truncate both on each run, and the
+# per-endpoint records file is drained into the aggregate before the next endpoint refills it.
+RECORD="${TMP_DIR}/record.json"
+ERRORS="${TMP_DIR}/stderr.txt"
+RECORDS="${TMP_DIR}/records.ndjson"
 
 GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURL_VERSION="$(curl --version 2>/dev/null | head -n 1)"
@@ -101,23 +106,15 @@ CURL_VERSION="$(curl --version 2>/dev/null | head -n 1)"
 echo "=== HTTPS Latency (${SAMPLES} fresh connections per endpoint) ==="
 echo "Phases derived from curl's cumulative timers: DNS | TCP | TLS | server | body"
 
-endpoint_index=0
 for url in "${ENDPOINTS[@]}"; do
 	host="${url#*://}"
 	host="${host%%/*}"
-	records="${TMP_DIR}/records-${endpoint_index}.ndjson"
-	: >"$records"
-	endpoint_index=$((endpoint_index + 1))
+	: >"$RECORDS"
 
 	echo ""
 	echo "--- ${url} ---"
 
 	for ((sample = 1; sample <= SAMPLES; sample++)); do
-		record="${TMP_DIR}/record.json"
-		errors="${TMP_DIR}/stderr.txt"
-		: >"$record"
-		: >"$errors"
-
 		# -sS with stderr redirected to its own file: the %{json} record goes to stdout, so a
 		# diagnostic can never end up inside the JSON — and on failure that diagnostic (DNS vs TLS vs
 		# proxy refusal) is the whole story.
@@ -129,29 +126,25 @@ for url in "${ENDPOINTS[@]}"; do
 			--output /dev/null \
 			--write-out '%{json}\n' \
 			"$url" \
-			>"$record" \
-			2>"$errors"
+			>"$RECORD" \
+			2>"$ERRORS"
 		curl_status=$?
 
-		# No record at all (curl too old for %{json}, or killed before the write-out): there is
-		# nothing to aggregate, so say so rather than appending a blank line.
-		if [ ! -s "$record" ]; then
-			echo "sample ${sample}: no structured record (curl exit ${curl_status})"
-			[ -s "$errors" ] && sed 's/^/  /' "$errors"
-			if [ "$sample" -eq 1 ]; then
-				skip_remaining_samples
-				break
-			fi
-			continue
+		# Two ways a sample can be unusable, one response to both. No record at all means curl was
+		# too old for %{json} or died before the write-out. An unparseable one must be dropped
+		# because the endpoint aggregation slurps every retained record in ONE jq pass, where a
+		# single malformed line would take that endpoint's whole result down with it. Neither branch
+		# echoes the record: curl inlines the PEM chain into it, and a raw dump would bury the log
+		# under kilobytes of certificate per sample.
+		unusable=""
+		if [ ! -s "$RECORD" ]; then
+			unusable="no structured record (curl exit ${curl_status})"
+		elif ! jq -e . "$RECORD" >/dev/null 2>&1; then
+			unusable="write-out was not valid JSON (curl exit ${curl_status}) — discarded"
 		fi
-
-		# Parse before retaining: the endpoint aggregation slurps every retained record in one jq
-		# pass, so a single malformed line would take that endpoint's whole result down with it. The
-		# record is NOT echoed here — curl inlines the PEM chain into it, and a raw dump would bury
-		# the log under kilobytes of certificate per sample.
-		if ! jq -e . "$record" >/dev/null 2>&1; then
-			echo "sample ${sample}: write-out was not valid JSON (curl exit ${curl_status}) — discarded"
-			[ -s "$errors" ] && sed 's/^/  /' "$errors"
+		if [ -n "$unusable" ]; then
+			echo "sample ${sample}: ${unusable}"
+			[ -s "$ERRORS" ] && sed 's/^/  /' "$ERRORS"
 			if [ "$sample" -eq 1 ]; then
 				skip_remaining_samples
 				break
@@ -170,22 +163,22 @@ for url in "${ENDPOINTS[@]}"; do
 				"sample \($n): FAILED after \($p.total)ms (curl exit \(.exitcode // "?"))" +
 				(if (.errormsg // "") == "" then "" else " — \(.errormsg)" end)
 			end
-		' "$record"
+		' "$RECORD"
 
 		# curl exits non-zero on a transport failure yet still emits a record carrying the exit code
 		# and error message. That record is kept as evidence and excluded from the statistics by
 		# `responded`, so a timeout stays visible without inflating the medians.
-		if [ "$curl_status" -ne 0 ] && [ -s "$errors" ]; then
-			sed 's/^/  /' "$errors"
+		if [ "$curl_status" -ne 0 ] && [ -s "$ERRORS" ]; then
+			sed 's/^/  /' "$ERRORS"
 		fi
 
-		cat "$record" >>"$records"
+		cat "$RECORD" >>"$RECORDS"
 
 		# The record is retained either way; what the first sample decides is whether spending the
 		# remaining ones can still teach us anything. `responded` is the same gate the statistics
 		# use, so "kept but not counted" and "stop here" can never disagree about what a response is.
 		if [ "$sample" -eq 1 ] &&
-			! jq -L "$JQ_MODULES" -e 'include "curl-phases"; responded' "$record" >/dev/null 2>&1; then
+			! jq -L "$JQ_MODULES" -e 'include "curl-phases"; responded' "$RECORD" >/dev/null 2>&1; then
 			skip_remaining_samples
 			break
 		fi
@@ -200,8 +193,10 @@ for url in "${ENDPOINTS[@]}"; do
 		--argjson attempted "$SAMPLES" '
 		include "curl-phases";
 
-		(map(select(responded)) | map(phases)) as $ok |
-		(map(select(responded) | .remote_ip) | map(select(. != "")) | unique) as $ips |
+		map(select(responded)) as $answered |
+		map(select(responded | not)) as $failed |
+		($answered | map(phases)) as $ok |
+		($answered | map(.remote_ip) | map(select(. != "")) | unique) as $ips |
 		{
 			url: $url,
 			host: $host,
@@ -210,8 +205,8 @@ for url in "${ENDPOINTS[@]}"; do
 				recorded: length,
 				responded: ($ok | length)
 			},
-			response_codes: (map(select(responded) | .response_code) | unique),
-			http_versions: (map(select(responded) | .http_version) | map(select(. != null)) | unique),
+			response_codes: ($answered | map(.response_code) | unique),
+			http_versions: ($answered | map(.http_version) | map(select(. != null)) | unique),
 			remote: {
 				ips: $ips,
 				ip_version: (
@@ -229,9 +224,9 @@ for url in "${ENDPOINTS[@]}"; do
 				body: ($ok | map(.body) | stats),
 				total: ($ok | map(.total) | stats)
 			},
-			bytes_downloaded: (map(select(responded) | .size_download) | unique),
+			bytes_downloaded: ($answered | map(.size_download) | unique),
 			errors: (
-				map(select(responded | not) | {
+				$failed | map({
 					exit_code: (.exitcode // null),
 					response_code: .response_code,
 					message: (if (.errormsg // "") == "" then null else .errormsg end)
@@ -244,7 +239,7 @@ for url in "${ENDPOINTS[@]}"; do
 			# ssl_verify_result, are separate fields and survive.
 			curl_records: map(del(.certs))
 		}
-	' "$records" >>"$ENDPOINTS_NDJSON"
+	' "$RECORDS" >>"$ENDPOINTS_NDJSON"
 done
 
 # One aggregate document for the whole probe: every endpoint, its statistics and its raw curl records

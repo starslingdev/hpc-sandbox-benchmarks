@@ -7,6 +7,10 @@
  * line. Extracting it into a .jq module made it executable outside the task; this file is what
  * makes that extraction worth doing.
  *
+ * That the probe actually INCLUDES this module, rather than carrying its own copy, is a structural
+ * invariant guarded separately in tooling/repo-checks/src/curl-phases-module.test.ts — it must keep
+ * running on a machine without jq, where the tests below skip themselves.
+ *
  * The records under __fixtures__/probes/curl-records.ndjson are REAL captures (`curl --write-out
  * '%{json}'`, `certs` stripped), covering the four shapes the decomposition has to survive: an HTTP/2
  * 200, a 301, a 401 auth challenge, a plain-HTTP request with no TLS milestone at all, and a
@@ -16,6 +20,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const repoRoot = join(import.meta.dir, "../../../..");
@@ -43,9 +48,13 @@ function runJq(program: string, options: { file?: string; input?: string } = {})
 		.map((line) => JSON.parse(line));
 }
 
-/** One fixture record by the URL it was captured against. */
+/** One fixture record by the URL it was captured against — plain JSON, no jq program involved. */
 function record(url: string): Record<string, unknown> {
-	const rows = runJq(`select(.url == "${url}")`, { file: fixture }) as Record<string, unknown>[];
+	const rows = readFileSync(fixture, "utf8")
+		.split("\n")
+		.filter((line) => line.length > 0)
+		.map((line) => JSON.parse(line) as Record<string, unknown>)
+		.filter((row) => row.url === url);
 	expect(rows).toHaveLength(1);
 	return rows[0] as Record<string, unknown>;
 }
@@ -159,23 +168,5 @@ suite("curl-phases.jq: stats", () => {
 	it("returns null for an empty sample, never a zero-valued distribution", () => {
 		expect(runJq("stats", { input: "[]" })).toEqual([null]);
 		expect(runJq("stats", { input: "[null,null]" })).toEqual([null]);
-	});
-});
-
-suite("the latency probe uses the module rather than its own copy", () => {
-	// The entire reason curl-phases.jq is a file: a second copy of this arithmetic could drift and
-	// produce different numbers from the same bytes. If the task ever re-inlines a `def phases`,
-	// these tests would still pass while the probe computed something else.
-	const task = join(repoRoot, ".mise/tasks/benchmark/network/latency");
-	const source = execFileSync("cat", [task], { encoding: "utf8" });
-
-	it("loads the shared module", () => {
-		expect(source).toContain('include "curl-phases"');
-	});
-
-	it("defines no phase arithmetic of its own", () => {
-		for (const name of ["def phases:", "def stats:", "def responded:", "def ms:"]) {
-			expect(source).not.toContain(name);
-		}
 	});
 });

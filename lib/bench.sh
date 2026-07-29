@@ -56,11 +56,27 @@ task_result_name() {
 	echo "$name"
 }
 
-# Minimal JSON string escaping (backslash + double quote) for the hand-built records below.
+# JSON string escaping for the hand-built records below: the two structural characters plus the
+# control characters that actually turn up in probe input. dmidecode, lscpu and an ipinfo field can
+# all carry a tab or a newline, and an unescaped one is not a cosmetic problem — it is a raw control
+# character inside a JSON string, which is invalid JSON that parsers reject outright. A byte below
+# 0x08 would still get through; nothing these probes read has ever produced one, and the callers that
+# can reach a parser (json_result) validate rather than trust this.
 _json_escape() {
 	local s="${1//\\/\\\\}"
 	s="${s//\"/\\\"}"
+	s="${s//$'\t'/\\t}"
+	s="${s//$'\n'/\\n}"
+	s="${s//$'\r'/\\r}"
+	s="${s//$'\b'/\\b}"
+	s="${s//$'\f'/\\f}"
 	printf '%s' "$s"
+}
+
+# Where a named result lands. One spelling of the layout, so a task that reads its artifact back
+# cannot drift from the path json_result wrote it to.
+result_path() {
+	echo "$(results_dir)/${1}.json"
 }
 
 # Install a JSON artifact read from stdin, but only once it is complete and parseable:
@@ -86,7 +102,7 @@ json_result() {
 		# the user that produced them, so restore the 0644 a plain `>` redirect would have left —
 		# staging must not quietly narrow who can read the result.
 		chmod 0644 "$tmp"
-		mv "$tmp" "$(results_dir)/${name}.json"
+		mv "$tmp" "$(result_path "$name")"
 		return 0
 	fi
 	rm -f "$tmp"
