@@ -26,6 +26,8 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"daytona-container",
 			"daytona-vm",
 			"e2b",
+			"microsandbox-cloud",
+			"microsandbox-local",
 			"modal-gvisor",
 			"modal-vm",
 			"namespace",

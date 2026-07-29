@@ -36,6 +36,8 @@ describe("forEachProviderWithCreds `only`", () => {
 			"daytona-vm",
 			"daytona-container",
 			"blaxel",
+			"microsandbox-local",
+			"microsandbox-cloud",
 			"modal-gvisor",
 			"modal-vm",
 			"novita",

@@ -74,6 +74,7 @@
         "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
         "computesdk": "catalog:computesdk",
+        "microsandbox": "catalog:computesdk",
         "novita-sandbox": "catalog:computesdk",
       },
       "devDependencies": {
@@ -177,6 +178,7 @@
       "@daytona/api-client": "0.192.0",
       "@daytona/sdk": "0.192.0",
       "computesdk": "4.1.3",
+      "microsandbox": "0.6.8",
       "novita-sandbox": "2.0.6",
     },
     "xml": {
@@ -504,6 +506,16 @@
     "@smithy/util-buffer-from": ["@smithy/util-buffer-from@2.2.0", "", { "dependencies": { "@smithy/is-array-buffer": "^2.2.0", "tslib": "^2.6.2" } }, "sha512-IJdWBbTcMQ6DA0gdNhh/BwrLkDR+ADW5Kr1aZmd4k3DIF6ezMV4R2NIAmT08wQJ3yUK82thHWmC/TnK/wpMMIA=="],
 
     "@smithy/util-utf8": ["@smithy/util-utf8@2.3.0", "", { "dependencies": { "@smithy/util-buffer-from": "^2.2.0", "tslib": "^2.6.2" } }, "sha512-R8Rdn8Hy72KKcebgLiv8jQcQkXoLMOGGv5uI1/k0l+snqkOzQ1R0ChUBCxWMlBsFMekWjq0wRudIweFs7sKT5A=="],
+
+    "@superradcompany/microsandbox-darwin-arm64": ["@superradcompany/microsandbox-darwin-arm64@0.6.8", "", { "os": "darwin", "cpu": "arm64" }, "sha512-SbPo2mb5sEWY7Sry9lxlh762oX5G4RI4Xq2i6U9covTe+4MIFznNSCPIntoCcpzVwt4VNIukvEdyTsI9kITJLw=="],
+
+    "@superradcompany/microsandbox-linux-arm64-gnu": ["@superradcompany/microsandbox-linux-arm64-gnu@0.6.8", "", { "os": "linux", "cpu": "arm64" }, "sha512-cMgS/pE6N2LTbdGYMNiSzfxlsD0F1fhVuCFuIULxGfGyK+zmrYHgTgV0K6n9UQY+PjseOvNn//T7FJQ7SwyJ3g=="],
+
+    "@superradcompany/microsandbox-linux-x64-gnu": ["@superradcompany/microsandbox-linux-x64-gnu@0.6.8", "", { "os": "linux", "cpu": "x64" }, "sha512-JCYgBsCf00bX2RA7YhdFdNOQHsWJFXYM3WJi1ONx3jLdUpiMKAVRZxCSPJe/UrFoRiqfj49AmgIBNtvs+2Ns9g=="],
+
+    "@superradcompany/microsandbox-win32-arm64-msvc": ["@superradcompany/microsandbox-win32-arm64-msvc@0.6.8", "", { "os": "win32", "cpu": "arm64" }, "sha512-cWXaHBleVZbTddVYiUSuChNbHWhzTnNkgBqhisSDcFa1FBa0g5sBzTBlcC0RAseMzs4F+6YqLbD040QOe/6deQ=="],
+
+    "@superradcompany/microsandbox-win32-x64-msvc": ["@superradcompany/microsandbox-win32-x64-msvc@0.6.8", "", { "os": "win32", "cpu": "x64" }, "sha512-Asfn+8+CplKh05MyJIoRJzLCl1Z05B/n6Lc6+tpfFKmHjMkQw976L67AqqBQq4AxfkakBcpZYVHZQqUDxl5Fow=="],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
@@ -872,6 +884,8 @@
     "merge2": ["merge2@1.4.1", "", {}, "sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg=="],
 
     "micromatch": ["micromatch@4.0.8", "", { "dependencies": { "braces": "^3.0.3", "picomatch": "^2.3.1" } }, "sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA=="],
+
+    "microsandbox": ["microsandbox@0.6.8", "", { "optionalDependencies": { "@superradcompany/microsandbox-darwin-arm64": "0.6.8", "@superradcompany/microsandbox-linux-arm64-gnu": "0.6.8", "@superradcompany/microsandbox-linux-x64-gnu": "0.6.8", "@superradcompany/microsandbox-win32-arm64-msvc": "0.6.8", "@superradcompany/microsandbox-win32-x64-msvc": "0.6.8" }, "bin": { "microsandbox": "bin/microsandbox.cjs", "msb": "bin/microsandbox.cjs" } }, "sha512-N9sqwUFjeRisBJPyu3uV0f+BFsWQmrxogGoZw0jXuLY9+ey0cgPTzQBLhjKyCbe6rq8joGtefvyS3J4vEW7DBQ=="],
 
     "mime-db": ["mime-db@1.52.0", "", {}, "sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg=="],
 

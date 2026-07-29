@@ -11,7 +11,19 @@ on:
         description: Provider to benchmark
         type: choice
         default: daytona-vm
-        options: [daytona-vm, daytona-container, e2b, modal-gvisor, modal-vm, blaxel, novita, namespace]
+        options:
+          [
+            daytona-vm,
+            daytona-container,
+            e2b,
+            modal-gvisor,
+            modal-vm,
+            blaxel,
+            novita,
+            namespace,
+            microsandbox-local,
+            microsandbox-cloud,
+          ]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
         # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
@@ -180,6 +192,11 @@ jobs:
           # runs when inputs.provider == 'namespace'), which the harness reads as the standard
           # missing-credentials skip on every other dispatch.
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an
+          # optional override for staging or private deployments. Neither value enters the guest.
+          MICROSANDBOX_LOCAL_BENCH: ${{ inputs.provider == 'microsandbox-local' && '1' || '' }}
+          MSB_API_URL: ${{ inputs.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
+          MSB_API_KEY: ${{ inputs.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
 
       - name: Upload Run + raw results

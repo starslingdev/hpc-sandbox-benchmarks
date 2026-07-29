@@ -146,6 +146,9 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
    | `BL_API_KEY` | bench matrix/smoke only |
    | `BL_WORKSPACE` | bench matrix/smoke only |
+   | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
+
+   `MSB_API_URL` is an optional Microsandbox Cloud endpoint override for staging or private deployments. Leave it unset to use the SDK's `https://api.microsandbox.dev` default.
 
 ### Main ruleset (public-safe bot merges)
 
@@ -196,6 +199,8 @@ Optional bootstrap (creates the empty environment; reviewers/secrets still need 
 Copy [`.env.example`](../.env.example) to a gitignored `.env` and fill in the providers you have
 (Bun auto-loads `.env` when you run a bin). A missing credential is a skip, not a failure. Never
 commit them; never paste them into issues or pull requests. See [SECURITY.md](../SECURITY.md).
+
+`microsandbox-local` uses `MICROSANDBOX_LOCAL_BENCH=1` as an explicit capability opt-in rather than a credential. The runner must provide KVM on Linux or Hypervisor.framework on macOS. `microsandbox-cloud` needs `MSB_API_KEY`; `MSB_API_URL` is an optional endpoint override. The cloud adapter keeps the key in the SDK control-plane backend and never adds it to sandbox metadata, create-time environment variables, or guest commands.
 
 The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
 credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.

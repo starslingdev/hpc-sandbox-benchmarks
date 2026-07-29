@@ -21,6 +21,7 @@
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
     "computesdk": "catalog:computesdk",
+    "microsandbox": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk"
   },
   "devDependencies": {

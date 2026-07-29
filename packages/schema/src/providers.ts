@@ -18,6 +18,8 @@ export type ProviderId =
 	| "modal-gvisor"
 	| "modal-vm"
 	| "blaxel"
+	| "microsandbox-local"
+	| "microsandbox-cloud"
 	| "novita"
 	| "namespace";
 
@@ -327,6 +329,70 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// `@computesdk/blaxel` execs through the sandbox gateway; long synchronous execs are not
 			// validated, so apply the conservative 60s policy bound and use the detached+poll path
 			// (background nohup + pollable filesystem, both supported by the wrapper) for long steps.
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
+	"microsandbox-local": {
+		displayName: "Microsandbox (local)",
+		website: "https://microsandbox.dev",
+		sdkPackage: "microsandbox",
+		// This is an explicit capability opt-in rather than a credential. Local runs require a host
+		// with KVM on Linux or Hypervisor.framework on macOS and should skip everywhere else.
+		requiredEnvVars: ["MICROSANDBOX_LOCAL_BENCH"],
+		isolation: {
+			technology: "libkrun microVM (local)",
+			notes:
+				"Runs on the benchmark harness machine itself with no control-plane or network hop. Results measure that host's hardware and are identified separately from Microsandbox Cloud.",
+		},
+		pricing: {
+			model: "unknown",
+			notes:
+				"Self-hosted execution has no vendor compute rate; infrastructure cost depends on the machine running the harness.",
+			sourceUrl: "https://microsandbox.dev",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Direct SDK adapter with exec, filesystem, lifecycle, list, and local snapshots. Opt-in until a comparable committed run exists.",
+		},
+		specPinning: "settable",
+		transport: {
+			// Native in-process control has no gateway timeout. Streaming callbacks are not adapted, but
+			// background exec plus the agent filesystem provides the durable detached+poll path.
+			streaming: false,
+			syncCapMs: null,
+			detachedPoll: true,
+		},
+	},
+	"microsandbox-cloud": {
+		displayName: "Microsandbox Cloud",
+		website: "https://microsandbox.dev",
+		sdkPackage: "microsandbox",
+		// MSB_API_URL is only an override for staging/private deployments. The SDK defaults to
+		// api.microsandbox.dev, so the key alone is the cloud-selection and credential gate.
+		requiredEnvVars: ["MSB_API_KEY"],
+		isolation: {
+			technology: "libkrun microVM (cloud)",
+			notes:
+				"The Microsandbox SDK talks to msb-cloud; Nomad schedules the same libkrun microVM runtime on remote hosts. Kept distinct from local runs so datasets never mix host-local and cloud measurements.",
+		},
+		pricing: {
+			model: "unknown",
+			notes:
+				"Cloud pricing is not public yet; no economics are emitted until a stable product rate is published.",
+			sourceUrl: "https://microsandbox.dev",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Create, readiness, exec, filesystem, list, and graceful teardown are supported. Cloud snapshots and published ports are not yet available.",
+		},
+		specPinning: "settable",
+		transport: {
+			// The adapter does not expose streaming callbacks. Use detached+filesystem polling for any
+			// benchmark-length step so a long-lived remote WebSocket is not the durability boundary.
 			streaming: false,
 			syncCapMs: 60_000,
 			detachedPoll: true,

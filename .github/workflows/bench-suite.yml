@@ -186,6 +186,11 @@ jobs:
           # (steps.nsc-token only runs when matrix.provider == 'namespace'), which the harness reads
           # as the standard missing-credentials skip on every other cell.
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an
+          # optional override for staging or private deployments. Neither value enters the guest.
+          MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
+          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
+          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicate "$BENCH_REPLICATE"
 
       - name: Upload Run + raw results

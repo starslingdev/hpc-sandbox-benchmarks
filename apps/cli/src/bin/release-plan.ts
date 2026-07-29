@@ -56,6 +56,8 @@ function providerArtifact(id: ProviderId): string {
 			return config.novitaTemplateCandidate;
 		case "modal-gvisor":
 		case "modal-vm":
+		case "microsandbox-local":
+		case "microsandbox-cloud":
 			return "boots the candidate image directly (no baked artifact)";
 		case "blaxel":
 			return "boots the stock base image (no baked artifact)";
