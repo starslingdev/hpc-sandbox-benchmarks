@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="HTTPS latency and connection-phase timing for common developer endpoints (curl probe)"
+#MISE description="HTTPS latency and connection-phase timing for the registries and APIs a CI job calls (curl probe)"
 # Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions: lib/bench.sh).
 # A network failure is evidence about the sandbox, not a task failure.
 #
@@ -19,9 +19,17 @@
 #
 # Redirects are deliberately NOT followed. A redirect chain opens a second connection and restarts
 # the timers, and curl reports only the final one — which would silently turn "latency to
-# google.com" into "latency to www.google.com, minus the hop we came to measure". A 301 is a
-# complete DNS + TCP + TLS + TTFB measurement, so the redirect is left unfollowed and the status
-# code recorded as-is.
+# raw.githubusercontent.com" into "latency to wherever it forwarded us, minus the hop we came to
+# measure". A 301 is a complete DNS + TCP + TLS + TTFB measurement, so the redirect is left
+# unfollowed and the status code recorded as-is. Same reasoning for the 401s and 403s below: an
+# auth challenge is a fully measured round trip, and the ENDPOINTS comment records which codes are
+# the expected answer so a reader never mistakes one for a fault.
+#
+# An endpoint whose FIRST sample never gets a response gives up its remaining samples. Three
+# identical connect-timeouts say nothing the first did not, and on a blackholed network that
+# restraint is the difference between a probe that finishes in a minute and one that spends
+# endpoints x samples x connect-timeout doing it. The aggregate keeps this honest: `attempted` stays
+# at the configured sample count while `recorded` drops to 1.
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
@@ -29,11 +37,29 @@ source "${REPO_ROOT}/lib/bench.sh"
 SAMPLES=3
 CONNECT_TIMEOUT_SECONDS=5
 MAX_TIME_SECONDS=20
+# The endpoints a CI job actually talks to, one URL per host, using each service's real entry point
+# rather than its marketing root: a container pull begins at `/v2/` and a cargo build begins at the
+# sparse index's config.json, so those are what get measured. Responses are kept small on purpose —
+# sustained throughput is the download probe's job, and a multi-megabyte body here would bury the
+# connection timings this probe exists to isolate.
 ENDPOINTS=(
+	# Source: clone/checkout, the API every action calls, and raw file fetches (301 at the root).
 	"https://github.com/"
-	"https://registry.npmjs.org/"
-	"https://google.com/"
 	"https://api.github.com/"
+	"https://raw.githubusercontent.com/"
+	# JavaScript: the npm registry root doubles as its ping.
+	"https://registry.npmjs.org/"
+	# Python: the index pip resolves against, then the CDN it downloads wheels from.
+	"https://pypi.org/"
+	"https://files.pythonhosted.org/"
+	# Containers: `/v2/` is the registry handshake every pull opens with (401 = challenge, i.e.
+	# working), and auth.docker.io is the token exchange that follows it for Docker Hub.
+	"https://ghcr.io/v2/"
+	"https://gcr.io/v2/"
+	"https://auth.docker.io/token?service=registry.docker.io"
+	# Rust: the API host, then the sparse index whose config.json is cargo's first request.
+	"https://crates.io/"
+	"https://index.crates.io/config.json"
 )
 
 # The probe IS curl, and its product IS the aggregate — so both tools are hard requirements, and a
@@ -74,6 +100,12 @@ def phases:
 		total: (.time_total | ms)
 	};
 '
+
+# Announcement for the first-sample abort. One helper, so all three paths that can reach it (no
+# record, unparseable record, record showing no response) explain the shortfall the same way.
+skip_remaining_samples() {
+	echo "(no response on the first sample — skipping the remaining $((SAMPLES - 1)) for this endpoint)"
+}
 
 RESULT="$(results_dir)/$(task_result_name).json"
 TMP_DIR="$(mktemp -d)"
@@ -124,6 +156,10 @@ for url in "${ENDPOINTS[@]}"; do
 		if [ ! -s "$record" ]; then
 			echo "sample ${sample}: no structured record (curl exit ${curl_status})"
 			[ -s "$errors" ] && sed 's/^/  /' "$errors"
+			if [ "$sample" -eq 1 ]; then
+				skip_remaining_samples
+				break
+			fi
 			continue
 		fi
 
@@ -134,6 +170,10 @@ for url in "${ENDPOINTS[@]}"; do
 		if ! jq -e . "$record" >/dev/null 2>&1; then
 			echo "sample ${sample}: write-out was not valid JSON (curl exit ${curl_status}) — discarded"
 			[ -s "$errors" ] && sed 's/^/  /' "$errors"
+			if [ "$sample" -eq 1 ]; then
+				skip_remaining_samples
+				break
+			fi
 			continue
 		fi
 
@@ -157,6 +197,14 @@ for url in "${ENDPOINTS[@]}"; do
 		fi
 
 		cat "$record" >>"$records"
+
+		# The record is retained either way; what the first sample decides is whether spending the
+		# remaining ones can still teach us anything. `responded` is the same gate the statistics
+		# use, so "kept but not counted" and "stop here" can never disagree about what a response is.
+		if [ "$sample" -eq 1 ] && ! jq -e "$JQ_LIB"'responded' "$record" >/dev/null 2>&1; then
+			skip_remaining_samples
+			break
+		fi
 	done
 
 	# Aggregate this endpoint from the records just captured. Statistics come from responding samples
@@ -249,7 +297,8 @@ jq -s \
 			connect_timeout_seconds: $connect_timeout,
 			max_time_seconds: $max_time,
 			follow_redirects: false,
-			connection_reuse: false
+			connection_reuse: false,
+			abort_after_unresponsive_first_sample: true
 		},
 		endpoints_probed: length,
 		endpoints_responded: (map(select(.samples.responded > 0)) | length),
@@ -266,7 +315,7 @@ if [ -s "$tmp_result" ]; then
 	echo "=== Aggregate: ${RESULT} ==="
 	jq -r '
 		.endpoints[] |
-		"\(.host + "                        " | .[0:24]) " +
+		"\(.host + "                              " | .[0:26]) " +
 		(
 			if .timing_ms.total == null
 			then "no response (\(.errors[0].message // "unknown error"))"
