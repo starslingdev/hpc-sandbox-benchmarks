@@ -287,7 +287,10 @@ echo "      Manufacturer/Product come from SMBIOS and describe the machine."
 # json_result, which refuses to install anything that does not parse (lib/bench.sh).
 esc() { _json_escape "$1"; }
 if command -v jq &>/dev/null; then
-	jq -n \
+	# -c: one line, the shape the printf fallback below emits and the shape this artifact has always
+	# had. A formatting difference between the jq and jq-less paths would be a difference between
+	# sandboxes, not between records.
+	jq -n -c \
 		--arg public_ip "$PUBLIC_IP" --arg org "$ORG" --arg asn "$ASN" --arg org_name "$ORG_NAME" \
 		--arg reverse_dns "$HOSTNAME_PTR" --arg city "$CITY" --arg region "$REGION" \
 		--arg country "$COUNTRY" --arg loc "$LOC" --arg timezone "$TIMEZONE" \
