@@ -16,6 +16,8 @@
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import {
+	CELL_BUDGET_ENV_KEY,
+	checkCellBudgetEnv,
 	checkCredentialEnv,
 	checkProviderInput,
 	checkSuiteInput,
@@ -111,6 +113,37 @@ describe("checkWorkflowTimeouts", () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("smoke");
 		expect(errors[0]).toContain(`${WORKFLOW_TIMEOUT_MARGIN_MINUTES}-minute host margin`);
+	});
+});
+
+describe("checkCellBudgetEnv", () => {
+	// The real workflow: the literal the run step advertises must be the job's own timeout-minutes.
+	test("the real cell budget matches the real job timeout", () => {
+		expect(
+			checkCellBudgetEnv(
+				suiteEnv,
+				jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW),
+				SUITE_WORKFLOW,
+			),
+		).toEqual([]);
+	});
+
+	// Dropping the key disables the fan-out budget guard entirely — a capped cell would then be
+	// cancelled three hours in with every shard lost, which is what the guard exists to prevent.
+	test("flags a missing budget key", () => {
+		const errors = checkCellBudgetEnv({}, 180, SUITE_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain(CELL_BUDGET_ENV_KEY);
+	});
+
+	// The drift that matters: raising `timeout-minutes` without raising the copied literal keeps
+	// rejecting caps that now fit; lowering it without lowering the literal waves through caps that
+	// no longer do.
+	test("flags a budget that has drifted from the job timeout", () => {
+		const errors = checkCellBudgetEnv({ [CELL_BUDGET_ENV_KEY]: "180" }, 240, SUITE_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('is "180"');
+		expect(errors[0]).toContain("timeout-minutes is 240");
 	});
 });
 

@@ -22,7 +22,8 @@ import {
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
 import { writeNormalizedRun } from "@sandbox-benchmarks/results";
-import type { Run } from "@sandbox-benchmarks/schema";
+import type { Run, SuiteName } from "@sandbox-benchmarks/schema";
+import { SUITES } from "@sandbox-benchmarks/schema";
 import type { CellKind, SummaryRow } from "../lib/actions-log.ts";
 import {
 	escapeHtml,
@@ -40,10 +41,12 @@ import {
 import { handleDiscovery } from "../lib/discovery.ts";
 import { installLineTagging, withLineTag } from "../lib/log-prefix.ts";
 import {
+	fleetBudgetError,
 	lastFlagValue,
 	parseReplicateIndex,
 	parseReplicatesFlag,
 	replicatePaths,
+	resolveCellBudgetMinutes,
 	resolveMaxConcurrency,
 	runPooled,
 } from "../lib/replicates.ts";
@@ -68,13 +71,15 @@ function cellTitle(suite: string, provider: string): string {
 	return `${suite} / ${provider}`;
 }
 
-/** Agent-facing usage; bare invocation keeps the daytona/cpu-node local-dev default. */
+/** Agent-facing usage; bare invocation keeps the daytona-vm/cpu-node local-dev default. Every provider
+ *  named here is a canonical {@link ProviderId} — the positional argument is matched against the
+ *  registry exactly, so a copied example that said "daytona" or "modal" would fail as unknown. */
 export const HELP = `bench-suite — run a benchmark suite on a provider sandbox and normalize it into a Run document.
 
 usage: bench-suite [provider] [suite] [runId]
        bench-suite [--help] [--list-providers] [--list-suites] [--json]
 
-  provider                Provider to run on (default: daytona). See --list-providers.
+  provider                Provider to run on (default: daytona-vm). See --list-providers.
   suite                   Suite to run (default: cpu-node). See --list-suites.
   runId                   Run identifier for the data/ tree (default: local-<timestamp>).
   --replicates <indices>  Drive the whole replicate fan-out from THIS process: a JSON array
@@ -84,7 +89,9 @@ usage: bench-suite [provider] [suite] [runId]
                           is run to completion even if a peer fails. This is the CI matrix's form.
   --max-concurrency <n>   Cap the replicate sandboxes in flight (default: all at once). Also read from
                           BENCH_MAX_CONCURRENCY. Lower it when a provider's quota makes a wide fan-out
-                          spend its create-retry budget queueing.
+                          spend its create-retry budget queueing. A cap runs the fleet in ceil(R / n)
+                          serial waves; under CI (BENCH_CELL_BUDGET_MINUTES) a cap whose waves cannot
+                          fit the job budget is rejected up front rather than cancelled mid-fan-out.
   --replicate <idx>       Run ONE replicate (a non-negative integer), stamped onto the shard Run so
                           the aggregate folds ≥2 replicates of one suite together. Writes the
                           un-suffixed data/runs/<runId>.json — the single-sandbox/local form.
@@ -99,8 +106,8 @@ Missing provider credentials are recorded as a skip (the provider stays "pending
 runnable without secrets. Writes the shard Run(s) under data/runs/ and updates data/runs/index.json.
 
 examples:
-  bench-suite daytona cpu-node                    # one suite locally, auto runId
-  bench-suite modal memory ci-1234                # a specific cell + runId
+  bench-suite daytona-vm cpu-node                 # one suite locally, auto runId
+  bench-suite modal-vm memory ci-1234             # a specific cell + runId
   bench-suite e2b memory --require e2b            # fail (don't skip) if E2B_API_KEY is absent
   bench-suite e2b memory ci-1 --replicates 0,1,2  # 3 replicate sandboxes from this one process
   bench-suite --list-suites                       # discover the suite names first
@@ -508,9 +515,9 @@ if (import.meta.main) {
 	}
 
 	// Filter flags out before positional resolution so a trailing/misplaced flag (e.g.
-	// `bench-suite daytona cpu-node --json`) never gets captured as the runId. The VALUE_FLAGS above are
-	// the ones that take a separate operand, so consume that operand too — otherwise `--require daytona`
-	// would leave `daytona` behind to be read as the runId.
+	// `bench-suite daytona-vm cpu-node --json`) never gets captured as the runId. The VALUE_FLAGS above
+	// are the ones that take a separate operand, so consume that operand too — otherwise
+	// `--require daytona-vm` would leave `daytona-vm` behind to be read as the runId.
 	const positionals: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
@@ -536,10 +543,12 @@ if (import.meta.main) {
 	let replicateIndices: number[] | undefined;
 	let maxConcurrency = Number.POSITIVE_INFINITY;
 	let singleReplicate: number | undefined;
+	let cellBudgetMinutes: number | undefined;
 	try {
 		replicateIndices = parseReplicatesFlag(argv);
 		maxConcurrency = resolveMaxConcurrency(argv);
 		singleReplicate = parseReplicateFlag(argv);
+		cellBudgetMinutes = resolveCellBudgetMinutes();
 	} catch (err) {
 		fail(err instanceof Error ? err.message : String(err), {
 			properties: { title: "bench-suite usage" },
@@ -551,6 +560,26 @@ if (import.meta.main) {
 			properties: { title: "bench-suite usage" },
 			exitCode: 2,
 		});
+	}
+
+	// A concurrency cap trades wall clock for peak provider load, and the cell has a FIXED job budget to
+	// pay that clock out of — so a cap can be small enough that the fan-out is cancelled mid-flight,
+	// losing every shard of the cell rather than just slowing it down. Reject that combination here,
+	// alongside the other malformed-axis guards and before a single sandbox exists. An unregistered
+	// suite is left alone: `describeSuiteTasks` below owns that error, and guessing a budget for a suite
+	// with no declared one would report the wrong problem.
+	const suiteBudget = suite in SUITES ? SUITES[suite as SuiteName].timeoutMinutes : undefined;
+	if (replicateIndices && cellBudgetMinutes !== undefined && suiteBudget !== undefined) {
+		const budgetError = fleetBudgetError({
+			replicates: replicateIndices.length,
+			maxConcurrency,
+			suite,
+			suiteTimeoutMinutes: suiteBudget,
+			budgetMinutes: cellBudgetMinutes,
+		});
+		if (budgetError) {
+			fail(budgetError, { properties: { title: "bench-suite usage" }, exitCode: 2 });
+		}
 	}
 
 	// The local newest-first Run index, shared by every replicate of this cell. It is keyed by runId and

@@ -71,7 +71,9 @@ on:
           Set a number when a provider's account quota is smaller than R: an over-quota create is retried
           for up to 60 minutes inside the cell, so an unbounded fan-out against a tight quota spends the
           job budget queueing. A cap makes the cell run in ceil(R / cap) SERIAL waves, so the wall clock
-          becomes waves x suite runtime — size it against the job's timeout-minutes.
+          becomes waves x suite runtime. A cap whose waves cannot fit the job's timeout-minutes is
+          REJECTED before any sandbox is created (BENCH_CELL_BUDGET_MINUTES below) — losing a whole
+          cell's fleet to a deterministic timeout is not a degradation worth discovering at 180 minutes.
         required: false
         type: string
         default: ''
@@ -207,6 +209,13 @@ jobs:
           # Blank = unbounded (all R sandboxes at once). See the max_concurrency input above: this is the
           # control for a provider whose quota is smaller than R, and it trades wall clock for peak load.
           BENCH_MAX_CONCURRENCY: ${{ inputs.max_concurrency }}
+          # This job's `timeout-minutes`, handed to the CLI so it can REFUSE a cap that cannot fit rather
+          # than be cancelled three hours in with every shard of the cell lost. A cap runs the fan-out in
+          # ceil(R / cap) serial waves, so the cell's worst case is waves x the suite's own budget — and
+          # at the realworld defaults (R=12, a 90-minute suite) any cap below 6 already exceeds the 180
+          # below. A literal, not an expression: `timeout-minutes` cannot be read from an expression
+          # context, so workflow-sync's Invariant 5 asserts the two stay equal instead.
+          BENCH_CELL_BUDGET_MINUTES: '180'
           # PTS passes-per-case policy: blank = the suite's own policy (cpu-node + memory converge, the rest
           # fixed), a number or "converge" overrides every suite. Read by the harness preamble.
           BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
@@ -248,6 +257,16 @@ jobs:
           # goes red because ONE replicate failed still uploads every shard its healthy peers wrote.
           name: bench-${{ inputs.suite }}-${{ matrix.provider }}-${{ github.run_id }}
           path: data/
+          # A "Re-run failed jobs" keeps github.run_id and only bumps run_attempt, so this name is
+          # unchanged on the retry — and upload-artifact@v4+ REJECTS a duplicate name by default. Without
+          # this the retry's fleet would be computed and then thrown away at the upload boundary, leaving
+          # the run to aggregate the first attempt's stale shards (or, with `if-no-files-found: error`
+          # above already satisfied, to fail the cell a second time for a reason that has nothing to do
+          # with the benchmark). Overwrite so the replacement fleet supersedes the attempt it retried.
+          # Scope is exactly this cell: the name carries (suite, provider, run_id), so replacing it
+          # cannot disturb another cell's artifact. commit-dataset.yml's per-cell shard preference (see
+          # its "Aggregate + promote" step) then reads one shape per cell, never a mix.
+          overwrite: true
           # A run always writes at least one shard (even an all-skipped Run), so an empty data/ means the
           # job is genuinely broken — fail the upload rather than bury a warning.
           if-no-files-found: error

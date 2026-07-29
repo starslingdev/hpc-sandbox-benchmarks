@@ -113,20 +113,51 @@ jobs:
       # them would hand `aggregate` two shards describing the SAME sandbox — a shard with no
       # replicateIndex normalizes to index 0, colliding with `-r0` — and its documented first-wins
       # rule would silently drop one sandbox's whole measured set while leaving no replicate breakdown,
-      # making the result indistinguishable from a genuine single-replicate run. Taking the
-      # per-replicate shards whenever ANY exist keeps the newer, complete attempt and never mixes the
-      # two vocabularies. The count is echoed so a short set is visible in the log rather than inferred.
+      # making the result indistinguishable from a genuine single-replicate run.
+      #
+      # The preference is applied PER CELL, never run-wide, because the collision it guards against is
+      # per-cell: the two shapes describe the same sandbox only when they came from the same
+      # (suite, provider) artifact. `merge-multiple: false` above unpacks each cell into its own
+      # `shards/<artifact>/` subdir, so that subdir IS the cell boundary — loop over it and ask each cell
+      # which shape it wrote. A run-wide preference reads the shapes as a single global choice, and a
+      # mixed-shape run (retry a cell that failed on the old code, and only that cell re-runs on the new)
+      # then publishes ONLY the retried cell: every other provider/suite of the run, still legacy-only,
+      # is silently discarded and the dataset is promoted a fraction of the size it should be. Per cell,
+      # the retried cell contributes its `-r<idx>` fleet and its untouched peers contribute their legacy
+      # shard, which is the union across cells and the preference within one — exactly the intent.
+      #
+      # (Both shapes under ONE cell needs `overwrite: true` on the cell's upload — see bench-suite.yml —
+      # to be reachable at all, since a re-run otherwise cannot claim the name. The per-cell preference
+      # is the belt to that suspenders: it stays correct for artifacts uploaded before that fix and for
+      # a backfill dispatch reaching back to any older run.)
+      #
+      # The per-shape cell counts are echoed so a short or lopsided set is visible in the log rather
+      # than inferred.
       - name: Aggregate + promote
         run: |
           shopt -s nullglob
-          shards=(shards/*/runs/"$RUN_ID"-r*.json)
-          shape="per-replicate"
-          if [ ${#shards[@]} -eq 0 ]; then
-            shards=(shards/*/runs/"$RUN_ID".json)
-            shape="legacy single-shard"
-          fi
+          shards=()
+          fanout_cells=0
+          legacy_cells=0
+          for cell in shards/*/; do
+            # The `-r*` probe is a real glob, so nullglob empties it when the cell wrote no fleet. The
+            # legacy name has NO wildcard left once "$cell" is an expanded literal, and nullglob only
+            # ever rewrites words that ARE patterns — so it must be probed with `-f`, or every cell
+            # would contribute a non-existent path and be miscounted as legacy.
+            cell_shards=("$cell"runs/"$RUN_ID"-r*.json)
+            if [ ${#cell_shards[@]} -gt 0 ]; then
+              fanout_cells=$((fanout_cells + 1))
+            elif [ -f "$cell"runs/"$RUN_ID".json ]; then
+              cell_shards=("$cell"runs/"$RUN_ID".json)
+              legacy_cells=$((legacy_cells + 1))
+            else
+              cell_shards=()
+            fi
+            shards+=("${cell_shards[@]}")
+          done
           if [ ${#shards[@]} -eq 0 ]; then echo "no shard Run documents found for run $RUN_ID" >&2; exit 1; fi
-          echo "aggregating ${#shards[@]} $shape shard(s) for run $RUN_ID"
+          echo "aggregating ${#shards[@]} shard(s) for run $RUN_ID" \
+            "from $fanout_cells per-replicate + $legacy_cells legacy single-shard cell(s)"
           bun apps/cli/src/bin/aggregate.ts "$RUN_ID" data/candidate "${shards[@]}"
           bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset
 

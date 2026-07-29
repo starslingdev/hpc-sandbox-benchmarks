@@ -152,6 +152,80 @@ export function resolveMaxConcurrency(
 }
 
 /**
+ * The cell's wall-clock budget in minutes — the `timeout-minutes` of the job driving this fan-out,
+ * handed down as `BENCH_CELL_BUDGET_MINUTES`. Absent/blank means "no budget", which is the honest
+ * answer for a local run: nothing cancels it, so there is nothing to check against. CI is the only
+ * caller that sets it (bench-suite.yml, kept in lockstep with the job's literal `timeout-minutes` by
+ * the workflow gate), so the guard below is inert exactly where it would be meaningless.
+ */
+export function resolveCellBudgetMinutes(
+	env: Record<string, string | undefined> = process.env,
+): number | undefined {
+	const raw = env.BENCH_CELL_BUDGET_MINUTES;
+	if (raw === undefined || raw.trim() === "") return undefined;
+	const minutes = Number(raw);
+	if (!Number.isInteger(minutes) || minutes < 1) {
+		throw new Error(`BENCH_CELL_BUDGET_MINUTES must be a positive integer; got "${raw}"`);
+	}
+	return minutes;
+}
+
+/** How many SERIAL waves a fan-out of `replicates` runs in under `maxConcurrency` in flight. */
+export function fleetWaves(replicates: number, maxConcurrency: number): number {
+	// `min` before the divide keeps an unbounded (Infinity) cap out of the arithmetic: a cap at or
+	// above R is one wave, which is the uncapped case and the only one this whole guard lets through.
+	return Math.ceil(replicates / Math.min(maxConcurrency, replicates));
+}
+
+/**
+ * Why the requested fan-out cannot fit the cell's job budget, or `undefined` when it can.
+ *
+ * A concurrency cap is not free: it makes the cell run `ceil(R / cap)` SERIAL waves, so the cell's
+ * wall clock stops being "the slowest replicate" and becomes "waves × the suite's own budget". That
+ * product is checked against the ONE job budget all R replicates share, because exceeding it is not a
+ * degraded run — the job is cancelled mid-flight and every shard of the cell is lost at once, which is
+ * precisely the whole-cell blast radius that driving R replicates from one runner introduced. At the
+ * shipped realworld defaults (R=12, a 90-minute suite, a 180-minute job) any cap below 6 is already in
+ * that state, so this is a reachable operator mistake and not a theoretical one.
+ *
+ * Deliberately worst-case: a suite's `timeoutMinutes` is the budget a replicate is ALLOWED to take, and
+ * a guard that assumed replicates finish early would pass configurations that die whenever they don't.
+ * Refusing up front costs a dispatch; discovering it costs three hours of runner time and the cell.
+ *
+ * Uncapped fan-outs can never trip this: they are one wave, so the comparison reduces to "the suite
+ * budget fits the job budget", which the workflow timeout gate (`checkWorkflowTimeouts`) already
+ * guarantees with margin.
+ */
+export function fleetBudgetError(opts: {
+	replicates: number;
+	maxConcurrency: number;
+	suite: string;
+	suiteTimeoutMinutes: number;
+	budgetMinutes: number;
+}): string | undefined {
+	const { replicates, maxConcurrency, suite, suiteTimeoutMinutes, budgetMinutes } = opts;
+	const waves = fleetWaves(replicates, maxConcurrency);
+	const worstCase = waves * suiteTimeoutMinutes;
+	if (worstCase <= budgetMinutes) return undefined;
+
+	// The smallest cap that WOULD fit, so the message ends in a number the operator can act on rather
+	// than in "try a bigger one". `maxWaves` is how many suite budgets the job budget holds; at 0 the
+	// suite cannot fit the job at all and no cap saves it, so recommend dropping the cap entirely and
+	// let the (separate) timeout gate own that mismatch.
+	const maxWaves = Math.floor(budgetMinutes / suiteTimeoutMinutes);
+	const remedy =
+		maxWaves >= 1
+			? `raise --max-concurrency to at least ${Math.ceil(replicates / maxWaves)} (or leave it blank for all ${replicates} at once)`
+			: `leave --max-concurrency blank — suite "${suite}" alone does not fit the ${budgetMinutes}-minute job budget`;
+	return (
+		`--max-concurrency ${maxConcurrency} splits ${replicates} replicates of suite "${suite}" into ` +
+		`${waves} serial waves × ${suiteTimeoutMinutes} minutes = up to ${worstCase} minutes, past the ` +
+		`cell's ${budgetMinutes}-minute job budget. The job would be cancelled mid-fan-out and ALL ` +
+		`${replicates} shards lost, so this is rejected before any sandbox is created: ${remedy}.`
+	);
+}
+
+/**
  * Run `fn` over every item with at most `limit` in flight, resolving to the results IN INPUT ORDER.
  * NEVER rejects: a throw from `fn` is handed to `onError`, whose return value takes that slot.
  *

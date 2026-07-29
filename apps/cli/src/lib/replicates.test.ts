@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
+	fleetBudgetError,
+	fleetWaves,
 	lastFlagValue,
 	parseReplicatesFlag,
 	replicatePaths,
+	resolveCellBudgetMinutes,
 	resolveMaxConcurrency,
 	runPooled,
 } from "./replicates.ts";
@@ -99,6 +102,93 @@ describe("resolveMaxConcurrency", () => {
 		expect(() => resolveMaxConcurrency([], { BENCH_MAX_CONCURRENCY: "lots" })).toThrow(
 			/positive integer/,
 		);
+	});
+});
+
+describe("resolveCellBudgetMinutes", () => {
+	// No budget is the honest local answer — nothing cancels a laptop run, so there is nothing the
+	// fan-out guard could meaningfully compare against.
+	it("is undefined when CI did not hand one down", () => {
+		expect(resolveCellBudgetMinutes({})).toBeUndefined();
+		expect(resolveCellBudgetMinutes({ BENCH_CELL_BUDGET_MINUTES: "" })).toBeUndefined();
+	});
+
+	it("reads the job budget the workflow advertises", () => {
+		expect(resolveCellBudgetMinutes({ BENCH_CELL_BUDGET_MINUTES: "180" })).toBe(180);
+	});
+
+	// A malformed budget must not read as "unbounded": that would disable the guard silently, which is
+	// the same outcome as not having it on the one run where it mattered.
+	it("rejects a malformed budget rather than falling back to no check", () => {
+		expect(() => resolveCellBudgetMinutes({ BENCH_CELL_BUDGET_MINUTES: "0" })).toThrow(
+			/positive integer/,
+		);
+		expect(() => resolveCellBudgetMinutes({ BENCH_CELL_BUDGET_MINUTES: "90.5" })).toThrow(
+			/positive integer/,
+		);
+		expect(() => resolveCellBudgetMinutes({ BENCH_CELL_BUDGET_MINUTES: "later" })).toThrow(
+			/positive integer/,
+		);
+	});
+});
+
+describe("fleetWaves", () => {
+	it("is one wave whenever the cap admits the whole fleet", () => {
+		expect(fleetWaves(12, Number.POSITIVE_INFINITY)).toBe(1);
+		expect(fleetWaves(12, 12)).toBe(1);
+		expect(fleetWaves(12, 99)).toBe(1);
+	});
+
+	it("rounds a partial final wave up", () => {
+		expect(fleetWaves(12, 6)).toBe(2);
+		expect(fleetWaves(12, 5)).toBe(3);
+		expect(fleetWaves(12, 1)).toBe(12);
+	});
+});
+
+describe("fleetBudgetError", () => {
+	// The shipped realworld cell: R=12, a 90-minute suite, the 180-minute job.
+	const realworld = { replicates: 12, suite: "realworld-mastra", suiteTimeoutMinutes: 90 };
+
+	it("passes an uncapped fan-out — one wave is the budget the job was sized for", () => {
+		expect(
+			fleetBudgetError({
+				...realworld,
+				maxConcurrency: Number.POSITIVE_INFINITY,
+				budgetMinutes: 180,
+			}),
+		).toBeUndefined();
+	});
+
+	it("passes a cap whose waves still fit", () => {
+		expect(
+			fleetBudgetError({ ...realworld, maxConcurrency: 6, budgetMinutes: 180 }),
+		).toBeUndefined();
+	});
+
+	// This is the whole point: 3 waves x 90 = 270 > 180, so the job is cancelled mid-fan-out and all 12
+	// shards are lost. Rejecting costs a dispatch; discovering it costs three hours and the cell.
+	it("rejects a cap that deterministically overruns, naming the smallest cap that fits", () => {
+		const error = fleetBudgetError({ ...realworld, maxConcurrency: 4, budgetMinutes: 180 });
+		expect(error).toContain("3 serial waves");
+		expect(error).toContain("up to 270 minutes");
+		expect(error).toContain("180-minute job budget");
+		// floor(180 / 90) = 2 waves are affordable, so ceil(12 / 2) = 6 is the smallest cap that fits.
+		expect(error).toContain("at least 6");
+	});
+
+	// A suite that cannot fit the job even once is not a concurrency problem, and telling the operator
+	// to raise a cap they cannot raise far enough would send them in circles.
+	it("does not recommend a cap when even one wave overruns", () => {
+		const error = fleetBudgetError({
+			replicates: 3,
+			suite: "cpu-node",
+			suiteTimeoutMinutes: 200,
+			maxConcurrency: 2,
+			budgetMinutes: 180,
+		});
+		expect(error).toContain("leave --max-concurrency blank");
+		expect(error).not.toContain("at least");
 	});
 });
 
