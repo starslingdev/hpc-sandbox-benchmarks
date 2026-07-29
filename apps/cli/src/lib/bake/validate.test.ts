@@ -64,4 +64,13 @@ describe("candidateCreateOptions", () => {
 			image: "ghcr.io/o/tc:v1-candidate",
 		});
 	});
+
+	it("points both Microsandbox backends at the same candidate OCI image", () => {
+		expect(candidateCreateOptions("microsandbox-local", refs)).toEqual({
+			templateId: "ghcr.io/o/tc:v1-candidate",
+		});
+		expect(candidateCreateOptions("microsandbox-cloud", refs)).toEqual({
+			templateId: "ghcr.io/o/tc:v1-candidate",
+		});
+	});
 });

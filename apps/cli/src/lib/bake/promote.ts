@@ -145,6 +145,10 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 				case "modal-vm":
 					log(`    ${provider.name} boots the published version image — nothing to build`);
 					break;
+				case "microsandbox-local":
+				case "microsandbox-cloud":
+					log(`    ${provider.name} boots the published version image — nothing to build`);
+					break;
 				case "blaxel":
 					log("    blaxel boots the stock base image — nothing to promote");
 					break;
