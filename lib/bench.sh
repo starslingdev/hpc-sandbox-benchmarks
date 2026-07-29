@@ -63,6 +63,36 @@ _json_escape() {
 	printf '%s' "$s"
 }
 
+# Install a JSON artifact read from stdin, but only once it is complete and parseable:
+#   <producer> | json_result <name>      # writes <results_dir>/<name>.json
+#
+# The staging is the whole point. Redirecting a producer straight at its result path (`prog >"$out"`)
+# TRUNCATES that path before prog runs, so a producer that dies mid-write — a curl killed by
+# --max-time, a jq that errors on malformed input, an OOM — leaves a zero-byte `.json` the harness
+# collects as real provenance, indistinguishable from a probe that ran and measured nothing. Staging
+# means the artifact appears only when there is an artifact; the previous file, if any, survives.
+#
+# Validation degrades with the toolchain: where jq exists the bytes must parse, where it does not
+# they must at least be non-empty, so a jq-less sandbox still gets the truncation guard. Returns 1
+# when nothing was installed, leaving the caller to log the diagnostic it is in a position to explain
+# (`(no structured record)` reads very differently from `(curl exited 28)`). Safe under `set -e` only
+# when wrapped — `| json_result x || true` — like the other helpers here.
+json_result() {
+	local name="$1" tmp
+	tmp="$(mktemp)" || return 1
+	cat >"$tmp"
+	if [ -s "$tmp" ] && { ! command -v jq &>/dev/null || jq -e . "$tmp" >/dev/null 2>&1; }; then
+		# mktemp creates 0600. These artifacts carry no secrets and the collect step may not run as
+		# the user that produced them, so restore the 0644 a plain `>` redirect would have left —
+		# staging must not quietly narrow who can read the result.
+		chmod 0644 "$tmp"
+		mv "$tmp" "$(results_dir)/${name}.json"
+		return 0
+	fi
+	rm -f "$tmp"
+	return 1
+}
+
 # Record a deliberately-skipped benchmark (instead of a bare `exit 0`) so the normalizer can tell
 # "skipped" apart from "broken". The marker is keyed to <name> (defaulting to the calling task's
 # derived result name) so `<name>--skipped.json` is the exact negative of the `<name>.xml` a successful

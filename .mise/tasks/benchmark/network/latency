@@ -77,29 +77,11 @@ for tool in curl jq; do
 	fi
 done
 
-# Shared jq definitions. curl's timers are CUMULATIVE from the start of the request, so a phase is
-# the gap between adjacent milestones; `ms` keeps three decimals of a millisecond (curl reports
-# seconds as floats, and sub-millisecond DNS on a warm resolver is a real reading, not zero).
-# `responded` is the gate for the statistics: a sample that timed out reports time_total == the
-# timeout, and folding that into a median would report the ceiling as if it were a latency.
-# `.exitcode` is absent from older curls' write-out; `// 0` keeps such a record classified by its
-# response code rather than silently dropped from every aggregate.
-# shellcheck disable=SC2016 # single quotes are the point: $connected is a jq binding, not a shell one.
-JQ_LIB='
-def ms: (. * 1000000 | round) / 1000;
-def r3: (. * 1000 | round) / 1000;
-def responded: ((.exitcode // 0) == 0) and (.response_code > 0);
-def phases:
-	(if .time_appconnect > 0 then .time_appconnect else .time_connect end) as $connected |
-	{
-		dns: (.time_namelookup | ms),
-		tcp: ((.time_connect - .time_namelookup) | ms),
-		tls: (if .time_appconnect > 0 then ((.time_appconnect - .time_connect) | ms) else null end),
-		server: ((.time_starttransfer - $connected) | ms),
-		body: ((.time_total - .time_starttransfer) | ms),
-		total: (.time_total | ms)
-	};
-'
+# The phase decomposition and the statistics live in lib/jq/curl-phases.jq, loaded as a jq module by
+# every call below. That arithmetic is the one part of this probe where a divergent copy would
+# produce different NUMBERS rather than different prose, so it lives in a file that a test can run
+# against recorded records (packages/results/src/lib/curl-phases.test.ts).
+JQ_MODULES="${REPO_ROOT}/lib/jq"
 
 # Announcement for the first-sample abort. One helper, so all three paths that can reach it (no
 # record, unparseable record, record showing no response) explain the shortfall the same way.
@@ -177,7 +159,8 @@ for url in "${ENDPOINTS[@]}"; do
 			continue
 		fi
 
-		jq -r --argjson n "$sample" "$JQ_LIB"'
+		jq -L "$JQ_MODULES" -r --argjson n "$sample" '
+			include "curl-phases";
 			phases as $p |
 			if responded then
 				"sample \($n): HTTP \(.response_code) \(.http_version // "?") | dns \($p.dns)ms" +
@@ -201,7 +184,8 @@ for url in "${ENDPOINTS[@]}"; do
 		# The record is retained either way; what the first sample decides is whether spending the
 		# remaining ones can still teach us anything. `responded` is the same gate the statistics
 		# use, so "kept but not counted" and "stop here" can never disagree about what a response is.
-		if [ "$sample" -eq 1 ] && ! jq -e "$JQ_LIB"'responded' "$record" >/dev/null 2>&1; then
+		if [ "$sample" -eq 1 ] &&
+			! jq -L "$JQ_MODULES" -e 'include "curl-phases"; responded' "$record" >/dev/null 2>&1; then
 			skip_remaining_samples
 			break
 		fi
@@ -210,24 +194,11 @@ for url in "${ENDPOINTS[@]}"; do
 	# Aggregate this endpoint from the records just captured. Statistics come from responding samples
 	# only; failures survive in `errors` and in the raw records, so a reader can always tell "fast"
 	# from "never answered".
-	jq -s -c \
+	jq -L "$JQ_MODULES" -s -c \
 		--arg url "$url" \
 		--arg host "$host" \
-		--argjson attempted "$SAMPLES" \
-		"$JQ_LIB"'
-		def stats:
-			map(select(. != null)) | sort as $s | ($s | length) as $n |
-			if $n == 0 then null else {
-				min: $s[0],
-				median: (
-					if $n % 2 == 1
-					then $s[($n / 2 | floor)]
-					else (($s[($n / 2) - 1] + $s[$n / 2]) / 2 | r3)
-					end
-				),
-				mean: (($s | add) / $n | r3),
-				max: $s[-1]
-			} end;
+		--argjson attempted "$SAMPLES" '
+		include "curl-phases";
 
 		(map(select(responded)) | map(phases)) as $ok |
 		(map(select(responded) | .remote_ip) | map(select(. != "")) | unique) as $ips |
@@ -277,9 +248,11 @@ for url in "${ENDPOINTS[@]}"; do
 done
 
 # One aggregate document for the whole probe: every endpoint, its statistics and its raw curl records
-# in a single file, rather than one file per host with no cross-endpoint view.
-tmp_result="${TMP_DIR}/aggregate.json"
-jq -s \
+# in a single file, rather than one file per host with no cross-endpoint view. json_result stages and
+# validates the bytes before they become the artifact (lib/bench.sh), so a jq that errors here leaves
+# the result path untouched instead of zero-byte.
+echo ""
+if jq -s \
 	--arg benchmark "$(task_result_name)" \
 	--arg generated_at "$GENERATED_AT" \
 	--arg curl_version "$CURL_VERSION" \
@@ -304,14 +277,7 @@ jq -s \
 		endpoints_responded: (map(select(.samples.responded > 0)) | length),
 		endpoints: .
 	}
-' "$ENDPOINTS_NDJSON" >"$tmp_result"
-
-# Staged through a temp file and moved into place only once non-empty: writing straight at the result
-# path truncates it BEFORE the aggregation runs, so a failure there would leave a zero-byte file that
-# the harness collects as real provenance.
-echo ""
-if [ -s "$tmp_result" ]; then
-	mv "$tmp_result" "$RESULT"
+' "$ENDPOINTS_NDJSON" | json_result "$(task_result_name)"; then
 	echo "=== Aggregate: ${RESULT} ==="
 	jq -r '
 		.endpoints[] |

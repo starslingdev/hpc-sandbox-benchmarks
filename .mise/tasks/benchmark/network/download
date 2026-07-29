@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-#MISE description="Download speed and connection timing against GitHub (curl probe)"
+#MISE description="Sustained download speed against GitHub (curl probe)"
 # Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
 # lib/bench.sh). The endpoint is GitHub deliberately: it is the one host every suite already depends
 # on (the harness clones this repo from it), so reachability is a given and the number reflects the
 # path real CI traffic takes.
 #
-# Each probe runs curl ONCE, writing the native `%{json}` write-out as the structured result and
-# rendering the human-readable log lines from that JSON — a second curl for display would double the
+# The probe runs curl ONCE, writing the native `%{json}` write-out as the structured result and
+# rendering the human-readable log line from that JSON — a second curl for display would double the
 # ~10MB transfer (and the two could disagree on a flaky path, which is exactly when this probe matters).
+#
+# Sustained throughput is ALL this measures. Connection setup used to be a second curl against
+# github.com here; benchmark:network:latency now probes that host with three fresh connections and a
+# full DNS/TCP/TLS/server decomposition, which is strictly more than the old block reported. It also
+# ran under -L, which that probe documents as disqualifying for a timing measurement: following a
+# redirect restarts curl's timers on a second connection and reports only the last one. -L stays
+# here because the release archive legitimately redirects to a CDN and the transfer IS the
+# measurement, wherever it is served from.
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
@@ -25,14 +33,10 @@ summarize() {
 	fi
 }
 
-# Both probes ARE curl — without it there is nothing to measure. Guard before the redirects below:
-# `>"$SPEED_JSON"` creates the file whether or not curl exists, so an unguarded run on a curl-less
-# sandbox would leave zero-byte `.json` artifacts — provenance that reads as "the probe ran and
-# measured nothing" rather than "the tool was missing". Skip markers are the negative the normalizer
-# expects (see skip_result in lib/bench.sh), one per probe, matching the pts/loopback guard.
+# The probe IS curl — without it there is nothing to measure, so record the skip marker the
+# normalizer expects (skip_result in lib/bench.sh) rather than exiting silently.
 if ! command -v curl &>/dev/null; then
 	skip_result "curl not installed" "$(task_result_name "speed")"
-	skip_result "curl not installed" "$(task_result_name "timing")"
 	exit 0
 fi
 
@@ -40,19 +44,19 @@ echo "=== Download Speed Test ==="
 echo "Downloading ~10MB test archive from GitHub..."
 
 SPEED_JSON="$(results_dir)/$(task_result_name "speed").json"
-# -sS, and stderr NOT discarded: the %{json} write-out goes to stdout (captured in $SPEED_JSON), so
-# curl's diagnostic on stderr can't corrupt the result file — and it is the whole story when the probe
+# -sS, and stderr NOT discarded: the %{json} write-out goes to stdout (piped into json_result), so
+# curl's diagnostic on stderr can't corrupt the result — and it is the whole story when the probe
 # fails (DNS vs TLS vs proxy refusal), which is precisely what a network probe exists to record.
 curl -sSL --max-time 120 -o /dev/null -w '%{json}' \
-	"https://github.com/anthropics/anthropic-sdk-python/archive/refs/heads/main.zip" \
-	>"$SPEED_JSON" || echo "(download probe failed — curl exited non-zero)"
+	"https://github.com/anthropics/anthropic-sdk-python/archive/refs/heads/main.zip" |
+	json_result "$(task_result_name "speed")"
+# Both halves of the pipeline are reported, because they answer different questions. curl emits its
+# write-out record even when the transfer fails, so a non-zero curl with a written record is a
+# RECORDED failure — the artifact carries the exit code and error message. Only json_result's own
+# failure means no artifact exists at all. Captured in one statement: any command in between, an
+# assignment included, would reset PIPESTATUS before the second read.
+probe_status=("${PIPESTATUS[@]}")
+[ "${probe_status[0]}" -ne 0 ] && echo "(download probe failed — curl exited ${probe_status[0]})"
+[ "${probe_status[1]}" -ne 0 ] && echo "(no structured record written)"
 summarize "$SPEED_JSON" \
 	'"HTTP \(.http_code) | \(.size_download) bytes | \(.time_total)s total | \(.speed_download) bytes/sec"'
-
-echo ""
-echo "=== Connection Timing (github.com) ==="
-TIMING_JSON="$(results_dir)/$(task_result_name "timing").json"
-curl -sSL --max-time 30 -o /dev/null -w '%{json}' "https://github.com" \
-	>"$TIMING_JSON" || echo "(timing probe failed — curl exited non-zero)"
-summarize "$TIMING_JSON" \
-	'"DNS:        \(.time_namelookup)s\nConnect:    \(.time_connect)s\nTLS:        \(.time_appconnect)s\nFirst byte: \(.time_starttransfer)s\nTotal:      \(.time_total)s"'

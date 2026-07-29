@@ -277,15 +277,43 @@ echo "note: Provider/ASN describe the public egress network, not the host."
 echo "      ASN is BGP origin data (Team Cymru DNS); geo is best-effort (ipinfo)."
 echo "      Manufacturer/Product come from SMBIOS and describe the machine."
 
+# jq builds the record wherever it exists, and it is the correct builder rather than the convenient
+# one: every value here is untrusted device text. _json_escape covers backslash and double quote
+# only, so one tab, newline or control byte out of dmidecode or an ipinfo `.city` silently produces
+# INVALID JSON — and this artifact has real consumers (packages/results/src/lib/host-metadata.ts
+# flattens it into every Run's host metadata), so invalidity costs more here than anywhere else in
+# the producer. --arg passes each value out-of-band, so jq escapes it by construction. The printf
+# path stays as the jq-less fallback: same keys, same order, best effort on exotic bytes. Both feed
+# json_result, which refuses to install anything that does not parse (lib/bench.sh).
 esc() { _json_escape "$1"; }
-printf '{"schema_version":"1.0","public_ip":"%s","org":"%s","asn":"%s","org_name":"%s","reverse_dns":"%s","city":"%s","region":"%s","country":"%s","loc":"%s","timezone":"%s","manufacturer":"%s","product_name":"%s","bios_vendor":"%s","virtualization":"%s","cpu_model":"%s","kernel":"%s","cores":"%s","ram":"%s","prefix":"%s","asn_source":"%s","geo_source":"%s"}\n' \
-	"$(esc "$PUBLIC_IP")" "$(esc "$ORG")" "$(esc "$ASN")" "$(esc "$ORG_NAME")" \
-	"$(esc "$HOSTNAME_PTR")" "$(esc "$CITY")" "$(esc "$REGION")" "$(esc "$COUNTRY")" \
-	"$(esc "$LOC")" "$(esc "$TIMEZONE")" "$(esc "$MANUFACTURER")" "$(esc "$PRODUCT_NAME")" \
-	"$(esc "$BIOS_VENDOR")" "$(esc "$VIRT")" \
-	"$(esc "$CPU_MODEL")" "$(esc "$KERNEL")" "$(esc "$CORES")" "$(esc "$RAM")" \
-	"$(esc "$PREFIX")" "$(esc "$ASN_SOURCE")" "$(esc "$GEO_SOURCE")" \
-	>"$RESULT_FILE"
+if command -v jq &>/dev/null; then
+	jq -n \
+		--arg public_ip "$PUBLIC_IP" --arg org "$ORG" --arg asn "$ASN" --arg org_name "$ORG_NAME" \
+		--arg reverse_dns "$HOSTNAME_PTR" --arg city "$CITY" --arg region "$REGION" \
+		--arg country "$COUNTRY" --arg loc "$LOC" --arg timezone "$TIMEZONE" \
+		--arg manufacturer "$MANUFACTURER" --arg product_name "$PRODUCT_NAME" \
+		--arg bios_vendor "$BIOS_VENDOR" --arg virtualization "$VIRT" \
+		--arg cpu_model "$CPU_MODEL" --arg kernel "$KERNEL" --arg cores "$CORES" --arg ram "$RAM" \
+		--arg prefix "$PREFIX" --arg asn_source "$ASN_SOURCE" --arg geo_source "$GEO_SOURCE" \
+		'{
+			schema_version: "1.0",
+			public_ip: $public_ip, org: $org, asn: $asn, org_name: $org_name,
+			reverse_dns: $reverse_dns, city: $city, region: $region, country: $country,
+			loc: $loc, timezone: $timezone,
+			manufacturer: $manufacturer, product_name: $product_name, bios_vendor: $bios_vendor,
+			virtualization: $virtualization, cpu_model: $cpu_model, kernel: $kernel,
+			cores: $cores, ram: $ram,
+			prefix: $prefix, asn_source: $asn_source, geo_source: $geo_source
+		}'
+else
+	printf '{"schema_version":"1.0","public_ip":"%s","org":"%s","asn":"%s","org_name":"%s","reverse_dns":"%s","city":"%s","region":"%s","country":"%s","loc":"%s","timezone":"%s","manufacturer":"%s","product_name":"%s","bios_vendor":"%s","virtualization":"%s","cpu_model":"%s","kernel":"%s","cores":"%s","ram":"%s","prefix":"%s","asn_source":"%s","geo_source":"%s"}\n' \
+		"$(esc "$PUBLIC_IP")" "$(esc "$ORG")" "$(esc "$ASN")" "$(esc "$ORG_NAME")" \
+		"$(esc "$HOSTNAME_PTR")" "$(esc "$CITY")" "$(esc "$REGION")" "$(esc "$COUNTRY")" \
+		"$(esc "$LOC")" "$(esc "$TIMEZONE")" "$(esc "$MANUFACTURER")" "$(esc "$PRODUCT_NAME")" \
+		"$(esc "$BIOS_VENDOR")" "$(esc "$VIRT")" \
+		"$(esc "$CPU_MODEL")" "$(esc "$KERNEL")" "$(esc "$CORES")" "$(esc "$RAM")" \
+		"$(esc "$PREFIX")" "$(esc "$ASN_SOURCE")" "$(esc "$GEO_SOURCE")"
+fi | json_result "$(task_result_name)" || echo "(no structured provider record written)"
 
 echo ""
-echo "Structured result: $(task_result_name).json"
+echo "Structured result: ${RESULT_FILE}"

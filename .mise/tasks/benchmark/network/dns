@@ -30,16 +30,11 @@ for domain in github.com registry.npmjs.org docker.io pypi.org rubygems.org; do
 			continue
 		fi
 		echo "$out"
-		# Structured output via jc. Staged through a temp file: redirecting straight at the .json
-		# truncates it BEFORE jc runs, so a swallowed parse failure leaves a zero-byte file behind.
+		# Structured output via jc, installed through json_result (lib/bench.sh) so a swallowed parse
+		# failure cannot leave a zero-byte .json behind that reads as a real empty answer.
 		if command -v jc &>/dev/null; then
-			json="$(results_dir)/$(task_result_name "$domain").json"
-			tmp="$(mktemp)"
-			if printf '%s\n' "$out" | jc --dig >"$tmp" 2>/dev/null && [ -s "$tmp" ]; then
-				mv "$tmp" "$json"
-			else
+			if ! printf '%s\n' "$out" | jc --dig 2>/dev/null | json_result "$(task_result_name "$domain")"; then
 				echo "(jc --dig produced no structured record)"
-				rm -f "$tmp"
 			fi
 		fi
 	else
