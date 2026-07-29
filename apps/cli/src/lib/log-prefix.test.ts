@@ -103,6 +103,35 @@ describe("createTaggedWriter + withLineTag", () => {
 		]);
 	});
 
+	// The cell's failure annotation is written AFTER the pool resolves, so it is untagged — and it is
+	// the one line that must survive. If the untagged path skipped the line-state machine, a replicate
+	// whose last chunk had no trailing newline would leave the cursor mid-line and the `::error::`
+	// would weld onto it, where the runner never parses it: the cell fails with no annotation.
+	it("forces a newline before an UNTAGGED workflow command left mid-line by the fan-out", async () => {
+		const { write, written } = spyWriter();
+		await withLineTag("[r0] ", async () => {
+			write("collecting results... ");
+		});
+		write("::error title=cell::realworld-mastra / e2b failed\n");
+		expect(written).toEqual([
+			"[r0] collecting results... ",
+			"\n::error title=cell::realworld-mastra / e2b failed\n",
+		]);
+	});
+
+	// The untagged path runs the same state machine, so it must not start prefixing or double-breaking
+	// ordinary output — an empty tag has to be a genuine no-op on everything but the two behaviours above.
+	it("leaves ordinary untagged output byte-for-byte unchanged", async () => {
+		const { write, written } = spyWriter();
+		write("Benchmark cell realworld-mastra / e2b\n");
+		write("partial ");
+		write("continuation\n");
+		write("::notice::at a line start already\n");
+		expect(written.join("")).toBe(
+			"Benchmark cell realworld-mastra / e2b\npartial continuation\n::notice::at a line start already\n",
+		);
+	});
+
 	it("carries the tag across an await inside the harness's async call graph", async () => {
 		const { write, written } = spyWriter();
 		const deepInSomeOtherPackage = async (): Promise<void> => {

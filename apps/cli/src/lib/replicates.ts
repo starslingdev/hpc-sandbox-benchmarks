@@ -13,8 +13,15 @@
  *
  * Host-side concurrency was already safe: the harness names every temp archive/staging dir with a
  * `randomUUID` precisely so concurrent collects can't collide (packages/harness/src/lib/collect.ts),
- * and each replicate here gets its own raw tree + shard file, so nothing is shared but the process.
+ * and each replicate here gets its own raw tree + shard file, so nothing is shared but the process and
+ * its environment. The environment caveat is real but currently harmless: the Daytona adapter pins
+ * `DAYTONA_TARGET` process-globally around each client-constructing call
+ * (packages/providers/src/lib/daytona-target.ts), so concurrent replicates interleave those
+ * set/restore pairs. Every replicate of a cell is the SAME provider and suite and therefore pins the
+ * SAME value, so the interleaving can only leave the variable holding the value it was already going
+ * to hold; a cell that mixed targets in one process would need that pin reworked first.
  */
+import { WORKFLOW_TIMEOUT_MARGIN_MINUTES } from "@sandbox-benchmarks/schema";
 
 /** Per-replicate shard paths inside the `data/` tree the cell uploads as one artifact. */
 export interface ReplicatePaths {
@@ -192,9 +199,17 @@ export function fleetWaves(replicates: number, maxConcurrency: number): number {
  * a guard that assumed replicates finish early would pass configurations that die whenever they don't.
  * Refusing up front costs a dispatch; discovering it costs three hours of runner time and the cell.
  *
+ * The sandbox time is charged per wave, but {@link WORKFLOW_TIMEOUT_MARGIN_MINUTES} is charged ONCE:
+ * the checkout, teardown, normalization and upload it covers happen per JOB, not per wave. Counting
+ * it is what keeps this guard consistent with the workflow timeout gate rather than one notch looser
+ * than it — omitting it accepts a fan-out landing on EXACTLY the budget (R=12 capped at 6 is 2 x 90 =
+ * 180 against a 180-minute job), which has no room left for the host work and is cancelled with all
+ * R shards lost. That is the failure this function exists to refuse, so it must not be its own
+ * boundary case.
+ *
  * Uncapped fan-outs can never trip this: they are one wave, so the comparison reduces to "the suite
- * budget fits the job budget", which the workflow timeout gate (`checkWorkflowTimeouts`) already
- * guarantees with margin.
+ * budget plus the margin fits the job budget", which the workflow timeout gate
+ * (`checkWorkflowTimeouts`) already guarantees using this same constant.
  */
 export function fleetBudgetError(opts: {
 	replicates: number;
@@ -205,23 +220,26 @@ export function fleetBudgetError(opts: {
 }): string | undefined {
 	const { replicates, maxConcurrency, suite, suiteTimeoutMinutes, budgetMinutes } = opts;
 	const waves = fleetWaves(replicates, maxConcurrency);
-	const worstCase = waves * suiteTimeoutMinutes;
+	const worstCase = waves * suiteTimeoutMinutes + WORKFLOW_TIMEOUT_MARGIN_MINUTES;
 	if (worstCase <= budgetMinutes) return undefined;
 
 	// The smallest cap that WOULD fit, so the message ends in a number the operator can act on rather
-	// than in "try a bigger one". `maxWaves` is how many suite budgets the job budget holds; at 0 the
-	// suite cannot fit the job at all and no cap saves it, so recommend dropping the cap entirely and
-	// let the (separate) timeout gate own that mismatch.
-	const maxWaves = Math.floor(budgetMinutes / suiteTimeoutMinutes);
+	// than in "try a bigger one". `maxWaves` is how many suite budgets the job budget holds once the
+	// host margin is set aside; at 0 the suite cannot fit the job at all and no cap saves it, so
+	// recommend dropping the cap entirely and let the (separate) timeout gate own that mismatch.
+	const maxWaves = Math.floor(
+		(budgetMinutes - WORKFLOW_TIMEOUT_MARGIN_MINUTES) / suiteTimeoutMinutes,
+	);
 	const remedy =
 		maxWaves >= 1
 			? `raise --max-concurrency to at least ${Math.ceil(replicates / maxWaves)} (or leave it blank for all ${replicates} at once)`
 			: `leave --max-concurrency blank — suite "${suite}" alone does not fit the ${budgetMinutes}-minute job budget`;
 	return (
 		`--max-concurrency ${maxConcurrency} splits ${replicates} replicates of suite "${suite}" into ` +
-		`${waves} serial waves × ${suiteTimeoutMinutes} minutes = up to ${worstCase} minutes, past the ` +
-		`cell's ${budgetMinutes}-minute job budget. The job would be cancelled mid-fan-out and ALL ` +
-		`${replicates} shards lost, so this is rejected before any sandbox is created: ${remedy}.`
+		`${waves} serial waves × ${suiteTimeoutMinutes} minutes + ${WORKFLOW_TIMEOUT_MARGIN_MINUTES} ` +
+		`minutes of host margin = up to ${worstCase} minutes, past the cell's ${budgetMinutes}-minute ` +
+		`job budget. The job would be cancelled mid-fan-out and ALL ${replicates} shards lost, so this ` +
+		`is rejected before any sandbox is created: ${remedy}.`
 	);
 }
 

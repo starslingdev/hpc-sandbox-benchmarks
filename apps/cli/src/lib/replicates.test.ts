@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { WORKFLOW_TIMEOUT_MARGIN_MINUTES } from "@sandbox-benchmarks/schema";
 import {
 	fleetBudgetError,
 	fleetWaves,
@@ -160,21 +161,33 @@ describe("fleetBudgetError", () => {
 		).toBeUndefined();
 	});
 
-	it("passes a cap whose waves still fit", () => {
+	it("passes a cap that admits the whole fleet in one wave", () => {
 		expect(
-			fleetBudgetError({ ...realworld, maxConcurrency: 6, budgetMinutes: 180 }),
+			fleetBudgetError({ ...realworld, maxConcurrency: 12, budgetMinutes: 180 }),
 		).toBeUndefined();
 	});
 
-	// This is the whole point: 3 waves x 90 = 270 > 180, so the job is cancelled mid-fan-out and all 12
-	// shards are lost. Rejecting costs a dispatch; discovering it costs three hours and the cell.
+	// The margin is not optional slack. Two waves land on EXACTLY the 180-minute budget (2 x 90), so a
+	// guard comparing bare sandbox time would wave this through with nothing left for the checkout,
+	// teardown, normalization and upload the job still has to do — and the cell is cancelled with all
+	// 12 shards lost, which is the outcome this guard exists to refuse.
+	it("rejects a cap that lands on the budget with no host margin left", () => {
+		const error = fleetBudgetError({ ...realworld, maxConcurrency: 6, budgetMinutes: 180 });
+		expect(error).toContain("2 serial waves");
+		expect(error).toContain(`+ ${WORKFLOW_TIMEOUT_MARGIN_MINUTES} minutes of host margin`);
+		expect(error).toContain("up to 195 minutes");
+	});
+
+	// 3 waves x 90 + 15 = 285 > 180. Rejecting costs a dispatch; discovering it costs three hours and
+	// the cell.
 	it("rejects a cap that deterministically overruns, naming the smallest cap that fits", () => {
 		const error = fleetBudgetError({ ...realworld, maxConcurrency: 4, budgetMinutes: 180 });
 		expect(error).toContain("3 serial waves");
-		expect(error).toContain("up to 270 minutes");
+		expect(error).toContain("up to 285 minutes");
 		expect(error).toContain("180-minute job budget");
-		// floor(180 / 90) = 2 waves are affordable, so ceil(12 / 2) = 6 is the smallest cap that fits.
-		expect(error).toContain("at least 6");
+		// floor((180 - 15) / 90) = 1 affordable wave, so ceil(12 / 1) = 12 — at the shipped realworld
+		// defaults no cap below the full fleet fits, and the message says so rather than inventing one.
+		expect(error).toContain("at least 12");
 	});
 
 	// A suite that cannot fit the job even once is not a concurrency problem, and telling the operator

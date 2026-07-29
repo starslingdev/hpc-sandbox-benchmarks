@@ -212,9 +212,10 @@ jobs:
           # This job's `timeout-minutes`, handed to the CLI so it can REFUSE a cap that cannot fit rather
           # than be cancelled three hours in with every shard of the cell lost. A cap runs the fan-out in
           # ceil(R / cap) serial waves, so the cell's worst case is waves x the suite's own budget — and
-          # at the realworld defaults (R=12, a 90-minute suite) any cap below 6 already exceeds the 180
-          # below. A literal, not an expression: `timeout-minutes` cannot be read from an expression
-          # context, so workflow-sync's Invariant 5 asserts the two stay equal instead.
+          # at the realworld defaults (R=12, a 90-minute suite) the 180 below affords ONE wave once the
+          # host margin is set aside, so any cap short of the full 12 is refused. A literal, not an
+          # expression: `timeout-minutes` cannot be read from an expression context, so workflow-sync's
+          # Invariant 5 asserts the two stay equal instead.
           BENCH_CELL_BUDGET_MINUTES: '180'
           # PTS passes-per-case policy: blank = the suite's own policy (cpu-node + memory converge, the rest
           # fixed), a number or "converge" overrides every suite. Read by the harness preamble.
@@ -245,8 +246,36 @@ jobs:
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicates "$BENCH_REPLICATES"
 
-      - name: Upload Run + raw results
+      # Did THIS attempt actually produce shard Runs? The upload below overwrites the cell's artifact,
+      # and overwriting is only safe when there is something to put in its place.
+      #
+      # `if-no-files-found: error` cannot answer this. The cell uploads `path: data/`, and `data/dataset/`
+      # is CHECKED IN — so data/ is non-empty from the moment of checkout, on every attempt, whatever the
+      # benchmark did. That guard has therefore never been able to fire, and combining it with `overwrite`
+      # would be actively harmful: a retry that dies before writing a single shard (runner eviction, a
+      # failed install, an early crash) would still upload the checked-out dataset files, delete the
+      # previous attempt's good shards, and leave commit-dataset.yml to drop this (suite, provider) cell
+      # from the published run entirely. Losing a healthy first attempt to a broken second one is worse
+      # than the duplicate-name rejection `overwrite` exists to avoid.
+      #
+      # So: gate on the shard files by name. A pass that wrote shards replaces the attempt it retried; a
+      # pass that wrote none leaves the previous attempt's artifact standing. The job's own red/green is
+      # unaffected — bench-suite already decided that — this only governs what gets published.
+      - name: Check this attempt wrote shard Runs
+        id: shards
         if: always()
+        run: |
+          shopt -s nullglob
+          shards=(data/runs/"$GITHUB_RUN_ID"*.json)
+          echo "count=${#shards[@]}" >> "$GITHUB_OUTPUT"
+          if [ ${#shards[@]} -eq 0 ]; then
+            echo "::warning title=No shards::this attempt wrote no shard Run; keeping any previous attempt's artifact"
+          else
+            echo "this attempt wrote ${#shards[@]} shard Run(s)"
+          fi
+
+      - name: Upload Run + raw results
+        if: always() && steps.shards.outputs.count != '0'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Per-cell artifact name so every (provider, suite) cell uploads independently, carrying its R
@@ -258,15 +287,15 @@ jobs:
           name: bench-${{ inputs.suite }}-${{ matrix.provider }}-${{ github.run_id }}
           path: data/
           # A "Re-run failed jobs" keeps github.run_id and only bumps run_attempt, so this name is
-          # unchanged on the retry — and upload-artifact@v4+ REJECTS a duplicate name by default. Without
-          # this the retry's fleet would be computed and then thrown away at the upload boundary, leaving
-          # the run to aggregate the first attempt's stale shards (or, with `if-no-files-found: error`
-          # above already satisfied, to fail the cell a second time for a reason that has nothing to do
-          # with the benchmark). Overwrite so the replacement fleet supersedes the attempt it retried.
-          # Scope is exactly this cell: the name carries (suite, provider, run_id), so replacing it
-          # cannot disturb another cell's artifact. commit-dataset.yml's per-cell shard preference (see
-          # its "Aggregate + promote" step) then reads one shape per cell, never a mix.
+          # unchanged on the retry — and upload-artifact@v4+ REJECTS a duplicate name by default, which
+          # would compute the retry's whole fleet and then throw it away at the upload boundary. Overwrite
+          # so the replacement fleet supersedes the attempt it retried; the step condition above is what
+          # keeps that replacement from ever being an empty one. Scope is exactly this cell: the name
+          # carries (suite, provider, run_id), so replacing it cannot disturb another cell's artifact.
+          # commit-dataset.yml's per-cell shard preference (see its "Aggregate + promote" step) then
+          # reads one shape per cell, never a mix.
           overwrite: true
-          # A run always writes at least one shard (even an all-skipped Run), so an empty data/ means the
-          # job is genuinely broken — fail the upload rather than bury a warning.
+          # Kept as a backstop, though the step condition above now owns the "did this attempt produce
+          # anything" question — data/ also carries the checked-in data/dataset/ tree, so this alone can
+          # never see an empty upload.
           if-no-files-found: error

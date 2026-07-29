@@ -85,11 +85,18 @@ export function prefixChunk(chunk: string, tag: string, state: StreamState): str
 export function createTaggedWriter(original: WriteFn): WriteFn {
 	const state: StreamState = { atLineStart: true };
 	return (chunk, encoding, callback) => {
-		const tag = tagStore.getStore();
+		// An UNTAGGED write still goes through prefixChunk, with an empty tag. Skipping it entirely
+		// looks equivalent — an empty tag prefixes nothing — but it is not: prefixChunk also owns
+		// `state.atLineStart` and the forced newline before a mid-line workflow command. The writes
+		// that matter most here are untagged, because they happen after `runPooled` resolves and the
+		// async-context tag is gone: `reportFleet`'s `core.error` annotation and `fail()`. Let a
+		// replicate's last chunk end without a newline and the skip would weld the cell's ONLY failure
+		// annotation onto that dangling line, where the runner never parses it — precisely the loss the
+		// tagged path forces a break to avoid, arriving through the one path that had no guard.
+		const tag = tagStore.getStore() ?? "";
 		// Buffers pass through untouched: nothing in this CLI writes binary to stdout, and decoding one
 		// to prefix it would risk corrupting a multi-byte character split across chunks.
-		const rewritten =
-			tag === undefined || typeof chunk !== "string" ? chunk : prefixChunk(chunk, tag, state);
+		const rewritten = typeof chunk !== "string" ? chunk : prefixChunk(chunk, tag, state);
 		return original(rewritten, encoding, callback);
 	};
 }

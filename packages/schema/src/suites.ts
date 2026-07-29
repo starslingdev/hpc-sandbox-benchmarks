@@ -324,6 +324,20 @@ export type SuiteName = keyof typeof SUITES;
 export const SUITE_NAMES = Object.keys(SUITES) as SuiteName[];
 
 /**
+ * Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime — what a
+ * bench job needs ON TOP of the suite budgets it runs, charged ONCE per job rather than per suite.
+ *
+ * Owned here, next to the `timeoutMinutes` it is always added to, because two independent consumers
+ * must agree on it or the pair contradicts itself: the workflow gate (`checkWorkflowTimeouts`) uses
+ * it as the floor a job's `timeout-minutes` must clear, and `bench-suite`'s fan-out guard
+ * (`fleetBudgetError`) uses it to decide whether a capped fleet's serial waves fit that same budget.
+ * A guard using a smaller margin than the gate would admit a fan-out the gate considers unaffordable
+ * and let the cell be cancelled with every shard lost — which is the exact outcome both exist to
+ * prevent.
+ */
+export const WORKFLOW_TIMEOUT_MARGIN_MINUTES = 15;
+
+/**
  * The comma-padded token for one suite, e.g. `cpu-node` → `,cpu-node,`. GitHub Actions `if:`
  * expressions can't split strings, so the setup job emits the planned suites as a padded list
  * ({@link padSuiteList}) and each suite job matches its own token with `contains(..., ',<suite>,')`.

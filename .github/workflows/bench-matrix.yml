@@ -77,7 +77,7 @@ on:
         # rejects any other non-numeric value.
         default: ''
       max_concurrency:
-        description: 'Cap replicate sandboxes in flight per (suite, provider) cell (blank = unbounded, i.e. all R at once). Set a number when a provider quota is smaller than R — an over-quota create retries for up to 60 min inside the cell, so an unbounded fan-out against a tight quota burns the job budget queueing. A cap serializes the cell into ceil(R / cap) waves, so wall clock grows proportionally; a cap whose waves cannot fit the cell job timeout is rejected before any sandbox is created (at the realworld defaults, R=12 over a 90-minute suite, that floor is 6).'
+        description: 'Cap replicate sandboxes in flight per (suite, provider) cell (blank = unbounded, i.e. all R at once). Set a number when a provider quota is smaller than R — an over-quota create retries for up to 60 min inside the cell, so an unbounded fan-out against a tight quota burns the job budget queueing. A cap serializes the cell into ceil(R / cap) waves, so wall clock grows proportionally; a cap whose waves cannot fit the cell job timeout (plus the host margin) is rejected before any sandbox is created, and the error names the smallest cap that would fit. Note the realworld suites leave no room to cap at all: R=12 over a 90-minute suite affords ONE wave inside a 180-minute job, so anything below 12 is refused — cap the synthetic suites, or raise the cell timeout first.'
         required: false
         type: string
         # Blank preserves the old behaviour exactly: R separate runners each held one sandbox with
