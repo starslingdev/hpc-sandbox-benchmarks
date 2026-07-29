@@ -113,8 +113,8 @@ function mergeProvider(providerId: string, entries: readonly ReplicateSlice[]): 
 	// silently drop whichever arrived second.
 	const gaps: ResultGap[] = [];
 	const seenGap = new Set<string>();
-	// Coverage unions across shards: the matrix fans out one job per (provider, suite), so each shard sees
-	// only its own cell. A suite is covered for this provider iff SOME shard produced a Metric for it.
+	// Coverage unions across shards: the matrix fans out one job per (provider, suite) and that job writes
+	// one shard per replicate sandbox, so each shard sees only its own cell+replicate. A suite is covered for this provider iff SOME shard produced a Metric for it.
 	const suitesCovered = new Set<string>();
 	const uncatalogued: UncataloguedResult[] = [];
 	const seenStraggler = new Set<string>();

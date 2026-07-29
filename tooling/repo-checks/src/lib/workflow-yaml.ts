@@ -94,6 +94,26 @@ export function jobTimeoutMinutes(doc: unknown, jobId: string, label: string): n
 }
 
 /**
+ * The step named `stepName` inside an already-resolved `job`, or undefined when the job has no steps
+ * list or no such step. LENIENT on purpose: the nesting gate (workflow-nesting.ts) accumulates error
+ * strings instead of throwing, so it needs "absent" as a value it can report. A step that is present
+ * but not a mapping still throws — that is malformed YAML, not drift. {@link stepEnv} layers the
+ * strict spelling on top for callers where a renamed job/step must fail the gate loudly.
+ */
+export function stepByName(
+	job: Record<string, unknown>,
+	stepName: string,
+	label: string,
+): Record<string, unknown> | undefined {
+	if (!Array.isArray(job.steps)) return undefined;
+	for (const value of job.steps) {
+		const step = asRecord(value, `${label}: malformed step`);
+		if (step.name === stepName) return step;
+	}
+	return undefined;
+}
+
+/**
  * The `env` mapping of a named step inside a job, as key -> value-expression entries. Throws if the
  * job, the step, or its env block is missing, or an env value is not a string — a renamed job/step
  * must fail the gate, not silently match nothing.
@@ -107,16 +127,12 @@ export function stepEnv(
 	const root = asRecord(doc, `${label}: not a YAML mapping`);
 	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
 	const job = asRecord(jobs[jobId], `${label}: job "${jobId}" not found`);
-	const steps = job.steps;
-	if (!Array.isArray(steps)) throw new Error(`${label}: job "${jobId}" has no steps list`);
-	const step = steps.find((s) => asRecord(s, `${label}: malformed step`).name === stepName);
+	if (!Array.isArray(job.steps)) throw new Error(`${label}: job "${jobId}" has no steps list`);
+	const step = stepByName(job, stepName, label);
 	if (step === undefined) {
 		throw new Error(`${label}: job "${jobId}" has no step named "${stepName}"`);
 	}
-	const env = asRecord(
-		(step as Record<string, unknown>).env,
-		`${label}: step "${stepName}" has no env mapping`,
-	);
+	const env = asRecord(step.env, `${label}: step "${stepName}" has no env mapping`);
 	const entries: Record<string, string> = {};
 	for (const [key, value] of Object.entries(env)) {
 		if (typeof value !== "string") {

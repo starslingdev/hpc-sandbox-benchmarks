@@ -138,11 +138,29 @@ export async function logProviderStatuses(
 }
 
 /**
+ * Whether {@link withGroup} may emit `::group::` markers. Disabled by the concurrent replicate driver:
+ * Actions groups are a flat, ordered stream, so R concurrent replicates opening and closing groups
+ * interleave into folds that contain other replicates' output — worse than no folding at all. Those
+ * runs tag every line with its replicate instead (see ./log-prefix.ts).
+ */
+let groupingEnabled = true;
+
+/** Turn foldable Actions groups on/off process-wide (see {@link groupingEnabled}). */
+export function setGroupingEnabled(enabled: boolean): void {
+	groupingEnabled = enabled;
+}
+
+/**
  * Run `fn` inside a foldable Actions group when in CI; otherwise just await `fn` so local stdout
  * stays free of `::group::` prefixes (needed for single-line JSON contracts).
  */
 export async function withGroup<T>(title: string, fn: () => Promise<T> | T): Promise<T> {
-	if (inActions()) return await core.group(title, async () => fn());
+	if (inActions()) {
+		if (groupingEnabled) return await core.group(title, async () => fn());
+		// Grouping off: keep the title as a plain line so the transcript still announces each phase
+		// (it is the only thing marking where a replicate's setup ends and its benchmark begins).
+		logInfo(`--- ${title} ---`);
+	}
 	return await fn();
 }
 
@@ -155,7 +173,11 @@ export interface JobSummaryOptions {
 	fields: Array<[label: string, value: string, kind: CellKind]>;
 	/** Optional extra tables (e.g. provider status). */
 	tables?: Array<{ heading: string; rows: SummaryRow[] }>;
-	/** Optional free-form detail paragraph. */
+	/**
+	 * Optional free-form detail, rendered PREFORMATTED (`<pre>`) — line breaks are preserved and the
+	 * text does not re-wrap. Suits a multi-line list (e.g. one line per failing replicate); a long
+	 * prose paragraph will render monospaced and scroll horizontally rather than wrapping.
+	 */
 	detail?: string;
 	/**
 	 * Annotation for the run's annotations panel. Failures always annotate; successes stay in the
@@ -183,7 +205,13 @@ export async function writeJobSummary(opts: JobSummaryOptions): Promise<void> {
 			core.summary.addHeading(escapeHtml(table.heading), 4).addTable(table.rows);
 		}
 		if (opts.detail) {
-			core.summary.addRaw(escapeHtml(opts.detail)).addEOL();
+			// `<pre>`, not bare text. `addTable` emits `</table>` followed by a single newline, and GFM
+			// keeps an HTML block open until a BLANK line — so raw detail appended after a table is
+			// swallowed into that block, where its newlines become insignificant whitespace. A fleet
+			// report's failure list (one line per failing replicate, up to R lines) rendered as a single
+			// run-on paragraph, which is exactly the text the annotation tells the reader to come here
+			// for. `<pre>` both terminates the ambiguity and preserves the line breaks.
+			core.summary.addRaw(`<pre>${escapeHtml(opts.detail)}</pre>`).addEOL();
 		}
 		await core.summary.write();
 	}

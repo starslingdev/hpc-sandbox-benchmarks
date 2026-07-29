@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // `aggregate` — merge the per-shard Run documents of one benchmark run (the CI matrix emits one per
-// `(provider, suite)` cell) into a single candidate Run, written to a candidate dataset + index. This
+// `(provider, suite, replicate)` sandbox — one cell's runner drives all R of its replicates and writes
+// a shard each) into a single candidate Run, written to a candidate dataset + index. This
 // is the collect half of candidate→promote: `promote` then validates and publishes the candidate.
 // Uses @actions/core for foldable groups, debug metadata, annotations, and a job summary in CI.
 

@@ -155,7 +155,9 @@ export interface RunSuiteOptions {
 	providerName: string;
 	/** Suite to run — must be a key of SUITES. */
 	suiteName: string;
-	/** Host directory to extract results into (e.g. `data/raw/<runId>/<provider>`). */
+	/** Host directory to extract results into. The CI fan-out gives each replicate sandbox its own
+	 *  root, so this is `data/raw/<runId>/r<idx>/<provider>/<suite>` there and
+	 *  `data/raw/<runId>/<provider>/<suite>` for a single-sandbox run. */
 	resultsDir: string;
 	/** Credential source for the provider's required env vars (default: process.env). */
 	env?: Record<string, string | undefined>;

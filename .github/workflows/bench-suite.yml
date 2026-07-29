@@ -1,19 +1,43 @@
 name: Benchmark suite (reusable)
 
-# One suite, fanned out across a provider × replicate matrix. bench-matrix.yml calls this once per suite
-# via its suite-matrix job (`name: ${{ matrix.suite }}`), passing the plan's selected provider list AND
-# that suite's replicate index array — so cells display as "<suite> / <provider> (replicate N)" and every
-# provider's replicate sandboxes nest under one suite label in the Actions UI. The replicate axis is the
-# BETWEEN-MACHINE knob: R sandboxes of one (provider, suite) capture a provider's fleet variation (two can
-# land on different host hardware), which the aggregate folds into per-metric replicate breakdowns.
+# One suite, fanned out across the provider matrix — ONE runner per (suite, provider) cell, which drives
+# that cell's whole replicate fleet itself. bench-matrix.yml calls this once per suite via its
+# suite-matrix job (`name: ${{ matrix.suite }}`), passing the plan's selected provider list AND that
+# suite's replicate index array — so cells display as "<suite> / <provider>" and nest under one suite
+# label in the Actions UI. The replicate axis is the BETWEEN-MACHINE knob: R sandboxes of one
+# (provider, suite) capture a provider's fleet variation (two can land on different host hardware),
+# which the aggregate folds into per-metric replicate breakdowns.
+#
+# Replicates are NOT a matrix axis. A bench runner spends effectively all of its wall time waiting on a
+# sandbox (create → poll a detached step → poll again), so a runner-per-replicate matrix billed R idle
+# runners to do one runner's work: at the shipped defaults (6 providers × 9 suites, R=3 synthetic /
+# R=12 realworld) that is 324 runners for 54 runners' worth of driving. `bench-suite --replicates` now
+# creates the same R sandboxes concurrently from one process, so the TOTAL sandbox count is unchanged
+# while the runner-minutes bill stops scaling with R.
+#
+# PEAK provider concurrency is NOT unchanged, and that is the one cost of this design. Under the old
+# axis the 324 jobs contended for GitHub's account-wide concurrent-job limit, which incidentally
+# rate-limited how many sandboxes existed at once. 54 jobs fit under any plan's cap, so a matrix run
+# can now hold all 54 of a provider's replicate sandboxes simultaneously. Providers answer an over-quota
+# create with a capacity error, which `createSuiteSandbox` retries patiently for up to 60 minutes — so
+# the degradation is queueing, not failure, but it spends the job budget. `max_concurrency` below is the
+# control; `strategy.max-parallel` on the caller's suite matrix is the coarser alternative.
+#
+# Replicate-level failure isolation is preserved inside the process: every replicate runs to completion
+# and writes its shard even when a peer throws, and the cell goes red at the end if any did. Note this
+# is NARROWER than the old `fail-fast: false`, which also isolated whole-cell events — a job timeout,
+# runner eviction, OOM, or a "re-run failed jobs" click now costs all R replicates of the cell rather
+# than one. Sizing `max_concurrency` against `timeout-minutes` below is what keeps that risk bounded.
+#
 # Factoring the shared cell here (checkout → run → upload, plus the per-provider credential wiring)
 # keeps that block in ONE place instead of copy-pasted into every suite job, mirroring
 # runner-benchmarking's reusable bench-suite.yml.
 #
-# The artifact name (bench-<suite>-<provider>-r<replicate>-<run_id>) is load-bearing: commit-dataset.yml
-# downloads the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep.
-# The `-r<replicate>` segment keeps each replicate's shard a distinct artifact even though every shard of
-# one run shares the same runId file (data/runs/<run_id>.json); the aggregate keys them by --replicate.
+# The artifact name (bench-<suite>-<provider>-<run_id>) is load-bearing: commit-dataset.yml downloads
+# the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep. One
+# artifact now carries the cell's R shards, each written to its own `data/runs/<run_id>-r<idx>.json`
+# (every shard of one run shares the same `runId` FIELD, so the `-r<idx>` filename suffix is what keeps
+# them distinct); the aggregate keys them by the --replicate index stamped on each Run.
 #
 # Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md) lives on
 # the fan-out job here: a `uses:` caller can't declare `environment:`, so the approval gate and the
@@ -35,10 +59,22 @@ on:
         description: >-
           JSON array of replicate sandbox indices for THIS suite, e.g. "[0,1,2]" — the between-machine
           fan-out axis. plan-replicates emits it per suite (Suite.defaultReplicas, or the BENCH_REPLICAS
-          override); the caller passes each suite its own slice. One matrix cell runs per (provider,
-          replicate), each tagged with `--replicate <idx>` so the aggregate folds them by index.
+          override); the caller passes each suite its own slice. Handed to `bench-suite --replicates`
+          VERBATIM: one matrix cell per provider drives every index in the array concurrently, each
+          sandbox tagged with its `--replicate <idx>` so the aggregate folds them by index.
         required: true
         type: string
+      max_concurrency:
+        description: >-
+          Cap on replicate sandboxes in flight per cell (BENCH_MAX_CONCURRENCY). Blank = unbounded, i.e.
+          all R at once — the fastest option and the one that matches what R separate runners used to do.
+          Set a number when a provider's account quota is smaller than R: an over-quota create is retried
+          for up to 60 minutes inside the cell, so an unbounded fan-out against a tight quota spends the
+          job budget queueing. A cap makes the cell run in ceil(R / cap) SERIAL waves, so the wall clock
+          becomes waves x suite runtime — size it against the job's timeout-minutes.
+        required: false
+        type: string
+        default: ''
       pts_passes:
         description: >-
           PTS passes-per-case override for the harness (BENCH_PTS_PASSES) — the within-machine axis.
@@ -59,28 +95,34 @@ permissions:
 
 jobs:
   bench:
-    # Display as "<caller suite job> / <provider> (replicate N)", e.g. "system / e2b (replicate 0)" —
-    # the replicate cells nest under their suite's job name in the Actions UI (GitHub-native
-    # reusable-workflow nesting). The replicate suffix keeps each of a provider's R sandboxes a
-    # distinct, legible cell (a bare `${{ matrix.provider }}` would render them all identically).
-    name: ${{ matrix.provider }} (replicate ${{ matrix.replicate }})
+    # Display as "<caller suite job> / <provider>", e.g. "system / e2b" — the provider cells nest under
+    # their suite's job name in the Actions UI (GitHub-native reusable-workflow nesting). One cell owns
+    # all R replicate sandboxes of that (suite, provider), so there is no replicate suffix to
+    # disambiguate; the per-replicate breakdown lives in the cell's job summary + `[r<idx>]` log tags.
+    name: ${{ matrix.provider }}
     environment: privileged
     # The ephemeral self-hosted label is reaped after 70 minutes even while a step is healthy. The
     # full CPU-generic and real-world matrices legitimately exceed that on slower providers, leaving
     # the step stuck `in_progress` with no logs/artifact. Hosted runners honor timeout-minutes below;
     # 180 minutes also leaves teardown/artifact margin around the longest 155-minute suite budget.
     # (workflow-registry-sync asserts this stays above the longest registered sandbox lifetime.)
+    #
+    # Driving R replicates from one runner does not need a bigger budget WHEN THEY RUN CONCURRENTLY: the
+    # cell's wall clock is then the slowest replicate, not their sum — the same bound a single-replicate
+    # cell had. Two things break that assumption and both consume this one shared budget:
+    #   * a `max_concurrency` cap, which makes the cell run ceil(R / cap) serial waves; and
+    #   * provider capacity errors, which `createSuiteSandbox` retries for up to 60 minutes per replicate
+    #     before giving up, so a fan-out wider than the account quota queues inside the budget.
+    # At R=12 against a suite budgeted near 90 minutes, either can exceed 180. Raise this, or lower the
+    # fan-out, rather than discovering it as a cancelled cell that loses all R replicates at once.
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
-      # One cell's failure (a flaky provider, or one bad replicate) must not cancel the rest of the matrix.
+      # One provider's failure (a flaky adapter, a dead account) must not cancel the rest of the matrix.
+      # Replicate-level isolation is handled INSIDE the cell — see the header note.
       fail-fast: false
       matrix:
         provider: ${{ fromJSON(inputs.providers) }}
-        # The between-machine axis: R replicate sandboxes per provider, expanded into provider × replicate
-        # cells. The array is this suite's slice of plan-replicates' map (Suite.defaultReplicas / the
-        # BENCH_REPLICAS override), so a suite runs exactly the replicate count its category configures.
-        replicate: ${{ fromJSON(inputs.replicates) }}
     steps:
       # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
       # moved/compromised tag can't silently change what runs.
@@ -115,9 +157,11 @@ jobs:
       # is rejected outright ("not allowed in revokable tokens"), and each wrong verb name (e.g.
       # "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error.
       #
-      # The cell's suite/replicate name the token so a leaked one is traceable to the cell that minted
-      # it; both reach the shell through the environment, never interpolated into the run block, so a
+      # The cell's suite names the token so a leaked one is traceable to the cell that minted it; it
+      # reaches the shell through the environment, never interpolated into the run block, so a
       # dispatch-controlled suite name can't inject into the runner command (zizmor template-injection).
+      # One token per cell now covers all R of its replicate sandboxes (they share this process's
+      # credentials, exactly as they share every other provider secret in the run step below).
       # run_attempt is part of the name because run_id is PRESERVED across re-runs: without it a retry
       # collides with the first attempt's token, and continue-on-error would turn that name clash into a
       # silent namespace skip — on exactly the re-run where you wanted the validation.
@@ -127,11 +171,10 @@ jobs:
         id: nsc-token
         env:
           BENCH_SUITE: ${{ inputs.suite }}
-          BENCH_REPLICATE: ${{ matrix.replicate }}
           NSC_TOKEN_PATH: ${{ runner.temp }}/nsc-token.json
         run: |
           nsc token create \
-            --name "sandbox-benchmarks-${BENCH_SUITE}-r${BENCH_REPLICATE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --name "sandbox-benchmarks-${BENCH_SUITE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
             --token_file "$NSC_TOKEN_PATH"
 
@@ -144,10 +187,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
-      # Drive the provider SDK to create a sandbox, run the suite, collect results, and normalize. The
-      # cell's provider + replicate are matrix values and its suite the reusable input, all passed through
-      # the environment (never interpolated into the shell) so none can inject into the runner command.
-      # On success/failure the bin also writes a compact job summary + run annotation (clean Results).
+      # Drive the provider SDK to create this cell's R replicate sandboxes, run the suite in each,
+      # collect results, and normalize one shard Run per replicate. The cell's provider is a matrix value
+      # and its suite + replicate array are reusable inputs, all passed through the environment (never
+      # interpolated into the shell) so none can inject into the runner command. On success/failure the
+      # bin writes ONE job summary for the whole fleet (a row per replicate) + a run annotation.
       - name: Run suite and normalize
         env:
           BENCH_REPO_REF: ${{ github.sha }}
@@ -156,9 +200,13 @@ jobs:
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_PROVIDER: ${{ matrix.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
-          # The replicate index this shard represents — stamped onto its Run so the aggregate folds the R
-          # sandboxes of one (provider, suite) into per-metric replicate breakdowns rather than colliding.
-          BENCH_REPLICATE: ${{ matrix.replicate }}
+          # The replicate index array this cell drives (the plan's per-suite slice, verbatim). Each index
+          # gets its own sandbox and its own shard Run, stamped with that index so the aggregate folds the
+          # R sandboxes of one (provider, suite) into per-metric replicate breakdowns rather than colliding.
+          BENCH_REPLICATES: ${{ inputs.replicates }}
+          # Blank = unbounded (all R sandboxes at once). See the max_concurrency input above: this is the
+          # control for a provider whose quota is smaller than R, and it trades wall clock for peak load.
+          BENCH_MAX_CONCURRENCY: ${{ inputs.max_concurrency }}
           # PTS passes-per-case policy: blank = the suite's own policy (cpu-node + memory converge, the rest
           # fixed), a number or "converge" overrides every suite. Read by the harness preamble.
           BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
@@ -186,17 +234,20 @@ jobs:
           # (steps.nsc-token only runs when matrix.provider == 'namespace'), which the harness reads
           # as the standard missing-credentials skip on every other cell.
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
-        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicate "$BENCH_REPLICATE"
+        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicates "$BENCH_REPLICATES"
 
       - name: Upload Run + raw results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          # Per-cell artifact name so every (provider, suite, replicate) shard uploads independently — the
-          # `-r<replicate>` segment is what keeps R replicates of one cell from colliding on one name (they
-          # all write the same data/runs/<run_id>.json). commit-dataset.yml matches these by `bench-*-<run_id>`.
-          name: bench-${{ inputs.suite }}-${{ matrix.provider }}-r${{ matrix.replicate }}-${{ github.run_id }}
+          # Per-cell artifact name so every (provider, suite) cell uploads independently, carrying its R
+          # replicate shards (data/runs/<run_id>-r<idx>.json — the filename suffix keeps them distinct,
+          # since every shard's Run carries the same `runId` field). commit-dataset.yml matches these by
+          # `bench-*-<run_id>` and globs both the `-r<idx>` shards and the legacy un-suffixed name.
+          # `if: always()` is what preserves failure isolation across the upload boundary: a cell that
+          # goes red because ONE replicate failed still uploads every shard its healthy peers wrote.
+          name: bench-${{ inputs.suite }}-${{ matrix.provider }}-${{ github.run_id }}
           path: data/
-          # A successful run always writes data/runs/<id>.json (even an all-skipped Run), so an empty
-          # data/ means the job is genuinely broken — fail the upload rather than bury a warning.
+          # A run always writes at least one shard (even an all-skipped Run), so an empty data/ means the
+          # job is genuinely broken — fail the upload rather than bury a warning.
           if-no-files-found: error

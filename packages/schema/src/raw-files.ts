@@ -1,6 +1,7 @@
 /**
  * The raw-file naming contract — the ONE home for how files in a Run's curated raw tree
- * (`data/raw/<runId>/<provider>/<suite>/`) are named, and how gap markers are shaped. The in-sandbox
+ * (`data/raw/<runId>/[r<idx>/]<provider>/<suite>/` — the `r<idx>` level is present when one runner
+ * drove a replicate fan-out) are named, and how gap markers are shaped. The in-sandbox
  * producer and the harness collector (writers) and the results extractor (the single reader) all
  * route through this module, so a filename's spelling can never drift between them.
  *

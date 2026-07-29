@@ -93,17 +93,40 @@ jobs:
       # Aggregate the shards' Run documents into one candidate, then promote (gate on >=1 validated
       # provider) and publish into the committed dataset at data/dataset/. The run-id matches the shards.
       #
-      # The glob names the Run document EXACTLY, `<runId>.json`, and must not gain a `data/` segment:
-      # the bench cell uploads `path: data/`, and upload-artifact roots the artifact at the least common
-      # ancestor of the matched files — so a shard unpacks as `shards/<artifact>/runs/<runId>.json`, with
-      # no `data/` prefix. Two decoys sit next to it that a `runs/*.json` wildcard would sweep in: the
-      # sibling `runs/index.json` (an index, not a Run), and `dataset/runs/<oldRunId>.json` (the committed
-      # dataset, which rides along because it lives under data/). Both would poison the aggregate.
+      # The globs name the Run documents EXACTLY and must not gain a `data/` segment: the bench cell
+      # uploads `path: data/`, and upload-artifact roots the artifact at the least common ancestor of the
+      # matched files — so a shard unpacks as `shards/<artifact>/runs/<runId>...json`, with no `data/`
+      # prefix. Two decoys sit next to them that a `runs/*.json` wildcard would sweep in: the sibling
+      # `runs/index.json` (an index, not a Run), and `dataset/runs/<oldRunId>.json` (the committed
+      # dataset, which rides along because it lives under data/, and which the `runs/` segment excludes).
+      # Both would poison the aggregate.
+      #
+      # TWO shard shapes exist, and they are selected with a PREFERENCE, never unioned:
+      #   * `<runId>-r<idx>.json` — the current per-replicate shards (one runner drives all R replicates
+      #     of a (suite, provider) cell, so they share an artifact and are told apart by the suffix).
+      #   * `<runId>.json` — the un-suffixed single-shard name written by a run that predates the
+      #     fan-out change. Keeping it is what lets a backfill dispatch re-aggregate an older run's
+      #     still-retained artifacts.
+      #
+      # Preference, not union, because run ids are PRESERVED across re-runs: a run whose first attempt
+      # predates the change and whose retry postdates it leaves BOTH shapes under one run id. Unioning
+      # them would hand `aggregate` two shards describing the SAME sandbox — a shard with no
+      # replicateIndex normalizes to index 0, colliding with `-r0` — and its documented first-wins
+      # rule would silently drop one sandbox's whole measured set while leaving no replicate breakdown,
+      # making the result indistinguishable from a genuine single-replicate run. Taking the
+      # per-replicate shards whenever ANY exist keeps the newer, complete attempt and never mixes the
+      # two vocabularies. The count is echoed so a short set is visible in the log rather than inferred.
       - name: Aggregate + promote
         run: |
           shopt -s nullglob
-          shards=(shards/*/runs/"$RUN_ID".json)
+          shards=(shards/*/runs/"$RUN_ID"-r*.json)
+          shape="per-replicate"
+          if [ ${#shards[@]} -eq 0 ]; then
+            shards=(shards/*/runs/"$RUN_ID".json)
+            shape="legacy single-shard"
+          fi
           if [ ${#shards[@]} -eq 0 ]; then echo "no shard Run documents found for run $RUN_ID" >&2; exit 1; fi
+          echo "aggregating ${#shards[@]} $shape shard(s) for run $RUN_ID"
           bun apps/cli/src/bin/aggregate.ts "$RUN_ID" data/candidate "${shards[@]}"
           bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset
 

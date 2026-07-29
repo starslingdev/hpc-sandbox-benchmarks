@@ -25,7 +25,8 @@
 //   5. Both live-run jobs (smoke's job and the reusable fan-out) outlast the longest registered sandbox
 //      lifetime by a fixed margin, so a suite budget increase cannot leave an otherwise healthy job to
 //      be killed by Actions first.
-//   6. Nesting wiring (suite-matrix caller + reusable provider job name) — see workflow-nesting.ts.
+//   6. Nesting wiring (suite-matrix caller + reusable provider job name) and the replicate axis
+//      reaching the cell as BENCH_REPLICATES data rather than as a matrix axis — see workflow-nesting.ts.
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -57,9 +58,13 @@ export {
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
 	EXPECTED_PROVIDER_NAME_EXPR,
+	EXPECTED_REPLICATES_ARG,
+	EXPECTED_REPLICATES_ENV_EXPR,
+	EXPECTED_REPLICATES_INPUT_EXPR,
 	EXPECTED_SUITE_MATRIX_EXPR,
 	EXPECTED_SUITE_NAME_EXPR,
 	matrixSuiteCaller,
+	REPLICATES_ENV_KEY,
 } from "./workflow-nesting.ts";
 export type { DispatchInput } from "./workflow-yaml.ts";
 export {

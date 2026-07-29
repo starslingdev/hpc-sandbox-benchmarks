@@ -91,14 +91,22 @@ without being Daytona-specific.
 
 ## The dataset pipeline
 
-1. **Run** — `bench-suite <provider> <suite> <runId> --replicate <idx>` boots a sandbox, runs the
-   suite's mise tasks, pulls the raw tree (`data/raw/<runId>/<provider>/<suite>/`), and normalizes it
-   into a Run document stamped with its replicate index.
+1. **Run** — `bench-suite <provider> <suite> <runId> --replicates <indices>` boots one sandbox per
+   replicate index (concurrently, from one process), runs the suite's mise tasks in each, pulls the raw
+   trees (`data/raw/<runId>/r<idx>/<provider>/<suite>/`), and normalizes each into its own shard Run
+   document (`data/runs/<runId>-r<idx>.json`) stamped with that replicate index. `--replicate <idx>` is
+   the single-sandbox spelling, writing the un-suffixed `data/runs/<runId>.json`.
 2. **Matrix** — the `bench-matrix` workflow plans three axes (`plan-providers` / `plan-suites` /
    `plan-replicates`), then one suite-matrix job calls the reusable `bench-suite` workflow per suite
-   (GitHub-native nesting: `<suite> / <provider> (replicate N)`), fanning out over the selected
-   providers × that suite's replicate sandboxes; every `(provider, suite, replicate)` cell uploads its
-   shard Run as an artifact. Two axes are the statistical knobs, both defaulting to the per-suite schema
+   (GitHub-native nesting: `<suite> / <provider>`), fanning out over the selected providers; each
+   `(provider, suite)` cell drives that suite's whole replicate fleet itself and uploads all its shard
+   Runs as one artifact. **Replicates are not a runner axis.** A bench runner is idle for essentially
+   its whole life — it creates a sandbox and polls it — so a runner per replicate billed R idle runners
+   to do one runner's work (324 runners where 54 suffice, at the shipped defaults). Driving the fleet
+   in-process leaves the sandbox count, provider load, and wall clock unchanged (the cell's wall clock
+   is its slowest replicate, not their sum) while the runner bill stops scaling with R. Isolation is
+   preserved: every replicate runs to completion and writes its shard even when a peer dies, and the
+   cell goes red at the end if any did. Two axes are the statistical knobs, both defaulting to the per-suite schema
    config so a bare dispatch already carries the intended statistical power for separating providers
    (subject to the genuine near-tie limit noted below — no sample size resolves providers that are truly
    within a few percent):

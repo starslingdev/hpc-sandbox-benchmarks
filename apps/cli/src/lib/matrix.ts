@@ -105,8 +105,9 @@ export function parseReplicasOverride(raw: string | undefined): number | undefin
  * `{ "cpu-node": [0, 1, 2], "realworld-mastra": [0, 1, 2, 3, 4] }`. Each suite maps to `[0..R-1]`, where
  * R is the `BENCH_REPLICAS` override (`replicasRaw`) when set, else that suite's schema default. The
  * suite set matches {@link selectSuites} exactly (same `BENCH_SUITES` parsing), so the map is keyed by
- * precisely the suites the plan's suite axis emits — the reusable bench-suite.yml indexes it by
- * `matrix.suite` to get its own replicate axis. `suitesRaw`/`replicasRaw` are the raw dispatch strings.
+ * precisely the suites the plan's suite axis emits — bench-matrix.yml indexes it by `matrix.suite` and
+ * hands each cell its slice as `bench-suite --replicates` (the cell drives every index itself, in one
+ * process, rather than expanding them into runners). `suitesRaw`/`replicasRaw` are the raw dispatch strings.
  */
 export function planReplicateMap(
 	suitesRaw: string | undefined,
