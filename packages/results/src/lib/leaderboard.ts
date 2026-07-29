@@ -8,6 +8,12 @@
  * its Direction (HIB → highest first, LIB → lowest first). A Metric with no provider value is omitted.
  * The representative value is the Samples' p50 (median) — robust to a single slow pass.
  *
+ * The document leads with `realworld` and collapses the synthetic microbenchmarks, because that is the
+ * claim this benchmark makes: a synthetic score says what the hardware CAN do, and the real-world
+ * workflows say what a developer or a CI job actually waits on. See {@link LEADERBOARD_DIMENSION_ORDER}
+ * and {@link SYNTHETIC_DIMENSIONS}. Which sections exist stays driven by the data — a Dimension no
+ * provider emitted is absent, collapsed or not.
+ *
  * Ranking is INFERENTIAL, not a bare sort. A provider's Samples are repeated trials inside one sandbox,
  * so their spread is environmental noise, and ordering on the median alone would let a lucky draw buy a
  * position: a live run had modal's STREAM Copy span 9.7k–65k MB/s against daytona's 66.5k ±0.14%. Each
@@ -39,6 +45,50 @@ import {
 	providerReportedNothing,
 	SUITE_NAMES,
 } from "@sandbox-benchmarks/schema";
+
+/**
+ * The repository the published leaderboard lives in — the base for every provenance link in the header.
+ * A constant rather than `GITHUB_REPOSITORY`: this renderer is pure, and its output is gated
+ * byte-identical against a fresh render (tooling/repo-checks/leaderboard-artifact-sync.test.ts), so a
+ * link that varied with the environment would make a local regeneration differ from CI's for no reason
+ * a reader could see. The artifact is published here; the links point here.
+ */
+export const REPO_URL = "https://github.com/starslingdev/hpc-sandbox-benchmarks";
+
+/** The committed dataset tree — one Run document per run id, written by `promote`. */
+export const DATASET_RUNS_DIR = "data/dataset/runs";
+
+/**
+ * The SYNTHETIC Dimensions: microbenchmarks that load one hardware axis in isolation (PTS profiles for
+ * `cpu`/`disk`/`memory`/`network`/`system`). They answer "what can this machine do", which is a real
+ * question but not the one this benchmark is FOR — so their sections render collapsed and the
+ * real-world workflows lead. See {@link LEADERBOARD_DIMENSION_ORDER}.
+ *
+ * Deliberately not "everything except realworld". `lifecycle` and `control-plane` are harness-measured
+ * timings of the provider's own API — a spawn a user waits on, not a synthetic load — and `economics`
+ * is the provider's published price. Neither is a microbenchmark, so neither is hidden behind a
+ * disclosure triangle.
+ */
+export const SYNTHETIC_DIMENSIONS: ReadonlySet<Dimension> = new Set<Dimension>([
+	"cpu",
+	"disk",
+	"memory",
+	"network",
+	"system",
+]);
+
+/**
+ * Dimension render order: `realworld` first, then the Catalog's own order for the rest. Only the hoist
+ * is editorial — everything else keeps {@link DIMENSIONS}' ordering so a new Dimension lands where the
+ * schema says it belongs, without a second ordering to keep in sync.
+ *
+ * This is presentation priority, never a filter: {@link buildLeaderboard} still emits a Dimension only
+ * when some provider produced a catalogued Metric in it.
+ */
+export const LEADERBOARD_DIMENSION_ORDER: readonly Dimension[] = [
+	"realworld",
+	...DIMENSIONS.filter((dimension) => dimension !== "realworld"),
+];
 
 /** One provider's standing on one Metric. */
 export interface LeaderboardRow {
@@ -518,7 +568,7 @@ function buildRoster(run: Run): ProviderRosterEntry[] {
 export function buildLeaderboard(run: Run): Leaderboard {
 	const dimensions: LeaderboardDimension[] = [];
 
-	for (const dimension of DIMENSIONS) {
+	for (const dimension of LEADERBOARD_DIMENSION_ORDER) {
 		// Catalog order is the stable display order, except the dimension's editorial headline leads.
 		// Crucially, every emitted Metric gets a table: headline is presentation priority, not a filter.
 		const catalogued = METRIC_CATALOG.filter((metric) => metric.dimension === dimension).sort(
@@ -584,16 +634,26 @@ function underpoweredFloors(board: Leaderboard): string[] {
 }
 
 /**
+ * Neutralize the HTML-significant characters. GitHub renders raw HTML inside Markdown, so any text
+ * that reaches markup passes through here first — a gap reason carrying an upstream error page
+ * (`<HTML>`, `<PRE>`, `<HR>` from a CloudFront/proxy diagnostic) would otherwise inject live markup
+ * instead of showing as a plain diagnostic. `&` goes first so the entities emitted for `<`/`>` aren't
+ * themselves re-encoded.
+ */
+function escapeHtml(text: string): string {
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
  * Make free-form text safe inside a Markdown table cell. Skip reasons are the harness's verbatim
- * strings — a `|` would end the cell and a newline would end the row, silently corrupting the table,
- * and GitHub renders raw HTML inside Markdown, so a reason carrying an upstream error page (`<HTML>`,
- * `<PRE>`, `<HR>` from a CloudFront/proxy diagnostic) would inject live markup instead of showing as
- * a plain diagnostic.
+ * strings — a `|` would end the cell and a newline would end the row, silently corrupting the table —
+ * on top of the raw-HTML hazard {@link escapeHtml} handles.
  *
- * Order matters: escape each escape-introducing character before the character it guards. `&` goes
- * first so the HTML entities we emit for `<`/`>` aren't themselves re-encoded, and the backslash is
- * doubled before we backslash-escape `|` — otherwise a reason containing `\|` would leave a lone `\`
- * in front of our escape, unescaping the pipe and breaking the cell anyway.
+ * Order matters: escape each escape-introducing character before the character it guards. The
+ * backslash is doubled before we backslash-escape `|` — otherwise a reason containing `\|` would leave
+ * a lone `\` in front of our escape, unescaping the pipe and breaking the cell anyway. HTML escaping
+ * runs first for the same reason it does inside {@link escapeHtml}: the `&` of an emitted entity must
+ * not be re-encoded, and the entities it emits contain no `\` or `|` for the later passes to mangle.
  *
  * The final pass folds any whitespace run that spans a newline down to a single space (a newline
  * would otherwise end the table row). It scans each maximal `\s+` run once rather than matching
@@ -601,13 +661,60 @@ function underpoweredFloors(board: Leaderboard): string[] {
  * newline-free whitespace stretch in an attacker-influenced reason.
  */
 function escapeCell(text: string): string {
-	return text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
+	return escapeHtml(text)
 		.replace(/\\/g, "\\\\")
 		.replace(/\|/g, "\\|")
 		.replace(/\s+/g, (ws) => (ws.includes("\n") ? " " : ws));
+}
+
+/**
+ * The GitHub Actions run(s) behind a Run id, as GFM links straight to the workflow run — the primary
+ * source for the matrix legs, the job logs, and the uploaded artifacts every number below is derived
+ * from. A Run id IS a bench-matrix run id, so it resolves to `/actions/runs/<id>` with nothing to look up.
+ *
+ * A COMPOSITE id (`<runA>+<runB>` — a Run spliced from two CI runs, see data/dataset/index.json) names
+ * no single workflow run, so each component is linked separately rather than emitting one dead link to
+ * an id GitHub has never issued.
+ *
+ * A component that is not a run id at all — a locally-produced Run named `local-1`, say — renders as
+ * bare code. A provenance link that 404s is worse than no link: it asserts a primary source exists.
+ */
+function runSourceLinks(runId: string): string {
+	return runId
+		.split("+")
+		.map((id) => (/^\d+$/.test(id) ? `[\`${id}\`](${REPO_URL}/actions/runs/${id})` : `\`${id}\``))
+		.join(" + ");
+}
+
+/** The Run's commit, linked to the tree the measurement was taken against. Bare code for a non-sha
+ *  (a fixture, a placeholder) — see {@link runSourceLinks} on why a dead link is worse than none. */
+function commitSourceLink(sha: string): string {
+	return /^[0-9a-f]{7,40}$/.test(sha) ? `[\`${sha}\`](${REPO_URL}/commit/${sha})` : `\`${sha}\``;
+}
+
+/**
+ * The committed Run document this board was rendered from, as a repo-relative GFM link: the reader can
+ * go from any table straight to the raw Samples behind it. Relative so it resolves on whatever ref the
+ * file is being viewed at, rather than pinning every reader to `main`.
+ *
+ * `+` is percent-encoded for a composite id: it is legal in a URL path segment, but it is the one
+ * character a renderer may still decode as a space, and the link would then point at no file at all.
+ */
+function datasetSourceLink(runId: string): string {
+	const path = `${DATASET_RUNS_DIR}/${runId}.json`;
+	return `[\`${path}\`](${path.replace(/\+/g, "%2B")})`;
+}
+
+/**
+ * The `<summary>` line of a collapsed synthetic Dimension — how many Metrics are inside and which one
+ * headlines them, so a shut section still says what it holds instead of reading as an empty triangle.
+ * Escaped: catalogued labels are trusted, but this is the one place a label is emitted into markup
+ * rather than into a table cell, and the two escapes are not the same.
+ */
+function syntheticSummary(metrics: readonly LeaderboardMetric[]): string {
+	const count = `<strong>${metrics.length} synthetic metric${metrics.length === 1 ? "" : "s"}</strong>`;
+	const headline = metrics.find(({ metric }) => metric.headline);
+	return headline ? `${count} · headline: ${escapeHtml(headline.metric.label)}` : count;
 }
 
 /** Format a metric value compactly: integers as-is, otherwise up to 4 significant digits, trimmed. */
@@ -764,10 +871,14 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 	const providerCount = new Set(rows.map((row) => row.providerId)).size;
 	const metricNoun = metricCount === 1 ? "metric" : "metrics";
 	const providerNoun = providerCount === 1 ? "provider" : "providers";
+	// Header provenance: every identifier links to the thing it names, so a reader can audit any number
+	// on this page without being told where to look — the workflow run that produced it, the commit it
+	// was measured against, and the committed Run document it was rendered from.
 	const lines: string[] = [
 		"# Sandbox provider leaderboard",
 		"",
-		`Run \`${board.runId}\` · commit \`${board.sha}\` · generated ${board.generatedAt}`,
+		`Run ${runSourceLinks(board.runId)} · commit ${commitSourceLink(board.sha)} ·`,
+		`dataset ${datasetSourceLink(board.runId)} · generated ${board.generatedAt}`,
 		"",
 		`Requested target for every provider: **${spec}**. This run contains **${rows.length} metric records**`,
 		`backed by **${observationCount} retained trial observations**, across **${metricCount} ${metricNoun}** and`,
@@ -782,6 +893,22 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		"surfaced through coverage gaps, not part of the compute-match verdict.",
 		"",
 	];
+
+	// Name the layout only when it is actually in play — the note lists the synthetic dimensions THIS
+	// run rendered, so a board with none never explains a collapse the reader cannot see.
+	const syntheticRendered = board.dimensions.filter(({ dimension }) =>
+		SYNTHETIC_DIMENSIONS.has(dimension),
+	);
+	if (syntheticRendered.length > 0) {
+		const names = syntheticRendered.map(({ dimension }) => `\`${dimension}\``).join(", ");
+		lines.push(
+			"**Document order:** the real-world developer workflows lead, because what a developer or a CI job",
+			`actually waits on is what this benchmark exists to measure. The synthetic microbenchmarks (${names})`,
+			"load one hardware axis in isolation — a real question, but a different one — so each is collapsed by",
+			"default; expand a section to read its tables.",
+			"",
+		);
+	}
 	lines.push(...rosterSection(board.roster));
 	if (board.absentProviders.length > 0) {
 		// One line, not per-suite `missing` rows: the Run does not record the dispatch plan
@@ -806,6 +933,13 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	for (const { dimension, metrics } of board.dimensions) {
 		lines.push(`## ${dimension}`, "");
+		// A synthetic dimension collapses its TABLES, never its heading: the heading stays in the rendered
+		// document outline so the board still discloses which hardware axes were measured — collapsing it
+		// too would make a measured dimension indistinguishable from one that never ran.
+		const collapsed = SYNTHETIC_DIMENSIONS.has(dimension);
+		if (collapsed) {
+			lines.push("<details>", `<summary>${syntheticSummary(metrics)}</summary>`, "");
+		}
 		for (const { metric, rows: metricRows } of metrics) {
 			const better = metric.direction === "HIB" ? "higher is better" : "lower is better";
 			const notes = metricRows.map(rowNote);
@@ -831,6 +965,7 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 				"",
 			);
 		}
+		if (collapsed) lines.push("</details>", "");
 	}
 
 	// Coverage gaps: summary first; full table + legends inside <details> so unfinished providers

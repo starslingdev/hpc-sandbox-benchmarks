@@ -34,8 +34,31 @@ observed allocation, so its ranks are never read as like-for-like with the compu
 Results land on a closed, ordered set of [`DIMENSIONS`](../packages/schema/src/metrics.ts): `lifecycle`,
 `control-plane`, `cpu`, `disk`, `memory`, `network`, `system`, `realworld`, `economics`. Each catalogued
 [`MetricDef`](../packages/schema/src/metrics.ts) declares its `dimension`, `unit`, `direction` (HIB =
-higher-is-better, LIB = lower-is-better), and whether it `headline`s its dimension. The leaderboard
-shows exactly one headline metric per dimension (enforced at catalog load).
+higher-is-better, LIB = lower-is-better), and whether it `headline`s its dimension. A dimension has at
+most one headline metric (enforced at catalog load); the leaderboard ranks *every* emitted metric and
+leads each dimension with its headline.
+
+### How the leaderboard is laid out
+
+Which sections exist is driven by the data — a dimension no provider emitted is simply absent — but the
+order and the emphasis are editorial, and they follow this document's argument:
+
+- **`realworld` leads.** Synthetic scores say what the hardware *can* do; the real-world suites say what
+  a developer or a CI job actually waits on, which is the question the benchmark exists to answer.
+- **The synthetic microbenchmarks collapse.** `cpu`, `disk`, `memory`, `network` and `system` each load
+  one hardware axis in isolation, so their tables render inside a collapsed `<details>`. The `##`
+  heading stays outside it: a measured axis must never look like one that never ran.
+- **Everything else stays expanded.** `lifecycle` and `control-plane` are harness-measured timings of
+  the provider's own API — a spawn a user waits on, not a synthetic load — and `economics` is the
+  provider's published price. None is a microbenchmark, so none is hidden.
+
+The header links each identifier to its primary source: the run id to the `bench-matrix` workflow run
+that produced the measurements, the commit to the tree they were measured against, and the dataset link
+to the committed Run document the tables were rendered from — so any number on the page can be traced
+back to its raw Samples. (A Run spliced from two CI runs — a composite `<runA>+<runB>` id, see
+[`data/dataset/index.json`](../data/dataset/index.json) — links each half separately; no single workflow
+run owns the pair.) The order, the collapse, and the links are all gated
+against the committed artifact by `tooling/repo-checks/src/leaderboard-artifact-sync.test.ts`.
 
 Metrics come from three sources:
 
