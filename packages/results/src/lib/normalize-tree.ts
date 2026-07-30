@@ -54,7 +54,10 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 		.map((meta) => normalizeProviderDir(input.rawRoot, meta.id));
 
 	const candidate = {
-		// A shard may carry a replicateIndex the aggregate folds into MetricResult.replicates (v3+).
+		// Pinned at 4 because this function stamps a structured `cause` on suite gaps
+		// (`shortfallCause`/`twinDropCause`), which `runSchema` gates at v4-or-later — lowering this while
+		// still emitting causes fails `parseRun`. A shard may also carry a replicateIndex (v3+) the
+		// aggregate folds into MetricResult.replicates.
 		schemaVersion: "4" as const,
 		runId: input.runId,
 		sha: input.sha,
