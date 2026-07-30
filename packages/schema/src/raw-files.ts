@@ -25,8 +25,8 @@
  * lifecycle timing files (`<name>_ms.txt`, `<name>-exit-code.txt`) land with the lifecycle path.
  */
 import { type } from "arktype";
-import type { GapOutcome, ResultGap } from "./run.ts";
-import { gapOutcomeSchema } from "./run.ts";
+import type { GapCause, GapOutcome, ResultGap } from "./run.ts";
+import { gapCauseSchema, gapOutcomeSchema } from "./run.ts";
 
 const SKIP_SUFFIX = "--skipped.json";
 const FAILURE_SUFFIX = "--failed.json";
@@ -120,8 +120,12 @@ export function harnessGapMarkerJson(
 	suite: string,
 	outcome: GapOutcome,
 	reason: string,
+	cause?: GapCause,
 ): string {
-	return `${JSON.stringify({ provider, suite, outcome, reason }, null, 2)}\n`;
+	// `cause` is written last and omitted when absent, so a marker from a producer that could not
+	// classify the failure is byte-identical to what the pre-cause harness wrote — the field's presence
+	// means "classified", never "this build knows about causes".
+	return `${JSON.stringify({ provider, suite, outcome, reason, ...(cause ? { cause } : {}) }, null, 2)}\n`;
 }
 
 /**
@@ -169,6 +173,10 @@ const gapMarkerBody = type({
 	"benchmark?": "string",
 	"reason?": "string",
 	"skip_reason?": "string",
+	// The structured classification, when the producing harness could make one. Optional forever: every
+	// already-written marker predates it, and a producer that cannot classify a failure must be able to
+	// stay silent rather than invent a label.
+	"cause?": gapCauseSchema,
 }).pipe((d) => ({
 	outcome: d.outcome,
 	// `|| undefined` (not `??`) so an empty-string `suite`/`benchmark` is treated as absent — suite is
@@ -176,6 +184,7 @@ const gapMarkerBody = type({
 	// `parseGapMarker`, exactly as a missing field does (mirrors `suiteFromGapMarkerFilename`).
 	suite: d.suite || d.benchmark || undefined,
 	reason: d.reason ?? d.skip_reason ?? "unknown",
+	cause: d.cause,
 }));
 
 /**
@@ -206,6 +215,7 @@ export function parseGapMarker(
 		id: body.suite ?? suiteFromGapMarkerFilename(filename, providerId) ?? filename,
 		outcome,
 		reason: body.reason,
+		...(body.cause ? { cause: body.cause } : {}),
 	};
 }
 

@@ -7,6 +7,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type {
+	GapCause,
 	HostMetadataRecord,
 	MetricResult,
 	ObservedSpecs,
@@ -54,7 +55,7 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 
 	const candidate = {
 		// v3: a shard may carry a replicateIndex the aggregate folds into MetricResult.replicates.
-		schemaVersion: "3" as const,
+		schemaVersion: "4" as const,
 		runId: input.runId,
 		sha: input.sha,
 		generatedAt: input.generatedAt,
@@ -128,13 +129,32 @@ function suiteForLeaf(leaf: string): string | undefined {
  * across replicate shards instead of stacking one gap per replicate.
  */
 export function shortfallReason(suite: string, missing: readonly AttemptedEmptyResult[]): string {
-	// suiteDirs only ever contains registered names, so the lookup can't miss in production; the
-	// fallback keeps this pure-string helper total for tests and future callers.
-	const declared =
-		(SUITES as Partial<Record<string, { metrics: readonly string[] }>>)[suite]?.metrics.length ??
-		missing.length;
 	const list = missing.map((e) => `${e.metricId} (${e.sourceFile})`).join(", ");
-	return `PTS ran but every trial failed for ${missing.length} of ${declared} declared metrics: ${list} — attempted, no value recorded`;
+	return `PTS ran but every trial failed for ${missing.length} of ${declaredMetricCount(suite, missing.length)} declared metrics: ${list} — attempted, no value recorded`;
+}
+
+/**
+ * How many metrics the suite declares — the denominator in the shortfall wording and cause. suiteDirs
+ * only ever contains registered names, so the lookup can't miss in production; the fallback keeps the
+ * pure helpers total for tests and future callers.
+ */
+function declaredMetricCount(suite: string, fallback: number): number {
+	return (
+		(SUITES as Partial<Record<string, { metrics: readonly string[] }>>)[suite]?.metrics.length ??
+		fallback
+	);
+}
+
+/**
+ * The same shortfall as data. Emitted alongside {@link shortfallReason} so the two can never describe
+ * different facts: one call site builds both from one input.
+ */
+export function shortfallCause(suite: string, missing: readonly AttemptedEmptyResult[]): GapCause {
+	return {
+		kind: "metrics-unrecorded",
+		metricIds: missing.map((e) => e.metricId),
+		declared: declaredMetricCount(suite, missing.length),
+	};
 }
 
 /** A catalogued fio twin whose <Result> PTS omitted entirely; sourceFile carries the SURVIVING twin. */
@@ -152,6 +172,11 @@ export interface DroppedTwinResult {
 export function twinDropReason(dropped: readonly DroppedTwinResult[]): string {
 	const list = dropped.map((d) => `${d.metricId} (twin survived in ${d.sourceFile})`).join(", ");
 	return `PTS duplicate-value dedup dropped ${dropped.length} fio twin result${dropped.length === 1 ? "" : "s"} (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${list}`;
+}
+
+/** The dropped-twin gap as data, built from the same input as {@link twinDropReason}. */
+export function twinDropCause(dropped: readonly DroppedTwinResult[]): GapCause {
+	return { kind: "duplicate-value-dedup", metricIds: dropped.map((d) => d.metricId) };
 }
 
 const TWIN_SUFFIXES = ["_mb_per_s", "_iops"] as const;
@@ -438,6 +463,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 			id: suite,
 			outcome: "failed",
 			reason: shortfallReason(suite, missing),
+			cause: shortfallCause(suite, missing),
 		});
 	}
 
@@ -465,6 +491,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 			id: suite,
 			outcome: "failed",
 			reason: twinDropReason(dropped),
+			cause: twinDropCause(dropped),
 		});
 	}
 

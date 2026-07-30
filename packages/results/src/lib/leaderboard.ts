@@ -23,6 +23,7 @@
  */
 import type {
 	Dimension,
+	GapCause,
 	GapOutcome,
 	GapScope,
 	MedianInterval,
@@ -255,13 +256,17 @@ export interface Leaderboard {
 }
 
 /**
- * Whether a skip reason is a disk-capacity gap — i.e. the harness wrote its "Insufficient disk: …"
- * marker because the sandbox had less free disk than the suite's `minDiskGb`. Matched by prefix rather
- * than importing the harness so `results` stays SDK-free; kept in lockstep with `runSuiteOnSandbox`'s
- * reason string (the one place that phrasing is authored).
+ * Whether a gap is a disk-capacity skip — the sandbox had less free disk than the suite's `minDiskGb`.
+ *
+ * Reads the structured {@link ResultGap.cause} when the Run carries one (v4+). The prose fallback is
+ * for ALREADY-PUBLISHED Runs only: every dataset before v4 recorded this fact solely as an English
+ * sentence, and the leaderboard is regenerated from any run in the committed series, so dropping the
+ * match would silently reclassify a decade of disk skips as generic ones. It is a compatibility
+ * shim with a closed input set — not a parser to extend. A NEW fact belongs in the cause taxonomy.
  */
-function isDiskGap(reason: string): boolean {
-	return /^insufficient disk/i.test(reason.trim());
+function isDiskGap(gap: { reason: string; cause?: GapCause }): boolean {
+	if (gap.cause !== undefined) return gap.cause.kind === "disk-shortfall";
+	return /^insufficient disk/i.test(gap.reason.trim());
 }
 
 /** Rendering/sort precedence: the structural absences first, the merely-unreported last. */
@@ -335,7 +340,7 @@ function coverageGapsOf(run: Run): CoverageGap[] {
 				// before the suite was attempted. A failure's reason is an error message, and one that merely
 				// happens to start with "insufficient disk" is the workload running out of space mid-flight —
 				// a different fact, and not the structural "cannot host this at all" the ❌ claims.
-				disk: gap.outcome === "skipped" && isDiskGap(gap.reason),
+				disk: gap.outcome === "skipped" && isDiskGap(gap),
 			})),
 			...exercised
 				.filter((suite) => !accountedFor.has(suite))

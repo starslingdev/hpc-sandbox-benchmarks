@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import type { MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
+import type { GapCause, MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
 import {
 	aggregate,
 	ECONOMICS_METRIC_IDS,
 	getProvider,
 	HARNESS_METRIC_IDS,
 	hourlyCostAtTargetSpec,
+	TARGET_SPEC,
 } from "@sandbox-benchmarks/schema";
 import { aggregateRuns } from "./aggregate.ts";
 
@@ -80,8 +81,8 @@ describe("aggregateRuns", () => {
 		]);
 		expect(node?.samples).toEqual([10, 11, 20, 21]);
 		expect(node?.aggregates.n).toBe(4);
-		// The merged Run is v3 (replicate-aware); its Metric carries no single replicateIndex.
-		expect(merged.schemaVersion).toBe("3");
+		// The merged Run is v4 (replicate-aware, mixture-aware, attributed, self-describing).
+		expect(merged.schemaVersion).toBe("4");
 	});
 
 	it("keeps a single-replicate metric verbatim — no replicates field at R = 1", () => {
@@ -172,7 +173,9 @@ describe("aggregateRuns", () => {
 		expect(merged.generatedAt).toBe("2026-06-02T00:00:00.000Z");
 	});
 
-	it("discloses the conflicting host CPUs when a provider's shards saw differing models", () => {
+	it("discloses differing host CPUs as distinct mixtures, naming each and how many saw it", () => {
+		// Replaces the deleted `hostCpuModels` string array: it named the distinct models but not how many
+		// sandboxes each covered, and nothing ever read it — the mixtures answer both.
 		const a = shard([
 			{
 				...provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
@@ -185,26 +188,264 @@ describe("aggregateRuns", () => {
 				observedSpecs: { cpuModel: "AMD EPYC 9R45", cpuMicroarch: "Zen 5 (Turin)" },
 			},
 		]);
-		const merged = aggregateRuns([a, b]);
-		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
-		// Sorted, distinct — names both machines rather than a bare "heterogeneous" flag.
-		expect(daytona?.observedSpecs.hostCpuModels).toEqual(["AMD EPYC 9R14", "AMD EPYC 9R45"]);
+		const daytona = aggregateRuns([a, b]).providers.find((p) => p.providerId === "daytona-vm");
+		// Sorted by name for the assertion only: both counts are 1, so the map's own order is the id
+		// tie-break, which is deliberately not alphabetical.
+		expect(
+			Object.values(daytona?.observedMixtures?.hostHardware ?? {})
+				.map((m) => [m.specs.cpuModel, m.count] as const)
+				.sort(([x], [y]) => String(x).localeCompare(String(y))),
+		).toEqual([
+			["AMD EPYC 9R14", 1],
+			["AMD EPYC 9R45", 1],
+		]);
 	});
 
-	it("does not disclose host CPUs when every shard saw the same host CPU", () => {
-		const same = { cpuModel: "AMD EPYC 9R45", cpuMicroarch: "Zen 5 (Turin)" };
-		const a = shard([
-			{
-				...provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
-				observedSpecs: same,
-			},
+	it("counts the distinct host-hardware and host-network mixtures its sandboxes reported", () => {
+		const genoa = {
+			cpuModel: "AMD EPYC 9R14",
+			cpuMicroarch: "Zen 4 (Genoa)",
+			vcpus: 2,
+			memoryGb: 8,
+		};
+		const turin = {
+			cpuModel: "AMD EPYC 9R45",
+			cpuMicroarch: "Zen 5 (Turin)",
+			vcpus: 2,
+			memoryGb: 8,
+		};
+		const ashburn = { egressAsn: "AS14618", egressOrg: "Amazon", city: "Ashburn", country: "US" };
+		const frankfurt = {
+			egressAsn: "AS16509",
+			egressOrg: "Amazon",
+			city: "Frankfurt",
+			country: "DE",
+		};
+		// Three sandboxes on Genoa/Ashburn, one on Turin, one of the Genoa three in Frankfurt. Each carries
+		// its OWN publicIp — a per-sandbox identity field that must not fragment the network mixtures.
+		const sandbox = (specs: Record<string, unknown>, index: number, ip: string) =>
+			shard(
+				[
+					{
+						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						observedSpecs: { ...specs, publicIp: ip },
+					},
+				],
+				"2026-06-01T00:00:00.000Z",
+				index,
+			);
+		const merged = aggregateRuns([
+			sandbox({ ...genoa, ...ashburn }, 0, "203.0.113.1"),
+			sandbox({ ...genoa, ...ashburn }, 1, "203.0.113.2"),
+			sandbox({ ...turin, ...ashburn }, 2, "203.0.113.3"),
+			sandbox({ ...genoa, ...frankfurt }, 3, "198.51.100.4"),
 		]);
-		const b = shard([
-			{ ...provider("daytona-vm", [metric("pybench_milliseconds", [900])]), observedSpecs: same },
-		]);
-		const merged = aggregateRuns([a, b]);
+		const mixtures = merged.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures;
+
+		// The denominator, and the two counts — no inference required to read the heterogeneity off this.
+		expect(mixtures?.sandboxes).toBe(4);
+		const hardware = Object.values(mixtures?.hostHardware ?? {});
+		const network = Object.values(mixtures?.hostNetwork ?? {});
+		expect(hardware.map((m) => m.count)).toEqual([3, 1]); // most-common mixture first
+		expect(network.map((m) => m.count)).toEqual([3, 1]);
+		expect(hardware[0]?.specs).toEqual(genoa);
+		expect(hardware[1]?.specs).toEqual(turin);
+		expect(network[1]?.specs).toEqual(frankfurt);
+		// Four distinct publicIps did NOT mint four network mixtures: identity fields are excluded from
+		// both hashes, without which every count would be 1 and the disclosure would carry no signal. The
+		// category types now make an identity field on a mixture unrepresentable, so the counts above are
+		// the assertion — four sandboxes collapsing to 3 + 1 is only possible if the ip was excluded.
+		expect(hardware.length + network.length).toBe(4);
+	});
+
+	it("keys mixtures by a stable hash that ignores shard arrival order", () => {
+		const specs = { cpuModel: "AMD EPYC 9R45", egressAsn: "AS16509" };
+		const sandbox = (index: number) =>
+			shard(
+				[
+					{
+						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						observedSpecs: specs,
+					},
+				],
+				"2026-06-01T00:00:00.000Z",
+				index,
+			);
+		const forward = aggregateRuns([sandbox(0), sandbox(1)]);
+		const reversed = aggregateRuns([sandbox(1), sandbox(0)]);
+		const of = (run: typeof forward) =>
+			run.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures;
+		// Byte-identical, so the committed dataset diff reflects real change rather than merge order — and
+		// an id can be compared across runs to ask "same machine shape as last week?".
+		expect(JSON.stringify(of(forward))).toBe(JSON.stringify(of(reversed)));
+		expect(Object.keys(of(forward)?.hostHardware ?? {})).toHaveLength(1);
+	});
+
+	it("omits mixtures for a provider that reported nothing, and ignores its placeholder slices", () => {
+		// The normalizer emits a zero-evidence ProviderRun for every registered provider in EVERY shard, so
+		// a naive per-slice count would credit a 2-sandbox provider with one blind sandbox per shard in the
+		// whole run — and would hand the never-dispatched provider a mixture block claiming sandboxes it
+		// never had.
+		const measured = (index: number) =>
+			shard(
+				[
+					{
+						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						observedSpecs: { cpuModel: "AMD EPYC 9R45" },
+					},
+					provider("daytona-container", []),
+				],
+				"2026-06-01T00:00:00.000Z",
+				index,
+			);
+		const merged = aggregateRuns([measured(0), measured(1)]);
+		expect(
+			merged.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures?.sandboxes,
+		).toBe(2);
+		expect(
+			merged.providers.find((p) => p.providerId === "daytona-container")?.observedMixtures,
+		).toBeUndefined();
+	});
+
+	it("names the machine behind each replicate, so a sample cluster resolves to its host", () => {
+		const genoa = { cpuModel: "AMD EPYC 9R14", cpuMicroarch: "Zen 4 (Genoa)" };
+		const xeon = { cpuModel: "Intel Xeon Platinum 8358", cpuMicroarch: "Ice Lake" };
+		const sandbox = (specs: Record<string, unknown>, index: number) =>
+			shard(
+				[
+					{
+						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						observedSpecs: specs,
+					},
+				],
+				"2026-06-01T00:00:00.000Z",
+				index,
+			);
+		const merged = aggregateRuns([sandbox(genoa, 0), sandbox(xeon, 1), sandbox(genoa, 2)]);
 		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
-		expect(daytona?.observedSpecs.hostCpuModels).toBeUndefined();
+		const replicates =
+			daytona?.metrics.find((m) => m.metricId === "pybench_milliseconds")?.replicates ?? [];
+		expect(replicates).toHaveLength(3);
+
+		// Every id resolves into the provider's own mixtures — the join the schema narrow guarantees.
+		const hardware = daytona?.observedMixtures?.hostHardware ?? {};
+		for (const replicate of replicates) {
+			expect(replicate.hostHardwareId).toBeDefined();
+			expect(hardware[replicate.hostHardwareId as string]).toBeDefined();
+		}
+		// r0 and r2 ran on one machine, r1 on the other: the between-machine axis is now decodable rather
+		// than an anonymous set of clusters.
+		expect(replicates[0]?.hostHardwareId).toBe(replicates[2]?.hostHardwareId as string);
+		expect(replicates[1]?.hostHardwareId).not.toBe(replicates[0]?.hostHardwareId as string);
+		expect(hardware[replicates[1]?.hostHardwareId as string]?.specs.cpuModel).toBe(
+			"Intel Xeon Platinum 8358",
+		);
+		// No network probe ran, so no network id is invented for a mixture that does not exist.
+		for (const replicate of replicates) expect(replicate.hostNetworkId).toBeUndefined();
+	});
+
+	it("attributes each suite's replicate to its OWN sandbox, not another suite's same-index cell", () => {
+		// A replicate index is scoped to its (suite, provider) cell, so (system, r0) and (cpu-node, r0) are
+		// different sandboxes. A provider-wide index→machine map would credit one suite's samples to the
+		// other suite's host — a wrong attribution that reads exactly like a right one.
+		const genoa = { cpuModel: "AMD EPYC 9R14" };
+		const xeon = { cpuModel: "Intel Xeon Platinum 8358" };
+		const cell = (metricId: string, specs: Record<string, unknown>, index: number) =>
+			shard(
+				[
+					{
+						...provider("daytona-vm", [metric(metricId, [900 + index])]),
+						observedSpecs: specs,
+					},
+				],
+				"2026-06-01T00:00:00.000Z",
+				index,
+			);
+		const merged = aggregateRuns([
+			cell("pybench_milliseconds", genoa, 0),
+			cell("pybench_milliseconds", genoa, 1),
+			cell("node_web_tooling_runs_per_s", xeon, 0),
+			cell("node_web_tooling_runs_per_s", xeon, 1),
+		]);
+		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		const hardware = daytona?.observedMixtures?.hostHardware ?? {};
+		const cpuOf = (metricId: string, index: number) => {
+			const id = daytona?.metrics
+				.find((m) => m.metricId === metricId)
+				?.replicates?.find((r) => r.index === index)?.hostHardwareId;
+			return hardware[id as string]?.specs.cpuModel;
+		};
+		expect(cpuOf("pybench_milliseconds", 0)).toBe("AMD EPYC 9R14");
+		expect(cpuOf("node_web_tooling_runs_per_s", 0)).toBe("Intel Xeon Platinum 8358");
+	});
+
+	it("seats the representative observedSpecs on the dominant machine, not the first shard's", () => {
+		// The failure this replaces: first-wins resolves to shard arrival order, so run 30510718771
+		// published modal-vm with a headline cpuModel of one machine out of ten its sandboxes used.
+		const rare = { cpuModel: "AMD EPYC 9J45 128-Core Processor" };
+		const common = { cpuModel: "Intel Xeon Platinum 8358" };
+		const sandbox = (specs: Record<string, unknown>, index: number) =>
+			shard(
+				[
+					{
+						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						observedSpecs: specs,
+					},
+				],
+				"2026-06-01T00:00:00.000Z",
+				index,
+			);
+		// The rare machine arrives FIRST — under first-wins it would have become the headline.
+		const merged = aggregateRuns([
+			sandbox(rare, 0),
+			sandbox(common, 1),
+			sandbox(common, 2),
+			sandbox(common, 3),
+		]);
+		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		expect(daytona?.observedSpecs.cpuModel).toBe("Intel Xeon Platinum 8358");
+		// Both machines stay fully disclosed; only the single-value summary moved.
+		expect(Object.keys(daytona?.observedMixtures?.hostHardware ?? {})).toHaveLength(2);
+	});
+
+	it("counts a sandbox that only reported a gap — a failed sandbox is still a sandbox report", () => {
+		// A create failure or a disk skip produces no metric and no spec reading, but the provider was
+		// asked for that sandbox. Counting it keeps `sandboxes` the true denominator, so a category whose
+		// counts sum to less than it is visibly a partial disclosure rather than a complete one.
+		const withGap = shard(
+			[
+				{
+					...provider("daytona-vm", []),
+					gaps: [
+						{
+							scope: "suite" as const,
+							id: "realworld-mastra",
+							outcome: "failed" as const,
+							reason: "Failed to create sandbox",
+						},
+					],
+				},
+			],
+			"2026-06-01T00:00:00.000Z",
+			0,
+		);
+		const measured = shard(
+			[
+				{
+					...provider("daytona-vm", [metric("pybench_milliseconds", [900])]),
+					observedSpecs: { cpuModel: "AMD EPYC 9R45" },
+				},
+			],
+			"2026-06-01T00:00:00.000Z",
+			1,
+		);
+		const mixtures = aggregateRuns([withGap, measured]).providers.find(
+			(p) => p.providerId === "daytona-vm",
+		)?.observedMixtures;
+		expect(mixtures?.sandboxes).toBe(2);
+		// Two sandboxes, but only one disclosed hardware — the shortfall is readable from the counts.
+		expect(Object.values(mixtures?.hostHardware ?? {}).map((m) => m.count)).toEqual([1]);
+		expect(mixtures?.hostNetwork).toEqual({});
 	});
 
 	it("unions rich host metadata across shards and removes byte-identical duplicates", () => {
@@ -276,7 +517,7 @@ describe("aggregateRuns", () => {
 		).toBeUndefined();
 
 		const matchOnly = provider("daytona-vm", [metric("pybench_milliseconds", [900])]);
-		matchOnly.observedSpecs = { vcpus: 2, memoryGb: 8 };
+		matchOnly.observedSpecs = { vcpus: TARGET_SPEC.vcpus, memoryGb: TARGET_SPEC.memoryGb };
 		matchOnly.specMatched = true;
 		expect(
 			aggregateRuns([noProbe, shard([matchOnly])]).providers.find(
@@ -330,5 +571,69 @@ describe("aggregateRuns suite-shortfall gap folding", () => {
 		);
 		const daytona = aggregateRuns([r0, r1]).providers.find((p) => p.providerId === "daytona-vm");
 		expect(daytona?.gaps).toEqual([shortfall(reason), shortfall(other)]);
+	});
+});
+
+describe("aggregateRuns gap-cause folding", () => {
+	const gap = (cause?: GapCause) => ({
+		scope: "suite" as const,
+		id: "realworld-mastra" as const,
+		outcome: "skipped" as const,
+		reason: "Insufficient disk: 20.0 GiB free, suite needs 30 GiB",
+		...(cause ? { cause } : {}),
+	});
+	const withGap = (cause: GapCause | undefined, index: number) =>
+		shard(
+			[{ ...provider("e2b", [metric("pybench_milliseconds", [900 + index])]), gaps: [gap(cause)] }],
+			"2026-06-01T00:00:00.000Z",
+			index,
+		);
+	const disk = { kind: "disk-shortfall", freeGb: 20, requiredGb: 30 } as const satisfies GapCause;
+
+	it("keeps the classified gap when shards straddle a producer upgrade, in either order", () => {
+		// `cause` is not part of the dedupe key, so plain first-wins would let shard arrival order decide
+		// whether the published gap carries its classification.
+		for (const order of [
+			[withGap(undefined, 0), withGap(disk, 1)],
+			[withGap(disk, 0), withGap(undefined, 1)],
+		]) {
+			const gaps = aggregateRuns(order).providers.find((p) => p.providerId === "e2b")?.gaps ?? [];
+			expect(gaps).toHaveLength(1);
+			expect(gaps[0]?.cause).toEqual(disk);
+		}
+	});
+});
+
+describe("aggregateRuns derived-metric marking", () => {
+	it("marks the economics rows it re-derives, so the document says what is computed", () => {
+		// The guarantee the schema deliberately does NOT enforce (a published Run's validity must not track
+		// the live catalog) is pinned here instead, on the producer that owns catalog knowledge.
+		const merged = aggregateRuns([
+			shard([provider("daytona-vm", [metric(HARNESS_METRIC_IDS.spawn, [1000])])]),
+		]);
+		const metrics = merged.providers.find((p) => p.providerId === "daytona-vm")?.metrics ?? [];
+		const economics = metrics.filter((m) => m.metricId.startsWith("usd_"));
+		expect(economics.length).toBeGreaterThan(0);
+		for (const row of economics) expect(row.derived).toBe(true);
+		// And measurements stay unmarked — the marker means "computed", not "present".
+		expect(metrics.find((m) => m.metricId === HARNESS_METRIC_IDS.spawn)?.derived).toBeUndefined();
+	});
+
+	it("drops a shard's stale economics row even when the catalog no longer knows the id", () => {
+		// isDerivedMetric prefers the document's marker: a marked row is never re-admitted as a measurement
+		// and pooled into a ranking, which a catalog-only test would do for a renamed or retired id.
+		const stale = provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
+		stale.metrics.push({
+			metricId: "usd_per_retired_thing",
+			samples: [42],
+			aggregates: aggregate([42]),
+			derived: true,
+		});
+		const merged = aggregateRuns([shard([stale])]);
+		const ids =
+			merged.providers.find((p) => p.providerId === "daytona-vm")?.metrics.map((m) => m.metricId) ??
+			[];
+		expect(ids).not.toContain("usd_per_retired_thing");
+		expect(ids).toContain("node_web_tooling_runs_per_s");
 	});
 });

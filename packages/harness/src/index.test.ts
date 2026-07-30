@@ -438,6 +438,12 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			suite: "cpu-node",
 			outcome: "failed",
 			reason: "Failed to create sandbox: Snapshot toolchain-v3-container is not available",
+			// The classification the thrower knew, carried into the marker so consumers need not
+			// re-read the sentence above to learn it was a creation failure.
+			cause: {
+				kind: "sandbox-create-failed",
+				detail: "Snapshot toolchain-v3-container is not available",
+			},
 		});
 	});
 
@@ -456,6 +462,12 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			suite: "cpu-node",
 			outcome: "failed",
 			reason: "Failed to create sandbox: provider config invalid: DAYTONA_REGION unset",
+			// The classification the thrower knew, carried into the marker so consumers need not
+			// re-read the sentence above to learn it was a creation failure.
+			cause: {
+				kind: "sandbox-create-failed",
+				detail: "provider config invalid: DAYTONA_REGION unset",
+			},
 		});
 	});
 
@@ -497,6 +509,9 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			id: "cpu-node",
 			outcome: "failed",
 			reason: "Failed to create sandbox: boom",
+			// The classification the thrower knew, carried into the marker so consumers need not
+			// re-read the sentence above to learn it was a creation failure.
+			cause: { kind: "sandbox-create-failed", detail: "boom" },
 		});
 	});
 });

@@ -10,6 +10,31 @@ import type { HostMetadataField, HostMetadataRecord } from "@sandbox-benchmarks/
 
 const PTS_METADATA_FILE = /^pts_.+--metadata\.json$/;
 
+/**
+ * Field-path suffixes whose value changes on every sandbox even when nothing about the host does — a
+ * wall-clock stamp of when that particular run happened.
+ *
+ * They are excluded from a host record's IDENTITY when the aggregate folds duplicates, because
+ * including them defeated deduplication entirely: records were folded only when byte-identical, and the
+ * timestamp never repeats, so one provider's 21 distinct source files landed as 82 near-identical
+ * records. Host metadata was 54% of the committed dataset while describing a handful of machines.
+ *
+ * This lives beside the flattening that PRODUCES these paths, not in the Run schema. The schema
+ * deliberately does not know either source's evolving key vocabulary (see the module note above), and a
+ * `.timestamp` suffix heuristic is exactly that kind of source-specific knowledge — in the contract it
+ * would also make any upstream field whose flattened path happens to end in `.timestamp` unpublishable
+ * on a folded record.
+ *
+ * Matched by suffix rather than exact path because the path is prefixed by the PTS result identifier
+ * (`ci.timestamp`), which is not fixed.
+ */
+export const VOLATILE_HOST_METADATA_PATH_SUFFIXES = [".timestamp"] as const;
+
+/** Whether a host-metadata field path is a per-run stamp rather than a property of the host. */
+export function isVolatileHostMetadataPath(path: string): boolean {
+	return VOLATILE_HOST_METADATA_PATH_SUFFIXES.some((suffix) => path.endsWith(suffix));
+}
+
 function parseJson(path: string): unknown {
 	try {
 		return JSON.parse(readFileSync(path, "utf8"));

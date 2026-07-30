@@ -17,7 +17,6 @@
  * inconsistent merge fails here rather than reaching a consumer.
  */
 import type {
-	HostMetadataRecord,
 	MetricReplicate,
 	MetricResult,
 	ObservedSpecs,
@@ -29,10 +28,18 @@ import type {
 import {
 	aggregate,
 	deriveEconomics,
-	getMetric,
 	getProvider,
+	isDerivedMetric,
 	parseRun,
+	providerReportedNothing,
 } from "@sandbox-benchmarks/schema";
+import type { HostMetadataRecordInput, ObservedMixtureIds } from "./observed-mixtures.ts";
+import {
+	buildObservedMixtures,
+	foldHostMetadata,
+	observedMixtureIds,
+	representativeSpecs,
+} from "./observed-mixtures.ts";
 
 /**
  * Field separator for the composite dedupe keys below. A NUL can't occur in a suite name, a reason, or
@@ -40,12 +47,6 @@ import {
  * rather than a literal control character in a template string (which makes git read the file as binary).
  */
 const NUL = "\u0000";
-
-/** A measured (non-derived) Metric: one a suite actually produced, vs. a derived economics Metric. */
-function isMeasured(metric: MetricResult): boolean {
-	// Derived metrics (economics) are recomputed post-merge; everything else is real measurement.
-	return getMetric(metric.metricId)?.derived !== true;
-}
 
 /** One provider's slice from one shard, tagged with the replicate sandbox the shard was measured under. */
 interface ReplicateSlice {
@@ -61,15 +62,21 @@ interface ReplicateSlice {
  * hierarchical-bootstrap inference while the pooled median stays the ranking value. Provenance
  * (`sourceFile`/`appVersion`/`arguments`) is carried from the lowest-index replicate.
  */
-function mergeMetricReplicates(byReplicate: Map<number, MetricResult>): MetricResult {
+function mergeMetricReplicates(byReplicate: Map<number, ReplicateContribution>): MetricResult {
 	const indices = [...byReplicate.keys()].sort((a, b) => a - b);
-	const first = byReplicate.get(indices[0] as number) as MetricResult;
+	const first = (byReplicate.get(indices[0] as number) as ReplicateContribution).metric;
 	if (indices.length === 1) return first;
 
-	const replicates: MetricReplicate[] = indices.map((index) => ({
-		index,
-		samples: [...(byReplicate.get(index) as MetricResult).samples],
-	}));
+	const replicates: MetricReplicate[] = indices.map((index) => {
+		const contribution = byReplicate.get(index) as ReplicateContribution;
+		return {
+			index,
+			samples: [...contribution.metric.samples],
+			// The join to observedMixtures: which machine and network produced THIS cluster. Spread so a
+			// category the sandbox disclosed nothing for stays absent rather than becoming a dangling key.
+			...contribution.ids,
+		};
+	});
 	const pooled = replicates.flatMap((r) => r.samples);
 	// Spread `first` so every provenance field (sourceFile/appVersion/arguments — and any future optional
 	// MetricResult field) is carried from the lowest-index replicate without re-listing the schema here,
@@ -83,92 +90,131 @@ function mergeMetricReplicates(byReplicate: Map<number, MetricResult>): MetricRe
 	};
 }
 
+/** One replicate's contribution to a metric, with the mixture ids of the sandbox that produced it. */
+interface ReplicateContribution {
+	metric: MetricResult;
+	ids: ObservedMixtureIds;
+}
+
+/**
+ * Fold across shards by the rule the whole merge uses for a verdict: a single `false` is sticky, a
+ * `true` stands only while nothing contradicts it, and all-undefined stays undefined ("refuse to judge
+ * on partial evidence", see computeSpecMatched).
+ *
+ * Order-independent by construction, which matters because shard arrival order is not deterministic —
+ * an earlier first-shard-wins version made ranking eligibility depend on it.
+ */
+function foldVerdict(current: boolean | undefined, next: boolean | undefined): boolean | undefined {
+	if (next === false || current === false) return false;
+	return next === true ? true : current;
+}
+
 /** Merge one provider's slices across every replicate shard that carried it. */
 function mergeProvider(providerId: string, entries: readonly ReplicateSlice[]): ProviderRun {
-	const slices = entries.map((entry) => entry.slice);
-	// Group measured metrics by id, then by the replicate that produced them. A metric id recurring across
-	// replicate shards is R distinct sandboxes (folded into the replicate structure below); a metric id
-	// recurring WITHIN one replicate is a duplicate (one <Result> owns a metric's samples — result-name
-	// contamination), so first-wins survives at the per-replicate level.
-	const byMetric = new Map<string, Map<number, MetricResult>>();
-	for (const { slice, replicateIndex } of entries) {
-		for (const metric of slice.metrics) {
-			if (!isMeasured(metric)) continue;
-			let byReplicate = byMetric.get(metric.metricId);
-			if (!byReplicate) {
-				byReplicate = new Map<number, MetricResult>();
-				byMetric.set(metric.metricId, byReplicate);
-			}
-			if (!byReplicate.has(replicateIndex)) byReplicate.set(replicateIndex, metric);
-		}
-	}
-	const measured = new Map<string, MetricResult>();
-	for (const [metricId, byReplicate] of byMetric) {
-		measured.set(metricId, mergeMetricReplicates(byReplicate));
-	}
-
-	// Gaps deduped by (scope, id, outcome, reason); uncatalogued stragglers by id — both can recur across
-	// shards. `outcome` belongs in the key: one shard skipping a suite on a disk precondition while another
-	// attempted it and crashed are two distinct facts about the provider, and folding them into one would
-	// silently drop whichever arrived second.
-	const gaps: ResultGap[] = [];
-	const seenGap = new Set<string>();
+	// Group measured metrics by id, then by the replicate that produced them, carrying that sandbox's
+	// mixture ids in the SAME record. A metric id recurring across replicate shards is R distinct
+	// sandboxes (folded into the replicate structure below); a metric id recurring WITHIN one replicate is
+	// a duplicate (one <Result> owns a metric's samples — result-name contamination), so first-wins
+	// survives at the per-replicate level. Keeping the ids alongside the metric rather than in a parallel
+	// map makes "the attribution describes the sandbox the samples came from" structural.
+	//
+	// Keyed per METRIC, not per provider: a replicate index is scoped to its cell, so (system, r0) and
+	// (disk, r0) are two different sandboxes that may well have landed on different machines. A
+	// provider-wide index→machine map would silently attribute one suite's samples to another suite's host.
+	const byMetric = new Map<string, Map<number, ReplicateContribution>>();
+	const gapByKey = new Map<string, ResultGap>();
 	// Coverage unions across shards: the matrix fans out one job per (provider, suite) and that job writes
-	// one shard per replicate sandbox, so each shard sees only its own cell+replicate. A suite is covered for this provider iff SOME shard produced a Metric for it.
+	// one shard per replicate sandbox, so each shard sees only its own cell+replicate. A suite is covered
+	// for this provider iff SOME shard produced a Metric for it.
 	const suitesCovered = new Set<string>();
 	const uncatalogued: UncataloguedResult[] = [];
 	const seenStraggler = new Set<string>();
-	// observed-specs: first non-undefined value per key wins (all shards of a provider ran the same spec).
-	const observedSpecs: ObservedSpecs = {};
 	let specMatched: boolean | undefined;
-	// Cross-shard hardware heterogeneity: shards of one provider are MEANT to be the same machine, so a
-	// divergent host cpuModel means the provider scheduled them onto different hardware — a confound the
-	// published Run must disclose. cpuModel is the key (cpuMicroarch is derived from it, so distinct
-	// microarchs can't arise without distinct models); collect the distinct disclosures, publish below.
-	const hostCpuModels = new Set<string>();
-	const hostMetadata: HostMetadataRecord[] = [];
-	const seenHostMetadata = new Set<string>();
+	// One reading per SANDBOX, for the mixture tally. Only slices carrying participation evidence count:
+	// the normalizer emits a zero-evidence placeholder ProviderRun for every registered provider in
+	// EVERY shard, so counting slices naively would set the denominator to "every shard in the run" and
+	// report a 3-sandbox provider as having 60-odd blind sandboxes. A slice with a gap but no metric IS a
+	// real report (a skipped or failed-to-create sandbox is a sandbox the provider was asked for), so the
+	// predicate is participation evidence, not measurement.
+	const sandboxSpecReadings: ObservedSpecs[] = [];
+	// One entry per (record, sandbox), folded below. Collected raw rather than deduped here because the
+	// fold needs the machine each record was read on, which only the slice knows.
+	const hostMetadataInputs: HostMetadataRecordInput[] = [];
 
-	for (const slice of slices) {
-		for (const record of slice.hostMetadata ?? []) {
-			const key = JSON.stringify(record);
-			if (seenHostMetadata.has(key)) continue;
-			seenHostMetadata.add(key);
-			hostMetadata.push(record);
-		}
+	// ONE pass over the slices. The mixture ids are two sha256 hashes per slice, and a real run merges
+	// ~470 slices per provider (the normalizer's placeholder rows included), so deriving them once here
+	// rather than once per consumer loop is the difference between ~940 hashes and ~2,800.
+	for (const { slice, replicateIndex } of entries) {
+		const ids = observedMixtureIds(slice.observedSpecs);
+		if (!providerReportedNothing(slice)) sandboxSpecReadings.push(slice.observedSpecs);
+		for (const record of slice.hostMetadata ?? []) hostMetadataInputs.push({ record, ids });
 		for (const suite of slice.suitesCovered) suitesCovered.add(suite);
+
+		for (const metric of slice.metrics) {
+			if (isDerivedMetric(metric)) continue;
+			let byReplicate = byMetric.get(metric.metricId);
+			if (!byReplicate) {
+				byReplicate = new Map<number, ReplicateContribution>();
+				byMetric.set(metric.metricId, byReplicate);
+			}
+			if (!byReplicate.has(replicateIndex)) byReplicate.set(replicateIndex, { metric, ids });
+		}
+
+		// Gaps keyed by (scope, id, outcome, reason); `outcome` belongs in the key because one shard
+		// skipping a suite on a disk precondition while another attempted it and crashed are two distinct
+		// facts, and folding them would silently drop whichever arrived second. `cause` is NOT in the key —
+		// reason and cause are built from one input — but shards can straddle a producer upgrade, so a
+		// classified gap is merged over an unclassified one instead of letting arrival order decide. Merged
+		// into a NEW object: the gaps belong to the caller's shard Runs and must not be mutated.
 		for (const gap of slice.gaps) {
 			const key = [gap.scope, gap.id, gap.outcome, gap.reason].join(NUL);
-			if (seenGap.has(key)) continue;
-			seenGap.add(key);
-			gaps.push(gap);
+			const existing = gapByKey.get(key);
+			if (existing === undefined) {
+				gapByKey.set(key, gap);
+			} else if (existing.cause === undefined && gap.cause !== undefined) {
+				gapByKey.set(key, { ...existing, cause: gap.cause });
+			}
 		}
+
 		for (const straggler of slice.uncatalogued) {
 			if (seenStraggler.has(straggler.id)) continue;
 			seenStraggler.add(straggler.id);
 			uncatalogued.push(straggler);
 		}
-		for (const [key, value] of Object.entries(slice.observedSpecs)) {
-			if (value !== undefined && !(key in observedSpecs)) {
-				(observedSpecs as Record<string, unknown>)[key] = value;
-			}
-		}
-		if (slice.observedSpecs.cpuModel) hostCpuModels.add(slice.observedSpecs.cpuModel);
-		// specMatched folds ORDER-INDEPENDENTLY across shards (was first-shard-wins, which made ranking
-		// eligibility depend on shard arrival order). The merged provider row shares one aggregate, so a
-		// single shard that ran off the target spec (specMatched === false) contaminates it and
-		// disqualifies the whole provider — false is sticky and always wins. An affirmative match stands
-		// only while no shard contradicts it; all-undefined stays undefined ("refuse to judge on partial
-		// evidence", see computeSpecMatched).
-		if (slice.specMatched === false) specMatched = false;
-		else if (slice.specMatched === true && specMatched !== false) specMatched = true;
+
+		specMatched = foldVerdict(specMatched, slice.specMatched);
 	}
 
-	// Disclose the distinct host CPUs when the shards saw more than one — names the confound rather than
-	// hiding it behind the "first-wins" cpuModel merged above. Sorted for deterministic output.
-	if (hostCpuModels.size > 1) {
-		observedSpecs.hostCpuModels = [...hostCpuModels].sort((a, b) => a.localeCompare(b));
+	const measured = new Map<string, MetricResult>();
+	for (const [metricId, byReplicate] of byMetric) {
+		measured.set(metricId, mergeMetricReplicates(byReplicate));
 	}
+	const gaps = [...gapByKey.values()];
+
+	// The counted disclosure: how many distinct host-hardware and host-network combinations the
+	// provider's sandboxes actually reported, and how many landed on each. Undefined for a provider with
+	// no sandbox report at all (the registry placeholder row), which has no mixture to disclose.
+	const observedMixtures = buildObservedMixtures(sandboxSpecReadings);
+
+	// The representative single-value summary, derived once from the mixtures plus a first-wins backfill
+	// rather than assembled by mutation order. Empty without mixtures, and provably so: `observedMixtures`
+	// is undefined only when NO slice carried participation evidence, and `providerReportedNothing`
+	// includes "no observed-spec reading" — so every excluded slice had empty specs and there is nothing to
+	// back-fill from. That is also why the backfill reads `sandboxSpecReadings` rather than every slice.
+	const observedSpecs: ObservedSpecs = observedMixtures
+		? representativeSpecs(sandboxSpecReadings, observedMixtures)
+		: {};
+
+	// Fold the PER-MACHINE verdicts in too. The two inputs are the same observations at different grains,
+	// so they cannot legitimately disagree — and this closes the case where a shard reported specs but no
+	// verdict of its own, which used to leave the provider undefined while its machines plainly answered
+	// the question. The schema refuses a provider verdict kinder than its parts, so this is load-bearing.
+	for (const mixture of Object.values(observedMixtures?.hostHardware ?? {})) {
+		specMatched = foldVerdict(specMatched, mixture.specMatched);
+	}
+
+	// Fold host records by (source, file, non-volatile fields, machine) with a sandbox count.
+	const hostMetadata = foldHostMetadata(hostMetadataInputs);
 
 	const metrics = [...measured.values()];
 	// Re-derive economics from the FULL merged measured set so $/lifecycle sums every suite's timings,
@@ -190,6 +236,7 @@ function mergeProvider(providerId: string, entries: readonly ReplicateSlice[]): 
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
 		...(specMatched !== undefined ? { specMatched } : {}),
 		observedSpecs,
+		...(observedMixtures !== undefined ? { observedMixtures } : {}),
 		...(hostMetadata.length > 0 ? { hostMetadata } : {}),
 		metrics,
 		suitesCovered: [...suitesCovered].sort((a, b) => a.localeCompare(b)),
@@ -243,9 +290,12 @@ export function aggregateRuns(runs: readonly Run[]): Run {
 	const sourceRunUrl = runs.find((run) => run.sourceRunUrl !== undefined)?.sourceRunUrl;
 
 	// The merged Run spans every replicate, so it carries no single `replicateIndex` — that lived on the
-	// shards. Emit v3 (the replicate-aware schema); v2 shards read in above validate unchanged.
+	// shards. Emit v4: this is the only layer that sees every sandbox's reading at once, so it is the only
+	// one that can emit `observedMixtures`, join each replicate to the mixture its sandbox reported, and
+	// fold the host records. v2/v3 shards read in above validate unchanged, and the v4 document still
+	// carries the v3 replicate fold (version floors compare numerically in runSchema).
 	return parseRun({
-		schemaVersion: "3",
+		schemaVersion: "4",
 		runId: first.runId,
 		sha: first.sha,
 		generatedAt,

@@ -12,7 +12,7 @@
  * SDK-free: the Run model + the Catalog (for each metric's Direction) only.
  */
 import type { Direction, Run } from "@sandbox-benchmarks/schema";
-import { getMetric, LEGACY_PROVIDER_ALIASES } from "@sandbox-benchmarks/schema";
+import { getMetric, isDerivedMetric, LEGACY_PROVIDER_ALIASES } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 
 /** The default noise threshold (relative): movements within ±10% are treated as stable. */
@@ -93,13 +93,15 @@ export function compareRuns(
 		const prevMetrics = new Map(prev.metrics.map((m) => [m.metricId, m]));
 
 		for (const curMetric of cur.metrics) {
-			const def = getMetric(curMetric.metricId);
 			// Derived metrics (economics) carry no provenance and mirror a measured shift — skip them.
-			if (def?.derived === true) continue;
+			// The document's own marker is preferred over the catalog (see isDerivedMetric): a catalog-only
+			// test re-classifies a renamed or retired derived metric as measured and reports a regression on
+			// a price.
+			if (isDerivedMetric(curMetric)) continue;
 			const prevMetric = prevMetrics.get(curMetric.metricId);
 			if (!prevMetric) continue;
 
-			const direction: Direction = def?.direction ?? "HIB";
+			const direction: Direction = getMetric(curMetric.metricId)?.direction ?? "HIB";
 			const base = {
 				providerId: cur.providerId,
 				metricId: curMetric.metricId,

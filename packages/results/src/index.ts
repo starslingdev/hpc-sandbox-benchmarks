@@ -30,6 +30,14 @@ export {
 } from "./lib/leaderboard.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
 export {
+	buildObservedMixtures,
+	foldHostMetadata,
+	type HostMetadataRecordInput,
+	type ObservedMixtureIds,
+	observedMixtureIds,
+	representativeSpecs,
+} from "./lib/observed-mixtures.ts";
+export {
 	type CompareRunsOptions,
 	compareRuns,
 	DEFAULT_THRESHOLD,

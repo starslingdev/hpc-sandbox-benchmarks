@@ -8,6 +8,7 @@ import { HARNESS_METRIC_IDS, isPtsResultFile, SUITES } from "@sandbox-benchmarks
 import { collectResults, writeGapMarker } from "./lib/collect.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 import { MIN, resolvePtsPassPolicy, StepRunner, withTimeout } from "./lib/execute.ts";
+import { gapCauseOf } from "./lib/gap-cause.ts";
 import { time } from "./lib/internal.ts";
 import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
@@ -200,7 +201,10 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 	if (missingVars.length > 0) {
 		const reason = `Missing credentials: ${missingVars.join(", ")}`;
 		console.log(`SKIPPED ${providerName}/${suiteName}: ${reason}`);
-		writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason);
+		writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason, {
+			kind: "missing-credentials",
+			variables: missingVars,
+		});
 		return;
 	}
 
@@ -331,6 +335,7 @@ export async function createSuiteSandbox(
 						suiteName,
 						"failed",
 						`${CREATE_FAILURE_PREFIX}${message}`,
+						{ kind: "sandbox-create-failed", detail: message },
 					);
 				} catch (markerErr) {
 					console.error(
@@ -339,6 +344,10 @@ export async function createSuiteSandbox(
 						}); the sandbox-creation error below is unaffected`,
 					);
 				}
+				// The ORIGINAL error propagates, unwrapped: bench-suite matches on the provider's own message
+				// and `createSuiteSandbox` is called outside `runSuiteOnSandbox`, so this throw never reaches
+				// the suite-level marker writer that reads a classification. The marker written just above
+				// already carries the cause as a plain value, which is the only place it is read.
 				throw err;
 			}
 			console.log(
@@ -427,7 +436,11 @@ export async function runSuiteOnSandbox(
 			if (freeGb < suite.minDiskGb) {
 				const reason = `Insufficient disk: ${freeGb.toFixed(1)} GiB free, suite needs ${suite.minDiskGb} GiB`;
 				console.log(`SKIPPED ${providerName}/${suiteName}: ${reason}`);
-				writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason);
+				writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason, {
+					kind: "disk-shortfall",
+					freeGb,
+					requiredGb: suite.minDiskGb,
+				});
 				return;
 			}
 		}
@@ -503,7 +516,10 @@ export async function runSuiteOnSandbox(
 		// The leaderboard still derives a `missing` gap when even this marker is lost (the artifact upload
 		// is itself best-effort), but a marker that survives says WHY, and that is the whole difference.
 		const reason = suiteError instanceof Error ? suiteError.message : String(suiteError);
-		writeGapMarker(resultsDir, providerName, suiteName, "failed", reason);
+		// The thrower classified it (a step timeout knows its budget, a lost sandbox knows its step);
+		// this frame only knows a message. `gapCauseOf` returns undefined for anything unclassified,
+		// which records the gap exactly as before rather than inventing a kind from the prose.
+		writeGapMarker(resultsDir, providerName, suiteName, "failed", reason, gapCauseOf(suiteError));
 		throw suiteError;
 	}
 	console.log(`\nDone: ${suiteName} on ${providerName}`);

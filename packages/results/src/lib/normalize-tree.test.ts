@@ -383,6 +383,11 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				outcome: "failed",
 				reason:
 					"PTS ran but every trial failed for 1 of 1 declared metrics: node_web_tooling_runs_per_s (cpu-node/pts_node-web-tooling.xml) — attempted, no value recorded",
+				cause: {
+					kind: "metrics-unrecorded",
+					metricIds: ["node_web_tooling_runs_per_s"],
+					declared: 1,
+				},
 			},
 		]);
 		expect(run.suitesCovered).toEqual([]);
@@ -449,6 +454,11 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				outcome: "failed",
 				reason:
 					"PTS ran but every trial failed for 1 of 3 declared metrics: pybench_milliseconds (system/pts_pybench.xml) — attempted, no value recorded",
+				cause: {
+					kind: "metrics-unrecorded",
+					metricIds: ["pybench_milliseconds"],
+					declared: 3,
+				},
 			},
 		]);
 	});
@@ -496,6 +506,11 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				outcome: "failed",
 				reason:
 					"PTS ran but every trial failed for 1 of 3 declared metrics: pybench_milliseconds (system/pts_git.xml) — attempted, no value recorded",
+				cause: {
+					kind: "metrics-unrecorded",
+					metricIds: ["pybench_milliseconds"],
+					declared: 3,
+				},
 			},
 		]);
 	});
@@ -567,6 +582,11 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				outcome: "failed",
 				reason:
 					"PTS ran but every trial failed for 2 of 4 declared metrics: stream_type_add (memory/pts_stream.xml), stream_type_triad (memory/pts_stream.xml) — attempted, no value recorded",
+				cause: {
+					kind: "metrics-unrecorded",
+					metricIds: ["stream_type_add", "stream_type_triad"],
+					declared: 4,
+				},
 			},
 		]);
 	});
@@ -622,6 +642,11 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				outcome: "failed",
 				reason:
 					"PTS ran but every trial failed for 1 of 3 declared metrics: pybench_milliseconds (system/pts_pybench.xml) — attempted, no value recorded",
+				cause: {
+					kind: "metrics-unrecorded",
+					metricIds: ["pybench_milliseconds"],
+					declared: 3,
+				},
 			},
 		]);
 	});
@@ -644,6 +669,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				id: "disk",
 				outcome: "failed",
 				reason: `PTS duplicate-value dedup dropped 1 fio twin result (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${SEQ_READ_DIRECT_YES}_mb_per_s (twin survived in disk/pts_fio-seq-read.xml)`,
+				cause: { kind: "duplicate-value-dedup", metricIds: [`${SEQ_READ_DIRECT_YES}_mb_per_s`] },
 			},
 		]);
 	});
@@ -786,6 +812,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				id: "disk",
 				outcome: "failed",
 				reason: `PTS duplicate-value dedup dropped 1 fio twin result (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${SEQ_READ_DIRECT_YES}_mb_per_s (twin survived in disk/pts_fio-seq-read.xml)`,
+				cause: { kind: "duplicate-value-dedup", metricIds: [`${SEQ_READ_DIRECT_YES}_mb_per_s`] },
 			},
 		]);
 	});
@@ -817,6 +844,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 				id: "disk",
 				outcome: "failed",
 				reason: `PTS duplicate-value dedup dropped 1 fio twin result (MB/s == IOPS at this block size, so the duplicate-valued <Result> was never written): ${SEQ_READ_DIRECT_YES}_mb_per_s (twin survived in disk/pts_fio-rand-read.xml)`,
+				cause: { kind: "duplicate-value-dedup", metricIds: [`${SEQ_READ_DIRECT_YES}_mb_per_s`] },
 			},
 		]);
 	});

@@ -24,6 +24,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
+import { GapError } from "./gap-cause.ts";
 
 export const MIN = 60_000;
 
@@ -149,18 +150,44 @@ function isUnsupportedFilesystem(err: unknown): boolean {
 }
 
 /** Race a promise against a timeout, clearing the timer either way. */
-export async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+export async function withTimeout<T>(
+	promise: Promise<T>,
+	ms: number,
+	// The message, or a factory for the error to reject with when the caller wants it classified. A
+	// factory rather than message+cause so the wording and its classification are built together and
+	// cannot describe different facts (see {@link stepTimeout}).
+	message: string | (() => Error),
+): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		return await Promise.race([
 			promise,
 			new Promise<never>((_, reject) => {
-				timer = setTimeout(() => reject(new Error(message)), ms);
+				timer = setTimeout(() => {
+					reject(typeof message === "string" ? new Error(message) : message());
+				}, ms);
 			}),
 		]);
 	} finally {
 		if (timer) clearTimeout(timer);
 	}
+}
+
+/**
+ * The step-timeout failure, worded and classified from one input.
+ *
+ * Both the synchronous and the detached step paths can time out, and each used to build the sentence and
+ * the cause itself — four copies of the same seconds rounding, and two chances for the prose and the
+ * data to disagree. This mirrors the `shortfallReason`/`shortfallCause` pairing the results package uses
+ * for the same reason.
+ */
+function stepTimeout(label: string, timeoutMs: number): GapError {
+	const timeoutSeconds = Math.round(timeoutMs / 1000);
+	return new GapError(`Step "${label}" timed out after ${timeoutSeconds}s`, {
+		kind: "step-timeout",
+		step: label,
+		timeoutSeconds,
+	});
 }
 
 /** Single-quote a script for safe embedding in `bash -c '<script>'`. */
@@ -459,7 +486,7 @@ export class StepRunner {
 			result = await withTimeout(
 				this.sandbox.runCommand(`bash -c ${shellQuote(`${this.preamble}; ${script}`)}`),
 				timeoutMs,
-				`Step "${label}" timed out after ${Math.round(timeoutMs / 1000)}s`,
+				() => stepTimeout(label, timeoutMs),
 			);
 		} finally {
 			stopHeartbeat();
@@ -528,9 +555,10 @@ export class StepRunner {
 					consecutivePollFailures++;
 					if (consecutivePollFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
 						const reason = err instanceof Error ? err.message : String(err);
-						throw new Error(
+						throw new GapError(
 							`Step "${label}" lost its sandbox: ${consecutivePollFailures} consecutive detached ` +
 								`polls failed (last: ${reason}) — the sandbox stopped responding, not a quiet long step`,
+							{ kind: "sandbox-lost", step: label, consecutivePollFailures },
 						);
 					}
 				}
@@ -567,7 +595,7 @@ export class StepRunner {
 					} else if (tail) {
 						console.log(`--- last output from "${label}" before timeout ---\n${tail}`);
 					}
-					throw new Error(`Step "${label}" timed out after ${Math.round(timeoutMs / 1000)}s`);
+					throw stepTimeout(label, timeoutMs);
 				}
 				await this.sleep(pollDelayMs);
 				pollDelayMs = Math.min(pollDelayMs * POLL_BACKOFF, POLL_CAP_MS);
@@ -745,7 +773,11 @@ export class StepRunner {
 				const tail = result.stderr || result.stdout;
 				if (tail) process.stderr.write(tail.endsWith("\n") ? tail : `${tail}\n`);
 			}
-			throw new Error(`Step "${label}" failed with exit code ${result.exitCode}`);
+			throw new GapError(`Step "${label}" failed with exit code ${result.exitCode}`, {
+				kind: "step-failed",
+				step: label,
+				exitCode: result.exitCode,
+			});
 		}
 		return result;
 	}
