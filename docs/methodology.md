@@ -43,8 +43,10 @@ leads each dimension with its headline.
 Which sections exist is driven by the data — a dimension no provider emitted is simply absent — but the
 order and the emphasis are editorial, and they follow this document's argument:
 
-- **`realworld` leads.** Synthetic scores say what the hardware *can* do; the real-world suites say what
-  a developer or a CI job actually waits on, which is the question the benchmark exists to answer.
+- **`realworld` leads, and it is drawn rather than tabulated.** Synthetic scores say what the hardware
+  *can* do; the real-world suites say what a developer or a CI job actually waits on, which is the
+  question the benchmark exists to answer. That section opens with one stacked chart per repo — see
+  [The realworld charts](#the-realworld-charts) — and folds its per-task tables behind a `<details>`.
 - **The synthetic microbenchmarks collapse.** `cpu`, `disk`, `memory`, `network` and `system` each load
   one hardware axis in isolation, so their tables render inside a collapsed `<details>`. The `##`
   heading stays outside it: a measured axis must never look like one that never ran.
@@ -59,6 +61,38 @@ back to its raw Samples. (A Run spliced from two CI runs — a composite `<runA>
 [`data/dataset/index.json`](../data/dataset/index.json) — links each half separately; no single workflow
 run owns the pair.) The order, the collapse, and the links are all gated
 against the committed artifact by `tooling/repo-checks/src/leaderboard-artifact-sync.test.ts`.
+
+### The realworld charts
+
+Each chart is one repo. Each bar is one environment's whole pipeline for that repo; each segment is one
+task, in the suite's real execution order, coloured on an ordinal ramp so colour order *is* execution
+order. Rows sort fastest-first and the fastest is badged.
+
+Four properties are load-bearing, and each one is a claim the picture would otherwise make silently:
+
+- **A bar is the SUM OF THE PER-TASK MEDIANS, not the median of any pipeline that ran.** In a stacked
+  bar the segments must add up to the bar — that is what stacking means — so the total is arithmetic
+  over the same p50s the tables below print, and no single execution ever took exactly that long. The
+  caption under every chart says so.
+- **All charts share one time scale.** A second is the same length in every one of them, so the three
+  repos can be read against each other. Scaling each to its own maximum would make three unrelated
+  pictures out of one comparison.
+- **An environment is charted only if it completed EVERY task the suite exercised.** Summing the tasks a
+  provider did run and drawing it beside providers that ran them all would show a fast bar for an
+  environment that skipped the work — the same "a gap is not a zero" rule the tables follow.
+- **Environments that did not complete the suite are listed under the bars**, with the outcome and the
+  reason the run recorded. Dropping them would turn a chart that discloses its gaps into one that
+  appears to have none.
+
+A suite is charted only when at least two environments completed it; with fewer, the section keeps its
+tables in the open, because hiding numbers behind a triangle whose figures do not exist would take them
+off the page entirely.
+
+The charts are SVG with the glyphs embedded as outlines, so they render identically anywhere with no
+font installed and pass GitHub's Markdown sanitiser. The cost is that they cannot be reviewed as a
+diff — the review surface is the image. That is exactly why the per-task tables stay one click below
+them, and why `leaderboard-artifact-sync` re-renders every chart and compares it byte-for-byte against
+the committed one: a stale table is at least readable, a stale figure is not.
 
 Metrics come from three sources:
 

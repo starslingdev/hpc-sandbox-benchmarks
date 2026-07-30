@@ -47,9 +47,10 @@ packages/   importable libraries   — scope @sandbox-benchmarks/*
   providers/    provider adapters → schema + computesdk
   templates/    per-provider template builders + toolchain Docker images (images/)
   harness/      benchmark timing → providers + schema
-  results/      normalization → schema only (no provider SDKs)
+  results/      normalization + the comparison surface → schema, figures
+  figures/      share figures: a derived model → JSX → SVG (satori) → PNG. Imports nothing here.
 apps/
-  cli/          entrypoint with bin commands → all five packages
+  cli/          entrypoint with bin commands → all six packages
 tooling/        dev-only            — scope @repo/*
   tsconfig/     shared source-first TS configs (config-only)
   test-utils/   provider conformance suite factory
@@ -68,16 +69,23 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
 | `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
 | `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
-| `@sandbox-benchmarks/results`    | schema                                          | `arktype`, XML tooling (`catalog:xml`) |
+| `@sandbox-benchmarks/figures`    | —                                               | `satori`, `@resvg/resvg-js`, `react` |
+| `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
 | `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results  | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
 | `@repo/tsconfig`            | —                                               | —                                   |
 | `@repo/test-utils`          | schema                                          | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
 
-`results` deliberately depends on `schema` alone among workspace packages — it must normalize
-without any provider SDK, and
-`@repo/repo-checks` enforces that no package reaches across boundaries or into another package's
-private `lib/`.
+`results` depends on `schema` and `figures` alone — it must normalize without any provider SDK,
+and it now also renders the leaderboard's charts. `@repo/repo-checks` enforces that no package
+reaches across boundaries or into another package's private `lib/`.
+
+`figures` depends on **nothing in this repo**, deliberately: it takes a Run document and a metric
+catalog as arguments rather than importing the schema, so its own guards render against a synthetic
+fixture instead of against whatever the committed run happens to contain. `results` owns the seam
+that hands it those documents. Importing the renderer costs a layout engine, so it is a second
+entry point — `@sandbox-benchmarks/results/figures` — and everything that merely reads the Run
+model stays on `@sandbox-benchmarks/results`.
 
 ## Command contract
 
