@@ -156,6 +156,19 @@ describe("Run schema", () => {
 			parseRun(withCause({ kind: "step-failed", step: "s" }, "failed")).providers[0]?.gaps[0]?.cause
 				?.kind,
 		).toBe("step-failed");
+		// More metrics unrecorded than the suite ever declared — the unrecorded ones are by definition a
+		// subset of the declared ones, so a count above `declared` describes metrics that do not exist.
+		expect(() =>
+			parseRun(
+				withCause({ kind: "metrics-unrecorded", metricIds: ["a", "b"], declared: 1 }, "failed"),
+			),
+		).toThrow(/unrecorded metrics that are a subset of the declared ones/);
+		// All of them unrecorded is the ordinary total-miss case, not a contradiction.
+		expect(
+			parseRun(
+				withCause({ kind: "metrics-unrecorded", metricIds: ["a", "b"], declared: 2 }, "failed"),
+			).providers[0]?.gaps[0]?.cause?.kind,
+		).toBe("metrics-unrecorded");
 	});
 
 	it("keeps unsupported-operation scoped to an operation", () => {

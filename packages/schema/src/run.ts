@@ -263,14 +263,18 @@ export const gapCauseSchema = type({
 	.narrow((cause, ctx) => {
 		// The arms carry numbers whose MEANING constrains them beyond their type, and a structured
 		// diagnosis that contradicts itself is worse than an absent one: a consumer trusts this field
-		// precisely because it stopped re-reading prose. Both invariants already hold at every producer
-		// (the disk precondition only fires below the threshold, and a step is only "failed" on a
-		// non-zero exit), so this pins them at the boundary for hand-edited and future producers.
+		// precisely because it stopped re-reading prose. Every invariant here already holds at each
+		// producer (the disk precondition only fires below the threshold, a step is only "failed" on a
+		// non-zero exit, and the unrecorded metrics are a subset of the declared ones), so this pins
+		// them at the boundary for hand-edited and future producers.
 		if (cause.kind === "disk-shortfall" && cause.freeGb >= cause.requiredGb) {
 			return ctx.mustBe("a disk shortfall whose freeGb is below requiredGb");
 		}
 		if (cause.kind === "step-failed" && cause.exitCode === 0) {
 			return ctx.mustBe("a failed step whose exitCode is non-zero");
+		}
+		if (cause.kind === "metrics-unrecorded" && cause.metricIds.length > cause.declared) {
+			return ctx.mustBe("unrecorded metrics that are a subset of the declared ones");
 		}
 		return true;
 	});
