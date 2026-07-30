@@ -677,6 +677,39 @@ describe("aggregateRuns gap-cause determinism", () => {
 		expect(forward).toEqual(reversed);
 	});
 
+	it("compares causes by content, not by the key order a producer wrote them in", () => {
+		// The tie-break must not be re-decidable by reformatting a cause literal at its construction
+		// site: `{ requiredGb, freeGb, kind }` serializes to a different string than `{ kind, freeGb,
+		// requiredGb }` while describing the identical fact.
+		const scrambled = (freeGb: number, index: number) =>
+			shard(
+				[
+					{
+						...provider("e2b", [metric("pybench_milliseconds", [900 + index])]),
+						gaps: [
+							{
+								scope: "suite" as const,
+								id: "realworld-mastra" as const,
+								outcome: "skipped" as const,
+								reason,
+								cause: { requiredGb: 30, freeGb, kind: "disk-shortfall" } as GapCause,
+							},
+						],
+					},
+				],
+				"2026-06-01T00:00:00.000Z",
+				index,
+			);
+		// Same winner as the canonically-keyed pair above: the smaller freeGb, whichever literal it came in.
+		for (const order of [
+			[scrambled(20.04, 0), withCause(20.049, 1)],
+			[withCause(20.049, 0), scrambled(20.04, 1)],
+		]) {
+			const gaps = aggregateRuns(order).providers.find((p) => p.providerId === "e2b")?.gaps ?? [];
+			expect(gaps[0]?.cause).toEqual(cause(20.04));
+		}
+	});
+
 	it("still upgrades an unclassified gap when another shard classified it, in either order", () => {
 		for (const order of [
 			[withCause(undefined, 0), withCause(20.04, 1)],

@@ -125,7 +125,18 @@ export function harnessGapMarkerJson(
 	// `cause` is written last and omitted when absent, so a marker from a producer that could not
 	// classify the failure is byte-identical to what the pre-cause harness wrote — the field's presence
 	// means "classified", never "this build knows about causes".
-	return `${JSON.stringify({ provider, suite, outcome, reason, ...(cause ? { cause } : {}) }, null, 2)}\n`;
+	return `${JSON.stringify({ provider, suite, outcome, reason, ...matchingCause(cause, outcome) }, null, 2)}\n`;
+}
+
+/**
+ * The marker's `cause` field — present only when the classification sits on the same side of the
+ * skip/failure partition as the outcome. Applied on BOTH sides of the file: the writer never emits a
+ * self-contradictory marker (a human reading one out of a CI artifact should not have to know which half
+ * to believe), and the reader drops one anyway, because a marker on disk may have been written by a
+ * build this one does not control.
+ */
+function matchingCause(cause: GapCause | undefined, outcome: GapOutcome): { cause?: GapCause } {
+	return cause !== undefined && gapOutcomeOfCause(cause) === outcome ? { cause } : {};
 }
 
 /**
@@ -196,11 +207,12 @@ const gapMarkerBody = type({
  * to believe is how a crashed suite comes to be published as a deliberate skip. Undefined for any
  * filename outside the naming contract, whatever the body claims.
  *
- * A `cause` on the wrong side of the skip/failure partition is dropped instead, not escalated: unlike a
- * contradicting `outcome` it leaves the outcome itself knowable (the filename said it), so only the
- * CLASSIFICATION is untrustworthy, and "unclassified" is a shape the schema already accepts. Keeping it
- * would make `resultGapSchema`'s narrow reject the gap — and since a Run parses as a whole, one
- * mislabelled marker in one provider's directory would take the entire Run's normalization down with it.
+ * A `cause` on the wrong side of the skip/failure partition is dropped instead ({@link matchingCause}),
+ * not escalated: unlike a contradicting `outcome` it leaves the outcome itself knowable (the filename
+ * said it), so only the CLASSIFICATION is untrustworthy, and "unclassified" is a shape the schema already
+ * accepts. Keeping it would make `resultGapSchema`'s narrow reject the gap — and since a Run parses as a
+ * whole, one mislabelled marker in one provider's directory would take the entire Run's normalization
+ * down with it.
  */
 export function parseGapMarker(
 	filename: string,
@@ -216,14 +228,12 @@ export function parseGapMarker(
 	const body = gapMarkerBody(data);
 	if (body instanceof type.errors) return undefined;
 	if (body.outcome !== undefined && body.outcome !== outcome) return undefined;
-	const cause =
-		body.cause && gapOutcomeOfCause(body.cause) === outcome ? { cause: body.cause } : {};
 	return {
 		scope: "suite",
 		id: body.suite ?? suiteFromGapMarkerFilename(filename, providerId) ?? filename,
 		outcome,
 		reason: body.reason,
-		...cause,
+		...matchingCause(body.cause, outcome),
 	};
 }
 

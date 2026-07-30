@@ -92,12 +92,23 @@ function mergeMetricReplicates(byReplicate: Map<number, ReplicateContribution>):
 }
 
 /**
+ * A cause's comparison key, with its keys in a FIXED order rather than the order the producing site
+ * happened to write them in. Every `GapCause` arm is a flat record of scalars, so listing the sorted
+ * top-level keys canonicalizes it completely — the same discipline `observed-mixtures` applies before
+ * hashing, for the same reason: a key order that drifts at a construction site would otherwise put shard
+ * arrival order back into the published document through the tie-break below.
+ */
+function causeKey(cause: GapCause): string {
+	return JSON.stringify(cause, Object.keys(cause).sort());
+}
+
+/**
  * Whether `next` should replace `current` as a gap's cause: any classification beats none, and between
  * two classifications the canonically smaller wins so the choice never depends on shard arrival order.
  */
 function preferCause(current: GapCause | undefined, next: GapCause): boolean {
 	if (current === undefined) return true;
-	return JSON.stringify(next) < JSON.stringify(current);
+	return causeKey(next) < causeKey(current);
 }
 
 /** One replicate's contribution to a metric, with the mixture ids of the sandbox that produced it. */

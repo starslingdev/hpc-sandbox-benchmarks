@@ -173,6 +173,59 @@ describe("parseGapMarker", () => {
 		});
 	});
 
+	it("drops a cause from the wrong side of the skip/failure partition, keeping the gap", () => {
+		// Unlike a contradicting `outcome`, a contradicting cause leaves the outcome knowable (the
+		// filename said it), so only the classification is lost. Keeping it would fail resultGapSchema's
+		// narrow — and a Run parses whole, so one bad marker would take the entire Run down.
+		const marker = parseGapMarker(
+			"sandbox-daytona-cpu-node--skipped.json",
+			{
+				outcome: "skipped",
+				suite: "cpu-node",
+				reason: "Missing credentials",
+				cause: { kind: "step-timeout", step: "install", timeoutSeconds: 600 },
+			},
+			"daytona",
+		);
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "skipped",
+			reason: "Missing credentials",
+		});
+		// A coherent pairing survives.
+		expect(
+			parseGapMarker(
+				"sandbox-daytona-cpu-node--skipped.json",
+				{
+					suite: "cpu-node",
+					reason: "no creds",
+					cause: { kind: "missing-credentials", variables: ["E2B_API_KEY"] },
+				},
+				"daytona",
+			)?.cause,
+		).toEqual({ kind: "missing-credentials", variables: ["E2B_API_KEY"] });
+	});
+
+	it("never writes a marker whose cause contradicts its outcome", () => {
+		// The same rule on the producer side, so the bytes in a CI artifact are self-consistent and a
+		// human reading one does not have to know which half the reader believes.
+		const bytes = harnessGapMarkerJson("daytona", "cpu-node", "skipped", "Missing credentials", {
+			kind: "step-failed",
+			step: "install",
+			exitCode: 1,
+		});
+		expect(JSON.parse(bytes).cause).toBeUndefined();
+		expect(
+			JSON.parse(
+				harnessGapMarkerJson("daytona", "cpu-node", "skipped", "Missing credentials", {
+					kind: "missing-credentials",
+					variables: ["E2B_API_KEY"],
+				}),
+			).cause,
+		).toEqual({ kind: "missing-credentials", variables: ["E2B_API_KEY"] });
+	});
+
 	it("rejects the fail_result body under a --skipped.json filename (suffix/body contradiction)", () => {
 		expect(
 			parseGapMarker(
