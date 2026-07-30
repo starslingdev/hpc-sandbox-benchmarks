@@ -217,6 +217,87 @@ export const gapOutcomeSchema = type("'skipped' | 'failed'");
 export type GapOutcome = typeof gapOutcomeSchema.infer;
 
 /**
+ * WHY a benchmark produced no result, as data rather than prose.
+ *
+ * `reason` beside this is a human sentence, and for a long time it was also the machine interface:
+ * the leaderboard decided whether a skip was a disk shortfall with `/^insufficient disk/i` against a
+ * string authored in another package, a coupling its own comment had to warn about. Every question
+ * past that regex — how many GiB short, which step timed out and after how long, which declared
+ * metrics never recorded — was answerable only by re-parsing English that no test pinned.
+ *
+ * The taxonomy is closed and there is deliberately NO catch-all arm. A producer that cannot classify
+ * a gap omits `cause` entirely, which reads as "unclassified" and cannot be mistaken for a diagnosis;
+ * an `other` kind would let genuinely different failures accumulate behind one label that consumers
+ * would then have to re-parse `reason` to tell apart, reintroducing exactly what this replaces.
+ */
+export const gapCauseSchema = type({
+	// A precondition refused the suite: the sandbox had less free disk than `Suite.minDiskGb`.
+	kind: "'disk-shortfall'",
+	freeGb: "number >= 0",
+	requiredGb: "number > 0",
+})
+	// The provider's credentials were not present in the environment, so nothing was attempted.
+	.or({ kind: "'missing-credentials'", variables: "string[] >= 1" })
+	// `sandbox.create` never returned a usable sandbox (quota, region, provider-side error).
+	.or({ kind: "'sandbox-create-failed'", "detail?": "string" })
+	// The sandbox stopped answering mid-step — distinct from a step that ran and failed.
+	.or({
+		kind: "'sandbox-lost'",
+		step: "string >= 1",
+		"consecutivePollFailures?": "number.integer >= 1",
+	})
+	// A step exceeded its own budget. `timeoutSeconds` is the budget, not the elapsed time.
+	.or({ kind: "'step-timeout'", step: "string >= 1", timeoutSeconds: "number > 0" })
+	// A step ran to completion and exited non-zero.
+	.or({ kind: "'step-failed'", step: "string >= 1", "exitCode?": "number.integer" })
+	// The suite ran, but these declared metrics never recorded a value on any trial.
+	.or({ kind: "'metrics-unrecorded'", metricIds: "string[] >= 1", declared: "number.integer >= 1" })
+	// PTS's duplicate-value dedup dropped a result whose value collided with its twin's.
+	.or({ kind: "'duplicate-value-dedup'", metricIds: "string[] >= 1" })
+	// A lifecycle operation the provider's SDK does not expose (`scope: "operation"` skips).
+	.or({ kind: "'unsupported-operation'", "detail?": "string" })
+	// The run was configured not to measure this — a choice we made, never a provider limitation. Kept
+	// distinct from `unsupported-operation` precisely because collapsing them would let a config toggle
+	// read as a capability the provider lacks.
+	.or({ kind: "'measurement-disabled'", "detail?": "string" })
+	.narrow((cause, ctx) => {
+		// The arms carry numbers whose MEANING constrains them beyond their type, and a structured
+		// diagnosis that contradicts itself is worse than an absent one: a consumer trusts this field
+		// precisely because it stopped re-reading prose. Both invariants already hold at every producer
+		// (the disk precondition only fires below the threshold, and a step is only "failed" on a
+		// non-zero exit), so this pins them at the boundary for hand-edited and future producers.
+		if (cause.kind === "disk-shortfall" && cause.freeGb >= cause.requiredGb) {
+			return ctx.mustBe("a disk shortfall whose freeGb is below requiredGb");
+		}
+		if (cause.kind === "step-failed" && cause.exitCode === 0) {
+			return ctx.mustBe("a failed step whose exitCode is non-zero");
+		}
+		return true;
+	});
+export type GapCause = typeof gapCauseSchema.infer;
+
+/**
+ * The causes that describe a PRECONDITION refusing a benchmark, as opposed to one that was attempted and
+ * broke — the {@link GapOutcome} partition of {@link gapCauseSchema}, stated next to the taxonomy it
+ * partitions rather than buried in the narrow that enforces it (and allocated once, not per parsed gap).
+ */
+const SKIP_CAUSE_KINDS: ReadonlySet<GapCause["kind"]> = new Set<GapCause["kind"]>([
+	"disk-shortfall",
+	"missing-credentials",
+	"unsupported-operation",
+	"measurement-disabled",
+]);
+
+/**
+ * Which {@link GapOutcome} a cause belongs to — the partition above, exposed so a producer can CHECK the
+ * pairing before building a gap instead of discovering it as a parse failure. `resultGapSchema` is the
+ * enforcement; this is how a caller stays on the right side of it (see `parseGapMarker`).
+ */
+export function gapOutcomeOfCause(cause: GapCause): GapOutcome {
+	return SKIP_CAUSE_KINDS.has(cause.kind) ? "skipped" : "failed";
+}
+
+/**
  * One benchmark that produced no result for a provider, and why — the recorded half of a coverage
  * gap. The DERIVED half (a suite that ran elsewhere in the Run but never reported here at all, with
  * no marker of any kind) cannot live on a ProviderRun: it is a cross-provider fact, so the
@@ -228,8 +309,38 @@ export const resultGapSchema = type({
 	/** The suite name (`scope: "suite"`) or the harness Metric id (`scope: "operation"`). */
 	id: "string",
 	outcome: gapOutcomeSchema,
-	/** The producer's verbatim explanation — a disk shortfall's numbers, or the error's message. */
+	/**
+	 * The producer's human explanation. Still authored, still the thing a reader reads — but no longer
+	 * the machine interface: consumers branch on {@link ResultGap.cause}, and this is free to be prose.
+	 */
 	reason: "string",
+	/**
+	 * The same failure as structured data (v4+). Absent means the producer did not classify it — an
+	 * older Run, or a failure mode the taxonomy has no arm for. Never infer a cause by parsing `reason`
+	 * when this is absent: guessing produces a confident label for an unclassified event.
+	 */
+	"cause?": gapCauseSchema,
+}).narrow((gap, ctx) => {
+	// A skip and a failure are different facts (see gapOutcomeSchema), and so are their causes. Pinning
+	// the pairing here stops a producer from recording a crash as a skip — or a precondition as a
+	// failure — via the cause while the outcome says otherwise, which would make the two disagree
+	// inside one gap and leave a consumer to pick a side.
+	if (gap.cause === undefined) return true;
+	const causeOutcome = gapOutcomeOfCause(gap.cause);
+	if (causeOutcome !== gap.outcome) {
+		return ctx.mustBe(
+			`a ${gap.outcome} gap whose cause describes one (got "${gap.cause.kind}", a ${causeOutcome} cause)`,
+		);
+	}
+	// `unsupported-operation` names a call the provider's SDK does not expose, which is a statement
+	// about ONE lifecycle operation — the scope its own doc gives it. On a suite it would read as
+	// "this provider cannot run this benchmark at all", a much larger claim than the producer made.
+	// Only this arm is pinned: `measurement-disabled` is a choice we make and could legitimately turn
+	// off a whole suite one day, so coupling it to a scope would be inventing a rule, not recording one.
+	if (gap.cause.kind === "unsupported-operation" && gap.scope !== "operation") {
+		return ctx.mustBe('an operation-scoped gap when its cause is "unsupported-operation"');
+	}
+	return true;
 });
 export type ResultGap = typeof resultGapSchema.infer;
 
@@ -314,17 +425,23 @@ export function providerStatusText(p: ProviderRun): string {
 /**
  * A full benchmark Run: every provider measured against one pinned target spec at one SHA.
  *
- * `schemaVersion` accepts `"2"` and `"3"`. v1's `skips: { suite, reason }[]` could not say whether a
- * benchmark was deliberately not run or had crashed, and carried no positive record of what DID run —
- * so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the document.
- * v2 replaced it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. v3 adds the
- * replicate model: a shard Run carries its {@link replicateIndex}, and the aggregate folds ≥2
- * replicate sandboxes of one (provider, suite) into {@link MetricResult.replicates}. Both versions
- * validate here — already-published v2 Runs (single replicate, no `replicates` field) are read
- * unchanged, and the parser never migrates them in place.
+ * `schemaVersion` accepts `"2"` through `"4"`. v1's `skips: { suite, reason }[]` could not say
+ * whether a benchmark was deliberately not run or had crashed, and carried no positive record of what
+ * DID run — so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the
+ * document. v2 replaced it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. v3 adds
+ * the replicate model: a shard Run carries its {@link replicateIndex}, and the aggregate folds ≥2
+ * replicate sandboxes of one (provider, suite) into {@link MetricResult.replicates}.
+ *
+ * v4 makes the document SELF-DESCRIBING — every fact a reader needs is expressible from the file,
+ * rather than recoverable only by knowing something the file does not say. The first of those facts:
+ *
+ *  - {@link ResultGap.cause} classifies a failure as data rather than prose.
+ *
+ * Every version validates here — already-published Runs are read unchanged, and the parser never
+ * migrates them in place.
  */
 export const runSchema = type({
-	schemaVersion: "'2' | '3'",
+	schemaVersion: "'2' | '3' | '4'",
 	runId: "string",
 	sha: "string",
 	// ISO-8601 timestamp the Run was generated at — validated so the RunIndex sort key can't be a
@@ -338,18 +455,33 @@ export const runSchema = type({
 	targetSpec: targetSpecSchema,
 	providers: providerRunSchema.array(),
 }).narrow((run, ctx) => {
-	// The replicate fields (`replicateIndex`, `MetricResult.replicates`) are v3-only, so "v2 == the
+	// Version floors are compared NUMERICALLY, not by equality: a field introduced at v3 stays legal at
+	// v4 and beyond, so "=== '3'" would have made every version bump retroactively reject the previous
+	// version's own fields (the v4 aggregate below carries folded `replicates`).
+	const version = Number(run.schemaVersion);
+	// The replicate fields (`replicateIndex`, `MetricResult.replicates`) are v3-or-later, so "v2 == the
 	// pre-replicate schema" stays a real guarantee: a producer that writes a replicate field but forgets
 	// to bump schemaVersion is rejected here rather than silently read by a v3-gated consumer that then
 	// ignores the between-sandbox breakdown (reporting the anti-conservative pooled interval instead).
-	if (run.schemaVersion !== "3") {
+	if (version < 3) {
 		if (run.replicateIndex !== undefined) {
-			return ctx.mustBe("a v3 Run when it carries a replicateIndex");
+			return ctx.mustBe("a v3-or-later Run when it carries a replicateIndex");
 		}
 		if (
 			run.providers.some((provider) => provider.metrics.some((m) => m.replicates !== undefined))
 		) {
-			return ctx.mustBe("a v3 Run when a MetricResult carries replicates");
+			return ctx.mustBe("a v3-or-later Run when a MetricResult carries replicates");
+		}
+	}
+	// The v4 self-description fields. A pre-v4 consumer handed one would fall back to the pre-v4 reading
+	// of the same fact — here, re-parsing `reason` prose for a classification the document already
+	// carries — which is a quietly wrong answer, never a loud one. Reported by FIELD rather than as one
+	// blanket message, so the error names what to fix.
+	if (version < 4) {
+		for (const provider of run.providers) {
+			if (provider.gaps.some((gap) => gap.cause !== undefined)) {
+				return ctx.mustBe("a v4-or-later Run when a ResultGap carries a structured cause");
+			}
 		}
 	}
 	// `replicateIndex` marks a per-replicate SHARD (one sandbox, not yet folded); `MetricResult.replicates`

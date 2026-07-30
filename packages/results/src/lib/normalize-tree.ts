@@ -53,8 +53,11 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 		.map((meta) => normalizeProviderDir(input.rawRoot, meta.id));
 
 	const candidate = {
-		// v3: a shard may carry a replicateIndex the aggregate folds into MetricResult.replicates.
-		schemaVersion: "3" as const,
+		// Pinned at 4 so this producer is already emitting the version whose fields it is about to carry:
+		// `runSchema` gates each v4 field at v4-or-later, and a producer that stamps a lower version than
+		// the fields it writes fails `parseRun` at its own boundary. A shard may also carry a
+		// replicateIndex (v3+) the aggregate folds into MetricResult.replicates.
+		schemaVersion: "4" as const,
 		runId: input.runId,
 		sha: input.sha,
 		generatedAt: input.generatedAt,

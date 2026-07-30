@@ -42,17 +42,18 @@ describe("Run schema", () => {
 		expect(run.providers[0]?.validationStatus).toBe("validated");
 	});
 
-	it("accepts both the v2 and v3 schemaVersion", () => {
-		expect(parseRun({ ...validRun, schemaVersion: "2" }).schemaVersion).toBe("2");
-		expect(parseRun({ ...validRun, schemaVersion: "3" }).schemaVersion).toBe("3");
+	it("accepts every published schemaVersion from v2 through v4", () => {
+		for (const schemaVersion of ["2", "3", "4"] as const) {
+			expect(parseRun({ ...validRun, schemaVersion }).schemaVersion).toBe(schemaVersion);
+		}
 	});
 
 	it("rejects a v2 Run that carries a v3-only replicate field", () => {
-		// replicateIndex and MetricResult.replicates are v3-only; a v2 document that carries either is a
-		// producer that wrote a replicate field without bumping schemaVersion — rejected at the boundary so
-		// "v2 == the pre-replicate schema" stays a real guarantee.
+		// replicateIndex and MetricResult.replicates are v3-or-later; a v2 document that carries either is
+		// a producer that wrote a replicate field without bumping schemaVersion — rejected at the boundary
+		// so "v2 == the pre-replicate schema" stays a real guarantee.
 		expect(() => parseRun({ ...validRun, schemaVersion: "2", replicateIndex: 0 })).toThrow(
-			/v3 Run/,
+			/v3-or-later Run/,
 		);
 		const v2WithReplicates = structuredClone(validRun);
 		v2WithReplicates.schemaVersion = "2"; // stays v2 while carrying an otherwise-consistent breakdown
@@ -62,14 +63,145 @@ describe("Run schema", () => {
 				{ index: 0, samples: [16.19, 16.3] },
 				{ index: 1, samples: [16.08] },
 			];
-		expect(() => parseRun(v2WithReplicates)).toThrow(/v3 Run/);
+		expect(() => parseRun(v2WithReplicates)).toThrow(/v3-or-later Run/);
 		// A v3 shard legitimately carries the replicateIndex.
 		expect(parseRun({ ...validRun, schemaVersion: "3", replicateIndex: 2 }).replicateIndex).toBe(2);
 	});
 
+	it("keeps the v3 replicate fold legal at v4 — version floors are not equality checks", () => {
+		// The v4 aggregate carries the v3 replicate breakdown as well as its own new fields. An "=== '3'"
+		// gate would have rejected its own predecessor's field on every version bump, so the floors compare
+		// numerically; this pins that so a future v5 can't silently re-break v3 documents.
+		const v4WithReplicates = structuredClone(validRun);
+		v4WithReplicates.schemaVersion = "4";
+		const metric = v4WithReplicates.providers[0]?.metrics[0];
+		if (metric)
+			(metric as Record<string, unknown>).replicates = [
+				{ index: 0, samples: [16.19, 16.3] },
+				{ index: 1, samples: [16.08] },
+			];
+		expect(parseRun(v4WithReplicates).providers[0]?.metrics[0]?.replicates).toHaveLength(2);
+	});
+
+	it("pins a gap's cause to its outcome — a crash cannot be filed as a precondition", () => {
+		// A skip and a failure are different facts about a provider. Letting the cause disagree with the
+		// outcome inside one gap would leave a consumer to pick a side.
+		const withGap = (outcome: string, cause: Record<string, unknown>) => {
+			const run = structuredClone(validRun);
+			run.schemaVersion = "4";
+			const provider = run.providers[0] as Record<string, unknown>;
+			provider.gaps = [{ scope: "suite", id: "disk", outcome, reason: "x", cause }];
+			return run;
+		};
+		expect(() =>
+			parseRun(withGap("skipped", { kind: "step-timeout", step: "s", timeoutSeconds: 600 })),
+		).toThrow(/skipped gap whose cause describes one.*a failed cause/);
+		expect(() =>
+			parseRun(withGap("failed", { kind: "disk-shortfall", freeGb: 20, requiredGb: 30 })),
+		).toThrow(/failed gap whose cause describes one.*a skipped cause/);
+		// The coherent pairings are accepted.
+		expect(
+			parseRun(withGap("skipped", { kind: "disk-shortfall", freeGb: 20, requiredGb: 30 }))
+				.providers[0]?.gaps[0]?.cause?.kind,
+		).toBe("disk-shortfall");
+	});
+
+	it("keeps a structured cause out of a pre-v4 Run", () => {
+		// The version gate is what stops a pre-v4 consumer from being handed a field it will ignore and
+		// then re-deriving the same fact by parsing `reason` — a quietly wrong answer. Pinned separately
+		// from the pairing narrow above so removing or inverting the boundary cannot regress unnoticed.
+		const withCause = (schemaVersion: string) => {
+			const run = structuredClone(validRun);
+			run.schemaVersion = schemaVersion;
+			const provider = run.providers[0] as Record<string, unknown>;
+			provider.gaps = [
+				{
+					scope: "suite",
+					id: "disk",
+					outcome: "skipped",
+					reason: "x",
+					cause: { kind: "disk-shortfall", freeGb: 20, requiredGb: 30 },
+				},
+			];
+			return run;
+		};
+		for (const schemaVersion of ["2", "3"]) {
+			expect(() => parseRun(withCause(schemaVersion))).toThrow(
+				/v4-or-later Run when a ResultGap carries a structured cause/,
+			);
+		}
+		expect(parseRun(withCause("4")).providers[0]?.gaps[0]?.cause?.kind).toBe("disk-shortfall");
+	});
+
+	it("rejects a cause whose own numbers contradict it", () => {
+		// A structured diagnosis that disagrees with itself is worse than an absent one: consumers stopped
+		// re-reading the prose precisely because they trust this field.
+		const withCause = (cause: Record<string, unknown>, outcome = "skipped") => {
+			const run = structuredClone(validRun);
+			run.schemaVersion = "4";
+			const provider = run.providers[0] as Record<string, unknown>;
+			provider.gaps = [{ scope: "suite", id: "disk", outcome, reason: "x", cause }];
+			return run;
+		};
+		// A shortfall that is not short — the suite would have fit, so nothing was refused.
+		expect(() =>
+			parseRun(withCause({ kind: "disk-shortfall", freeGb: 30, requiredGb: 30 })),
+		).toThrow(/disk shortfall whose freeGb is below requiredGb/);
+		// A "failed" step that exited cleanly.
+		expect(() =>
+			parseRun(withCause({ kind: "step-failed", step: "s", exitCode: 0 }, "failed")),
+		).toThrow(/failed step whose exitCode is non-zero/);
+		// An absent exitCode stays legal — the producer may not have one to report.
+		expect(
+			parseRun(withCause({ kind: "step-failed", step: "s" }, "failed")).providers[0]?.gaps[0]?.cause
+				?.kind,
+		).toBe("step-failed");
+	});
+
+	it("keeps unsupported-operation scoped to an operation", () => {
+		// On a suite the cause would read as "this provider cannot run this benchmark at all" — a much
+		// larger claim than the producer made, which only ever says one SDK call is missing.
+		const withScope = (scope: string) => {
+			const run = structuredClone(validRun);
+			run.schemaVersion = "4";
+			const provider = run.providers[0] as Record<string, unknown>;
+			provider.gaps = [
+				{
+					scope,
+					id: scope === "suite" ? "disk" : "sandbox_snapshot_ms",
+					outcome: "skipped",
+					reason: "x",
+					cause: { kind: "unsupported-operation", detail: "no snapshot op" },
+				},
+			];
+			return run;
+		};
+		expect(() => parseRun(withScope("suite"))).toThrow(
+			/operation-scoped gap when its cause is "unsupported-operation"/,
+		);
+		expect(parseRun(withScope("operation")).providers[0]?.gaps[0]?.cause?.kind).toBe(
+			"unsupported-operation",
+		);
+		// measurement-disabled is deliberately NOT coupled to a scope: turning a whole suite off is a
+		// choice we could legitimately make, so pinning it would invent a rule rather than record one.
+		const suiteDisabled = structuredClone(validRun);
+		suiteDisabled.schemaVersion = "4";
+		const provider = suiteDisabled.providers[0] as Record<string, unknown>;
+		provider.gaps = [
+			{
+				scope: "suite",
+				id: "disk",
+				outcome: "skipped",
+				reason: "x",
+				cause: { kind: "measurement-disabled" },
+			},
+		];
+		expect(parseRun(suiteDisabled).providers[0]?.gaps[0]?.cause?.kind).toBe("measurement-disabled");
+	});
+
 	it("rejects an unknown schemaVersion", () => {
 		expect(() => parseRun({ ...validRun, schemaVersion: "1" })).toThrow();
-		expect(() => parseRun({ ...validRun, schemaVersion: "4" })).toThrow();
+		expect(() => parseRun({ ...validRun, schemaVersion: "5" })).toThrow();
 	});
 
 	it("accepts a v3 Metric carrying a consistent replicate breakdown", () => {

@@ -243,9 +243,12 @@ export function aggregateRuns(runs: readonly Run[]): Run {
 	const sourceRunUrl = runs.find((run) => run.sourceRunUrl !== undefined)?.sourceRunUrl;
 
 	// The merged Run spans every replicate, so it carries no single `replicateIndex` — that lived on the
-	// shards. Emit v3 (the replicate-aware schema); v2 shards read in above validate unchanged.
+	// shards. Emit v4, the version whose self-description fields this layer is about to populate — it is
+	// the only one that sees every sandbox's reading at once. v2/v3 shards read in above validate
+	// unchanged, and a v4 document still carries the v3 replicate fold (version floors compare
+	// numerically in runSchema).
 	return parseRun({
-		schemaVersion: "3",
+		schemaVersion: "4",
 		runId: first.runId,
 		sha: first.sha,
 		generatedAt,

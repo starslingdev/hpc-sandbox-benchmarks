@@ -80,8 +80,8 @@ describe("aggregateRuns", () => {
 		]);
 		expect(node?.samples).toEqual([10, 11, 20, 21]);
 		expect(node?.aggregates.n).toBe(4);
-		// The merged Run is v3 (replicate-aware); its Metric carries no single replicateIndex.
-		expect(merged.schemaVersion).toBe("3");
+		// The merged Run is v4 (self-describing); its Metric carries no single replicateIndex.
+		expect(merged.schemaVersion).toBe("4");
 	});
 
 	it("keeps a single-replicate metric verbatim — no replicates field at R = 1", () => {
