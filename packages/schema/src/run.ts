@@ -256,12 +256,19 @@ const sandboxIdentitySpecFields = {
 /**
  * The hostHardware mixture category as its own Type — the `specs` of a hardware mixture, so a mixture
  * carrying a network or identity field is rejected at the boundary rather than merely discouraged.
+ *
+ * `onUndeclaredKey("reject")` is what makes that true: arktype IGNORES undeclared keys by default, so
+ * without it a serialized `hostNetwork` mixture carrying `cpuModel` — or either category carrying the
+ * `publicIp` whose inclusion the design says destroys the signal — validated cleanly and the partition
+ * was only a producer convention. Scoped to the category schemas alone, NOT to
+ * {@link observedSpecsSchema}: that one must keep ignoring undeclared keys so already-published Runs
+ * carrying since-deleted fields (`hostCpuModels`) still parse.
  */
-export const hostHardwareSpecsSchema = type(hostHardwareSpecFields);
+export const hostHardwareSpecsSchema = type(hostHardwareSpecFields).onUndeclaredKey("reject");
 export type HostHardwareSpecs = typeof hostHardwareSpecsSchema.infer;
 
 /** The hostNetwork mixture category as its own Type; see {@link hostHardwareSpecsSchema}. */
-export const hostNetworkSpecsSchema = type(hostNetworkSpecFields);
+export const hostNetworkSpecsSchema = type(hostNetworkSpecFields).onUndeclaredKey("reject");
 export type HostNetworkSpecs = typeof hostNetworkSpecsSchema.infer;
 
 /**
@@ -275,10 +282,10 @@ export type HostNetworkSpecs = typeof hostNetworkSpecsSchema.infer;
  * mixture hash, which is exactly the "looks complete, quietly isn't" failure the categories exist to
  * remove. See {@link ObservedMixtures}.
  *
- * On an AGGREGATED Run this carries one representative reading (first defined value per key across the
- * merged shards), which is a summary, NOT a claim that every sandbox saw it. `observedMixtures` is the
- * complete, countable disclosure; prefer it whenever the question is "how many distinct X did this
- * provider actually put us on".
+ * On an AGGREGATED Run this carries one representative reading — the DOMINANT mixture per category, i.e.
+ * the one the most sandboxes reported — which is a summary, NOT a claim that every sandbox saw it.
+ * `observedMixtures` is the complete, countable disclosure; prefer it whenever the question is "how many
+ * distinct X did this provider actually put us on".
  */
 export const observedSpecsSchema = type({
 	...hostHardwareSpecFields,
@@ -288,16 +295,20 @@ export const observedSpecsSchema = type({
 export type ObservedSpecs = typeof observedSpecsSchema.infer;
 
 /**
- * One observed mixture: a distinct combination of one category's fields, plus how many of the
- * provider's sandboxes reported exactly that combination. `count` is a sandbox count, so the counts
+ * One observed HOST-NETWORK mixture: a distinct combination of the egress/geo fields, plus how many of
+ * the provider's sandboxes reported exactly that combination. `count` is a sandbox count, so the counts
  * within a category sum to the number of sandboxes that disclosed at least one of its fields — which
  * is ≤ {@link ObservedMixtures.sandboxes} whenever some sandbox's probe saw nothing.
+ *
+ * Named for its category rather than left generic: the two mixture types are deliberately NOT the same
+ * shape (see {@link observedHardwareMixtureSchema}), so a category-neutral name would read as the shared
+ * base of both and invite the verdict field to be added here too.
  */
-export const observedMixtureSchema = type({
+export const observedNetworkMixtureSchema = type({
 	count: "number.integer >= 1",
 	specs: hostNetworkSpecsSchema,
 });
-export type ObservedMixture = typeof observedMixtureSchema.infer;
+export type ObservedNetworkMixture = typeof observedNetworkMixtureSchema.infer;
 
 /**
  * A host-hardware mixture, which additionally carries its OWN spec verdict (v4+).
@@ -340,7 +351,7 @@ export type ObservedHardwareMixture = typeof observedHardwareMixtureSchema.infer
 export const observedMixturesSchema = type({
 	sandboxes: "number.integer >= 1",
 	hostHardware: type({ "[string]": observedHardwareMixtureSchema }),
-	hostNetwork: type({ "[string]": observedMixtureSchema }),
+	hostNetwork: type({ "[string]": observedNetworkMixtureSchema }),
 });
 export type ObservedMixtures = typeof observedMixturesSchema.infer;
 
@@ -435,6 +446,15 @@ const SKIP_CAUSE_KINDS: ReadonlySet<GapCause["kind"]> = new Set<GapCause["kind"]
 ]);
 
 /**
+ * Which {@link GapOutcome} a cause belongs to — the partition above, exposed so a producer can CHECK the
+ * pairing before building a gap instead of discovering it as a parse failure. `resultGapSchema` is the
+ * enforcement; this is how a caller stays on the right side of it (see `parseGapMarker`).
+ */
+export function gapOutcomeOfCause(cause: GapCause): GapOutcome {
+	return SKIP_CAUSE_KINDS.has(cause.kind) ? "skipped" : "failed";
+}
+
+/**
  * One benchmark that produced no result for a provider, and why — the recorded half of a coverage
  * gap. The DERIVED half (a suite that ran elsewhere in the Run but never reported here at all, with
  * no marker of any kind) cannot live on a ProviderRun: it is a cross-provider fact, so the
@@ -463,12 +483,11 @@ export const resultGapSchema = type({
 	// failure — via the cause while the outcome says otherwise, which would make the two disagree
 	// inside one gap and leave a consumer to pick a side.
 	if (gap.cause === undefined) return true;
-	const isSkipCause = SKIP_CAUSE_KINDS.has(gap.cause.kind);
-	if (gap.outcome === "skipped" && !isSkipCause) {
-		return ctx.mustBe(`a skipped gap with a precondition cause (got "${gap.cause.kind}")`);
-	}
-	if (gap.outcome === "failed" && isSkipCause) {
-		return ctx.mustBe(`a failed gap with an attempted-and-broke cause (got "${gap.cause.kind}")`);
+	const causeOutcome = gapOutcomeOfCause(gap.cause);
+	if (causeOutcome !== gap.outcome) {
+		return ctx.mustBe(
+			`a ${gap.outcome} gap whose cause describes one (got "${gap.cause.kind}", a ${causeOutcome} cause)`,
+		);
 	}
 	return true;
 });

@@ -182,7 +182,10 @@ export async function withTimeout<T>(
  * for the same reason.
  */
 function stepTimeout(label: string, timeoutMs: number): GapError {
-	const timeoutSeconds = Math.round(timeoutMs / 1000);
+	// Floored at 1: every real step budget is minute-scale, but `gapCauseSchema` requires
+	// `timeoutSeconds > 0`, and a sub-500ms budget would round to 0 and make the cause unparseable —
+	// turning a timed-out step into a Run that cannot be normalized at all.
+	const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1000));
 	return new GapError(`Step "${label}" timed out after ${timeoutSeconds}s`, {
 		kind: "step-timeout",
 		step: label,

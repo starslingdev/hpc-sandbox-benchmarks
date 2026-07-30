@@ -26,7 +26,7 @@
  */
 import { type } from "arktype";
 import type { GapCause, GapOutcome, ResultGap } from "./run.ts";
-import { gapCauseSchema, gapOutcomeSchema } from "./run.ts";
+import { gapCauseSchema, gapOutcomeOfCause, gapOutcomeSchema } from "./run.ts";
 
 const SKIP_SUFFIX = "--skipped.json";
 const FAILURE_SUFFIX = "--failed.json";
@@ -195,6 +195,12 @@ const gapMarkerBody = type({
  * than resolved by precedence: a marker whose two halves disagree is corrupt, and guessing which half
  * to believe is how a crashed suite comes to be published as a deliberate skip. Undefined for any
  * filename outside the naming contract, whatever the body claims.
+ *
+ * A `cause` on the wrong side of the skip/failure partition is dropped instead, not escalated: unlike a
+ * contradicting `outcome` it leaves the outcome itself knowable (the filename said it), so only the
+ * CLASSIFICATION is untrustworthy, and "unclassified" is a shape the schema already accepts. Keeping it
+ * would make `resultGapSchema`'s narrow reject the gap — and since a Run parses as a whole, one
+ * mislabelled marker in one provider's directory would take the entire Run's normalization down with it.
  */
 export function parseGapMarker(
 	filename: string,
@@ -210,12 +216,14 @@ export function parseGapMarker(
 	const body = gapMarkerBody(data);
 	if (body instanceof type.errors) return undefined;
 	if (body.outcome !== undefined && body.outcome !== outcome) return undefined;
+	const cause =
+		body.cause && gapOutcomeOfCause(body.cause) === outcome ? { cause: body.cause } : {};
 	return {
 		scope: "suite",
 		id: body.suite ?? suiteFromGapMarkerFilename(filename, providerId) ?? filename,
 		outcome,
 		reason: body.reason,
-		...(body.cause ? { cause: body.cause } : {}),
+		...cause,
 	};
 }
 

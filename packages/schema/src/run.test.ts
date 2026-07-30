@@ -178,10 +178,10 @@ describe("Run schema", () => {
 		};
 		expect(() =>
 			parseRun(withGap("skipped", { kind: "step-timeout", step: "s", timeoutSeconds: 600 })),
-		).toThrow(/skipped gap with a precondition cause/);
+		).toThrow(/skipped gap whose cause describes one.*a failed cause/);
 		expect(() =>
 			parseRun(withGap("failed", { kind: "disk-shortfall", freeGb: 20, requiredGb: 30 })),
-		).toThrow(/failed gap with an attempted-and-broke cause/);
+		).toThrow(/failed gap whose cause describes one.*a skipped cause/);
 		// The coherent pairings are accepted.
 		expect(
 			parseRun(withGap("skipped", { kind: "disk-shortfall", freeGb: 20, requiredGb: 30 }))
@@ -384,5 +384,41 @@ describe("Run schema", () => {
 				],
 			}),
 		).toThrow();
+	});
+});
+
+describe("mixture category partition", () => {
+	const mixtures = (specs: Record<string, unknown>) => {
+		const run = structuredClone(validRun);
+		run.schemaVersion = "4";
+		const provider = run.providers[0] as Record<string, unknown>;
+		provider.observedMixtures = {
+			sandboxes: 1,
+			hostHardware: { aaaaaaaaaaaaaaaa: { count: 1, specs } },
+			hostNetwork: {},
+		};
+		return run;
+	};
+
+	it("rejects a cross-category or identity field inside a mixture's specs", () => {
+		// arktype IGNORES undeclared keys by default, so without onUndeclaredKey("reject") the partition
+		// was only a producer convention: a hostHardware mixture could carry `egressAsn`, or the `publicIp`
+		// whose inclusion the design says destroys the signal, and still validate.
+		expect(() => parseRun(mixtures({ cpuModel: "AMD EPYC 9R14", egressAsn: "AS14618" }))).toThrow(
+			/must be removed/,
+		);
+		expect(() =>
+			parseRun(mixtures({ cpuModel: "AMD EPYC 9R14", publicIp: "203.0.113.1" })),
+		).toThrow(/must be removed/);
+		expect(parseRun(mixtures({ cpuModel: "AMD EPYC 9R14" })).schemaVersion).toBe("4");
+	});
+
+	it("still ignores undeclared keys on observedSpecs, so published Runs keep parsing", () => {
+		// The rejection is scoped to the category schemas ALONE. observedSpecs must stay permissive: every
+		// committed Run predating this change carries `hostCpuModels`, a field since deleted from the schema.
+		const legacy = structuredClone(validRun);
+		const provider = legacy.providers[0] as Record<string, unknown>;
+		(provider.observedSpecs as Record<string, unknown>).hostCpuModels = ["AMD EPYC 9R14"];
+		expect(parseRun(legacy).providers[0]?.observedSpecs.cpuModel).toBeUndefined();
 	});
 });

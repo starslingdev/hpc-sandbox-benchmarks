@@ -17,6 +17,7 @@
  * inconsistent merge fails here rather than reaching a consumer.
  */
 import type {
+	GapCause,
 	MetricReplicate,
 	MetricResult,
 	ObservedSpecs,
@@ -88,6 +89,15 @@ function mergeMetricReplicates(byReplicate: Map<number, ReplicateContribution>):
 		aggregates: aggregate(pooled),
 		replicates,
 	};
+}
+
+/**
+ * Whether `next` should replace `current` as a gap's cause: any classification beats none, and between
+ * two classifications the canonically smaller wins so the choice never depends on shard arrival order.
+ */
+function preferCause(current: GapCause | undefined, next: GapCause): boolean {
+	if (current === undefined) return true;
+	return JSON.stringify(next) < JSON.stringify(current);
 }
 
 /** One replicate's contribution to a metric, with the mixture ids of the sandbox that produced it. */
@@ -162,16 +172,23 @@ function mergeProvider(providerId: string, entries: readonly ReplicateSlice[]): 
 
 		// Gaps keyed by (scope, id, outcome, reason); `outcome` belongs in the key because one shard
 		// skipping a suite on a disk precondition while another attempted it and crashed are two distinct
-		// facts, and folding them would silently drop whichever arrived second. `cause` is NOT in the key —
-		// reason and cause are built from one input — but shards can straddle a producer upgrade, so a
-		// classified gap is merged over an unclassified one instead of letting arrival order decide. Merged
-		// into a NEW object: the gaps belong to the caller's shard Runs and must not be mutated.
+		// facts, and folding them would silently drop whichever arrived second. Merged into a NEW object:
+		// the gaps belong to the caller's shard Runs and must not be mutated.
+		//
+		// `cause` is not in the key, and the merge below is ORDER-INDEPENDENT for the two ways two shards
+		// can disagree about it. A classified cause beats an unclassified one (shards can straddle a
+		// producer upgrade). Two DIFFERENT classified causes under one key are reachable even though
+		// reason and cause are built from one input, because a reason can be lossier than its cause: the
+		// disk-shortfall sentence rounds with `toFixed(1)`, so 20.04 and 20.049 GiB free render one
+		// sentence carrying two `freeGb` values. Keeping whichever arrived first would make the published
+		// number depend on shard order, so the canonically smaller cause wins — arbitrary, but stable
+		// across re-aggregation, which is the property the committed dataset needs.
 		for (const gap of slice.gaps) {
 			const key = [gap.scope, gap.id, gap.outcome, gap.reason].join(NUL);
 			const existing = gapByKey.get(key);
 			if (existing === undefined) {
 				gapByKey.set(key, gap);
-			} else if (existing.cause === undefined && gap.cause !== undefined) {
+			} else if (gap.cause !== undefined && preferCause(existing.cause, gap.cause)) {
 				gapByKey.set(key, { ...existing, cause: gap.cause });
 			}
 		}
@@ -196,13 +213,13 @@ function mergeProvider(providerId: string, entries: readonly ReplicateSlice[]): 
 	// no sandbox report at all (the registry placeholder row), which has no mixture to disclose.
 	const observedMixtures = buildObservedMixtures(sandboxSpecReadings);
 
-	// The representative single-value summary, derived once from the mixtures plus a first-wins backfill
-	// rather than assembled by mutation order. Empty without mixtures, and provably so: `observedMixtures`
-	// is undefined only when NO slice carried participation evidence, and `providerReportedNothing`
-	// includes "no observed-spec reading" — so every excluded slice had empty specs and there is nothing to
-	// back-fill from. That is also why the backfill reads `sandboxSpecReadings` rather than every slice.
+	// The representative single-value summary: the dominant machine and network, derived from the mixtures
+	// alone so it cannot depend on shard arrival order. Empty without mixtures, and provably so —
+	// `observedMixtures` is undefined only when NO slice carried participation evidence, and
+	// `providerReportedNothing` includes "no observed-spec reading", so every excluded slice had empty
+	// specs and there was never anything to summarize.
 	const observedSpecs: ObservedSpecs = observedMixtures
-		? representativeSpecs(sandboxSpecReadings, observedMixtures)
+		? representativeSpecs(observedMixtures)
 		: {};
 
 	// Fold the PER-MACHINE verdicts in too. The two inputs are the same observations at different grains,

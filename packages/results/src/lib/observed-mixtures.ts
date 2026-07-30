@@ -22,8 +22,8 @@ import type {
 	HostMetadataRecord,
 	HostNetworkSpecs,
 	ObservedHardwareMixture,
-	ObservedMixture,
 	ObservedMixtures,
+	ObservedNetworkMixture,
 	ObservedSpecs,
 } from "@sandbox-benchmarks/schema";
 import { hostHardwareSpecsSchema, hostNetworkSpecsSchema } from "@sandbox-benchmarks/schema";
@@ -157,7 +157,7 @@ export function buildObservedMixtures(
 		const specMatched = computeSpecMatched(mixture.specs);
 		hostHardware[id] = { ...mixture, ...(specMatched !== undefined ? { specMatched } : {}) };
 	}
-	const hostNetwork: Record<string, ObservedMixture> = {};
+	const hostNetwork: Record<string, ObservedNetworkMixture> = {};
 	for (const [id, mixture] of tallyCategory<HostNetworkSpecs>(readings, HOST_NETWORK_SPEC_KEYS)) {
 		hostNetwork[id] = mixture;
 	}
@@ -188,35 +188,30 @@ export function observedMixtureIds(specs: ObservedSpecs): ObservedMixtureIds {
 
 /**
  * The single representative reading an aggregated ProviderRun publishes beside its mixtures: the specs
- * of the mixture the MOST sandboxes reported in each category, over a first-wins backfill of everything
- * a mixture cannot speak for (per-sandbox identity, and any hashed field the dominant sandbox happened
- * not to disclose).
+ * of the mixture the MOST sandboxes reported, in each category.
  *
- * One derivation rather than three resolved by mutation order. What it replaces was "first defined
- * value per key wins", which resolves to whichever shard arrived first and on a mixed fleet publishes a
- * machine most sandboxes never ran on: in run 30510718771 that gave modal-vm a headline `cpuModel` of
- * "AMD EPYC 9J45 128-Core Processor" while its sandboxes were spread over ten CPU models, Intel and AMD
- * alike. A modal value can still under-describe a fleet — that is what the mixtures are for — but it
- * cannot be a machine the fleet mostly did not use, and it does not change with shard arrival order.
+ * Exactly the dominant machine and the dominant egress network — no blending, no backfill. What this
+ * replaces was "first defined value per key wins" across every shard, which had two order dependencies.
+ * The obvious one: on a mixed fleet it published a machine most sandboxes never ran on (run 30510718771
+ * gave modal-vm a headline `cpuModel` of "AMD EPYC 9J45 128-Core Processor" while its sandboxes spread
+ * over ten CPU models, Intel and AMD alike). The subtler one: per-sandbox identity — `publicIp`,
+ * `reverseDns`, `user` — was backfilled from whichever shard arrived first, so re-aggregating the same
+ * shards in a different order emitted a different document. The committed dataset is re-aggregated (a
+ * schema bump backfills the whole series), so a value that moves with arrival order is churn.
+ *
+ * Identity is now simply ABSENT from an aggregate. One sandbox's IP was never a property of the
+ * provider, and the full per-sandbox records are still in `hostMetadata`, so nothing is lost — the same
+ * reasoning that deleted `hostCpuModels`. A field the dominant machine did not disclose is absent too,
+ * which is honest: this reading describes that machine, and `observedMixtures` remains the exact record
+ * of every other one.
  */
-export function representativeSpecs(
-	readings: readonly ObservedSpecs[],
-	mixtures: ObservedMixtures,
-): ObservedSpecs {
-	const backfill: Record<string, unknown> = {};
-	for (const reading of readings) {
-		for (const key in reading) {
-			const value = (reading as Record<string, unknown>)[key];
-			if (value !== undefined && !(key in backfill)) backfill[key] = value;
-		}
-	}
-	// Dominance order is the map's own key order (tallyCategory sorted it), so the leading entry is the
-	// dominant one — but selected with the shared comparator rather than by reading the first key, so
-	// the result never depends on JS property-order rules.
+export function representativeSpecs(mixtures: ObservedMixtures): ObservedSpecs {
+	// Dominance order is the map's own key order (tallyCategory sorted it), but the leading entry is
+	// selected with the shared comparator rather than by reading the first key, so the result never
+	// depends on JS property-order rules.
 	const dominant = <M extends { count: number }>(category: Readonly<Record<string, M>>) =>
 		Object.entries(category).sort(byDominance)[0]?.[1];
 	return {
-		...backfill,
 		...dominant(mixtures.hostHardware)?.specs,
 		...dominant(mixtures.hostNetwork)?.specs,
 	};
@@ -254,7 +249,9 @@ export function foldHostMetadata(
 		// compiler configuration are single fields of several hundred characters), so keeping ~500 of them
 		// alive to dedupe ~200 records costs about a megabyte for nothing. The mixture ids belong in the
 		// key because the same source file read on two machines is two facts — folding them would
-		// attribute one machine's record to the other's sandboxes.
+		// attribute one machine's record to the other's sandboxes. Fields are sorted into the key (never
+		// into the record) for the same reason the mixture hash sorts its object keys: two readings of the
+		// same facts are the same fact, and a content hash that depends on emission order would split them.
 		const key = createHash("sha256")
 			.update(
 				JSON.stringify([
@@ -262,7 +259,9 @@ export function foldHostMetadata(
 					record.sourceFile,
 					ids.hostHardwareId ?? null,
 					ids.hostNetworkId ?? null,
-					stable.map((field) => [field.path, field.value]),
+					[...stable]
+						.sort((a, b) => a.path.localeCompare(b.path))
+						.map((field) => [field.path, field.value]),
 				]),
 			)
 			.digest("hex");

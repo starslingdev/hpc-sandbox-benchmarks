@@ -54,7 +54,7 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 		.map((meta) => normalizeProviderDir(input.rawRoot, meta.id));
 
 	const candidate = {
-		// v3: a shard may carry a replicateIndex the aggregate folds into MetricResult.replicates.
+		// A shard may carry a replicateIndex the aggregate folds into MetricResult.replicates (v3+).
 		schemaVersion: "4" as const,
 		runId: input.runId,
 		sha: input.sha,

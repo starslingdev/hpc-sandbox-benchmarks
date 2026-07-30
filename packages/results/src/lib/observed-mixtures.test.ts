@@ -129,27 +129,42 @@ describe("buildObservedMixtures", () => {
 	});
 
 	it("picks the dominant mixture's specs, not the first-seen one", () => {
-		const readings = [
+		const mixtures = buildObservedMixtures([
 			{ ...GENOA, ...FRANKFURT },
 			{ ...TURIN, ...ASHBURN },
 			{ ...TURIN, ...ASHBURN },
-		];
-		const mixtures = buildObservedMixtures(readings);
+		]);
 		expect(mixtures).toBeDefined();
 		if (!mixtures) return;
-		expect(representativeSpecs(readings, mixtures)).toEqual({ ...TURIN, ...ASHBURN });
+		expect(representativeSpecs(mixtures)).toEqual({ ...TURIN, ...ASHBURN });
+	});
+
+	it("omits per-sandbox identity, so re-aggregating in another order emits the same document", () => {
+		// publicIp/reverseDns/user used to be back-filled from whichever shard arrived first, which made a
+		// re-aggregation of the SAME shards produce a different document — churn in a committed dataset that
+		// a schema bump re-aggregates wholesale. One sandbox's IP was never a property of the provider, and
+		// hostMetadata still carries every per-sandbox record.
+		const forward = [
+			{ ...GENOA, ...ASHBURN, publicIp: "203.0.113.1", reverseDns: "a.example", user: "root" },
+			{ ...GENOA, ...ASHBURN, publicIp: "203.0.113.2", reverseDns: "b.example", user: "root" },
+		];
+		const specsOf = (readings: ObservedSpecs[]) => {
+			const mixtures = buildObservedMixtures(readings);
+			return mixtures ? representativeSpecs(mixtures) : undefined;
+		};
+		expect(specsOf(forward)).toEqual({ ...GENOA, ...ASHBURN });
+		expect(specsOf([...forward].reverse())).toEqual(specsOf(forward));
 	});
 
 	it("breaks a dominance tie by id so the representative reading is deterministic", () => {
-		const readings = [GENOA, TURIN];
-		const mixtures = buildObservedMixtures(readings);
+		const mixtures = buildObservedMixtures([GENOA, TURIN]);
 		expect(mixtures).toBeDefined();
 		if (!mixtures) return;
 		// Both count 1; the pick must not depend on iteration luck, and must be one of the two observed
 		// machines rather than a blend of them.
-		const picked = representativeSpecs(readings, mixtures);
+		const picked = representativeSpecs(mixtures);
 		expect([GENOA, TURIN]).toContainEqual(picked);
-		expect(representativeSpecs(readings, mixtures)).toEqual(picked);
+		expect(representativeSpecs(mixtures)).toEqual(picked);
 	});
 
 	it("emits a document that validates against the schema", () => {

@@ -637,3 +637,54 @@ describe("aggregateRuns derived-metric marking", () => {
 		expect(ids).toContain("node_web_tooling_runs_per_s");
 	});
 });
+
+describe("aggregateRuns gap-cause determinism", () => {
+	// One reason, two causes. Reachable because a reason can be lossier than its cause: the disk-shortfall
+	// sentence rounds free space with toFixed(1), so 20.04 and 20.049 GiB render one identical sentence.
+	const reason = "Insufficient disk: 20.0 GiB free, suite needs 30 GiB";
+	const cause = (freeGb: number) =>
+		({ kind: "disk-shortfall", freeGb, requiredGb: 30 }) as const satisfies GapCause;
+	const withCause = (freeGb: number | undefined, index: number) =>
+		shard(
+			[
+				{
+					...provider("e2b", [metric("pybench_milliseconds", [900 + index])]),
+					gaps: [
+						{
+							scope: "suite" as const,
+							id: "realworld-mastra" as const,
+							outcome: "skipped" as const,
+							reason,
+							...(freeGb === undefined ? {} : { cause: cause(freeGb) }),
+						},
+					],
+				},
+			],
+			"2026-06-01T00:00:00.000Z",
+			index,
+		);
+
+	it("resolves two different classified causes the same way in either arrival order", () => {
+		// Keeping whichever arrived first would make the published freeGb depend on shard order — churn in
+		// a committed dataset that a schema bump re-aggregates wholesale.
+		const causeOf = (order: ReturnType<typeof withCause>[]) => {
+			const gaps = aggregateRuns(order).providers.find((p) => p.providerId === "e2b")?.gaps ?? [];
+			expect(gaps).toHaveLength(1);
+			return gaps[0]?.cause;
+		};
+		const forward = causeOf([withCause(20.04, 0), withCause(20.049, 1)]);
+		const reversed = causeOf([withCause(20.049, 0), withCause(20.04, 1)]);
+		expect(forward).toEqual(reversed);
+	});
+
+	it("still upgrades an unclassified gap when another shard classified it, in either order", () => {
+		for (const order of [
+			[withCause(undefined, 0), withCause(20.04, 1)],
+			[withCause(20.04, 0), withCause(undefined, 1)],
+		]) {
+			const gaps = aggregateRuns(order).providers.find((p) => p.providerId === "e2b")?.gaps ?? [];
+			expect(gaps).toHaveLength(1);
+			expect(gaps[0]?.cause).toEqual(cause(20.04));
+		}
+	});
+});
