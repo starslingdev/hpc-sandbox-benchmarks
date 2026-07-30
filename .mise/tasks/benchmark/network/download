@@ -57,13 +57,21 @@ DOWNLOAD_MAX_SECONDS="${DOWNLOAD_MAX_SECONDS:-120}"
 # Authorization header, for api.github.com URLs only — a CDN has no use for either, and curl drops
 # the credential on a cross-host redirect, so the token never reaches the storage host. Rate-limit
 # headers are captured and reported below, because "throttled" and "slow" must never look alike.
+#
+# The credential goes through a 0600 file read with `-H @file`, never `-H "Authorization: …"`: an
+# argv is world-readable through ps and /proc/<pid>/cmdline for as long as curl runs, and curl blanks
+# only its own auth options, never a custom header. Sandboxes are usually single-tenant, but "usually"
+# is not a property to lean a token on when the alternative costs three lines.
 DOWNLOAD_ACCEPT="${DOWNLOAD_ACCEPT:-application/octet-stream}"
 GITHUB_API_NOTE=""
 curl_args=(-sSL --max-time "$DOWNLOAD_MAX_SECONDS" -o /dev/null -w '%{json}')
 if [[ "$DOWNLOAD_URL" == https://api.github.com/* ]]; then
 	curl_args+=(-H "Accept: ${DOWNLOAD_ACCEPT}" -H "X-GitHub-Api-Version: 2022-11-28")
 	if [ -n "${GITHUB_TOKEN:-}" ]; then
-		curl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+		AUTH_HEADER_FILE="$(mktemp)"
+		chmod 0600 "$AUTH_HEADER_FILE"
+		printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" >"$AUTH_HEADER_FILE"
+		curl_args+=(-H "@${AUTH_HEADER_FILE}")
 		GITHUB_API_NOTE="GitHub API, authenticated (5000 requests/hour)"
 	else
 		GITHUB_API_NOTE="GitHub API, unauthenticated (60 requests/hour per source IP — set GITHUB_TOKEN to raise it)"
@@ -84,7 +92,7 @@ echo "(capped at ${DOWNLOAD_MAX_SECONDS}s — a transfer cut short still reports
 
 SPEED_JSON="$(result_path "$(task_result_name "speed")")"
 HEADERS_TMP="$(mktemp)"
-trap 'rm -f "$HEADERS_TMP"' EXIT
+trap 'rm -f "$HEADERS_TMP" "${AUTH_HEADER_FILE:-}"' EXIT
 
 # First occurrence of a response header across the whole redirect chain. First, not last, because the
 # rate-limit budget is reported by api.github.com on the 302 — the storage host it forwards to knows

@@ -104,7 +104,7 @@ GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURL_VERSION="$(curl --version 2>/dev/null | head -n 1)"
 
 echo "=== HTTPS Latency (${SAMPLES} fresh connections per endpoint) ==="
-echo "Phases derived from curl's cumulative timers: DNS | TCP | TLS | server | body"
+echo "Phases derived from curl's cumulative timers: DNS | TCP | TLS | prep | server | body"
 
 for url in "${ENDPOINTS[@]}"; do
 	host="${url#*://}"
@@ -157,8 +157,8 @@ for url in "${ENDPOINTS[@]}"; do
 			phases as $p |
 			if responded then
 				"sample \($n): HTTP \(.response_code) \(.http_version // "?") | dns \($p.dns)ms" +
-				" | tcp \($p.tcp)ms | tls \($p.tls // "n/a")ms | server \($p.server)ms" +
-				" | body \($p.body)ms | total \($p.total)ms"
+				" | tcp \($p.tcp)ms | tls \($p.tls // "n/a")ms | prep \($p.pretransfer)ms" +
+				" | server \($p.server)ms | body \($p.body)ms | total \($p.total)ms"
 			else
 				"sample \($n): FAILED after \($p.total)ms (curl exit \(.exitcode // "?"))" +
 				(if (.errormsg // "") == "" then "" else " — \(.errormsg)" end)
@@ -220,6 +220,7 @@ for url in "${ENDPOINTS[@]}"; do
 				dns: ($ok | map(.dns) | stats),
 				tcp: ($ok | map(.tcp) | stats),
 				tls: ($ok | map(.tls) | stats),
+				pretransfer: ($ok | map(.pretransfer) | stats),
 				server: ($ok | map(.server) | stats),
 				body: ($ok | map(.body) | stats),
 				total: ($ok | map(.total) | stats)

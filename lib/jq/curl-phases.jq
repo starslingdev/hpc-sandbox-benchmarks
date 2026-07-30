@@ -23,15 +23,22 @@ def responded: ((.exitcode // 0) == 0) and (.response_code > 0);
 
 # curl's timers are CUMULATIVE from the start of the request, so each phase is the gap between
 # adjacent milestones. `tls` is null on a plain-HTTP request, which has no appconnect milestone, and
-# `server` then measures from the TCP connect instead — subtracting a zero appconnect would charge
-# the whole connection to server think-time.
+# `pretransfer` then measures from the TCP connect instead — subtracting a zero appconnect would
+# charge the whole connection to it.
+#
+# `pretransfer` is its own phase rather than part of `server` because time_starttransfer includes it:
+# it is the client-side gap between "connection ready" and "request on the wire" (curl's own setup,
+# and a proxy CONNECT where one is in play). Folding it into `server` would bill the origin for work
+# it never saw — small in absolute terms, measured at 0.05-0.18ms on real records, but this probe
+# exists to attribute latency to the right party, and every phase still sums to `total`.
 def phases:
 	(if .time_appconnect > 0 then .time_appconnect else .time_connect end) as $connected |
 	{
 		dns: (.time_namelookup | ms),
 		tcp: ((.time_connect - .time_namelookup) | ms),
 		tls: (if .time_appconnect > 0 then ((.time_appconnect - .time_connect) | ms) else null end),
-		server: ((.time_starttransfer - $connected) | ms),
+		pretransfer: ((.time_pretransfer - $connected) | ms),
+		server: ((.time_starttransfer - .time_pretransfer) | ms),
 		body: ((.time_total - .time_starttransfer) | ms),
 		total: (.time_total | ms)
 	};

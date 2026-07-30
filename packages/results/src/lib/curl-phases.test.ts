@@ -72,23 +72,35 @@ suite("curl-phases.jq: phases", () => {
 			dns: 2.843,
 			tcp: 0.52, // .003363 - .002843
 			tls: 25.822, // .029185 - .003363
-			server: 21.643, // .050828 - .029185
+			pretransfer: 0.158, // .029343 - .029185 — client-side, not the origin's
+			server: 21.485, // .050828 - .029343
 			body: 0.074, // .050902 - .050828
 			total: 50.902,
 		});
 	});
 
-	it("reports null TLS on plain HTTP and measures server time from the TCP connect", () => {
-		// http://pypi.org/ has no appconnect milestone (0). Charging .036762 - 0 to the server would
-		// invent 36ms of think-time out of the connection setup; the correct base is time_connect.
+	it("reports null TLS on plain HTTP and starts the next phase at the TCP connect", () => {
+		// http://pypi.org/ has no appconnect milestone (0). Measuring from 0 would invent 2.6ms of
+		// phase out of the connection setup; with no TLS the correct base is time_connect.
 		const [phases] = runJq('select(.url == "http://pypi.org/") | phases', { file: fixture });
 		expect(phases).toMatchObject({
 			dns: 1.849,
 			tcp: 0.776, // .002625 - .001849
 			tls: null,
-			server: 34.137, // .036762 - .002625, NOT .036762 - 0
+			pretransfer: 0.047, // .002672 - .002625, NOT .002672 - 0
+			server: 34.09, // .036762 - .002672
 			total: 36.807,
 		});
+	});
+
+	it("bills client-side pre-transfer separately from the wait on the origin", () => {
+		// time_starttransfer INCLUDES time_pretransfer, so measuring `server` from the connection
+		// milestone would charge curl's own request setup (and a proxy CONNECT, where there is one) to
+		// the origin's think-time. Small on these records — well under a millisecond — but it is the
+		// client's time, and this probe exists to attribute latency to the right party.
+		const rows = runJq("select(responded) | phases | .pretransfer", { file: fixture }) as number[];
+		expect(rows.length).toBeGreaterThan(0);
+		expect(rows.every((ms) => ms > 0 && ms < 1)).toBe(true);
 	});
 
 	it("keeps sub-millisecond readings instead of rounding them to zero", () => {
@@ -103,7 +115,7 @@ suite("curl-phases.jq: phases", () => {
 
 	it("accounts for the whole request: the phases sum to the total", () => {
 		const rows = runJq(
-			"select(responded) | phases | { total, sum: ([.dns, .tcp, (.tls // 0), .server, .body] | add) }",
+			"select(responded) | phases | { total, sum: ([.dns, .tcp, (.tls // 0), .pretransfer, .server, .body] | add) }",
 			{ file: fixture },
 		) as { total: number; sum: number }[];
 		expect(rows.length).toBeGreaterThan(0);
@@ -133,10 +145,12 @@ suite("curl-phases.jq: responded", () => {
 	});
 
 	it("is why the statistics gate on it: an unanswered request has nonsense phases", () => {
-		// time_starttransfer stays 0 on a connection that never opened, so `server` goes NEGATIVE and
-		// `body` absorbs the whole timeout. Harmless only because `responded` keeps it out of stats.
+		// The milestones after the connect stay 0 on a connection that never opened, so `pretransfer`
+		// goes NEGATIVE and `body` absorbs the whole timeout. Harmless only because `responded` keeps
+		// the record out of every statistic.
 		const [phases] = runJq("select(.response_code == 0) | phases", { file: fixture });
-		expect((phases as { server: number }).server).toBeLessThan(0);
+		expect((phases as { pretransfer: number }).pretransfer).toBeLessThan(0);
+		expect((phases as { body: number }).body).toBe(41.665);
 	});
 });
 
