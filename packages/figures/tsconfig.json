@@ -1,0 +1,10 @@
+{
+  "extends": "@repo/tsconfig/library.json",
+  "compilerOptions": {
+    // The React types this package's .tsx needs. `types` is a whole-project override rather than a
+    // merge, so `bun` has to be restated or every `node:*` import and `import.meta.dir` in here
+    // stops resolving.
+    "types": ["bun", "react"]
+  },
+  "include": ["src"]
+}

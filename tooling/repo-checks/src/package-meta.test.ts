@@ -1,7 +1,7 @@
 // Invariant: every workspace member has the uniform package.json shape.
 
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Glob } from "bun";
 import type { PackageJson } from "./lib/workspace.ts";
@@ -27,6 +27,21 @@ function isInternal(depName: string): boolean {
 
 function allDeps(pkg: PackageJson): Record<string, string> {
 	return { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+}
+
+/**
+ * Every relative file target reachable in an `exports` map, at any nesting depth.
+ *
+ * Recursive because the field is: a subpath may hold a string, or a conditions object
+ * (`{ import, default }`), or an array of fallbacks. Walking it rather than assuming today's flat
+ * string form means the check keeps working the day a package needs conditions, instead of quietly
+ * matching nothing.
+ */
+function exportTargets(node: unknown): string[] {
+	if (typeof node === "string") return node.startsWith(".") ? [node] : [];
+	if (Array.isArray(node)) return node.flatMap(exportTargets);
+	if (node !== null && typeof node === "object") return Object.values(node).flatMap(exportTargets);
+	return [];
 }
 
 describe("package metadata invariants", () => {
@@ -69,6 +84,17 @@ describe("package metadata invariants", () => {
 			if (isLibraryPackage || member.name === "@repo/test-utils") {
 				it("exposes an exports map", () => {
 					expect(pkg.exports).toBeDefined();
+				});
+
+				it("every exports subpath points at a file that exists", () => {
+					// An exports map is the package's public surface, and in a source-first workspace a
+					// stale entry in one is invisible until someone imports that subpath: the resolver
+					// reports the specifier as unresolvable, which reads like the importer's mistake. Cheap
+					// to check, and it catches the move-a-file refactor that forgets the manifest.
+					const missing = exportTargets(pkg.exports ?? {}).filter(
+						(target) => !existsSync(join(member.dir, target)),
+					);
+					expect(missing).toEqual([]);
 				});
 			}
 

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./figures": "./src/figures.ts"
   },
   "scripts": {
     "test": "bun test",
@@ -13,6 +14,7 @@
   "dependencies": {
     "@nodable/compact-builder": "catalog:xml",
     "@nodable/flexible-xml-parser": "catalog:xml",
+    "@sandbox-benchmarks/figures": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:"
   },

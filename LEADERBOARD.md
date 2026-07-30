@@ -6,7 +6,8 @@ dataset [`data/dataset/runs/30322186937.json`](data/dataset/runs/30322186937.jso
 Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **298 metric records**
 backed by **2980 retained trial observations**, across **44 metrics** and
 **7 providers**; every emitted, catalogued metric has a ranked table below
-(median of retained trials), grouped by dimension with its headline first.
+(median of retained trials), grouped by dimension with its headline first — some behind a
+disclosure triangle, none omitted.
 Generated from the published Run dataset — do not edit by hand. Methodology:
 [`docs/methodology.md`](docs/methodology.md).
 
@@ -19,6 +20,11 @@ surfaced through coverage gaps, not part of the compute-match verdict.
 actually waits on is what this benchmark exists to measure. The synthetic microbenchmarks (`cpu`, `disk`, `memory`, `network`, `system`)
 load one hardware axis in isolation — a real question, but a different one — so each is collapsed by
 default; expand a section to read its tables.
+
+**The `realworld` section is drawn, not tabulated.** One stacked chart per repo, each bar a
+whole pipeline on one environment and each segment a task. Its per-task rankings — the medians,
+intervals and trial counts every bar is built from — are still here, one triangle down: the charts
+are what the section is FOR, and the tables are how you check them.
 
 ## Providers in this run
 
@@ -40,6 +46,19 @@ cross-check.
 _Not present in this run: Daytona (container) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._
 
 ## realworld
+
+What a developer or a CI job actually waits on: each bar is one environment's whole pipeline
+for that repo, segmented by task in execution order. The three charts share one time scale, so
+a second is the same length in all of them.
+
+![Better-Auth: 10 pipeline tasks across 7 environments, stacked by task and sorted fastest-first](docs/figures/realworld-better-auth.svg)
+
+![Mastra: 4 pipeline tasks across 6 environments, 1 disclosed as incomplete, stacked by task and sorted fastest-first](docs/figures/realworld-mastra.svg)
+
+![OpenClaw: 3 pipeline tasks across 6 environments, 1 disclosed as incomplete, stacked by task and sorted fastest-first](docs/figures/realworld-openclaw.svg)
+
+<details>
+<summary><strong>Per-task rankings</strong> · 17 tasks, with medians, intervals and trial counts</summary>
 
 ### Mastra: cold install _(headline)_
 
@@ -305,6 +324,8 @@ _Namespace leads · Daytona (VM) is ~1.1× higher (lower is better)._
 | 4 | Modal (VM) | 47.11 | 44.5 – 52.2 | 12 | — |
 | 4 | Novita | 50.33 | 47.41 – 56.71 | 12 | tied |
 | 6 | Modal (gVisor) | 103.9 | 97.1 – 113.1 | 12 | — |
+
+</details>
 
 ## cpu
 

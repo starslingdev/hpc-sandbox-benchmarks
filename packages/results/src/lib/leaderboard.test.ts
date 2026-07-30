@@ -1,13 +1,29 @@
 import { describe, expect, it } from "bun:test";
 import type { MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
 import { aggregate, ECONOMICS_METRIC_IDS } from "@sandbox-benchmarks/schema";
+import type { Leaderboard, LeaderboardFigure } from "./leaderboard.ts";
 import {
 	buildLeaderboard,
 	DATASET_RUNS_DIR,
+	FIGURE_DIMENSION,
 	LEADERBOARD_DIMENSION_ORDER,
 	REPO_URL,
 	renderLeaderboardMarkdown,
 } from "./leaderboard.ts";
+
+/**
+ * Render with NO figures, which is what almost every case below is about — the tables, the header,
+ * the statistics essay. The renderer takes the figures the caller rendered as a required argument
+ * (see `LeaderboardFigure`), and defaulting it here rather than in the signature keeps that
+ * requirement on the production callers while leaving these cases to say what they mean.
+ *
+ * With no figures the figure dimension renders exactly as every other one: tables, expanded. That
+ * is the honest fallback — a board whose suites could not be charted must not hide its tables
+ * behind a triangle whose figures do not exist.
+ */
+function render(board: Leaderboard, figures: readonly LeaderboardFigure[] = []): string {
+	return renderLeaderboardMarkdown(board, figures);
+}
 
 function metric(metricId: string, samples: number[]): MetricResult {
 	return { metricId, samples, aggregates: aggregate(samples) };
@@ -98,7 +114,7 @@ describe("provider isolation roster", () => {
 			]),
 		);
 		expect(board.roster.map((r) => r.mismatch)).toEqual([true, false]);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain("## Providers in this run");
 		expect(md).toContain("| Modal (gVisor) | gVisor container | vm ⚠ |");
 		expect(md).toContain("Isolation mismatch");
@@ -106,7 +122,7 @@ describe("provider isolation roster", () => {
 
 	it("renders an em-dash and no mismatch banner when no isolation was detected", () => {
 		const board = buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10])])]));
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain("| Daytona (VM) | microVM (Linux VM) | — |");
 		expect(md).not.toContain("Isolation mismatch");
 	});
@@ -149,7 +165,7 @@ describe("buildLeaderboard", () => {
 		);
 		// Only cpu is populated; disk/memory/etc. are absent.
 		expect(board.dimensions.map((d) => d.dimension)).toEqual(["cpu"]);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain("## cpu");
 		expect(md).toContain("Node.js web tooling");
 		expect(md).toContain("higher is better");
@@ -171,7 +187,7 @@ describe("buildLeaderboard", () => {
 	});
 
 	it("renders a placeholder when nothing is ranked", () => {
-		const md = renderLeaderboardMarkdown(buildLeaderboard(run([provider("daytona-vm", [])])));
+		const md = render(buildLeaderboard(run([provider("daytona-vm", [])])));
 		expect(md).toContain("No ranked metrics yet");
 	});
 
@@ -193,7 +209,7 @@ describe("buildLeaderboard", () => {
 			board.dimensions.flatMap(({ metrics }) => metrics.flatMap(({ rows }) => rows)),
 		).toHaveLength(3);
 
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain("**3 metric records**");
 		expect(md).toContain("**3 retained trial observations**");
 		expect(md).toContain("**2 metrics**");
@@ -214,7 +230,7 @@ describe("buildLeaderboard", () => {
 		expect(board.targetSpec).toEqual({ vcpus: 2, memoryGb: 8, diskGb: 20 });
 		expect(board.comparabilityCaveats).toHaveLength(1);
 
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain(
 			"Requested target for every provider: **2 vCPU · 8 GiB RAM · 20 GB disk**",
 		);
@@ -253,7 +269,7 @@ describe("buildLeaderboard statistical ranking", () => {
 
 	it("is deterministic: the same Run yields byte-identical markdown", () => {
 		const build = () =>
-			renderLeaderboardMarkdown(
+			render(
 				buildLeaderboard(
 					run([
 						provider("daytona-vm", [metric(HEADLINE, DAYTONA_COPY)]),
@@ -299,8 +315,8 @@ describe("buildLeaderboard statistical ranking", () => {
 		expect(rows[1]?.tiedWithAbove).toBe("statistical");
 		expect(rows[1]?.pVsPrevious?.mannWhitney).toBeGreaterThan(0.05);
 		// Takeaway must not claim a sole provider when the top cohort is a statistical tie.
-		expect(renderLeaderboardMarkdown(board)).toContain("share the top on this metric");
-		expect(renderLeaderboardMarkdown(board)).not.toContain("is the only ranked provider");
+		expect(render(board)).toContain("share the top on this metric");
+		expect(render(board)).not.toContain("is the only ranked provider");
 	});
 
 	it("leaves a single-Sample Metric untested and ranked on its exact value", () => {
@@ -346,7 +362,7 @@ describe("buildLeaderboard statistical ranking", () => {
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
 		expect(rows.map((r) => r.rank)).toEqual([1, 1, 1]);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		// All three display names appear in the "share the top" takeaway, joined as a list.
 		expect(md).toMatch(/[^,|]+, [^,|]+ and [^,|]+ share the top on this metric/);
 		for (const name of ["Daytona (VM)", "E2B", "Modal (gVisor)"]) expect(md).toContain(name);
@@ -444,7 +460,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 	const HEADLINE = "node_web_tooling_runs_per_s";
 
 	it("renders a bootstrap interval, n and a Note for a statistical tie", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [10, 12, 11, 13, 9])]),
@@ -470,7 +486,7 @@ describe("renderLeaderboardMarkdown statistics", () => {
 				provider("e2b", [metric(HEADLINE, [11, 12, 10, 14, 13])]),
 			]),
 		);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 
 		expect(md).toContain("p (KS)");
 		expect(md).toContain("Kolmogorov-Smirnov");
@@ -496,15 +512,13 @@ describe("renderLeaderboardMarkdown statistics", () => {
 	});
 
 	it("renders a point value with no interval for a single-Sample Metric", () => {
-		const md = renderLeaderboardMarkdown(
-			buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10])])])),
-		);
+		const md = render(buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10])])])));
 		// n=1 → em-dash for the bootstrap interval; no Note column when nothing needs calling out.
 		expect(md).toMatch(/\| 1 \| Daytona \(VM\) \| 10 \| — \| 1 \|\n/);
 	});
 
 	it("never prints a p-value as a misleading 0", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [1, 2, 3, 4, 5, 6, 7, 8])]),
@@ -534,7 +548,7 @@ describe("underpowered comparisons", () => {
 			["Daytona (VM)", 1, null, null],
 			["Modal (gVisor)", 2, "underpowered", null],
 		]);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain("n too small");
 		expect(md).not.toMatch(/\| tied \|/);
 		expect(md).not.toContain("(tied)");
@@ -543,7 +557,7 @@ describe("underpowered comparisons", () => {
 	it("quotes each underpowered row's own floor, not one recomputed from its sample sizes", () => {
 		// A 4-v-3 comparison is still underpowered, but floors at 2/C(7,4) ≈ 0.057, not 3 v 3's 0.1. The
 		// footer must quote the shape the table actually contains, or it explains a number no row has.
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [19.6, 19.7, 19.9, 20.1])]),
@@ -556,7 +570,7 @@ describe("underpowered comparisons", () => {
 	});
 
 	it("omits the n-too-small explanation entirely when no comparison was underpowered", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [10, 11, 12, 13, 14])]),
@@ -587,7 +601,7 @@ describe("underpowered comparisons", () => {
 		]);
 		expect(rows[1]?.verdict).toBe("underpowered");
 		expect(rows[1]?.tiedWithAbove).toBe("identical-value");
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		// The cell distinguishes the two reasons the rank is shared; it never reads as a statistical tie.
 		expect(md).toContain("n too small, equal medians");
 		expect(md).not.toMatch(/\| tied \|/);
@@ -606,7 +620,7 @@ describe("underpowered comparisons", () => {
 			[1, null, null],
 			[1, "untested", "identical-value"],
 		]);
-		expect(renderLeaderboardMarkdown(board)).toContain("equal values");
+		expect(render(board)).toContain("equal values");
 	});
 
 	it("names every co-leader when three or more providers share the top rank", () => {
@@ -620,7 +634,7 @@ describe("underpowered comparisons", () => {
 		);
 		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
 		expect(rows.map((r) => r.rank)).toEqual([1, 1, 1]);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		// Match the common phrasing across branches (the takeaway says "…this headline" here and
 		// "…this metric" once the per-metric renderer lands) so this test survives the flow up-stack.
 		expect(md).toMatch(/[^,|]+, [^,|]+ and [^,|]+ share the top on this/);
@@ -665,7 +679,7 @@ describe("underpowered comparisons", () => {
 			[1, null, null],
 			[1, "tied", "statistical"],
 		]);
-		expect(renderLeaderboardMarkdown(board)).toContain("| tied |");
+		expect(render(board)).toContain("| tied |");
 	});
 
 	it("does not let the tie-corrected approximation crown a provider the exact test cannot separate", () => {
@@ -741,7 +755,7 @@ describe("coverage gaps", () => {
 	});
 
 	it("renders a Coverage gaps section that marks disk gaps ❌ and reads as a failure, not a tie", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["realworld-mastra"]),
@@ -760,16 +774,14 @@ describe("coverage gaps", () => {
 	});
 
 	it("renders coverage gaps even when no dimension ranked (all-skipped run)", () => {
-		const md = renderLeaderboardMarkdown(
-			buildLeaderboard(run([provider("e2b", [], [diskSkip(30)])])),
-		);
+		const md = render(buildLeaderboard(run([provider("e2b", [], [diskSkip(30)])])));
 		expect(md).toContain("_No ranked metrics yet");
 		expect(md).toContain("## Coverage gaps");
 		expect(md).toContain("realworld-mastra");
 	});
 
 	it("omits the section and the disk note entirely when nothing was skipped", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10, 11])])])),
 		);
 		expect(md).not.toContain("## Coverage gaps");
@@ -777,7 +789,7 @@ describe("coverage gaps", () => {
 	});
 
 	it("escapes pipes and newlines in the verbatim gap reason so the table stays intact", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider(
@@ -802,7 +814,7 @@ describe("coverage gaps", () => {
 		// Some providers hand back a full HTML error page (CloudFront/proxy 403 etc.) as the failure
 		// reason. GitHub renders raw HTML inside Markdown, so left un-escaped a `<PRE>`/`<HR>` would go
 		// live and shred the coverage table. The cell must show the tags as literal text instead.
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider(
@@ -830,7 +842,7 @@ describe("coverage gaps", () => {
 	it("doubles a backslash before the pipe it guards so a `\\|` in the reason can't unescape the delimiter", () => {
 		// Escaping `|` -> `\|` is only safe if a backslash already in the reason is doubled first;
 		// otherwise `\|` would render as an escaped-backslash plus a bare pipe, splitting the row.
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider(
@@ -852,7 +864,7 @@ describe("coverage gaps", () => {
 	});
 
 	it("folds a newline-spanning whitespace run to one space but leaves a newline-free run intact", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider(
@@ -976,7 +988,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 			]),
 		);
 		expect(board.coverageGaps[0]).toMatchObject({ outcome: "failed", disk: false });
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).not.toContain("❌");
 		expect(md).toContain("| E2B | realworld-mastra | **failed** |");
 	});
@@ -999,7 +1011,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 				),
 			]),
 		);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain(
 			"| Daytona (VM) | lifecycle_snapshot_ms _(lifecycle op)_ | **skipped** | provider SDK exposes no snapshot operation |",
 		);
@@ -1008,7 +1020,7 @@ describe("coverage gaps: the holes nobody recorded", () => {
 	});
 
 	it("explains only the outcomes the table actually contains", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([
 					provider("daytona-vm", [metric(HEADLINE, [10, 11])], [], ["cpu-node"]),
@@ -1067,7 +1079,7 @@ describe("absent providers (zero-evidence registry rows) and the registered-suit
 		expect(board.coverageGaps.filter((g) => g.providerId === "modal-vm")).toEqual([]);
 		expect(board.absentProviders).toEqual([{ providerId: "modal-vm", displayName: "Modal (VM)" }]);
 		expect(board.roster.map((r) => r.providerId)).toEqual(["daytona-vm"]);
-		const md = renderLeaderboardMarkdown(board);
+		const md = render(board);
 		expect(md).toContain(
 			"_Not present in this run: Modal (VM) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._",
 		);
@@ -1153,7 +1165,7 @@ describe("header provenance links", () => {
 	const cpu = () => provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
 
 	it("links the run id to its workflow run, the sha to its commit, and the dataset file it rendered", () => {
-		const md = renderLeaderboardMarkdown(
+		const md = render(
 			buildLeaderboard(
 				run([cpu()], { runId: "30322186937", sha: "769743f75f2d0c55fd51b01ec5f026bdcdba774c" }),
 			),
@@ -1168,9 +1180,7 @@ describe("header provenance links", () => {
 	});
 
 	it("links each half of a COMPOSITE run id separately — no single workflow run owns the pair", () => {
-		const md = renderLeaderboardMarkdown(
-			buildLeaderboard(run([cpu()], { runId: "29937467891+29967667026" })),
-		);
+		const md = render(buildLeaderboard(run([cpu()], { runId: "29937467891+29967667026" })));
 		expect(md).toContain(
 			`Run [\`29937467891\`](${REPO_URL}/actions/runs/29937467891) + ` +
 				`[\`29967667026\`](${REPO_URL}/actions/runs/29967667026)`,
@@ -1185,7 +1195,7 @@ describe("header provenance links", () => {
 
 	it("leaves a locally-produced Run's id and sha as bare code rather than inventing a dead link", () => {
 		// A link that 404s is worse than no link: it asserts a primary source that was never published.
-		const md = renderLeaderboardMarkdown(buildLeaderboard(run([cpu()])));
+		const md = render(buildLeaderboard(run([cpu()])));
 		expect(md).toContain("Run `run-1` · commit `abc123` ·");
 		expect(md).not.toContain(`${REPO_URL}/actions/runs/run-1`);
 		expect(md).not.toContain(`${REPO_URL}/commit/abc123`);
@@ -1238,16 +1248,11 @@ describe("document order: realworld leads, synthetics collapse", () => {
 			"memory",
 			"economics",
 		]);
-		expect(dimensionHeadings(renderLeaderboardMarkdown(board))).toEqual([
-			"realworld",
-			"cpu",
-			"memory",
-			"economics",
-		]);
+		expect(dimensionHeadings(render(board))).toEqual(["realworld", "cpu", "memory", "economics"]);
 	});
 
 	it("wraps only the synthetic sections in <details>, leaving realworld and economics expanded", () => {
-		const md = dimensionBody(renderLeaderboardMarkdown(buildLeaderboard(mixed())));
+		const md = dimensionBody(render(buildLeaderboard(mixed())));
 		const sectionOf = (dimension: string): string =>
 			(md.split(`\n## ${dimension}\n`)[1] ?? "").split("\n## ")[0] as string;
 
@@ -1263,7 +1268,7 @@ describe("document order: realworld leads, synthetics collapse", () => {
 	});
 
 	it("names the metric count and headline in the summary, so a shut section still says what it holds", () => {
-		const md = renderLeaderboardMarkdown(buildLeaderboard(mixed()));
+		const md = render(buildLeaderboard(mixed()));
 		expect(md).toContain(
 			"<summary><strong>1 synthetic metric</strong> · headline: Node.js web tooling</summary>",
 		);
@@ -1273,20 +1278,97 @@ describe("document order: realworld leads, synthetics collapse", () => {
 	});
 
 	it("keeps the ## heading OUTSIDE the collapse so a measured axis is never mistaken for an absent one", () => {
-		const md = renderLeaderboardMarkdown(buildLeaderboard(mixed()));
+		const md = render(buildLeaderboard(mixed()));
 		expect(md).toContain("## cpu\n\n<details>\n<summary>");
 	});
 
 	it("explains the collapse only when a synthetic dimension was actually rendered", () => {
-		const withSynthetic = renderLeaderboardMarkdown(buildLeaderboard(mixed()));
+		const withSynthetic = render(buildLeaderboard(mixed()));
 		expect(withSynthetic).toContain("**Document order:**");
 		expect(withSynthetic).toContain("(`cpu`, `memory`)");
 
-		const realworldOnly = renderLeaderboardMarkdown(
+		const realworldOnly = render(
 			buildLeaderboard(
 				run([provider("daytona-vm", [metric("realworld_mastra_task_cold_install", [30])])]),
 			),
 		);
 		expect(realworldOnly).not.toContain("**Document order:**");
+	});
+});
+
+describe("the figure dimension: charts above, receipts below", () => {
+	const TASK = "realworld_mastra_task_cold_install";
+	const board = () =>
+		buildLeaderboard(
+			run([
+				provider("daytona-vm", [metric(TASK, [30, 31])]),
+				provider("modal-vm", [metric(TASK, [50, 52])]),
+			]),
+		);
+	/** The figure dimension's own section — cut at the next `## ` heading or at the trailing
+	 *  statistics block, both of which carry `<details>` of their own. */
+	const section = (md: string): string => {
+		const body = md.slice(md.indexOf(`## ${FIGURE_DIMENSION}\n`) + 1);
+		const ends = ["\n## ", "\n<details>\n<summary>How rankings are decided</summary>"]
+			.map((marker) => body.indexOf(marker))
+			.filter((index) => index >= 0);
+		return ends.length > 0 ? body.slice(0, Math.min(...ends)) : body;
+	};
+	const chart = (over: Partial<LeaderboardFigure> = {}): LeaderboardFigure => ({
+		suiteId: "realworld-mastra",
+		suiteName: "Mastra",
+		file: "docs/figures/realworld-mastra.svg",
+		charted: 2,
+		incomplete: 0,
+		tasks: 4,
+		...over,
+	});
+
+	it("puts every chart above the collapse, in the order it was handed them", () => {
+		const md = render(board(), [
+			chart(),
+			chart({
+				suiteId: "realworld-openclaw",
+				suiteName: "OpenClaw",
+				file: "docs/figures/realworld-openclaw.svg",
+			}),
+		]);
+		const body = section(md);
+		const mastra = body.indexOf("(docs/figures/realworld-mastra.svg)");
+		const openclaw = body.indexOf("(docs/figures/realworld-openclaw.svg)");
+		const collapse = body.indexOf("<details>");
+		expect(mastra).toBeGreaterThan(-1);
+		expect(mastra).toBeLessThan(openclaw);
+		expect(openclaw).toBeLessThan(collapse);
+	});
+
+	it("names the suite, the comparison size and the disclosure count in the alt text", () => {
+		// Alt text is what a reader with the image unavailable gets INSTEAD of the section, so it
+		// carries the claim rather than the word "chart".
+		const md = render(board(), [chart({ incomplete: 1 })]);
+		expect(md).toContain(
+			"![Mastra: 4 pipeline tasks across 2 environments, 1 disclosed as incomplete, " +
+				"stacked by task and sorted fastest-first](docs/figures/realworld-mastra.svg)",
+		);
+		// …and says nothing about disclosures when there are none, rather than "0 disclosed".
+		expect(render(board(), [chart()])).toContain("across 2 environments, stacked by task");
+	});
+
+	it("labels the collapsed tables as the receipts, counting the tasks inside", () => {
+		const md = render(board(), [chart()]);
+		expect(md).toContain(
+			"<summary><strong>Per-task rankings</strong> · 1 task, with medians, intervals and trial counts</summary>",
+		);
+	});
+
+	it("leaves the tables EXPANDED when there are no charts", () => {
+		// The fallback that matters: a run whose suites could not be charted must not hide its numbers
+		// behind a triangle whose figures do not exist. Nothing else in the document changes.
+		const md = render(board(), []);
+		const body = section(md);
+		expect(body).not.toContain("<details>");
+		expect(body).toContain("| Rank | Provider |");
+		expect(md).not.toContain("is drawn, not tabulated");
+		expect(md).not.toContain("![");
 	});
 });

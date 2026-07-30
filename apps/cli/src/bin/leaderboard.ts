@@ -10,6 +10,7 @@ import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks
 import { parseRun } from "@sandbox-benchmarks/schema";
 import { fail, inActions, logInfo, withGroup, writeJobSummary } from "../lib/actions-log.ts";
 import { handleDiscovery } from "../lib/discovery.ts";
+import { writeLeaderboardFigures } from "../lib/leaderboard-figures.ts";
 
 /** Agent-facing usage. The Run document names the providers/suites it covers, so the registry
  *  listings are offered only as cross-CLI-consistent discovery, not the primary input. */
@@ -76,7 +77,25 @@ if (import.meta.main) {
 		}
 		return built;
 	});
-	const markdown = renderLeaderboardMarkdown(board);
+	// The figures go in FIRST, and their paths are relative to wherever the Markdown lands, so a
+	// render into a scratch directory produces a self-contained document exactly as the repo-root
+	// render does. `dryRun` when printing to stdout: there is no Markdown file for a relative image
+	// path to resolve against, so writing SVGs into the working directory would be a side effect
+	// nobody asked a pipe for. The links are still rendered, which is what makes the piped output
+	// the same document.
+	const figureDir = outFile ? dirname(outFile) : ".";
+	const { figures, written } = await withGroup("Render suite figures", async () => {
+		const result = await writeLeaderboardFigures(run, figureDir, { dryRun: !outFile });
+		for (const figure of result.figures) {
+			logInfo(
+				`${figure.suiteId}: ${figure.tasks} tasks × ${figure.charted} environments` +
+					`${figure.incomplete > 0 ? ` (+${figure.incomplete} incomplete)` : ""} → ${figure.file}`,
+			);
+		}
+		return result;
+	});
+
+	const markdown = renderLeaderboardMarkdown(board, figures);
 
 	if (outFile) {
 		mkdirSync(dirname(outFile), { recursive: true });
@@ -91,11 +110,14 @@ if (import.meta.main) {
 				["Output", outFile, "code"],
 				["Dimensions", String(board.dimensions.length), "plain"],
 				["Providers", String(run.providers.length), "plain"],
+				// Named individually, not counted: the release job path-allowlists what it commits, so
+				// the summary has to say which files this run produced.
+				["Figures", written.length === 0 ? "none" : written.join(", "), "code"],
 			],
 			annotation: {
 				failed: false,
 				title: `Leaderboard ${run.runId}`,
-				message: `Wrote ${outFile} (${board.dimensions.length} dimension(s))`,
+				message: `Wrote ${outFile} (${board.dimensions.length} dimension(s), ${written.length} figure(s))`,
 			},
 		});
 	} else {

@@ -6,6 +6,19 @@
 // are implementation detail. This surface exposes only the entry points consumers (the CLI) need:
 // normalize a raw tree, write the Run, and summarize it.
 export { aggregateRuns } from "./lib/aggregate.ts";
+// The schema↔figures seam: the catalog document the figure package ingests, the ingest call, the
+// figure list the Markdown links, where the charts land, and the caption under each one. All
+// satori-free — the renderer itself is `@sandbox-benchmarks/results/figures`, a separate entry
+// point so nothing that merely reads the Run model pays for a layout engine. Public because the
+// CLI renders through these and the artifact gate re-derives through them.
+export {
+	benchmarkDataOf,
+	catalogDocument,
+	LEADERBOARD_FIGURE_DIR,
+	leaderboardFigures,
+	suiteFigureFile,
+	suiteFigureNote,
+} from "./lib/figures.ts";
 export {
 	type AbsentProvider,
 	buildLeaderboard,
@@ -18,9 +31,14 @@ export {
 	// (tooling/repo-checks) re-derives the committed LEADERBOARD.md from these rather than hardcoding a
 	// second copy of the dataset path, the dimension order, or which dimensions collapse.
 	DATASET_RUNS_DIR,
+	FIGURE_DIMENSION,
 	LEADERBOARD_DIMENSION_ORDER,
 	type Leaderboard,
 	type LeaderboardDimension,
+	// The figure contract. Exported alongside the renderer because the CLI produces these values and
+	// the artifact gate re-derives them: a caller that can pass the argument but cannot name its type
+	// cannot write the function that builds it.
+	type LeaderboardFigure,
 	type LeaderboardMetric,
 	type LeaderboardRow,
 	type ProviderRosterEntry,

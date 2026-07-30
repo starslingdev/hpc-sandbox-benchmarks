@@ -121,20 +121,28 @@ jobs:
       # github-actions bot, then merge. Merging never bypasses the ruleset: it succeeds only because
       # code-owner review is the sole review requirement and LEADERBOARD.md is intentionally unowned
       # (see docs/ci-secrets.md operator setup). Path allowlisting (staged + PR) ensures we only ever
-      # land LEADERBOARD.md this way.
+      # land the leaderboard artifact and its charts this way.
       - name: Update the leaderboard via pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # `-A` on the figure directory so a suite that disappears upstream removes its chart rather
+          # than leaving an orphan the document no longer links. The render step above already pruned
+          # it on disk; this is what stages the deletion.
           git add LEADERBOARD.md
+          git add -A docs/figures
           if git diff --cached --quiet; then
             echo "LEADERBOARD.md already reflects run $TARGET_RUN_ID; nothing to commit"
             exit 0
           fi
-          # Refuse to commit (and later auto-merge) anything except the public leaderboard artifact.
-          ./scripts/assert-paths-allowlisted.sh staged -- LEADERBOARD.md
+          # Refuse to commit (and later auto-merge) anything except the public leaderboard artifact and
+          # its charts. The charts are a bounded glob, not three literals, because how many there are is
+          # a property of the dataset: a fourth realworld suite landing upstream must not fail every
+          # release until someone edits this file. `docs/figures/*.svg` is one directory level and one
+          # extension — see scripts/assert-paths-allowlisted.sh on why it cannot widen.
+          ./scripts/assert-paths-allowlisted.sh staged -- LEADERBOARD.md 'docs/figures/*.svg'
           branch="leaderboard/update-${TARGET_RUN_ID}"
           # Always (re)build the bot branch from the freshly rendered content and force-push FIRST, so a
           # re-dispatch refreshes an already-open PR rather than leaving it stale (e.g. if the renderer or
@@ -169,7 +177,7 @@ jobs:
           fi
           # Re-check the PR file list (not just the local index) before merging, so a raced push that
           # added other paths cannot slip through.
-          ./scripts/assert-paths-allowlisted.sh pr "$branch" -- LEADERBOARD.md
+          ./scripts/assert-paths-allowlisted.sh pr "$branch" -- LEADERBOARD.md 'docs/figures/*.svg'
           # Merge as the bot with a direct merge — deliberately NOT `gh pr merge --auto`. On a
           # GITHUB_TOKEN-authored PR a required status check never runs, so if one were ever added,
           # `--auto` would exit 0 after merely ARMING auto-merge for a merge that can never complete —

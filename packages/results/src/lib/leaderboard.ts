@@ -90,6 +90,42 @@ export const LEADERBOARD_DIMENSION_ORDER: readonly Dimension[] = [
 	...DIMENSIONS.filter((dimension) => dimension !== "realworld"),
 ];
 
+/**
+ * The Dimension whose section leads with FIGURES instead of tables. See
+ * {@link renderLeaderboardMarkdown} on why the tables then collapse rather than disappear.
+ *
+ * A constant rather than a literal in two places: the renderer branches on it and
+ * `tooling/repo-checks/src/leaderboard-artifact-sync.test.ts` asserts the resulting layout, and a
+ * gate holding its own copy of "which dimension is special" stops checking the renderer the moment
+ * the renderer changes its mind.
+ */
+export const FIGURE_DIMENSION: Dimension = "realworld";
+
+/**
+ * One rendered suite chart the Markdown embeds — what the renderer needs in order to link a figure
+ * it did not produce.
+ *
+ * The renderer takes these as an ARGUMENT rather than deriving them, and the argument is required
+ * rather than defaulted. Which suites are chartable is a decision the figure pipeline makes from
+ * the run (it needs two environments that completed every exercised task), so re-deriving it here
+ * would be a second copy of that rule, free to disagree — and the way it would disagree is by
+ * linking an image nobody wrote, which renders as a broken image on the published page and as a
+ * passing test in CI. Handing over the list that was actually rendered makes that impossible: the
+ * writer and the linker read the same array.
+ */
+export interface LeaderboardFigure {
+	/** The suite's registry id, e.g. `realworld-better-auth`. */
+	readonly suiteId: string;
+	/** Display name for the alt text, e.g. `Better-Auth`. */
+	readonly suiteName: string;
+	/** Path the Markdown links, relative to the directory holding it. */
+	readonly file: string;
+	/** Environments charted, and those the chart discloses as not having completed the suite. */
+	readonly charted: number;
+	readonly incomplete: number;
+	readonly tasks: number;
+}
+
 /** One provider's standing on one Metric. */
 export interface LeaderboardRow {
 	providerId: string;
@@ -717,6 +753,45 @@ function syntheticSummary(metrics: readonly LeaderboardMetric[]): string {
 	return headline ? `${count} · headline: ${escapeHtml(headline.metric.label)}` : count;
 }
 
+/**
+ * The `<summary>` line over the figure dimension's collapsed tables. It says the tables are the
+ * per-task receipts for the charts above — a triangle labelled only "details" would read as
+ * something optional, and these are the only auditable numbers in the section.
+ */
+function figureTableSummary(metrics: readonly LeaderboardMetric[]): string {
+	const noun = metrics.length === 1 ? "task" : "tasks";
+	return `<strong>Per-task rankings</strong> · ${metrics.length} ${noun}, with medians, intervals and trial counts`;
+}
+
+/**
+ * The charts, one per suite, above the collapsed tables.
+ *
+ * Written as bare `![…](…)` images rather than `<img>`: GitHub sanitises embedded SVG, and these
+ * pass it because `embedFont: true` makes them glyph outlines with no `<text>` node to strip. The
+ * alt text is not decoration — it is what a reader with the image unavailable gets INSTEAD of the
+ * section, so it names the suite, the size of the comparison and the disclosure count.
+ */
+function figureSection(figures: readonly LeaderboardFigure[]): string[] {
+	if (figures.length === 0) return [];
+	const lines: string[] = [
+		"What a developer or a CI job actually waits on: each bar is one environment's whole pipeline",
+		"for that repo, segmented by task in execution order. The three charts share one time scale, so",
+		"a second is the same length in all of them.",
+		"",
+	];
+	for (const figure of figures) {
+		const environments = `${figure.charted} environment${figure.charted === 1 ? "" : "s"}`;
+		const disclosed =
+			figure.incomplete === 0 ? "" : `, ${figure.incomplete} disclosed as incomplete`;
+		lines.push(
+			`![${figure.suiteName}: ${figure.tasks} pipeline tasks across ${environments}${disclosed}, ` +
+				`stacked by task and sorted fastest-first](${figure.file})`,
+			"",
+		);
+	}
+	return lines;
+}
+
 /** Format a metric value compactly: integers as-is, otherwise up to 4 significant digits, trimmed. */
 function formatValue(value: number): string {
 	if (Number.isInteger(value)) return String(value);
@@ -855,8 +930,30 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 	return lines;
 }
 
-/** Render a {@link Leaderboard} as a Markdown document — the committed comparison surface. */
-export function renderLeaderboardMarkdown(board: Leaderboard): string {
+/**
+ * Render a {@link Leaderboard} as a Markdown document — the committed comparison surface.
+ *
+ * `figures` are the suite charts the caller has already rendered (see {@link LeaderboardFigure} on
+ * why they are passed rather than derived). The `realworld` section leads with them and then
+ * COLLAPSES its per-task tables behind a disclosure, which is a deliberate half-measure and worth
+ * saying why:
+ *
+ *  - The three charts are what a reader actually wants from that section. Seventeen ranked tables —
+ *    one per (repo, task) — is a way of having the information without conveying it: nothing on the
+ *    page told you that a pipeline on the slowest environment costs 3.4× what it costs on the
+ *    fastest, because that number was never in any of the tables.
+ *  - Deleting the tables would take the numbers off the page entirely, and every number this
+ *    document prints is auditable back to the Run it came from. A picture of a bar is not: the SVG
+ *    is glyph outlines, so the figures are exactly the one part of this file a reader cannot check.
+ *    The tables are the receipts for the charts, and they stay one click away for that reason.
+ *
+ * The mechanism is the same `<details>` the synthetic dimensions already use, so the document has
+ * one collapse idiom rather than two.
+ */
+export function renderLeaderboardMarkdown(
+	board: Leaderboard,
+	figures: readonly LeaderboardFigure[],
+): string {
 	// Render the board's OWN target, not the global constant, so the header can never claim the pinned
 	// spec while the comparability warnings below report another one.
 	const spec = formatSpec(board.targetSpec);
@@ -883,7 +980,8 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 		`Requested target for every provider: **${spec}**. This run contains **${rows.length} metric records**`,
 		`backed by **${observationCount} retained trial observations**, across **${metricCount} ${metricNoun}** and`,
 		`**${providerCount} ${providerNoun}**; every emitted, catalogued metric has a ranked table below`,
-		"(median of retained trials), grouped by dimension with its headline first.",
+		"(median of retained trials), grouped by dimension with its headline first — some behind a",
+		"disclosure triangle, none omitted.",
 		"Generated from the published Run dataset — do not edit by hand. Methodology:",
 		"[`docs/methodology.md`](docs/methodology.md).",
 		"",
@@ -906,6 +1004,15 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 			`actually waits on is what this benchmark exists to measure. The synthetic microbenchmarks (${names})`,
 			"load one hardware axis in isolation — a real question, but a different one — so each is collapsed by",
 			"default; expand a section to read its tables.",
+			"",
+		);
+	}
+	if (figures.length > 0) {
+		lines.push(
+			`**The \`${FIGURE_DIMENSION}\` section is drawn, not tabulated.** One stacked chart per repo, each bar a`,
+			"whole pipeline on one environment and each segment a task. Its per-task rankings — the medians,",
+			"intervals and trial counts every bar is built from — are still here, one triangle down: the charts",
+			"are what the section is FOR, and the tables are how you check them.",
 			"",
 		);
 	}
@@ -933,12 +1040,22 @@ export function renderLeaderboardMarkdown(board: Leaderboard): string {
 
 	for (const { dimension, metrics } of board.dimensions) {
 		lines.push(`## ${dimension}`, "");
+		// The figure dimension puts its charts ABOVE the collapse, so the section reads as three
+		// pictures with the receipts folded underneath.
+		if (dimension === FIGURE_DIMENSION) lines.push(...figureSection(figures));
 		// A synthetic dimension collapses its TABLES, never its heading: the heading stays in the rendered
 		// document outline so the board still discloses which hardware axes were measured — collapsing it
 		// too would make a measured dimension indistinguishable from one that never ran.
-		const collapsed = SYNTHETIC_DIMENSIONS.has(dimension);
+		//
+		// The figure dimension collapses for a different reason — its charts replace the tables as the
+		// thing you read — but only when there ARE charts. With none, its tables render in the open:
+		// hiding them behind a triangle whose figures do not exist would take the numbers off the page.
+		const collapsed =
+			SYNTHETIC_DIMENSIONS.has(dimension) || (dimension === FIGURE_DIMENSION && figures.length > 0);
 		if (collapsed) {
-			lines.push("<details>", `<summary>${syntheticSummary(metrics)}</summary>`, "");
+			const summary =
+				dimension === FIGURE_DIMENSION ? figureTableSummary(metrics) : syntheticSummary(metrics);
+			lines.push("<details>", `<summary>${summary}</summary>`, "");
 		}
 		for (const { metric, rows: metricRows } of metrics) {
 			const better = metric.direction === "HIB" ? "higher is better" : "lower is better";

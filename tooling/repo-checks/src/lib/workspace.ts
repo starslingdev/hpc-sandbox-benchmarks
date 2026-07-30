@@ -81,9 +81,17 @@ export function listMembers(root: string = findRepoRoot()): Member[] {
 	return members.sort((a, b) => a.relPath.localeCompare(b.relPath));
 }
 
-/** Every `.ts` file under a member's `src/`, as absolute paths. */
+/**
+ * Every TypeScript file under a member's `src/`, as absolute paths.
+ *
+ * `.tsx` is included, and the omission was real: `@sandbox-benchmarks/figures` holds the repo's
+ * only JSX, all of it in `lib/components` and `lib/render` — precisely the modules that reach for
+ * `satori` and could reach back into a sibling package. A `**\/*.ts` glob left the import-boundary
+ * check scanning none of them, and a boundary gate that silently skips a whole package's renderer
+ * is the kind of green that means nothing.
+ */
 export function memberSourceFiles(member: Member): string[] {
-	const glob = new Glob("**/*.ts");
+	const glob = new Glob("**/*.{ts,tsx}");
 	return [...glob.scanSync({ cwd: join(member.dir, "src"), onlyFiles: true })].map((rel) =>
 		join(member.dir, "src", rel),
 	);

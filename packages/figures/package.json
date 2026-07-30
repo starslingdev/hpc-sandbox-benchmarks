@@ -1,0 +1,30 @@
+{
+  "name": "@sandbox-benchmarks/figures",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Share figures for the comparison surface: a derived model -> JSX -> SVG (satori) -> PNG (resvg), in memory. No build, no browser, no CSS.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./domain": "./src/domain/index.ts",
+    "./ingest": "./src/ingest/index.ts",
+    "./plan": "./src/plan.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "react": "19.2.3",
+    "satori": "0.28.2"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "@types/bun": "catalog:",
+    "@types/react": "19.2.5",
+    "typescript": "catalog:"
+  }
+}
