@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { RawRun, ResultGap } from "@sandbox-benchmarks/schema";
+import type { GapCause, RawRun, ResultGap } from "@sandbox-benchmarks/schema";
 import { HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
+import { GapError } from "./gap-cause.ts";
 import type { LifecycleCompute, LifecycleSandbox } from "./lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lifecycle.ts";
 
@@ -14,6 +15,8 @@ interface FakeOptions {
 	withList?: boolean;
 	failCreate?: boolean;
 	failExec?: boolean;
+	/** Make the measured exec throw a CLASSIFIED error, to check the cause survives the throw. */
+	failExecWithCause?: GapCause;
 	failInfo?: boolean;
 	failDestroy?: boolean;
 	failSnapshotCreate?: boolean;
@@ -49,6 +52,9 @@ function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls
 				return {
 					exitCode: opts.notReadyFor && readinessProbes <= opts.notReadyFor ? 1 : 0,
 				};
+			}
+			if (opts.failExecWithCause) {
+				throw new GapError("exec boom", opts.failExecWithCause);
 			}
 			if (opts.failExec) throw new Error("exec boom");
 			return { exitCode: 0 };
@@ -106,6 +112,7 @@ const gapFor = (gaps: ResultGap[], op: string): ResultGap | undefined =>
 	gaps.find((g) => g.id === op);
 const reasonFor = (gaps: ResultGap[], op: string): string | undefined => gapFor(gaps, op)?.reason;
 const outcomeFor = (gaps: ResultGap[], op: string): string | undefined => gapFor(gaps, op)?.outcome;
+const causeFor = (gaps: ResultGap[], op: string): GapCause | undefined => gapFor(gaps, op)?.cause;
 
 describe("measureLifecycle", () => {
 	it("times the full spawn→readiness→exec→payload→info→list→snapshot→teardown chain in order", async () => {
@@ -209,8 +216,13 @@ describe("measureLifecycle", () => {
 		expect(calls.order.some((c) => c.includes("/dev/zero | tr"))).toBe(false);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.execPayload64k]).toBeUndefined();
 		expect(reasonFor(gaps, HARNESS_METRIC_IDS.execPayload64k)).toMatch(/disabled/);
-		// Never attempted (the run turned it off) — a decision, not a reliability fact.
+		// Never attempted (the run turned it off) — a decision, not a reliability fact. The cause says so
+		// in data: `measurement-disabled`, never `unsupported-operation`, which would publish a config
+		// toggle as a capability e2b lacks.
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.execPayload64k)).toBe("skipped");
+		expect(causeFor(gaps, HARNESS_METRIC_IDS.execPayload64k)).toEqual({
+			kind: "measurement-disabled",
+		});
 	});
 
 	it("honors a custom exec command", async () => {
@@ -238,9 +250,19 @@ describe("measureLifecycle", () => {
 		expect(reasonFor(gaps, HARNESS_METRIC_IDS.controlPlaneList)).toMatch(
 			/no sandbox list operation/,
 		);
-		// The SDK exposes no such call, so neither was ever attempted — a skip, not an outage.
+		// The SDK exposes no such call, so neither was ever attempted — a skip, not an outage. And the
+		// cause is `unsupported-operation`: a statement about the PROVIDER, the opposite half of the
+		// distinction `measurement-disabled` carries.
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.snapshot)).toBe("skipped");
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.controlPlaneList)).toBe("skipped");
+		expect(causeFor(gaps, HARNESS_METRIC_IDS.snapshot)).toEqual({
+			kind: "unsupported-operation",
+			detail: "provider SDK exposes no snapshot operation",
+		});
+		expect(causeFor(gaps, HARNESS_METRIC_IDS.controlPlaneList)).toEqual({
+			kind: "unsupported-operation",
+			detail: "provider SDK exposes no sandbox list operation",
+		});
 	});
 
 	it("records a skip when snapshot measurement is disabled, without calling the SDK", async () => {
@@ -253,6 +275,9 @@ describe("measureLifecycle", () => {
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.snapshot]).toBeUndefined();
 		expect(reasonFor(gaps, HARNESS_METRIC_IDS.snapshot)).toMatch(/disabled/);
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.snapshot)).toBe("skipped");
+		// The SDK HAS a snapshot manager here — only the run turned it off, so the cause must not claim
+		// the provider cannot do it.
+		expect(causeFor(gaps, HARNESS_METRIC_IDS.snapshot)).toEqual({ kind: "measurement-disabled" });
 	});
 
 	it("turns a mid-chain exec failure into a failed gap and still tears down", async () => {
@@ -268,6 +293,9 @@ describe("measureLifecycle", () => {
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.exec]).toBeUndefined();
 		expect(reasonFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("exec boom");
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("failed");
+		// A provider SDK's own error carries no classification, and none is invented from its message —
+		// guessing a kind from prose is the coupling the taxonomy exists to remove.
+		expect(causeFor(gaps, HARNESS_METRIC_IDS.exec)).toBeUndefined();
 		// Readiness succeeded here, so the cold-start Metrics are real Samples, not gaps.
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.coldStart]).toBe(1);
 		// Teardown still ran and was sampled.
@@ -312,6 +340,22 @@ describe("measureLifecycle", () => {
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBe(1);
 	});
 
+	it("carries a classified throw from a measured step onto its gap", async () => {
+		// The `step()` error path is the one place a gap's cause comes from the ERROR rather than from a
+		// constant beside the call. An unclassified throw must stay unclassified (the test above pins
+		// that), and a classified one must arrive intact — otherwise `GapError` buys nothing here and the
+		// classification silently dies at the frame that catches it.
+		const cause: GapCause = { kind: "step-timeout", step: "exec", timeoutSeconds: 30 };
+		const { compute } = fakeCompute({ failExecWithCause: cause });
+		const { gaps } = await measureLifecycle(compute, {
+			provider: "e2b",
+			now: fastClock(),
+			delay: noDelay,
+		});
+		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("failed");
+		expect(causeFor(gaps, HARNESS_METRIC_IDS.exec)).toEqual(cause);
+	});
+
 	it("keeps disabled and unsupported operations SKIPPED on a never-ready sandbox", async () => {
 		// A readiness outage must not relabel decisions as provider failures. Payload is off, and this fake
 		// exposes neither list nor snapshot — none of those calls was ever going to happen, so reporting
@@ -326,13 +370,16 @@ describe("measureLifecycle", () => {
 			now: fastClock(),
 			delay: noDelay,
 		});
-		for (const [metricId, pattern] of [
-			[HARNESS_METRIC_IDS.execPayload64k, /disabled/],
-			[HARNESS_METRIC_IDS.controlPlaneList, /no sandbox list operation/],
-			[HARNESS_METRIC_IDS.snapshot, /disabled/],
+		for (const [metricId, pattern, kind] of [
+			[HARNESS_METRIC_IDS.execPayload64k, /disabled/, "measurement-disabled"],
+			[HARNESS_METRIC_IDS.controlPlaneList, /no sandbox list operation/, "unsupported-operation"],
+			[HARNESS_METRIC_IDS.snapshot, /disabled/, "measurement-disabled"],
 		] as const) {
 			expect(outcomeFor(gaps, metricId)).toBe("skipped");
 			expect(reasonFor(gaps, metricId)).toMatch(pattern);
+			// The classification has to survive the outage too — this is the path where a skip is most
+			// easily relabelled, and a swapped kind here is exactly the regression prose cannot catch.
+			expect(causeFor(gaps, metricId)?.kind).toBe(kind);
 		}
 		// The genuinely-prevented ops are still failures — the outage is not swallowed either.
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.exec)).toBe("failed");

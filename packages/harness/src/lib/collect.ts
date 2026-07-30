@@ -9,7 +9,7 @@ import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { GapOutcome } from "@sandbox-benchmarks/schema";
+import type { GapCause, GapOutcome } from "@sandbox-benchmarks/schema";
 import {
 	harnessGapMarkerJson,
 	isGapMarkerFile,
@@ -220,10 +220,13 @@ export function writeGapMarker(
 	suite: string,
 	outcome: GapOutcome,
 	reason: string,
+	// The structured classification, when the caller has one. A marker written without it is not
+	// downgraded — `reason` still says what happened — but nothing downstream will guess a kind for it.
+	cause?: GapCause,
 ): void {
 	mkdirSync(resultsDir, { recursive: true });
 	writeFileSync(
 		join(resultsDir, sandboxGapMarkerFile(provider, suite, outcome)),
-		harnessGapMarkerJson(provider, suite, outcome, reason),
+		harnessGapMarkerJson(provider, suite, outcome, reason, cause),
 	);
 }

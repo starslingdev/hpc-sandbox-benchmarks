@@ -18,8 +18,15 @@
  * `finally` and never throws out of it. Repeat the cycle for a cold-start distribution — that is what
  * {@link benchmarkLifecycle} (in index.ts) does.
  */
-import type { Aggregates, HarnessMetricId, RawRun, ResultGap } from "@sandbox-benchmarks/schema";
+import type {
+	Aggregates,
+	GapCause,
+	HarnessMetricId,
+	RawRun,
+	ResultGap,
+} from "@sandbox-benchmarks/schema";
 import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
+import { gapCauseOf } from "./gap-cause.ts";
 import { now as defaultNow, time } from "./internal.ts";
 import { neverReadyReason, waitUntilReady } from "./readiness.ts";
 
@@ -45,6 +52,21 @@ const PAYLOAD_DISABLED = "64KiB payload exec disabled for this run";
 const NO_LIST_OP = "provider SDK exposes no sandbox list operation";
 const SNAPSHOT_DISABLED = "snapshot measurement disabled for this run";
 const NO_SNAPSHOT_OP = "provider SDK exposes no snapshot operation";
+/**
+ * A measurement this RUN turned off. Deliberately not `unsupported-operation`: the provider can do it,
+ * we chose not to time it, and publishing a config toggle as a missing capability would be a claim
+ * about the provider we have no evidence for.
+ */
+const DISABLED_CAUSE = { kind: "measurement-disabled" } as const satisfies GapCause;
+/** The provider's SDK exposes no such call — a capability statement, unlike {@link DISABLED_CAUSE}. */
+const NO_LIST_CAUSE = {
+	kind: "unsupported-operation",
+	detail: NO_LIST_OP,
+} as const satisfies GapCause;
+const NO_SNAPSHOT_CAUSE = {
+	kind: "unsupported-operation",
+	detail: NO_SNAPSHOT_OP,
+} as const satisfies GapCause;
 /** Writes exactly 64KiB (65536 bytes) to stdout — exec overhead including output streaming. Uses `tr`
  *  rather than `base64` so the stream is exactly 64KiB, matching the metric's name (base64 expands the
  *  input ~33%, overstating the payload). */
@@ -156,18 +178,30 @@ export async function measureLifecycle(
 	// about reliability. `fail` is an outage: the call was made and it threw. Recording a throw as a skip
 	// (as this did while both shared one helper) publishes a provider's control-plane failure as though
 	// we had chosen not to measure it, which is precisely backwards.
-	const skip = (operation: HarnessMetricId, reason: string): void => {
-		gaps.push({ scope: "operation", id: operation, outcome: "skipped", reason });
+	const skip = (operation: HarnessMetricId, reason: string, cause?: GapCause): void => {
+		gaps.push({
+			scope: "operation",
+			id: operation,
+			outcome: "skipped",
+			reason,
+			...(cause ? { cause } : {}),
+		});
 	};
-	const fail = (operation: HarnessMetricId, reason: string): void => {
-		gaps.push({ scope: "operation", id: operation, outcome: "failed", reason });
+	const fail = (operation: HarnessMetricId, reason: string, cause?: GapCause): void => {
+		gaps.push({
+			scope: "operation",
+			id: operation,
+			outcome: "failed",
+			reason,
+			...(cause ? { cause } : {}),
+		});
 	};
 	// A timed step that records a Sample on success and a FAILED gap (never a throw) on error.
 	const step = async (operation: HarnessMetricId, run: () => Promise<unknown>): Promise<void> => {
 		try {
 			sample(operation, (await time(run)).ms);
 		} catch (err) {
-			fail(operation, reasonOf(err));
+			fail(operation, reasonOf(err), gapCauseOf(err));
 		}
 	};
 
@@ -219,11 +253,12 @@ export async function measureLifecycle(
 			// no probe ran here and N copies of one fact is noise, not fidelity.
 			fail(HARNESS_METRIC_IDS.controlPlaneInfo, reason);
 			if (wantPayload) fail(HARNESS_METRIC_IDS.execPayload64k, reason);
-			else skip(HARNESS_METRIC_IDS.execPayload64k, PAYLOAD_DISABLED);
+			else skip(HARNESS_METRIC_IDS.execPayload64k, PAYLOAD_DISABLED, DISABLED_CAUSE);
 			if (compute.sandbox.list) fail(HARNESS_METRIC_IDS.controlPlaneList, reason);
-			else skip(HARNESS_METRIC_IDS.controlPlaneList, NO_LIST_OP);
-			if (!wantSnapshot) skip(HARNESS_METRIC_IDS.snapshot, SNAPSHOT_DISABLED);
-			else if (!compute.snapshot) skip(HARNESS_METRIC_IDS.snapshot, NO_SNAPSHOT_OP);
+			else skip(HARNESS_METRIC_IDS.controlPlaneList, NO_LIST_OP, NO_LIST_CAUSE);
+			if (!wantSnapshot) skip(HARNESS_METRIC_IDS.snapshot, SNAPSHOT_DISABLED, DISABLED_CAUSE);
+			else if (!compute.snapshot)
+				skip(HARNESS_METRIC_IDS.snapshot, NO_SNAPSHOT_OP, NO_SNAPSHOT_CAUSE);
 			else fail(HARNESS_METRIC_IDS.snapshot, reason);
 			return { samples, gaps };
 		} else {
@@ -238,7 +273,7 @@ export async function measureLifecycle(
 		if (wantPayload) {
 			await step(HARNESS_METRIC_IDS.execPayload64k, () => sandbox.runCommand(PAYLOAD_CMD));
 		} else {
-			skip(HARNESS_METRIC_IDS.execPayload64k, PAYLOAD_DISABLED);
+			skip(HARNESS_METRIC_IDS.execPayload64k, PAYLOAD_DISABLED, DISABLED_CAUSE);
 		}
 
 		// Control-plane read: getInfo, sampled within this one (cheap) sandbox to build a distribution
@@ -257,16 +292,16 @@ export async function measureLifecycle(
 				await step(HARNESS_METRIC_IDS.controlPlaneList, () => listSandboxes());
 			}
 		} else {
-			skip(HARNESS_METRIC_IDS.controlPlaneList, NO_LIST_OP);
+			skip(HARNESS_METRIC_IDS.controlPlaneList, NO_LIST_OP, NO_LIST_CAUSE);
 		}
 
 		// Snapshot: when requested and the SDK exposes a snapshot manager. Best-effort delete afterwards
 		// so a measured snapshot never leaks into the account.
 		const snapshots = compute.snapshot;
 		if (!wantSnapshot) {
-			skip(HARNESS_METRIC_IDS.snapshot, SNAPSHOT_DISABLED);
+			skip(HARNESS_METRIC_IDS.snapshot, SNAPSHOT_DISABLED, DISABLED_CAUSE);
 		} else if (!snapshots) {
-			skip(HARNESS_METRIC_IDS.snapshot, NO_SNAPSHOT_OP);
+			skip(HARNESS_METRIC_IDS.snapshot, NO_SNAPSHOT_OP, NO_SNAPSHOT_CAUSE);
 		} else {
 			try {
 				const snap = await time(() => snapshots.create(sandbox.sandboxId));
