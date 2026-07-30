@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import type { FsEntry as MsbFsEntry } from "microsandbox";
-import { Sandbox as MsbSandbox, Snapshot as MsbSnapshot, SandboxNotFoundError } from "microsandbox";
+import {
+	IoError,
+	Sandbox as MsbSandbox,
+	Snapshot as MsbSnapshot,
+	SandboxFsOpsError,
+	SandboxNotFoundError,
+} from "microsandbox";
 import {
 	microsandboxCloudCompute,
 	microsandboxFileEntries,
@@ -101,11 +107,32 @@ describe("Microsandbox failed-create cleanup", () => {
 		expect(builtName).toStartWith("test-cloud-");
 		expect(getNames).toEqual([builtName]);
 		expect(removedNames).toEqual([builtName]);
-		expect(stopCalls).toBe(0);
+		// status=error is not "stopped", so it is stopped first: remove() is documented as removing a
+		// STOPPED sandbox, and skipping the stop for a status outside the mapped set made it reject.
+		expect(stopCalls).toBe(1);
 	});
 
 	it("stops a running partial sandbox before removing its record", async () => {
 		residueStatus = "running";
+		await expect(cloudProvider().sandbox.create()).rejects.toThrow(/simulated create failure/);
+
+		expect(stopCalls).toBe(1);
+		expect(removedNames).toEqual([builtName]);
+	});
+
+	it("skips the stop only for a record that is already stopped", async () => {
+		residueStatus = "stopped";
+		await expect(cloudProvider().sandbox.create()).rejects.toThrow(/simulated create failure/);
+
+		expect(stopCalls).toBe(0);
+		expect(removedNames).toEqual([builtName]);
+	});
+
+	it("stops a record whose status the SDK does not document before removing it", async () => {
+		// `mapStatus`'s default arm exists because transitional/unknown statuses do reach us. remove()
+		// on a sandbox the control plane does not consider stopped rejects, and that rejection escaped
+		// destroy() and leaked the microVM until its maxDuration expired.
+		residueStatus = "crashed";
 		await expect(cloudProvider().sandbox.create()).rejects.toThrow(/simulated create failure/);
 
 		expect(stopCalls).toBe(1);
@@ -195,7 +222,7 @@ describe("Microsandbox provider edge cases", () => {
 		expect((await sandbox.getInfo()).timeout).toBe(12_345);
 	});
 
-	it("does not replay a command after an ambiguous agent failure", async () => {
+	it("throws instead of replaying a command after an ambiguous agent failure", async () => {
 		let execCalls = 0;
 		const nativeSandbox = {
 			execWith: async () => {
@@ -218,10 +245,14 @@ describe("Microsandbox provider edge cases", () => {
 		);
 
 		const sandbox = await cloudProvider().sandbox.create();
-		const result = await sandbox.runCommand("touch /tmp/must-run-once");
 
-		expect(result.exitCode).toBe(127);
-		expect(result.stderr).toBe("connection closed after acceptance");
+		// A synthesized `exitCode: 127` result was invisible to `StepRunner.runDetached`, which discards
+		// the result of its background launch — the harness then polled for a job that was never started
+		// until the step's whole budget expired. It was also indistinguishable from a guest command that
+		// genuinely exits 127. The command still must not be replayed: exactly one exec attempt.
+		await expect(sandbox.runCommand("touch /tmp/must-run-once")).rejects.toThrow(
+			/did not reach sandbox .*: connection closed after acceptance/,
+		);
 		expect(execCalls).toBe(1);
 	});
 
@@ -267,7 +298,9 @@ describe("Microsandbox provider edge cases", () => {
 			fs: () => ({
 				readToString: async () => {
 					reads++;
-					throw new Error("stale agent");
+					// A CONNECTION-class error: only these are worth a reconnect. See the sibling test for
+					// an application error, which reproduces identically and must not pay a round trip.
+					throw new IoError("stale agent");
 				},
 			}),
 		};
@@ -307,6 +340,146 @@ describe("Microsandbox provider edge cases", () => {
 
 		expect(await sandbox.filesystem.readFile("/tmp/result")).toBe("recovered");
 		expect(reads).toBe(2);
+	});
+
+	it("does not reconnect for an application-level filesystem error", async () => {
+		let reads = 0;
+		let connects = 0;
+		const nativeSandbox = {
+			fs: () => ({
+				readToString: async () => {
+					reads++;
+					throw new SandboxFsOpsError("no such file or directory");
+				},
+			}),
+		};
+		let builder: Record<PropertyKey, unknown>;
+		builder = new Proxy(
+			{},
+			{
+				get: (_target, property) =>
+					property === "create" ? async () => nativeSandbox : () => builder,
+			},
+		);
+		restore(
+			spyOn(MsbSandbox, "builder").mockImplementation(
+				(() => builder) as unknown as typeof MsbSandbox.builder,
+			),
+		);
+		restore(
+			spyOn(MsbSandbox, "get").mockImplementation(
+				(async (name: string) =>
+					({
+						name,
+						status: "running",
+						connect: async () => {
+							connects++;
+							return nativeSandbox;
+						},
+					}) as unknown as Awaited<ReturnType<typeof MsbSandbox.get>>) as typeof MsbSandbox.get,
+			),
+		);
+
+		const sandbox = await cloudProvider().sandbox.create();
+
+		// A missing path reproduces identically after a reconnect, so retrying it only spends a
+		// get+connect round trip — and under the detached poll loop, whose fs calls are individually
+		// bounded, that extra latency can turn a benign miss into a counted poll failure.
+		await expect(sandbox.filesystem.readFile("/tmp/absent")).rejects.toThrow(
+			"no such file or directory",
+		);
+		expect(reads).toBe(1);
+		expect(connects).toBe(0);
+	});
+
+	it("refuses to reboot a sandbox that is no longer running", async () => {
+		let startCalls = 0;
+		restore(
+			spyOn(MsbSandbox, "get").mockImplementation(
+				(async (name: string) =>
+					({
+						name,
+						status: "stopped",
+						connect: async () => ({}),
+						startDetached: async () => {
+							startCalls++;
+							return {};
+						},
+					}) as unknown as Awaited<ReturnType<typeof MsbSandbox.get>>) as typeof MsbSandbox.get,
+			),
+		);
+
+		const handle = await cloudProvider().sandbox.getById("bench-cloud-dead");
+		expect(handle).not.toBeNull();
+
+		// Booting a replacement guest here made a killed sandbox indistinguishable from a quietly-running
+		// step: the done-file can never appear in a fresh VM, so the harness's sandbox-lost detection
+		// never fires and the step burns its whole budget before reporting a plain timeout.
+		await expect(handle?.filesystem.readFile("/tmp/anything")).rejects.toThrow(
+			/is stopped, not running — refusing to reboot it/,
+		);
+		expect(startCalls).toBe(0);
+	});
+
+	it("drops a cached connection after a snapshot stops and restarts the guest", async () => {
+		let connects = 0;
+		const nativeSandbox = {
+			execWith: async () => ({ stdout: () => "ok", stderr: () => "", code: 0 }),
+		};
+		let builder: Record<PropertyKey, unknown>;
+		builder = new Proxy(
+			{},
+			{
+				get: (_target, property) =>
+					property === "create" ? async () => nativeSandbox : () => builder,
+			},
+		);
+		restore(
+			spyOn(MsbSandbox, "builder").mockImplementation(
+				(() => builder) as unknown as typeof MsbSandbox.builder,
+			),
+		);
+		restore(
+			spyOn(MsbSandbox, "get").mockImplementation(
+				(async (name: string) =>
+					({
+						name,
+						status: "running",
+						stop: async () => {},
+						startDetached: async () => ({}),
+						connect: async () => {
+							connects++;
+							return nativeSandbox;
+						},
+					}) as unknown as Awaited<ReturnType<typeof MsbSandbox.get>>) as typeof MsbSandbox.get,
+			),
+		);
+		restore(
+			spyOn(MsbSnapshot, "builder").mockImplementation(((name: string) => {
+				let snapBuilder: Record<PropertyKey, unknown>;
+				snapBuilder = new Proxy(
+					{},
+					{
+						get: (_target, property) =>
+							property === "create" ? async () => ({ name }) : () => snapBuilder,
+					},
+				);
+				return snapBuilder as unknown as ReturnType<typeof MsbSnapshot.builder>;
+			}) as typeof MsbSnapshot.builder),
+		);
+
+		const provider = localProvider();
+		const sandbox = await provider.sandbox.create({ name: "bench-local-snap" });
+		await sandbox.runCommand("true");
+		expect(connects).toBe(0); // create handed back a live connection
+
+		await provider.snapshot?.create("bench-local-snap");
+
+		// The snapshot path stopped and rebooted the guest through its own handles, so the connection
+		// cached on the ComputeSDK handle is dead. Without invalidation the next command went straight
+		// to that stale connection and was reported as having failed INSIDE the guest.
+		await sandbox.runCommand("true");
+		expect(connects).toBe(1);
 	});
 
 	it("lists legacy prefix-owned sandboxes without requiring the current label", async () => {

@@ -31,6 +31,10 @@ export interface ProviderAdapter {
 	/** Overrides the schema ProviderMeta's `requiredEnvVars` when the credential set is resolved at
 	 *  runtime (e.g. daytona's per-region API key var). Falls back to the schema default when absent. */
 	requiredEnvVars?: string[];
+	/** Overrides the harness's default per-attempt create timeout for providers whose `create` does not
+	 *  return until the sandbox is fully booted — the toolchain image pull then happens INSIDE the
+	 *  create call rather than behind a readiness probe. Omitted when the default is adequate. */
+	createTimeoutMs?: number;
 }
 
 /** A provider as the harness consumes it: schema-owned identity joined with the harness adapter. */

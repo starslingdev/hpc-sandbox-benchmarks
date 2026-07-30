@@ -192,6 +192,59 @@ export function resolveCellBudgetMinutes(
 	return minutes;
 }
 
+/**
+ * How long the RUNNER hosting this cell will stay alive, in minutes, handed down as
+ * `BENCH_RUNNER_LIFETIME_MINUTES`. Absent/blank means "the runner outlives the job budget", which is
+ * true of GitHub-hosted runners and of any local run — so the guard below is inert everywhere except
+ * the one place it matters.
+ *
+ * Set only by the workflows that route a provider onto an EPHEMERAL self-hosted label. Those runners
+ * are reaped on their own schedule, which `timeout-minutes` cannot express: the job is not cancelled,
+ * it stops existing, leaving the cell stuck `in_progress` with no logs and no artifact.
+ */
+export function resolveRunnerLifetimeMinutes(
+	env: Record<string, string | undefined> = process.env,
+): number | undefined {
+	const raw = env.BENCH_RUNNER_LIFETIME_MINUTES;
+	if (raw === undefined || raw.trim() === "") return undefined;
+	const minutes = Number(raw);
+	if (!Number.isInteger(minutes) || minutes < 1) {
+		throw new Error(`BENCH_RUNNER_LIFETIME_MINUTES must be a positive integer; got "${raw}"`);
+	}
+	return minutes;
+}
+
+/**
+ * Why this suite cannot fit the host runner's lifetime, or `undefined` when it can.
+ *
+ * Distinct from {@link fleetBudgetError}, which checks the fan-out against the JOB budget: this checks
+ * the single-replicate worst case against how long the MACHINE lives. A job budget is enforced by
+ * GitHub and produces a cancelled job with logs; an ephemeral runner's reaper produces nothing at all
+ * — the cell hangs `in_progress`, never reaches its upload step, and every replicate is lost with no
+ * record of why. Refusing at dispatch turns that silence into one explanatory failure.
+ *
+ * Worst-case for the same reason `fleetBudgetError` is: `timeoutMinutes` is what a replicate is
+ * ALLOWED to take, and the host margin covers checkout, teardown, normalization and upload, which the
+ * reaper does not wait for either.
+ */
+export function runnerLifetimeError(opts: {
+	suite: string;
+	suiteTimeoutMinutes: number;
+	runnerLifetimeMinutes: number;
+}): string | undefined {
+	const { suite, suiteTimeoutMinutes, runnerLifetimeMinutes } = opts;
+	const worstCase = suiteTimeoutMinutes + WORKFLOW_TIMEOUT_MARGIN_MINUTES;
+	if (worstCase <= runnerLifetimeMinutes) return undefined;
+	return (
+		`Suite "${suite}" budgets ${suiteTimeoutMinutes} minutes + ${WORKFLOW_TIMEOUT_MARGIN_MINUTES} ` +
+		`minutes of host margin = up to ${worstCase} minutes, past the ${runnerLifetimeMinutes}-minute ` +
+		`lifetime of the ephemeral runner this cell was routed to. That runner is reaped while the step ` +
+		`is still healthy, leaving the cell stuck in_progress with no logs and no artifact, so this is ` +
+		`rejected before any sandbox is created: dispatch this provider on a shorter suite, or route it ` +
+		`to a runner that outlives ${worstCase} minutes.`
+	);
+}
+
 /** How many SERIAL waves a fan-out of `replicates` runs in under `maxConcurrency` in flight. */
 export function fleetWaves(replicates: number, maxConcurrency: number): number {
 	// `min` before the divide keeps an unbounded (Infinity) cap out of the arithmetic: a cap at or

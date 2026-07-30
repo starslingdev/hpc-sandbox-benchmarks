@@ -48,6 +48,8 @@ import {
 	replicatePaths,
 	resolveCellBudgetMinutes,
 	resolveMaxConcurrency,
+	resolveRunnerLifetimeMinutes,
+	runnerLifetimeError,
 	runPooled,
 } from "../lib/replicates.ts";
 import { suiteMetricSummaryRows, suiteTaskSummaryRows } from "../lib/suite-summary.ts";
@@ -601,11 +603,13 @@ if (import.meta.main) {
 	let maxConcurrency = Number.POSITIVE_INFINITY;
 	let singleReplicate: number | undefined;
 	let cellBudgetMinutes: number | undefined;
+	let runnerLifetimeMinutes: number | undefined;
 	try {
 		replicateIndices = parseReplicatesFlag(argv);
 		maxConcurrency = resolveMaxConcurrency(argv);
 		singleReplicate = parseReplicateFlag(argv);
 		cellBudgetMinutes = resolveCellBudgetMinutes();
+		runnerLifetimeMinutes = resolveRunnerLifetimeMinutes();
 	} catch (err) {
 		fail(err instanceof Error ? err.message : String(err), {
 			properties: { title: "bench-suite usage" },
@@ -636,6 +640,21 @@ if (import.meta.main) {
 		});
 		if (budgetError) {
 			fail(budgetError, { properties: { title: "bench-suite usage" }, exitCode: 2 });
+		}
+	}
+
+	// Same class of guard, one level lower: the JOB budget above is enforced by GitHub and ends in a
+	// cancelled job with logs, whereas an ephemeral self-hosted runner is simply reaped — the cell hangs
+	// `in_progress`, never reaches its upload step, and the loss has no record at all. Applies to every
+	// dispatch shape (single or fan-out), because one replicate is already enough to outlive the runner.
+	if (runnerLifetimeMinutes !== undefined && suiteBudget !== undefined) {
+		const lifetimeError = runnerLifetimeError({
+			suite,
+			suiteTimeoutMinutes: suiteBudget,
+			runnerLifetimeMinutes,
+		});
+		if (lifetimeError) {
+			fail(lifetimeError, { properties: { title: "bench-suite usage" }, exitCode: 2 });
 		}
 	}
 

@@ -117,8 +117,11 @@ jobs:
     #     before giving up, so a fan-out wider than the account quota queues inside the budget.
     # At R=12 against a suite budgeted near 90 minutes, either can exceed 180. Raise this, or lower the
     # fan-out, rather than discovering it as a cancelled cell that loses all R replicates at once.
-    # The local Microsandbox backend needs KVM; all remote providers only need a driver process.
-    # Keep the capability opt-in paired with this provider-specific runner route below.
+    # The local Microsandbox backend needs KVM; all remote providers only need a driver process. Routing
+    # it to the self-hosted label knowingly re-enters the 70-minute reaping described above — that is
+    # the trade for having any local backend at all — so it also declares BENCH_RUNNER_LIFETIME_MINUTES
+    # below, and bench-suite refuses a suite that cannot finish inside that window rather than letting
+    # the cell be reaped mid-run with no logs and every replicate lost. Keep the three paired.
     runs-on: ${{ matrix.provider == 'microsandbox-local' && 'starsling-ubuntu-24.04-2' || 'ubuntu-24.04' }}
     timeout-minutes: 180
     strategy:
@@ -249,6 +252,11 @@ jobs:
           # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an
           # optional override for staging or private deployments. Neither value enters the guest.
           MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
+          # Paired with the microsandbox-local runner route above: that self-hosted label is reaped at
+          # 70 minutes regardless of timeout-minutes, which no expression can encode (the workflow gate
+          # requires a literal). Declaring it here lets bench-suite reject a suite that cannot finish
+          # inside it, before any sandbox is created. Empty on the hosted runner, which outlives the job.
+          BENCH_RUNNER_LIFETIME_MINUTES: ${{ matrix.provider == 'microsandbox-local' && '70' || '' }}
           MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
           MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicates "$BENCH_REPLICATES"

@@ -8,6 +8,8 @@ import {
 	replicatePaths,
 	resolveCellBudgetMinutes,
 	resolveMaxConcurrency,
+	resolveRunnerLifetimeMinutes,
+	runnerLifetimeError,
 	runPooled,
 } from "./replicates.ts";
 
@@ -153,6 +155,68 @@ describe("resolveCellBudgetMinutes", () => {
 		expect(() => resolveCellBudgetMinutes({ BENCH_CELL_BUDGET_MINUTES: "later" })).toThrow(
 			/positive integer/,
 		);
+	});
+});
+
+describe("resolveRunnerLifetimeMinutes", () => {
+	// Hosted runners and local machines outlive the job, so the guard is inert everywhere except the
+	// one workflow route that lands on an ephemeral self-hosted label.
+	it("is undefined when the runner outlives the job", () => {
+		expect(resolveRunnerLifetimeMinutes({})).toBeUndefined();
+		expect(resolveRunnerLifetimeMinutes({ BENCH_RUNNER_LIFETIME_MINUTES: "" })).toBeUndefined();
+	});
+
+	it("reads the lifetime the workflow advertises for an ephemeral runner", () => {
+		expect(resolveRunnerLifetimeMinutes({ BENCH_RUNNER_LIFETIME_MINUTES: "70" })).toBe(70);
+	});
+
+	it("rejects a malformed lifetime rather than falling back to no check", () => {
+		expect(() => resolveRunnerLifetimeMinutes({ BENCH_RUNNER_LIFETIME_MINUTES: "0" })).toThrow(
+			/positive integer/,
+		);
+		expect(() => resolveRunnerLifetimeMinutes({ BENCH_RUNNER_LIFETIME_MINUTES: "70m" })).toThrow(
+			/positive integer/,
+		);
+	});
+});
+
+describe("runnerLifetimeError", () => {
+	// The real pairing: microsandbox-local is routed to the KVM-capable self-hosted label, which is
+	// reaped at 70 minutes even while the step is healthy.
+	const ephemeral = { runnerLifetimeMinutes: 70 };
+
+	it("passes a suite that finishes inside the runner's lifetime with host margin to spare", () => {
+		expect(
+			runnerLifetimeError({ ...ephemeral, suite: "cpu-node", suiteTimeoutMinutes: 40 }),
+		).toBeUndefined();
+	});
+
+	// Same reasoning as fleetBudgetError's margin case: the reaper does not wait for checkout,
+	// teardown, normalization and upload either, so a suite landing on exactly the lifetime is refused.
+	it("rejects a suite that lands on the lifetime with no host margin left", () => {
+		expect(
+			runnerLifetimeError({ ...ephemeral, suite: "cpu-node", suiteTimeoutMinutes: 70 }),
+		).toMatch(/past the 70-minute lifetime/);
+		expect(
+			runnerLifetimeError({
+				...ephemeral,
+				suite: "cpu-node",
+				suiteTimeoutMinutes: 70 - WORKFLOW_TIMEOUT_MARGIN_MINUTES,
+			}),
+		).toBeUndefined();
+	});
+
+	// The failure this exists to prevent has no logs and no artifact at all — the cell simply stops
+	// existing — so the message has to name the trade and the two ways out.
+	it("explains the reaping and how to get out of it", () => {
+		const error = runnerLifetimeError({
+			...ephemeral,
+			suite: "realworld-mastra",
+			suiteTimeoutMinutes: 155,
+		});
+		expect(error).toMatch(/stuck in_progress with no logs and no artifact/);
+		expect(error).toMatch(/before any sandbox is created/);
+		expect(error).toMatch(/shorter suite, or route it to a runner that outlives 170 minutes/);
 	});
 });
 

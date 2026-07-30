@@ -220,6 +220,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		providerName,
 		resultsDir,
 		createOptions: config.createOptions,
+		createTimeoutMs: config.createTimeoutMs,
 	});
 
 	await runSuiteOnSandbox(sandbox, {
@@ -248,7 +249,10 @@ export interface SuiteSandboxCompute {
 const CREATE_RETRY_BUDGET_MS = 60 * MIN;
 const CREATE_RETRY_DELAY_MS = 2 * MIN;
 /** How long a single `sandbox.create` may run before the attempt is abandoned (and any late handle
- *  destroyed). Generous: a cold provider image can take minutes to provision. */
+ *  destroyed). Generous: a cold provider image can take minutes to provision. Adequate only for
+ *  providers whose `create` returns once the control plane ACCEPTS the sandbox, with the image pull
+ *  absorbed by a readiness probe afterwards; one that boots the image inline needs its own budget via
+ *  {@link ProviderConfig.createTimeoutMs}. */
 const CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
 
 /**
@@ -268,8 +272,10 @@ export interface CreateSuiteSandboxContext {
 	resultsDir: string;
 	/** The provider's pinned create-time options; the suite's lifetime is layered on top. */
 	createOptions?: SandboxCreateOptions;
-	/** Per-attempt create timeout, ms. Defaults to {@link CREATE_ATTEMPT_TIMEOUT_MS}; injectable so the
-	 *  timeout-leak path (a create that resolves after the race is lost) is exercisable in tests. */
+	/** Per-attempt create timeout, ms. Defaults to {@link CREATE_ATTEMPT_TIMEOUT_MS}; set per provider
+	 *  (see {@link ProviderConfig.createTimeoutMs}) for adapters whose `create` boots the image inline,
+	 *  and injectable so the timeout-leak path (a create that resolves after the race is lost) is
+	 *  exercisable in tests. */
 	createTimeoutMs?: number;
 }
 

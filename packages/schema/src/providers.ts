@@ -359,10 +359,15 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 		specPinning: "settable",
 		transport: {
-			// Native in-process control has no gateway timeout. Streaming callbacks are not adapted, but
-			// background exec plus the agent filesystem provides the durable detached+poll path.
+			// Streaming callbacks are not adapted, but background exec plus the agent filesystem provides
+			// the durable detached+poll path. `syncCapMs` is a real number, not null, precisely so that
+			// path is reachable: `selectTransport` short-circuits a null cap to "sync" REGARDLESS of
+			// `detachedPoll`, which would leave every benchmark-length step as one synchronous exec whose
+			// output exists only in the agent response — nothing to read back if that exec drops. Native
+			// in-process control has no gateway timeout, so this cap is a durability policy rather than a
+			// vendor limit; it matches the cloud variant so both backends detach at the same boundary.
 			streaming: false,
-			syncCapMs: null,
+			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
 	},

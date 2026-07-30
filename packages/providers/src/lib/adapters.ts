@@ -85,6 +85,16 @@ const modalVmCompute = () => modal({ appName: MODAL_APP_NAME });
  * teardown as well, while keeping leaked benchmark sandboxes self-expiring. */
 const MICROSANDBOX_MAX_DURATION_SECS = 3 * 60 * 60;
 
+/**
+ * Microsandbox's `create` does not return until the sandbox is RUNNING, so the toolchain image pull
+ * happens inside it — unlike providers whose create is accepted in well under a second and whose pull
+ * is absorbed by the readiness probe loop afterwards. The toolchain image is ~1.5 GiB compressed
+ * across 7 layers and CI runners always start with a cold cache, which the harness's 5-minute default
+ * per-attempt budget can easily lose to. A create timeout is not classified as a capacity error, so
+ * that loss is not retried: the cell records `sandbox-create-failed` and produces zero results.
+ */
+const MICROSANDBOX_CREATE_TIMEOUT_MS = 20 * 60 * 1000;
+
 function microsandboxCloudCredentials(): { kind: "cloud"; url?: string; apiKey: string } {
 	const { apiUrl, apiKey } = config.microsandboxCloud;
 	if (!apiKey) {
@@ -146,6 +156,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 				timeoutMs: MICROSANDBOX_MAX_DURATION_SECS * 1000,
 			}),
 		createOptions: { templateId: config.toolchainImage },
+		createTimeoutMs: MICROSANDBOX_CREATE_TIMEOUT_MS,
 	},
 	"microsandbox-cloud": {
 		// The API key remains in the CloudBackend HTTP/WebSocket client. It is never forwarded through
@@ -162,6 +173,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 				timeoutMs: MICROSANDBOX_MAX_DURATION_SECS * 1000,
 			}),
 		createOptions: { templateId: config.toolchainImage },
+		createTimeoutMs: MICROSANDBOX_CREATE_TIMEOUT_MS,
 	},
 	// Modal's default runtime = gVisor. Both variants boot the same pushed image; modal-vm adds the
 	// vm_runtime experimental flag to select Modal's gVisor-free VM runtime and drops scalableSandboxes

@@ -21,8 +21,12 @@ import type {
 	SandboxHandle as MsbSandboxHandle,
 } from "microsandbox";
 import {
+	CloudHttpError,
+	HttpError,
+	IoError,
 	Sandbox as MsbSandbox,
 	Snapshot as MsbSnapshot,
+	ProtocolError,
 	SandboxNotFoundError,
 	withDefaultBackend,
 } from "microsandbox";
@@ -47,21 +51,15 @@ interface MicrosandboxBaseConfig {
 	memoryMib: number;
 	/** Writable managed root disk in MiB. */
 	rootDiskMib: number;
-	/** Working directory inside the guest. */
-	workdir?: string;
 	/** Prefix for generated sandbox names. */
 	namePrefix: string;
 	/** Informational timeout surfaced through ComputeSDK getInfo(). */
 	timeoutMs: number;
-	/** Optional image pull policy forwarded to Microsandbox. */
-	pullPolicy?: string;
 }
 
 export interface MicrosandboxLocalConfig extends MicrosandboxBaseConfig {
 	variant: "microsandbox-local";
 	backend: "local";
-	/** TCP port maps declared at boot; only the local backend supports published ports. */
-	ports?: Array<{ host: number; guest: number }>;
 }
 
 export interface MicrosandboxCloudConfig extends MicrosandboxBaseConfig {
@@ -80,8 +78,45 @@ export interface MicrosandboxHandle {
 	createdAt: Date;
 	timeoutMs: number;
 	metadata: Record<string, unknown>;
-	/** guestPort -> hostPort, local only. */
-	ports: Map<number, number>;
+	/** Value of {@link bootEpoch} when `sandbox` was connected; a mismatch means that guest has been
+	 *  rebooted underneath us and the cached connection is dead. Meaningless while `sandbox` is null. */
+	connectedEpoch: number;
+}
+
+/**
+ * Thrown when the command never reached the guest — the agent connection failed, or the SDK gave up
+ * waiting for a response.
+ *
+ * This is deliberately NOT folded into a `CommandResult`: `StepRunner.runDetached` launches the
+ * benchmark with `runCommand(..., { background: true })` and discards the result, so a synthesized
+ * "exit 127" would leave the harness polling for the done-file of a job that was never started until
+ * the step's whole budget expired. A guest command that genuinely exits 127 still returns a result.
+ */
+export class MicrosandboxTransportError extends Error {
+	constructor(sandboxName: string, cause: unknown) {
+		super(`Microsandbox command did not reach sandbox "${sandboxName}": ${errorMessage(cause)}`, {
+			cause,
+		});
+		this.name = "MicrosandboxTransportError";
+	}
+}
+
+/**
+ * Per-sandbox boot counter, bumped whenever this process stops and restarts a guest.
+ *
+ * `SnapshotMethods` receive only `(config, sandboxId)`, so the snapshot path cannot reach the
+ * ComputeSDK handles that hold cached agent connections to the sandbox it just rebooted. Comparing an
+ * epoch is how those handles find out: it is O(1) per name and needs no handle registry.
+ */
+const bootEpoch = new Map<string, number>();
+
+function currentEpoch(name: string): number {
+	return bootEpoch.get(name) ?? 0;
+}
+
+/** Invalidate every cached connection to `name`; call after this process restarts that guest. */
+function bumpEpoch(name: string): void {
+	bootEpoch.set(name, currentEpoch(name) + 1);
 }
 
 /** POSIX single-quote shell escaping for commands sent to the guest shell. */
@@ -95,6 +130,24 @@ function errorMessage(error: unknown): string {
 
 function isNotFound(error: unknown): boolean {
 	return error instanceof SandboxNotFoundError;
+}
+
+/**
+ * Does this error mean the agent connection itself failed, rather than the guest rejecting the
+ * operation?
+ *
+ * Only a transport fault makes a retry meaningful. Application faults — `SandboxFsOpsError` for a
+ * missing path or a read-only target, `SandboxNotFoundError` for a vanished record — reproduce
+ * identically after a reconnect, so retrying them only spends a `get` + `connect` round trip and, on
+ * the detached poll path, risks pushing a bounded poll past its cap.
+ */
+function isConnectionError(error: unknown): boolean {
+	return (
+		error instanceof IoError ||
+		error instanceof HttpError ||
+		error instanceof CloudHttpError ||
+		error instanceof ProtocolError
+	);
 }
 
 function mapStatus(status: string): SandboxInfo["status"] {
@@ -112,11 +165,9 @@ function mapStatus(status: string): SandboxInfo["status"] {
 function recoverFromConfig(configJson: string): {
 	labels: Record<string, string>;
 	metadata: Record<string, unknown>;
-	ports: Map<number, number>;
 } {
 	const labels: Record<string, string> = {};
 	const metadata: Record<string, unknown> = {};
-	const ports = new Map<number, number>();
 	try {
 		const config = JSON.parse(configJson) as Record<string, unknown>;
 		const rawLabels = config.labels;
@@ -128,29 +179,17 @@ function recoverFromConfig(configJson: string): {
 				}
 			}
 		}
-
-		// `configJson` is the raw Rust serde form (host_port/guest_port), while older JS-facing
-		// projections used host/guest or hostPort/guestPort. Accept every emitted spelling so a handle
-		// recovered by get/list keeps local getUrl() functional across SDK upgrades.
-		const network = config.network as { ports?: unknown } | undefined;
-		if (Array.isArray(network?.ports)) {
-			for (const entry of network.ports as Array<Record<string, unknown>>) {
-				const host = Number(entry.host_port ?? entry.host ?? entry.hostPort);
-				const guest = Number(entry.guest_port ?? entry.guest ?? entry.guestPort);
-				if (Number.isFinite(host) && Number.isFinite(guest)) ports.set(guest, host);
-			}
-		}
 	} catch {
 		// A malformed legacy config must not make list/get unusable; the name prefix remains a fallback.
 	}
-	return { labels, metadata, ports };
+	return { labels, metadata };
 }
 
 function handleFromMsb(
 	config: MicrosandboxConfig,
 	msbHandle: MsbSandboxHandle,
 ): MicrosandboxHandle {
-	const { metadata, ports } = recoverFromConfig(msbHandle.configJson);
+	const { metadata } = recoverFromConfig(msbHandle.configJson);
 	return {
 		name: msbHandle.name,
 		sandbox: null,
@@ -159,7 +198,7 @@ function handleFromMsb(
 		createdAt: msbHandle.createdAt ?? new Date(),
 		timeoutMs: config.timeoutMs,
 		metadata,
-		ports,
+		connectedEpoch: currentEpoch(msbHandle.name),
 	};
 }
 
@@ -187,12 +226,20 @@ async function removeSandboxIfPresent(
 	await withBackend(config, async () => {
 		try {
 			const handle = await MsbSandbox.get(sandboxId);
-			if (handle.status === "running" || handle.status === "draining") await handle.stop();
+			// Stop anything not already stopped, not just the two statuses that map to "running". The SDK
+			// documents remove() as removing a STOPPED sandbox, and `mapStatus`'s `default` arm exists
+			// precisely because transitional/unknown statuses (a cloud record still booting, `crashed`) do
+			// occur — skipping the stop for those made remove() reject and leaked the microVM until its
+			// maxDuration expired.
+			if (handle.status !== "stopped") await handle.stop();
 			await MsbSandbox.remove(sandboxId);
 		} catch (error) {
 			if (isNotFound(error)) return;
 			throw error;
 		}
+		// Deliberately NOT clearing this name's `bootEpoch`: resetting it to 0 would let a handle whose
+		// cached connection predates a snapshot restart compare equal again and reuse a dead connection.
+		// The map only gains an entry when a sandbox is actually snapshotted, so it cannot grow far.
 	});
 }
 
@@ -206,35 +253,61 @@ export function microsandboxFileEntries(entries: readonly MsbFsEntry[]): FileEnt
 	}));
 }
 
-/** Connect lazily; handles created by the SDK already retain their backend after this lookup. */
+/**
+ * Connect lazily; handles created by the SDK already retain their backend after this lookup.
+ *
+ * A sandbox that is no longer running is an ERROR, never something to boot back up. The harness's
+ * detached poll loop treats a run of failing filesystem calls as `GapError{kind:"sandbox-lost"}`
+ * specifically so a microVM killed by its maxDuration, an OOM, or a host fault is recorded as a gap.
+ * Silently returning a freshly booted guest defeats that: the done-file it is asked about can never
+ * appear, so the step burns its whole budget and reports a plain timeout — and on the synchronous
+ * path the results tar is collected from an empty VM, yielding a Run with no results AND no gap.
+ */
 async function ensureConnected(
 	handle: MicrosandboxHandle,
 ): Promise<InstanceType<typeof MsbSandbox>> {
-	if (handle.sandbox) return handle.sandbox;
+	// A cached connection is only usable while it predates no reboot of that guest (see `bootEpoch`).
+	if (handle.sandbox && handle.connectedEpoch === currentEpoch(handle.name)) return handle.sandbox;
+	handle.sandbox = null;
+	const epoch = currentEpoch(handle.name);
 	const sandbox = await withDefaultBackend(handle.backend, async () => {
 		const current = await MsbSandbox.get(handle.name);
-		return current.status === "running" ? current.connect() : current.startDetached();
+		if (current.status !== "running") {
+			throw new Error(
+				`Microsandbox sandbox "${handle.name}" is ${current.status}, not running — refusing to ` +
+					`reboot it. A sandbox that died mid-run must surface as a lost sandbox, not be replaced ` +
+					`by an empty guest that answers every probe with "not done yet".`,
+			);
+		}
+		return current.connect();
 	});
 	handle.sandbox = sandbox;
+	handle.connectedEpoch = epoch;
 	return sandbox;
 }
 
 /**
- * Retry one agent filesystem operation when a previously cached connection has gone stale.
+ * Retry one agent filesystem operation once when the CONNECTION failed.
  *
- * Filesystem reads and full-content writes are idempotent; command execution is deliberately excluded
- * because a lost response cannot tell us whether the guest already accepted that command.
+ * Two things are deliberately narrow here. Only connection-class errors retry ({@link
+ * isConnectionError}): a missing path or a read-only target reproduces identically after a reconnect,
+ * so retrying it just spends a get+connect round trip and can push a bounded detached poll past its
+ * cap. And the retry is gated on the error, not on whether a cached connection existed — a handle from
+ * `getById`/`list` starts with none, and a connection that goes stale inside that very call deserves
+ * the same second chance as one that was already cached.
+ *
+ * Command execution is excluded from all of this because a lost response cannot tell us whether the
+ * guest already accepted that command; filesystem reads and full-content writes are idempotent.
  */
 async function withFilesystemReconnect<T>(
 	handle: MicrosandboxHandle,
 	operation: (sandbox: InstanceType<typeof MsbSandbox>) => Promise<T>,
 ): Promise<T> {
-	const hadCachedConnection = handle.sandbox !== null;
 	const sandbox = await ensureConnected(handle);
 	try {
 		return await operation(sandbox);
 	} catch (error) {
-		if (!hadCachedConnection) throw error;
+		if (!isConnectionError(error)) throw error;
 		handle.sandbox = null;
 		return operation(await ensureConnected(handle));
 	}
@@ -274,12 +347,11 @@ async function runShell(
 		// the NEXT operation reconnects, but never replay this operation: setup mutations and detached
 		// benchmark launches are not generally idempotent.
 		handle.sandbox = null;
-		return {
-			stdout: "",
-			stderr: errorMessage(error),
-			exitCode: 127,
-			durationMs: Date.now() - started,
-		};
+		// THROW rather than synthesizing a result. `StepRunner.runDetached` discards the result of its
+		// background launch, so a returned "exit 127" left the harness polling for a job that was never
+		// started until the step's whole budget expired — and it was indistinguishable from a guest
+		// command that genuinely exits 127.
+		throw new MicrosandboxTransportError(handle.name, error);
 	}
 }
 
@@ -306,16 +378,15 @@ const sandboxMethods: SandboxMethods<MicrosandboxHandle, MicrosandboxConfig> = {
 		const name = options?.name ?? `${config.namePrefix}${randomUUID()}`;
 		const timeoutMs = options?.timeout ?? config.timeoutMs;
 		const metadata: Record<string, unknown> = options?.metadata ?? {};
-		if (config.variant === "microsandbox-cloud" && options?.ports?.length) {
-			throw new Error("Microsandbox cloud does not support published host ports");
+		// Published ports are unsupported on BOTH backends. The benchmark drives sandboxes over the
+		// agent connection and never dials into a guest, so there was no caller for the port-mapping and
+		// getUrl machinery this used to carry — one rejection beats two code paths, only one of them live.
+		if (options?.ports?.length) {
+			throw new Error("Microsandbox sandboxes do not expose published host ports");
 		}
 		if (config.variant === "microsandbox-cloud" && options?.snapshotId) {
 			throw new Error("Microsandbox cloud snapshots are not supported");
 		}
-		const requestedPorts =
-			(options?.ports as Array<{ host: number; guest: number }> | undefined) ?? [];
-		const ports =
-			config.variant === "microsandbox-local" ? [...(config.ports ?? []), ...requestedPorts] : [];
 		const maxDurationSecs = Math.max(1, Math.ceil(timeoutMs / 1000));
 
 		try {
@@ -338,9 +409,6 @@ const sandboxMethods: SandboxMethods<MicrosandboxHandle, MicrosandboxConfig> = {
 				}
 				if (options?.envs && Object.keys(options.envs).length > 0)
 					builder = builder.envs(options.envs);
-				if (config.workdir) builder = builder.workdir(config.workdir);
-				if (config.pullPolicy) builder = builder.pullPolicy(config.pullPolicy);
-				for (const { host, guest } of ports) builder = builder.port(host, guest);
 				return builder.create();
 			});
 
@@ -353,7 +421,7 @@ const sandboxMethods: SandboxMethods<MicrosandboxHandle, MicrosandboxConfig> = {
 					createdAt: new Date(),
 					timeoutMs,
 					metadata,
-					ports: new Map(ports.map(({ host, guest }) => [guest, host])),
+					connectedEpoch: currentEpoch(name),
 				},
 				sandboxId: name,
 			};
@@ -424,15 +492,13 @@ const sandboxMethods: SandboxMethods<MicrosandboxHandle, MicrosandboxConfig> = {
 		};
 	},
 
-	getUrl: async (handle, options): Promise<string> => {
-		if (handle.variant === "microsandbox-cloud") {
-			throw new Error("Microsandbox cloud does not expose published sandbox ports");
-		}
-		const hostPort = handle.ports.get(options.port);
-		if (!hostPort) {
-			throw new Error(`No local host port is mapped to guest port ${options.port}`);
-		}
-		return `${options.protocol ?? "http"}://127.0.0.1:${hostPort}`;
+	// Required by SandboxMethods, so it cannot be omitted — but `create` rejects published ports on both
+	// backends, so there is never a mapping to return. Rejecting here keeps that single answer in one
+	// place rather than reintroducing a port map that nothing populates.
+	getUrl: async (handle): Promise<string> => {
+		throw new Error(
+			`Microsandbox sandbox "${handle.name}" does not expose published ports; drive it through runCommand`,
+		);
 	},
 
 	filesystem: {
@@ -471,7 +537,14 @@ const localSnapshotMethods: SnapshotMethods<unknown, MicrosandboxLocalConfig> = 
 			const name = options?.name ?? `${sandboxId}-snap-${Date.now().toString(36)}`;
 			const current = await MsbSandbox.get(sandboxId);
 			const wasRunning = current.status === "running" || current.status === "draining";
-			if (wasRunning) await current.stop();
+			if (wasRunning) {
+				// Every agent connection to this guest dies with the stop below, and the restart brings up a
+				// different one. Bump first: ComputeSDK handles reach their cached connection through
+				// `ensureConnected`, which compares this epoch, and the snapshot methods have no other way
+				// to reach them (they receive only config + sandboxId).
+				bumpEpoch(sandboxId);
+				await current.stop();
+			}
 
 			let snapshotError: unknown;
 			try {
