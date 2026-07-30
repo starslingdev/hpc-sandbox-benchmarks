@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { ProviderRun } from "./index.ts";
+import type { ProviderRun, ResultGap } from "./index.ts";
 import {
 	aggregate,
 	harnessGapMarkerJson,
@@ -171,6 +171,98 @@ describe("parseGapMarker", () => {
 			reason:
 				"PTS batch-run of pts/fio-2.1.0 completed but every trial errored (composite carries no values)",
 		});
+	});
+
+	it("drops an unparsable cause, keeping the gap — a newer producer must not erase one", () => {
+		// The raw tree is re-normalized retroactively, so this build reads markers written by builds it
+		// does not control. If an uninterpretable `cause` failed the whole body, `parseGapMarker` would
+		// answer `undefined` and the gap would vanish — a benchmark that reads as never attempted, which
+		// is strictly worse than one recorded without a diagnosis.
+		const unclassified: ResultGap = {
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "skipped",
+			reason: "Insufficient disk: 3.0 GiB free, suite needs 20 GiB",
+		};
+		const body = (cause: unknown) => ({
+			outcome: "skipped",
+			suite: "cpu-node",
+			reason: "Insufficient disk: 3.0 GiB free, suite needs 20 GiB",
+			cause,
+		});
+		// A kind from a future taxonomy this build has no arm for.
+		expect(
+			parseGapMarker(
+				"sandbox-daytona-cpu-node--skipped.json",
+				body({ kind: "quota-exceeded" }),
+				"daytona",
+			),
+		).toEqual(unclassified);
+		// A known kind whose payload is malformed (a shortfall that is not short).
+		expect(
+			parseGapMarker(
+				"sandbox-daytona-cpu-node--skipped.json",
+				body({ kind: "disk-shortfall", freeGb: 30, requiredGb: 20 }),
+				"daytona",
+			),
+		).toEqual(unclassified);
+		// Outright garbage in the field.
+		expect(
+			parseGapMarker("sandbox-daytona-cpu-node--skipped.json", body("disk"), "daytona"),
+		).toEqual(unclassified);
+	});
+
+	it("drops a cause from the wrong side of the skip/failure partition, keeping the gap", () => {
+		// Unlike a contradicting `outcome`, a contradicting cause leaves the outcome knowable (the
+		// filename said it), so only the classification is lost. Keeping it would fail resultGapSchema's
+		// narrow — and a Run parses whole, so one bad marker would take the entire Run down.
+		const marker = parseGapMarker(
+			"sandbox-daytona-cpu-node--skipped.json",
+			{
+				outcome: "skipped",
+				suite: "cpu-node",
+				reason: "Missing credentials",
+				cause: { kind: "step-timeout", step: "install", timeoutSeconds: 600 },
+			},
+			"daytona",
+		);
+		expect(marker).toEqual({
+			scope: "suite",
+			id: "cpu-node",
+			outcome: "skipped",
+			reason: "Missing credentials",
+		});
+		// A coherent pairing survives.
+		expect(
+			parseGapMarker(
+				"sandbox-daytona-cpu-node--skipped.json",
+				{
+					suite: "cpu-node",
+					reason: "no creds",
+					cause: { kind: "missing-credentials", variables: ["E2B_API_KEY"] },
+				},
+				"daytona",
+			)?.cause,
+		).toEqual({ kind: "missing-credentials", variables: ["E2B_API_KEY"] });
+	});
+
+	it("never writes a marker whose cause contradicts its outcome", () => {
+		// The same rule on the producer side, so the bytes in a CI artifact are self-consistent and a
+		// human reading one does not have to know which half the reader believes.
+		const bytes = harnessGapMarkerJson("daytona", "cpu-node", "skipped", "Missing credentials", {
+			kind: "step-failed",
+			step: "install",
+			exitCode: 1,
+		});
+		expect(JSON.parse(bytes).cause).toBeUndefined();
+		expect(
+			JSON.parse(
+				harnessGapMarkerJson("daytona", "cpu-node", "skipped", "Missing credentials", {
+					kind: "missing-credentials",
+					variables: ["E2B_API_KEY"],
+				}),
+			).cause,
+		).toEqual({ kind: "missing-credentials", variables: ["E2B_API_KEY"] });
 	});
 
 	it("rejects the fail_result body under a --skipped.json filename (suffix/body contradiction)", () => {
