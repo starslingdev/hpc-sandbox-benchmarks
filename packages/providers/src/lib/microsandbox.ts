@@ -47,8 +47,6 @@ interface MicrosandboxBaseConfig {
 	memoryMib: number;
 	/** Writable managed root disk in MiB. */
 	rootDiskMib: number;
-	/** Maximum sandbox lifetime in seconds. */
-	maxDurationSecs: number;
 	/** Working directory inside the guest. */
 	workdir?: string;
 	/** Prefix for generated sandbox names. */
@@ -190,11 +188,11 @@ async function removeSandboxIfPresent(
 		try {
 			const handle = await MsbSandbox.get(sandboxId);
 			if (handle.status === "running" || handle.status === "draining") await handle.stop();
+			await MsbSandbox.remove(sandboxId);
 		} catch (error) {
 			if (isNotFound(error)) return;
 			throw error;
 		}
-		await MsbSandbox.remove(sandboxId);
 	});
 }
 
@@ -219,6 +217,27 @@ async function ensureConnected(
 	});
 	handle.sandbox = sandbox;
 	return sandbox;
+}
+
+/**
+ * Retry one agent filesystem operation when a previously cached connection has gone stale.
+ *
+ * Filesystem reads and full-content writes are idempotent; command execution is deliberately excluded
+ * because a lost response cannot tell us whether the guest already accepted that command.
+ */
+async function withFilesystemReconnect<T>(
+	handle: MicrosandboxHandle,
+	operation: (sandbox: InstanceType<typeof MsbSandbox>) => Promise<T>,
+): Promise<T> {
+	const hadCachedConnection = handle.sandbox !== null;
+	const sandbox = await ensureConnected(handle);
+	try {
+		return await operation(sandbox);
+	} catch (error) {
+		if (!hadCachedConnection) throw error;
+		handle.sandbox = null;
+		return operation(await ensureConnected(handle));
+	}
 }
 
 async function execOnce(
@@ -247,21 +266,14 @@ async function runShell(
 	options?: RunCommandOptions,
 ): Promise<CommandResult> {
 	const started = Date.now();
-	const hadCachedConnection = handle.sandbox !== null;
 	try {
 		const sandbox = await ensureConnected(handle);
-		try {
-			return { ...(await execOnce(sandbox, command, options)), durationMs: Date.now() - started };
-		} catch (error) {
-			// A stop/start cycle invalidates an old agent connection. Reconnect once before surfacing it.
-			if (!hadCachedConnection) throw error;
-			handle.sandbox = null;
-			return {
-				...(await execOnce(await ensureConnected(handle), command, options)),
-				durationMs: Date.now() - started,
-			};
-		}
+		return { ...(await execOnce(sandbox, command, options)), durationMs: Date.now() - started };
 	} catch (error) {
+		// The agent may have accepted the command before its connection failed. Drop the stale cache so
+		// the NEXT operation reconnects, but never replay this operation: setup mutations and detached
+		// benchmark launches are not generally idempotent.
+		handle.sandbox = null;
 		return {
 			stdout: "",
 			stderr: errorMessage(error),
@@ -274,15 +286,14 @@ async function runShell(
 /** Drain every page for this provider marker; ComputeSDK's list contract is not paginated. */
 async function listAll(config: MicrosandboxConfig): Promise<MsbSandboxHandle[]> {
 	return withBackend(config, async () => {
-		let page = await MsbSandbox.listWith((list) =>
-			list.limit(100).label(LABEL_MARKER, config.variant),
-		);
+		// Ownership is decided once, in isOurs(): labels cover current sandboxes and the name prefix
+		// recovers legacy/partial records whose labels were lost. A server-side label filter would make
+		// that fallback unreachable.
+		let page = await MsbSandbox.listWith((list) => list.limit(100));
 		const all = [...page.sandboxes];
 		while (page.nextCursor) {
 			const cursor = page.nextCursor;
-			page = await MsbSandbox.listWith((list) =>
-				list.limit(100).cursor(cursor).label(LABEL_MARKER, config.variant),
-			);
+			page = await MsbSandbox.listWith((list) => list.limit(100).cursor(cursor));
 			all.push(...page.sandboxes);
 		}
 		return all;
@@ -295,16 +306,17 @@ const sandboxMethods: SandboxMethods<MicrosandboxHandle, MicrosandboxConfig> = {
 		const name = options?.name ?? `${config.namePrefix}${randomUUID()}`;
 		const timeoutMs = options?.timeout ?? config.timeoutMs;
 		const metadata: Record<string, unknown> = options?.metadata ?? {};
-		const requestedPorts =
-			(options?.ports as Array<{ host: number; guest: number }> | undefined) ?? [];
-		const ports =
-			config.variant === "microsandbox-local" ? [...(config.ports ?? []), ...requestedPorts] : [];
-		if (config.variant === "microsandbox-cloud" && requestedPorts.length > 0) {
+		if (config.variant === "microsandbox-cloud" && options?.ports?.length) {
 			throw new Error("Microsandbox cloud does not support published host ports");
 		}
 		if (config.variant === "microsandbox-cloud" && options?.snapshotId) {
 			throw new Error("Microsandbox cloud snapshots are not supported");
 		}
+		const requestedPorts =
+			(options?.ports as Array<{ host: number; guest: number }> | undefined) ?? [];
+		const ports =
+			config.variant === "microsandbox-local" ? [...(config.ports ?? []), ...requestedPorts] : [];
+		const maxDurationSecs = Math.max(1, Math.ceil(timeoutMs / 1000));
 
 		try {
 			const sandbox = await withBackend(config, async () => {
@@ -318,7 +330,7 @@ const sandboxMethods: SandboxMethods<MicrosandboxHandle, MicrosandboxConfig> = {
 				builder = builder
 					.cpus(config.cpus)
 					.memory(config.memoryMib)
-					.maxDuration(config.maxDurationSecs)
+					.maxDuration(maxDurationSecs)
 					.detached(true)
 					.label(LABEL_MARKER, config.variant);
 				for (const [key, value] of Object.entries(metadata)) {
@@ -425,21 +437,27 @@ const sandboxMethods: SandboxMethods<MicrosandboxHandle, MicrosandboxConfig> = {
 
 	filesystem: {
 		readFile: async (handle, path): Promise<string> =>
-			(await ensureConnected(handle)).fs().readToString(path),
+			withFilesystemReconnect(handle, (sandbox) => sandbox.fs().readToString(path)),
 		writeFile: async (handle, path, content, runCommand): Promise<void> => {
 			const parent = posixPath.dirname(path);
-			if (parent && parent !== "/" && parent !== ".")
-				await runCommand(handle, `mkdir -p ${shellQuote(parent)}`);
-			await (await ensureConnected(handle)).fs().write(path, content);
+			if (parent && parent !== "/" && parent !== ".") {
+				const result = await runCommand(handle, `mkdir -p ${shellQuote(parent)}`);
+				if (result.exitCode !== 0) {
+					throw new Error(`mkdir failed for ${parent}: ${result.stderr}`);
+				}
+			}
+			await withFilesystemReconnect(handle, (sandbox) => sandbox.fs().write(path, content));
 		},
 		mkdir: async (handle, path, runCommand): Promise<void> => {
 			const result = await runCommand(handle, `mkdir -p ${shellQuote(path)}`);
 			if (result.exitCode !== 0) throw new Error(`mkdir failed for ${path}: ${result.stderr}`);
 		},
 		readdir: async (handle, path): Promise<FileEntry[]> =>
-			microsandboxFileEntries(await (await ensureConnected(handle)).fs().list(path)),
+			microsandboxFileEntries(
+				await withFilesystemReconnect(handle, (sandbox) => sandbox.fs().list(path)),
+			),
 		exists: async (handle, path): Promise<boolean> =>
-			(await ensureConnected(handle)).fs().exists(path),
+			withFilesystemReconnect(handle, (sandbox) => sandbox.fs().exists(path)),
 		remove: async (handle, path, runCommand): Promise<void> => {
 			const result = await runCommand(handle, `rm -rf ${shellQuote(path)}`);
 			if (result.exitCode !== 0) throw new Error(`remove failed for ${path}: ${result.stderr}`);
@@ -470,11 +488,16 @@ const localSnapshotMethods: SnapshotMethods<unknown, MicrosandboxLocalConfig> = 
 				try {
 					await (await MsbSandbox.get(sandboxId)).startDetached();
 				} catch (restartError) {
-					if (!snapshotError) {
-						throw new Error(
-							`Snapshot "${name}" succeeded but restart failed: ${errorMessage(restartError)}`,
+					if (snapshotError) {
+						throw new AggregateError(
+							[snapshotError, restartError],
+							`Snapshot "${name}" failed: ${errorMessage(snapshotError)}; restart also failed: ${errorMessage(restartError)}`,
 						);
 					}
+					throw new Error(
+						`Snapshot "${name}" succeeded but restart failed: ${errorMessage(restartError)}`,
+						{ cause: restartError },
+					);
 				}
 			}
 			if (snapshotError) throw snapshotError;

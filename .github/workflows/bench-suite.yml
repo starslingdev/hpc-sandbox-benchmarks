@@ -117,7 +117,9 @@ jobs:
     #     before giving up, so a fan-out wider than the account quota queues inside the budget.
     # At R=12 against a suite budgeted near 90 minutes, either can exceed 180. Raise this, or lower the
     # fan-out, rather than discovering it as a cancelled cell that loses all R replicates at once.
-    runs-on: ubuntu-24.04
+    # The local Microsandbox backend needs KVM; all remote providers only need a driver process.
+    # Keep the capability opt-in paired with this provider-specific runner route below.
+    runs-on: ${{ matrix.provider == 'microsandbox-local' && 'starsling-ubuntu-24.04-2' || 'ubuntu-24.04' }}
     timeout-minutes: 180
     strategy:
       # One provider's failure (a flaky adapter, a dead account) must not cancel the rest of the matrix.

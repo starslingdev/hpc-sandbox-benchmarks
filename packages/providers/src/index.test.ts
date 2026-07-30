@@ -165,7 +165,6 @@ describe("@sandbox-benchmarks/providers", () => {
 			cpus: TARGET_SPEC.vcpus,
 			memoryMib: TARGET_SPEC.memoryGb * 1024,
 			rootDiskMib: TARGET_SPEC.diskGb * 1024,
-			maxDurationSecs: 10_800,
 			namePrefix: "test-msb-",
 			timeoutMs: 10_800_000,
 		} as const;

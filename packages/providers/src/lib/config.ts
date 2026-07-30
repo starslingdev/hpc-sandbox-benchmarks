@@ -79,7 +79,7 @@ export interface DaytonaConfig {
 
 /** Connection settings for the remote Microsandbox backend. The API URL is an optional override;
  * the SDK uses its production endpoint when it is absent. */
-export interface MicrosandboxCloudConfig {
+export interface MicrosandboxCloudCredentials {
 	apiUrl?: string;
 	apiKey?: string;
 }
@@ -171,5 +171,5 @@ export const config = {
 	microsandboxCloud: {
 		apiUrl: env.MSB_API_URL,
 		apiKey: env.MSB_API_KEY,
-	} satisfies MicrosandboxCloudConfig,
+	} satisfies MicrosandboxCloudCredentials,
 } as const;

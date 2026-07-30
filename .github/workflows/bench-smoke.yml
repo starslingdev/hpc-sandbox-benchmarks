@@ -71,10 +71,10 @@ jobs:
     if: >
       github.ref == 'refs/heads/main' &&
       github.repository == 'starslingdev/hpc-sandbox-benchmarks'
-    # The ephemeral self-hosted label is reaped after 70 minutes, while this dispatch exposes suites
-    # with a 155-minute sandbox budget. Match the matrix's hosted runner and leave job-level margin
-    # for checkout, sandbox teardown, normalization, and artifact upload.
-    runs-on: ubuntu-24.04
+    # Microsandbox local requires KVM, so route that one opt-in to the same virtualization-capable
+    # StarSling runner used by toolchain validation. Cloud and every other provider retain the hosted
+    # runner with enough lifetime for the longest suite.
+    runs-on: ${{ inputs.provider == 'microsandbox-local' && 'starsling-ubuntu-24.04-2' || 'ubuntu-24.04' }}
     environment: privileged
     timeout-minutes: 180
     # `id-token: write` is scoped to this job (not the workflow, which only has this one job today),
