@@ -3,6 +3,7 @@
 // owns one concern.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { WORKFLOW_TIMEOUT_MARGIN_MINUTES } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { findRepoRoot } from "./workspace.ts";
 
@@ -15,7 +16,6 @@ export const RUN_STEP = "Run suite and normalize";
 export const SMOKE_JOB = "smoke";
 /** The fan-out job inside the reusable bench-suite.yml (its credential env + timeout). */
 export const SUITE_JOB = "bench";
-
 // The staged toolchain release lane (plan → build → bake → promote). Its two credentialed jobs each
 // boot a provider sandbox, so both carry a per-provider credential block of their own — separate from
 // the bench lanes' and, until this gate covered them, mirrored by hand with nothing checking them.
@@ -29,8 +29,10 @@ export const BAKE_STEP = "Bake + verify candidate";
 export const PUBLISH_JOB = "publish";
 /** The step inside {@link PUBLISH_JOB} that re-validates and publishes; it owns the env. */
 export const PROMOTE_STEP = "Promote candidate → version";
-/** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. */
-export const WORKFLOW_TIMEOUT_MARGIN_MINUTES = 15;
+/** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. Re-exported
+ *  from the schema, which owns it — `bench-suite`'s fan-out budget guard adds the SAME margin, and the
+ *  two must not drift (see the constant's own note). */
+export { WORKFLOW_TIMEOUT_MARGIN_MINUTES };
 
 // Single source of truth: this schema drives BOTH the runtime parse (coercions live in the morphs)
 // and the exported DispatchInput type (inferred below) — there is no hand-written interface or
@@ -108,6 +110,26 @@ export function jobTimeoutMinutes(doc: unknown, jobId: string, label: string): n
 }
 
 /**
+ * The step named `stepName` inside an already-resolved `job`, or undefined when the job has no steps
+ * list or no such step. LENIENT on purpose: the nesting gate (workflow-nesting.ts) accumulates error
+ * strings instead of throwing, so it needs "absent" as a value it can report. A step that is present
+ * but not a mapping still throws — that is malformed YAML, not drift. {@link stepEnv} layers the
+ * strict spelling on top for callers where a renamed job/step must fail the gate loudly.
+ */
+export function stepByName(
+	job: Record<string, unknown>,
+	stepName: string,
+	label: string,
+): Record<string, unknown> | undefined {
+	if (!Array.isArray(job.steps)) return undefined;
+	for (const value of job.steps) {
+		const step = asRecord(value, `${label}: malformed step`);
+		if (step.name === stepName) return step;
+	}
+	return undefined;
+}
+
+/**
  * The `env` mapping of a named step inside a job, as key -> value-expression entries. Throws if the
  * job, the step, or its env block is missing, or an env value is not a string — a renamed job/step
  * must fail the gate, not silently match nothing.
@@ -121,16 +143,12 @@ export function stepEnv(
 	const root = asRecord(doc, `${label}: not a YAML mapping`);
 	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
 	const job = asRecord(jobs[jobId], `${label}: job "${jobId}" not found`);
-	const steps = job.steps;
-	if (!Array.isArray(steps)) throw new Error(`${label}: job "${jobId}" has no steps list`);
-	const step = steps.find((s) => asRecord(s, `${label}: malformed step`).name === stepName);
+	if (!Array.isArray(job.steps)) throw new Error(`${label}: job "${jobId}" has no steps list`);
+	const step = stepByName(job, stepName, label);
 	if (step === undefined) {
 		throw new Error(`${label}: job "${jobId}" has no step named "${stepName}"`);
 	}
-	const env = asRecord(
-		(step as Record<string, unknown>).env,
-		`${label}: step "${stepName}" has no env mapping`,
-	);
+	const env = asRecord(step.env, `${label}: step "${stepName}" has no env mapping`);
 	const entries: Record<string, string> = {};
 	for (const [key, value] of Object.entries(env)) {
 		if (typeof value !== "string") {

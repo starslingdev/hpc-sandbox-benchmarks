@@ -93,17 +93,71 @@ jobs:
       # Aggregate the shards' Run documents into one candidate, then promote (gate on >=1 validated
       # provider) and publish into the committed dataset at data/dataset/. The run-id matches the shards.
       #
-      # The glob names the Run document EXACTLY, `<runId>.json`, and must not gain a `data/` segment:
-      # the bench cell uploads `path: data/`, and upload-artifact roots the artifact at the least common
-      # ancestor of the matched files — so a shard unpacks as `shards/<artifact>/runs/<runId>.json`, with
-      # no `data/` prefix. Two decoys sit next to it that a `runs/*.json` wildcard would sweep in: the
-      # sibling `runs/index.json` (an index, not a Run), and `dataset/runs/<oldRunId>.json` (the committed
-      # dataset, which rides along because it lives under data/). Both would poison the aggregate.
+      # The globs name the Run documents EXACTLY and must not gain a `data/` segment: the bench cell
+      # uploads `path: data/`, and upload-artifact roots the artifact at the least common ancestor of the
+      # matched files — so a shard unpacks as `shards/<artifact>/runs/<runId>...json`, with no `data/`
+      # prefix. Two decoys sit next to them that a `runs/*.json` wildcard would sweep in: the sibling
+      # `runs/index.json` (an index, not a Run), and `dataset/runs/<oldRunId>.json` (the committed
+      # dataset, which rides along because it lives under data/, and which the `runs/` segment excludes).
+      # Both would poison the aggregate.
+      #
+      # TWO shard shapes exist, and they are selected with a PREFERENCE, never unioned:
+      #   * `<runId>-r<idx>.json` — the current per-replicate shards (one runner drives all R replicates
+      #     of a (suite, provider) cell, so they share an artifact and are told apart by the suffix).
+      #   * `<runId>.json` — the un-suffixed single-shard name written by a run that predates the
+      #     fan-out change. Keeping it is what lets a backfill dispatch re-aggregate an older run's
+      #     still-retained artifacts.
+      #
+      # Preference, not union, because run ids are PRESERVED across re-runs: a run whose first attempt
+      # predates the change and whose retry postdates it leaves BOTH shapes under one run id. Unioning
+      # them would hand `aggregate` two shards describing the SAME sandbox — a shard with no
+      # replicateIndex normalizes to index 0, colliding with `-r0` — and its documented first-wins
+      # rule would silently drop one sandbox's whole measured set while leaving no replicate breakdown,
+      # making the result indistinguishable from a genuine single-replicate run.
+      #
+      # The preference is applied PER CELL, never run-wide, because the collision it guards against is
+      # per-cell: the two shapes describe the same sandbox only when they came from the same
+      # (suite, provider) artifact. `merge-multiple: false` above unpacks each cell into its own
+      # `shards/<artifact>/` subdir, so that subdir IS the cell boundary — loop over it and ask each cell
+      # which shape it wrote. A run-wide preference reads the shapes as a single global choice, and a
+      # mixed-shape run (retry a cell that failed on the old code, and only that cell re-runs on the new)
+      # then publishes ONLY the retried cell: every other provider/suite of the run, still legacy-only,
+      # is silently discarded and the dataset is promoted a fraction of the size it should be. Per cell,
+      # the retried cell contributes its `-r<idx>` fleet and its untouched peers contribute their legacy
+      # shard, which is the union across cells and the preference within one — exactly the intent.
+      #
+      # (Both shapes under ONE cell needs `overwrite: true` on the cell's upload — see bench-suite.yml —
+      # to be reachable at all, since a re-run otherwise cannot claim the name. The per-cell preference
+      # is the belt to that suspenders: it stays correct for artifacts uploaded before that fix and for
+      # a backfill dispatch reaching back to any older run.)
+      #
+      # The per-shape cell counts are echoed so a short or lopsided set is visible in the log rather
+      # than inferred.
       - name: Aggregate + promote
         run: |
           shopt -s nullglob
-          shards=(shards/*/runs/"$RUN_ID".json)
+          shards=()
+          fanout_cells=0
+          legacy_cells=0
+          for cell in shards/*/; do
+            # The `-r*` probe is a real glob, so nullglob empties it when the cell wrote no fleet. The
+            # legacy name has NO wildcard left once "$cell" is an expanded literal, and nullglob only
+            # ever rewrites words that ARE patterns — so it must be probed with `-f`, or every cell
+            # would contribute a non-existent path and be miscounted as legacy.
+            cell_shards=("$cell"runs/"$RUN_ID"-r*.json)
+            if [ ${#cell_shards[@]} -gt 0 ]; then
+              fanout_cells=$((fanout_cells + 1))
+            elif [ -f "$cell"runs/"$RUN_ID".json ]; then
+              cell_shards=("$cell"runs/"$RUN_ID".json)
+              legacy_cells=$((legacy_cells + 1))
+            else
+              cell_shards=()
+            fi
+            shards+=("${cell_shards[@]}")
+          done
           if [ ${#shards[@]} -eq 0 ]; then echo "no shard Run documents found for run $RUN_ID" >&2; exit 1; fi
+          echo "aggregating ${#shards[@]} shard(s) for run $RUN_ID" \
+            "from $fanout_cells per-replicate + $legacy_cells legacy single-shard cell(s)"
           bun apps/cli/src/bin/aggregate.ts "$RUN_ID" data/candidate "${shards[@]}"
           bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset
 
@@ -114,6 +168,14 @@ jobs:
       # the mechanical formatting here is exactly what a developer's `bun run lint:fix` would do. Scope
       # the write to data/dataset (JSON only): this job never touches LEADERBOARD.md, and Biome leaves
       # any rendered Markdown untouched anyway.
+      #
+      # A Run document grows with every provider x suite x metric the matrix gains, and Biome SKIPS any
+      # file over `files.maxSize` — emitting a warning that `--error-on-warnings` below turns into a job
+      # failure (run 30322186937 died this way at 2.2 MiB against the 2 MiB project cap, and the autofix
+      # silently no-op'd on the very file it exists to format). `biome.json` therefore carries a
+      # `data/dataset/runs/*.json` override raising the cap to 16 MiB for these generated documents only;
+      # hand-written source keeps the strict project-wide cap. Note biome.json cannot hold comments —
+      # Biome silently discards a commented config and falls back to its defaults — hence this note here.
       - name: Autofix the promoted dataset formatting (Biome)
         run: bunx biome check data/dataset --write
 
@@ -127,12 +189,11 @@ jobs:
 
       # main is protected by a "changes must be made through a pull request" ruleset (the public-repo
       # hardening in #176/#177), so this job can't push the promoted dataset straight to main — a direct
-      # push is rejected with GH013. Commit through a short-lived branch + pull request and enable
-      # GitHub-native auto-merge (`--auto`): the PR merges itself only once branch protection is
-      # satisfied — required status checks (the PR's Biome/CI gate) green and any required reviews in.
-      # `--auto` waits for those rules, it does not bypass them, so the dataset never lands unlinted or
-      # unreviewed. If auto-merge can't be armed (e.g. the repo hasn't enabled it), the PR stays open
-      # for a maintainer to merge normally.
+      # push is rejected with GH013. Commit through a short-lived branch + pull request as the
+      # github-actions bot, then merge it. The merge never bypasses the ruleset: it succeeds only
+      # because the ruleset requires no status checks and code-owner review is its sole review
+      # requirement, with data/dataset/ intentionally unowned (see docs/ci-secrets.md operator setup);
+      # the in-job Biome pre-flight above already guarantees the content is clean.
       - name: Commit the dataset via pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -153,6 +214,10 @@ jobs:
           git switch -C "$branch"
           git commit -m "chore(dataset): commit run ${RUN_ID}"
           git push -u --force origin "$branch"
+          # Pin the exact commit this run validated: the merge below passes it via --match-head-commit,
+          # so a concurrent push that swaps the branch head between now and the merge fails the merge
+          # instead of landing content this run never checked.
+          head_sha="$(git rev-parse HEAD)"
           # Open the PR only if one isn't already open for this deterministic branch; a re-run reuses it
           # (the force-push above already refreshed its content). `gh pr create` fails outright (GraphQL
           # "GitHub Actions is not permitted to create or approve pull requests") when the repo's Settings →
@@ -164,7 +229,7 @@ jobs:
               --base main \
               --head "$branch" \
               --title "chore(dataset): commit run ${RUN_ID}" \
-              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; auto-merge lands it once branch protection is satisfied. The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
+              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; the workflow merges this PR directly right after opening it (data/dataset/ is unowned, so no review rules apply — if this PR is still open, that merge failed and a maintainer must finish it). The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
                 "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
                 "requests' setting being off (Settings → Actions → General → Workflow permissions)." \
@@ -173,8 +238,19 @@ jobs:
               exit 1
             fi
           fi
-          # Queue GitHub-native auto-merge: it merges only after the PR's required checks pass (and any
-          # required reviews land), never bypassing branch protection. Best-effort — if the repo hasn't
-          # enabled auto-merge, leave the PR open for a maintainer.
-          gh pr merge "$branch" --squash --delete-branch --auto \
-            || echo "auto-merge not armed; dataset PR left open for a maintainer to merge"
+          # Merge as the bot with a direct merge — deliberately NOT `gh pr merge --auto`. On a
+          # GITHUB_TOKEN-authored PR a required status check never runs, so if one were ever added,
+          # `--auto` would exit 0 after merely ARMING auto-merge for a merge that can never complete —
+          # a green publish job hiding a forever-open dataset PR. A direct merge either lands the PR
+          # right now (today's posture: no required checks, and data/dataset/ is unowned so no
+          # code-owner review applies) or fails this job red. GitHub still enforces the ruleset on the
+          # merge call — this is not a bypass.
+          if ! gh pr merge "$branch" --squash --delete-branch --match-head-commit "$head_sha"; then
+            echo "::error::could not merge '$branch'. The ruleset blocks it (unresolved review" \
+              "thread, a required review, or a required status check — which a GITHUB_TOKEN-authored" \
+              "PR can never run; landing bot PRs under required checks needs an App/PAT, see" \
+              "docs/ci-secrets.md). A maintainer must finish the merge. Do NOT add github-actions as" \
+              "a ruleset bypass — prefer: required approving review count 0 + Require review from" \
+              "Code Owners, with data/dataset/ unowned."
+            exit 1
+          fi

@@ -1,6 +1,7 @@
 /**
  * The raw-file naming contract — the ONE home for how files in a Run's curated raw tree
- * (`data/raw/<runId>/<provider>/<suite>/`) are named, and how gap markers are shaped. The in-sandbox
+ * (`data/raw/<runId>/[r<idx>/]<provider>/<suite>/` — the `r<idx>` level is present when one runner
+ * drove a replicate fan-out) are named, and how gap markers are shaped. The in-sandbox
  * producer and the harness collector (writers) and the results extractor (the single reader) all
  * route through this module, so a filename's spelling can never drift between them.
  *
@@ -24,8 +25,8 @@
  * lifecycle timing files (`<name>_ms.txt`, `<name>-exit-code.txt`) land with the lifecycle path.
  */
 import { type } from "arktype";
-import type { GapOutcome, ResultGap } from "./run.ts";
-import { gapOutcomeSchema } from "./run.ts";
+import type { GapCause, GapOutcome, ResultGap } from "./run.ts";
+import { gapCauseSchema, gapOutcomeOfCause, gapOutcomeSchema } from "./run.ts";
 
 const SKIP_SUFFIX = "--skipped.json";
 const FAILURE_SUFFIX = "--failed.json";
@@ -119,8 +120,23 @@ export function harnessGapMarkerJson(
 	suite: string,
 	outcome: GapOutcome,
 	reason: string,
+	cause?: GapCause,
 ): string {
-	return `${JSON.stringify({ provider, suite, outcome, reason }, null, 2)}\n`;
+	// `cause` is written last and omitted when absent, so a marker from a producer that could not
+	// classify the failure is byte-identical to what the pre-cause harness wrote — the field's presence
+	// means "classified", never "this build knows about causes".
+	return `${JSON.stringify({ provider, suite, outcome, reason, ...matchingCause(cause, outcome) }, null, 2)}\n`;
+}
+
+/**
+ * The marker's `cause` field — present only when the classification sits on the same side of the
+ * skip/failure partition as the outcome. Applied on BOTH sides of the file: the writer never emits a
+ * self-contradictory marker (a human reading one out of a CI artifact should not have to know which half
+ * to believe), and the reader drops one anyway, because a marker on disk may have been written by a
+ * build this one does not control.
+ */
+function matchingCause(cause: GapCause | undefined, outcome: GapOutcome): { cause?: GapCause } {
+	return cause !== undefined && gapOutcomeOfCause(cause) === outcome ? { cause } : {};
 }
 
 /**
@@ -168,6 +184,17 @@ const gapMarkerBody = type({
 	"benchmark?": "string",
 	"reason?": "string",
 	"skip_reason?": "string",
+	// The structured classification, when the producing harness could make one. Optional forever: every
+	// already-written marker predates it, and a producer that cannot classify a failure must be able to
+	// stay silent rather than invent a label.
+	//
+	// Typed `unknown` and validated separately below, NOT as `gapCauseSchema` inline: a body schema that
+	// embeds the taxonomy makes an unparsable cause fail the WHOLE body, and `parseGapMarker` answers a
+	// failed body with `undefined` — which drops the gap itself. That is the outcome the rules below
+	// exist to prevent, arrived at through the type system instead of through a partition mistake. A
+	// marker written by a newer harness (a cause kind this build has no arm for) is exactly the case:
+	// its gap is still perfectly knowable from the filename and `reason`.
+	"cause?": "unknown",
 }).pipe((d) => ({
 	outcome: d.outcome,
 	// `|| undefined` (not `??`) so an empty-string `suite`/`benchmark` is treated as absent — suite is
@@ -175,7 +202,21 @@ const gapMarkerBody = type({
 	// `parseGapMarker`, exactly as a missing field does (mirrors `suiteFromGapMarkerFilename`).
 	suite: d.suite || d.benchmark || undefined,
 	reason: d.reason ?? d.skip_reason ?? "unknown",
+	cause: parsedCause(d.cause),
 }));
+
+/**
+ * A marker's `cause` if it is one this build understands, and undefined otherwise — never an error.
+ *
+ * "Unclassified" is a shape the schema accepts, so an uninterpretable classification costs only the
+ * classification. Refusing it would cost the gap, and a lost gap is a benchmark that reads as though it
+ * was never attempted — strictly worse than one recorded without a diagnosis.
+ */
+function parsedCause(cause: unknown): GapCause | undefined {
+	if (cause === undefined) return undefined;
+	const parsed = gapCauseSchema(cause);
+	return parsed instanceof type.errors ? undefined : parsed;
+}
 
 /**
  * Parse a `*--skipped.json` / `*--failed.json` body into a suite-scoped {@link ResultGap}.
@@ -185,6 +226,13 @@ const gapMarkerBody = type({
  * than resolved by precedence: a marker whose two halves disagree is corrupt, and guessing which half
  * to believe is how a crashed suite comes to be published as a deliberate skip. Undefined for any
  * filename outside the naming contract, whatever the body claims.
+ *
+ * A `cause` this build cannot use is DROPPED, never escalated — whether it sits on the wrong side of the
+ * skip/failure partition ({@link matchingCause}) or does not parse at all ({@link parsedCause}). Unlike a
+ * contradicting `outcome`, neither leaves the outcome in doubt: the filename said it, so only the
+ * CLASSIFICATION is untrustworthy, and "unclassified" is a shape the schema already accepts. Refusing
+ * either would make `resultGapSchema`'s narrow reject the gap — and since a Run parses as a whole, one
+ * mislabelled marker in one provider's directory would take the entire Run's normalization down with it.
  */
 export function parseGapMarker(
 	filename: string,
@@ -205,6 +253,7 @@ export function parseGapMarker(
 		id: body.suite ?? suiteFromGapMarkerFilename(filename, providerId) ?? filename,
 		outcome,
 		reason: body.reason,
+		...matchingCause(body.cause, outcome),
 	};
 }
 

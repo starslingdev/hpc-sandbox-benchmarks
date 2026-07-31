@@ -100,9 +100,11 @@ steps 1–5 are compile errors, and step 6 is the `workflow-registry-sync` gate 
    and a guard in `publish` would never match, so each is rejected where it does not belong. It is a whitelist rather than a set of checks against
    known-bad spellings, because a malformed expression passes every presence check while handing the
    provider an empty (or over-broad) credential, which reads downstream as "that provider has no results".
-   A credential that genuinely cannot use a canonical form needs a `CREDENTIAL_EXPR_EXCEPTIONS` entry with
-   its reason — `NSC_TOKEN_FILE` is the one today, since namespace mints its token from OIDC and references
-   no stored secret at all.
+   A credential that genuinely cannot use a canonical form needs a `CREDENTIAL_EXPR_EXCEPTIONS` entry
+   naming its reason and its exact expression per lane. Two exist today, and both are cases where there is
+   no secret to draw from: `NSC_TOKEN_FILE` (namespace mints it from GitHub OIDC) and
+   `MICROSANDBOX_LOCAL_BENCH` (a host-capability opt-in set to the literal `1`). A lane the entry omits
+   permits nothing there, so list every lane the credential is wired into.
 7. **Nothing enforces the default matrix.** `bench-matrix.yml`'s `providers` input default is free text;
    a new provider is dispatchable immediately but stays out of the default run until added there. Leave
    it out (and out of `RELEASE_REQUIRED_PROVIDERS`) until a committed run validates it — that is the

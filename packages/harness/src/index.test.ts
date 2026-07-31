@@ -1,5 +1,4 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -283,10 +282,15 @@ function collectPayload(files: Record<string, string>): string {
 	for (const [name, contents] of Object.entries(files)) {
 		writeFileSync(join(src, "benchmark-results", name), contents);
 	}
-	const b64 = execFileSync("bash", ["-c", "tar -czf - benchmark-results | base64 | tr -d '\\n'"], {
+	// Bun.spawnSync, not node:child_process — the fixture mirrors the in-sandbox collect command, and
+	// the harness runs entirely on Bun's own process API.
+	const tar = Bun.spawnSync(["bash", "-c", "tar -czf - benchmark-results | base64 | tr -d '\\n'"], {
 		cwd: src,
-		encoding: "utf8",
 	});
+	if (tar.exitCode !== 0) {
+		throw new Error(`fixture tar failed (${tar.exitCode}): ${tar.stderr.toString()}`);
+	}
+	const b64 = tar.stdout.toString();
 	rmSync(src, { recursive: true, force: true });
 	return `__BENCH_RESULTS_TGZ_BEGIN__\n${b64}\n__BENCH_RESULTS_TGZ_END__\n`;
 }
@@ -434,6 +438,12 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			suite: "cpu-node",
 			outcome: "failed",
 			reason: "Failed to create sandbox: Snapshot toolchain-v3-container is not available",
+			// The classification the thrower knew, carried into the marker so consumers need not
+			// re-read the sentence above to learn it was a creation failure.
+			cause: {
+				kind: "sandbox-create-failed",
+				detail: "Snapshot toolchain-v3-container is not available",
+			},
 		});
 	});
 
@@ -452,6 +462,12 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			suite: "cpu-node",
 			outcome: "failed",
 			reason: "Failed to create sandbox: provider config invalid: DAYTONA_REGION unset",
+			// The classification the thrower knew, carried into the marker so consumers need not
+			// re-read the sentence above to learn it was a creation failure.
+			cause: {
+				kind: "sandbox-create-failed",
+				detail: "provider config invalid: DAYTONA_REGION unset",
+			},
 		});
 	});
 
@@ -493,6 +509,9 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			id: "cpu-node",
 			outcome: "failed",
 			reason: "Failed to create sandbox: boom",
+			// The classification the thrower knew, carried into the marker so consumers need not
+			// re-read the sentence above to learn it was a creation failure.
+			cause: { kind: "sandbox-create-failed", detail: "boom" },
 		});
 	});
 });

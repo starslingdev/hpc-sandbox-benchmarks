@@ -52,21 +52,26 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a
    pull request" ruleset, so `commit-dataset.yml`'s `commit` job cannot push the promoted dataset
    straight to `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>`
-   PR instead (hence `pull-requests: write`) and arms GitHub-native auto-merge (`gh pr merge --auto`),
-   which merges only once branch protection is satisfied — required status checks green and any
-   required reviews in. It never bypasses those rules. As a fast pre-flight, the job first runs the
+   PR instead (hence `pull-requests: write`) and merges it the same way the leaderboard flow does
+   (rule 7): a direct `gh pr merge` — GitHub still enforces the ruleset on that call; it succeeds
+   because the ruleset has no required status checks and `data/dataset/` is unowned. Deliberately not
+   `--auto`: arming auto-merge on a `GITHUB_TOKEN` PR whose required check will never run would leave
+   the PR stranded behind a green job. As a fast pre-flight, the job first runs the
    Biome gate on the generated dataset (`biome check data/dataset`, the same rules ci.yml runs) —
    Biome formats JSON, so an unformatted Run document would fail the PR — and aborts before opening a
    doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the existing open PR instead of
-   colliding on the deterministic branch. `update-leaderboard.yml` lands `LEADERBOARD.md` the same way
-   (a `leaderboard/update-<run-id>` PR, Biome-preflighted, auto-merge armed).
+   colliding on the deterministic branch. Leaderboard landing follows the same `GITHUB_TOKEN` + PR
+   pattern, path-fenced to exactly `LEADERBOARD.md` (rule 7).
 
    > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
-   > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI check
-   > is a *required* status, auto-merge waits for a check that never runs, and a maintainer completes
-   > the merge (their merge to `main` runs `ci.yml` normally); the in-job pre-flight guarantees the
-   > content is already clean. For fully hands-off auto-merge, open the PR with a GitHub App
-   > installation token or PAT instead of `GITHUB_TOKEN` so the PR's own checks run.
+   > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI
+   > check ever becomes a *required* status on the main ruleset, the direct merge fails and the
+   > publish job goes red — a maintainer completes the merge (their merge to `main` runs `ci.yml`
+   > normally). Today the ruleset requires no status checks, so this caveat only bites if one is
+   > added — the in-job Biome pre-flights already guarantee the generated content is clean either
+   > way. For fully hands-off merging *with* required checks, the PR would need to be opened with a
+   > GitHub App installation token or PAT instead of `GITHUB_TOKEN`; we deliberately avoid
+   > provisioning one until that trade-off is actually needed.
 6. **Backfilling a failed dataset commit.** The commit logic is the reusable `commit-dataset.yml`, so
    when a matrix run's dataset commit fails (or was never reached) a maintainer can re-run it standalone:
    **Actions → Commit dataset → Run workflow**, passing the original run's id — or, from a
@@ -79,17 +84,37 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    copy of the workflow on the default branch, so `commit-dataset.yml` must be merged to `main` before
    it can be dispatched.)
 
-7. **Updating the public leaderboard.** `LEADERBOARD.md` is regenerated separately from the dataset
-   commit, on a deliberate maintainer action: **Actions → Update leaderboard → Run workflow** — or
-   `scripts/update-leaderboard.sh [run-id]` from a gh-authenticated clone. Leave `run_id` blank to render
-   from the newest committed dataset run (the first entry in `data/dataset/index.json`), or pass an
-   explicit run id to point the table at a specific run. The
+7. **Updating the public leaderboard (github-actions bot, path-fenced).** `LEADERBOARD.md` is regenerated
+   separately from the dataset commit, on a deliberate maintainer action: **Actions → Update
+   leaderboard → Run workflow** — or `scripts/update-leaderboard.sh [run-id]` from a gh-authenticated
+   clone. Leave `run_id` blank to render from the newest committed dataset run (the first entry in
+   `data/dataset/index.json`), or pass an explicit run id to point the table at a specific run. The
    workflow renders `LEADERBOARD.md` from `data/dataset/runs/<run-id>.json` — the **committed** dataset,
    never the gitignored `data/runs/` scratch tree (what the `leaderboard-artifact-sync` gate enforces) —
    so the run must already be committed (via a bench-matrix run or rule 6) before the leaderboard can
-   name it. It then opens the lint-gated `leaderboard/update-<run-id>` PR (rule 5). Because the render is
-   deterministic, the resulting `LEADERBOARD.md` is exactly what `leaderboard-artifact-sync` expects, so
-   the PR's own CI stays green.
+   name it. It then:
+
+   1. Pushes `leaderboard/update-<run-id>` and opens the PR as the built-in **github-actions bot**
+      (`GITHUB_TOKEN` — no extra App or PAT; requires the "Allow GitHub Actions to create and approve
+      pull requests" toggle, see operator setup).
+   2. Runs `scripts/assert-paths-allowlisted.sh` on the staged index **and** the PR file list; anything
+      other than `LEADERBOARD.md` aborts before any merge is attempted.
+   3. Merges the PR with a direct `gh pr merge` (deliberately not `--auto`: on a `GITHUB_TOKEN` PR a
+      required check never runs, so arming auto-merge could only ever strand the PR behind a green
+      job). GitHub still enforces the ruleset on the merge call; this is not a bypass — it succeeds
+      only because the ruleset has no required status checks, code-owner review is the sole review
+      requirement, and `LEADERBOARD.md` is intentionally unowned.
+
+   Because the render is deterministic, the resulting `LEADERBOARD.md` is exactly what
+   `leaderboard-artifact-sync` expects, so subsequent CI stays green. The job also pre-flights the
+   repo-wide Biome gate (`biome check .`, the same command ci.yml's lint job runs) before opening the
+   PR — it must be repo-wide, not `biome check LEADERBOARD.md`: Biome has no Markdown handler under
+   this config, so a Markdown-only invocation processes zero files and exits non-zero.
+
+   This is intentionally **not** a ruleset bypass for `github-actions`. Public contributors who open a
+   PR that modifies `.github/` still need a code-owner approval (see operator setup), and the dispatch
+   itself is gated by Environment `privileged` (main-only + required reviewer), so fork PRs can never
+   drive this flow.
 
 > **Two approval gates per bench-matrix run.** The suite-matrix fan-out (each cell calling
 > `bench-suite.yml` with `environment: privileged`) and the `publish` job both carry the environment
@@ -102,7 +127,10 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 
 ## Operator setup (before flipping the repo public)
 
-Do this in the GitHub UI (Settings → Environments), then delete any matching **repository** secrets.
+Do this in the GitHub UI (Settings → Environments / Rules / Actions), then delete any matching
+**repository** secrets.
+
+### Environment `privileged`
 
 1. Create Environment **`privileged`**.
 2. **Required reviewers:** at least one maintainer (two preferred).
@@ -120,6 +148,7 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
    | `NOVITA_API_KEY` | toolchain bake + publish, bench matrix/smoke — optional, but see below |
    | `BL_API_KEY` | bench matrix/smoke only (see the blaxel note below) |
    | `BL_WORKSPACE` | bench matrix/smoke only (see the blaxel note below) |
+   | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
 
    **"Optional" means the release still completes, not that nothing is lost.** Only the providers in
    `RELEASE_REQUIRED_PROVIDERS` (`e2b`, `daytona-vm`, `modal-gvisor`) gate a toolchain release, so
@@ -148,14 +177,45 @@ Do this in the GitHub UI (Settings → Environments), then delete any matching *
      design — declared in `RELEASE_LANE_EXEMPT` (`tooling/repo-checks/src/lib/workflow-sync.ts`), which
      is the only sanctioned way for a provider to skip the release lane's credential invariant.
 
-5. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
+   `MSB_API_URL` is an optional Microsandbox Cloud endpoint override for staging or private deployments. Leave it unset to use the SDK's `https://api.microsandbox.dev` default.
+
+### Main ruleset (public-safe bot merges)
+
+Configure the `main` ruleset so the bot-authored dataset/leaderboard PRs can merge hands-off
+**without** letting a public contributor merge a PR that edits `.github/`:
+
+1. Ruleset on `main` (or default branch):
+   - Require a pull request before merging.
+   - **Required approving review count: `0`.**
+   - **Require review from Code Owners: on.**
+   - **No required status checks** — `GITHUB_TOKEN`-authored PRs never run them (the caveat in
+     rule 5), so a required check would strand every bot PR on a maintainer merge. The bot-landed
+     content is guarded instead by the in-job Biome pre-flights, the deterministic renderer, and the
+     path allowlist.
+2. Keep [`.github/CODEOWNERS`](../.github/CODEOWNERS) owning **everything by default** (`*` owner)
+   with ownerless overrides for exactly the bot-landed artifacts (`/LEADERBOARD.md`,
+   `/data/dataset/` — a CODEOWNERS entry with no owner un-owns its paths; last match wins). Those
+   two must stay unowned so code-owner review is not required for the bot's PRs; everything else —
+   in particular the leaderboard renderer and its backing packages, whose output a `privileged` job
+   commits — must stay owned so no code change can merge without maintainer review.
+3. **Do not** add `github-actions` (or a broad actor) as a ruleset bypass. The bot does not need
+   bypass when code-owner review is the only review requirement and its two landing paths are
+   unowned.
+4. **Settings → General → Pull Requests → Allow auto-merge** is not needed by these flows: the
+   workflows use a direct `gh pr merge`, never `--auto` (arming auto-merge on a `GITHUB_TOKEN` PR
+   whose required check can never run would strand it behind a green job).
+
+With that posture: a fork/public PR that touches `/.github/` still needs `@dbworku`; a
+`leaderboard/update-*` PR that only changes `LEADERBOARD.md` merges as soon as the workflow opens it.
+
+### Other Actions settings
+
+1. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
    the candidate base anonymously (Org → Packages → package settings).
-6. Enable **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create
-   and approve pull requests"**. The `gh pr create` in `commit-dataset.yml` and `update-leaderboard.yml`
-   fails outright without it (`GraphQL: GitHub Actions is not permitted to create or approve pull
-   requests`) — the job pushes its branch (`dataset/publish-<run-id>` / `leaderboard/update-<run-id>`)
-   and then dies, so every matrix run's commit step needs a maintainer to open the PR by hand until this
-   is on.
+2. Enable **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create
+   and approve pull requests"** — both `commit-dataset.yml` and `update-leaderboard.yml` use
+   `GITHUB_TOKEN` for `gh pr create`. Prefer the default **Read** repository contents permission;
+   elevated `contents` / `pull-requests` stay on individual jobs.
 
 Optional bootstrap (creates the empty environment; reviewers/secrets still need a human):
 
@@ -168,6 +228,8 @@ Optional bootstrap (creates the empty environment; reviewers/secrets still need 
 Copy [`.env.example`](../.env.example) to a gitignored `.env` and fill in the providers you have
 (Bun auto-loads `.env` when you run a bin). A missing credential is a skip, not a failure. Never
 commit them; never paste them into issues or pull requests. See [SECURITY.md](../SECURITY.md).
+
+`microsandbox-local` uses `MICROSANDBOX_LOCAL_BENCH=1` as an explicit capability opt-in rather than a credential. The runner must provide KVM on Linux or Hypervisor.framework on macOS. `microsandbox-cloud` needs `MSB_API_KEY`; `MSB_API_URL` is an optional endpoint override. The cloud adapter keeps the key in the SDK control-plane backend and never adds it to sandbox metadata, create-time environment variables, or guest commands.
 
 The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
 credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.

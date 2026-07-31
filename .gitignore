@@ -133,6 +133,11 @@ dist
 # dataset lives under data/dataset/ and is committed by the promote step, so it is NOT ignored.
 data/raw/
 data/runs/
+# Where the in-sandbox producer writes (results_dir in lib/bench.sh): running any
+# `mise run benchmark:**` leaf on a dev machine leaves artifacts here. They belong to the sandbox
+# that produced them — the harness collects them out of the sandbox and the promote step publishes
+# the normalized result — so a local copy is never the thing to commit.
+benchmark-results/
 
 # Generated from packages/templates/src/pins.ts by build.sh / the publish workflow (the
 # e2b CLI requires this file on disk; the TypeScript config is its single source of truth).

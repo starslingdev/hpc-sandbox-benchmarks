@@ -18,7 +18,9 @@ import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import {
 	BAKE_JOB,
 	BAKE_STEP,
+	CELL_BUDGET_ENV_KEY,
 	canonicalCredentialExpressions,
+	checkCellBudgetEnv,
 	checkCredentialEnv,
 	checkCredentialExprExceptions,
 	checkCredentialExpressions,
@@ -31,6 +33,9 @@ import {
 	checkWorkflowTimeouts,
 	dispatchInput,
 	EXPECTED_PROVIDER_NAME_EXPR,
+	EXPECTED_REPLICATES_ARG,
+	EXPECTED_REPLICATES_ENV_EXPR,
+	EXPECTED_REPLICATES_INPUT_EXPR,
 	EXPECTED_SUITE_MATRIX_EXPR,
 	EXPECTED_SUITE_NAME_EXPR,
 	jobTimeoutMinutes,
@@ -40,6 +45,7 @@ import {
 	PUBLISH_JOB,
 	RELEASE_LANE_EXEMPT,
 	RELEASE_WORKFLOW,
+	REPLICATES_ENV_KEY,
 	RUN_STEP,
 	readWorkflow,
 	releaseLaneLabel,
@@ -126,6 +132,37 @@ describe("checkWorkflowTimeouts", () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("smoke");
 		expect(errors[0]).toContain(`${WORKFLOW_TIMEOUT_MARGIN_MINUTES}-minute host margin`);
+	});
+});
+
+describe("checkCellBudgetEnv", () => {
+	// The real workflow: the literal the run step advertises must be the job's own timeout-minutes.
+	test("the real cell budget matches the real job timeout", () => {
+		expect(
+			checkCellBudgetEnv(
+				suiteEnv,
+				jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW),
+				SUITE_WORKFLOW,
+			),
+		).toEqual([]);
+	});
+
+	// Dropping the key disables the fan-out budget guard entirely — a capped cell would then be
+	// cancelled three hours in with every shard lost, which is what the guard exists to prevent.
+	test("flags a missing budget key", () => {
+		const errors = checkCellBudgetEnv({}, 180, SUITE_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain(CELL_BUDGET_ENV_KEY);
+	});
+
+	// The drift that matters: raising `timeout-minutes` without raising the copied literal keeps
+	// rejecting caps that now fit; lowering it without lowering the literal waves through caps that
+	// no longer do.
+	test("flags a budget that has drifted from the job timeout", () => {
+		const errors = checkCellBudgetEnv({ [CELL_BUDGET_ENV_KEY]: "180" }, 240, SUITE_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('is "180"');
+		expect(errors[0]).toContain("timeout-minutes is 240");
 	});
 });
 
@@ -526,7 +563,7 @@ describe("checkCredentialExprExceptions", () => {
 
 	test("flags an exception for a key no provider requires", () => {
 		const errors = checkCredentialExprExceptions({
-			FLY_API_TOKEN: { reason: "retired", expression: "x" },
+			FLY_API_TOKEN: { reason: "retired", expressions: { matrix: "x" } },
 		});
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("FLY_API_TOKEN");
@@ -534,10 +571,43 @@ describe("checkCredentialExprExceptions", () => {
 
 	test("flags a blank reason — an exception is a permanent exemption from the canonical shape", () => {
 		const errors = checkCredentialExprExceptions({
-			NSC_TOKEN_FILE: { reason: "  ", expression: "x" },
+			NSC_TOKEN_FILE: { reason: "  ", expressions: { matrix: "x" } },
 		});
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("blank reason");
+	});
+
+	test("flags an exception that declares no lane, which would permit nothing anywhere", () => {
+		const errors = checkCredentialExprExceptions({
+			NSC_TOKEN_FILE: { reason: "real reason", expressions: {} },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("declares no lane");
+	});
+
+	test("flags a declared lane whose expression is blank", () => {
+		const errors = checkCredentialExprExceptions({
+			NSC_TOKEN_FILE: { reason: "real reason", expressions: { matrix: "  " } },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("expressions.matrix is blank");
+	});
+
+	// An exception is per-lane, so a lane it omits must fail rather than fall through to the generated
+	// form — otherwise declaring one lane would silently re-permit the canonical shape everywhere else.
+	test("an exception permits nothing in a lane it does not declare", () => {
+		expect(canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "matrix")).toHaveLength(
+			1,
+		);
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				env: { MICROSANDBOX_LOCAL_BENCH: "1" },
+				scoping: "inputs",
+			},
+		});
+		// "1" is the declared `unconditional` spelling, so it must NOT pass in the `inputs` lane.
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("declared exception");
 	});
 });
 
@@ -599,11 +669,39 @@ describe("checkSuiteMatrixCaller", () => {
 				a: {
 					name: EXPECTED_SUITE_NAME_EXPR,
 					uses: "./.github/workflows/bench-suite.yml",
-					with: { suite: EXPECTED_SUITE_NAME_EXPR },
+					with: { suite: EXPECTED_SUITE_NAME_EXPR, replicates: EXPECTED_REPLICATES_INPUT_EXPR },
 					strategy: { matrix: { suite: EXPECTED_SUITE_MATRIX_EXPR } },
 				},
 				b: {
 					name: EXPECTED_SUITE_NAME_EXPR,
+					uses: "./.github/workflows/bench-suite.yml",
+					with: { suite: EXPECTED_SUITE_NAME_EXPR, replicates: EXPECTED_REPLICATES_INPUT_EXPR },
+					strategy: { matrix: { suite: EXPECTED_SUITE_MATRIX_EXPR } },
+				},
+			},
+		});
+		expect(() => matrixSuiteCaller(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
+			"expected exactly one suite-matrix caller",
+		);
+	});
+
+	// The caller-side twin of the run-step bypass: hardcoding the array here passes every other nesting
+	// check while quietly measuring one sandbox per cell.
+	test("flags a caller that hardcodes with.replicates instead of taking the plan's slice", () => {
+		const caller = {
+			...matrixSuiteCaller(matrix),
+			replicatesInput: "[0]",
+		};
+		const errors = checkSuiteMatrixCaller(caller, "synthetic.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("with.replicates must be");
+		expect(errors[0]).toContain(EXPECTED_REPLICATES_INPUT_EXPR);
+	});
+
+	test("matrixSuiteCaller throws on a reusable-caller job with no string replicates", () => {
+		const yaml = Bun.YAML.stringify({
+			jobs: {
+				bad: {
 					uses: "./.github/workflows/bench-suite.yml",
 					with: { suite: EXPECTED_SUITE_NAME_EXPR },
 					strategy: { matrix: { suite: EXPECTED_SUITE_MATRIX_EXPR } },
@@ -611,7 +709,7 @@ describe("checkSuiteMatrixCaller", () => {
 			},
 		});
 		expect(() => matrixSuiteCaller(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
-			"expected exactly one suite-matrix caller",
+			'without a string "replicates" input',
 		);
 	});
 
@@ -632,14 +730,96 @@ describe("checkSuiteWorkflowNesting", () => {
 		expect(checkSuiteWorkflowNesting(suiteWf)).toEqual([]);
 	});
 
+	/** A fan-out job that satisfies every nesting invariant; each drift test bends exactly one field. */
+	const wiredRunStep = {
+		name: RUN_STEP,
+		env: { [REPLICATES_ENV_KEY]: EXPECTED_REPLICATES_ENV_EXPR },
+		run: `bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" ${EXPECTED_REPLICATES_ARG}`,
+	};
+	const wiredFanOut = {
+		name: EXPECTED_PROVIDER_NAME_EXPR,
+		"runs-on": "ubuntu-24.04",
+		steps: [wiredRunStep],
+	};
+	const nestingErrors = (job: object): string[] =>
+		checkSuiteWorkflowNesting(
+			Bun.YAML.parse(Bun.YAML.stringify({ jobs: { [SUITE_JOB]: job } })),
+			"synthetic.yml",
+		);
+
+	test("passes a fan-out job named matrix.provider that receives the replicate array", () => {
+		expect(nestingErrors(wiredFanOut)).toEqual([]);
+	});
+
 	test("flags a fan-out job whose display name is not matrix.provider", () => {
-		const yaml = Bun.YAML.stringify({
-			jobs: { [SUITE_JOB]: { name: "Run", "runs-on": "ubuntu-24.04" } },
-		});
-		const errors = checkSuiteWorkflowNesting(Bun.YAML.parse(yaml), "synthetic.yml");
+		const errors = nestingErrors({ ...wiredFanOut, name: "Run" });
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("name must be");
 		expect(errors[0]).toContain(EXPECTED_PROVIDER_NAME_EXPR);
+	});
+
+	// Re-adding the axis is the exact regression the in-process fan-out exists to prevent: it would
+	// silently restore one idle runner per replicate.
+	test("flags a reinstated replicate matrix axis", () => {
+		const errors = nestingErrors({
+			...wiredFanOut,
+			strategy: { matrix: { provider: "[]", replicate: "[0,1]" } },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('must not have a "replicate" matrix axis');
+	});
+
+	test("accepts a provider-only matrix", () => {
+		expect(nestingErrors({ ...wiredFanOut, strategy: { matrix: { provider: "[]" } } })).toEqual([]);
+	});
+
+	// Without the env wiring the cell falls back to ONE sandbox — a green run that publishes R=1 while
+	// the plan asked for R=12, so the drift must fail the gate rather than the dataset.
+	test("flags a run step that never receives the replicate array", () => {
+		const errors = nestingErrors({
+			...wiredFanOut,
+			steps: [{ ...wiredRunStep, env: {} }],
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain(REPLICATES_ENV_KEY);
+		expect(errors[0]).toContain("no such env key");
+	});
+
+	// The bypass that made the env check alone insufficient: keep the env key, drop the flag. The cell
+	// then takes bench-suite's single-sandbox default and commit-dataset's legacy glob collects the one
+	// shard without complaint — a green matrix run publishing R=1.
+	test("flags a run step that sets the env but never passes --replicates", () => {
+		const errors = nestingErrors({
+			...wiredFanOut,
+			steps: [
+				{
+					...wiredRunStep,
+					run: 'bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"',
+				},
+			],
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain(EXPECTED_REPLICATES_ARG);
+	});
+
+	test("flags a run step with no run: command at all", () => {
+		const { run: _dropped, ...noRun } = wiredRunStep;
+		const errors = nestingErrors({ ...wiredFanOut, steps: [noRun] });
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("no run: command");
+	});
+
+	// `replicas` (the dispatch knob) vs `replicates` (the plan's index array) is the plausible typo:
+	// it's a live input name, so it resolves to a value rather than failing the workflow outright.
+	test("flags a replicate array wired to the wrong expression", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal, not a JS template.
+		const wrongExpr = "${{ inputs.replicas }}";
+		const errors = nestingErrors({
+			...wiredFanOut,
+			steps: [{ ...wiredRunStep, env: { [REPLICATES_ENV_KEY]: wrongExpr } }],
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain(EXPECTED_REPLICATES_ENV_EXPR);
 	});
 });
 

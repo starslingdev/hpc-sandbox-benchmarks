@@ -4,12 +4,12 @@
  * exactly when partial results matter), and writes harness skip markers. The pulled files are the
  * raw inputs the normalizer consumes — the committed raw tool output is the dataset's source of truth.
  */
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { cpSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { GapOutcome } from "@sandbox-benchmarks/schema";
+import type { GapCause, GapOutcome } from "@sandbox-benchmarks/schema";
 import {
 	harnessGapMarkerJson,
 	isGapMarkerFile,
@@ -85,7 +85,7 @@ export async function collectResults(runner: StepRunner, resultsDir: string): Pr
 			// the idempotent re-collect can fix, so treat it like a marker miss one stage later and retry
 			// rather than discard the suite. The content gate is the one thing that does NOT retry.
 			try {
-				const archiveKiB = decodeAndExtract(base64, resultsDir);
+				const archiveKiB = await decodeAndExtract(base64, resultsDir);
 				validateCollected(resultsDir);
 				console.log(`Results extracted to ${resultsDir} (${archiveKiB.toFixed(1)} KiB archive)`);
 				return;
@@ -129,31 +129,63 @@ export async function collectResults(runner: StepRunner, resultsDir: string): Pr
 }
 
 /**
+ * Untar `archive` into `stage` with `Bun.spawn`, throwing tar's own diagnostics on a non-zero exit.
+ *
+ * Async, not `Bun.spawnSync`/`execFileSync`: one process now drives R replicate sandboxes at once
+ * (apps/cli/src/lib/replicates.ts), and each one's detached step is kept alive by a poll loop on this
+ * same event loop. A synchronous extract stalls every PEER's polling for its whole duration — and a
+ * poll that cannot run is indistinguishable, to the loop's consecutive-failure guard, from a sandbox
+ * that stopped answering. Awaiting the child yields instead.
+ *
+ * tar's stderr is included in the error because it names the actual corruption ("unexpected EOF"),
+ * and unlike the collect stdout it carries none of the payload — the content-free diagnostics rule in
+ * {@link collectResults} is about the base64 archive, not about tar's complaints regarding it.
+ */
+async function extractArchive(archive: string, stage: string): Promise<void> {
+	const proc = Bun.spawn(["tar", "-xzf", archive, "-C", stage], {
+		stdout: "ignore",
+		stderr: "pipe",
+	});
+	const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+	if (exitCode !== 0) {
+		throw new Error(
+			`tar exited ${exitCode} extracting the results archive: ${stderr.trim() || "(no stderr)"}`,
+		);
+	}
+}
+
+/**
  * Decode the marker-bounded base64 tar to disk and extract benchmark-results/ into `resultsDir`,
  * returning the archive size in KiB (for the success log). Throws on any decode/extract failure —
  * {@link collectResults} treats that as retryable stream corruption.
  */
-function decodeAndExtract(base64: string, resultsDir: string): number {
-	// Decode straight to disk via the "base64" write encoding — avoids a Node-only Buffer in the
-	// cross-runtime package code. A random suffix keeps concurrent collects from colliding.
+async function decodeAndExtract(base64: string, resultsDir: string): Promise<number> {
 	const archive = join(tmpdir(), `bench-results-${process.pid}-${randomUUID()}.tgz`);
 	try {
-		writeFileSync(archive, base64, "base64");
+		// The archive write and the tree copy yield, for the reason {@link extractArchive} documents:
+		// R replicates enter collect at roughly the same time, so whatever blocks here blocks R-1 peers'
+		// poll loops. Converting only the `tar` child would have left the multi-MB write and the
+		// recursive copy stalling them. `Uint8Array.fromBase64` itself is a synchronous decode with no
+		// async alternative, but it is ~0.2 ms/MB — three orders under the poll interval — so it stays.
+		// It is also the Bun-native spelling of the old `writeFileSync(…, "base64")`: no Node Buffer in
+		// package code, and it throws on a corrupt payload the old encoding would have silently dropped.
+		const bytes = Uint8Array.fromBase64(base64);
+		await Bun.write(archive, bytes);
 		const target = resolve(resultsDir);
 		// The tarball holds a top-level benchmark-results/ directory. Extract into a unique staging
 		// dir (not `parent`, which is shared across providers) so concurrent collects can't clobber
 		// each other, then copy its contents into the target (`<provider>`, not `benchmark-results`).
 		const stage = join(tmpdir(), `bench-extract-${process.pid}-${randomUUID()}`);
-		mkdirSync(stage, { recursive: true });
+		await mkdir(stage, { recursive: true });
 		try {
-			execFileSync("tar", ["-xzf", archive, "-C", stage]);
-			cpSync(join(stage, "benchmark-results"), target, { recursive: true });
+			await extractArchive(archive, stage);
+			await cp(join(stage, "benchmark-results"), target, { recursive: true });
 		} finally {
-			rmSync(stage, { recursive: true, force: true });
+			await rm(stage, { recursive: true, force: true });
 		}
-		return statSync(archive).size / 1024;
+		return Bun.file(archive).size / 1024;
 	} finally {
-		rmSync(archive, { force: true });
+		await rm(archive, { force: true });
 	}
 }
 
@@ -188,10 +220,13 @@ export function writeGapMarker(
 	suite: string,
 	outcome: GapOutcome,
 	reason: string,
+	// The structured classification, when the caller has one. A marker written without it is not
+	// downgraded — `reason` still says what happened — but nothing downstream will guess a kind for it.
+	cause?: GapCause,
 ): void {
 	mkdirSync(resultsDir, { recursive: true });
 	writeFileSync(
 		join(resultsDir, sandboxGapMarkerFile(provider, suite, outcome)),
-		harnessGapMarkerJson(provider, suite, outcome, reason),
+		harnessGapMarkerJson(provider, suite, outcome, reason, cause),
 	);
 }

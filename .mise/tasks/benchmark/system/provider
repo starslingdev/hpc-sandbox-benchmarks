@@ -29,7 +29,7 @@ set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
-RESULT_FILE="$(results_dir)/$(task_result_name).json"
+RESULT_FILE="$(result_path "$(task_result_name)")"
 
 # --- Public egress IP --------------------------------------------------------
 # DNS echoes first: no quota, and they answer over :53 where an HTTP egress proxy may not exist.
@@ -277,15 +277,39 @@ echo "note: Provider/ASN describe the public egress network, not the host."
 echo "      ASN is BGP origin data (Team Cymru DNS); geo is best-effort (ipinfo)."
 echo "      Manufacturer/Product come from SMBIOS and describe the machine."
 
+# jq builds the record wherever it exists, and it is the correct builder rather than the convenient
+# one: every value here is untrusted device text, and --arg passes each one out-of-band so jq escapes
+# it by construction. `$ARGS.named` collects those flags in order, which means each field is named
+# ONCE — the earlier form spelled all 21 twice, in two lists nothing kept in agreement.
+#
+# The printf path is the jq-less fallback and cannot borrow that safety: json_result validates with
+# jq, so on a sandbox without it there is no parser to catch a bad record either. What protects that
+# path is _json_escape handling the control characters these sources really emit (lib/bench.sh) —
+# worth caring about because this artifact has real consumers, packages/results/src/lib/
+# host-metadata.ts flattening it into every Run's host metadata.
 esc() { _json_escape "$1"; }
-printf '{"schema_version":"1.0","public_ip":"%s","org":"%s","asn":"%s","org_name":"%s","reverse_dns":"%s","city":"%s","region":"%s","country":"%s","loc":"%s","timezone":"%s","manufacturer":"%s","product_name":"%s","bios_vendor":"%s","virtualization":"%s","cpu_model":"%s","kernel":"%s","cores":"%s","ram":"%s","prefix":"%s","asn_source":"%s","geo_source":"%s"}\n' \
-	"$(esc "$PUBLIC_IP")" "$(esc "$ORG")" "$(esc "$ASN")" "$(esc "$ORG_NAME")" \
-	"$(esc "$HOSTNAME_PTR")" "$(esc "$CITY")" "$(esc "$REGION")" "$(esc "$COUNTRY")" \
-	"$(esc "$LOC")" "$(esc "$TIMEZONE")" "$(esc "$MANUFACTURER")" "$(esc "$PRODUCT_NAME")" \
-	"$(esc "$BIOS_VENDOR")" "$(esc "$VIRT")" \
-	"$(esc "$CPU_MODEL")" "$(esc "$KERNEL")" "$(esc "$CORES")" "$(esc "$RAM")" \
-	"$(esc "$PREFIX")" "$(esc "$ASN_SOURCE")" "$(esc "$GEO_SOURCE")" \
-	>"$RESULT_FILE"
+if command -v jq &>/dev/null; then
+	# -c: one line, the shape the printf fallback below emits and the shape this artifact has always
+	# had. A formatting difference between the jq and jq-less paths would be a difference between
+	# sandboxes, not between records.
+	jq -n -c \
+		--arg public_ip "$PUBLIC_IP" --arg org "$ORG" --arg asn "$ASN" --arg org_name "$ORG_NAME" \
+		--arg reverse_dns "$HOSTNAME_PTR" --arg city "$CITY" --arg region "$REGION" \
+		--arg country "$COUNTRY" --arg loc "$LOC" --arg timezone "$TIMEZONE" \
+		--arg manufacturer "$MANUFACTURER" --arg product_name "$PRODUCT_NAME" \
+		--arg bios_vendor "$BIOS_VENDOR" --arg virtualization "$VIRT" \
+		--arg cpu_model "$CPU_MODEL" --arg kernel "$KERNEL" --arg cores "$CORES" --arg ram "$RAM" \
+		--arg prefix "$PREFIX" --arg asn_source "$ASN_SOURCE" --arg geo_source "$GEO_SOURCE" \
+		'{schema_version: "1.0"} + $ARGS.named'
+else
+	printf '{"schema_version":"1.0","public_ip":"%s","org":"%s","asn":"%s","org_name":"%s","reverse_dns":"%s","city":"%s","region":"%s","country":"%s","loc":"%s","timezone":"%s","manufacturer":"%s","product_name":"%s","bios_vendor":"%s","virtualization":"%s","cpu_model":"%s","kernel":"%s","cores":"%s","ram":"%s","prefix":"%s","asn_source":"%s","geo_source":"%s"}\n' \
+		"$(esc "$PUBLIC_IP")" "$(esc "$ORG")" "$(esc "$ASN")" "$(esc "$ORG_NAME")" \
+		"$(esc "$HOSTNAME_PTR")" "$(esc "$CITY")" "$(esc "$REGION")" "$(esc "$COUNTRY")" \
+		"$(esc "$LOC")" "$(esc "$TIMEZONE")" "$(esc "$MANUFACTURER")" "$(esc "$PRODUCT_NAME")" \
+		"$(esc "$BIOS_VENDOR")" "$(esc "$VIRT")" \
+		"$(esc "$CPU_MODEL")" "$(esc "$KERNEL")" "$(esc "$CORES")" "$(esc "$RAM")" \
+		"$(esc "$PREFIX")" "$(esc "$ASN_SOURCE")" "$(esc "$GEO_SOURCE")"
+fi | json_result "$(task_result_name)" || echo "(no structured provider record written)"
 
 echo ""
-echo "Structured result: $(task_result_name).json"
+echo "Structured result: ${RESULT_FILE}"

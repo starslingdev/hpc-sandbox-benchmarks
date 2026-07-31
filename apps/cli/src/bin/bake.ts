@@ -35,6 +35,14 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	// Both Modal variants boot the same pushed image via Image.fromRegistry — no per-variant artifact.
 	"modal-gvisor": bakeModalImage,
 	"modal-vm": bakeModalImage,
+	// Both Microsandbox variants boot the candidate OCI image directly. Local and cloud remain separate
+	// validation cells because they exercise different control planes and virtualization hosts.
+	"microsandbox-local": async (_image, log) => {
+		log("microsandbox-local boots the candidate image directly — no candidate artifact to bake");
+	},
+	"microsandbox-cloud": async (_image, log) => {
+		log("microsandbox-cloud boots the candidate image directly — no candidate artifact to bake");
+	},
 	blaxel: async (_image, log) => {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},

@@ -16,6 +16,7 @@ import type { DaytonaConfig } from "./config.ts";
 import { config } from "./config.ts";
 import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
+import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
 
@@ -80,6 +81,30 @@ function modalCreateOptions(experimentalOptions?: Record<string, unknown>): Crea
 const modalGvisorCompute = () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME });
 const modalVmCompute = () => modal({ appName: MODAL_APP_NAME });
 
+/** The longest suite has a 155-minute budget. Give Microsandbox enough lifetime for setup and
+ * teardown as well, while keeping leaked benchmark sandboxes self-expiring. */
+const MICROSANDBOX_MAX_DURATION_SECS = 3 * 60 * 60;
+
+/**
+ * Microsandbox's `create` does not return until the sandbox is RUNNING, so the toolchain image pull
+ * happens inside it — unlike providers whose create is accepted in well under a second and whose pull
+ * is absorbed by the readiness probe loop afterwards. The toolchain image is ~1.5 GiB compressed
+ * across 7 layers and CI runners always start with a cold cache, which the harness's 5-minute default
+ * per-attempt budget can easily lose to. A create timeout is not classified as a capacity error, so
+ * that loss is not retried: the cell records `sandbox-create-failed` and produces zero results.
+ */
+const MICROSANDBOX_CREATE_TIMEOUT_MS = 20 * 60 * 1000;
+
+function microsandboxCloudCredentials(): { kind: "cloud"; url?: string; apiKey: string } {
+	const { apiUrl, apiKey } = config.microsandboxCloud;
+	if (!apiKey) {
+		throw new Error("microsandbox-cloud requires MSB_API_KEY");
+	}
+	// Omitting the URL intentionally delegates to the SDK's api.microsandbox.dev default. Keeping the
+	// property absent, instead of passing undefined, also makes the backend selection shape explicit.
+	return apiUrl ? { kind: "cloud", url: apiUrl, apiKey } : { kind: "cloud", apiKey };
+}
+
 /**
  * Harness adapters, keyed by the schema {@link ProviderId}. The `Record<ProviderId, …>` type is what
  * keeps the two registries honest: it forces exactly one adapter per schema provider, so a provider
@@ -115,6 +140,42 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 				blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-was-1" }),
 			),
 		createOptions: {},
+	},
+	"microsandbox-local": {
+		// Explicit local selection is important: a developer can have MSB_API_* configured globally and
+		// still request a true host-local benchmark without the SDK auto-selecting cloud.
+		createCompute: () =>
+			microsandboxLocalCompute({
+				variant: "microsandbox-local",
+				backend: "local",
+				ephemeral: false,
+				image: config.toolchainImage,
+				cpus: TARGET_SPEC.vcpus,
+				memoryMib: TARGET_SPEC.memoryGb * 1024,
+				rootDiskMib: TARGET_SPEC.diskGb * 1024,
+				namePrefix: "bench-local-",
+				timeoutMs: MICROSANDBOX_MAX_DURATION_SECS * 1000,
+			}),
+		createOptions: { templateId: config.toolchainImage },
+		createTimeoutMs: MICROSANDBOX_CREATE_TIMEOUT_MS,
+	},
+	"microsandbox-cloud": {
+		// The API key remains in the CloudBackend HTTP/WebSocket client. It is never forwarded through
+		// createOptions, metadata, or the benchmark's in-guest environment.
+		createCompute: () =>
+			microsandboxCloudCompute({
+				variant: "microsandbox-cloud",
+				backend: microsandboxCloudCredentials(),
+				ephemeral: true,
+				image: config.toolchainImage,
+				cpus: TARGET_SPEC.vcpus,
+				memoryMib: TARGET_SPEC.memoryGb * 1024,
+				rootDiskMib: TARGET_SPEC.diskGb * 1024,
+				namePrefix: "bench-cloud-",
+				timeoutMs: MICROSANDBOX_MAX_DURATION_SECS * 1000,
+			}),
+		createOptions: { templateId: config.toolchainImage },
+		createTimeoutMs: MICROSANDBOX_CREATE_TIMEOUT_MS,
 	},
 	// Modal's default runtime = gVisor. Both variants boot the same pushed image; modal-vm adds the
 	// vm_runtime experimental flag to select Modal's gVisor-free VM runtime and drops scalableSandboxes

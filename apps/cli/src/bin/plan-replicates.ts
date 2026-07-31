@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 // `plan-replicates` — emit the per-suite replicate index arrays as a SINGLE LINE of compact JSON object,
 // e.g. `{"cpu-node":[0,1,2],"realworld-mastra":[0,1,2,3,4]}`. This is a $GITHUB_OUTPUT contract the Bench
-// matrix reads: the suite-matrix job passes each suite its own slice as the reusable bench-suite.yml's
-// `replicate` axis (`fromJSON(needs.plan.outputs.replicates)[matrix.suite]`), so N replicate sandboxes
-// fan out per (provider, suite) cell — the BETWEEN-MACHINE axis that captures a provider's fleet
-// variation (two sandboxes can land on different host hardware).
+// matrix reads: the suite-matrix job passes each suite its own slice
+// (`fromJSON(needs.plan.outputs.replicates)[matrix.suite]`) to the reusable bench-suite.yml, which hands
+// it to `bench-suite --replicates` — so N replicate sandboxes run per (provider, suite) cell, all driven
+// concurrently by that cell's single runner. This is the BETWEEN-MACHINE axis that captures a provider's
+// fleet variation (two sandboxes can land on different host hardware).
 //
 // The count per suite is its schema-declared Suite.defaultReplicas, overridable for the whole run by the
 // BENCH_REPLICAS dispatch input (blank = each suite's default; a number scales every suite). The suite
@@ -54,7 +55,7 @@ examples:
   BENCH_REPLICAS=5 plan-replicates             # every suite fanned out to 5 replicate sandboxes
   BENCH_SUITES=network BENCH_REPLICAS=1 plan-replicates   # a single network sandbox (a quick pass)
 
-Next: run one replicate with  bench-suite <provider> <suite> <runId> --replicate <idx>`;
+Next: drive a suite's whole fleet with  bench-suite <provider> <suite> <runId> --replicates <indices>`;
 
 if (import.meta.main) {
 	const argv = process.argv.slice(2);

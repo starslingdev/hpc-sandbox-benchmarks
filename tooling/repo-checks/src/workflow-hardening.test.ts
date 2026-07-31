@@ -183,7 +183,13 @@ describe("customSecretsIn", () => {
 
 describe("checkPrivilegedEnvironment", () => {
 	test("passes the real privileged workflows", () => {
-		for (const file of ["bench-matrix.yml", "bench-smoke.yml", "toolchain-image.yml"]) {
+		for (const file of [
+			"bench-matrix.yml",
+			"bench-smoke.yml",
+			"toolchain-image.yml",
+			"commit-dataset.yml",
+			"update-leaderboard.yml",
+		]) {
 			expect(checkPrivilegedEnvironment(readWorkflow(`${WORKFLOWS_DIR}/${file}`), file)).toEqual(
 				[],
 			);

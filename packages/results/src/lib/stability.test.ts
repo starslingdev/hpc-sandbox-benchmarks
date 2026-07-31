@@ -91,6 +91,33 @@ describe("compareRuns", () => {
 		expect(shifts).toHaveLength(0);
 	});
 
+	it("excludes a metric either Run marks derived, even when the catalog has forgotten it", () => {
+		// A comparison spans two Runs, and the classification can differ between them: an economics id
+		// that was renamed or retired leaves the catalog, so `isDerivedMetric` falls back to each
+		// document's own marker — and only the older Run has one. Checking the current row alone would
+		// diff a computed PRICE against a measured baseline and publish a 350% regression on a number no
+		// sandbox ever measured.
+		const retired = "usd_per_retired_thing"; // not in the catalog, so only the markers can classify
+		const marked = (value: number): MetricResult => ({ ...metric(retired, value), derived: true });
+
+		// Previous Run marks it, current Run does not (the marker arrived after that Run was published).
+		expect(
+			compareRuns(run("daytona", [marked(0.2)]), run("daytona", [metric(retired, 0.9)])),
+		).toHaveLength(0);
+		// And the mirror case, so neither side is privileged.
+		expect(
+			compareRuns(run("daytona", [metric(retired, 0.2)]), run("daytona", [marked(0.9)])),
+		).toHaveLength(0);
+		// A genuinely measured id the catalog also does not know is still compared — the exclusion keys on
+		// the derived marker, never on catalog absence.
+		expect(
+			compareRuns(
+				run("daytona", [metric("stranger_metric", 0.2)]),
+				run("daytona", [metric("stranger_metric", 0.9)]),
+			),
+		).toHaveLength(1);
+	});
+
 	it("reports a zero-baseline metric as incomparable, not an Infinity regression", () => {
 		// Previous p50 of 0 has no ratio; the pair is surfaced but never gates.
 		const shifts = compareRuns(

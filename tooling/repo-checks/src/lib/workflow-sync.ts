@@ -25,7 +25,8 @@
 //   5. Both live-run jobs (smoke's job and the reusable fan-out) outlast the longest registered sandbox
 //      lifetime by a fixed margin, so a suite budget increase cannot leave an otherwise healthy job to
 //      be killed by Actions first.
-//   6. Nesting wiring (suite-matrix caller + reusable provider job name) — see workflow-nesting.ts.
+//   6. Nesting wiring (suite-matrix caller + reusable provider job name) and the replicate axis
+//      reaching the cell as BENCH_REPLICATES data rather than as a matrix axis — see workflow-nesting.ts.
 //   7. Every provider's requiredEnvVars is present in the credential env of BOTH credentialed jobs of
 //      the toolchain release lane (toolchain-image.yml's `bake` cell and `publish` promote step), or the
 //      provider is explicitly declared in {@link RELEASE_LANE_EXEMPT}. Invariant 3 covers only the two
@@ -38,6 +39,7 @@
 //      empty or over-broad credential — read downstream as "that provider has no results", not "the
 //      wiring never matched". A whitelist rather than a set of rules against known-bad forms: see
 //      checkCredentialExpressions for why the rule-based version had an unbounded tail.
+//   9. The fan-out cell's advertised budget matches its own job timeout — see checkCellBudgetEnv.
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -74,9 +76,13 @@ export {
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
 	EXPECTED_PROVIDER_NAME_EXPR,
+	EXPECTED_REPLICATES_ARG,
+	EXPECTED_REPLICATES_ENV_EXPR,
+	EXPECTED_REPLICATES_INPUT_EXPR,
 	EXPECTED_SUITE_MATRIX_EXPR,
 	EXPECTED_SUITE_NAME_EXPR,
 	matrixSuiteCaller,
+	REPLICATES_ENV_KEY,
 } from "./workflow-nesting.ts";
 export type { DispatchInput } from "./workflow-yaml.ts";
 export {
@@ -354,21 +360,48 @@ export function releaseLaneLabel(job: string): string {
 
 /**
  * Credentials whose wiring is deliberately NOT the canonical provider-scoped form, each with the reason
- * and the EXACT expression allowed. This is the whitelist's only escape hatch, and it is a literal rather
- * than a pattern on purpose: a declared exception should permit exactly one known-good spelling, not a
- * family of them.
+ * and the EXACT expression allowed PER LANE. This is the whitelist's only escape hatch, and the values are
+ * literals rather than patterns on purpose: a declared exception should permit exactly one known-good
+ * spelling per lane, not a family of them.
+ *
+ * Keyed by lane scoping because an exception is not automatically lane-independent. A lane the entry does
+ * not list is an error, not a pass — the same fail-closed posture the generated forms have.
  */
 export const CREDENTIAL_EXPR_EXCEPTIONS: Readonly<
-	Record<string, { reason: string; expression: string }>
+	Record<string, { reason: string; expressions: Readonly<Partial<Record<LaneScoping, string>>> }>
 > = Object.freeze({
 	NSC_TOKEN_FILE: {
 		reason:
 			"namespace has no stored secret — CI federates through GitHub's OIDC identity and mints a " +
 			"scoped token file per job, so the value is gated on the mint step's outcome rather than on a " +
-			"provider, and references no `secrets.*` at all",
-		expression:
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal, not a JS template.
-			"${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}",
+			"provider, and references no `secrets.*` at all. Every lane mints its own token the same way, " +
+			"so all three share one spelling",
+		expressions: {
+			// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
+			inputs:
+				"${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}",
+			matrix:
+				"${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}",
+			unconditional:
+				"${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}",
+			// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
+		},
+	},
+	MICROSANDBOX_LOCAL_BENCH: {
+		reason:
+			"an explicit capability opt-in, not a credential: microsandbox-local runs on the harness host " +
+			"itself and needs KVM (Linux) or Hypervisor.framework (macOS), so the flag is the literal '1' " +
+			"and there is no secret to draw from. It still rides requiredEnvVars — that is what makes an " +
+			"unequipped runner skip rather than fail — so the whitelist has to know its shape",
+		expressions: {
+			// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
+			inputs: "${{ inputs.provider == 'microsandbox-local' && '1' || '' }}",
+			matrix: "${{ matrix.provider == 'microsandbox-local' && '1' || '' }}",
+			// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
+			// promote has no provider axis, so the opt-in is simply on for its serial microsandbox-local
+			// re-validation; a guard there could never match.
+			unconditional: "1",
+		},
 	},
 });
 
@@ -411,23 +444,30 @@ export function canonicalCredentialExpressions(
 	scoping: LaneScoping,
 ): string[] {
 	const exception = CREDENTIAL_EXPR_EXCEPTIONS[key];
-	if (exception !== undefined) return [normalizeExpr(exception.expression)];
+	if (exception !== undefined) {
+		const declared = exception.expressions[scoping];
+		// An exception that says nothing about this lane permits nothing in it — returning [] makes any
+		// expression there fail, which is the fail-closed reading of an incomplete declaration.
+		return declared === undefined ? [] : [normalizeExpr(declared)];
+	}
 	if (scoping === "unconditional") return [normalizeExpr(`\${{ secrets.${key} }}`)];
 	const tests = owners.map((id) => `${scoping}.provider == '${id}'`).join(" || ");
 	const guard = owners.length > 1 ? `(${tests})` : tests;
 	return [normalizeExpr(`\${{ ${guard} && secrets.${key} || '' }}`)];
 }
 
-/** Every exception names a real credential key and carries a non-blank reason — the same anti-rot check
- *  {@link checkReleaseLaneExemptions} applies to its own escape hatch. */
+/** Every exception names a real credential key, carries a non-blank reason, and declares at least one
+ *  lane — the same anti-rot check {@link checkReleaseLaneExemptions} applies to its own escape hatch.
+ *  An entry declaring no lane would permit nothing anywhere, which is a silently broken declaration
+ *  rather than a deliberate one. */
 export function checkCredentialExprExceptions(
 	exceptions: Readonly<
-		Record<string, { reason: string; expression: string }>
+		Record<string, { reason: string; expressions: Readonly<Partial<Record<LaneScoping, string>>> }>
 	> = CREDENTIAL_EXPR_EXCEPTIONS,
 ): string[] {
 	const errors: string[] = [];
 	const known = requiredCredentialKeys();
-	for (const [key, { reason }] of Object.entries(exceptions)) {
+	for (const [key, { reason, expressions }] of Object.entries(exceptions)) {
 		if (!known.has(key)) {
 			errors.push(
 				`CREDENTIAL_EXPR_EXCEPTIONS names "${key}", which no provider lists in requiredEnvVars ` +
@@ -439,6 +479,21 @@ export function checkCredentialExprExceptions(
 				`CREDENTIAL_EXPR_EXCEPTIONS["${key}"] has a blank reason — an exception permanently exempts ` +
 					"a credential from the canonical shape, so it must say why that shape does not apply",
 			);
+		}
+		const lanes = Object.entries(expressions);
+		if (lanes.length === 0) {
+			errors.push(
+				`CREDENTIAL_EXPR_EXCEPTIONS["${key}"] declares no lane, so it permits nothing anywhere — ` +
+					"list the expression for each lane the credential is wired into",
+			);
+		}
+		for (const [lane, expr] of lanes) {
+			if (expr === undefined || expr.trim() === "") {
+				errors.push(
+					`CREDENTIAL_EXPR_EXCEPTIONS["${key}"].expressions.${lane} is blank — a declared lane must ` +
+						"carry the exact expression allowed there",
+				);
+			}
 		}
 	}
 	return errors;
@@ -505,6 +560,42 @@ export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>)
 		);
 }
 
+/** The run-step env key carrying the cell's job budget down to `bench-suite`. */
+export const CELL_BUDGET_ENV_KEY = "BENCH_CELL_BUDGET_MINUTES";
+
+/**
+ * Invariant 5 (second half): the budget the cell's run step advertises equals the job's real
+ * `timeout-minutes`.
+ *
+ * `bench-suite` refuses a `--max-concurrency` cap whose serial waves cannot fit the cell's budget —
+ * the check that keeps a capped fan-out from being cancelled mid-flight with all R shards lost. It
+ * learns that budget from this env key, because `timeout-minutes` is not readable from an expression
+ * context, so the value is a hand-copied literal. Copied literals drift: raising the job timeout
+ * without raising the env would keep rejecting caps that now fit, and lowering it without lowering the
+ * env would wave through caps that no longer do — the exact failure the guard exists to prevent,
+ * re-entered through its own configuration. Assert them equal.
+ */
+export function checkCellBudgetEnv(
+	env: Record<string, string>,
+	timeoutMinutes: number,
+	workflow: string,
+): string[] {
+	const raw = env[CELL_BUDGET_ENV_KEY];
+	if (raw === undefined) {
+		return [
+			`${workflow}: run step must set ${CELL_BUDGET_ENV_KEY} so bench-suite can reject a ` +
+				`--max-concurrency cap that cannot fit the job's ${timeoutMinutes}-minute budget`,
+		];
+	}
+	if (Number(raw) !== timeoutMinutes) {
+		return [
+			`${workflow}: ${CELL_BUDGET_ENV_KEY} is "${raw}" but the job's timeout-minutes is ` +
+				`${timeoutMinutes} — the cell would size its fan-out against a budget it does not have`,
+		];
+	}
+	return [];
+}
+
 /**
  * The whole gate against the real workflow files under `root` — the single owner of which files feed
  * the gate, used by the real-file test in workflow-registry-sync.test.ts.
@@ -515,12 +606,15 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 	// The matrix lane's credential block + run-job timeout live in the reusable bench-suite.yml that
 	// every suite job calls, so the "matrix side" of Invariants 3–5 reads that file.
 	const suiteWf = readWorkflow(SUITE_WORKFLOW, root);
+	// Read once and share: the suite run step's env feeds both the credential gate and the cell-budget
+	// gate, and its job timeout feeds both the margin gate and that same budget gate.
+	const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
+	const suiteTimeout = jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW);
 	// The release lane's two credentialed jobs each own their own credential block (see Invariant 7).
 	const release = readWorkflow(RELEASE_WORKFLOW, root);
 	const bakeLabel = releaseLaneLabel(BAKE_JOB);
 	const promoteLabel = releaseLaneLabel(PUBLISH_JOB);
 	const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
-	const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 	const bakeEnv = stepEnv(release, BAKE_JOB, BAKE_STEP, bakeLabel);
 	const promoteEnv = stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, promoteLabel);
 	return [
@@ -548,8 +642,9 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 		}),
 		...checkWorkflowTimeouts({
 			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),
-			[SUITE_WORKFLOW]: jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW),
+			[SUITE_WORKFLOW]: suiteTimeout,
 		}),
+		...checkCellBudgetEnv(suiteEnv, suiteTimeout, SUITE_WORKFLOW),
 		...checkSuiteMatrixCaller(matrixSuiteCaller(matrix, MATRIX_WORKFLOW), MATRIX_WORKFLOW),
 		...checkSuiteWorkflowNesting(suiteWf, SUITE_WORKFLOW),
 	];

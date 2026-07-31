@@ -1,38 +1,292 @@
 #!/usr/bin/env bash
-#MISE description="Network latency to common developer endpoints (ping probe)"
-# Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
-# lib/bench.sh). Some sandbox networks drop ICMP entirely; that answer is itself provenance.
+#MISE description="HTTPS latency and connection-phase timing for the registries and APIs a CI job calls (curl probe)"
+# Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions: lib/bench.sh).
+# A network failure is evidence about the sandbox, not a task failure.
 #
-# Each host is pinged ONCE, with the structured record parsed from the same bytes the log shows —
-# a second ping for jc would double the runtime and could disagree with the displayed run.
+# curl, not ping: several sandbox networks filter ICMP outright, so the ping probe recorded
+# "(ping failed)" on runners whose HTTPS traffic flows fine — an unreachability claim about a
+# reachable host. HTTPS also measures the path CI actually takes, decomposed into the phases that
+# explain a slow clone or install: DNS, TCP, TLS handshake, server think-time, body transfer.
+#
+# Every sample is a fresh curl PROCESS, so no connection is ever reused — DNS, TCP and TLS setup are
+# re-measured on each request instead of collapsing to zero after the first.
+#
+# curl's native `%{json}` write-out is the canonical evidence: the log lines and the aggregate
+# statistics are both derived from the same captured records, so nothing is ever re-requested merely
+# to render output (a replay would measure a different, cache-warmed path — and the two could
+# disagree exactly on the flaky networks this probe exists to characterize). stderr is captured
+# separately so curl's diagnostics can never corrupt the JSON.
+#
+# Redirects are deliberately NOT followed. A redirect chain opens a second connection and restarts
+# the timers, and curl reports only the final one — which would silently turn "latency to
+# raw.githubusercontent.com" into "latency to wherever it forwarded us, minus the hop we came to
+# measure". A 301 is a complete DNS + TCP + TLS + TTFB measurement, so the redirect is left
+# unfollowed and the status code recorded as-is. Same reasoning for the 401s and 403s below: an
+# auth challenge is a fully measured round trip, and the ENDPOINTS comment records which codes are
+# the expected answer so a reader never mistakes one for a fault.
+#
+# An endpoint whose FIRST sample never gets a response gives up its remaining samples. Three
+# identical connect-timeouts say nothing the first did not, and on a blackholed network that
+# restraint is the difference between a probe that finishes in a minute and one that spends
+# endpoints x samples x connect-timeout doing it. The aggregate keeps this honest: `attempted` stays
+# at the configured sample count while `recorded` drops to 1.
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
-echo "=== Ping Latency (3 packets each) ==="
-for host in github.com registry.npmjs.org google.com api.github.com; do
-	echo ""
-	echo "--- $host ---"
-	if ! out="$(ping -c 3 -W 5 "$host" 2>/dev/null)"; then
-		# Distinguish "no ping binary" from "host unreachable/ICMP dropped" like try() would.
-		if command -v ping &>/dev/null; then echo "(ping failed — ICMP dropped or unreachable)"; else echo "(ping not found)"; fi
-		# On total packet loss ping still prints its statistics block to stdout and exits 1: keep it, so
-		# the log separates "name resolved, every ICMP filtered" from "name never resolved".
-		[ -n "$out" ] && printf '%s\n' "$out"
-		continue
-	fi
-	echo "$out"
-	# Structured output via jc (mise-managed in the toolchain image; probes degrade to logs without it).
-	# Staged through a temp file: redirecting straight at the .json truncates it BEFORE jc runs, so a
-	# swallowed parse failure would leave a zero-byte file that the harness collects as real provenance.
-	if command -v jc &>/dev/null; then
-		json="$(results_dir)/$(task_result_name "$host").json"
-		tmp="$(mktemp)"
-		if printf '%s\n' "$out" | jc --ping >"$tmp" 2>/dev/null && [ -s "$tmp" ]; then
-			mv "$tmp" "$json"
-		else
-			echo "(jc --ping produced no structured record)"
-			rm -f "$tmp"
-		fi
+SAMPLES=3
+CONNECT_TIMEOUT_SECONDS=5
+MAX_TIME_SECONDS=20
+# The endpoints a CI job actually talks to, one URL per host, using each service's real entry point
+# rather than its marketing root: a container pull begins at `/v2/` and a cargo build begins at the
+# sparse index's config.json, so those are what get measured. Responses are kept small on purpose —
+# sustained throughput is the download probe's job, and a multi-megabyte body here would bury the
+# connection timings this probe exists to isolate.
+ENDPOINTS=(
+	# Source: clone/checkout, the API every action calls, and raw file fetches (301 at the root).
+	"https://github.com/"
+	"https://api.github.com/"
+	"https://raw.githubusercontent.com/"
+	# JavaScript: the npm registry root doubles as its ping.
+	"https://registry.npmjs.org/"
+	# Python: the index pip resolves against, then the CDN it downloads wheels from.
+	"https://pypi.org/"
+	"https://files.pythonhosted.org/"
+	# Containers: `/v2/` is the registry handshake every pull opens with (401 = challenge, i.e.
+	# working), and auth.docker.io is the token exchange that follows it for Docker Hub.
+	"https://ghcr.io/v2/"
+	"https://gcr.io/v2/"
+	"https://auth.docker.io/token?service=registry.docker.io"
+	# Rust: the API host, then the sparse index whose config.json is cargo's first request.
+	"https://crates.io/"
+	"https://index.crates.io/config.json"
+)
+
+# The probe IS curl, and its product IS the aggregate — so both tools are hard requirements, and a
+# missing one is recorded as the skip marker the normalizer expects (skip_result in lib/bench.sh)
+# rather than as a zero-byte .json that reads as "measured nothing". Both ship in the toolchain image
+# (packages/templates/images/base/scripts/00-apt.sh), so either marker is a toolchain gap worth
+# seeing. jq is not optional here the way it is for a probe that can fall back to raw records: curl
+# inlines the peer's full PEM chain into every `%{json}` record (~9KB per sample, measured on curl
+# 8.5), so an unparsed fallback would spend a six-figure artifact on certificate material and still
+# carry no latency summary.
+for tool in curl jq; do
+	if ! command -v "$tool" &>/dev/null; then
+		skip_result "${tool} not installed"
+		exit 0
 	fi
 done
+
+# The phase decomposition and the statistics live in lib/jq/curl-phases.jq, loaded as a jq module by
+# every call below. That arithmetic is the one part of this probe where a divergent copy would
+# produce different NUMBERS rather than different prose, so it lives in a file that a test can run
+# against recorded records (packages/results/src/lib/curl-phases.test.ts).
+JQ_MODULES="${REPO_ROOT}/lib/jq"
+
+# Announcement for the first-sample abort. One helper, so all three paths that can reach it (no
+# record, unparseable record, record showing no response) explain the shortfall the same way.
+skip_remaining_samples() {
+	echo "(no response on the first sample — skipping the remaining $((SAMPLES - 1)) for this endpoint)"
+}
+
+RESULT="$(result_path "$(task_result_name)")"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+ENDPOINTS_NDJSON="${TMP_DIR}/endpoints.ndjson"
+: >"$ENDPOINTS_NDJSON"
+# Scratch paths reused by every sample: curl's own redirects truncate both on each run, and the
+# per-endpoint records file is drained into the aggregate before the next endpoint refills it.
+RECORD="${TMP_DIR}/record.json"
+ERRORS="${TMP_DIR}/stderr.txt"
+RECORDS="${TMP_DIR}/records.ndjson"
+
+GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CURL_VERSION="$(curl --version 2>/dev/null | head -n 1)"
+
+echo "=== HTTPS Latency (${SAMPLES} fresh connections per endpoint) ==="
+echo "Phases derived from curl's cumulative timers: DNS | TCP | TLS | prep | server | body"
+
+for url in "${ENDPOINTS[@]}"; do
+	host="${url#*://}"
+	host="${host%%/*}"
+	: >"$RECORDS"
+
+	echo ""
+	echo "--- ${url} ---"
+
+	for ((sample = 1; sample <= SAMPLES; sample++)); do
+		# -sS with stderr redirected to its own file: the %{json} record goes to stdout, so a
+		# diagnostic can never end up inside the JSON — and on failure that diagnostic (DNS vs TLS vs
+		# proxy refusal) is the whole story.
+		curl \
+			--silent \
+			--show-error \
+			--connect-timeout "$CONNECT_TIMEOUT_SECONDS" \
+			--max-time "$MAX_TIME_SECONDS" \
+			--output /dev/null \
+			--write-out '%{json}\n' \
+			"$url" \
+			>"$RECORD" \
+			2>"$ERRORS"
+		curl_status=$?
+
+		# Two ways a sample can be unusable, one response to both. No record at all means curl was
+		# too old for %{json} or died before the write-out. An unparseable one must be dropped
+		# because the endpoint aggregation slurps every retained record in ONE jq pass, where a
+		# single malformed line would take that endpoint's whole result down with it. Neither branch
+		# echoes the record: curl inlines the PEM chain into it, and a raw dump would bury the log
+		# under kilobytes of certificate per sample.
+		unusable=""
+		if [ ! -s "$RECORD" ]; then
+			unusable="no structured record (curl exit ${curl_status})"
+		elif ! jq -e . "$RECORD" >/dev/null 2>&1; then
+			unusable="write-out was not valid JSON (curl exit ${curl_status}) — discarded"
+		fi
+		if [ -n "$unusable" ]; then
+			echo "sample ${sample}: ${unusable}"
+			[ -s "$ERRORS" ] && sed 's/^/  /' "$ERRORS"
+			if [ "$sample" -eq 1 ]; then
+				skip_remaining_samples
+				break
+			fi
+			continue
+		fi
+
+		jq -L "$JQ_MODULES" -r --argjson n "$sample" '
+			include "curl-phases";
+			phases as $p |
+			if responded then
+				"sample \($n): HTTP \(.response_code) \(.http_version // "?") | dns \($p.dns)ms" +
+				" | tcp \($p.tcp)ms | tls \($p.tls // "n/a")ms | prep \($p.pretransfer)ms" +
+				" | server \($p.server)ms | body \($p.body)ms | total \($p.total)ms"
+			else
+				"sample \($n): FAILED after \($p.total)ms (curl exit \(.exitcode // "?"))" +
+				(if (.errormsg // "") == "" then "" else " — \(.errormsg)" end)
+			end
+		' "$RECORD"
+
+		# curl exits non-zero on a transport failure yet still emits a record carrying the exit code
+		# and error message. That record is kept as evidence and excluded from the statistics by
+		# `responded`, so a timeout stays visible without inflating the medians.
+		if [ "$curl_status" -ne 0 ] && [ -s "$ERRORS" ]; then
+			sed 's/^/  /' "$ERRORS"
+		fi
+
+		cat "$RECORD" >>"$RECORDS"
+
+		# The record is retained either way; what the first sample decides is whether spending the
+		# remaining ones can still teach us anything. `responded` is the same gate the statistics
+		# use, so "kept but not counted" and "stop here" can never disagree about what a response is.
+		if [ "$sample" -eq 1 ] &&
+			! jq -L "$JQ_MODULES" -e 'include "curl-phases"; responded' "$RECORD" >/dev/null 2>&1; then
+			skip_remaining_samples
+			break
+		fi
+	done
+
+	# Aggregate this endpoint from the records just captured. Statistics come from responding samples
+	# only; failures survive in `errors` and in the raw records, so a reader can always tell "fast"
+	# from "never answered".
+	jq -L "$JQ_MODULES" -s -c \
+		--arg url "$url" \
+		--arg host "$host" \
+		--argjson attempted "$SAMPLES" '
+		include "curl-phases";
+
+		map(select(responded)) as $answered |
+		map(select(responded | not)) as $failed |
+		($answered | map(phases)) as $ok |
+		($answered | map(.remote_ip) | map(select(. != "")) | unique) as $ips |
+		{
+			url: $url,
+			host: $host,
+			samples: {
+				attempted: $attempted,
+				recorded: length,
+				responded: ($ok | length)
+			},
+			response_codes: ($answered | map(.response_code) | unique),
+			http_versions: ($answered | map(.http_version) | map(select(. != null)) | unique),
+			remote: {
+				ips: $ips,
+				ip_version: (
+					if ($ips | length) == 0 then null
+					elif ($ips[0] | contains(":")) then "IPv6"
+					else "IPv4"
+					end
+				)
+			},
+			timing_ms: {
+				dns: ($ok | map(.dns) | stats),
+				tcp: ($ok | map(.tcp) | stats),
+				tls: ($ok | map(.tls) | stats),
+				pretransfer: ($ok | map(.pretransfer) | stats),
+				server: ($ok | map(.server) | stats),
+				body: ($ok | map(.body) | stats),
+				total: ($ok | map(.total) | stats)
+			},
+			bytes_downloaded: ($answered | map(.size_download) | unique),
+			errors: (
+				$failed | map({
+					exit_code: (.exitcode // null),
+					response_code: .response_code,
+					message: (if (.errormsg // "") == "" then null else .errormsg end)
+				})
+			),
+			# The native write-out record is the canonical evidence, kept intact except for one field:
+			# curl inlines the full PEM certificate chain under "certs" (~9KB per sample, measured on
+			# curl 8.5), which would grow this aggregate roughly tenfold with TLS material a latency
+			# probe never reads. The handshake facts a reader does want, num_certs and
+			# ssl_verify_result, are separate fields and survive.
+			curl_records: map(del(.certs))
+		}
+	' "$RECORDS" >>"$ENDPOINTS_NDJSON"
+done
+
+# One aggregate document for the whole probe: every endpoint, its statistics and its raw curl records
+# in a single file, rather than one file per host with no cross-endpoint view. json_result stages and
+# validates the bytes before they become the artifact (lib/bench.sh), so a jq that errors here leaves
+# the result path untouched instead of zero-byte.
+echo ""
+if jq -s \
+	--arg benchmark "$(task_result_name)" \
+	--arg generated_at "$GENERATED_AT" \
+	--arg curl_version "$CURL_VERSION" \
+	--argjson samples "$SAMPLES" \
+	--argjson connect_timeout "$CONNECT_TIMEOUT_SECONDS" \
+	--argjson max_time "$MAX_TIME_SECONDS" '
+	{
+		schema_version: "1.0",
+		benchmark: $benchmark,
+		tool: "curl",
+		curl_version: $curl_version,
+		generated_at: $generated_at,
+		probe: {
+			samples_per_endpoint: $samples,
+			connect_timeout_seconds: $connect_timeout,
+			max_time_seconds: $max_time,
+			follow_redirects: false,
+			connection_reuse: false,
+			abort_after_unresponsive_first_sample: true
+		},
+		endpoints_probed: length,
+		endpoints_responded: (map(select(.samples.responded > 0)) | length),
+		endpoints: .
+	}
+' "$ENDPOINTS_NDJSON" | json_result "$(task_result_name)"; then
+	echo "=== Aggregate: ${RESULT} ==="
+	jq -r '
+		.endpoints[] |
+		"\(.host + "                              " | .[0:26]) " +
+		(
+			if .timing_ms.total == null
+			then "no response (\(.errors[0].message // "unknown error"))"
+			else "median total \(.timing_ms.total.median)ms " +
+				"(dns \(.timing_ms.dns.median)ms, tcp \(.timing_ms.tcp.median)ms, " +
+				"tls \(.timing_ms.tls.median // "n/a")ms, server \(.timing_ms.server.median)ms)"
+			end
+		)
+	' "$RESULT" 2>/dev/null || true
+else
+	echo "(no aggregate written — the probe produced no structured records)"
+fi

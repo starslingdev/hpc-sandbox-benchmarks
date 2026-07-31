@@ -179,7 +179,13 @@ export function amortizationBreakEvenRunsPerMonth(
 	return burst > 0 ? monthlyUsd / burst : Number.POSITIVE_INFINITY;
 }
 
-/** A derived economics Metric as a single-Sample MetricResult (n=1, stdev=0). */
+/**
+ * A derived economics Metric as a single-Sample MetricResult (n=1, stdev=0).
+ *
+ * `derived: true` is set HERE, at the one place economics rows are constructed, so the marker cannot
+ * be forgotten by a caller — every consumer of `deriveEconomics` gets correctly-marked rows, and
+ * `metricResultSchema`'s catalog cross-check would reject them at the boundary if it ever were.
+ */
 function economicsResult(metricId: EconomicsMetricId, value: number): MetricResult {
-	return { metricId, samples: [value], aggregates: aggregate([value]) };
+	return { metricId, samples: [value], aggregates: aggregate([value]), derived: true };
 }

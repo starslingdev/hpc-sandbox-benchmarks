@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import type { MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
 import { aggregate, ECONOMICS_METRIC_IDS } from "@sandbox-benchmarks/schema";
-import { buildLeaderboard, renderLeaderboardMarkdown } from "./leaderboard.ts";
+import {
+	buildLeaderboard,
+	DATASET_RUNS_DIR,
+	LEADERBOARD_DIMENSION_ORDER,
+	REPO_URL,
+	renderLeaderboardMarkdown,
+} from "./leaderboard.ts";
 
 function metric(metricId: string, samples: number[]): MetricResult {
 	return { metricId, samples, aggregates: aggregate(samples) };
@@ -36,14 +42,18 @@ function provider(
 	};
 }
 
-function run(providers: ProviderRun[]): Run {
+function run(providers: ProviderRun[], provenance: Partial<Pick<Run, "runId" | "sha">> = {}): Run {
 	return {
 		schemaVersion: "2",
+		// Deliberately NOT a workflow run id / commit sha: the default fixture is a locally-produced Run,
+		// which is exactly the case the header must render without inventing a link. Tests that exercise
+		// the provenance links pass real-shaped ids in.
 		runId: "run-1",
 		sha: "abc123",
 		generatedAt: "2026-06-20T00:00:00.000Z",
 		targetSpec: { vcpus: 2, memoryGb: 8, diskGb: 20 },
 		providers,
+		...provenance,
 	};
 }
 
@@ -1136,5 +1146,147 @@ describe("absent providers (zero-evidence registry rows) and the registered-suit
 		expect(board.coverageGaps.map((g) => `${g.providerId}/${g.id}/${g.outcome}`)).toEqual([
 			"e2b/pts_fast-cli/failed",
 		]);
+	});
+});
+
+describe("header provenance links", () => {
+	const cpu = () => provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
+
+	it("links the run id to its workflow run, the sha to its commit, and the dataset file it rendered", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([cpu()], { runId: "30322186937", sha: "769743f75f2d0c55fd51b01ec5f026bdcdba774c" }),
+			),
+		);
+		expect(md).toContain(`[\`30322186937\`](${REPO_URL}/actions/runs/30322186937)`);
+		expect(md).toContain(
+			`[\`769743f75f2d0c55fd51b01ec5f026bdcdba774c\`](${REPO_URL}/commit/769743f75f2d0c55fd51b01ec5f026bdcdba774c)`,
+		);
+		expect(md).toContain(
+			`[\`${DATASET_RUNS_DIR}/30322186937.json\`](${DATASET_RUNS_DIR}/30322186937.json)`,
+		);
+	});
+
+	it("links each half of a COMPOSITE run id separately — no single workflow run owns the pair", () => {
+		const md = renderLeaderboardMarkdown(
+			buildLeaderboard(run([cpu()], { runId: "29937467891+29967667026" })),
+		);
+		expect(md).toContain(
+			`Run [\`29937467891\`](${REPO_URL}/actions/runs/29937467891) + ` +
+				`[\`29967667026\`](${REPO_URL}/actions/runs/29967667026)`,
+		);
+		// The dataset link keeps the WHOLE composite id — it names a real file — with `+` percent-encoded
+		// in the target so no renderer can decode it back to a space and point the link at nothing.
+		expect(md).toContain(
+			`[\`${DATASET_RUNS_DIR}/29937467891+29967667026.json\`]` +
+				`(${DATASET_RUNS_DIR}/29937467891%2B29967667026.json)`,
+		);
+	});
+
+	it("leaves a locally-produced Run's id and sha as bare code rather than inventing a dead link", () => {
+		// A link that 404s is worse than no link: it asserts a primary source that was never published.
+		const md = renderLeaderboardMarkdown(buildLeaderboard(run([cpu()])));
+		expect(md).toContain("Run `run-1` · commit `abc123` ·");
+		expect(md).not.toContain(`${REPO_URL}/actions/runs/run-1`);
+		expect(md).not.toContain(`${REPO_URL}/commit/abc123`);
+		// The dataset link is unconditional — the file is named by the run id whether or not CI produced it.
+		expect(md).toContain(`[\`${DATASET_RUNS_DIR}/run-1.json\`](${DATASET_RUNS_DIR}/run-1.json)`);
+	});
+});
+
+describe("document order: realworld leads, synthetics collapse", () => {
+	/**
+	 * The dimension sections alone — everything before the board's trailing Coverage gaps and statistics
+	 * blocks. Those carry `<details>` of their own, which would otherwise be attributed to whichever
+	 * dimension happens to render last and make this suite pass or fail on section order.
+	 */
+	function dimensionBody(markdown: string): string {
+		const ends = [
+			"\n## Coverage gaps\n",
+			"\n<details>\n<summary>How rankings are decided</summary>",
+		]
+			.map((marker) => markdown.indexOf(marker))
+			.filter((index) => index >= 0);
+		return ends.length > 0 ? markdown.slice(0, Math.min(...ends)) : markdown;
+	}
+
+	/** The `## <dimension>` headings, in rendered order. */
+	function dimensionHeadings(markdown: string): string[] {
+		return markdown
+			.split("\n")
+			.filter((line) => line.startsWith("## "))
+			.map((line) => line.slice(3))
+			.filter((heading) => (LEADERBOARD_DIMENSION_ORDER as readonly string[]).includes(heading));
+	}
+
+	const mixed = () =>
+		run([
+			provider("daytona-vm", [
+				metric("node_web_tooling_runs_per_s", [10]),
+				metric("stream_type_triad", [100]),
+				metric("realworld_mastra_task_cold_install", [30]),
+				metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.23]),
+			]),
+		]);
+
+	it("hoists realworld above the catalog's order and leaves the rest of that order intact", () => {
+		const board = buildLeaderboard(mixed());
+		// Catalog order is cpu, memory, realworld, economics; realworld leads and the others keep it.
+		expect(board.dimensions.map(({ dimension }) => dimension)).toEqual([
+			"realworld",
+			"cpu",
+			"memory",
+			"economics",
+		]);
+		expect(dimensionHeadings(renderLeaderboardMarkdown(board))).toEqual([
+			"realworld",
+			"cpu",
+			"memory",
+			"economics",
+		]);
+	});
+
+	it("wraps only the synthetic sections in <details>, leaving realworld and economics expanded", () => {
+		const md = dimensionBody(renderLeaderboardMarkdown(buildLeaderboard(mixed())));
+		const sectionOf = (dimension: string): string =>
+			(md.split(`\n## ${dimension}\n`)[1] ?? "").split("\n## ")[0] as string;
+
+		for (const dimension of ["cpu", "memory"]) {
+			expect(sectionOf(dimension), dimension).toContain("<details>");
+			expect(sectionOf(dimension), dimension).toContain("</details>");
+		}
+		for (const dimension of ["realworld", "economics"]) {
+			// Neither is a microbenchmark: realworld is the point of the board, economics is a published
+			// price. Hiding either behind a triangle would be an editorial claim the data doesn't make.
+			expect(sectionOf(dimension), dimension).not.toContain("<details>");
+		}
+	});
+
+	it("names the metric count and headline in the summary, so a shut section still says what it holds", () => {
+		const md = renderLeaderboardMarkdown(buildLeaderboard(mixed()));
+		expect(md).toContain(
+			"<summary><strong>1 synthetic metric</strong> · headline: Node.js web tooling</summary>",
+		);
+		expect(md).toContain(
+			"<summary><strong>1 synthetic metric</strong> · headline: STREAM Triad</summary>",
+		);
+	});
+
+	it("keeps the ## heading OUTSIDE the collapse so a measured axis is never mistaken for an absent one", () => {
+		const md = renderLeaderboardMarkdown(buildLeaderboard(mixed()));
+		expect(md).toContain("## cpu\n\n<details>\n<summary>");
+	});
+
+	it("explains the collapse only when a synthetic dimension was actually rendered", () => {
+		const withSynthetic = renderLeaderboardMarkdown(buildLeaderboard(mixed()));
+		expect(withSynthetic).toContain("**Document order:**");
+		expect(withSynthetic).toContain("(`cpu`, `memory`)");
+
+		const realworldOnly = renderLeaderboardMarkdown(
+			buildLeaderboard(
+				run([provider("daytona-vm", [metric("realworld_mastra_task_cold_install", [30])])]),
+			),
+		);
+		expect(realworldOnly).not.toContain("**Document order:**");
 	});
 });

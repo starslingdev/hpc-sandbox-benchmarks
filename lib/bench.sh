@@ -56,11 +56,81 @@ task_result_name() {
 	echo "$name"
 }
 
-# Minimal JSON string escaping (backslash + double quote) for the hand-built records below.
+# JSON string escaping for the hand-built records below: the two structural characters, then every
+# control character. dmidecode, lscpu and an ipinfo field can all carry a tab or a newline, and an
+# unescaped one is not a cosmetic problem — a raw control character inside a JSON string is invalid
+# JSON that parsers reject outright. The five with short escapes get them; the rest of U+0000–U+001F
+# become \u00XX, so no input can produce a record a parser refuses. Completeness matters because the
+# only caller that reaches this path is the one json_result cannot check: the jq-less fallback, where
+# there is no parser available to catch what the escaping missed.
+#
+# The scan is skipped entirely unless a control byte is actually present, which is the normal case —
+# bash string indexing is slow enough to be worth avoiding on every field of every record.
 _json_escape() {
 	local s="${1//\\/\\\\}"
 	s="${s//\"/\\\"}"
+	s="${s//$'\t'/\\t}"
+	s="${s//$'\n'/\\n}"
+	s="${s//$'\r'/\\r}"
+	s="${s//$'\b'/\\b}"
+	s="${s//$'\f'/\\f}"
+	if [[ "$s" == *[$'\x01'-$'\x1f']* ]]; then
+		local out="" char i
+		for ((i = 0; i < ${#s}; i++)); do
+			char="${s:i:1}"
+			case "$char" in
+			[$'\x01'-$'\x1f']) printf -v char '\\u%04x' "'$char" ;;
+			esac
+			out+="$char"
+		done
+		s="$out"
+	fi
 	printf '%s' "$s"
+}
+
+# Where a named result lands. One spelling of the layout, so a task that reads its artifact back
+# cannot drift from the path json_result wrote it to.
+result_path() {
+	echo "$(results_dir)/${1}.json"
+}
+
+# Install a JSON artifact read from stdin, but only once it is complete and parseable:
+#   <producer> | json_result <name>      # writes <results_dir>/<name>.json
+#
+# The staging is the whole point. Redirecting a producer straight at its result path (`prog >"$out"`)
+# TRUNCATES that path before prog runs, so a producer that dies mid-write — a curl killed by
+# --max-time, a jq that errors on malformed input, an OOM — leaves a zero-byte `.json` the harness
+# collects as real provenance, indistinguishable from a probe that ran and measured nothing. Staging
+# means the artifact appears only when there is an artifact.
+#
+# A REFUSED write also removes any artifact already at that path. Staleness is the worse failure: a
+# rerun into a directory that still holds the last run's file would otherwise leave it there for the
+# collector to normalize as this run's measurement, and a wrong number attributed to the wrong run is
+# less recoverable than a missing one. Absence is a gap the normalizer already models.
+#
+# Staged INSIDE the results directory so the install is a same-filesystem rename — atomic, with no
+# window where a reader can see a half-copied artifact, which `mktemp` under /tmp cannot promise when
+# the two are different mounts. The dot prefix keeps a crash-orphaned temp out of the way.
+#
+# Validation degrades with the toolchain: where jq exists the bytes must parse, where it does not
+# they must at least be non-empty, so a jq-less sandbox still gets the truncation guard. Returns 1
+# when nothing was installed — including when the rename itself failed, which must never read as
+# success — leaving the caller to log the diagnostic it is in a position to explain (`(no structured
+# record)` reads very differently from `(curl exited 28)`). Safe under `set -e` only when wrapped —
+# `| json_result x || true` — like the other helpers here.
+json_result() {
+	local name="$1" tmp output
+	output="$(result_path "$name")"
+	tmp="$(mktemp "$(results_dir)/.${name}.XXXXXX")" || return 1
+	cat >"$tmp"
+	if [ -s "$tmp" ] && { ! command -v jq &>/dev/null || jq -e . "$tmp" >/dev/null 2>&1; }; then
+		# mktemp creates 0600. These artifacts carry no secrets and the collect step may not run as
+		# the user that produced them, so restore the 0644 a plain `>` redirect would have left —
+		# staging must not quietly narrow who can read the result.
+		chmod 0644 "$tmp" && mv "$tmp" "$output" && return 0
+	fi
+	rm -f "$tmp" "$output"
+	return 1
 }
 
 # Record a deliberately-skipped benchmark (instead of a bare `exit 0`) so the normalizer can tell

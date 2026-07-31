@@ -10,7 +10,14 @@
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
+import {
+	buildLeaderboard,
+	DATASET_RUNS_DIR,
+	LEADERBOARD_DIMENSION_ORDER,
+	REPO_URL,
+	renderLeaderboardMarkdown,
+	SYNTHETIC_DIMENSIONS,
+} from "@sandbox-benchmarks/results";
 import type { MetricDef, Run } from "@sandbox-benchmarks/schema";
 import {
 	canSeparate,
@@ -30,9 +37,9 @@ const ARTIFACT = join(ROOT, "LEADERBOARD.md");
  *  `promote` writes. `data/runs/` is a gitignored raw scratch tree: it exists on a dev machine, is
  *  absent in CI, and can hold a stale/partial Run — rendering from it once silently dropped the whole
  *  `economics` dimension from this file. */
-const runFile = (runId: string) => join(ROOT, "data", "dataset", "runs", `${runId}.json`);
+const runFile = (runId: string) => join(ROOT, ...DATASET_RUNS_DIR.split("/"), `${runId}.json`);
 const regenCmd = (runId: string) =>
-	`bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/${runId}.json LEADERBOARD.md`;
+	`bun apps/cli/src/bin/leaderboard.ts ${DATASET_RUNS_DIR}/${runId}.json LEADERBOARD.md`;
 
 /** Independent R-7 percentile implementation for auditing the persisted Aggregates and displayed p50. */
 function auditPercentile(samples: readonly number[], p: number): number {
@@ -341,15 +348,24 @@ function parseMetricTables(markdown: string, emitted: Map<string, MetricDef>) {
 	return { rows, pairwise };
 }
 
-/** The Run id the committed artifact was generated from, read out of its own header line:
- *  "Run `<id>` · commit `<sha>` · generated <iso>". Parsed rather than hardcoded so regenerating the
- *  leaderboard from a newer Run doesn't require editing this gate too. */
+/**
+ * The Run id the committed artifact was generated from, read out of the header's DATASET link
+ * (`[…](data/dataset/runs/<id>.json)`). Parsed rather than hardcoded so regenerating the leaderboard
+ * from a newer Run doesn't require editing this gate too.
+ *
+ * The dataset link is the right anchor rather than the `Run` identifier beside it: the identifier is
+ * now rendered as one Actions link per component, so a COMPOSITE id (`<runA>+<runB>`) appears there
+ * only in pieces, while the dataset link always carries the whole id — it has to, since it names the
+ * file on disk. `+` is percent-encoded in the link target, so decode before returning the id.
+ */
 function runIdOf(markdown: string): string {
-	const match = markdown.match(/^Run `([^`]+)`/m);
+	const match = markdown.match(new RegExp(`\\(${DATASET_RUNS_DIR}/([^)]+)\\.json\\)`));
 	if (!match?.[1]) {
-		throw new Error("LEADERBOARD.md has no `Run <id>` header line — cannot locate its source Run");
+		throw new Error(
+			`LEADERBOARD.md has no ${DATASET_RUNS_DIR}/<id>.json link in its header — cannot locate its source Run`,
+		);
 	}
-	return match[1];
+	return decodeURIComponent(match[1]);
 }
 
 /**
@@ -390,6 +406,107 @@ function loadCommittedRun(): {
 // is wrong, so give the file a generous ceiling — high enough to absorb further dataset growth, still low
 // enough to catch a genuine non-terminating bootstrap.
 setDefaultTimeout(120_000);
+
+describe("LEADERBOARD.md publishes auditable provenance", () => {
+	// The header's identifiers are the reader's only route from a number back to the thing that produced
+	// it. A stale or malformed link is invisible in a rendered page — it just goes nowhere — so assert
+	// each one resolves to the artifact it claims, against the SOURCE Run rather than the header's own
+	// text (which is what a broken renderer would get wrong in the first place).
+	it("links the run id to its workflow run, the sha to its commit, and names the dataset file it rendered", () => {
+		const { committed, runId, run } = loadCommittedRun();
+		// A composite id (`<runA>+<runB>`) names no single workflow run, so each component links separately.
+		for (const component of run.runId.split("+")) {
+			expect(committed, `run ${component} workflow link`).toContain(
+				`[\`${component}\`](${REPO_URL}/actions/runs/${component})`,
+			);
+		}
+		expect(committed).toContain(`[\`${run.sha}\`](${REPO_URL}/commit/${run.sha})`);
+
+		const dataset = `${DATASET_RUNS_DIR}/${runId}.json`;
+		expect(committed).toContain(`[\`${dataset}\`](${dataset.replace(/\+/g, "%2B")})`);
+		// …and the file that link points at is the one this artifact was actually rendered from.
+		expect(readFileSync(runFile(runId), "utf8").length).toBeGreaterThan(0);
+	});
+});
+
+describe("LEADERBOARD.md leads with the real-world workflows", () => {
+	// The layout is the board's editorial claim: synthetic scores say what the hardware CAN do, the
+	// realworld suites say what a developer waits on. A renderer change that quietly buried `realworld`
+	// below five synthetic sections, or left one expanded, would invert that claim while every number on
+	// the page stayed correct — so the ORDER and the collapse are gated, not just the tables.
+	/**
+	 * The dimension sections alone — everything before the trailing Coverage gaps and statistics blocks,
+	 * which carry `<details>` of their own. Without this cut those would be attributed to whichever
+	 * dimension renders last, so the collapse assertion below would pass or fail on section order.
+	 */
+	const dimensionBody = (markdown: string): string => {
+		const ends = [
+			"\n## Coverage gaps\n",
+			"\n<details>\n<summary>How rankings are decided</summary>",
+		]
+			.map((marker) => markdown.indexOf(marker))
+			.filter((index) => index >= 0);
+		return ends.length > 0 ? markdown.slice(0, Math.min(...ends)) : markdown;
+	};
+
+	const dimensionHeadings = (markdown: string): string[] =>
+		markdown
+			.split("\n")
+			.filter((line) => line.startsWith("## "))
+			.map((line) => line.slice(3))
+			.filter((heading) => (LEADERBOARD_DIMENSION_ORDER as readonly string[]).includes(heading));
+
+	it("orders the dimension sections realworld-first, then by catalog order", () => {
+		const { committed } = loadCommittedRun();
+		const rendered = dimensionHeadings(committed);
+		expect(rendered.length).toBeGreaterThan(0);
+		expect(rendered[0]).toBe("realworld");
+		// Data-driven: only the dimensions this run emitted appear, but in the declared relative order.
+		expect(rendered).toEqual(
+			LEADERBOARD_DIMENSION_ORDER.filter((dimension) => rendered.includes(dimension)),
+		);
+	});
+
+	it("collapses every synthetic dimension and leaves every other one expanded", () => {
+		const { committed } = loadCommittedRun();
+		// Read each `## <dimension>` section's body and ask whether it opens a disclosure block. Parsed
+		// from the committed text, not from the renderer's intent, so this catches an unclosed <details>
+		// swallowing the section after it just as readily as a missing one.
+		const sections = new Map<string, string[]>();
+		let current: string | undefined;
+		for (const line of dimensionBody(committed).split("\n")) {
+			if (line.startsWith("## ")) {
+				const heading = line.slice(3);
+				current = (LEADERBOARD_DIMENSION_ORDER as readonly string[]).includes(heading)
+					? heading
+					: undefined;
+				if (current) sections.set(current, []);
+				continue;
+			}
+			if (current) sections.get(current)?.push(line);
+		}
+		expect(sections.size).toBeGreaterThan(0);
+
+		for (const [dimension, body] of sections) {
+			const synthetic = SYNTHETIC_DIMENSIONS.has(dimension as never);
+			const opens = body.filter((line) => line === "<details>").length;
+			const closes = body.filter((line) => line === "</details>").length;
+			expect(opens, `${dimension} <details> count`).toBe(synthetic ? 1 : 0);
+			expect(closes, `${dimension} </details> count`).toBe(synthetic ? 1 : 0);
+			if (synthetic) {
+				// The heading itself stays OUTSIDE the collapse (it is above this body), and the summary
+				// names what is hidden — a shut section must still disclose that the axis was measured.
+				expect(
+					body.some((line) => line.startsWith("<summary>")),
+					`${dimension} summary`,
+				).toBe(true);
+				expect(body.indexOf("<details>")).toBeLessThan(
+					body.findIndex((line) => line.startsWith("### ")),
+				);
+			}
+		}
+	});
+});
 
 describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	it("stores internally consistent Aggregates for every raw Sample distribution", () => {

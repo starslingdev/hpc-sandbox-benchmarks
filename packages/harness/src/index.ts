@@ -8,6 +8,7 @@ import { HARNESS_METRIC_IDS, isPtsResultFile, SUITES } from "@sandbox-benchmarks
 import { collectResults, writeGapMarker } from "./lib/collect.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 import { MIN, resolvePtsPassPolicy, StepRunner, withTimeout } from "./lib/execute.ts";
+import { gapCauseOf } from "./lib/gap-cause.ts";
 import { time } from "./lib/internal.ts";
 import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
@@ -155,7 +156,9 @@ export interface RunSuiteOptions {
 	providerName: string;
 	/** Suite to run — must be a key of SUITES. */
 	suiteName: string;
-	/** Host directory to extract results into (e.g. `data/raw/<runId>/<provider>`). */
+	/** Host directory to extract results into. The CI fan-out gives each replicate sandbox its own
+	 *  root, so this is `data/raw/<runId>/r<idx>/<provider>/<suite>` there and
+	 *  `data/raw/<runId>/<provider>/<suite>` for a single-sandbox run. */
 	resultsDir: string;
 	/** Credential source for the provider's required env vars (default: process.env). */
 	env?: Record<string, string | undefined>;
@@ -198,7 +201,10 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 	if (missingVars.length > 0) {
 		const reason = `Missing credentials: ${missingVars.join(", ")}`;
 		console.log(`SKIPPED ${providerName}/${suiteName}: ${reason}`);
-		writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason);
+		writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason, {
+			kind: "missing-credentials",
+			variables: missingVars,
+		});
 		return;
 	}
 
@@ -214,6 +220,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		providerName,
 		resultsDir,
 		createOptions: config.createOptions,
+		createTimeoutMs: config.createTimeoutMs,
 	});
 
 	await runSuiteOnSandbox(sandbox, {
@@ -242,7 +249,10 @@ export interface SuiteSandboxCompute {
 const CREATE_RETRY_BUDGET_MS = 60 * MIN;
 const CREATE_RETRY_DELAY_MS = 2 * MIN;
 /** How long a single `sandbox.create` may run before the attempt is abandoned (and any late handle
- *  destroyed). Generous: a cold provider image can take minutes to provision. */
+ *  destroyed). Generous: a cold provider image can take minutes to provision. Adequate only for
+ *  providers whose `create` returns once the control plane ACCEPTS the sandbox, with the image pull
+ *  absorbed by a readiness probe afterwards; one that boots the image inline needs its own budget via
+ *  {@link ProviderConfig.createTimeoutMs}. */
 const CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
 
 /**
@@ -262,8 +272,10 @@ export interface CreateSuiteSandboxContext {
 	resultsDir: string;
 	/** The provider's pinned create-time options; the suite's lifetime is layered on top. */
 	createOptions?: SandboxCreateOptions;
-	/** Per-attempt create timeout, ms. Defaults to {@link CREATE_ATTEMPT_TIMEOUT_MS}; injectable so the
-	 *  timeout-leak path (a create that resolves after the race is lost) is exercisable in tests. */
+	/** Per-attempt create timeout, ms. Defaults to {@link CREATE_ATTEMPT_TIMEOUT_MS}; set per provider
+	 *  (see {@link ProviderConfig.createTimeoutMs}) for adapters whose `create` boots the image inline,
+	 *  and injectable so the timeout-leak path (a create that resolves after the race is lost) is
+	 *  exercisable in tests. */
 	createTimeoutMs?: number;
 }
 
@@ -329,6 +341,7 @@ export async function createSuiteSandbox(
 						suiteName,
 						"failed",
 						`${CREATE_FAILURE_PREFIX}${message}`,
+						{ kind: "sandbox-create-failed", detail: message },
 					);
 				} catch (markerErr) {
 					console.error(
@@ -337,6 +350,10 @@ export async function createSuiteSandbox(
 						}); the sandbox-creation error below is unaffected`,
 					);
 				}
+				// The ORIGINAL error propagates, unwrapped: bench-suite matches on the provider's own message
+				// and `createSuiteSandbox` is called outside `runSuiteOnSandbox`, so this throw never reaches
+				// the suite-level marker writer that reads a classification. The marker written just above
+				// already carries the cause as a plain value, which is the only place it is read.
 				throw err;
 			}
 			console.log(
@@ -425,7 +442,11 @@ export async function runSuiteOnSandbox(
 			if (freeGb < suite.minDiskGb) {
 				const reason = `Insufficient disk: ${freeGb.toFixed(1)} GiB free, suite needs ${suite.minDiskGb} GiB`;
 				console.log(`SKIPPED ${providerName}/${suiteName}: ${reason}`);
-				writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason);
+				writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason, {
+					kind: "disk-shortfall",
+					freeGb,
+					requiredGb: suite.minDiskGb,
+				});
 				return;
 			}
 		}
@@ -501,7 +522,10 @@ export async function runSuiteOnSandbox(
 		// The leaderboard still derives a `missing` gap when even this marker is lost (the artifact upload
 		// is itself best-effort), but a marker that survives says WHY, and that is the whole difference.
 		const reason = suiteError instanceof Error ? suiteError.message : String(suiteError);
-		writeGapMarker(resultsDir, providerName, suiteName, "failed", reason);
+		// The thrower classified it (a step timeout knows its budget, a lost sandbox knows its step);
+		// this frame only knows a message. `gapCauseOf` returns undefined for anything unclassified,
+		// which records the gap exactly as before rather than inventing a kind from the prose.
+		writeGapMarker(resultsDir, providerName, suiteName, "failed", reason, gapCauseOf(suiteError));
 		throw suiteError;
 	}
 	console.log(`\nDone: ${suiteName} on ${providerName}`);

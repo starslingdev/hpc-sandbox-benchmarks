@@ -31,8 +31,11 @@ apt-get update
 # > package; keep this name so the two runtime mirrors (lib/bench.sh ensure_pts, and the schema
 # > toolchain contract's PTS_APT_DEPS that setup.ts interpolates) stay aligned.
 # > dnsutils + jq: the benchmark:system:provider probe (Team Cymru DNS whois via dig, ipinfo JSON via
-# > jq). netcat-openbsd: the pts/network-loopback runner (`dd | nc`). iputils-ping: the
-# > benchmark:network:latency probe (slim base images ship no ping).
+# > jq). jq is also what aggregates the benchmark:network:latency probe (it skips without a parser,
+# > since curl's %{json} write-out is the only thing it measures). netcat-openbsd: the
+# > pts/network-loopback runner (`dd | nc`). iputils-ping: no benchmark shells out to ping any more
+# > (the latency probe moved to curl, because sandbox networks that filter ICMP made it report
+# > unreachable hosts that HTTPS reached fine); kept for interactive diagnosis on slim base images.
 # > tcl: sqlite-speedtest builds SQLite from source, and SQLite's Makefile shells out to `tclsh` to
 # > generate opcodes.h — without it the build dies with exit 127 mid-`batch-install`. PTS still exits
 # > 0 there, so the failure only surfaces in 20-pts.sh's post-install verification.

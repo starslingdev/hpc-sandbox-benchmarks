@@ -34,8 +34,31 @@ observed allocation, so its ranks are never read as like-for-like with the compu
 Results land on a closed, ordered set of [`DIMENSIONS`](../packages/schema/src/metrics.ts): `lifecycle`,
 `control-plane`, `cpu`, `disk`, `memory`, `network`, `system`, `realworld`, `economics`. Each catalogued
 [`MetricDef`](../packages/schema/src/metrics.ts) declares its `dimension`, `unit`, `direction` (HIB =
-higher-is-better, LIB = lower-is-better), and whether it `headline`s its dimension. The leaderboard
-shows exactly one headline metric per dimension (enforced at catalog load).
+higher-is-better, LIB = lower-is-better), and whether it `headline`s its dimension. A dimension has at
+most one headline metric (enforced at catalog load); the leaderboard ranks *every* emitted metric and
+leads each dimension with its headline.
+
+### How the leaderboard is laid out
+
+Which sections exist is driven by the data — a dimension no provider emitted is simply absent — but the
+order and the emphasis are editorial, and they follow this document's argument:
+
+- **`realworld` leads.** Synthetic scores say what the hardware *can* do; the real-world suites say what
+  a developer or a CI job actually waits on, which is the question the benchmark exists to answer.
+- **The synthetic microbenchmarks collapse.** `cpu`, `disk`, `memory`, `network` and `system` each load
+  one hardware axis in isolation, so their tables render inside a collapsed `<details>`. The `##`
+  heading stays outside it: a measured axis must never look like one that never ran.
+- **Everything else stays expanded.** `lifecycle` and `control-plane` are harness-measured timings of
+  the provider's own API — a spawn a user waits on, not a synthetic load — and `economics` is the
+  provider's published price. None is a microbenchmark, so none is hidden.
+
+The header links each identifier to its primary source: the run id to the `bench-matrix` workflow run
+that produced the measurements, the commit to the tree they were measured against, and the dataset link
+to the committed Run document the tables were rendered from — so any number on the page can be traced
+back to its raw Samples. (A Run spliced from two CI runs — a composite `<runA>+<runB>` id, see
+[`data/dataset/index.json`](../data/dataset/index.json) — links each half separately; no single workflow
+run owns the pair.) The order, the collapse, and the links are all gated
+against the committed artifact by `tooling/repo-checks/src/leaderboard-artifact-sync.test.ts`.
 
 Metrics come from three sources:
 
@@ -91,14 +114,22 @@ without being Daytona-specific.
 
 ## The dataset pipeline
 
-1. **Run** — `bench-suite <provider> <suite> <runId> --replicate <idx>` boots a sandbox, runs the
-   suite's mise tasks, pulls the raw tree (`data/raw/<runId>/<provider>/<suite>/`), and normalizes it
-   into a Run document stamped with its replicate index.
+1. **Run** — `bench-suite <provider> <suite> <runId> --replicates <indices>` boots one sandbox per
+   replicate index (concurrently, from one process), runs the suite's mise tasks in each, pulls the raw
+   trees (`data/raw/<runId>/r<idx>/<provider>/<suite>/`), and normalizes each into its own shard Run
+   document (`data/runs/<runId>-r<idx>.json`) stamped with that replicate index. `--replicate <idx>` is
+   the single-sandbox spelling, writing the un-suffixed `data/runs/<runId>.json`.
 2. **Matrix** — the `bench-matrix` workflow plans three axes (`plan-providers` / `plan-suites` /
    `plan-replicates`), then one suite-matrix job calls the reusable `bench-suite` workflow per suite
-   (GitHub-native nesting: `<suite> / <provider> (replicate N)`), fanning out over the selected
-   providers × that suite's replicate sandboxes; every `(provider, suite, replicate)` cell uploads its
-   shard Run as an artifact. Two axes are the statistical knobs, both defaulting to the per-suite schema
+   (GitHub-native nesting: `<suite> / <provider>`), fanning out over the selected providers; each
+   `(provider, suite)` cell drives that suite's whole replicate fleet itself and uploads all its shard
+   Runs as one artifact. **Replicates are not a runner axis.** A bench runner is idle for essentially
+   its whole life — it creates a sandbox and polls it — so a runner per replicate billed R idle runners
+   to do one runner's work (324 runners where 54 suffice, at the shipped defaults). Driving the fleet
+   in-process leaves the sandbox count, provider load, and wall clock unchanged (the cell's wall clock
+   is its slowest replicate, not their sum) while the runner bill stops scaling with R. Isolation is
+   preserved: every replicate runs to completion and writes its shard even when a peer dies, and the
+   cell goes red at the end if any did. Two axes are the statistical knobs, both defaulting to the per-suite schema
    config so a bare dispatch already carries the intended statistical power for separating providers
    (subject to the genuine near-tie limit noted below — no sample size resolves providers that are truly
    within a few percent):

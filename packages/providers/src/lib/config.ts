@@ -21,6 +21,8 @@ const envSchema = type({
 	"DAYTONA_CONTAINER_SNAPSHOT?": "string >= 1",
 	"NOVITA_API_KEY?": "string >= 1",
 	"NOVITA_TEMPLATE?": "string >= 1",
+	"MSB_API_URL?": "string >= 1",
+	"MSB_API_KEY?": "string >= 1",
 });
 
 const ENV_KEYS = [
@@ -33,6 +35,8 @@ const ENV_KEYS = [
 	"DAYTONA_CONTAINER_SNAPSHOT",
 	"NOVITA_API_KEY",
 	"NOVITA_TEMPLATE",
+	"MSB_API_URL",
+	"MSB_API_KEY",
 ] as const;
 
 // 2. Startup gatekeeper — validate the environment once, fail fast with a clear message. Only the
@@ -71,6 +75,13 @@ export interface DaytonaConfig {
 	target?: string;
 	/** Snapshot to boot from (the pre-baked toolchain snapshot for this variant). */
 	snapshot: string;
+}
+
+/** Connection settings for the remote Microsandbox backend. The API URL is an optional override;
+ * the SDK uses its production endpoint when it is absent. */
+export interface MicrosandboxCloudCredentials {
+	apiUrl?: string;
+	apiKey?: string;
 }
 
 // Candidate↔version naming. The public version (`:v1`, `…-v1`) is immutable and written only by
@@ -155,4 +166,10 @@ export const config = {
 	novita: {
 		apiKey: env.NOVITA_API_KEY,
 	} satisfies NovitaConfig,
+	/** Microsandbox Cloud connection. The provider gate requires the key before construction, while
+	 * the URL stays optional so the SDK can use its production default. */
+	microsandboxCloud: {
+		apiUrl: env.MSB_API_URL,
+		apiKey: env.MSB_API_KEY,
+	} satisfies MicrosandboxCloudCredentials,
 } as const;

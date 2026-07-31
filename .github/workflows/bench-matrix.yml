@@ -1,12 +1,18 @@
 name: Bench matrix
 
-# Fan the live benchmark out across the provider × suite × replicate matrix using GitHub's native
-# reusable-workflow nesting. `plan` emits all three axes; a single suite-matrix job calls the reusable
-# bench-suite.yml once per suite (`name: ${{ matrix.suite }}`), and that reusable fans out
-# provider × replicate — so each cell displays as "<suite> / <provider> (replicate N)" (e.g.
-# "system / e2b (replicate 0)") and cells nest under their suite in the Actions UI. Adding a suite is a
-# schema change only: the suite axis is `fromJSON(needs.plan.outputs.suites)`, kept in lockstep by the
-# workflow-registry-sync gate.
+# Fan the live benchmark out across the provider × suite matrix using GitHub's native reusable-workflow
+# nesting. `plan` emits all three axes; a single suite-matrix job calls the reusable bench-suite.yml
+# once per suite (`name: ${{ matrix.suite }}`), and that reusable fans out over providers — so each cell
+# displays as "<suite> / <provider>" (e.g. "system / e2b") and cells nest under their suite in the
+# Actions UI. Adding a suite is a schema change only: the suite axis is
+# `fromJSON(needs.plan.outputs.suites)`, kept in lockstep by the workflow-registry-sync gate.
+#
+# The THIRD axis, replicates, is deliberately NOT a runner axis: `plan` hands each suite's replicate
+# index array to its cells as data, and one runner drives that cell's whole replicate fleet
+# concurrently in-process (`bench-suite --replicates`). A bench runner is ~100% idle waiting on its
+# sandbox, so a runner per replicate billed R idle runners to do one runner's work — at the shipped
+# defaults that is 324 runners where 54 suffice, with identical sandbox load and wall clock. See
+# bench-suite.yml's header for the failure-isolation contract inside a cell.
 #
 # Three configurable inputs tune the statistics, all defaulting to the schema/per-suite config so a bare
 # dispatch reproduces the configured run:
@@ -14,7 +20,8 @@ name: Bench matrix
 #     pre-merge knob, so a validation dispatch can run just one suite instead of the whole matrix.
 #   * `replicas` — replicate sandboxes per (provider, suite) cell, the BETWEEN-machine axis (blank = each
 #     suite's Suite.defaultReplicas — synthetic R=3, realworld R=12; a number scales every suite). More
-#     replicates → tighter intervals on a provider's fleet variation, at proportional runner cost.
+#     replicates → tighter intervals on a provider's fleet variation, at proportional PROVIDER cost
+#     (sandbox minutes) but flat runner cost — the cell's runner drives them all concurrently.
 #   * `pts_passes` — timed PTS passes per case INSIDE a sandbox, the WITHIN-machine axis (blank = each
 #     suite's own policy: the cpu-node and memory suites converge, while every other suite (system, disk,
 #     pgbench, network, realworld) keeps a fixed count; a number or `converge` forces one policy across
@@ -69,6 +76,15 @@ on:
         # axis). A number or "converge" is the GLOBAL override applied to every suite. resolvePtsPassPolicy
         # rejects any other non-numeric value.
         default: ''
+      max_concurrency:
+        description: 'Cap replicate sandboxes in flight per (suite, provider) cell (blank = unbounded, i.e. all R at once). Set a number when a provider quota is smaller than R — an over-quota create retries for up to 60 min inside the cell, so an unbounded fan-out against a tight quota burns the job budget queueing. A cap serializes the cell into ceil(R / cap) waves, so wall clock grows proportionally; a cap whose waves cannot fit the cell job timeout (plus the host margin) is rejected before any sandbox is created, and the error names the smallest cap that would fit. Note the realworld suites leave no room to cap at all: R=12 over a 90-minute suite affords ONE wave inside a 180-minute job, so anything below 12 is refused — cap the synthetic suites, or raise the cell timeout first.'
+        required: false
+        type: string
+        # Blank preserves the old behaviour exactly: R separate runners each held one sandbox with
+        # nothing coordinating them, so the fan-out was already unbounded per provider. The difference
+        # now is that GitHub's concurrent-JOB limit no longer incidentally throttles it — see
+        # bench-suite.yml's header on peak provider concurrency.
+        default: ''
       allow_branch:
         description: 'Allow benchmark cells on a non-main ref (publish remains main-only).'
         required: false
@@ -104,8 +120,9 @@ jobs:
       providers: ${{ steps.plan.outputs.providers }}
       suites: ${{ steps.plan.outputs.suites }}
       # A JSON object mapping each selected suite to its replicate index array (e.g.
-      # {"cpu-node":[0,1,2],...}). The suite-matrix job indexes it by matrix.suite to get that suite's
-      # own replicate axis, so per-category replicate counts stay registry-driven like the suite axis.
+      # {"cpu-node":[0,1,2],...}). The suite-matrix job indexes it by matrix.suite and passes that
+      # suite's slice down for the cell to fan out over in-process, so per-category replicate counts
+      # stay registry-driven like the suite axis.
       replicates: ${{ steps.plan.outputs.replicates }}
     steps:
       - name: Checkout
@@ -140,7 +157,8 @@ jobs:
 
   # One matrix cell per selected suite → reusable workflow call. GitHub nests the reusable's provider
   # matrix under each suite name, so the Actions UI shows expandable "<suite>" groups with "<provider>"
-  # children (display: "<suite> / <provider>"). fail-fast stays off so one bad suite doesn't cancel peers.
+  # children (display: "<suite> / <provider>"); each of those children drives its own R replicate
+  # sandboxes. fail-fast stays off so one bad suite doesn't cancel peers.
   # The fork/branch guard is repeated here (not only inherited via `needs: plan`) so the job stays
   # explicit when read in isolation — matching every other live-run job in the repo.
   suite:
@@ -169,10 +187,12 @@ jobs:
       providers: ${{ needs.plan.outputs.providers }}
       suite: ${{ matrix.suite }}
       # Hand this suite its own replicate slice out of the plan's per-suite map (keyed by matrix.suite),
-      # re-serialized to the JSON string the reusable workflow's `replicate` axis parses with fromJSON.
+      # re-serialized to the JSON array string each cell passes straight to `bench-suite --replicates`.
       replicates: ${{ toJSON(fromJSON(needs.plan.outputs.replicates)[matrix.suite]) }}
       # Forward the PTS passes-per-case override unchanged (blank = suite default, a number, or converge).
       pts_passes: ${{ inputs.pts_passes }}
+      # Forward the per-cell replicate concurrency cap unchanged (blank = all R sandboxes at once).
+      max_concurrency: ${{ inputs.max_concurrency }}
     secrets: inherit
 
   # Collect every shard Run, aggregate into one candidate, gate it (promote), and commit the machine-

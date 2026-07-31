@@ -1,6 +1,13 @@
 // Invariant 6: GitHub-native suite→provider nesting wiring for bench-matrix.yml + bench-suite.yml.
 // Kept out of workflow-sync.ts so credential/timeout gates and nesting gates don't grow as one file.
-import { asRecord, MATRIX_WORKFLOW, SUITE_JOB, SUITE_WORKFLOW } from "./workflow-yaml.ts";
+import {
+	asRecord,
+	MATRIX_WORKFLOW,
+	RUN_STEP,
+	SUITE_JOB,
+	SUITE_WORKFLOW,
+	stepByName,
+} from "./workflow-yaml.ts";
 
 /** A bench-matrix suite job is one that `uses` this reusable workflow (matched by path suffix). */
 const SUITE_WORKFLOW_USES_SUFFIX = "/bench-suite.yml";
@@ -14,6 +21,8 @@ export interface SuiteMatrixCaller {
 	jobId: string;
 	name: string;
 	suiteInput: string;
+	/** The `with.replicates` expression — this suite's slice of the plan's per-suite map. */
+	replicatesInput: string;
 	matrixSuiteExpr: string;
 	/** Job ids listed in `publish.needs` (empty when publish is missing or has no needs list). */
 	publishNeeds: string[];
@@ -25,16 +34,28 @@ export const EXPECTED_SUITE_MATRIX_EXPR = "${{ fromJSON(needs.plan.outputs.suite
 /** The expression that makes each caller cell's display name the suite id (native nesting parent). */
 // biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
 export const EXPECTED_SUITE_NAME_EXPR = "${{ matrix.suite }}";
-/** The provider id half of the fan-out cell's display name. */
+/** The expression that makes each reusable fan-out cell's display name the provider id (the nesting
+ *  child): "<suite> / <provider>". There is no replicate suffix — one cell owns all R replicate
+ *  sandboxes of its (suite, provider), driven concurrently from the single runner. */
 // biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
-const PROVIDER_NAME_EXPR = "${{ matrix.provider }}";
-/** The replicate-index suffix on the fan-out cell's display name. */
+export const EXPECTED_PROVIDER_NAME_EXPR = "${{ matrix.provider }}";
+
+/** The run-step env key that hands the cell its replicate index array. */
+export const REPLICATES_ENV_KEY = "BENCH_REPLICATES";
+/** The expression that key must carry: the reusable's own `replicates` input, verbatim. */
 // biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
-const REPLICATE_NAME_SUFFIX = " (replicate ${{ matrix.replicate }})";
-/** The expression that makes each reusable fan-out cell's display name the provider id + replicate index
- *  (the nesting child): "<provider> (replicate N)". The replicate suffix keeps each of a provider's R
- *  replicate sandboxes a distinct, legible cell — a bare `matrix.provider` would render them identically. */
-export const EXPECTED_PROVIDER_NAME_EXPR = `${PROVIDER_NAME_EXPR}${REPLICATE_NAME_SUFFIX}`;
+export const EXPECTED_REPLICATES_ENV_EXPR = "${{ inputs.replicates }}";
+/** The argument the run step must pass, so the env value is actually CONSUMED. Setting the env
+ *  without passing the flag leaves bench-suite on its single-sandbox default — a green matrix run
+ *  publishing R=1 — which is precisely what this invariant exists to prevent. */
+export const EXPECTED_REPLICATES_ARG = `--replicates "$${REPLICATES_ENV_KEY}"`;
+/** The expression the suite-matrix caller must hand down as `with.replicates`: this suite's slice of
+ *  the plan's per-suite map. Pinned because a hardcoded array here (`'[0]'`) would pass every other
+ *  nesting check while quietly running one sandbox per cell — the same R=1 outcome the callee-side
+ *  checks guard, entered from the caller instead. */
+export const EXPECTED_REPLICATES_INPUT_EXPR =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
+	"${{ toJSON(fromJSON(needs.plan.outputs.replicates)[matrix.suite]) }}";
 
 /**
  * The bench-matrix suite-matrix caller — exactly one job whose `uses` targets the reusable
@@ -61,6 +82,10 @@ export function matrixSuiteCaller(
 		if (typeof suiteInput !== "string") {
 			throw new Error(`${label}: job "${jobId}" calls ${uses} without a string "suite" input`);
 		}
+		const replicatesInput = withMap.replicates;
+		if (typeof replicatesInput !== "string") {
+			throw new Error(`${label}: job "${jobId}" calls ${uses} without a string "replicates" input`);
+		}
 		const name = typeof job.name === "string" ? job.name : "";
 		const strategy = asRecord(
 			job.strategy,
@@ -76,7 +101,7 @@ export function matrixSuiteCaller(
 				`${label}: job "${jobId}" calls ${uses} without a string "strategy.matrix.suite" axis`,
 			);
 		}
-		callers.push({ jobId, name, suiteInput, matrixSuiteExpr });
+		callers.push({ jobId, name, suiteInput, replicatesInput, matrixSuiteExpr });
 	}
 	if (callers.length === 0) {
 		throw new Error(
@@ -128,6 +153,14 @@ export function checkSuiteMatrixCaller(
 				`matrix cell dispatches its own suite (got "${caller.suiteInput}")`,
 		);
 	}
+	if (caller.replicatesInput !== EXPECTED_REPLICATES_INPUT_EXPR) {
+		errors.push(
+			`${label}: job "${caller.jobId}" with.replicates must be "${EXPECTED_REPLICATES_INPUT_EXPR}" ` +
+				`so each cell receives its own suite's replicate axis from the plan — a literal or a ` +
+				`different suite's slice silently changes how many sandboxes the run measures ` +
+				`(got "${caller.replicatesInput}")`,
+		);
+	}
 	if (caller.matrixSuiteExpr !== EXPECTED_SUITE_MATRIX_EXPR) {
 		errors.push(
 			`${label}: job "${caller.jobId}" strategy.matrix.suite must be "${EXPECTED_SUITE_MATRIX_EXPR}" ` +
@@ -145,7 +178,16 @@ export function checkSuiteMatrixCaller(
 
 /**
  * Invariant 6 (callee half): the reusable bench-suite fan-out job display name is the provider id so
- * nested Actions UI cells read as "<suite> / <provider>".
+ * nested Actions UI cells read as "<suite> / <provider>", AND the replicate axis reaches the cell as
+ * data rather than as a matrix axis.
+ *
+ * The replicate check is the load-bearing half. The `replicates` input used to be consumed by
+ * `strategy.matrix.replicate`, so forgetting to wire it was impossible — the fan-out simply had no
+ * cells. Now the array is handed to one cell through the run step's environment, and a dropped or
+ * misspelled `BENCH_REPLICATES` would leave `bench-suite` on its single-sandbox default: a green
+ * matrix run that quietly published R=1 for every provider, with the dataset's between-machine
+ * intervals silently collapsing to within-machine ones. Assert both that the axis is gone from the
+ * matrix (so R runners are not re-introduced by accident) and that the input reaches the cell.
  */
 export function checkSuiteWorkflowNesting(doc: unknown, label: string = SUITE_WORKFLOW): string[] {
 	const root = asRecord(doc, `${label}: not a YAML mapping`);
@@ -155,12 +197,68 @@ export function checkSuiteWorkflowNesting(doc: unknown, label: string = SUITE_WO
 		return [`${label}: job "${SUITE_JOB}" is missing — the provider fan-out job is required`];
 	}
 	const bench = asRecord(job, `${label}: job "${SUITE_JOB}" is not a mapping`);
+	const errors: string[] = [];
+
 	const name = typeof bench.name === "string" ? bench.name : "";
 	if (name !== EXPECTED_PROVIDER_NAME_EXPR) {
-		return [
+		errors.push(
 			`${label}: job "${SUITE_JOB}" name must be "${EXPECTED_PROVIDER_NAME_EXPR}" for native ` +
 				`provider nesting under each suite (got ${name ? `"${name}"` : "no name"})`,
-		];
+		);
 	}
-	return [];
+
+	// A `replicate` matrix axis would restore one idle runner per replicate — the cost this fan-out
+	// was moved in-process to remove. `?? {}` reads an absent strategy/matrix as "no axis"; a present
+	// but malformed one still throws, matching how the rest of this module navigates.
+	const strategy = asRecord(
+		bench.strategy ?? {},
+		`${label}: job "${SUITE_JOB}" strategy is not a mapping`,
+	);
+	const matrix = asRecord(
+		strategy.matrix ?? {},
+		`${label}: job "${SUITE_JOB}" strategy.matrix is not a mapping`,
+	);
+	if (matrix.replicate !== undefined) {
+		errors.push(
+			`${label}: job "${SUITE_JOB}" must not have a "replicate" matrix axis — the cell drives ` +
+				`every replicate itself (bench-suite --replicates), so an axis here bills one idle ` +
+				`runner per replicate for no extra throughput`,
+		);
+	}
+
+	// Both remaining checks read the SAME step, so locate it once. `?? {}` again: a missing step or
+	// env block is drift this gate reports, not a parse error — the two checks below name it.
+	const step = stepByName(bench, RUN_STEP, label);
+	const env = asRecord(
+		step?.env ?? {},
+		`${label}: job "${SUITE_JOB}" step "${RUN_STEP}" env is not a mapping`,
+	);
+
+	// ...the array must actually reach it, or the cell silently falls back to a single sandbox...
+	const rawEnv = env[REPLICATES_ENV_KEY];
+	const replicatesEnv = typeof rawEnv === "string" ? rawEnv : undefined;
+	if (replicatesEnv !== EXPECTED_REPLICATES_ENV_EXPR) {
+		errors.push(
+			`${label}: job "${SUITE_JOB}" step "${RUN_STEP}" must set ${REPLICATES_ENV_KEY}: ` +
+				`"${EXPECTED_REPLICATES_ENV_EXPR}" so the cell fans out over the plan's replicate axis ` +
+				`(got ${replicatesEnv === undefined ? "no such env key" : `"${replicatesEnv}"`})`,
+		);
+	}
+
+	// ...AND the command must consume it. Checking only the env block left the invariant bypassable by
+	// its own stated failure mode: dropping the flag from the `run:` line keeps the env key present, so
+	// the gate stayed green while bench-suite took its single-sandbox default and the legacy
+	// `<runId>.json` glob in commit-dataset.yml collected the lone shard without complaint — a matrix
+	// run that publishes R=1 with the dataset's between-machine intervals collapsed to within-machine
+	// ones. A substring match is enough and matches how the rest of this module pins expressions.
+	const runCommand = typeof step?.run === "string" ? step.run : undefined;
+	if (runCommand === undefined || !runCommand.includes(EXPECTED_REPLICATES_ARG)) {
+		errors.push(
+			`${label}: job "${SUITE_JOB}" step "${RUN_STEP}" must pass ${EXPECTED_REPLICATES_ARG} to ` +
+				`bench-suite — setting ${REPLICATES_ENV_KEY} without consuming it silently runs ONE sandbox ` +
+				`per cell (got ${runCommand === undefined ? "no run: command" : `"${runCommand.trim()}"`})`,
+		);
+	}
+
+	return errors;
 }

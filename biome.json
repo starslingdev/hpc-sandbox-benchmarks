@@ -71,6 +71,12 @@
       }
     },
     {
+      "includes": ["data/dataset/runs/*.json"],
+      "files": {
+        "maxSize": 16777216
+      }
+    },
+    {
       "includes": ["packages/**/src/**"],
       "linter": {
         "rules": {

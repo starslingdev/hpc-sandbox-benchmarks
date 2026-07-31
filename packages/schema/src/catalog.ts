@@ -158,6 +158,19 @@ export function getMetric(id: string): MetricDef | undefined {
 	return byId.get(id);
 }
 
+/**
+ * Whether a Metric result is a COMPUTED row (economics) rather than a measurement.
+ *
+ * Prefers the document's own `derived` marker and falls back to the Catalog only for pre-v4 Runs, which
+ * carry none. That order is the point: a Run outlives the Catalog version that produced it, so a
+ * Catalog-only test re-classifies a renamed or retired derived metric as measured — and it would then be
+ * pooled into a ranking or reported as a regression on a price. Authored once here because the same
+ * decision was previously re-made at three call sites, one of which had it wrong.
+ */
+export function isDerivedMetric(metric: { metricId: string; derived?: true }): boolean {
+	return metric.derived === true || getMetric(metric.metricId)?.derived === true;
+}
+
 /** Every Metric belonging to a Dimension, in Catalog order. */
 export function metricsForDimension(dimension: Dimension): MetricDef[] {
 	return METRIC_CATALOG.filter((metric) => metric.dimension === dimension);

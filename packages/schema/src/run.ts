@@ -26,6 +26,22 @@ export const metricReplicateSchema = type({
 	index: "number.integer >= 0",
 	// This replicate's retained per-pass Samples (>= 1, all finite — enforced by the parent narrow).
 	samples: "number[] >= 1",
+	/**
+	 * WHICH machine and network these Samples were measured on: keys into the provider's
+	 * {@link ObservedMixtures}. Absent when that sandbox's probes disclosed nothing for the category.
+	 *
+	 * Without this the between-machine axis is undecodable. A replicate breakdown says a provider's
+	 * numbers varied across R sandboxes, and `observedMixtures` says the fleet held N distinct machine
+	 * shapes — but nothing joined them, so "is the Intel leg slower than the EPYC leg?" was
+	 * unanswerable from a published Run even though both halves of the answer were in it. The dataset
+	 * already pays R× the provider cost to sample between machines; discarding which machine each
+	 * cluster came from threw away most of what that spend bought.
+	 *
+	 * {@link providerRunSchema} narrows these to real keys of the provider's own mixtures, so an id can
+	 * never dangle.
+	 */
+	"hostHardwareId?": "string >= 1",
+	"hostNetworkId?": "string >= 1",
 });
 export type MetricReplicate = typeof metricReplicateSchema.infer;
 
@@ -48,6 +64,35 @@ export const metricResultSchema = type({
 	// the clusters distinct so render-time inference can resample the between-sandbox level. Absent at
 	// R = 1, so a single-replicate Run is byte-identical to the pre-replicate schema.
 	"replicates?": metricReplicateSchema.array(),
+	/**
+	 * WHICH machine and network produced these Samples, when a single sandbox produced all of them
+	 * (v4+): keys into the provider's {@link ObservedMixtures}, exactly as on {@link MetricReplicate}.
+	 *
+	 * Set only when this Metric came from ONE sandbox — a shard, or an aggregate that merged a single
+	 * replicate for this id. With ≥2 clusters the attribution lives per-replicate, where it is honest;
+	 * one id here would have to name a single machine for samples that may span several.
+	 *
+	 * Without this the join had a hole exactly where the replicate structure is absent. `replicates`
+	 * only exists at ≥2 clusters, so a provider whose suites each landed one sandbox published its
+	 * mixtures with nothing pointing at any of them — the fleet was counted and the numbers were
+	 * unattributable. A metric measured on one machine can always say which.
+	 */
+	"hostHardwareId?": "string >= 1",
+	"hostNetworkId?": "string >= 1",
+	/**
+	 * Marks a COMPUTED Metric (v4+): the economics rows, which are derived from other Metrics plus the
+	 * provider's published price rather than measured in any sandbox.
+	 *
+	 * Without it the document could not tell the two apart — `usd_per_hour` sat in `metrics` looking
+	 * exactly like a measurement, and only a Metric Catalog lookup (`getMetric(id)?.derived`) separated
+	 * them. That made a dataset non-self-describing: a consumer validating the JSON on its own would
+	 * rank a price alongside measured throughput, and a Run outlives the catalog version that produced
+	 * it. The narrow below keeps document and catalog in agreement rather than merely hoping.
+	 *
+	 * A literal `true`, not a boolean: the flag is a marker, so `derived: false` on a derived Metric is
+	 * unrepresentable rather than merely wrong. Absent means measured.
+	 */
+	"derived?": "true",
 }).narrow((metric, ctx) => {
 	// `aggregate()` already guarantees these at the producer; enforce them at the dataset boundary too,
 	// so a hand-edited/corrupt persisted Run can't carry NaN/Infinity samples or a sample count that
@@ -57,6 +102,23 @@ export const metricResultSchema = type({
 	}
 	if (metric.aggregates.n !== metric.samples.length) {
 		return ctx.mustBe("a MetricResult whose aggregates.n equals samples.length");
+	}
+	// A derived Metric is computed from the merged measured set as a single value, so it has no
+	// per-sandbox clusters to break out — a replicate breakdown on one would claim a between-machine
+	// spread that was never measured.
+	if (metric.derived === true && metric.replicates !== undefined) {
+		return ctx.mustBe("a derived MetricResult without a replicate breakdown");
+	}
+	// The two attribution levels are mutually exclusive by construction: a Metric-level id claims ONE
+	// machine for every Sample, which is only true when one sandbox produced them all. Carrying both
+	// would let the levels disagree, and a consumer would have to pick which to believe.
+	if (
+		metric.replicates !== undefined &&
+		(metric.hostHardwareId !== undefined || metric.hostNetworkId !== undefined)
+	) {
+		return ctx.mustBe(
+			"a MetricResult whose host attribution is per-replicate when it has a replicate breakdown",
+		);
 	}
 	if (metric.replicates !== undefined) {
 		// The replicate structure only exists to hold ≥2 clusters; a lone replicate is just `samples`.
@@ -121,25 +183,40 @@ export type HostMetadataField = typeof hostMetadataFieldSchema.infer;
  * One rich host record retained from an in-sandbox producer. `mise/system-provider` is the repo's
  * ASN/geo/DMI probe; `phoronix/result-file-to-json` is PTS's native structured System export. The
  * generic flattened field list deliberately preserves new upstream keys without a Run schema bump.
+ *
+ * On an AGGREGATED Run (v4+) a record is the FOLD of every sandbox that reported these same
+ * non-volatile fields: `sandboxes` counts them, and `hostHardwareId`/`hostNetworkId` name the machine
+ * and network they were on. Before that a record was an anonymous member of a flat bag — so the ten
+ * distinct CPUs modal-vm ran on were present in the file yet attributable to nothing, which is the
+ * same defect {@link ObservedMixtures} fixed one level up.
  */
 export const hostMetadataRecordSchema = type({
 	source: "'mise/system-provider' | 'phoronix/result-file-to-json'",
 	sourceFile: "string >= 1",
 	fields: hostMetadataFieldSchema.array(),
+	/** How many sandboxes reported this record (v4+); absent on a per-shard Run, where it is always 1. */
+	"sandboxes?": "number.integer >= 1",
+	/** The machine and network this record was read on — keys into the provider's mixtures (v4+). */
+	"hostHardwareId?": "string >= 1",
+	"hostNetworkId?": "string >= 1",
 });
 export type HostMetadataRecord = typeof hostMetadataRecordSchema.infer;
 
 /**
- * Observed actuals recorded per Run — what in-sandbox probes actually saw, versus the requested
- * {@link TargetSpec}. All optional: providers differ in what in-sandbox
- * probes can see. `vcpus`/`memoryGb` are the EFFECTIVE Sandbox size (cgroup quota where enforced);
+ * HOST HARDWARE fields — the machine a sandbox landed on, as the sandbox could see it. This is one of
+ * the two {@link ObservedMixtures} hash categories: a provider that scheduled its sandboxes across
+ * more than one machine shape produces more than one hostHardware mixture, and the count on each says
+ * how many sandboxes landed there.
+ *
+ * `vcpus`/`memoryGb`/`diskGb` are the EFFECTIVE sandbox size (the cgroup quota where enforced) while
  * `hostVcpus`/`hostMemoryGb` disclose the underlying machine when probes see through the container
- * boundary (e.g. Daytona: a 4-vCPU quota on a 48-thread host). `cpuMicroarch` is a HOST-side
- * generation/microarch label derived from `cpuModel` (e.g. "Zen 5 (Turin)"). `hostCpuModels` is set
- * only by the aggregate path — the distinct host CPU models a provider's shards disclosed, present
- * only when there was more than one (a scheduling confound the published Run names rather than hides).
+ * boundary (e.g. Daytona: a 4-vCPU quota on a 48-thread host) — the host-vs-effective split of
+ * ADR 0005, which the field docs keep explicit. They share ONE hash category on purpose: a provider
+ * handing out 4 vCPU on some sandboxes and 2 on others is exactly the heterogeneity this disclosure
+ * exists to make impossible to miss, so the effective size is part of "which machine did I get".
+ * `cpuMicroarch` is a HOST-side generation label derived from `cpuModel` (e.g. "Zen 5 (Turin)").
  */
-export const observedSpecsSchema = type({
+const hostHardwareSpecFields = {
 	"vcpus?": "number",
 	"memoryGb?": "number",
 	"diskGb?": "number",
@@ -159,30 +236,187 @@ export const observedSpecsSchema = type({
 	// microVM (both read "unknown"), so the declared per-provider isolation stays the source of truth
 	// and this is only a cross-check the leaderboard flags when the two disagree.
 	"detectedIsolation?": "string",
-	"user?": "string",
-	// The distinct host CPU models when merged shards of one provider disclosed more than one — the
-	// aggregate-only heterogeneity disclosure (cpuModel is the key; cpuMicroarch is derived from it).
-	"hostCpuModels?": "string[]",
-	// Rich identity from benchmark:system:provider. ASN/org describe public egress; DMI describes the
-	// machine/hypervisor. Full source records also live in ProviderRun.hostMetadata.
-	"publicIp?": "string",
+	// DMI, from benchmark:system:provider — describes the machine/hypervisor the sandbox ran on.
+	"manufacturer?": "string",
+	"productName?": "string",
+	"biosVendor?": "string",
+} as const;
+
+/**
+ * HOST NETWORK fields — which network a sandbox egressed through, and from where. The second
+ * {@link ObservedMixtures} hash category, from benchmark:system:provider's ASN/geo lookup.
+ *
+ * `publicIp` and `reverseDns` are deliberately NOT here: they identify the individual sandbox rather
+ * than its network, so hashing them would mint one "mixture" per sandbox and report every count as 1 —
+ * destroying the very signal the categories exist to carry. They live in
+ * {@link sandboxIdentitySpecFields} instead, and `networkPrefix` (the announced prefix) is what
+ * carries the address-space dimension into the hash.
+ */
+const hostNetworkSpecFields = {
 	"egressOrg?": "string",
 	"egressAsn?": "string",
 	"egressOrgName?": "string",
-	"reverseDns?": "string",
+	"networkPrefix?": "string",
 	"city?": "string",
 	"region?": "string",
 	"country?": "string",
 	"location?": "string",
 	"timezone?": "string",
-	"manufacturer?": "string",
-	"productName?": "string",
-	"biosVendor?": "string",
-	"networkPrefix?": "string",
+	// Which lookup answered — a mixture whose geo came from a different source is a different
+	// observation, not a silently comparable one.
 	"asnSource?": "string",
 	"geoSource?": "string",
+} as const;
+
+/**
+ * Per-sandbox IDENTITY fields — true observations, but unique (or near-unique) to a single sandbox,
+ * so they are excluded from both mixture hashes. Full source records live in
+ * {@link ProviderRun.hostMetadata} when the individual value is what a reader wants.
+ */
+const sandboxIdentitySpecFields = {
+	"publicIp?": "string",
+	"reverseDns?": "string",
+	"user?": "string",
+} as const;
+
+/**
+ * The hostHardware mixture category as its own Type — the `specs` of a hardware mixture, so a mixture
+ * carrying a network or identity field is rejected at the boundary rather than merely discouraged.
+ *
+ * `onUndeclaredKey("reject")` is what makes that true: arktype IGNORES undeclared keys by default, so
+ * without it a serialized `hostNetwork` mixture carrying `cpuModel` — or either category carrying the
+ * `publicIp` whose inclusion the design says destroys the signal — validated cleanly and the partition
+ * was only a producer convention. Scoped to the category schemas alone, NOT to
+ * {@link observedSpecsSchema}: that one must keep ignoring undeclared keys so already-published Runs
+ * carrying since-deleted fields (`hostCpuModels`) still parse.
+ */
+export const hostHardwareSpecsSchema = type(hostHardwareSpecFields).onUndeclaredKey("reject");
+export type HostHardwareSpecs = typeof hostHardwareSpecsSchema.infer;
+
+/** The hostNetwork mixture category as its own Type; see {@link hostHardwareSpecsSchema}. */
+export const hostNetworkSpecsSchema = type(hostNetworkSpecFields).onUndeclaredKey("reject");
+export type HostNetworkSpecs = typeof hostNetworkSpecsSchema.infer;
+
+/**
+ * Observed actuals recorded per Run — what in-sandbox probes actually saw, versus the requested
+ * {@link TargetSpec}. All optional: providers differ in what in-sandbox probes can see.
+ *
+ * COMPOSED from the three field groups above rather than written out flat, and that composition is
+ * load-bearing: the two mixture categories are literally groups this type is built from, so a field
+ * added to ObservedSpecs must be added to one of them and therefore cannot end up unclassified. A flat
+ * list plus a separate key list would let the two drift — a new field silently absent from every
+ * mixture hash, which is exactly the "looks complete, quietly isn't" failure the categories exist to
+ * remove. See {@link ObservedMixtures}.
+ *
+ * On an AGGREGATED Run this carries one representative reading — the DOMINANT mixture per category, i.e.
+ * the one the most sandboxes reported — which is a summary, NOT a claim that every sandbox saw it.
+ * `observedMixtures` is the complete, countable disclosure; prefer it whenever the question is "how many
+ * distinct X did this provider actually put us on".
+ */
+export const observedSpecsSchema = type({
+	...hostHardwareSpecFields,
+	...hostNetworkSpecFields,
+	...sandboxIdentitySpecFields,
 });
 export type ObservedSpecs = typeof observedSpecsSchema.infer;
+
+/**
+ * A mixture must DESCRIBE something. All category fields are optional, so `specs: {}` is structurally
+ * legal — and it would be a counted, referenceable "machine shape" built from a probe that disclosed
+ * nothing, which inverts the contract: a category the sandbox saw nothing for is represented by no
+ * mixture and no id at all, so the counts visibly fall short of `sandboxes`. An empty mixture would
+ * launder that shortfall into a phantom machine every reader can join to.
+ */
+function nonEmptySpecs(
+	mixture: { specs: object },
+	ctx: { mustBe: (expected: string) => false },
+): boolean {
+	return (
+		Object.keys(mixture.specs).length > 0 ||
+		ctx.mustBe("a mixture whose specs disclose at least one field")
+	);
+}
+
+/**
+ * One observed HOST-NETWORK mixture: a distinct combination of the egress/geo fields, plus how many of
+ * the provider's sandboxes reported exactly that combination. `count` is a sandbox count, so the counts
+ * within a category sum to the number of sandboxes that disclosed at least one of its fields — which
+ * is ≤ {@link ObservedMixtures.sandboxes} whenever some sandbox's probe saw nothing.
+ *
+ * Named for its category rather than left generic: the two mixture types are deliberately NOT the same
+ * shape (see {@link observedHardwareMixtureSchema}), so a category-neutral name would read as the shared
+ * base of both and invite the verdict field to be added here too.
+ */
+export const observedNetworkMixtureSchema = type({
+	count: "number.integer >= 1",
+	specs: hostNetworkSpecsSchema,
+}).narrow(nonEmptySpecs);
+export type ObservedNetworkMixture = typeof observedNetworkMixtureSchema.infer;
+
+/**
+ * A host-hardware mixture, which additionally carries its OWN spec verdict (v4+).
+ *
+ * `ProviderRun.specMatched` is one boolean folded across every shard, and on a mixed fleet that is too
+ * coarse to act on: run 30510718771 put modal-vm's sandboxes on ten different machines under a single
+ * `specMatched: true`, so a provider honoring the target on nine shapes and missing it on the tenth
+ * reads identically to one that honored it everywhere. Per machine, the verdict is answerable —
+ * `vcpus`/`memoryGb` are hostHardware-category fields, so each mixture carries what the check needs.
+ *
+ * Deliberately absent from the NETWORK mixture type rather than optional-and-always-undefined there:
+ * the target spec says nothing about egress, so a network mixture has no verdict to give and should
+ * not be able to claim one.
+ */
+export const observedHardwareMixtureSchema = type({
+	count: "number.integer >= 1",
+	specs: hostHardwareSpecsSchema,
+	/** Whether THIS machine honored the pinned target; absent when its probes saw too little to judge. */
+	"specMatched?": "boolean",
+}).narrow(nonEmptySpecs);
+export type ObservedHardwareMixture = typeof observedHardwareMixtureSchema.infer;
+
+/**
+ * The precise, countable answer to "how heterogeneous was this provider in this run" — keyed by a
+ * stable content hash of the combination, so the same machine shape or egress network carries the same
+ * id in every run and can be tracked across the dataset series.
+ *
+ * This exists because a single {@link ObservedSpecs} on an aggregated ProviderRun reads like a
+ * property of the provider while actually being one sandbox's reading: a provider spread across three
+ * CPU generations and two regions rendered identically to one that never moved. A reader could not
+ * tell, and nothing in the document disclosed the mixture. Here, `Object.keys(hostHardware).length` IS
+ * the number of distinct machine shapes observed, and each `count` says how many sandboxes landed on
+ * it — no inference required.
+ *
+ * `sandboxes` is the denominator: how many sandboxes (one per merged shard, i.e. per
+ * `(suite, replicate)` cell) the provider contributed. Without it a category's counts are
+ * uninterpretable — "one hardware mixture, count 10" cannot be told apart from a homogeneous fleet
+ * (10 of 10) or a mostly-blind one (10 of 30).
+ */
+export const observedMixturesSchema = type({
+	sandboxes: "number.integer >= 1",
+	hostHardware: type({ "[string]": observedHardwareMixtureSchema }),
+	hostNetwork: type({ "[string]": observedNetworkMixtureSchema }),
+}).narrow((mixtures, ctx) => {
+	// A category's counts are sandbox counts drawn from ONE reading per sandbox, so their sum cannot
+	// exceed the denominator. It may fall short — that is the visible partial disclosure a category
+	// records when some sandbox's probe saw nothing — but a sum ABOVE `sandboxes` describes a fleet
+	// that never existed, and every proportion a reader computes from it ("6 of 4 sandboxes were on
+	// Zen 5") is then arithmetic on a lie. The denominator is the whole reason the counts mean
+	// anything, so it is enforced rather than documented.
+	for (const [category, entries] of [
+		["hostHardware", mixtures.hostHardware],
+		["hostNetwork", mixtures.hostNetwork],
+	] as const) {
+		let total = 0;
+		for (const mixture of Object.values(entries)) total += mixture.count;
+		if (total > mixtures.sandboxes) {
+			return ctx.mustBe(
+				`ObservedMixtures whose ${category} counts sum to at most sandboxes (got ${total} of ${mixtures.sandboxes})`,
+			);
+		}
+	}
+	return true;
+});
+export type ObservedMixtures = typeof observedMixturesSchema.infer;
 
 /** The pinned size every provider is asked to match; compared against each provider's {@link ObservedSpecs}. */
 export const targetSpecSchema = type({
@@ -217,6 +451,91 @@ export const gapOutcomeSchema = type("'skipped' | 'failed'");
 export type GapOutcome = typeof gapOutcomeSchema.infer;
 
 /**
+ * WHY a benchmark produced no result, as data rather than prose.
+ *
+ * `reason` beside this is a human sentence, and for a long time it was also the machine interface:
+ * the leaderboard decided whether a skip was a disk shortfall with `/^insufficient disk/i` against a
+ * string authored in another package, a coupling its own comment had to warn about. Every question
+ * past that regex — how many GiB short, which step timed out and after how long, which declared
+ * metrics never recorded — was answerable only by re-parsing English that no test pinned.
+ *
+ * The taxonomy is closed and there is deliberately NO catch-all arm. A producer that cannot classify
+ * a gap omits `cause` entirely, which reads as "unclassified" and cannot be mistaken for a diagnosis;
+ * an `other` kind would let genuinely different failures accumulate behind one label that consumers
+ * would then have to re-parse `reason` to tell apart, reintroducing exactly what this replaces.
+ */
+export const gapCauseSchema = type({
+	// A precondition refused the suite: the sandbox had less free disk than `Suite.minDiskGb`.
+	kind: "'disk-shortfall'",
+	freeGb: "number >= 0",
+	requiredGb: "number > 0",
+})
+	// The provider's credentials were not present in the environment, so nothing was attempted.
+	.or({ kind: "'missing-credentials'", variables: "string[] >= 1" })
+	// `sandbox.create` never returned a usable sandbox (quota, region, provider-side error).
+	.or({ kind: "'sandbox-create-failed'", "detail?": "string" })
+	// The sandbox stopped answering mid-step — distinct from a step that ran and failed.
+	.or({
+		kind: "'sandbox-lost'",
+		step: "string >= 1",
+		"consecutivePollFailures?": "number.integer >= 1",
+	})
+	// A step exceeded its own budget. `timeoutSeconds` is the budget, not the elapsed time.
+	.or({ kind: "'step-timeout'", step: "string >= 1", timeoutSeconds: "number > 0" })
+	// A step ran to completion and exited non-zero.
+	.or({ kind: "'step-failed'", step: "string >= 1", "exitCode?": "number.integer" })
+	// The suite ran, but these declared metrics never recorded a value on any trial.
+	.or({ kind: "'metrics-unrecorded'", metricIds: "string[] >= 1", declared: "number.integer >= 1" })
+	// PTS's duplicate-value dedup dropped a result whose value collided with its twin's.
+	.or({ kind: "'duplicate-value-dedup'", metricIds: "string[] >= 1" })
+	// A lifecycle operation the provider's SDK does not expose (`scope: "operation"` skips).
+	.or({ kind: "'unsupported-operation'", "detail?": "string" })
+	// The run was configured not to measure this — a choice we made, never a provider limitation. Kept
+	// distinct from `unsupported-operation` precisely because collapsing them would let a config toggle
+	// read as a capability the provider lacks.
+	.or({ kind: "'measurement-disabled'", "detail?": "string" })
+	.narrow((cause, ctx) => {
+		// The arms carry numbers whose MEANING constrains them beyond their type, and a structured
+		// diagnosis that contradicts itself is worse than an absent one: a consumer trusts this field
+		// precisely because it stopped re-reading prose. Every invariant here already holds at each
+		// producer (the disk precondition only fires below the threshold, a step is only "failed" on a
+		// non-zero exit, and the unrecorded metrics are a subset of the declared ones), so this pins
+		// them at the boundary for hand-edited and future producers.
+		if (cause.kind === "disk-shortfall" && cause.freeGb >= cause.requiredGb) {
+			return ctx.mustBe("a disk shortfall whose freeGb is below requiredGb");
+		}
+		if (cause.kind === "step-failed" && cause.exitCode === 0) {
+			return ctx.mustBe("a failed step whose exitCode is non-zero");
+		}
+		if (cause.kind === "metrics-unrecorded" && cause.metricIds.length > cause.declared) {
+			return ctx.mustBe("unrecorded metrics that are a subset of the declared ones");
+		}
+		return true;
+	});
+export type GapCause = typeof gapCauseSchema.infer;
+
+/**
+ * The causes that describe a PRECONDITION refusing a benchmark, as opposed to one that was attempted and
+ * broke — the {@link GapOutcome} partition of {@link gapCauseSchema}, stated next to the taxonomy it
+ * partitions rather than buried in the narrow that enforces it (and allocated once, not per parsed gap).
+ */
+const SKIP_CAUSE_KINDS: ReadonlySet<GapCause["kind"]> = new Set<GapCause["kind"]>([
+	"disk-shortfall",
+	"missing-credentials",
+	"unsupported-operation",
+	"measurement-disabled",
+]);
+
+/**
+ * Which {@link GapOutcome} a cause belongs to — the partition above, exposed so a producer can CHECK the
+ * pairing before building a gap instead of discovering it as a parse failure. `resultGapSchema` is the
+ * enforcement; this is how a caller stays on the right side of it (see `parseGapMarker`).
+ */
+export function gapOutcomeOfCause(cause: GapCause): GapOutcome {
+	return SKIP_CAUSE_KINDS.has(cause.kind) ? "skipped" : "failed";
+}
+
+/**
  * One benchmark that produced no result for a provider, and why — the recorded half of a coverage
  * gap. The DERIVED half (a suite that ran elsewhere in the Run but never reported here at all, with
  * no marker of any kind) cannot live on a ProviderRun: it is a cross-provider fact, so the
@@ -228,8 +547,38 @@ export const resultGapSchema = type({
 	/** The suite name (`scope: "suite"`) or the harness Metric id (`scope: "operation"`). */
 	id: "string",
 	outcome: gapOutcomeSchema,
-	/** The producer's verbatim explanation — a disk shortfall's numbers, or the error's message. */
+	/**
+	 * The producer's human explanation. Still authored, still the thing a reader reads — but no longer
+	 * the machine interface: consumers branch on {@link ResultGap.cause}, and this is free to be prose.
+	 */
 	reason: "string",
+	/**
+	 * The same failure as structured data (v4+). Absent means the producer did not classify it — an
+	 * older Run, or a failure mode the taxonomy has no arm for. Never infer a cause by parsing `reason`
+	 * when this is absent: guessing produces a confident label for an unclassified event.
+	 */
+	"cause?": gapCauseSchema,
+}).narrow((gap, ctx) => {
+	// A skip and a failure are different facts (see gapOutcomeSchema), and so are their causes. Pinning
+	// the pairing here stops a producer from recording a crash as a skip — or a precondition as a
+	// failure — via the cause while the outcome says otherwise, which would make the two disagree
+	// inside one gap and leave a consumer to pick a side.
+	if (gap.cause === undefined) return true;
+	const causeOutcome = gapOutcomeOfCause(gap.cause);
+	if (causeOutcome !== gap.outcome) {
+		return ctx.mustBe(
+			`a ${gap.outcome} gap whose cause describes one (got "${gap.cause.kind}", a ${causeOutcome} cause)`,
+		);
+	}
+	// `unsupported-operation` names a call the provider's SDK does not expose, which is a statement
+	// about ONE lifecycle operation — the scope its own doc gives it. On a suite it would read as
+	// "this provider cannot run this benchmark at all", a much larger claim than the producer made.
+	// Only this arm is pinned: `measurement-disabled` is a choice we make and could legitimately turn
+	// off a whole suite one day, so coupling it to a scope would be inventing a rule, not recording one.
+	if (gap.cause.kind === "unsupported-operation" && gap.scope !== "operation") {
+		return ctx.mustBe('an operation-scoped gap when its cause is "unsupported-operation"');
+	}
+	return true;
 });
 export type ResultGap = typeof resultGapSchema.infer;
 
@@ -249,6 +598,14 @@ export const providerRunSchema = type({
 	// Whether observed specs honored the pinned target spec; absent when probes saw too little to judge.
 	"specMatched?": "boolean",
 	observedSpecs: observedSpecsSchema,
+	/**
+	 * The countable heterogeneity disclosure — distinct host-hardware and host-network combinations with
+	 * a sandbox count each. Set by the AGGREGATE path only (a single shard is one sandbox, so its
+	 * mixtures would be a tautology) and therefore v4-only, gated in {@link runSchema}'s narrow. Absent
+	 * on shards and on every Run published before v4; `observedSpecs` remains the representative
+	 * single-value summary beside it.
+	 */
+	"observedMixtures?": observedMixturesSchema,
 	/** Rich, source-attributed host records; optional for historical Runs predating capture. */
 	"hostMetadata?": hostMetadataRecordSchema.array(),
 	metrics: metricResultSchema.array(),
@@ -275,7 +632,76 @@ export const providerRunSchema = type({
 			run.specMatched === undefined ||
 			Object.keys(run.observedSpecs).length > 0 ||
 			ctx.mustBe("a ProviderRun with observedSpecs when specMatched carries a verdict"),
-	);
+	)
+	.narrow((run, ctx) => {
+		// Referential integrity for the replicate→machine join. A dangling id is worse than an absent
+		// one: absent reads as "this sandbox disclosed nothing", while dangling reads as a real machine
+		// that simply cannot be looked up — and the natural consumer (`mixtures[replicate.hostHardwareId]`)
+		// yields undefined for both, so the two failure modes are indistinguishable at the point of use.
+		// Rejecting here keeps "an id resolves" a guarantee rather than a hope.
+		// `Object.hasOwn` against the maps directly rather than materialising two key Sets: a provider has
+		// at most a handful of mixtures, and the common case by far — a shard, or any pre-v4 Run — has none
+		// at all, where building Sets from `{}` would allocate on every provider row of every parse.
+		const hardware = run.observedMixtures?.hostHardware;
+		const network = run.observedMixtures?.hostNetwork;
+		const resolves = (map: object | undefined, id: string): boolean =>
+			map !== undefined && Object.hasOwn(map, id);
+		for (const metric of run.metrics) {
+			if (metric.hostHardwareId !== undefined && !resolves(hardware, metric.hostHardwareId)) {
+				return ctx.mustBe(
+					`a ProviderRun whose metric hostHardwareId resolves in observedMixtures (${metric.metricId} → ${metric.hostHardwareId})`,
+				);
+			}
+			if (metric.hostNetworkId !== undefined && !resolves(network, metric.hostNetworkId)) {
+				return ctx.mustBe(
+					`a ProviderRun whose metric hostNetworkId resolves in observedMixtures (${metric.metricId} → ${metric.hostNetworkId})`,
+				);
+			}
+			for (const replicate of metric.replicates ?? []) {
+				if (
+					replicate.hostHardwareId !== undefined &&
+					!resolves(hardware, replicate.hostHardwareId)
+				) {
+					return ctx.mustBe(
+						`a ProviderRun whose replicate hostHardwareId resolves in observedMixtures (${metric.metricId} r${replicate.index} → ${replicate.hostHardwareId})`,
+					);
+				}
+				if (replicate.hostNetworkId !== undefined && !resolves(network, replicate.hostNetworkId)) {
+					return ctx.mustBe(
+						`a ProviderRun whose replicate hostNetworkId resolves in observedMixtures (${metric.metricId} r${replicate.index} → ${replicate.hostNetworkId})`,
+					);
+				}
+			}
+		}
+		// Host records join the same way and get the same guarantee — one rule for every reference into
+		// observedMixtures, so "an id resolves" holds document-wide rather than per-field.
+		for (const record of run.hostMetadata ?? []) {
+			if (record.hostHardwareId !== undefined && !resolves(hardware, record.hostHardwareId)) {
+				return ctx.mustBe(
+					`a ProviderRun whose hostMetadata hostHardwareId resolves in observedMixtures (${record.sourceFile} → ${record.hostHardwareId})`,
+				);
+			}
+			if (record.hostNetworkId !== undefined && !resolves(network, record.hostNetworkId)) {
+				return ctx.mustBe(
+					`a ProviderRun whose hostMetadata hostNetworkId resolves in observedMixtures (${record.sourceFile} → ${record.hostNetworkId})`,
+				);
+			}
+		}
+		return true;
+	})
+	.narrow((run, ctx) => {
+		// The provider verdict is the fold of the per-machine ones, so it cannot be kinder than its
+		// parts: one machine off-spec contaminates the shared aggregate and disqualifies the provider.
+		// Checking it here makes the fold rule a property of the document rather than a convention of
+		// whichever code last wrote it.
+		const mixtures = Object.values(run.observedMixtures?.hostHardware ?? {});
+		if (mixtures.some((mixture) => mixture.specMatched === false) && run.specMatched !== false) {
+			return ctx.mustBe(
+				"a ProviderRun with specMatched false when any host-hardware mixture failed the target spec",
+			);
+		}
+		return true;
+	});
 export type ProviderRun = typeof providerRunSchema.infer;
 
 /**
@@ -314,17 +740,32 @@ export function providerStatusText(p: ProviderRun): string {
 /**
  * A full benchmark Run: every provider measured against one pinned target spec at one SHA.
  *
- * `schemaVersion` accepts `"2"` and `"3"`. v1's `skips: { suite, reason }[]` could not say whether a
- * benchmark was deliberately not run or had crashed, and carried no positive record of what DID run —
- * so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the document.
- * v2 replaced it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. v3 adds the
- * replicate model: a shard Run carries its {@link replicateIndex}, and the aggregate folds ≥2
- * replicate sandboxes of one (provider, suite) into {@link MetricResult.replicates}. Both versions
- * validate here — already-published v2 Runs (single replicate, no `replicates` field) are read
- * unchanged, and the parser never migrates them in place.
+ * `schemaVersion` accepts `"2"` through `"4"`. v1's `skips: { suite, reason }[]` could not say
+ * whether a benchmark was deliberately not run or had crashed, and carried no positive record of what
+ * DID run — so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the
+ * document. v2 replaced it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. v3 adds
+ * the replicate model: a shard Run carries its {@link replicateIndex}, and the aggregate folds ≥2
+ * replicate sandboxes of one (provider, suite) into {@link MetricResult.replicates}.
+ *
+ * v4 makes the document SELF-DESCRIBING — every fact a reader needs is expressible from the file,
+ * rather than recoverable only by knowing something the file does not say:
+ *
+ *  - {@link ProviderRun.observedMixtures} counts the distinct host-hardware and host-network
+ *    combinations a provider's sandboxes reported, which one representative `observedSpecs` reading
+ *    could only imply.
+ *  - {@link MetricReplicate} names the mixture its sandbox reported, joining a sample cluster to the
+ *    machine that produced it instead of to an anonymous index; a single-sandbox
+ *    {@link MetricResult} names its own, so the join has no hole below two clusters.
+ *  - {@link ResultGap.cause} classifies a failure as data rather than prose.
+ *  - {@link MetricResult.derived} separates a computed row from a measured one without a catalog lookup.
+ *  - Host records are folded and attributed to their machine.
+ *  - Each host-hardware mixture carries its own spec verdict.
+ *
+ * Every version validates here — already-published Runs are read unchanged, and the parser never
+ * migrates them in place.
  */
 export const runSchema = type({
-	schemaVersion: "'2' | '3'",
+	schemaVersion: "'2' | '3' | '4'",
 	runId: "string",
 	sha: "string",
 	// ISO-8601 timestamp the Run was generated at — validated so the RunIndex sort key can't be a
@@ -338,18 +779,56 @@ export const runSchema = type({
 	targetSpec: targetSpecSchema,
 	providers: providerRunSchema.array(),
 }).narrow((run, ctx) => {
-	// The replicate fields (`replicateIndex`, `MetricResult.replicates`) are v3-only, so "v2 == the
+	// Version floors are compared NUMERICALLY, not by equality: a field introduced at v3 stays legal at
+	// v4 and beyond, so "=== '3'" would have made every version bump retroactively reject the previous
+	// version's own fields (the v4 aggregate below carries folded `replicates`).
+	const version = Number(run.schemaVersion);
+	// The replicate fields (`replicateIndex`, `MetricResult.replicates`) are v3-or-later, so "v2 == the
 	// pre-replicate schema" stays a real guarantee: a producer that writes a replicate field but forgets
 	// to bump schemaVersion is rejected here rather than silently read by a v3-gated consumer that then
 	// ignores the between-sandbox breakdown (reporting the anti-conservative pooled interval instead).
-	if (run.schemaVersion !== "3") {
+	if (version < 3) {
 		if (run.replicateIndex !== undefined) {
-			return ctx.mustBe("a v3 Run when it carries a replicateIndex");
+			return ctx.mustBe("a v3-or-later Run when it carries a replicateIndex");
 		}
 		if (
 			run.providers.some((provider) => provider.metrics.some((m) => m.replicates !== undefined))
 		) {
-			return ctx.mustBe("a v3 Run when a MetricResult carries replicates");
+			return ctx.mustBe("a v3-or-later Run when a MetricResult carries replicates");
+		}
+	}
+	// The v4 self-description fields, gated together because they arrived together. A pre-v4 consumer
+	// handed any of them would fall back to the pre-v4 reading of the same fact — a heterogeneous fleet
+	// read as homogeneous, an anonymous replicate cluster, re-parsed `reason` prose, a price treated as a
+	// measurement, a folded host record read as one sandbox's — each a quietly wrong answer, never a loud
+	// one. Reported by FIELD rather than as one blanket message, so the error names what to fix.
+	if (version < 4) {
+		for (const provider of run.providers) {
+			if (provider.observedMixtures !== undefined) {
+				return ctx.mustBe("a v4-or-later Run when a ProviderRun carries observedMixtures");
+			}
+			// No separate check for a replicate's mixture ids, or for a mixture's own `specMatched`: both
+			// are unreachable pre-v4 by construction rather than by a second rule. A replicate id must
+			// RESOLVE (the ProviderRun narrow, which runs before this one), and `specMatched` lives inside
+			// a mixture — so each requires `observedMixtures`, which the check above has already refused.
+			// Restating them here would read as defence-in-depth while actually being dead branches that
+			// no test can reach and that a later reader would have to re-derive as unreachable.
+			if (provider.gaps.some((gap) => gap.cause !== undefined)) {
+				return ctx.mustBe("a v4-or-later Run when a ResultGap carries a structured cause");
+			}
+			if (provider.metrics.some((metric) => metric.derived !== undefined)) {
+				return ctx.mustBe("a v4-or-later Run when a MetricResult carries the derived marker");
+			}
+			if (
+				provider.hostMetadata?.some(
+					(record) =>
+						record.sandboxes !== undefined ||
+						record.hostHardwareId !== undefined ||
+						record.hostNetworkId !== undefined,
+				)
+			) {
+				return ctx.mustBe("a v4-or-later Run when a HostMetadataRecord is folded or attributed");
+			}
 		}
 	}
 	// `replicateIndex` marks a per-replicate SHARD (one sandbox, not yet folded); `MetricResult.replicates`

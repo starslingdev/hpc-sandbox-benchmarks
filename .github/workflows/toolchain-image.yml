@@ -386,6 +386,11 @@ jobs:
           # the standard missing-credentials skip on every other cell. Best-effort like novita: namespace
           # is not in --require, so a skipped/failed mint skips its validate boot without failing publish.
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          # Microsandbox backends boot the candidate OCI image directly. Local is an explicit runner
+          # capability opt-in. Cloud needs only its key; the URL is an optional deployment override.
+          MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
+          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
+          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
         run: |
           set -euo pipefail
           args=(--provider "${PROVIDER}")
@@ -520,6 +525,16 @@ jobs:
           # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
           # skips namespace's re-validation without failing the promote (namespace is not in --require).
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          # The promote transaction re-validates every provider. Unlike every credential around it, this
+          # is a literal rather than a `secrets.*` reference, so it has no missing-value skip path — it
+          # is safe only because this job is PINNED to `starsling-ubuntu-24.04-2` (see runs-on above),
+          # the same virtualization-capable label the bake matrix uses. Moving promote to a runner
+          # without KVM must clear this at the same time, or every release spends a doomed libkrun boot
+          # whose failure is invisible in promote-payload.json (microsandbox-local is not in --require,
+          # so `blocks()` is false and promote never records it). Cloud uses its key + optional endpoint.
+          MICROSANDBOX_LOCAL_BENCH: "1"
+          MSB_API_URL: ${{ secrets.MSB_API_URL }}
+          MSB_API_KEY: ${{ secrets.MSB_API_KEY }}
         run: |
           set -euo pipefail
           args=(--promote --require "${REQUIRED}")

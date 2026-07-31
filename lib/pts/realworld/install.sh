@@ -42,9 +42,20 @@ chmod +x "$EXE_NAME"
 # what the runner reads: a fresh COREPACK_HOME would otherwise make the first measured pnpm task
 # of a batch pay a pnpm-toolchain download inside its sample. The runner's cold_install branch
 # still wipes the store + XDG cache before measuring, so this never warms a cold-install sample.
+# The store pins are load-bearing, not cosmetic: pnpm 11 ignores npm_config_store_dir and resolves
+# its store from PNPM_HOME first, then <XDG_DATA_HOME>/pnpm/store/v<n> (see the matching pins and
+# the precedence note in realworld-runner.sh). Without BOTH, this warm install would populate the
+# shared $HOME store, which the runner's cold reset cannot wipe (and must not, since it is not
+# ours) -- every measured cold_install would then be a warm store hit. PNPM_HOME especially: images
+# that ship the `ENV PNPM_HOME=/pnpm` idiom would otherwise warm a store the reset never touches.
+# MISE_DATA_DIR is frozen before XDG_DATA_HOME moves, so mise's node/pnpm shims keep resolving on
+# stock images (the baked image already sets it).
 export XDG_CACHE_HOME="${PWD}/.cache"
 export COREPACK_HOME="${PWD}/.corepack"
 export npm_config_store_dir="${PWD}/.pnpm-store"
+export PNPM_HOME="${PWD}/.pnpm-home"
+export MISE_DATA_DIR="${MISE_DATA_DIR:-${HOME}/.local/share/mise}"
+export XDG_DATA_HOME="${PWD}/.local-share"
 
 if ! command -v node >/dev/null 2>&1; then
 	echo "ERROR: node not found (the sandbox harness's setupNode step provisions it)" >&2
