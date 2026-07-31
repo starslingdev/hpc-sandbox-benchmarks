@@ -29,6 +29,10 @@ runs with its actuals recorded and the mismatch disclosed (`specMatched`). Its m
 rankings, but the leaderboard flags the provider with an explicit **Comparability warning** naming its
 observed allocation, so its ranks are never read as like-for-like with the compute-matched providers.
 
+Vercel exposes only a vCPU resource knob and derives memory at 2048 MB per vCPU, so requesting four
+vCPU reaches the 8 GiB target as a coupled point. Its SDK does not expose a disk-size knob; available
+disk is measured in the guest and disk-gated suites skip honestly when the observed mount is too small.
+
 ## Dimensions and metrics
 
 Results land on a closed, ordered set of [`DIMENSIONS`](../packages/schema/src/metrics.ts): `lifecycle`,

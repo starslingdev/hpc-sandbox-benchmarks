@@ -65,6 +65,8 @@ function providerArtifact(id: ProviderId): string {
 			// No template/snapshot system — pulls the candidate image straight into an instance at
 			// create time (same as modal), so there is no baked artifact to name.
 			return "boots the candidate image directly (no baked artifact)";
+		case "vercel":
+			return config.vercelImageCandidate;
 	}
 }
 

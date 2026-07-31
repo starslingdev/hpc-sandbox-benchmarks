@@ -116,7 +116,7 @@ export const smokeChecks: readonly SmokeCheck[] = [
 	// The installed-count probe above trusts PTS's own install bookkeeping, which a launcher-only
 	// pgbench half-install satisfies. This one asserts the built postgres payload itself — in BOTH
 	// consumers, so the docker-level smoke proves the bake built it and the in-sandbox smoke proves
-	// it survived provider packaging (e2b envd injection / daytona snapshot / modal fromRegistry —
+	// it survived provider packaging (e2b envd injection / daytona snapshot / modal import / VCR —
 	// the same drift class that dropped fast-cli's Chrome libs).
 	...(pgbenchPayloadCheck ? [pgbenchPayloadCheck] : []),
 	// The enforced verification manifest is present (proves the base build's 99-manifest step ran)…

@@ -21,7 +21,8 @@ export type ProviderId =
 	| "microsandbox-local"
 	| "microsandbox-cloud"
 	| "novita"
-	| "namespace";
+	| "namespace"
+	| "vercel";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -147,8 +148,9 @@ export interface ProviderMeta {
  * so it clears the gate anyway. Blaxel's sandbox root is a RAM-derived tmpfs with no independent disk
  * knob, so it mounts a 40 GiB volume at the PTS data dir where the heavy suites write (see
  * packages/providers/src/lib/blaxel-volume.ts) — clearing the gate like the others. Only e2b/novita
- * (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`) and namespace
- * (`NamespaceConfig` has no disk field at all) still CANNOT express disk:
+ * (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`), namespace
+ * (`NamespaceConfig` has no disk field at all), and Vercel (resources exposes only vCPUs) still
+ * CANNOT express disk:
  * they run with actuals recorded and the heavy suites skip there, surfaced as an explicit coverage gap
  * in the leaderboard, never silently dropped.
  */
@@ -531,6 +533,42 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// this adapter gets — so this declaration depends on that degradation path (isUnsupportedFilesystem).
 			// Each poll is a sub-second exec far under the cap, so a multi-minute benchmark survives as a
 			// sequence of short calls.
+			detachedPoll: true,
+		},
+	},
+	vercel: {
+		displayName: "Vercel Sandbox",
+		website: "https://vercel.com/docs/sandbox",
+		sdkPackage: "@vercel/sandbox",
+		requiredEnvVars: [
+			"VERCEL_OIDC_TOKEN_FILE",
+			"VERCEL_ORG_ID",
+			"VERCEL_PROJECT_ID",
+			"VERCEL_TEAM_SLUG",
+			"VERCEL_PROJECT_NAME",
+		],
+		isolation: {
+			technology: "Firecracker microVM",
+			notes:
+				"Runs on Vercel's Hive build infrastructure and boots the shared Debian toolchain image mirrored into Vercel Container Registry.",
+		},
+		pricing: {
+			model: "unknown",
+			notes:
+				"Vercel bills active CPU separately from provisioned memory. The registry cannot model utilization-dependent active-CPU cost honestly, so economics remain unknown.",
+			sourceUrl: "https://vercel.com/docs/sandbox/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Direct @vercel/sandbox v2 adapter with native detached exec and filesystem support; opt-in until a committed validation run exists.",
+		},
+		// Only vCPU is requested; Vercel derives memory at a fixed 2048 MB/vCPU ratio. Four vCPU
+		// therefore reaches this benchmark's 8 GiB target, but the dimensions are not independent.
+		specPinning: "fixed",
+		transport: {
+			streaming: false,
+			syncCapMs: null,
 			detachedPoll: true,
 		},
 	},

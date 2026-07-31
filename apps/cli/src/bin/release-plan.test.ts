@@ -38,6 +38,7 @@ describe("buildReleasePlan matrix", () => {
 			"modal-vm",
 			"novita",
 			"namespace",
+			"vercel",
 		]);
 	});
 
@@ -59,7 +60,7 @@ describe("planOutputs", () => {
 		expect(matrixLine).toBeDefined();
 		// The matrix value must be valid, single-line JSON (the fromJSON contract).
 		const parsed = JSON.parse((matrixLine as string).slice("matrix=".length));
-		expect(parsed.include).toHaveLength(10);
+		expect(parsed.include).toHaveLength(11);
 		expect((matrixLine as string).includes("\n")).toBe(false);
 	});
 });

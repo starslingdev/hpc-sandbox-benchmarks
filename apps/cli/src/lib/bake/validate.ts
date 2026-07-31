@@ -12,6 +12,8 @@ export interface CandidateRefs {
 	/** Candidate template on Novita's E2B-compatible control plane (its own namespace). */
 	novitaTemplateCandidate: string;
 	toolchainImageCandidate: string;
+	/** Candidate image mirrored into the linked project's Vercel Container Registry. */
+	vercelImageCandidate: string;
 	/** daytona-vm runner target (us-west-2; undefined → account default). */
 	daytonaVmTarget?: string;
 	/** daytona-container runner target (us-west-2; undefined → account default). */
@@ -57,5 +59,7 @@ export function candidateCreateOptions(
 		case "namespace":
 			// No template/snapshot system — points create() at the candidate image directly, same as modal.
 			return { image: refs.toolchainImageCandidate };
+		case "vercel":
+			return { templateId: refs.vercelImageCandidate };
 	}
 }
