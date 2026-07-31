@@ -172,11 +172,13 @@ describe("@sandbox-benchmarks/providers", () => {
 			...base,
 			variant: "microsandbox-local",
 			backend: "local",
+			ephemeral: false,
 		});
 		const cloud = microsandboxCloudCompute({
 			...base,
 			variant: "microsandbox-cloud",
 			backend: { kind: "cloud", url: "https://msb.invalid", apiKey: "unit-test-key" },
+			ephemeral: true,
 		});
 
 		expect(local.name).toBe("microsandbox-local");

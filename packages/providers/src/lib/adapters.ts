@@ -148,6 +148,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			microsandboxLocalCompute({
 				variant: "microsandbox-local",
 				backend: "local",
+				ephemeral: false,
 				image: config.toolchainImage,
 				cpus: TARGET_SPEC.vcpus,
 				memoryMib: TARGET_SPEC.memoryGb * 1024,
@@ -165,6 +166,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			microsandboxCloudCompute({
 				variant: "microsandbox-cloud",
 				backend: microsandboxCloudCredentials(),
+				ephemeral: true,
 				image: config.toolchainImage,
 				cpus: TARGET_SPEC.vcpus,
 				memoryMib: TARGET_SPEC.memoryGb * 1024,
