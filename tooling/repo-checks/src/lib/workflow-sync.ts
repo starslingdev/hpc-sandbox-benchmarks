@@ -367,9 +367,11 @@ export function releaseLaneLabel(job: string): string {
  * Keyed by lane scoping because an exception is not automatically lane-independent. A lane the entry does
  * not list is an error, not a pass — the same fail-closed posture the generated forms have.
  */
-export const CREDENTIAL_EXPR_EXCEPTIONS: Readonly<
+export type CredentialExprExceptions = Readonly<
 	Record<string, { reason: string; expressions: Readonly<Partial<Record<LaneScoping, string>>> }>
-> = Object.freeze({
+>;
+
+export const CREDENTIAL_EXPR_EXCEPTIONS: CredentialExprExceptions = Object.freeze({
 	NSC_TOKEN_FILE: {
 		reason:
 			"namespace has no stored secret — CI federates through GitHub's OIDC identity and mints a " +
@@ -437,13 +439,18 @@ export type LaneScoping = "inputs" | "matrix" | "unconditional";
  * property the per-cell scoping exists to provide — and accepting a scoped form in `publish` would
  * guarantee an empty credential, since it has no provider axis to match. Owner order follows the registry,
  * which is where the expected multi-owner spelling comes from.
+ *
+ * Returns an EMPTY array — permitting nothing — only when an exception omits `scoping`; the generated path
+ * always yields exactly one form. `exceptions` is injectable so that fail-closed branch is reachable from
+ * a test, since every real entry declares each lane its credential is wired into.
  */
 export function canonicalCredentialExpressions(
 	key: string,
 	owners: readonly string[],
 	scoping: LaneScoping,
+	exceptions: CredentialExprExceptions = CREDENTIAL_EXPR_EXCEPTIONS,
 ): string[] {
-	const exception = CREDENTIAL_EXPR_EXCEPTIONS[key];
+	const exception = exceptions[key];
 	if (exception !== undefined) {
 		const declared = exception.expressions[scoping];
 		// An exception that says nothing about this lane permits nothing in it — returning [] makes any
@@ -461,9 +468,7 @@ export function canonicalCredentialExpressions(
  *  An entry declaring no lane would permit nothing anywhere, which is a silently broken declaration
  *  rather than a deliberate one. */
 export function checkCredentialExprExceptions(
-	exceptions: Readonly<
-		Record<string, { reason: string; expressions: Readonly<Partial<Record<LaneScoping, string>>> }>
-	> = CREDENTIAL_EXPR_EXCEPTIONS,
+	exceptions: CredentialExprExceptions = CREDENTIAL_EXPR_EXCEPTIONS,
 ): string[] {
 	const errors: string[] = [];
 	const known = requiredCredentialKeys();
@@ -519,16 +524,33 @@ export function checkCredentialExprExceptions(
  */
 export function checkCredentialExpressions(
 	lanes: Record<string, { env: Record<string, string>; scoping: LaneScoping }>,
+	exceptions: CredentialExprExceptions = CREDENTIAL_EXPR_EXCEPTIONS,
 ): string[] {
 	const errors: string[] = [];
 	for (const [key, owners] of requiredCredentialKeys()) {
 		for (const [lane, { env, scoping }] of Object.entries(lanes)) {
-			const allowed = canonicalCredentialExpressions(key, owners, scoping);
+			const allowed = canonicalCredentialExpressions(key, owners, scoping, exceptions);
 			const expr = env[key];
 			// Presence is Invariants 3/7's job; reporting the same omission twice buries the useful message.
 			if (expr === undefined) continue;
 			if (!allowed.includes(normalizeExpr(expr))) {
-				const exception = CREDENTIAL_EXPR_EXCEPTIONS[key];
+				const exception = exceptions[key];
+				// Nothing is permitted here at all, so there is no expected form to print and no expression
+				// the author could write to pass. Saying "it must match that exact expression" under an empty
+				// `expected:` would send them to rewrite the workflow when the fix is in the exception entry.
+				if (allowed.length === 0) {
+					const reason = exception === undefined ? "" : ` (${exception.reason})`;
+					errors.push(
+						`${key} in ${lane}: its CREDENTIAL_EXPR_EXCEPTIONS entry${reason} declares no ` +
+							`expression for a "${scoping}" lane, so NOTHING is permitted here.\n` +
+							`    actual: ${normalizeExpr(expr)}\n` +
+							"  An entry that omits a lane fails closed rather than falling back to the generated " +
+							"form, since a half-declared exception silently re-permits the canonical shape " +
+							"everywhere it forgot to mention. Add this lane to the entry's `expressions` map with " +
+							"the exact expression allowed there, or stop wiring the credential into this lane.",
+					);
+					continue;
+				}
 				errors.push(
 					`${key} in ${lane}: credential expression is not the form generated for it from the ` +
 						`registry for a "${scoping}" lane.\n    actual:   ${normalizeExpr(expr)}\n` +

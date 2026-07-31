@@ -15,6 +15,7 @@
 // failure messages on synthetic drift, so a future regression names the offending file + key.
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
+import type { CredentialExprExceptions } from "./lib/workflow-sync.ts";
 import {
 	BAKE_JOB,
 	BAKE_STEP,
@@ -593,12 +594,13 @@ describe("checkCredentialExprExceptions", () => {
 		expect(errors[0]).toContain("expressions.matrix is blank");
 	});
 
-	// An exception is per-lane, so a lane it omits must fail rather than fall through to the generated
-	// form — otherwise declaring one lane would silently re-permit the canonical shape everywhere else.
-	test("an exception permits nothing in a lane it does not declare", () => {
-		expect(canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "matrix")).toHaveLength(
-			1,
-		);
+	// An exception is per-lane, so one lane's declared spelling must not pass in another lane. Both real
+	// entries declare every lane they are wired into, so this exercises the WRONG-EXPRESSION branch: the
+	// `inputs` lane has a declared form and "1" simply is not it.
+	test("one lane's declared spelling does not pass in another lane", () => {
+		expect(
+			canonicalCredentialExpressions("MICROSANDBOX_LOCAL_BENCH", ["microsandbox-local"], "inputs"),
+		).toHaveLength(1);
 		const errors = checkCredentialExpressions({
 			"synthetic.yml": {
 				env: { MICROSANDBOX_LOCAL_BENCH: "1" },
@@ -608,6 +610,37 @@ describe("checkCredentialExprExceptions", () => {
 		// "1" is the declared `unconditional` spelling, so it must NOT pass in the `inputs` lane.
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("declared exception");
+		expect(errors[0]).toContain("expected:");
+	});
+
+	// The other branch: an entry that omits a lane permits NOTHING there, rather than falling back to the
+	// generated form — otherwise declaring one lane would silently re-permit the canonical shape in every
+	// lane the entry forgot. Reached only through an injected table, since no real entry omits a lane.
+	const OMITS_INPUTS: CredentialExprExceptions = {
+		NSC_TOKEN_FILE: { reason: "declares matrix only", expressions: { matrix: "x" } },
+	};
+
+	test("an exception permits nothing in a lane it does not declare", () => {
+		expect(
+			canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "inputs", OMITS_INPUTS),
+		).toEqual([]);
+		// The declared lane still permits its one spelling — omission is per-lane, not entry-wide.
+		expect(
+			canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "matrix", OMITS_INPUTS),
+		).toEqual(["x"]);
+	});
+
+	test("names the undeclared lane as the fix, rather than printing an empty expected form", () => {
+		const errors = checkCredentialExpressions(
+			{ "synthetic.yml": { env: { NSC_TOKEN_FILE: "anything" }, scoping: "inputs" } },
+			OMITS_INPUTS,
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("declares no expression");
+		expect(errors[0]).toContain('"inputs" lane');
+		// No form is permitted, so there is nothing to suggest — the message must not imply otherwise.
+		expect(errors[0]).not.toContain("expected:");
+		expect(errors[0]).not.toContain("must match that exact expression");
 	});
 });
 
