@@ -12,6 +12,7 @@
 //     GitHub would reject it. stdout is left to carry the (inherited) build log, and
 //   • argv[1] (optional): a build-metadata.json diagnostic artifact with the same facts.
 import { config } from "@sandbox-benchmarks/providers";
+import { logWarning } from "../lib/actions-log.ts";
 import { buildAndPushCandidate, imageRepo, resolveImageDigest } from "../lib/bake/image.ts";
 import type { Log } from "../lib/bake/types.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
@@ -38,8 +39,11 @@ if (import.meta.main) {
 		digest = await resolveImageDigest(config.toolchainImageCandidate);
 		digestRef = `${repo}@${digest}`;
 	} catch (err) {
-		log(
-			`::warning::could not resolve candidate digest (${err instanceof Error ? err.message : String(err)}); recording the tag instead.`,
+		// A real @actions/core annotation, not a hand-written `::warning::` on stderr (which Actions
+		// never parses, so the old string produced no annotation at all); locally it prints to stderr.
+		logWarning(
+			`could not resolve candidate digest (${err instanceof Error ? err.message : String(err)}); recording the tag instead.`,
+			{ title: "Candidate digest unresolved" },
 		);
 	}
 

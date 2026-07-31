@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { escapeHtml, isFailure, renderCell } from "./release-summary.ts";
+import {
+	classifyRelease,
+	escapeHtml,
+	isFailure,
+	readReports,
+	renderCell,
+} from "./release-summary.ts";
+
+const REQUIRED = ["e2b", "daytona-vm", "modal-gvisor"];
 
 describe("isFailure", () => {
 	// Both spellings are in circulation (GitHub's job.status says `failure`; the bake report and the
@@ -40,5 +48,121 @@ describe("renderCell", () => {
 	test("leaves plain prose unwrapped (still escaped)", () => {
 		expect(renderCell("2 vCPU / 8 GiB", "plain")).toBe("2 vCPU / 8 GiB");
 		expect(renderCell("<b>", "plain")).toBe("&lt;b&gt;");
+	});
+});
+
+describe("classifyRelease", () => {
+	test("the run 29896891577 promote: green job, best-effort daytona-container failed → warning, no discrepancy", () => {
+		// After the exit-code fix this promote job is GREEN (it published :v5). The summary must still make
+		// the daytona-container failure obvious at a glance — a warning result, not a silent success.
+		const v = classifyRelease({
+			jobStatus: "success",
+			reports: [
+				{ provider: "e2b", status: "ok" },
+				{ provider: "daytona-vm", status: "ok" },
+				{ provider: "daytona-container", status: "failed" },
+				{ provider: "modal-gvisor", status: "ok" },
+				{ provider: "image", status: "ok" },
+			],
+			required: REQUIRED,
+		});
+		expect(v.kind).toBe("warning");
+		expect(v.result).toBe("Passed with non-blocking failure(s): daytona-container");
+		expect(v.blocking).toEqual([]);
+		expect(v.nonBlocking).toEqual(["daytona-container"]);
+		expect(v.discrepancy).toBeUndefined();
+	});
+
+	test("a required provider failure → failure result naming the blocker", () => {
+		const v = classifyRelease({
+			jobStatus: "failure",
+			reports: [
+				{ provider: "e2b", status: "ok" },
+				{ provider: "daytona-vm", status: "failed" },
+			],
+			required: REQUIRED,
+		});
+		expect(v.kind).toBe("failure");
+		expect(v.result).toBe("Failed — blocking: daytona-vm");
+		expect(v.discrepancy).toBeUndefined();
+	});
+
+	test("the `image` commit-point failure blocks even though it is not a required provider", () => {
+		const v = classifyRelease({
+			jobStatus: "failure",
+			reports: [{ provider: "image", status: "failed", reason: "v5 already exists" } as never],
+			required: REQUIRED,
+		});
+		expect(v.kind).toBe("failure");
+		expect(v.result).toBe("Failed — blocking: image");
+	});
+
+	test("green-but-failed: job status GREEN but a blocking failure recorded → escalates with a discrepancy banner", () => {
+		const v = classifyRelease({
+			jobStatus: "success",
+			reports: [{ provider: "daytona-vm", status: "failed" }],
+			required: REQUIRED,
+		});
+		expect(v.kind).toBe("failure");
+		expect(v.discrepancy).toContain("GREEN but a blocking failure");
+	});
+
+	test("red-but-nothing-failed: job failed with no blocking report → points outside the provider reports", () => {
+		const v = classifyRelease({
+			jobStatus: "failure",
+			reports: [{ provider: "e2b", status: "ok" }],
+			required: REQUIRED,
+		});
+		expect(v.kind).toBe("failure");
+		expect(v.discrepancy).toContain("outside the provider reports");
+	});
+
+	test("all clean → OK; a skip is noted but not a failure", () => {
+		expect(
+			classifyRelease({
+				jobStatus: "success",
+				reports: [
+					{ provider: "e2b", status: "ok" },
+					{ provider: "blaxel", status: "skipped" },
+				],
+				required: REQUIRED,
+			}),
+		).toMatchObject({ kind: "ok", result: "OK (skipped: blaxel)" });
+	});
+
+	test("no report (plan/build phase) → mirrors the raw job status", () => {
+		expect(classifyRelease({ jobStatus: "success", reports: [], required: [] }).result).toBe("OK");
+		expect(classifyRelease({ jobStatus: "failure", reports: [], required: [] })).toMatchObject({
+			kind: "failure",
+			result: "Failed (failure)",
+			discrepancy: undefined,
+		});
+	});
+});
+
+describe("readReports", () => {
+	test("extracts a well-formed reports array from a promote/bake payload", () => {
+		const json = JSON.stringify({
+			version: { image: "x" },
+			reports: [
+				{ provider: "e2b", status: "ok", durationMs: 12061 },
+				{ provider: "daytona-container", status: "failed", reason: "No runners…" },
+			],
+		});
+		expect(readReports(json)).toEqual([
+			{ provider: "e2b", status: "ok", durationMs: 12061 },
+			{ provider: "daytona-container", status: "failed", reason: "No runners…" },
+		]);
+	});
+
+	test("tolerates absence and malformed input (metadata still renders)", () => {
+		expect(readReports(undefined)).toEqual([]);
+		expect(readReports("")).toEqual([]);
+		expect(readReports("not json")).toEqual([]);
+		expect(readReports(JSON.stringify({ candidate: {} }))).toEqual([]);
+		// Drops entries missing the provider/status contract rather than throwing.
+		expect(
+			readReports(JSON.stringify({ reports: [{ provider: "e2b" }, { status: "ok" }] })),
+		).toEqual([]);
 	});
 });
