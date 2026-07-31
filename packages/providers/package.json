@@ -19,6 +19,7 @@
     "@computesdk/namespace": "catalog:computesdk",
     "@computesdk/provider": "catalog:computesdk",
     "@sandbox-benchmarks/schema": "workspace:*",
+    "@vercel/sandbox": "catalog:computesdk",
     "arktype": "catalog:",
     "computesdk": "catalog:computesdk",
     "microsandbox": "catalog:computesdk",

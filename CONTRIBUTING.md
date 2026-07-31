@@ -51,8 +51,10 @@ bun run check:catalog-drift                                    # fail if the com
    one-sided provider is a compile error.
 3. **Template** — add a template builder under [`packages/templates`](./packages/templates) so the
    provider can be baked with the toolchain image.
-4. The provider now flows through the matrix, normalizer, leaderboard, and economics automatically — no
-   consumer edits. Bring it up live per the provider end-to-end issues (E2B/Modal/Daytona).
+4. **Exhaustive consumers** — update the CLI bake map, candidate create-options switch, release-plan
+   artifact switch, provider-id test oracles, and both benchmark workflows' synchronized credential
+   environment. Provider matrix fan-out, normalization, leaderboard, and economics remain automatic.
+5. Bring it up live with a single-provider branch dispatch before adding it to the default matrix list.
 
 ## Add a suite
 

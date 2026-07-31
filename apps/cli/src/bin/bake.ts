@@ -54,6 +54,9 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	namespace: async (_image, log) => {
 		log("namespace boots the candidate image directly — no candidate artifact to bake");
 	},
+	vercel: async (_image, log) => {
+		log("vercel boots the candidate image mirrored to VCR — no separate sandbox artifact to bake");
+	},
 };
 
 /**
@@ -173,6 +176,7 @@ if (import.meta.main) {
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: pinnedCandidateImage,
+		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,
 		daytonaContainerTarget: config.daytonaContainer.target,
 	};

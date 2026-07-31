@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { pinsSchema } from "./lib/pins.ts";
-import { e2bToml, miseToml, pins, validatedPins } from "./pins.ts";
+import { e2bToml, miseToml, pins, VERCEL_VCR_REPOSITORY, validatedPins } from "./pins.ts";
 
 // A synthetic, fully-specified pin set — exercises the schema independently of the real pins, so
 // these schema-level tests stay stable across future pin updates.
@@ -23,6 +23,10 @@ const validSample = {
 };
 
 describe("@sandbox-benchmarks/templates pins", () => {
+	it("versions the VCR mirror with the shared toolchain", () => {
+		expect(VERCEL_VCR_REPOSITORY).toBe(`${TOOLCHAIN_IMAGE_NAME}-vercel`);
+	});
+
 	it("accepts fully-specified pins", () => {
 		expect(pinsSchema(validSample) instanceof type.errors).toBe(false);
 	});

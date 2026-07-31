@@ -147,8 +147,21 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BL_API_KEY` | bench matrix/smoke only |
    | `BL_WORKSPACE` | bench matrix/smoke only |
    | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
+   | `VERCEL_TOKEN` | Bootstrap only: mints short-lived Vercel OIDC tokens in Actions |
+   | `VERCEL_ORG_ID` | API token mint and Sandbox SDK team ID only (`team_*`) |
+   | `VERCEL_PROJECT_ID` | API token mint and Sandbox SDK project ID only (`prj_*`) |
+   | `VERCEL_TEAM_SLUG` | Canonical lowercase VCR team path segment (never `team_*`) |
+   | `VERCEL_PROJECT_NAME` | Canonical lowercase VCR project path segment (never `prj_*`) |
 
    `MSB_API_URL` is an optional Microsandbox Cloud endpoint override for staging or private deployments. Leave it unset to use the SDK's `https://api.microsandbox.dev` default.
+
+   Enable **OIDC Federation** in the linked Vercel project's Security settings and create the
+   `sandbox-benchmarks-toolchain-vercel` VCR repository once (for example with `vercel vcr add`). The
+   workflow exchanges `VERCEL_TOKEN` at job start and writes the returned bearer to a mode-`0600`
+   file under `runner.temp`; it is never written to a step output. The SDK reads that file immediately
+   before provider construction, and `docker login vcr.vercel.com -u oidc` reads it through stdin.
+   Every job removes the file in an `if: always()` cleanup step. API IDs are used only for token mint
+   and SDK credentials; VCR refs are built only from `VERCEL_TEAM_SLUG` and `VERCEL_PROJECT_NAME`.
 
 ### Main ruleset (public-safe bot merges)
 

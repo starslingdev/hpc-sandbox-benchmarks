@@ -30,6 +30,14 @@ export async function buildAndPushCandidate(log: Log): Promise<void> {
 	await run(["docker", "tag", config.toolchainImageVersion, config.toolchainImageCandidate], log);
 	await run(["docker", "push", config.toolchainImageCandidate], log);
 	await run(imagetoolsNormalizeCmd(config.toolchainImageCandidate), log);
+	// The thin Vercel variant is staged in GHCR so the separate Vercel matrix cell can mirror the
+	// exact bytes into VCR after obtaining its short-lived OIDC registry login.
+	await run(
+		["docker", "tag", config.vercelSourceImageVersion, config.vercelSourceImageCandidate],
+		log,
+	);
+	await run(["docker", "push", config.vercelSourceImageCandidate], log);
+	await run(imagetoolsNormalizeCmd(config.vercelSourceImageCandidate), log);
 }
 
 /** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */
@@ -173,6 +181,7 @@ export async function imageExistsInRegistry(ref: string): Promise<boolean> {
 export async function promoteImage(
 	log: Log,
 	source: string = config.toolchainImageCandidate,
+	target: string = config.toolchainImageVersion,
 ): Promise<void> {
-	await run(imagetoolsRetagCmd(source, config.toolchainImageVersion), log);
+	await run(imagetoolsRetagCmd(source, target), log);
 }
