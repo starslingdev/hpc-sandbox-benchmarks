@@ -61,13 +61,10 @@ describe("@sandbox-benchmarks/providers", () => {
 		expect(gvisor?.createOptions?.experimentalOptions).toBeUndefined();
 	});
 
-	it("passes Vercel's shared VCR image and vCPU target through provider options", () => {
+	it("configures Vercel through its custom provider factory", () => {
 		const adapter = providers.find((provider) => provider.name === "vercel");
 		expect(adapter?.requiredEnvVars).toEqual(["VERCEL_OIDC_TOKEN"]);
-		expect(adapter?.createOptions).toEqual({
-			image: config.vercelImage,
-			resources: { vcpus: TARGET_SPEC.vcpus },
-		});
+		expect(adapter?.createOptions).toEqual({});
 		expect(adapter?.createCompute().name).toBe("vercel");
 	});
 

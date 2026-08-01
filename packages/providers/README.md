@@ -12,7 +12,8 @@ adapters over raw vendor SDKs only where required.
 
 **What lives here:** provider factories and focused compatibility adapters. Most `@computesdk/*`
 packages adapt their vendor SDK directly; Microsandbox uses a local `defineProvider` implementation.
-Vercel uses `@computesdk/vercel` without a local wrapper. The package also
+Vercel's local provider starts from ComputeSDK's upstream adapter but uses pinned `@vercel/sandbox`
+v2, because the published wrapper still pins a pre-VCR SDK. The package also
 owns benchmark create-time policy — the pinned `TARGET_SPEC` and toolchain image. The assembled
 `providers` registry joins the schema `PROVIDERS` metadata with the adapter
 map by id; both are keyed by `ProviderId`, so a one-sided provider is a compile error rather than a
@@ -42,7 +43,7 @@ packages/templates/images/build.sh
 vercel vcr push docker \
   "sandbox-benchmarks-toolchain-vercel:v6"
 
-# Pull a short-lived project OIDC token. @computesdk/vercel discovers it directly from the environment.
+# Pull a short-lived project OIDC token. The Vercel SDK discovers it directly from the environment.
 vercel pull --yes
 vercel env pull .env.vercel.local
 set -a; . ./.env.vercel.local; set +a
@@ -54,5 +55,6 @@ REQUIRE_PROVIDERS=vercel bun apps/cli/src/bin/bench-smoke.ts
 ```
 
 The VCR path is fixed to this repository's human-readable namespace. The `EXIT` trap removes the
-temporary environment file and Docker credential even if validation fails. Sandbox lifecycle
-behavior is provided by the pinned `@computesdk/vercel` package.
+temporary environment file and Docker credential even if validation fails. The local ComputeSDK
+provider uses the v2 SDK's name-keyed lifecycle, detached current-session execution, non-resuming
+reconnects, and permanent delete cleanup.

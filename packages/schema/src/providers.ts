@@ -539,7 +539,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 	vercel: {
 		displayName: "Vercel Sandbox",
 		website: "https://vercel.com/docs/sandbox",
-		sdkPackage: "@computesdk/vercel",
+		sdkPackage: "@vercel/sandbox",
 		requiredEnvVars: ["VERCEL_OIDC_TOKEN"],
 		isolation: {
 			technology: "Firecracker microVM",
@@ -554,7 +554,8 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 		maturity: {
 			status: "beta",
-			notes: "ComputeSDK Vercel integration; opt-in until a committed validation run exists.",
+			notes:
+				"Custom ComputeSDK provider based on the upstream adapter and updated for the latest Vercel SDK; opt-in until a committed validation run exists.",
 		},
 		// Only vCPU is requested; Vercel derives memory at a fixed 2048 MB/vCPU ratio. Four vCPU
 		// therefore reaches this benchmark's 8 GiB target, but the dimensions are not independent.
