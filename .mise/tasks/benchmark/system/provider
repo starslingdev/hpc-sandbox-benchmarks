@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Identify the infrastructure under a sandbox: egress ASN/org, geo, and DMI hardware identity"
+#MISE description="Identify the infrastructure under a sandbox: egress ASN/org, geo, DMI hardware identity, and the isolation technique (Firecracker/libkrun/gVisor/Sysbox/…)"
 # Mirrors the "Provider Info" step of runs-on Bench Global, which is the source of the
 # `Infrastructure` column in their published table:
 #
@@ -24,12 +24,21 @@
 # authoritative BGP origin data, no HTTP, no quota, no install, and no key. ipinfo is retained only
 # for city/region, and its failure is recorded in `geo_source` rather than blanking the identity.
 #
+# AND THE THIRD QUESTION — "what is actually isolating this workload". Neither the ASN nor the DMI
+# answers it, and it is the one that decides whether two providers' numbers may be read side by side:
+# a gVisor syscall trap, a Firecracker virtio round-trip and a Sysbox namespace boundary have
+# different overhead profiles for the same benchmark. The schema DECLARES an isolation per provider
+# (packages/schema/src/providers.ts), authoritative but unverified; the last section of this probe is
+# the independent observation. See its own header for how it identifies a specific VMM/runtime.
+#
 # Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions: lib/bench.sh).
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
 RESULT_FILE="$(result_path "$(task_result_name)")"
+
+have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- Public egress IP --------------------------------------------------------
 # DNS echoes first: no quota, and they answer over :53 where an HTTP egress proxy may not exist.
@@ -64,7 +73,7 @@ public_ip() {
 	# public IPv4 path at all (e.g. Blaxel egresses through a globally-routed IPv6) — the Cymru and
 	# ipinfo lookups below follow whichever family answered here.
 	local ip=""
-	if command -v dig &>/dev/null; then
+	if have dig; then
 		ip="$(dig -4 @ns1.google.com TXT o-o.myaddr.l.google.com +short +time=2 +tries=1 2>/dev/null | _first_ipv4)"
 		[ -z "$ip" ] && ip="$(dig -4 @resolver1.opendns.com myip.opendns.com +short +time=2 +tries=1 2>/dev/null | _first_ipv4)"
 		[ -z "$ip" ] && ip="$(dig -4 @1.0.0.1 ch txt whoami.cloudflare +short +time=2 +tries=1 2>/dev/null | _first_ipv4)"
@@ -72,7 +81,7 @@ public_ip() {
 	[ -z "$ip" ] && ip="$(curl -s -4 --max-time 3 https://ifconfig.me 2>/dev/null | _first_ipv4)"
 	[ -z "$ip" ] && ip="$(curl -s -4 --max-time 3 https://ipinfo.io/ip 2>/dev/null | _first_ipv4)"
 	if [ -z "$ip" ]; then
-		if command -v dig &>/dev/null; then
+		if have dig; then
 			# Both echoes report the QUERY's source address, so over -6 transport they return the
 			# public IPv6. (No OpenDNS leg: myip.opendns.com only answers for A-record resolvers.)
 			ip="$(dig -6 @ns1.google.com TXT o-o.myaddr.l.google.com +short +time=2 +tries=1 2>/dev/null | _first_ipv6)"
@@ -150,7 +159,7 @@ _cymru_from_origin() {
 }
 cymru_lookup() {
 	local ip="$1" rev nib
-	command -v dig &>/dev/null || return 1
+	have dig || return 1
 	# Dispatch by family — the IPv6 nibble form is a different zone (origin6). Bail on anything
 	# that is neither, rather than silently querying a malformed name.
 	if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -175,7 +184,7 @@ jq_get() { printf '%s' "$IPINFO" | jq -r "$1 // \"\"" 2>/dev/null || printf ''; 
 # A quota'd or errored ipinfo returns a body with `.error` (or no `.ip` at all). Distinguish that
 # from a genuine answer instead of silently reporting blanks.
 GEO_SOURCE="ipinfo"
-if ! command -v jq &>/dev/null; then
+if ! have jq; then
 	# "No parser on this image" is NOT "ipinfo refused us": jq_get's `|| printf ''` swallows exit 127,
 	# so without this every field reads empty under a geo_source claiming an upstream outage.
 	GEO_SOURCE="no-jq"
@@ -248,12 +257,540 @@ BIOS_VENDOR="$(dmi bios_vendor bios-vendor)"
 # indistinguishable from "tool missing" on exactly the whose-metal-is-this axis this probe answers.
 VIRT="$(systemd-detect-virt 2>/dev/null || true)"
 
+# =============================================================================
+# Isolation fingerprint — WHICH sandboxing technique is this?
+# =============================================================================
+# `virtualization` above (systemd-detect-virt) answers a strictly coarser question than the one this
+# comparison needs. Every KVM-backed microVM reads exactly `kvm` — Firecracker, libkrun, Cloud
+# Hypervisor and stock QEMU are one indistinguishable bucket — while gVisor reads `container-other`
+# and a stock OCI container reads `docker`. Worse, it consults marker FILES before it looks at
+# hardware, so an image built from a Docker base that baked in `/run/systemd/container` makes a
+# genuine microVM report `docker` (observed on this repo's own dev sandbox: a Firecracker guest, ACPI
+# OEM id `FIRECK`, that systemd-detect-virt calls a container).
+#
+# METHOD. Collect independently meaningful SIGNALS, publish every one of them, then classify with an
+# ordered rule set that records which evidence fired and how much it is worth. The verdict is never
+# the only thing kept: a reader who disagrees can re-derive it from the signals in the committed
+# record without re-running anything.
+#
+# TWO LAYERS, reported separately, because a sandbox is routinely both. `machine_vmm` is the
+# virtualization under the kernel we can see; `container_runtime` is the namespace/kernel-emulation
+# boundary layered on top of it (Daytona's container class is Sysbox inside a VM; Modal's default is
+# gVisor). `isolation_runtime` is the headline — the innermost boundary, i.e. the one that actually
+# confines the workload — and it is a single token so no consumer has to parse a compound label.
+#
+# CONFIDENCE is part of the answer:
+#   confirmed — the runtime names itself (ACPI OEM id, SMBIOS vendor, a gVisor banner, a sysboxfs
+#               mount). These are self-declarations from the isolation layer, not inferences.
+#   strong    — a device/boot signature that no other deployed implementation produces.
+#   likely    — a signature consistent with one implementation but reachable by others.
+#   unknown   — refuse to name it.
+#
+# WHAT IS DELIBERATELY NOT RECORDED. The raw kernel command line, the cgroup path and the overlay
+# upperdir all identify a single sandbox (container ids) or can carry a control-plane token or
+# internal endpoint, and every field here lands in a committed dataset. Only the matched cmdline
+# TOKENS and the derived engine names are kept — enough to re-classify, nothing per-sandbox.
+
+ISOLATION_EVIDENCE=()
+note_evidence() { ISOLATION_EVIDENCE+=("$1"); }
+
+# The boot log, read ONCE and bounded. Everything this section wants from it — the ACPI RSDP line,
+# "Hypervisor detected: …", gVisor's startup banner — is printed during early boot, and slurping an
+# unbounded ring buffer into a shell variable is not free. Captured into a variable rather than
+# grepped through a pipe in a condition, because `set -o pipefail` turns the SIGPIPE that `head`
+# delivers to `dmesg` into a non-zero pipeline status: a `if dmesg | head | grep -q …` test reports
+# FALSE on a successful match, which is exactly backwards.
+DMESG_HEAD=""
+have dmesg && DMESG_HEAD="$(dmesg 2>/dev/null | head -200)"
+
+# ---- Signal: kernel command line (matched tokens only) ----------------------
+# A VMM's default boot arguments are one of the strongest fingerprints available on a guest with no
+# SMBIOS at all: Firecracker boots `reboot=k panic=1 pci=off`, libkrun `console=hvc0
+# rootfstype=virtiofs … no-kvmapf`, Kata carries its `agent.*` options.
+KERNEL_CMDLINE=""
+[ -r /proc/cmdline ] && KERNEL_CMDLINE="$(tr -d '\n' </proc/cmdline 2>/dev/null)"
+CMDLINE_TOKENS=(
+	reboot=k panic=1 panic=-1 pci=off nomodule no-kvmapf
+	virtio_mmio.device console=ttyS0 console=hvc0
+	root=/dev/vda root=/dev/pmem0 rootfstype=virtiofs init=/init.krun
+	agent. systemd.unit=kata-containers.target nvme_core.io_timeout
+)
+CMDLINE_MARKERS=""
+for _token in "${CMDLINE_TOKENS[@]}"; do
+	# Anchored at a word boundary (the leading space) so `panic=1` cannot match inside `panic=100`
+	# and `console=ttyS0` cannot match a substring of some other option's value.
+	case " ${KERNEL_CMDLINE} " in
+	*" ${_token}"*) CMDLINE_MARKERS="${CMDLINE_MARKERS:+${CMDLINE_MARKERS},}${_token}" ;;
+	esac
+done
+cmdline_has() { case ",${CMDLINE_MARKERS}," in *",${1},"*) return 0 ;; esac; return 1; }
+
+# ---- Signal: ACPI table identity — the SMBIOS substitute --------------------
+# The minimal VMMs deliberately ship no SMBIOS, which is why `manufacturer`/`product_name` above are
+# empty for almost every provider in this matrix. Most of them DO expose ACPI tables, and an ACPI
+# table header carries the same kind of self-declaration: a 6-byte OEM id and a 4-byte creator id.
+# Firecracker writes `FIRECK`/`FCAT`, Cloud Hypervisor `CLOUDH`, a SeaBIOS-built QEMU guest `BOCHS`.
+# That makes this the single highest-value probe in the section — a definitive VMM name where DMI
+# has nothing to say.
+#
+# Layout (ACPI 6.x §21.2.1, the fixed 36-byte description header): signature[4] length[4]
+# revision[1] checksum[1] oem_id[6] oem_table_id[8] oem_revision[4] creator_id[4]
+# creator_revision[4] — so the OEM id is at byte 10 and the creator id at byte 28.
+ACPI_OEM=""
+ACPI_CREATOR=""
+_rstrip() { local s="$1"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
+_read_acpi_ids() {
+	local table oem creator
+	for table in /sys/firmware/acpi/tables/DSDT /sys/firmware/acpi/tables/FACP \
+		/sys/firmware/acpi/tables/APIC /sys/firmware/acpi/tables/XSDT; do
+		[ -r "$table" ] || continue
+		oem="$(dd if="$table" bs=1 skip=10 count=6 2>/dev/null | tr -cd '[:print:]')"
+		[ -n "$oem" ] || continue
+		creator="$(dd if="$table" bs=1 skip=28 count=4 2>/dev/null | tr -cd '[:print:]')"
+		ACPI_OEM="$(_rstrip "$oem")"
+		ACPI_CREATOR="$(_rstrip "$creator")"
+		return 0
+	done
+	return 1
+}
+_read_acpi_ids || true
+if [ -z "$ACPI_OEM" ] && [ -n "$DMESG_HEAD" ]; then
+	# `/sys/firmware/acpi/tables/*` is mode 0400; a non-root sandbox falls back to the boot log, which
+	# prints the same id: "ACPI: RSDP 0x00000000000E0000 000024 (v02 FIRECK)".
+	ACPI_OEM="$(printf '%s\n' "$DMESG_HEAD" | sed -n 's/^.*ACPI: RSDP .*(v[0-9]* \([^)]*\)).*$/\1/p' | head -1)"
+	ACPI_OEM="$(_rstrip "$ACPI_OEM")"
+fi
+
+# ---- Signal: is there a hypervisor under this kernel at all? ----------------
+# The CPUID hypervisor bit is set by every VMM and by nothing else, so it separates "guest" from
+# "bare metal" without naming anyone. lscpu's vendor line resolves the paravirt interface (KVM,
+# VMware, Microsoft, Xen) when the tool exists; the boot log carries the same string when it does not.
+#
+# The bit is x86-only. On aarch64 /proc/cpuinfo has a `Features` line and no hypervisor bit at all,
+# so its ABSENCE there says nothing — recorded separately as `cpuinfo_flags` rather than folded into
+# the flag, because "no hypervisor bit on x86" is proof of bare metal and "no hypervisor bit on ARM"
+# is no information whatsoever, and one boolean cannot mean both.
+_flags_line="$(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null)"
+CPUINFO_FLAGS="false"
+[ -n "$_flags_line" ] && CPUINFO_FLAGS="true"
+# Whole-word match in the shell rather than a `grep` alternation: BRE `\|` is a GNU extension that a
+# busybox image does not honour, and silently never matching would read as bare metal.
+HYPERVISOR_FLAG="false"
+case " ${_flags_line} " in *" hypervisor "*) HYPERVISOR_FLAG="true" ;; esac
+CPU_HYPERVISOR=""
+if have lscpu; then
+	CPU_HYPERVISOR="$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Hypervisor vendor:[[:space:]]*//p' | head -1)"
+fi
+if [ -z "$CPU_HYPERVISOR" ] && [ -n "$DMESG_HEAD" ]; then
+	CPU_HYPERVISOR="$(printf '%s\n' "$DMESG_HEAD" | sed -n 's/^.*Hypervisor detected: //p' | head -1)"
+fi
+
+# ---- Signal: virtio topology ------------------------------------------------
+# WHICH devices the VMM chose to expose, and over WHICH transport, is what separates two KVM guests
+# that otherwise look identical. Firecracker gives a guest virtio-blk + virtio-net (classically over
+# MMIO, with `pci=off`); libkrun gives it virtio-fs as the ROOT plus virtio-console and, in its
+# default TSI mode, no network device at all; Cloud Hypervisor and stock QEMU put everything on PCI.
+#
+# Read from the device-id register rather than the bound driver's name: the id is the hardware fact
+# and is stable across kernel versions, while driver names are not (vsock binds as
+# `vmw_vsock_virtio_transport`, virtio-fs as `virtiofs`). Ids are the virtio spec's §5 numbering.
+VIRTIO_TRANSPORT="none"
+VIRTIO_DEVICES=""
+_virtio_name() {
+	case "$1" in
+	1) printf 'net' ;;
+	2) printf 'blk' ;;
+	3) printf 'console' ;;
+	4) printf 'rng' ;;
+	5) printf 'balloon' ;;
+	9) printf '9p' ;;
+	16) printf 'gpu' ;;
+	18) printf 'input' ;;
+	19) printf 'vsock' ;;
+	26) printf 'fs' ;;
+	27) printf 'pmem' ;;
+	*) printf 'id%s' "$1" ;;
+	esac
+}
+_scan_virtio() {
+	local dev id path saw_pci=0 saw_mmio=0
+	local -a names=()
+	for dev in /sys/bus/virtio/devices/*; do
+		[ -d "$dev" ] || continue
+		id=""
+		[ -r "$dev/device" ] && id="$(tr -d '\n' <"$dev/device" 2>/dev/null)"
+		case "$id" in
+		0x[0-9a-fA-F]* | [0-9]*) names+=("$(_virtio_name "$((id))")") ;;
+		esac
+		path="$(readlink -f "$dev" 2>/dev/null)"
+		case "$path" in
+		# A virtio device's parent is either a PCI function (`…/pci0000:00/0000:00:01.0/virtio0`) or
+		# a platform device standing for an MMIO window (`…/platform/d0000000.virtio_mmio/virtio0`).
+		*/pci[0-9]*) saw_pci=1 ;;
+		*/platform/*) saw_mmio=1 ;;
+		esac
+	done
+	if [ ${#names[@]} -gt 0 ]; then
+		VIRTIO_DEVICES="$(printf '%s\n' "${names[@]}" | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')"
+	fi
+	if [ "$saw_mmio" = 1 ] && [ "$saw_pci" = 1 ]; then
+		VIRTIO_TRANSPORT="mixed"
+	elif [ "$saw_mmio" = 1 ]; then
+		VIRTIO_TRANSPORT="mmio"
+	elif [ "$saw_pci" = 1 ]; then
+		VIRTIO_TRANSPORT="pci"
+	fi
+}
+_scan_virtio
+virtio_has() { case ",${VIRTIO_DEVICES}," in *",${1},"*) return 0 ;; esac; return 1; }
+
+# ---- Signal: the root filesystem and how it is backed -----------------------
+# `virtiofs` as the root is a libkrun/Kata shape; a real block device (`/dev/vda`) with ext4 is the
+# microVM-with-a-disk shape; `overlay` is a container; gVisor names its own overlay `overlayfs` and
+# its gofer-backed mounts `9p`/`goferfs`, which no Linux kernel does.
+#
+# /proc/self/mountinfo, not `findmnt`: no tool dependency, and its post-"-" fields give fstype and
+# source unambiguously even when the source contains spaces. The LAST entry for `/` is the effective
+# one after any pivot/overlay.
+ROOT_FSTYPE=""
+ROOT_SOURCE=""
+OVERLAY_UPPER=""
+_root_line="$(awk '$5 == "/"' /proc/self/mountinfo 2>/dev/null | tail -1)"
+if [ -n "$_root_line" ]; then
+	ROOT_FSTYPE="$(printf '%s' "$_root_line" | awk '{for (i = 6; i <= NF; i++) if ($i == "-") { print $(i + 1); exit }}')"
+	ROOT_SOURCE="$(printf '%s' "$_root_line" | awk '{for (i = 6; i <= NF; i++) if ($i == "-") { print $(i + 2); exit }}')"
+	case "$_root_line" in
+	*upperdir=*)
+		OVERLAY_UPPER="${_root_line##*upperdir=}"
+		OVERLAY_UPPER="${OVERLAY_UPPER%%,*}"
+		OVERLAY_UPPER="${OVERLAY_UPPER%% *}"
+		;;
+	esac
+fi
+if [ -z "$ROOT_FSTYPE" ]; then
+	# gVisor and some minimal images expose /proc/mounts but not /proc/self/mountinfo.
+	ROOT_FSTYPE="$(awk '$2 == "/" { src = $1; fs = $3 } END { print fs }' /proc/mounts 2>/dev/null)"
+	ROOT_SOURCE="$(awk '$2 == "/" { src = $1 } END { print src }' /proc/mounts 2>/dev/null)"
+fi
+HAS_VIRTIOFS="false"
+grep -qm1 '[[:space:]]virtiofs[[:space:]]' /proc/mounts 2>/dev/null && HAS_VIRTIOFS="true"
+
+# ---- Signal: firmware surface, consoles, buses ------------------------------
+HAS_SMBIOS="false"
+[ -d /sys/class/dmi/id ] && HAS_SMBIOS="true"
+HAS_ACPI="false"
+[ -d /sys/firmware/acpi ] && HAS_ACPI="true"
+HAS_PCI="false"
+for _dev in /sys/bus/pci/devices/*; do
+	[ -e "$_dev" ] && HAS_PCI="true"
+	break
+done
+# Console shape: /dev/hvc0 is virtio-console (libkrun, Cloud Hypervisor, Kata); /dev/ttyS0 is an
+# emulated 8250 (Firecracker, QEMU, most clouds).
+HAS_HVC0="false"
+[ -c /dev/hvc0 ] && HAS_HVC0="true"
+HAS_TTYS0="false"
+[ -c /dev/ttyS0 ] && HAS_TTYS0="true"
+HAS_VSOCK="false"
+[ -c /dev/vsock ] && HAS_VSOCK="true"
+
+# ---- Signal: network shape (libkrun's TSI is visible as an absence) ---------
+# libkrun's default networking is TSI (Transparent Socket Impersonation): the guest gets NO network
+# interface, yet sockets reach the internet because the VMM intercepts them. "Egress works and there
+# is no non-loopback interface" is a signature nothing else in this matrix produces.
+NET_IFACES=""
+for _if in /sys/class/net/*; do
+	[ -e "$_if" ] || continue
+	_name="${_if##*/}"
+	[ "$_name" = "lo" ] && continue
+	NET_IFACES="${NET_IFACES:+${NET_IFACES},}${_name}"
+done
+
+# ---- Signal: container-layer markers ----------------------------------------
+# Split deliberately into two tiers, because conflating them is the single most common way to get
+# this wrong (systemd-detect-virt gets it wrong exactly here):
+#
+#   WEAK      — a file or an environment variable that a container engine writes but that also
+#               survives being baked into an image. `/.dockerenv` and `/run/systemd/container` are
+#               copied into a rootfs built from a container image and then boot inside a microVM.
+#   STRUCTURAL— live kernel state that cannot survive an image copy: a fuse mount, a user-namespace
+#               id map, a capability the boundary dropped, a masked /proc entry, an engine-owned
+#               cgroup path or overlay upperdir.
+#
+# A weak marker alone never names a container runtime; it is recorded as `image-residue` instead.
+CONTAINER_MARKERS=""
+_add_marker() { CONTAINER_MARKERS="${CONTAINER_MARKERS:+${CONTAINER_MARKERS},}$1"; }
+[ -f /.dockerenv ] && _add_marker "dockerenv"
+[ -f /run/.containerenv ] && _add_marker "containerenv"
+CONTAINER_ENV_VALUE=""
+if [ -r /proc/1/environ ]; then
+	CONTAINER_ENV_VALUE="$(tr '\0' '\n' </proc/1/environ 2>/dev/null | sed -n 's/^container=//p' | head -1)"
+fi
+[ -n "$CONTAINER_ENV_VALUE" ] && _add_marker "container-env=${CONTAINER_ENV_VALUE}"
+SYSTEMD_CONTAINER=""
+[ -r /run/systemd/container ] && SYSTEMD_CONTAINER="$(tr -d '\n' </run/systemd/container 2>/dev/null)"
+[ -n "$SYSTEMD_CONTAINER" ] && _add_marker "systemd-container=${SYSTEMD_CONTAINER}"
+
+# Sysbox virtualizes procfs/sysfs through a FUSE daemon mounted as `sysboxfs` over /proc/sys,
+# /proc/uptime and friends — a live mount, and the one unambiguous Sysbox tell from inside.
+SYSBOXFS="false"
+grep -qm1 'sysboxfs' /proc/mounts 2>/dev/null && SYSBOXFS="true"
+
+# The engine that owns our cgroup, from the cgroup PATH only — never the path itself, which embeds a
+# per-sandbox container id.
+CGROUP_ENGINE=""
+_cgroup_raw="$(cat /proc/self/cgroup 2>/dev/null)"
+case "$_cgroup_raw" in
+*sysbox*) CGROUP_ENGINE="sysbox" ;;
+*kubepods*) CGROUP_ENGINE="kubernetes" ;;
+*libpod*) CGROUP_ENGINE="podman" ;;
+*lxc*) CGROUP_ENGINE="lxc" ;;
+*containerd*) CGROUP_ENGINE="containerd" ;;
+*/docker*) CGROUP_ENGINE="docker" ;;
+*machine.slice*) CGROUP_ENGINE="nspawn" ;;
+esac
+# Same treatment for the overlay upperdir: keep the engine it names, drop the id it contains.
+OVERLAY_ENGINE=""
+case "$OVERLAY_UPPER" in
+/var/lib/docker/*) OVERLAY_ENGINE="docker" ;;
+/var/lib/containerd/* | /run/containerd/*) OVERLAY_ENGINE="containerd" ;;
+/var/lib/containers/* | /home/*/.local/share/containers/*) OVERLAY_ENGINE="podman" ;;
+/var/lib/sysbox/*) OVERLAY_ENGINE="sysbox" ;;
+/var/lib/lxd/* | /var/lib/incus/*) OVERLAY_ENGINE="lxd" ;;
+esac
+
+# A remapped user namespace. "0 0 4294967295" is the initial namespace's identity map; anything else
+# means someone put us inside a userns (Sysbox always does, as do rootless podman and unprivileged
+# LXD). Cannot be baked into an image.
+USERNS_MAPPED="false"
+_uidmap="$(awk 'NR == 1 { print $1, $2, $3 }' /proc/self/uid_map 2>/dev/null)"
+[ -n "$_uidmap" ] && [ "$_uidmap" != "0 0 4294967295" ] && USERNS_MAPPED="true"
+
+# CAP_SYS_ADMIN (bit 21) is in a VM guest's root capability set and out of a default OCI container's.
+CAP_SYS_ADMIN="unknown"
+_capeff="$(awk '/^CapEff:/ { print $2 }' /proc/self/status 2>/dev/null)"
+if [[ "$_capeff" =~ ^[0-9a-fA-F]{1,16}$ ]]; then
+	if ((0x$_capeff & 0x200000)); then CAP_SYS_ADMIN="true"; else CAP_SYS_ADMIN="false"; fi
+fi
+
+# runc-family engines mask kernel-introspection paths by bind-mounting /dev/null over them, which
+# leaves them visible in mountinfo. Nothing bakes this into an image either.
+MASKED_PROC="false"
+grep -qEm1 ' /proc/(kcore|keys|timer_list|sched_debug|latency_stats) ' /proc/self/mountinfo 2>/dev/null &&
+	MASKED_PROC="true"
+
+PID1_COMM="$(tr -d '\n' </proc/1/comm 2>/dev/null)"
+KERNEL_BUILD="$(tr -d '\n' </proc/version 2>/dev/null)"
+
+# ---- Signal: gVisor ---------------------------------------------------------
+# gVisor is not a hypervisor and not a namespace: it is a user-space kernel, so every machine-layer
+# signal above describes a machine that does not exist. Detect it FIRST and never let a VMM rule fire
+# on its synthetic hardware.
+GVISOR="false"
+GVISOR_CONFIDENCE=""
+if [[ "$KERNEL_BUILD" == *[gG]Visor* ]] || [[ "$(uname -r 2>/dev/null)" == *gvisor* ]]; then
+	# The sentry names itself in the version string it synthesizes (Modal's build reports kernel
+	# release `4.19.0-gvisor`).
+	GVISOR="true"
+	GVISOR_CONFIDENCE="confirmed"
+	note_evidence "gvisor-version-string"
+elif [[ "$DMESG_HEAD" == *[gG][vV]isor* ]]; then
+	# gVisor's fake boot log opens with "Starting gVisor...".
+	GVISOR="true"
+	GVISOR_CONFIDENCE="confirmed"
+	note_evidence "gvisor-boot-banner"
+elif [ "$HAS_ACPI" = "false" ] && [ "$HAS_SMBIOS" = "false" ] && [ "$VIRTIO_TRANSPORT" = "none" ] &&
+	{ [ "$ROOT_FSTYPE" = "overlayfs" ] || [ "$ROOT_FSTYPE" = "goferfs" ] || [ "$ROOT_FSTYPE" = "9p" ]; }; then
+	# No firmware, no virtio, and a root filesystem whose type name Linux does not use: the real
+	# overlay driver is `overlay`, and `overlayfs`/`goferfs` are the sentry's own spellings.
+	GVISOR="true"
+	GVISOR_CONFIDENCE="strong"
+	note_evidence "gvisor-fs-shape=${ROOT_FSTYPE}"
+fi
+
+# ---- Classify: the machine layer (which VMM, if any) ------------------------
+MACHINE_VMM="unknown"
+MACHINE_CONFIDENCE="unknown"
+_set_machine() {
+	MACHINE_VMM="$1"
+	MACHINE_CONFIDENCE="$2"
+	note_evidence "$3"
+}
+
+if [ "$GVISOR" = "true" ]; then
+	# The sentry IS the kernel here; whatever runs under the runsc process is not observable from
+	# inside, so claiming a VMM would be an invention.
+	MACHINE_VMM="not-observable"
+	MACHINE_CONFIDENCE="n/a"
+elif [ -n "$ACPI_OEM" ]; then
+	# Firmware self-declaration, tier 1. These ids are compiled into each VMM's ACPI table builder.
+	case "$ACPI_OEM" in
+	FIRECK) _set_machine firecracker confirmed "acpi-oem=FIRECK" ;;
+	CLOUDH) _set_machine cloud-hypervisor confirmed "acpi-oem=CLOUDH" ;;
+	BOCHS) _set_machine qemu-kvm confirmed "acpi-oem=BOCHS" ;;
+	KRUN | LIBKRUN) _set_machine libkrun confirmed "acpi-oem=${ACPI_OEM}" ;;
+	Xen | XEN) _set_machine xen confirmed "acpi-oem=${ACPI_OEM}" ;;
+	VRTUAL | MSFTVM) _set_machine hyper-v confirmed "acpi-oem=${ACPI_OEM}" ;;
+	AMAZON) _set_machine amazon-nitro confirmed "acpi-oem=AMAZON" ;;
+	Google | GOOGLE) _set_machine gce confirmed "acpi-oem=${ACPI_OEM}" ;;
+	VBOX) _set_machine virtualbox confirmed "acpi-oem=VBOX" ;;
+	*) note_evidence "acpi-oem=${ACPI_OEM}" ;;
+	esac
+fi
+
+if [ "$MACHINE_VMM" = "unknown" ] && [ -n "${MANUFACTURER}${PRODUCT_NAME}${BIOS_VENDOR}" ]; then
+	# Firmware self-declaration, tier 2 — SMBIOS. Note this describes the machine OUR KERNEL sees, so
+	# inside a container it correctly names the host's hypervisor, and the container layer below is
+	# what actually confines the workload.
+	case "${MANUFACTURER} ${PRODUCT_NAME} ${BIOS_VENDOR}" in
+	*"Kata Containers"*) _set_machine kata-containers confirmed "smbios=kata" ;;
+	*"Cloud Hypervisor"* | *cloud-hypervisor*) _set_machine cloud-hypervisor confirmed "smbios=cloud-hypervisor" ;;
+	*"Amazon EC2"*) _set_machine amazon-nitro confirmed "smbios=amazon-ec2" ;;
+	*"Google Compute Engine"* | Google*) _set_machine gce confirmed "smbios=google" ;;
+	*"Microsoft Corporation"*) _set_machine hyper-v confirmed "smbios=microsoft" ;;
+	*VMware*) _set_machine vmware confirmed "smbios=vmware" ;;
+	*VirtualBox* | *innotek*) _set_machine virtualbox confirmed "smbios=virtualbox" ;;
+	*Parallels*) _set_machine parallels confirmed "smbios=parallels" ;;
+	*QEMU* | *SeaBIOS* | *Bochs*) _set_machine qemu-kvm confirmed "smbios=qemu" ;;
+	*Xen*) _set_machine xen confirmed "smbios=xen" ;;
+	*) note_evidence "smbios=$(_rstrip "${MANUFACTURER:-${PRODUCT_NAME}}")" ;;
+	esac
+fi
+
+if [ "$MACHINE_VMM" = "unknown" ] && { [ "$HYPERVISOR_FLAG" = "true" ] || [ -n "$CPU_HYPERVISOR" ]; }; then
+	# No firmware identity — infer from the boot arguments and the device topology the VMM chose.
+	# Ordered most-specific first; each arm's comment states what makes it exclusive.
+	if cmdline_has "systemd.unit=kata-containers.target" || [ -d /run/kata-containers ] ||
+		{ cmdline_has "agent." && { [ "$HAS_VSOCK" = "true" ] || [ "$HAS_VIRTIOFS" = "true" ]; }; }; then
+		# Kata's guest is booted by its own agent, which is configured through the command line. The
+		# bare `agent.` prefix is corroborated by the transport that agent needs (vsock) or the share
+		# it mounts (virtio-fs), so an unrelated `agent.*` boot option cannot claim Kata on its own.
+		_set_machine kata-containers strong "kata-boot-args"
+	elif [ "$ROOT_FSTYPE" = "virtiofs" ] || cmdline_has "rootfstype=virtiofs" || cmdline_has "init=/init.krun"; then
+		# Rooting the guest on virtio-fs — no block device at all — is libkrun's model. Kata also
+		# shares files over virtio-fs but boots from a block/pmem root and is caught above.
+		_set_machine libkrun strong "virtiofs-root"
+	elif [ "$HAS_VIRTIOFS" = "true" ] && [ "$HAS_HVC0" = "true" ] && ! virtio_has blk; then
+		# The same shape seen through the devices instead of the mounts: virtio-fs present,
+		# virtio-console for the terminal, and no virtio-blk anywhere.
+		_set_machine libkrun strong "virtiofs+hvc0-no-blk"
+	elif cmdline_has "reboot=k" && cmdline_has "panic=1" && [ "$HAS_SMBIOS" = "false" ]; then
+		# Firecracker's documented default boot arguments, on a guest with no SMBIOS. `pci=off` and
+		# `virtio_mmio.device` are the classic companions but are no longer required — recent
+		# Firecracker can attach virtio over PCIe, so their absence must not veto the match.
+		_set_machine firecracker likely "firecracker-boot-args"
+	elif [ "$VIRTIO_TRANSPORT" = "mmio" ] && [ "$HAS_SMBIOS" = "false" ]; then
+		# virtio over MMIO with no firmware tables is a minimal rust-vmm-family VMM, but several fit.
+		_set_machine microvm-unidentified likely "virtio-mmio-no-firmware"
+	elif [ "$HAS_SMBIOS" = "false" ] && [ "$VIRTIO_TRANSPORT" != "none" ]; then
+		_set_machine microvm-unidentified likely "virtio-no-smbios"
+	else
+		_set_machine vm-unidentified likely "hypervisor-cpuid-only"
+	fi
+fi
+
+if [ "$MACHINE_VMM" = "unknown" ] && [ "$HYPERVISOR_FLAG" = "false" ] && [ "$CPUINFO_FLAGS" = "true" ]; then
+	# An x86 `flags` line WITHOUT the hypervisor bit is positive evidence of bare metal — no VMM
+	# leaves it clear. Gated on the line existing so an aarch64 guest, which has no such bit to miss,
+	# stays `unknown` instead of being declared bare metal. (A container on bare metal lands here
+	# too; its container layer below is what names the isolation.)
+	MACHINE_VMM="none"
+	MACHINE_CONFIDENCE="strong"
+	note_evidence "no-hypervisor-cpuid"
+fi
+
+[ -n "$CPU_HYPERVISOR" ] && note_evidence "cpu-hypervisor=${CPU_HYPERVISOR}"
+[ -n "$CMDLINE_MARKERS" ] && note_evidence "cmdline=${CMDLINE_MARKERS}"
+[ -n "$VIRTIO_DEVICES" ] && note_evidence "virtio=${VIRTIO_DEVICES}@${VIRTIO_TRANSPORT}"
+[ -n "$ROOT_FSTYPE" ] && note_evidence "root=${ROOT_FSTYPE}${ROOT_SOURCE:+ on ${ROOT_SOURCE}}"
+if [ "$MACHINE_VMM" = "libkrun" ] && [ -z "$NET_IFACES" ] && [ -n "$PUBLIC_IP" ]; then
+	# Public egress with no network interface: TSI, libkrun's socket-impersonation networking. Only
+	# meaningful once egress has actually been demonstrated, which the sections above just did.
+	note_evidence "tsi-egress-without-netdev"
+fi
+
+# ---- Classify: the container layer ------------------------------------------
+CONTAINER_RUNTIME="none"
+CONTAINER_CONFIDENCE=""
+# Any ONE of these corroborates a weak marker, because none of them survives being copied into an
+# image — they only exist while a boundary is actively holding us.
+STRUCTURAL_CONTAINMENT="false"
+if [ "$SYSBOXFS" = "true" ] || [ -n "$CGROUP_ENGINE" ] || [ -n "$OVERLAY_ENGINE" ] ||
+	[ "$USERNS_MAPPED" = "true" ] || [ "$CAP_SYS_ADMIN" = "false" ] || [ "$MASKED_PROC" = "true" ] ||
+	[ "$ROOT_FSTYPE" = "overlay" ]; then
+	STRUCTURAL_CONTAINMENT="true"
+fi
+
+_set_container() {
+	CONTAINER_RUNTIME="$1"
+	CONTAINER_CONFIDENCE="$2"
+	note_evidence "$3"
+}
+
+if [ "$GVISOR" = "true" ]; then
+	# gVisor is an OCI runtime whose boundary is a user-space kernel, so it belongs to this layer
+	# even though it presents a machine.
+	_set_container gvisor "$GVISOR_CONFIDENCE" "gvisor"
+elif [ "$SYSBOXFS" = "true" ] || [ "$CGROUP_ENGINE" = "sysbox" ] || [ "$OVERLAY_ENGINE" = "sysbox" ]; then
+	_set_container sysbox confirmed "sysboxfs-mount"
+elif [ -S /dev/lxd/sock ] || [ "$OVERLAY_ENGINE" = "lxd" ]; then
+	_set_container lxd confirmed "lxd-socket"
+elif [ -d /dev/.lxc ] || [ "$CONTAINER_ENV_VALUE" = "lxc" ] || [ "$CGROUP_ENGINE" = "lxc" ]; then
+	_set_container lxc confirmed "lxc-marker"
+elif [ "$CONTAINER_ENV_VALUE" = "podman" ] || [ "$OVERLAY_ENGINE" = "podman" ] || [ "$CGROUP_ENGINE" = "podman" ]; then
+	_set_container podman confirmed "podman-marker"
+elif [ "$CONTAINER_ENV_VALUE" = "systemd-nspawn" ] || [ "$CGROUP_ENGINE" = "nspawn" ]; then
+	_set_container systemd-nspawn confirmed "nspawn-marker"
+elif [ "$OVERLAY_ENGINE" = "docker" ] || [ "$CGROUP_ENGINE" = "docker" ]; then
+	_set_container docker-runc confirmed "docker-cgroup-or-overlay"
+elif [ "$OVERLAY_ENGINE" = "containerd" ] || [ "$CGROUP_ENGINE" = "containerd" ] || [ "$CGROUP_ENGINE" = "kubernetes" ]; then
+	_set_container containerd-runc confirmed "containerd-cgroup-or-overlay"
+elif [ "$STRUCTURAL_CONTAINMENT" = "true" ] && [ -n "$CONTAINER_MARKERS" ]; then
+	# A weak marker WITH live corroboration: a container, engine unnamed.
+	_set_container oci-container strong "marker+structural"
+elif [ "$STRUCTURAL_CONTAINMENT" = "true" ] && [ "$MACHINE_VMM" = "none" ]; then
+	# On bare metal, structural containment alone is enough — there is no VM to attribute it to.
+	_set_container oci-container likely "structural-only"
+elif [ -n "$CONTAINER_MARKERS" ]; then
+	# Weak markers ONLY. This is the systemd-detect-virt trap: an image built from a container base
+	# carries these files into a microVM, where nothing is containing anything.
+	note_evidence "image-residue=${CONTAINER_MARKERS}"
+fi
+
+# ---- Headline ---------------------------------------------------------------
+# The innermost boundary is the one that confines the workload, so a container layer outranks the
+# machine layer whenever both are present.
+if [ "$CONTAINER_RUNTIME" != "none" ]; then
+	ISOLATION_RUNTIME="$CONTAINER_RUNTIME"
+	ISOLATION_CONFIDENCE="$CONTAINER_CONFIDENCE"
+else
+	ISOLATION_RUNTIME="$MACHINE_VMM"
+	ISOLATION_CONFIDENCE="$MACHINE_CONFIDENCE"
+fi
+case "$ISOLATION_RUNTIME" in
+gvisor) ISOLATION_CLASS="user-kernel" ;;
+firecracker | libkrun | cloud-hypervisor | kata-containers | microvm-unidentified) ISOLATION_CLASS="microvm" ;;
+qemu-kvm | amazon-nitro | gce | hyper-v | vmware | virtualbox | parallels | xen | vm-unidentified) ISOLATION_CLASS="vm" ;;
+sysbox | lxc | lxd | podman | systemd-nspawn | docker-runc | containerd-runc | oci-container) ISOLATION_CLASS="container" ;;
+none)
+	ISOLATION_RUNTIME="bare-metal"
+	ISOLATION_CLASS="bare-metal"
+	;;
+*) ISOLATION_CLASS="unknown" ;;
+esac
+ISOLATION_EVIDENCE_STR=""
+[ ${#ISOLATION_EVIDENCE[@]} -gt 0 ] &&
+	ISOLATION_EVIDENCE_STR="$(printf '%s; ' "${ISOLATION_EVIDENCE[@]}" | sed 's/; $//')"
+
 # --- Machine shape -----------------------------------------------------------
 # What actually distinguishes two sandboxes behind the same ASN. Without them a cross-vendor
 # comparison cannot tell "different cloud" from "same cloud, different CPU generation".
 CPU_MODEL="$(get "" sh -c "grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs")"
 [ -z "$CPU_MODEL" ] && CPU_MODEL="$(get "" sh -c "lscpu | grep -m1 'Model name:' | cut -d: -f2 | xargs")"
 KERNEL="$(get "" uname -r)"
+# Recorded because it qualifies the isolation signals as much as the results: the CPUID hypervisor
+# bit only exists on x86, so `hypervisor_flag=false` means something different here than on aarch64.
+ARCH="$(get "" uname -m)"
 CORES="$(get "" nproc)"
 RAM="$(get "" sh -c "free -h | awk '/Mem:/{print \$2}'")"
 
@@ -269,46 +806,122 @@ echo "Manufacturer = ${MANUFACTURER:-N/A}"
 echo "Product      = ${PRODUCT_NAME:-N/A}"
 echo "BIOS vendor  = ${BIOS_VENDOR:-N/A}"
 echo "Virtualized  = ${VIRT:-N/A}"
-echo "CPU Model    = ${CPU_MODEL:-N/A}  (${CORES:-?} cores)"
+echo "CPU Model    = ${CPU_MODEL:-N/A}  (${CORES:-?} cores, ${ARCH:-?})"
 echo "Kernel       = ${KERNEL:-N/A}"
 echo "RAM          = ${RAM:-N/A}"
+echo ""
+echo "=== Isolation ==="
+echo "Technique    = ${ISOLATION_RUNTIME} (${ISOLATION_CLASS}, confidence=${ISOLATION_CONFIDENCE:-unknown})"
+echo "  Machine    = ${MACHINE_VMM} (${MACHINE_CONFIDENCE})"
+echo "  Container  = ${CONTAINER_RUNTIME}${CONTAINER_CONFIDENCE:+ (${CONTAINER_CONFIDENCE})}"
+echo "  Evidence   = ${ISOLATION_EVIDENCE_STR:-none}"
+echo "ACPI id      = ${ACPI_OEM:-N/A}${ACPI_CREATOR:+ / ${ACPI_CREATOR}}"
+echo "CPU hyperv.  = ${CPU_HYPERVISOR:-N/A}   (cpuid hypervisor bit=${HYPERVISOR_FLAG})"
+echo "Root FS      = ${ROOT_FSTYPE:-N/A}${ROOT_SOURCE:+ on ${ROOT_SOURCE}}"
+echo "virtio       = ${VIRTIO_DEVICES:-none} (transport=${VIRTIO_TRANSPORT})"
+echo "Firmware     = smbios=${HAS_SMBIOS} acpi=${HAS_ACPI} pci=${HAS_PCI}"
+echo "Consoles     = hvc0=${HAS_HVC0} ttyS0=${HAS_TTYS0} vsock=${HAS_VSOCK}"
+echo "Net ifaces   = ${NET_IFACES:-none (TSI or no egress device)}"
+echo "Containment  = userns=${USERNS_MAPPED} cap_sys_admin=${CAP_SYS_ADMIN} masked_proc=${MASKED_PROC} cgroup=${CGROUP_ENGINE:-none}"
+echo "Markers      = ${CONTAINER_MARKERS:-none}"
+echo "PID 1        = ${PID1_COMM:-N/A}"
 echo ""
 echo "note: Provider/ASN describe the public egress network, not the host."
 echo "      ASN is BGP origin data (Team Cymru DNS); geo is best-effort (ipinfo)."
 echo "      Manufacturer/Product come from SMBIOS and describe the machine."
+echo "      Isolation is an in-sandbox observation; the declared per-provider technology"
+echo "      (packages/schema/src/providers.ts) stays authoritative when the two disagree."
+
+# ONE ordered name/value list builds the record, for both writers below. The earlier form spelled
+# every field twice — once as a `--arg` flag, once in a printf format string — in two lists nothing
+# kept in agreement; this section has since roughly doubled the field count, which would have doubled
+# that hazard. Adding a field here now reaches both paths by construction.
+RECORD_FIELDS=(
+	public_ip "$PUBLIC_IP"
+	org "$ORG"
+	asn "$ASN"
+	org_name "$ORG_NAME"
+	reverse_dns "$HOSTNAME_PTR"
+	city "$CITY"
+	region "$REGION"
+	country "$COUNTRY"
+	loc "$LOC"
+	timezone "$TIMEZONE"
+	manufacturer "$MANUFACTURER"
+	product_name "$PRODUCT_NAME"
+	bios_vendor "$BIOS_VENDOR"
+	virtualization "$VIRT"
+	cpu_model "$CPU_MODEL"
+	kernel "$KERNEL"
+	cores "$CORES"
+	ram "$RAM"
+	prefix "$PREFIX"
+	asn_source "$ASN_SOURCE"
+	geo_source "$GEO_SOURCE"
+	# The verdict …
+	isolation_runtime "$ISOLATION_RUNTIME"
+	isolation_class "$ISOLATION_CLASS"
+	isolation_confidence "$ISOLATION_CONFIDENCE"
+	isolation_evidence "$ISOLATION_EVIDENCE_STR"
+	machine_vmm "$MACHINE_VMM"
+	container_runtime "$CONTAINER_RUNTIME"
+	# … and the signals it was derived from, so the classification can be audited — or redone — from
+	# the committed record without re-running the probe on hardware that may no longer exist.
+	acpi_oem "$ACPI_OEM"
+	acpi_creator "$ACPI_CREATOR"
+	cpu_hypervisor "$CPU_HYPERVISOR"
+	hypervisor_flag "$HYPERVISOR_FLAG"
+	cpuinfo_flags "$CPUINFO_FLAGS"
+	arch "$ARCH"
+	virtio_transport "$VIRTIO_TRANSPORT"
+	virtio_devices "$VIRTIO_DEVICES"
+	root_fstype "$ROOT_FSTYPE"
+	root_source "$ROOT_SOURCE"
+	kernel_cmdline_markers "$CMDLINE_MARKERS"
+	kernel_build "$KERNEL_BUILD"
+	has_smbios "$HAS_SMBIOS"
+	has_acpi "$HAS_ACPI"
+	has_pci "$HAS_PCI"
+	has_hvc0 "$HAS_HVC0"
+	has_ttys0 "$HAS_TTYS0"
+	has_vsock "$HAS_VSOCK"
+	has_virtiofs "$HAS_VIRTIOFS"
+	net_ifaces "$NET_IFACES"
+	userns_mapped "$USERNS_MAPPED"
+	cap_sys_admin "$CAP_SYS_ADMIN"
+	masked_proc "$MASKED_PROC"
+	cgroup_engine "$CGROUP_ENGINE"
+	container_markers "$CONTAINER_MARKERS"
+	pid1_comm "$PID1_COMM"
+)
 
 # jq builds the record wherever it exists, and it is the correct builder rather than the convenient
 # one: every value here is untrusted device text, and --arg passes each one out-of-band so jq escapes
-# it by construction. `$ARGS.named` collects those flags in order, which means each field is named
-# ONCE — the earlier form spelled all 21 twice, in two lists nothing kept in agreement.
+# it by construction. `$ARGS.named` collects those flags in order, so the key order matches the list
+# above — and the printf fallback's.
 #
 # The printf path is the jq-less fallback and cannot borrow that safety: json_result validates with
 # jq, so on a sandbox without it there is no parser to catch a bad record either. What protects that
 # path is _json_escape handling the control characters these sources really emit (lib/bench.sh) —
 # worth caring about because this artifact has real consumers, packages/results/src/lib/
 # host-metadata.ts flattening it into every Run's host metadata.
-esc() { _json_escape "$1"; }
-if command -v jq &>/dev/null; then
+if have jq; then
+	jq_args=()
+	for ((i = 0; i < ${#RECORD_FIELDS[@]}; i += 2)); do
+		jq_args+=(--arg "${RECORD_FIELDS[i]}" "${RECORD_FIELDS[i + 1]}")
+	done
 	# -c: one line, the shape the printf fallback below emits and the shape this artifact has always
 	# had. A formatting difference between the jq and jq-less paths would be a difference between
 	# sandboxes, not between records.
-	jq -n -c \
-		--arg public_ip "$PUBLIC_IP" --arg org "$ORG" --arg asn "$ASN" --arg org_name "$ORG_NAME" \
-		--arg reverse_dns "$HOSTNAME_PTR" --arg city "$CITY" --arg region "$REGION" \
-		--arg country "$COUNTRY" --arg loc "$LOC" --arg timezone "$TIMEZONE" \
-		--arg manufacturer "$MANUFACTURER" --arg product_name "$PRODUCT_NAME" \
-		--arg bios_vendor "$BIOS_VENDOR" --arg virtualization "$VIRT" \
-		--arg cpu_model "$CPU_MODEL" --arg kernel "$KERNEL" --arg cores "$CORES" --arg ram "$RAM" \
-		--arg prefix "$PREFIX" --arg asn_source "$ASN_SOURCE" --arg geo_source "$GEO_SOURCE" \
-		'{schema_version: "1.0"} + $ARGS.named'
+	jq -n -c "${jq_args[@]}" '{schema_version: "1.1"} + $ARGS.named'
 else
-	printf '{"schema_version":"1.0","public_ip":"%s","org":"%s","asn":"%s","org_name":"%s","reverse_dns":"%s","city":"%s","region":"%s","country":"%s","loc":"%s","timezone":"%s","manufacturer":"%s","product_name":"%s","bios_vendor":"%s","virtualization":"%s","cpu_model":"%s","kernel":"%s","cores":"%s","ram":"%s","prefix":"%s","asn_source":"%s","geo_source":"%s"}\n' \
-		"$(esc "$PUBLIC_IP")" "$(esc "$ORG")" "$(esc "$ASN")" "$(esc "$ORG_NAME")" \
-		"$(esc "$HOSTNAME_PTR")" "$(esc "$CITY")" "$(esc "$REGION")" "$(esc "$COUNTRY")" \
-		"$(esc "$LOC")" "$(esc "$TIMEZONE")" "$(esc "$MANUFACTURER")" "$(esc "$PRODUCT_NAME")" \
-		"$(esc "$BIOS_VENDOR")" "$(esc "$VIRT")" \
-		"$(esc "$CPU_MODEL")" "$(esc "$KERNEL")" "$(esc "$CORES")" "$(esc "$RAM")" \
-		"$(esc "$PREFIX")" "$(esc "$ASN_SOURCE")" "$(esc "$GEO_SOURCE")"
+	{
+		printf '{"schema_version":"1.1"'
+		for ((i = 0; i < ${#RECORD_FIELDS[@]}; i += 2)); do
+			printf ',"%s":"%s"' "${RECORD_FIELDS[i]}" "$(_json_escape "${RECORD_FIELDS[i + 1]}")"
+		done
+		printf '}\n'
+	}
 fi | json_result "$(task_result_name)" || echo "(no structured provider record written)"
 
 echo ""
