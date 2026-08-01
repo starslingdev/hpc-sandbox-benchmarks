@@ -371,6 +371,9 @@ jobs:
           ./node_modules/.bin/vercel vcr push docker "$target_name"
           digest="$(docker buildx imagetools inspect "$target_ref" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${target_ref%:*}@${digest}" >> "$GITHUB_OUTPUT"
+      - name: Log out of VCR after mirror
+        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'
+        run: docker logout vcr.vercel.com || true
       - name: Bake + verify candidate
         id: bake
         # The cell's provider + required flag reach the script through the environment, never
@@ -437,7 +440,8 @@ jobs:
             bun apps/cli/src/bin/bake.ts "${args[@]}" ||
               echo "::warning title=Non-required provider not validated::${PROVIDER} did not pass its bake/verify — reported, not blocking the release (best-effort variant)"
           fi
-      - name: Log out of VCR
+      # Failure-safe fallback for auth/mirror failures that skip the immediate post-mirror logout.
+      - name: Ensure VCR logout
         if: always()
         run: docker logout vcr.vercel.com || true
       - name: Upload bake report
