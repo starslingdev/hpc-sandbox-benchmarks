@@ -14,7 +14,12 @@ inputs:
     description: Phase status (ok / failed / skipped / success / failure).
     default: ""
   mode:
-    description: Release mode (build / republish).
+    description: Release mode (build / republish / backfill).
+    default: ""
+  scope:
+    description: >-
+      The providers this release covers — the resolved list, so a scoped backfill reads as one at a
+      glance instead of having to be inferred from which matrix cells ran.
     default: ""
   source-ref:
     description: The source ref the release is cut from (github.sha).
@@ -55,6 +60,7 @@ runs:
         PHASE: ${{ inputs.phase }}
         STATUS: ${{ inputs.status }}
         MODE: ${{ inputs.mode }}
+        SCOPE: ${{ inputs.scope }}
         SOURCE_REF: ${{ inputs.source-ref }}
         IMAGE: ${{ inputs.image }}
         BASE_IMAGE: ${{ inputs.base-image }}

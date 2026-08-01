@@ -14,6 +14,12 @@
 //      gap can't be detected only post-hoc in bake.ts after the immutable base is already tagged.
 //   4. LAST: retag the candidate base → the public version (registry-side). Reached only when every
 //      prior step succeeded, so a failure never leaves a published version with missing/stale artifacts.
+//
+// A PARTIAL promote (`--provider <subset>`, the scoped backfill a dispatch asks for when it adds one
+// provider to a version the rest of the fleet already runs) reshapes the same four steps: step 1 wants
+// the version to ALREADY exist, steps 2–3 work from the published version base rather than the mutable
+// candidate, and step 4 does not happen at all. See {@link PromoteOptions.partial}.
+//
 // A rerun after a mid-promote failure is clean (the version tag was never written); once published it
 // is refused at step 1 — bump the version, or force_republish, to publish again. Under `--force` the
 // version's artifacts already exist, and step 3 regenerates them in place: the image retag and e2b
@@ -23,6 +29,7 @@
 // (a plain rerun is refused at step 1, since the base image is still there).
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
+import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
@@ -32,8 +39,34 @@ import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
 
-export async function promoteAll(log: Log, force = false): Promise<BakeReport[]> {
+export interface PromoteOptions {
+	/** `--force`: deliberately regenerate an already-published version in place (see step 1). Manual
+	 *  force_republish dispatch only, and never valid together with `partial`. */
+	force?: boolean;
+	/** Restrict the transaction to these providers (`--provider`). Omitted → every registered provider. */
+	only?: readonly ProviderId[];
+	/**
+	 * PARTIAL promote — `only` is a strict subset of the registry, so this run BACKFILLS those
+	 * providers' version artifacts onto a version the rest of the fleet already runs. Two inversions
+	 * follow from that, both handled below:
+	 *
+	 *   • Step 1 flips from "refuse if the version exists" to "refuse UNLESS it exists": nothing here
+	 *     overwrites the immutable base, and a backfill with no published base to attach to would
+	 *     publish a provider artifact for a version that doesn't exist.
+	 *   • The base every version artifact is built from is the PUBLISHED version, not the mutable
+	 *     candidate — the new provider must get the same bytes the others are already running, and the
+	 *     candidate tag may have moved on since the version was cut.
+	 *
+	 * Step 4 (the base retag) is then skipped entirely: the base is already published and correct, and
+	 * rewriting it is exactly the blast radius a scoped release exists to avoid.
+	 */
+	partial?: boolean;
+}
+
+export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<BakeReport[]> {
+	const { force = false, only, partial = false } = options;
 	const reports: BakeReport[] = [];
+	const scope = only ? only.join(", ") : "every provider";
 	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
 	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
 	// skips, so its re-validation or artifact failure is recorded but must NOT abort the publish. Locally
@@ -52,7 +85,30 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	//    snapshot before creating, so a forced republish drops the published snapshot for the length
 	//    of the rebuild, and leaves it absent if the rebuild fails. Forced republish is therefore a
 	//    destructive regenerate, and is why `force` is manual-dispatch-only.
-	if (force) {
+	if (partial) {
+		// A backfill attaches to an existing version instead of creating one, so the guard inverts: the
+		// public base MUST already be there. Same refuse-on-uncertain posture as the full path — an
+		// unreadable registry is not evidence either way, so we decline rather than publish blind.
+		let publishedBase: boolean;
+		try {
+			publishedBase = await imageExistsInRegistry(config.toolchainImageVersion);
+		} catch (err) {
+			const reason = `could not verify whether ${config.toolchainImageVersion} is published, so refusing to backfill onto it: ${err instanceof Error ? err.message : String(err)}`;
+			log(`<<< promote refused — ${reason}`);
+			reports.push({ provider: "image", status: "failed", reason });
+			return reports;
+		}
+		if (!publishedBase) {
+			const reason = `${config.toolchainImageVersion} is not published, so there is nothing to backfill ${scope} onto — a scoped promote adds providers to an existing version and never writes the base; run a full release first`;
+			log(`<<< promote refused — ${reason}`);
+			reports.push({ provider: "image", status: "failed", reason });
+			return reports;
+		}
+		log(
+			`>>> partial promote: backfilling ${scope} onto the published ${config.toolchainImageVersion}; ` +
+				"the public base is NOT rewritten and no other provider's artifact is touched",
+		);
+	} else if (force) {
 		log(
 			`>>> force-republish: regenerating ${config.toolchainImageVersion}, overwriting if present ` +
 				`(daytona: both ${config.daytonaSnapshotDefault} and ${config.daytonaContainerSnapshotDefault} ` +
@@ -78,11 +134,14 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 
 	// 2. Re-validate the candidate immediately before publishing, so the bytes we promote are verified
 	//    again (the candidate tag is mutable). Abort the whole promote if any provider fails to validate.
-	let pinnedCandidateImage: string;
+	//    A PARTIAL promote pins the PUBLISHED version instead: it is not cutting a new version, it is
+	//    attaching a provider to the one already live, so the base under test must be that one.
+	const baseTag = partial ? config.toolchainImageVersion : config.toolchainImageCandidate;
+	let pinnedBaseImage: string;
 	try {
-		pinnedCandidateImage = await resolveImageDigestRef(config.toolchainImageCandidate);
+		pinnedBaseImage = await resolveImageDigestRef(baseTag);
 	} catch (err) {
-		const reason = `could not resolve immutable digest for ${config.toolchainImageCandidate}: ${err instanceof Error ? err.message : String(err)}`;
+		const reason = `could not resolve immutable digest for ${baseTag}: ${err instanceof Error ? err.message : String(err)}`;
 		log(`<<< promote aborted — ${reason} (nothing published)`);
 		reports.push({ provider: "image", status: "failed", reason });
 		return reports;
@@ -92,13 +151,13 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		toolchainImageCandidate: pinnedCandidateImage,
+		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,
 		daytonaContainerTarget: config.daytonaContainer.target,
 	};
-	log(`>>> re-validating candidate ${pinnedCandidateImage} before promote…`);
-	const validateRuns = await validateCandidates(candidateRefs, log);
+	log(`>>> re-validating ${scope} against ${pinnedBaseImage} before promote…`);
+	const validateRuns = await validateCandidates(candidateRefs, log, only);
 	if (validateRuns.some(blocks)) {
 		log(
 			"<<< promote aborted — a required provider's candidate re-validation failed (nothing published)",
@@ -114,31 +173,30 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		return reports;
 	}
 
-	// 3. Build each provider's version-named artifact FROM the candidate base (the bytes we just
-	//    revalidated). Built BEFORE the base retag, so a failure here leaves the version base unwritten
-	//    and a rerun is clean. Shares the skip-vs-fail loop with bake.
+	// 3. Build each in-scope provider's version-named artifact FROM the base we just revalidated (the
+	//    candidate base, or the published version base on a partial promote). Built BEFORE the base
+	//    retag, so a failure here leaves the version base unwritten and a rerun is clean. Shares the
+	//    skip-vs-fail loop with bake.
 	//    Under `--force` these names already exist and are live. e2b/image replace on success; daytona
 	//    deletes first (no snapshot overwrite in the SDK), so a failed daytona create removes the
 	//    published snapshot — `bakeDaytonaSnapshot` says so in its error, which lands in the report's
 	//    `reason`. The base is still never written, so the version tag itself stays consistent.
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {
-			log(`>>> ${provider.name}: building version artifact from candidate…`);
+			log(`>>> ${provider.name}: building version artifact from ${pinnedBaseImage}…`);
 			switch (provider.name) {
 				case "e2b":
-					await bakeE2bTemplate(config.e2bTemplateVersion, pinnedCandidateImage, (m) =>
-						log(`    ${m}`),
-					);
+					await bakeE2bTemplate(config.e2bTemplateVersion, pinnedBaseImage, (m) => log(`    ${m}`));
 					break;
 				case "daytona-vm":
-					await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedCandidateImage, (m) =>
+					await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedBaseImage, (m) =>
 						log(`    ${m}`),
 					);
 					break;
 				case "daytona-container":
 					await bakeDaytonaContainerSnapshot(
 						config.daytonaContainerSnapshotDefault,
-						pinnedCandidateImage,
+						pinnedBaseImage,
 						(m) => log(`    ${m}`),
 					);
 					break;
@@ -154,7 +212,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 					log("    blaxel boots the stock base image — nothing to promote");
 					break;
 				case "novita":
-					await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedCandidateImage, (m) =>
+					await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedBaseImage, (m) =>
 						log(`    ${m}`),
 					);
 					break;
@@ -173,6 +231,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		},
 		{
 			log,
+			only,
 			onComplete: (run) => {
 				const time = run.durationMs !== undefined ? ` (${run.durationMs.toFixed(0)}ms)` : "";
 				log(`<<< ${run.provider}: ${run.status}${time}${run.reason ? ` — ${run.reason}` : ""}`);
@@ -190,10 +249,18 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	}
 
 	// After a forced republish aborts, the previous version's base image is still tagged, so step 1 would
-	// refuse a plain rerun — recovery has to re-force. Shared by both pre-publish aborts below.
-	const rerunHint = force
-		? "Fix the cause and rerun with force_republish — a plain rerun is refused because the base image already exists."
-		: "Fix the cause and rerun `bake --promote`.";
+	// refuse a plain rerun — recovery has to re-force. A partial promote is already re-runnable as-is
+	// (it never wrote the base, and its step 1 wants the version to exist). Shared by both aborts below.
+	const rerunHint = partial
+		? `Fix the cause and rerun the scoped release (\`--provider ${only?.join(",")}\`); nothing needs unwinding.`
+		: force
+			? "Fix the cause and rerun with force_republish — a plain rerun is refused because the base image already exists."
+			: "Fix the cause and rerun `bake --promote`.";
+	// Both aborts below stop before step 4. On a partial promote there is no step 4 to stop before, so
+	// say what is actually true rather than implying the base was about to move.
+	const baseUntouched = partial
+		? `the public base ${config.toolchainImageVersion} is untouched (a scoped promote never writes it).`
+		: "the public base was NOT written.";
 
 	// A REQUIRED provider's artifact failed → do NOT publish the base. The version tag stays unwritten,
 	// so a rerun (after fixing the cause) reconciles cleanly. Nothing public was half-written — EXCEPT
@@ -202,7 +269,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 	if (reports.some(blocks)) {
 		log(
 			`!!! promote aborted before publish: a required ${config.toolchainImageVersion} provider artifact failed; ` +
-				"the public base was NOT written. " +
+				`${baseUntouched} ` +
 				(force
 					? "This was a forced republish, so the failed provider's already-published artifact may have " +
 						"been regenerated — or, for daytona, deleted and not recreated (see its reason above). "
@@ -224,20 +291,28 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		const reason = `required providers did not promote: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`;
 		// A required provider that merely *skipped* never built anything, so unlike the artifact-failed
 		// abort above there is no half-regenerated artifact to warn about — only the rerun differs.
-		log(
-			`!!! promote aborted before publish: ${reason}; the public base was NOT written. ${rerunHint}`,
-		);
+		log(`!!! promote aborted before publish: ${reason}; ${baseUntouched} ${rerunHint}`);
 		// Push a structured failure (like the step-1 and step-4 aborts) so the emitted JSON is
 		// self-describing — a consumer sees the failed promote without re-deriving it from `--require`.
 		reports.push({ provider: "image", status: "failed", reason });
 		return reports;
 	}
 
-	// 4. LAST: publish the candidate base as the immutable public version — the commit point.
-	log(`>>> promoting image ${pinnedCandidateImage} → ${config.toolchainImageVersion}…`);
+	// 4. LAST: publish the candidate base as the immutable public version — the commit point. A partial
+	//    promote has none: the version it backfilled onto is already published, and its providers'
+	//    artifacts (step 3) were the whole transaction. Returning here is what keeps a scoped release
+	//    from touching the fleet everyone else is already running on.
+	if (partial) {
+		log(
+			`>>> partial promote complete: ${scope} now published for ${config.toolchainImageVersion}; ` +
+				"the public base and every other provider's artifact are unchanged",
+		);
+		return reports;
+	}
+	log(`>>> promoting image ${pinnedBaseImage} → ${config.toolchainImageVersion}…`);
 	const imageStart = performance.now();
 	try {
-		await promoteImage(log, pinnedCandidateImage);
+		await promoteImage(log, pinnedBaseImage);
 		reports.push({ provider: "image", status: "ok", durationMs: performance.now() - imageStart });
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : String(err);

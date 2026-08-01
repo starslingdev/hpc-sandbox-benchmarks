@@ -3,19 +3,35 @@ description: >-
   The credential-free fail-fast gate (release-validate.ts): validate the toolchain pins and the dispatch
   inputs BEFORE any registry/provider credential is introduced, reporting failures as @actions/core
   annotations (a pin failure is annotated ON the pins source file). Runs after setup-toolchain (needs
-  Bun + deps) but before ghcr-login, so a bad pin or a malformed input fails the release without creds.
+  Bun + deps) but before ghcr-login, so a bad pin, a malformed input, or a contradictory combination of
+  inputs fails the release without creds — and before the plan spends a registry round trip.
 
 inputs:
   force-republish:
     description: The force_republish dispatch input (regenerate an already-published version in place).
     default: "false"
+  providers:
+    description: >-
+      The providers dispatch input — a comma-separated provider id list scoping the release, or blank
+      for every registered provider. Ids are resolved against the provider registry here so a typo
+      fails as an annotation instead of silently shrinking the release.
+    default: ""
+  build:
+    description: The build dispatch input (full / variants / skip).
+    default: "full"
+  promote:
+    description: The promote dispatch input (run the publish phase, or bake + verify only).
+    default: "true"
 
 runs:
   using: composite
   steps:
     - name: Validate pins and dispatch inputs
       shell: bash
-      # Input reaches the script as env (a composite `run` step gets no INPUT_* vars).
+      # Inputs reach the script as env (a composite `run` step gets no INPUT_* vars).
       env:
         FORCE_REPUBLISH: ${{ inputs.force-republish }}
+        RELEASE_PROVIDERS: ${{ inputs.providers }}
+        BUILD_MODE: ${{ inputs.build }}
+        PROMOTE: ${{ inputs.promote }}
       run: bun apps/cli/src/bin/release-validate.ts

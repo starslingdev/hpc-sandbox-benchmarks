@@ -10,11 +10,42 @@ import type { Log } from "./types.ts";
 // repo-relative path would resolve to the non-existent apps/cli/packages/... and fail in bash.
 const BUILD_SH = join(import.meta.dir, "../../../../../packages/templates/images/build.sh");
 
-async function run(cmd: string[], log: Log): Promise<void> {
+async function run(cmd: string[], log: Log, extraEnv: Record<string, string> = {}): Promise<void> {
 	log(`$ ${cmd.join(" ")}`);
-	const proc = Bun.spawn(cmd, { stdout: "inherit", stderr: "inherit", env: process.env });
+	const proc = Bun.spawn(cmd, {
+		stdout: "inherit",
+		stderr: "inherit",
+		env: { ...process.env, ...extraEnv },
+	});
 	const code = await proc.exited;
 	if (code !== 0) throw new Error(`${cmd[0]} exited ${code}`);
+}
+
+/**
+ * The provider variants that are PUSHED to a registry, and so have candidate/version tags of their
+ * own. Every other variant build.sh produces is consumed locally or rebuilt remotely (e2b builds its
+ * template on E2B's builder FROM the base digest; daytona/modal boot the base itself), so it has no
+ * registry copy to stage. Today only Vercel needs one: VCR is a separate registry the sandbox pulls
+ * from, so the variant has to exist in GHCR first for the bake cell to mirror it across.
+ *
+ * `variant` is the build.sh variant name (its directory under packages/templates/images).
+ */
+export const PUBLISHED_VARIANTS = [
+	{
+		variant: "vercel",
+		version: config.vercelSourceImageVersion,
+		candidate: config.vercelSourceImageCandidate,
+	},
+] as const;
+
+/** Retag a freshly built variant to its mutable candidate tag and push it (normalized, as below). */
+async function stagePublishedVariant(
+	entry: (typeof PUBLISHED_VARIANTS)[number],
+	log: Log,
+): Promise<void> {
+	await run(["docker", "tag", entry.version, entry.candidate], log);
+	await run(["docker", "push", entry.candidate], log);
+	await run(imagetoolsNormalizeCmd(entry.candidate), log);
 }
 
 /** build.sh (base + variants, tagged `:dev` and `:v1`) → retag base `:v1`→`:v1-candidate` → push the
@@ -32,12 +63,30 @@ export async function buildAndPushCandidate(log: Log): Promise<void> {
 	await run(imagetoolsNormalizeCmd(config.toolchainImageCandidate), log);
 	// The thin Vercel variant is staged in GHCR so the separate Vercel matrix cell can mirror the
 	// exact bytes into VCR after obtaining its short-lived OIDC registry login.
-	await run(
-		["docker", "tag", config.vercelSourceImageVersion, config.vercelSourceImageCandidate],
-		log,
-	);
-	await run(["docker", "push", config.vercelSourceImageCandidate], log);
-	await run(imagetoolsNormalizeCmd(config.vercelSourceImageCandidate), log);
+	for (const entry of PUBLISHED_VARIANTS) await stagePublishedVariant(entry, log);
+}
+
+/**
+ * Variants-only rebuild: restage the registry-served provider variants FROM an already-published base,
+ * without rebuilding the base or touching its candidate tag. Returns the digest-pinned base ref the
+ * variants were built on.
+ *
+ * This is the build phase of a scoped backfill — adding a provider to a version the rest of the fleet
+ * already runs. The alternative (a full rebuild) would take an hour AND produce different base bytes:
+ * the toolchain build is not reproducible (apt/mise resolve at build time), so the new provider would
+ * end up benchmarking a different `:vN` than everyone else, which is precisely the confound the pinned
+ * toolchain exists to remove. Composing the thin variant layer on the PUBLISHED base keeps the
+ * comparison honest — and the base is pinned by digest, so "the published base" can't drift mid-build.
+ */
+export async function buildAndPushVariantCandidates(log: Log, base: string): Promise<string> {
+	const pinnedBase = await resolveImageDigestRef(base);
+	log(`>>> rebuilding variants on the published base ${pinnedBase} (no base build)`);
+	await run(["bash", BUILD_SH], log, {
+		BASE_IMAGE: pinnedBase,
+		VARIANTS: PUBLISHED_VARIANTS.map((entry) => entry.variant).join(","),
+	});
+	for (const entry of PUBLISHED_VARIANTS) await stagePublishedVariant(entry, log);
+	return pinnedBase;
 }
 
 /** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */

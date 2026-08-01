@@ -4,6 +4,7 @@
 // mutable, so it could have changed since `bake` last validated it). Distinct from `bake`'s loop,
 // which bakes AND validates each candidate in one pass; this only validates an already-baked candidate.
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
+import type { ProviderId } from "@sandbox-benchmarks/schema";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import type { SmokeOutcome } from "../smoke-run.ts";
@@ -13,10 +14,13 @@ import type { CandidateRefs } from "./validate.ts";
 import { candidateCreateOptions } from "./validate.ts";
 
 /** Validate every provider's candidate artifact (boot + smoke), sharing the skip-vs-fail contract. A
- *  provider with no creds skips; one that boots and fails its smoke is `failed`. Never throws. */
+ *  provider with no creds skips; one that boots and fails its smoke is `failed`. Never throws.
+ *  `only` restricts the pass to a subset (a scoped promote re-validates only the providers it is
+ *  about to publish); omitted → every registered provider. */
 export function validateCandidates(
 	refs: CandidateRefs,
 	log: Log,
+	only?: readonly ProviderId[],
 ): Promise<ProviderRun<SmokeOutcome>[]> {
 	return forEachProviderWithCreds(
 		(provider) => {
@@ -33,6 +37,7 @@ export function validateCandidates(
 		},
 		{
 			log,
+			only,
 			ok: smokeOk,
 			failureReason: smokeFailureReason,
 			onComplete: (run) => {

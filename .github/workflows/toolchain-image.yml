@@ -21,6 +21,24 @@ name: Toolchain image
 #         the plan (mode, refs, provider matrix, gates) rather    │
 #         than re-reading the raw workflow inputs. ───────────────┘
 #
+# The plan also decides WHICH of those phases run, so a dispatch pays only for what it asked for. All
+# four dispatch inputs are optional and their defaults reproduce the full release exactly:
+#
+#   providers  scope the whole lane to a subset (`vercel`). Only those matrix cells exist, and promote
+#              becomes a BACKFILL: it publishes just those providers' version artifacts onto the
+#              already-published version and never rewrites the public base or anyone else's artifact.
+#              A scoped dispatch names what it wants, so every provider it names is REQUIRED.
+#   build      `full` rebuilds the base (the default; what a version bump needs). `variants` restages
+#              only the registry-served provider variants on top of the PUBLISHED base — minutes, and
+#              the new provider gets the same bytes the fleet already runs (the toolchain build is not
+#              reproducible, so a rebuild would quietly hand it a different `:vN`). `skip` skips the
+#              build job outright and reuses what the registry already holds.
+#   promote    off ⇒ the publish job is skipped: bake + verify, look at the report, promote later.
+#
+# The canonical use is adding a provider to a version everyone else already runs — e.g. Vercel on v7:
+#   1. providers=vercel, build=variants, promote=false  → stage + verify the candidate, nothing public
+#   2. providers=vercel, build=skip,     promote=true   → publish just the Vercel v7 artifact
+#
 # Cross-cutting GitHub Actions mechanics live in .github/actions/* composites (setup, ghcr login,
 # input validation, package-visibility guard, summaries); provider bake/verify/promote logic lives in
 # the package scripts under apps/cli (thin YAML, fat scripts). GHCR auth is the job's GITHUB_TOKEN; the
@@ -34,6 +52,19 @@ on:
   # plan phase unless force_republish is set.
   workflow_dispatch:
     inputs:
+      providers:
+        description: "Providers to build, verify and promote (comma-separated; blank = all)"
+        type: string
+        default: ""
+      build:
+        description: "Build phase: full (rebuild the base) / variants (restage variants on the published base) / skip"
+        type: choice
+        options: [full, variants, skip]
+        default: full
+      promote:
+        description: "Run the promote phase (uncheck to bake + verify only)"
+        type: boolean
+        default: true
       force_republish:
         description: "Regenerate the current version, overwriting it if already published (dev only)"
         type: boolean
@@ -157,6 +188,14 @@ jobs:
       mode: ${{ steps.plan.outputs.mode }}
       matrix: ${{ steps.plan.outputs.matrix }}
       required: ${{ steps.plan.outputs.required }}
+      # The RESOLVED provider scope (a blank `providers` input becomes the whole registry here), so the
+      # jobs below read one shape: the promote `--provider` list, and the `contains()` guards that keep
+      # a scoped run from doing a provider's credential dance for a provider it isn't releasing.
+      providers: ${{ steps.plan.outputs.providers }}
+      # The two dynamic job-skipping gates — see `build`'s and `publish`'s `if:` below.
+      build-mode: ${{ steps.plan.outputs.build-mode }}
+      run-build: ${{ steps.plan.outputs.run-build }}
+      run-publish: ${{ steps.plan.outputs.run-publish }}
       size-tier: ${{ steps.plan.outputs.size-tier }}
       image-candidate: ${{ steps.plan.outputs.image-candidate }}
       toolchain-version: ${{ steps.plan.outputs.toolchain-version }}
@@ -174,6 +213,9 @@ jobs:
         uses: ./.github/actions/release-validate-inputs
         with:
           force-republish: ${{ inputs.force_republish }}
+          providers: ${{ inputs.providers }}
+          build: ${{ inputs.build }}
+          promote: ${{ inputs.promote }}
       # The one privileged step in plan: the immutability probe (`docker manifest inspect`) needs a
       # GHCR session. GITHUB_TOKEN with packages: read suffices.
       - name: GHCR session
@@ -184,6 +226,9 @@ jobs:
         id: plan
         env:
           FORCE_REPUBLISH: ${{ inputs.force_republish }}
+          RELEASE_PROVIDERS: ${{ inputs.providers }}
+          BUILD_MODE: ${{ inputs.build }}
+          PROMOTE: ${{ inputs.promote }}
         # release-plan.ts validates pins again, probes whether :v1 is already published (best-effort —
         # promote does the authoritative guard), writes release-plan.json, and prints the key=value
         # outputs the downstream jobs read.
@@ -191,13 +236,16 @@ jobs:
         # redirect), so a child process's stdout can never corrupt the outputs file.
         run: bun apps/cli/src/bin/release-plan.ts release-plan.json
       # Guard the candidate package visibility so providers can pull it anonymously (see the composite).
+      # The plan lists EVERY anonymously-pulled package — the base plus each registry-served variant (the
+      # vercel bake cell pulls its staged variant from GHCR with no login of its own) — so a variant
+      # package that is still private surfaces here rather than as an opaque pull failure mid-bake.
       # Skipped when the release itself is skipped (version already published).
-      - name: Ensure candidate package is public
+      - name: Ensure candidate packages are public
         if: steps.plan.outputs.skip != 'true'
         uses: ./.github/actions/ensure-package-public
         with:
           owner: ${{ env.IMAGE_OWNER }}
-          package: ${{ steps.plan.outputs.image-name }}
+          package: ${{ steps.plan.outputs.packages }}
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload release plan
         if: always()
@@ -217,6 +265,7 @@ jobs:
           phase: plan
           status: ${{ job.status }}
           mode: ${{ steps.plan.outputs.mode }}
+          scope: ${{ steps.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
           image: ${{ steps.plan.outputs.image-candidate }}
           size-tier: ${{ steps.plan.outputs.size-tier }}
@@ -225,12 +274,19 @@ jobs:
 
   # BUILD: build the base image (+ variants) and push the mutable candidate base to GHCR ONCE, then
   # record its immutable digest. The providers below all fan out from this single pushed candidate.
+  #
+  # Dynamic job skipping #1: `build: skip` drops this job entirely (`run-build` is false), so a re-verify
+  # or a promote of an already-staged candidate spends no build at all. `build: variants` still runs the
+  # job, but build-candidate.ts takes the cheap path — no base rebuild, just the registry-served variants
+  # restaged on the published base. Everything downstream tolerates this job being skipped (see `bake`).
   build:
-    name: Build + push candidate
+    name: Build + push candidate (${{ needs.plan.outputs.build-mode }})
     needs: plan
-    if: needs.plan.outputs.skip != 'true'
+    if: needs.plan.outputs.skip != 'true' && needs.plan.outputs.run-build == 'true'
     # 8 vCPUs — the same compile-bound base-image build as pr-gate (see the note there), and it sits on
-    # the critical path of every release: nothing bakes until the candidate is pushed.
+    # the critical path of every release: nothing bakes until the candidate is pushed. A `variants` build
+    # does not need the cores (it composes one thin layer on a pulled base), but it is minutes long
+    # either way, so it keeps the same label rather than making runs-on an expression.
     runs-on: starsling-ubuntu-24.04-8
     # The heavy phase: a full base-image build (apt, mise, the PTS install) plus the push.
     timeout-minutes: 60
@@ -260,6 +316,8 @@ jobs:
         env:
           BUILD_REF: ${{ github.sha }}
           BUILD_VERSION: ${{ needs.plan.outputs.toolchain-version }}
+          # `full` or `variants` — the plan already rejected anything else, and `skip` never gets here.
+          BUILD_MODE: ${{ needs.plan.outputs.build-mode }}
           # Same mise rate-limit fix as pr-gate: the release build runs the identical build.sh, so give
           # it the authenticated GitHub API limit too. Built-in token; this job is already privileged.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -289,6 +347,7 @@ jobs:
           phase: build
           status: ${{ job.status }}
           mode: ${{ needs.plan.outputs.mode }}
+          scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
           image: ${{ steps.build.outputs.candidate-digest-ref }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
@@ -301,10 +360,22 @@ jobs:
   # that RAN and failed still fails this job (and, being a `needs`, blocks promote). Required cells
   # (plan `required`) additionally pass `--require`, so a missing/misnamed secret fails the cell instead
   # of silently skipping a provider the release must ship.
+  #
+  # The matrix comes from the plan, so a scoped dispatch simply produces fewer cells — there is no
+  # per-cell `if:` to keep in sync with the scope, and an out-of-scope provider's job never exists.
   bake:
     name: Bake + verify (${{ matrix.provider }})
     needs: [plan, build]
-    if: needs.plan.outputs.skip != 'true'
+    # `build` is skippable (`build: skip`), and a skipped `needs` would normally skip this job too — so
+    # the condition is spelled out rather than left to the default. `!cancelled()` re-enables the job
+    # after a skipped dependency, which then makes plan's own success something we must assert (a FAILED
+    # plan emits no outputs, and `'' != 'true'` would have read as "don't skip"). build must have either
+    # succeeded or been skipped on purpose; anything else means there is no candidate to bake.
+    if: >
+      !cancelled() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.skip != 'true' &&
+      contains(fromJSON('["success", "skipped"]'), needs.build.result)
     runs-on: starsling-ubuntu-24.04-2
     # Each cell boots a provider sandbox with that provider's secret — a credentialed job, so it runs
     # behind Environment `privileged` like the rest of the release lane.
@@ -478,8 +549,11 @@ jobs:
           phase: ${{ matrix.provider }}/bake
           status: ${{ job.status }}
           mode: ${{ needs.plan.outputs.mode }}
+          scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
-          image: ${{ needs.build.outputs.candidate-digest-ref }}
+          # The build job may have been skipped (`build: skip`), leaving its outputs empty — fall back
+          # to the candidate tag the plan resolved, which is the ref this cell baked against anyway.
+          image: ${{ needs.build.outputs.candidate-digest-ref || needs.plan.outputs.image-candidate }}
           base-image: ${{ needs.plan.outputs.image-candidate }}
           provider-target: ${{ matrix.provider }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
@@ -492,21 +566,35 @@ jobs:
   # version-named artifact FROM the revalidated bytes, then retags the base → :v1 LAST as the commit
   # point. `--require` (from the plan) fails the promote before publish if a required provider's version
   # artifact was skipped/failed. `--force` (force_republish only) regenerates an existing version.
+  # `--provider` (from the plan) scopes the transaction; a SUBSET makes it a backfill that publishes only
+  # those providers' version artifacts onto the existing version and never writes the base at all.
   # The release job (named `publish` — the drift gate requires this name for the GHCR release lane).
+  #
+  # Dynamic job skipping #2: `promote: false` drops this job (`run-publish`), so a dispatch can stage and
+  # verify a candidate, leave the public surface untouched, and promote from a later dispatch.
   publish:
     name: Promote candidate → version
     needs: [plan, build, bake]
     # The only job that mutates the public :v1. Confine it to a manual dispatch on main of this repo
     # (redundant with plan's gate, but the hardening gate asserts this literally on the publish job).
+    # Same `!cancelled()` shape as `bake` (build is skippable), so each dependency is asserted by hand:
+    # plan must have succeeded, bake must be green (a failed required cell blocks the release), and
+    # build must have either succeeded or been deliberately skipped.
     if: >
+      !cancelled() &&
+      needs.plan.result == 'success' &&
+      needs.bake.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.build.result) &&
       needs.plan.outputs.skip != 'true' &&
+      needs.plan.outputs.run-publish == 'true' &&
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
       github.repository == 'starslingdev/hpc-sandbox-benchmarks'
     runs-on: starsling-ubuntu-24.04-2
     environment: privileged
-    # Re-validates the candidate and promotes across all eight providers SERIALLY (it is a transaction,
-    # not a fan-out), so it is the longest-running credentialed job.
+    # Re-validates and promotes every in-scope provider SERIALLY (it is a transaction, not a fan-out),
+    # so at full scope it is the longest-running credentialed job. Sized for that worst case; a scoped
+    # backfill finishes in a fraction of it.
     timeout-minutes: 60
     # packages: write retags the base → public :v1. id-token: write is Namespace's OIDC federation for
     # the re-validation boot (no stored secret) — scoped here, not at the workflow level (zizmor).
@@ -530,11 +618,14 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       # Namespace federates via GitHub's OIDC identity (id-token: write on this job), so promote's
       # re-validation boot can reach the Compute API with no stored secret. Unlike the bake matrix there
-      # is no per-provider cell here (promote is a serial transaction over all providers), so the mint
-      # runs unconditionally — continue-on-error keeps a not-yet-registered trust relationship (or any
-      # transient failure) from failing the release: namespace is best-effort (not in --require), so its
-      # re-validation simply skips when the token is absent, exactly like a missing optional secret.
+      # is no per-provider cell here (promote is a serial transaction over its providers), so the mint
+      # runs for the whole job — gated only on namespace actually being in scope, so a scoped release
+      # doesn't mint a token it will never use. continue-on-error keeps a not-yet-registered trust
+      # relationship (or any transient failure) from failing the release: namespace is best-effort (not
+      # in --require), so its re-validation simply skips when the token is absent, exactly like a
+      # missing optional secret — and a skipped step leaves `outcome` != 'success', the same path.
       - name: Set up Namespace CLI
+        if: contains(needs.plan.outputs.providers, 'namespace')
         continue-on-error: true
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
@@ -552,7 +643,10 @@ jobs:
             --name "sandbox-benchmarks-toolchain-promote-${{ github.run_id }}-${{ github.run_attempt }}" \
             --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
             --token_file "${{ runner.temp }}/nsc-token.json"
+      # Same scope gate as the Namespace mint above: a release that isn't promoting vercel has no reason
+      # to pull a project OIDC token or log docker into VCR.
       - name: Authenticate with Vercel and VCR
+        if: contains(needs.plan.outputs.providers, 'vercel')
         continue-on-error: true
         id: vercel-auth
         uses: ./.github/actions/vercel-auth
@@ -573,6 +667,11 @@ jobs:
         id: promote
         env:
           REQUIRED: ${{ needs.plan.outputs.required }}
+          # The resolved scope, always passed (never the raw dispatch input): for a full release it is
+          # simply every registered provider and `--provider` is a no-op, and for a scoped one it is what
+          # makes the promote a backfill. bake.ts derives "partial" from the list length, so the
+          # subset-vs-everything decision has exactly one owner.
+          RELEASE_PROVIDERS: ${{ needs.plan.outputs.providers }}
           FORCE_REPUBLISH: ${{ inputs.force_republish }}
           # Route the promote payload JSON to a file via env (not a `> file` redirect): the provider
           # CLIs inherit stdout, so a redirect would splice their chatter into the payload. bake.ts
@@ -591,7 +690,7 @@ jobs:
           # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
           # skips namespace's re-validation without failing the promote (namespace is not in --require).
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
-          # The promote transaction re-validates every provider. Unlike every credential around it, this
+          # The promote transaction re-validates every in-scope provider. Unlike every credential around it, this
           # is a literal rather than a `secrets.*` reference, so it has no missing-value skip path — it
           # is safe only because this job is PINNED to `starsling-ubuntu-24.04-2` (see runs-on above),
           # the same virtualization-capable label the bake matrix uses. Moving promote to a runner
@@ -605,9 +704,10 @@ jobs:
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail
-          args=(--promote --require "${REQUIRED}")
+          args=(--promote --require "${REQUIRED}" --provider "${RELEASE_PROVIDERS}")
           # --force (manual force_republish dispatch only) republishes over an existing immutable
-          # version; never set on the automated push path.
+          # version; never set on the automated push path. bake.ts refuses --force on a scoped promote,
+          # and release-validate rejects the combination before the release spends anything.
           if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
           bun apps/cli/src/bin/bake.ts "${args[@]}"
       - name: Log out of VCR
@@ -630,10 +730,12 @@ jobs:
           phase: publish
           status: ${{ job.status }}
           mode: ${{ needs.plan.outputs.mode }}
+          scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
-          image: ${{ needs.build.outputs.candidate-digest-ref }}
+          # Empty when the build job was skipped (`build: skip`) — fall back to the planned candidate tag.
+          image: ${{ needs.build.outputs.candidate-digest-ref || needs.plan.outputs.image-candidate }}
           base-image: ${{ needs.plan.outputs.image-candidate }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
-          verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }}${{ inputs.force_republish && ' --force' || '' }}
+          verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}
           published: ${{ needs.plan.outputs.publish-target }}
           diagnostics: promote-payload-${{ github.run_id }}

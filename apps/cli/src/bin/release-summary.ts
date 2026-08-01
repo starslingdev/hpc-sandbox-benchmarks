@@ -26,6 +26,7 @@ if (import.meta.main) {
 	const fields: Array<[label: string, value: string, kind: CellKind]> = [
 		["Status", status, "plain"],
 		["Mode", env("MODE"), "code"],
+		["Scope", env("SCOPE"), "plain"],
 		["Source ref", env("SOURCE_REF"), "code"],
 		["Image", env("IMAGE"), "code"],
 		["Base image", env("BASE_IMAGE"), "code"],
