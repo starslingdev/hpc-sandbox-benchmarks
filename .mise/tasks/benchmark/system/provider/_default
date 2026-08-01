@@ -26,9 +26,9 @@
 #   (3) an OUTPUT of it.
 #
 # Anything else — the raw command line, cgroup paths, the overlay upperdir, pid 1, seccomp and LSM
-# details — is printed in the human evidence table instead. Several of those identify a single
-# sandbox or can carry a control-plane token, and the dataset folds host records by identity, so
-# publishing one would both leak and defeat the fold.
+# details — stays private to the classifier. Several of those identify a single sandbox or can carry
+# a control-plane token, and the dataset folds host records by identity, so rendering or publishing
+# one would both leak and defeat the fold.
 #
 # Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions: lib/bench.sh).
 set -uo pipefail

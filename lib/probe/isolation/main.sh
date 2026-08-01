@@ -72,8 +72,8 @@ ISO_EGRESS_OK="false"
 # Derived by isolation_classify from the signals above; not observations, so they are re-derived
 # rather than collected, and every input to them is published.
 ISO_GVISOR="false" ISO_GVISOR_WHY="" ISO_KATA_DECLARED="false" ISO_KATA_INFERRED="false"
-# Report-only signals: per-sandbox strings (container ids, control-plane arguments) that must never
-# enter the committed record, where they would both leak and defeat the host-record fold.
+# Private classifier inputs: per-sandbox strings (container ids, control-plane arguments) that must
+# never enter the report or committed record, where they would both leak and defeat the host-record fold.
 ISO_RAW_CMDLINE="" ISO_RAW_CGROUP="" ISO_RAW_OVERLAY_UPPER="" ISO_PID1=""
 
 # --- Verdict globals, filled by isolation_classify ---------------------------
@@ -160,4 +160,3 @@ source "${_ISO_STAGES}/30-classify.sh"
 source "${_ISO_STAGES}/40-dind.sh"
 # shellcheck source=lib/probe/isolation/50-report.sh
 source "${_ISO_STAGES}/50-report.sh"
-

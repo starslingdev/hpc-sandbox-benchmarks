@@ -4,8 +4,8 @@
 # task that sources the facade, never by this file itself.
 # isolation_report — the human evidence table.
 #
-# The only consumer of the report-only signals: values that identify a single sandbox, or can carry a
-# control-plane token, are printed here and never published to the record.
+# Values that identify a single sandbox, or can carry a control-plane token, are private classifier
+# inputs. They are never rendered here and never published to the record.
 # =============================================================================
 # isolation_report — the human evidence table
 # =============================================================================
@@ -44,11 +44,6 @@ isolation_report() {
 	bench_row "kernel build" "$ISO_KERNEL_BUILD"
 	bench_row "containment" "markers=${ISO_CONTAINER_MARKERS:-none} cgroup=${ISO_CGROUP_ENGINE:-none} overlay=${ISO_OVERLAY_ENGINE:-none} userns=${ISO_USERNS_MAPPED} cap_sys_admin=${ISO_CAP_SYS_ADMIN} masked_proc=${ISO_MASKED_PROC} lsm=${ISO_LSM_PROFILE:-none}"
 	bench_row "pid 1" "$ISO_PID1"
-	# Report-only, by the rule in this file's header: these identify a single sandbox or can carry a
-	# control-plane token, so they are useful when debugging a run and must never reach the record.
-	bench_row "raw cmdline" "$ISO_RAW_CMDLINE"
-	bench_row "raw cgroup" "$ISO_RAW_CGROUP"
-	bench_row "raw overlay upperdir" "$ISO_RAW_OVERLAY_UPPER"
 	echo
 	echo "=== Docker-in-Docker ==="
 	bench_row "readiness" "$DIND_READINESS (mode=$DIND_MODE)"
