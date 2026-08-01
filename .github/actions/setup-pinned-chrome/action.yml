@@ -1,0 +1,56 @@
+name: Set up pinned headless Chrome
+description: >-
+  Provision the chromium-headless-shell build the lockfile's playwright-core pins, cached, and
+  export its path as BUN_CHROME_PATH — the variable that wins Bun.WebView's discovery (full search
+  order: packages/figures/README.md). This is what makes the chart-rendering browser a PINNED,
+  reviewable input rather than ambient runner state: without it the runner image's unpinned
+  google-chrome-stable would rasterise the published figures, changing their bytes whenever the
+  image updates. The download happens only here, explicitly — installs are --ignore-scripts
+  everywhere, so no postinstall ever fetches a browser.
+
+  Linux x64 hosted runners only, by design: this action serves exactly the update-leaderboard job.
+  NOTE: assumes the repo is checked out AND `bun install` has run (a local action is read from the
+  workspace, and the version detection below reads the installed playwright-core) — the caller
+  keeps its explicit checkout + install steps first.
+
+outputs:
+  chrome-path:
+    description: Absolute path of the pinned chrome-headless-shell executable (also exported as BUN_CHROME_PATH).
+    value: ${{ steps.provision.outputs.chrome-path }}
+
+runs:
+  using: composite
+  steps:
+    # The cache key is the LOCKED playwright-core version — each release pins exactly one
+    # chromium-headless-shell build, so the cache busts precisely when the pin changes and
+    # survives unrelated lockfile churn (a hashFiles(bun.lock) key would re-download ~100 MB on
+    # every dependency bump).
+    - name: Resolve the locked playwright-core version
+      id: version
+      shell: bash
+      run: |
+        version="$(bun -e 'console.log(require("playwright-core/package.json").version)')"
+        if [ -z "$version" ]; then
+          echo "could not read the installed playwright-core version — did bun install run?" >&2
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a moved or
+    # compromised tag can't silently change what runs — the repo-wide supply-chain posture.
+    - name: Cache the pinned browser
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: chrome-headless-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+
+    # pin-chrome.sh is the ONE provisioning mechanism, shared with pinned local renders — it
+    # installs the build (a no-op on cache hit) and resolves the executable from playwright-core
+    # itself, so a stale cache entry or relocated cache can never select the wrong browser.
+    - name: Provision pinned headless Chrome
+      id: provision
+      shell: bash
+      run: |
+        chrome="$(./scripts/pin-chrome.sh)"
+        echo "chrome-path=$chrome" >> "$GITHUB_OUTPUT"
+        echo "BUN_CHROME_PATH=$chrome" >> "$GITHUB_ENV"

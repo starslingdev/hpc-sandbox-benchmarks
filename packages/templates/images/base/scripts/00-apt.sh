@@ -1,77 +1,40 @@
 #!/usr/bin/env bash
-# System packages + the mise binary. Runs first: everything downstream needs these.
+# Install ONE apt group. The Dockerfile calls this once per group in TOOLCHAIN_APT_GROUPS
+# (packages/schema/src/toolchain.ts), each in its own RUN, so each group becomes its own Docker layer.
 #
-# apt-vs-mise boundary (deliberate): only genuine OS/build dependencies live here — things mise can't
-# provide. Compilers + headers for the PTS build-* suites (build-essential, flex, bison, bc,
-# libelf-dev, libssl-dev), php for the PTS runtime, and core system utilities. The language runtimes
-# and portable CLIs (node, python, pnpm, hyperfine, warp, jc, quarto) are mise-managed in 10-mise.sh —
-# NOT apt — so their versions live in one place (pins.ts → mise.toml).
+# Why per-group instead of one install: a single apt layer measured 624.7 MB compressed, and Vercel
+# Container Registry rejects any compressed layer over 500 MB with an opaque HTTP 413 mid-push
+# (Daytona's snapshot registry rejects oversized layers too — see the base Dockerfile). Splitting is
+# the only lever here; the package set itself is unchanged.
+#
+# The package list is NOT written here. It arrives as APT_PACKAGES from the schema-owned group
+# definition via build.sh --build-arg, so the bake and the runtime dep refresh (packages/harness
+# setup.ts, which interpolates the PTS_APT_DEPS derived from those same groups) cannot disagree about
+# a package. tooling/repo-checks/src/pts-dep-alignment.test.ts holds that wiring in place.
+#
+# apt-vs-mise boundary (deliberate): only genuine OS/build dependencies live in these groups — things
+# mise can't provide. The language runtimes and portable CLIs (node, python, pnpm, hyperfine, warp,
+# jc, quarto) are mise-managed in 10-mise.sh, so their versions live in one place (pins.ts →
+# mise.toml). The mise binary itself is fetched in 05-mise-binary.sh.
 set -Eeuxo pipefail
 
-# > MISE_VERSION is the pinned mise *release* version (see pins.ts), installed from GitHub releases
-# > below — NOT apt. mise's apt repo is rolling (it only serves the latest version), so a pinned
-# > `apt install mise=<ver>` breaks the moment mise publishes a new release; an immutable release
-# > asset keeps the pin reproducible.
-: "${MISE_VERSION:?}"
+# > Fail loudly if the Dockerfile passed an empty/unset group rather than silently installing nothing.
+: "${APT_PACKAGES:?}"
+: "${APT_GROUP_NAME:?}"
+
+echo "::: apt group ${APT_GROUP_NAME}"
 
 apt-get update
 
-# > System build/runtime deps. The mise binary is fetched separately (its pinned release, below); curl
-# > + ca-certificates here are that fetch's only prerequisites.
 # > Security: no `sudo` — the image runs as root (see Dockerfile) so nothing needs privilege
 # > escalation, and shipping sudo would only widen the attack surface. --no-install-recommends keeps
 # > the set to exactly what the benchmark suites need.
-# > libaio-dev: fio's libaio engine (the disk suite's pinned scenarios) — needed at bake time, when
-# > 20-pts.sh pre-builds fio. libicu-dev: postgres's configure hard-requires ICU (pgbench pre-build).
-# > pkg-config: PostgreSQL 17's configure locates ICU exclusively via PKG_CHECK_MODULES(icu-uc
-# > icu-i18n), so libicu-dev is invisible to it without a pkg-config binary — configure aborts with
-# > "ICU library not found" while PTS still marks pgbench installed (its upstream install.sh has no
-# > set -e and writes the launcher unconditionally), which is how every image since #144 shipped
-# > pgbench without its pg_/ payload. On Debian 13 `pkg-config` resolves to pkgconf's transitional
-# > package; keep this name so the two runtime mirrors (lib/bench.sh ensure_pts, and the schema
-# > toolchain contract's PTS_APT_DEPS that setup.ts interpolates) stay aligned.
-# > dnsutils + jq: the benchmark:system:provider probe (Team Cymru DNS whois via dig, ipinfo JSON via
-# > jq). jq is also what aggregates the benchmark:network:latency probe (it skips without a parser,
-# > since curl's %{json} write-out is the only thing it measures). netcat-openbsd: the
-# > pts/network-loopback runner (`dd | nc`). iputils-ping: no benchmark shells out to ping any more
-# > (the latency probe moved to curl, because sandbox networks that filter ICMP made it report
-# > unreachable hosts that HTTPS reached fine); kept for interactive diagnosis on slim base images.
-# > tcl: sqlite-speedtest builds SQLite from source, and SQLite's Makefile shells out to `tclsh` to
-# > generate opcodes.h — without it the build dies with exit 127 mid-`batch-install`. PTS still exits
-# > 0 there, so the failure only surfaces in 20-pts.sh's post-install verification.
-# > The fonts/GTK/X11 libraries are fast-cli's Puppeteer/Chrome runtime dependencies. Keep them baked
-# > beside the pre-installed profile: otherwise its launcher starts but Chrome fails before the first
-# > fast.com transfer, leaving a deceptively successful PTS composite with four empty values.
-apt-get install -y --no-install-recommends \
-	curl git ca-certificates \
-	build-essential autoconf \
-	php-cli php-xml \
-	flex bison bc libelf-dev libssl-dev libaio-dev libicu-dev pkg-config \
-	dnsutils jq netcat-openbsd iputils-ping \
-	fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
-	libcairo2 libcups2 libdbus-1-3 libdrm2 libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 \
-	libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 \
-	libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 \
-	libxext6 libxfixes3 libxi6 libxkbcommon0 libxrandr2 libxrender1 libxss1 libxtst6 \
-	xdg-utils \
-	tcl \
-	stress-ng tar gzip xz-utils unzip procps
+# >
+# > Word-splitting APT_PACKAGES is intended: it is a space-separated package list from a validated
+# > constant, never user input.
+# shellcheck disable=SC2086
+apt-get install -y --no-install-recommends ${APT_PACKAGES}
 
-# > Keep the layer small: the package index is regenerated by any later `apt-get update`.
+# > Keep the layer small: the package index is regenerated by the next group's `apt-get update`.
+# > This must happen INSIDE this RUN — a later layer deleting these files cannot shrink this one.
 rm -rf /var/lib/apt/lists/*
-
-# > Install the pinned mise binary from its immutable GitHub release asset (version-locked URL, no
-# > remote install script executed) to a stable system path, then verify it against the sha256 pinned
-# > in pins.ts and passed as a build arg — a committed checksum, not one fetched next to the binary, so
-# > a corrupted/MITM'd download or a swapped release asset fails the build. dpkg arch selects both the
-# > mise asset arch and its matching pinned sha.
-case "$(dpkg --print-architecture)" in
-	amd64) mise_arch="x64";   mise_sha="${MISE_SHA256_X64:?}" ;;
-	arm64) mise_arch="arm64"; mise_sha="${MISE_SHA256_ARM64:?}" ;;
-	*) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;;
-esac
-mise_url="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${mise_arch}"
-curl -fsSL --retry 5 --retry-all-errors -o /usr/local/bin/mise "${mise_url}"
-echo "${mise_sha}  /usr/local/bin/mise" | sha256sum -c -
-chmod +x /usr/local/bin/mise
-mise --version

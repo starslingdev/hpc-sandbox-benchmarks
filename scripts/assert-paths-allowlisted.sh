@@ -57,15 +57,71 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-# Build an allowlist set keyed by exact repo-relative path.
+# Build the allowlist. Entries come in exactly two forms:
+#
+#   an exact repo-relative path            LEADERBOARD.md
+#   a single-level extension-pinned glob   docs/figures/*.webp
+#
+# The glob form exists because the leaderboard publishes one WebP chart per realworld suite, and that
+# count is a property of the DATASET: a fourth suite landing upstream would otherwise fail every
+# release until someone remembered to add a fourth literal here. It is deliberately the narrowest
+# pattern that does the job rather than a general one — exactly ONE path segment under the named
+# directory, and a fixed extension. `docs/figures/*.webp` cannot match `docs/figures/nested/x.webp`,
+# cannot match `docs/figures/evil.yml`, and cannot be bent into reaching `.github/`. Anything
+# containing `*` that is not of this shape is refused rather than interpreted, so a widened pattern
+# is a loud script error and not a quietly bigger hole.
 declare -A allow=()
+globs=()
 for path in "$@"; do
   if [ -z "$path" ] || [[ "$path" == /* ]] || [[ "$path" == *..* ]]; then
     echo "refusing non-repo-relative allowlist path: $path" >&2
     exit 2
   fi
-  allow["$path"]=1
+  case "$path" in
+    */'*.'*)
+      # The DIRECTORY must be literal — `docs/**/*.webp` gets this far otherwise, and `**` is exactly
+      # the unbounded depth this form exists to not have. The EXTENSION must be literal too: no
+      # second `*`, and not empty.
+      ext="${path##*/\*.}"
+      if [[ "${path%/*}" == *'*'* ]] || [ -z "$ext" ] || [[ "$ext" == *'*'* ]]; then
+        echo "refusing allowlist glob (expected DIR/*.EXT): $path" >&2
+        exit 2
+      fi
+      globs+=("$path")
+      ;;
+    *'*'*)
+      echo "refusing allowlist glob (expected DIR/*.EXT): $path" >&2
+      exit 2
+      ;;
+    *)
+      allow["$path"]=1
+      ;;
+  esac
 done
+
+# Does one changed path satisfy the allowlist?
+path_allowed() {
+  local candidate="$1"
+  if [ -n "${allow[$candidate]+x}" ]; then
+    return 0
+  fi
+  local glob dir pattern
+  for glob in ${globs[@]+"${globs[@]}"}; do
+    dir="${glob%/*}"
+    pattern="${glob##*/}"
+    # The candidate's own directory must equal the glob's directory EXACTLY — that is what holds the
+    # match to a single level. A candidate with no `/` has `${candidate%/*}` equal to itself, so the
+    # second test rejects it before the pattern is ever consulted.
+    if [ "${candidate%/*}" = "$dir" ] && [ "$candidate" != "${candidate%/*}" ]; then
+      # Unquoted on purpose: this is the one place a glob is meant to glob.
+      # shellcheck disable=SC2254
+      case "${candidate##*/}" in
+        $pattern) return 0 ;;
+      esac
+    fi
+  done
+  return 1
+}
 
 # Collect the change set via command substitution, NOT `mapfile < <(...)`: a process substitution's
 # exit status is invisible to `set -e`, so a source command that fails mid-stream (e.g. a later
@@ -110,7 +166,7 @@ for path in "${changed[@]}"; do
   if [ -z "$path" ]; then
     continue
   fi
-  if [ -z "${allow[$path]+x}" ]; then
+  if ! path_allowed "$path"; then
     echo "path not allowlisted: $path" >&2
     blocked=1
   fi

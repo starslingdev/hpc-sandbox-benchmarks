@@ -129,6 +129,11 @@ dist
 # Claude Code agent/harness state (skills, workflows, settings) — machine-local, not repo source.
 .claude/
 
+# Vercel CLI link state. `vercel link` / `vercel pull` write project.json (the team_*/prj_* API IDs)
+# here; CI passes those as secrets instead, so a checked-in copy would only ever be one developer's.
+# The pulled env file already matches the .env.* rule above.
+.vercel/
+
 # Local benchmark outputs are transient (per-run raw trees + the local run index). The PUBLISHED
 # dataset lives under data/dataset/ and is committed by the promote step, so it is NOT ignored.
 data/raw/
@@ -145,3 +150,6 @@ packages/templates/images/e2b/e2b.toml
 # Generated per-bake by `bake` (apps/cli/src/lib/bake/e2b.ts): the committed e2b/Dockerfile with its
 # base pinned to the candidate/version registry ref, since e2b CLI 2.x can't inject a build-arg.
 packages/templates/images/e2b/Dockerfile.generated
+
+# macOS Finder litter - never content, and the artifact gate compares docs/figures exactly.
+.DS_Store

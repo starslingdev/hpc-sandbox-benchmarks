@@ -194,6 +194,16 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Authenticate with Vercel
+        if: matrix.provider == 'vercel'
+        continue-on-error: true
+        id: vercel-auth
+        uses: ./.github/actions/vercel-auth
+        with:
+          token: ${{ secrets.VERCEL_TOKEN }}
+          org-id: ${{ secrets.VERCEL_ORG_ID }}
+          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+
       # Drive the provider SDK to create this cell's R replicate sandboxes, run the suite in each,
       # collect results, and normalize one shard Run per replicate. The cell's provider is a matrix value
       # and its suite + replicate array are reusable inputs, all passed through the environment (never
@@ -249,6 +259,8 @@ jobs:
           # (steps.nsc-token only runs when matrix.provider == 'namespace'), which the harness reads
           # as the standard missing-credentials skip on every other cell.
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          # @computesdk/vercel reads the short-lived token exported by the auth action.
+          VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
           # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an
           # optional override for staging or private deployments. Neither value enters the guest.
           MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}

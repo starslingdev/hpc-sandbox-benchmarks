@@ -13,6 +13,7 @@
   "dependencies": {
     "@nodable/compact-builder": "catalog:xml",
     "@nodable/flexible-xml-parser": "catalog:xml",
+    "@sandbox-benchmarks/figures": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:"
   },

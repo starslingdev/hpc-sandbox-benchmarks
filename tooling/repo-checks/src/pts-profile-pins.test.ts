@@ -51,12 +51,18 @@ function referencedProfiles(): Set<string> {
 	return new Set(paths.flatMap((path) => pinnedReferences(readFileSync(join(root, path), "utf8"))));
 }
 
-/** The whitespace-separated profiles the toolchain bake pre-installs (ptsInstallTests). */
+/**
+ * The profiles the toolchain bake pre-installs. Read from `ptsInstallGroups` — the partitioned list
+ * is now the source, and `ptsInstallTests` is derived by joining it (one Docker layer per group, see
+ * lib/pins.ts), so flattening the groups here reads exactly what the bake installs.
+ */
 function bakedTests(): Set<string> {
 	const pins = readFileSync(join(root, "packages/templates/src/lib/pins.ts"), "utf8");
-	const match = pins.match(/ptsInstallTests:\s*\n?\s*"([^"]+)"/);
-	expect(match).not.toBeNull();
-	return new Set((match?.[1] ?? "").split(/\s+/).filter(Boolean));
+	const block = pins.match(/const ptsInstallGroups = \[([\s\S]*?)\n\];/);
+	expect(block).not.toBeNull();
+	const groups = [...(block?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1] as string);
+	expect(groups.length).toBeGreaterThan(0);
+	return new Set(groups.flatMap((group) => group.split(/\s+/)).filter(Boolean));
 }
 
 describe("PTS profile version pins", () => {

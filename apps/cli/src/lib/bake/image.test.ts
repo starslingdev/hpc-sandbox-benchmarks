@@ -20,6 +20,23 @@ describe("imagetoolsRetagCmd", () => {
 			"ghcr.io/o/tc:v1-candidate",
 		]);
 	});
+
+	it("builds a promotion within a canonical team-slug/project-name VCR namespace", () => {
+		expect(
+			imagetoolsRetagCmd(
+				"vcr.vercel.com/starsling-dev/sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v6-candidate",
+				"vcr.vercel.com/starsling-dev/sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v6",
+			),
+		).toEqual([
+			"docker",
+			"buildx",
+			"imagetools",
+			"create",
+			"-t",
+			"vcr.vercel.com/starsling-dev/sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v6",
+			"vcr.vercel.com/starsling-dev/sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v6-candidate",
+		]);
+	});
 });
 
 describe("imagetoolsNormalizeCmd", () => {
