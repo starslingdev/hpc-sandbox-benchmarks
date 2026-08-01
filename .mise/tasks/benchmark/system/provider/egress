@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Egress only: the sandbox's public IP, the ASN/org that announces it, and its best-effort geo"
+# The network half of `benchmark:system:provider`, on its own: no /proc and /sys sweep, no result
+# file. Same rationale as the isolation leaf — see its header for why the sub-probes never write.
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+source "${REPO_ROOT}/lib/net-identity.sh"
+
+net_identity_probe
+net_identity_report

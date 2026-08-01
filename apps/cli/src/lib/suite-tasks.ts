@@ -10,7 +10,7 @@
 // Actions HTML table rendering lives in suite-summary.ts so this module stays free of Toolkit/
 // presentation concerns. Callers pass an explicit `root` (tests) or default to process.cwd()
 // (CI / local bins already run from the monorepo root).
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import type { SuiteName } from "@sandbox-benchmarks/schema";
 import { getMetric, SUITES } from "@sandbox-benchmarks/schema";
@@ -205,12 +205,29 @@ function relFile(absOrRel: string, root: string): string {
 	return rel.startsWith("..") ? "" : rel;
 }
 
-/** Resolve a task file under the repo root — mise path first, then the conventional file layout. */
+/**
+ * Resolve a task file under the repo root — mise path first, then the conventional file layout.
+ *
+ * A conventional path can land on a DIRECTORY rather than a file: mise lets a group carry its own
+ * task as `<group>/_default` (`.mise/tasks/a/b/_default` loads as `a:b`), which is how
+ * `benchmark:system:provider` gained sibling leaves without being renamed. `existsSync` is true for
+ * that directory, so testing existence alone would report a directory as the task file and then mine
+ * zero pins from it. Check for a file, and fall through to the group's `_default`.
+ */
 function resolveTaskFile(task: string, miseFile: string | undefined, root: string): string {
+	const isFile = (rel: string): boolean => {
+		try {
+			return statSync(resolve(root, rel)).isFile();
+		} catch {
+			return false;
+		}
+	};
 	const fromMise = miseFile ? relFile(miseFile, root) : "";
-	if (fromMise && existsSync(resolve(root, fromMise))) return fromMise;
+	if (fromMise && isFile(fromMise)) return fromMise;
 	const conventional = conventionalTaskFile(task);
-	if (existsSync(resolve(root, conventional))) return conventional;
+	if (isFile(conventional)) return conventional;
+	const grouped = `${conventional}/_default`;
+	if (isFile(grouped)) return grouped;
 	return fromMise;
 }
 

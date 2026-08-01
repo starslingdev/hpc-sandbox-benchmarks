@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Isolation only: which VMM and/or container runtime is confining this sandbox, with the scored evidence behind the verdict"
+# A DEBUGGING view of one half of `benchmark:system:provider`, for driving on a live sandbox when the
+# question is "what am I actually running on" and you want neither the network legs nor a result file.
+#
+# Writes NOTHING. The record is the group task's job (`_default`), so this leaf can never race it for
+# `system-provider.json` — the artifact packages/results/src/lib/host-metadata.ts matches by exact
+# name. That is the whole reason the sub-probes are report-only leaves rather than producers.
+#
+#USAGE flag "--dind" help="Also assess whether a container can run INSIDE this sandbox (Docker-in-Docker readiness)"
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+source "${REPO_ROOT}/lib/isolation.sh"
+
+isolation_collect
+# The classifier reads ISO_EGRESS_OK to recognise libkrun's TSI networking ("egress works AND there
+# is no interface"). This leaf deliberately does not probe egress — that is the sibling leaf's job —
+# so the signal stays false and the TSI rule simply does not fire. The group task is what sees both.
+isolation_classify
+[ "${usage_dind:-false}" = "true" ] && isolation_dind
+isolation_report

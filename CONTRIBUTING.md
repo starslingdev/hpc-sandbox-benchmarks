@@ -62,7 +62,13 @@ bun run check:catalog-drift                                    # fail if the com
    is uncatalogued or off-dimension, or a declared dimension has no metric.
 2. **Producer tasks** — add the mise task(s) under `.mise/tasks/benchmark/**` that the `commands` name,
    driving the benchmark via the helpers in [`lib/bench.sh`](./lib/bench.sh) (e.g. `run_pts_benchmark`).
-   An orchestrator is a task *file*; its leaves live in a sibling *directory* (a task path can't be both).
+   An orchestrator is a task *file*; its leaves live in a sibling *directory* (a task path can't be both)
+   — **unless** the group's own task is spelled `_default`. mise loads `.mise/tasks/a/b/_default` as the
+   task `a:b`, so a task can gain sibling leaves without being renamed (this is how
+   `benchmark:system:provider` grew `:isolation` and `:egress`). Two things follow from choosing it:
+   `task_result_name` strips the `_default` segment so the artifact keeps its name — the normalizer
+   matches those files by exact name — and a leaf that is a *view* rather than a producer must write no
+   result at all, so it can never race the group task for that artifact.
 3. **No matrix job edit** — `bench-matrix.yml` matrices over `plan.outputs.suites` (from `SUITE_NAMES`
    via `plan-suites`), so a new suite is picked up automatically and nests as `<suite> / <provider>` in
    the Actions UI; a dispatch can still narrow to a subset with the `suites` input. The

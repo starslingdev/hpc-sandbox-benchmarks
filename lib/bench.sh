@@ -78,6 +78,13 @@ task_result_name() {
 	local script_path="${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}"
 	local tasks_dir="${REPO_ROOT}/.mise/tasks/benchmark/"
 	local relative="${script_path#"$tasks_dir"}"
+	# `_default` is mise's spelling for a GROUP's own task: `.mise/tasks/a/b/_default` loads as the
+	# task `a:b`, not `a:b:_default`. It names no leaf, so it contributes nothing to the result name.
+	# Without this, moving a task into a directory to give it sibling leaves silently renames its
+	# artifact — and packages/results/src/lib/host-metadata.ts matches these files by EXACT name, so
+	# the rename would drop that probe from every future run and from every retroactive
+	# re-normalization of the committed raw tree.
+	relative="${relative%/_default}"
 	local name="${relative//\//-}"
 	[ -n "$suffix" ] && name="${name}--${suffix}"
 	echo "$name"
