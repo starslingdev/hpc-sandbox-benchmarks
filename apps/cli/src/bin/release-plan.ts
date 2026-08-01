@@ -192,8 +192,15 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	// force_republish deliberately regenerates the version in place and a partial release deliberately
 	// backfills onto it, so "already published" never skips either; a plain build skips once the
 	// immutable version exists (bump TOOLCHAIN_VERSION to publish anew).
+	//
+	// `promote: false` is the third exception, and for a different reason than the other two: the early
+	// skip exists to spare a release that would only re-publish a version already sitting in the
+	// registry. A dispatch that is not publishing has nothing to be spared — it asked to bake and verify
+	// against the current version, which is exactly what you do BEFORE deciding to cut a new one — so
+	// letting "already published" skip it would silently turn the whole run into a no-op.
+	const promote = inputs.promote ?? true;
 	const mode = partial ? "backfill" : inputs.forceRepublish ? "republish" : "build";
-	const skip = inputs.alreadyPublished && !inputs.forceRepublish && !partial;
+	const skip = inputs.alreadyPublished && !inputs.forceRepublish && !partial && promote;
 
 	const providers: ReleaseProviderPlan[] = scope.map((provider) => ({
 		provider,
@@ -207,7 +214,7 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 		mode,
 		skip,
 		build: inputs.build ?? "full",
-		promote: inputs.promote ?? true,
+		promote,
 		partial,
 		sourceRef: inputs.sourceRef,
 		sizeTier: `${vcpus} vCPU / ${memoryGb} GiB / ${diskGb} GB`,
@@ -285,11 +292,15 @@ if (import.meta.main) {
 	const promote = process.env.PROMOTE !== "false";
 
 	// Best-effort immutability probe: an inconclusive result (auth/network) proceeds — promote does the
-	// authoritative, refuse-on-uncertain check before it writes the immutable base.
+	// authoritative, refuse-on-uncertain check before it writes the immutable base. `probeConclusive`
+	// records whether the answer is evidence or just the default, so the gate below can tell a real
+	// "not published" from a registry blip.
 	let alreadyPublished = false;
+	let probeConclusive = true;
 	try {
 		alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
 	} catch (err) {
+		probeConclusive = false;
 		console.error(
 			`::warning::could not probe whether ${config.toolchainImageVersion} is already published ` +
 				`(${err instanceof Error ? err.message : String(err)}); proceeding — promote does the authoritative guard.`,
@@ -316,6 +327,21 @@ if (import.meta.main) {
 				"providers onto an existing version and never writes the base, so it will refuse. Run a full " +
 				"release first, or dispatch with promote disabled to bake + verify only.",
 		);
+	}
+
+	// `build: variants` composes the provider variants ON the published version base, so it cannot run
+	// before that version exists — the build job would die resolving it, after a `privileged` approval
+	// this (unprivileged) job can refuse ahead of. Unlike the warning above this is a hard failure: there
+	// is no path where the phase works without that base. It is gated on a CONCLUSIVE probe, though, so a
+	// registry blip degrades to the opaque-but-honest failure in the build job rather than a false refusal.
+	if (plan.build === "variants" && probeConclusive && !alreadyPublished) {
+		console.error(
+			`::error title=No published base to compose variants on::${config.toolchainImageVersion} is not ` +
+				"published, and `build: variants` rebuilds only the provider variants ON TOP of it — there is " +
+				"nothing to compose against. Use `build: full` to cut this version first; `variants` is for " +
+				"adding a provider to a version that already shipped.",
+		);
+		process.exit(1);
 	}
 
 	// Optional first positional (flags filtered out): write the full plan JSON here for the

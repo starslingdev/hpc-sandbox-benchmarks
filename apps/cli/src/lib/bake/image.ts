@@ -122,6 +122,17 @@ export async function buildAndPushVariantCandidates(
 	scope?: readonly ProviderId[],
 ): Promise<StagedCandidates> {
 	const staged = variantsInScope(scope);
+	// This mode has one hard prerequisite — the published base it composes on. The plan refuses the
+	// combination up front when it can see the version is absent, but that probe is best-effort, so this
+	// is the authoritative check. It is spelled out here rather than left to `resolveImageDigestRef`
+	// because that would surface as a raw `imagetools inspect exited 1`, which reads like a registry
+	// outage rather than "you asked for the wrong build mode".
+	if (!(await imageExistsInRegistry(config.toolchainImageVersion))) {
+		throw new Error(
+			`${config.toolchainImageVersion} is not published, so there is no base to rebuild the variants on — ` +
+				"`build: variants` adds a provider to a version that already shipped; use `build: full` to cut it first",
+		);
+	}
 	const pinnedBase = await resolveImageDigestRef(config.toolchainImageVersion);
 	if (staged.length === 0) {
 		// Nothing to do rather than a no-op build.sh run: with no registry-served variant in scope there

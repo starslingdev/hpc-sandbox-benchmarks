@@ -38,6 +38,20 @@ describe("buildReleasePlan mode + skip", () => {
 		expect(plan.partial).toBe(true);
 		expect(plan.skip).toBe(false);
 	});
+
+	// The early skip spares a release that would only re-publish a version already in the registry. A
+	// dispatch that is not publishing has nothing to spare — it asked to bake and verify against the
+	// current version — so skipping it would turn the whole run into a silent no-op.
+	test("promote: false still runs against an already-published version", () => {
+		const plan = buildReleasePlan({ ...base, alreadyPublished: true, promote: false });
+		expect(plan.partial).toBe(false);
+		expect(plan.promote).toBe(false);
+		expect(plan.skip).toBe(false);
+	});
+
+	test("...but a promoting full release of the same version still skips", () => {
+		expect(buildReleasePlan({ ...base, alreadyPublished: true, promote: true }).skip).toBe(true);
+	});
 });
 
 describe("buildReleasePlan matrix", () => {
