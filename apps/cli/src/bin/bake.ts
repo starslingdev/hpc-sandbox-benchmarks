@@ -21,7 +21,7 @@ import { bakeModalImage } from "../lib/bake/modal.ts";
 import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
-import { candidateCreateOptions } from "../lib/bake/validate.ts";
+import { baseImageUse, candidateCreateOptions } from "../lib/bake/validate.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
@@ -171,7 +171,7 @@ if (import.meta.main) {
 	if (process.argv.includes("--build-push")) {
 		log(">>> building + pushing candidate image…");
 		try {
-			await buildAndPushCandidate(log);
+			await buildAndPushCandidate(log, only);
 		} catch (err) {
 			log(`<<< build/push failed — ${err instanceof Error ? err.message : String(err)}`);
 			process.exit(1);
@@ -181,15 +181,25 @@ if (import.meta.main) {
 	// Modal's registry importer, like the remote E2B-compatible builders, may cache a mutable tag.
 	// Resolve once after the push and validate the exact candidate bytes by immutable digest. This also
 	// makes a tag change between provider bakes unable to redirect Modal's validation to different bytes.
-	let pinnedCandidateImage: string;
-	try {
-		pinnedCandidateImage = await resolveImageDigestRef(config.toolchainImageCandidate);
-		log(`>>> candidate image pinned for validation: ${pinnedCandidateImage}`);
-	} catch (err) {
-		log(
-			`<<< could not resolve candidate image digest — ${err instanceof Error ? err.message : String(err)}`,
-		);
-		process.exit(1);
+	//
+	// Only providers that actually reference the base need it: vercel boots its own VCR mirror and
+	// blaxel the vendor's stock image, so a cell restricted to those must not die on a base candidate it
+	// never reads — under `build: variants`/`skip` that ref may legitimately be stale or absent, and
+	// failing there would break the one flow the scoped release exists for.
+	const needsBase = (only ?? PROVIDERS.map((p) => p.id)).some((id) => baseImageUse(id) !== "none");
+	let pinnedCandidateImage: string = config.toolchainImageCandidate;
+	if (needsBase) {
+		try {
+			pinnedCandidateImage = await resolveImageDigestRef(config.toolchainImageCandidate);
+			log(`>>> candidate image pinned for validation: ${pinnedCandidateImage}`);
+		} catch (err) {
+			log(
+				`<<< could not resolve candidate image digest — ${err instanceof Error ? err.message : String(err)}`,
+			);
+			process.exit(1);
+		}
+	} else {
+		log(`>>> no provider in scope reads ${config.toolchainImageCandidate} — not resolving it`);
 	}
 	const candidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,

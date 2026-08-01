@@ -296,7 +296,12 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
+      # Two different facts, deliberately not one: `candidate-digest-ref` is what this phase STAGED
+      # (the new candidate base on a `full` build, the variant candidates on a `variants` one), while
+      # `base-digest-ref` is the base every downstream phase pins — which a `variants` build leaves as
+      # the published version it composed on, having never touched the candidate base.
       candidate-digest-ref: ${{ steps.build.outputs.candidate-digest-ref }}
+      base-digest-ref: ${{ steps.build.outputs.base-digest-ref }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -318,6 +323,11 @@ jobs:
           BUILD_VERSION: ${{ needs.plan.outputs.toolchain-version }}
           # `full` or `variants` — the plan already rejected anything else, and `skip` never gets here.
           BUILD_MODE: ${{ needs.plan.outputs.build-mode }}
+          # The resolved scope, so the build stages only the registry-served variants this release is
+          # actually publishing. Without it a scoped release would rewrite an out-of-scope provider's
+          # candidate tag — a mutation nobody asked for, on an image the plan dropped from the
+          # visibility guard, so nothing would even check it is still pullable afterwards.
+          RELEASE_PROVIDERS: ${{ needs.plan.outputs.providers }}
           # Same mise rate-limit fix as pr-gate: the release build runs the identical build.sh, so give
           # it the authenticated GitHub API limit too. Built-in token; this job is already privileged.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -350,6 +360,7 @@ jobs:
           scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
           image: ${{ steps.build.outputs.candidate-digest-ref }}
+          base-image: ${{ steps.build.outputs.base-digest-ref }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
           verify: bun apps/cli/src/bin/build-candidate.ts
           diagnostics: build-metadata-${{ github.run_id }}
@@ -554,7 +565,7 @@ jobs:
           # The build job may have been skipped (`build: skip`), leaving its outputs empty — fall back
           # to the candidate tag the plan resolved, which is the ref this cell baked against anyway.
           image: ${{ needs.build.outputs.candidate-digest-ref || needs.plan.outputs.image-candidate }}
-          base-image: ${{ needs.plan.outputs.image-candidate }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
           provider-target: ${{ matrix.provider }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
           verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }}${{ matrix.required && format(' --require {0}', matrix.provider) || '' }}
@@ -739,7 +750,7 @@ jobs:
           source-ref: ${{ github.sha }}
           # Empty when the build job was skipped (`build: skip`) — fall back to the planned candidate tag.
           image: ${{ needs.build.outputs.candidate-digest-ref || needs.plan.outputs.image-candidate }}
-          base-image: ${{ needs.plan.outputs.image-candidate }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
           verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}
           published: ${{ needs.plan.outputs.publish-target }}

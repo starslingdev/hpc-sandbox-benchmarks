@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
-import { buildReleasePlan, planOutputs, RELEASE_REQUIRED_PROVIDERS } from "./release-plan.ts";
+import {
+	buildReleasePlan,
+	planOutputs,
+	RELEASE_REQUIRED_PROVIDERS,
+	RELEASE_UNSCOPABLE_PROVIDERS,
+} from "./release-plan.ts";
 
 const base = { sourceRef: "abc123", forceRepublish: false, alreadyPublished: false };
 const ALL_PROVIDERS = PROVIDERS.map((p) => p.id);
@@ -69,9 +74,28 @@ describe("buildReleasePlan matrix", () => {
 	// A named provider that could still skip on a missing secret would report a green release that
 	// published nothing — the exact failure the scoped path is meant to make impossible.
 	test("every provider a partial dispatch names is required, even a normally best-effort one", () => {
-		const plan = buildReleasePlan({ ...base, providers: "blaxel,novita" });
-		expect(plan.required).toEqual(["blaxel", "novita"]);
+		const plan = buildReleasePlan({ ...base, providers: "daytona-container,novita" });
+		expect(plan.required).toEqual(["daytona-container", "novita"]);
 		expect(plan.matrix.include.every((c) => c.required)).toBe(true);
+	});
+
+	// The flip side of "everything you name is required": a provider the lane carries no credentials
+	// for would fail its cell deterministically, after a privileged approval and (on `build: full`) an
+	// hour of rebuild. The plan refuses instead, naming the reason.
+	test("refuses a scope naming a provider the release lane cannot ship", () => {
+		expect(() => buildReleasePlan({ ...base, providers: "blaxel" })).toThrow(/blaxel/);
+		expect(() => buildReleasePlan({ ...base, providers: "e2b,blaxel" })).toThrow(
+			/BL_API_KEY|cannot ship/,
+		);
+	});
+
+	// Unscoped, the same provider is simply skipped — it is not in the required set, so a missing
+	// credential is a skip and the release proceeds. Only a scope makes it a demand.
+	test("the same provider is fine in an unscoped release", () => {
+		const plan = buildReleasePlan(base);
+		expect(plan.matrix.include.map((c) => c.provider)).toContain("blaxel");
+		expect(plan.required).not.toContain("blaxel");
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the

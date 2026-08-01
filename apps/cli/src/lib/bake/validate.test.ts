@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import type { CandidateRefs } from "./validate.ts";
-import { candidateCreateOptions } from "./validate.ts";
+import { baseImageUse, candidateCreateOptions } from "./validate.ts";
 
 const refs: CandidateRefs = {
 	e2bTemplateCandidate: "tc-v1-candidate",
@@ -79,5 +80,43 @@ describe("candidateCreateOptions", () => {
 		expect(candidateCreateOptions("microsandbox-cloud", refs)).toEqual({
 			templateId: "ghcr.io/o/tc:v1-candidate",
 		});
+	});
+});
+
+// Two release decisions read this classification, and both fail QUIETLY if it is wrong: a bake cell
+// resolves the candidate base only when some in-scope provider reads it, and a partial promote demands
+// candidate/published identity only when some in-scope provider BAKES its artifact from the base.
+describe("baseImageUse", () => {
+	it("marks the providers that bake their own artifact from the base", () => {
+		const bakes = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "bakes");
+		expect(bakes).toEqual(["e2b", "daytona-vm", "daytona-container", "novita"]);
+	});
+
+	it("marks the providers that boot the base image directly", () => {
+		const boots = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "boots");
+		expect(boots).toEqual([
+			"microsandbox-local",
+			"microsandbox-cloud",
+			"modal-gvisor",
+			"modal-vm",
+			"namespace",
+		]);
+	});
+
+	// The two that make a vercel-only release able to run without the candidate base existing at all.
+	it("marks the providers that never reference the toolchain base", () => {
+		const none = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "none");
+		expect(none).toEqual(["blaxel", "vercel"]);
+	});
+
+	// Anything that reads the base ref in candidateCreateOptions must not be classified "none", or the
+	// bake cell would skip resolving a digest that provider then boots.
+	it("agrees with candidateCreateOptions about who reads the base image ref", () => {
+		for (const { id } of PROVIDERS) {
+			const readsBase = JSON.stringify(candidateCreateOptions(id, refs)).includes(
+				refs.toolchainImageCandidate,
+			);
+			expect(`${id}:${readsBase}`).toBe(`${id}:${baseImageUse(id) === "boots"}`);
+		}
 	});
 });

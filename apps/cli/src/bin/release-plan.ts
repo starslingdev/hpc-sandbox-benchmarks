@@ -44,6 +44,25 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
 	"modal-gvisor",
 ];
 
+/**
+ * Providers a SCOPED release cannot name, with the reason. An unscoped release simply skips these (a
+ * missing credential is a skip, and they are not in {@link RELEASE_REQUIRED_PROVIDERS}); naming one in
+ * `providers` says "make this ship", which the lane then cannot do — and every provider a scoped
+ * dispatch names is required, so the cell fails on missing credentials AFTER a `privileged` approval
+ * and, on a `build: full` dispatch, an hour of rebuild. Refusing in the plan turns that into a
+ * fail-fast with an explanation.
+ *
+ * Keyed by provider so the reason travels with the refusal. Blaxel is the only entry: its bake is a
+ * no-op (it boots the vendor's stock image, not our toolchain) and its promote publishes nothing, so
+ * the release lane deliberately injects no BL_API_KEY/BL_WORKSPACE — those live in the bench lane
+ * only (docs/ci-secrets.md). Adding credentials to the bake matrix is what would remove an entry here.
+ */
+export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, string>>> = {
+	blaxel:
+		"it boots the vendor's stock image rather than the toolchain, so the release lane carries no " +
+		"BL_API_KEY/BL_WORKSPACE and has no artifact to publish for it",
+};
+
 /** Per-provider baked artifact name (what a cell produces), or a note for the providers that bake none. */
 function providerArtifact(id: ProviderId): string {
 	switch (id) {
@@ -150,6 +169,19 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	// spelling out the whole registry stays an ordinary full release, matching what promote will do.
 	const scope = selectProviders(inputs.providers);
 	const partial = isPartialScope(scope);
+
+	// Refuse a scope naming a provider the lane cannot ship, before the release spends an approval and
+	// a build on a cell that is guaranteed to fail (see RELEASE_UNSCOPABLE_PROVIDERS).
+	if (partial) {
+		const unscopable = scope.filter((id) => RELEASE_UNSCOPABLE_PROVIDERS[id]);
+		if (unscopable.length > 0) {
+			throw new Error(
+				`the release lane cannot ship ${unscopable.join(", ")}: ${unscopable
+					.map((id) => `${id} — ${RELEASE_UNSCOPABLE_PROVIDERS[id]}`)
+					.join("; ")}. Drop it from \`providers\` (an unscoped release skips it).`,
+			);
+		}
+	}
 
 	// A partial dispatch names exactly the providers it wants, so every one of them is REQUIRED: the
 	// point of `providers: vercel` is to make that provider ship, and a "best-effort" cell would let it

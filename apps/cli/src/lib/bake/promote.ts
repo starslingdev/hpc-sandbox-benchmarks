@@ -30,14 +30,21 @@
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
+import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { isPartialScope } from "../matrix.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
-import { imageExistsInRegistry, promoteImage, resolveImageDigestRef } from "./image.ts";
+import {
+	imageDigest,
+	imageExistsInRegistry,
+	promoteImage,
+	resolveImageDigestRef,
+} from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
 import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
+import { baseImageUse } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
 
 export interface PromoteOptions {
@@ -146,6 +153,35 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 			`could not resolve immutable digest for ${baseTag}: ${err instanceof Error ? err.message : String(err)} (nothing published)`,
 			"aborted",
 		);
+	}
+
+	// 2b. A backfill verifies each provider's CANDIDATE artifact (step 2) but builds its version artifact
+	//     from the PUBLISHED base (step 3). For a provider that BAKES its artifact from the base —
+	//     e2b/novita templates, daytona snapshots — those are the same bytes only while the candidate
+	//     base still IS the published version; if a later `build: full` moved the candidate on, the run
+	//     would verify one image and publish an artifact built from another. Require that identity when
+	//     such a provider is in scope. The rest don't bake from the base at all (vercel's version artifact
+	//     is a retag of the exact candidate step 2 just booted; modal/namespace/microsandbox boot the
+	//     published base directly), so a drifted candidate tag is simply irrelevant to them.
+	const bakesFromBase = (only ?? PROVIDERS.map((p) => p.id)).filter(
+		(id) => baseImageUse(id) === "bakes",
+	);
+	if (partial && bakesFromBase.length > 0) {
+		let pinnedCandidate: string;
+		try {
+			pinnedCandidate = await resolveImageDigestRef(config.toolchainImageCandidate);
+		} catch (err) {
+			return refuse(
+				`could not resolve immutable digest for ${config.toolchainImageCandidate}, which ${bakesFromBase.join(", ")} bake their version artifact from: ${err instanceof Error ? err.message : String(err)}`,
+				"aborted",
+			);
+		}
+		if (imageDigest(pinnedCandidate) !== imageDigest(pinnedBaseImage)) {
+			return refuse(
+				`the candidate base has drifted from the published version (${pinnedCandidate} vs ${pinnedBaseImage}), so a backfill of ${bakesFromBase.join(", ")} would verify one image and publish an artifact built from another. Re-stage the candidate from the published base (\`build: variants\`), or bump TOOLCHAIN_VERSION and cut a full release`,
+				"aborted",
+			);
+		}
 	}
 	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,

@@ -50,35 +50,65 @@ export const PUBLISHED_VARIANTS: readonly PublishedVariant[] = [
 	},
 ];
 
-/** Retag a freshly built variant to its mutable candidate tag and push it (normalized, as below). */
-async function stagePublishedVariant(entry: PublishedVariant, log: Log): Promise<void> {
+/**
+ * The variants this release is allowed to stage: those whose provider is in `scope` (omitted → every
+ * one, the unscoped default). A scoped release must not rewrite an out-of-scope provider's candidate
+ * tag — that is a mutation outside what the dispatch asked for, on an image the plan has deliberately
+ * dropped from the public-package guard, so nothing would even check it is still pullable.
+ */
+function variantsInScope(scope?: readonly ProviderId[]): readonly PublishedVariant[] {
+	if (!scope) return PUBLISHED_VARIANTS;
+	return PUBLISHED_VARIANTS.filter((entry) => scope.includes(entry.provider));
+}
+
+/** Retag a freshly built variant to its mutable candidate tag and push it (normalized, as below),
+ *  returning the pushed candidate's digest-pinned ref. */
+async function stagePublishedVariant(entry: PublishedVariant, log: Log): Promise<string> {
 	await run(["docker", "tag", entry.version, entry.candidate], log);
 	await run(["docker", "push", entry.candidate], log);
 	await run(imagetoolsNormalizeCmd(entry.candidate), log);
+	return resolveImageDigestRef(entry.candidate);
+}
+
+/** What a build phase staged: the digest-pinned base it pins, plus each registry-served variant
+ *  candidate it pushed (empty when no in-scope provider has one). */
+export interface StagedCandidates {
+	/** The base ref every downstream phase pins — the candidate base for a full build, the published
+	 *  version base for a variants-only build (which does not touch the candidate base at all). */
+	base: string;
+	/** Digest-pinned refs of the variant candidates this run actually pushed. */
+	variants: string[];
 }
 
 /** build.sh (base + variants, tagged `:dev` and `:v1`) → retag base `:v1`→`:v1-candidate` → push the
- *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run.
+ *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run. `scope`
+ *  restricts which registry-served variants are staged (see {@link variantsInScope}).
  *
  *  A plain `docker push` publishes a bare image manifest, while the public version is a one-platform
  *  image index produced by `imagetools create`. Daytona's registry importer rejects the bare
  *  candidate with an opaque inspection error even when its total compressed size is below the
  *  accepted public image. Normalize the mutable candidate to the same envelope before providers
  *  consume it; the config and layers stay byte-identical. */
-export async function buildAndPushCandidate(log: Log): Promise<void> {
+export async function buildAndPushCandidate(
+	log: Log,
+	scope?: readonly ProviderId[],
+): Promise<StagedCandidates> {
 	await run(["bash", BUILD_SH], log);
 	await run(["docker", "tag", config.toolchainImageVersion, config.toolchainImageCandidate], log);
 	await run(["docker", "push", config.toolchainImageCandidate], log);
 	await run(imagetoolsNormalizeCmd(config.toolchainImageCandidate), log);
 	// The thin Vercel variant is staged in GHCR so the separate Vercel matrix cell can mirror the
 	// exact bytes into VCR after obtaining its short-lived OIDC registry login.
-	for (const entry of PUBLISHED_VARIANTS) await stagePublishedVariant(entry, log);
+	const variants: string[] = [];
+	for (const entry of variantsInScope(scope))
+		variants.push(await stagePublishedVariant(entry, log));
+	return { base: await resolveImageDigestRef(config.toolchainImageCandidate), variants };
 }
 
 /**
  * Variants-only rebuild: restage the registry-served provider variants FROM an already-published base,
- * without rebuilding the base or touching its candidate tag. Returns the digest-pinned base ref the
- * variants were built on.
+ * without rebuilding the base or touching its candidate tag. `scope` restricts which variants are
+ * staged (see {@link variantsInScope}).
  *
  * This is the build phase of a scoped backfill — adding a provider to a version the rest of the fleet
  * already runs. The alternative (a full rebuild) would take an hour AND produce different base bytes:
@@ -87,15 +117,26 @@ export async function buildAndPushCandidate(log: Log): Promise<void> {
  * toolchain exists to remove. Composing the thin variant layer on the PUBLISHED base keeps the
  * comparison honest — and the base is pinned by digest, so "the published base" can't drift mid-build.
  */
-export async function buildAndPushVariantCandidates(log: Log): Promise<string> {
+export async function buildAndPushVariantCandidates(
+	log: Log,
+	scope?: readonly ProviderId[],
+): Promise<StagedCandidates> {
+	const staged = variantsInScope(scope);
 	const pinnedBase = await resolveImageDigestRef(config.toolchainImageVersion);
+	if (staged.length === 0) {
+		// Nothing to do rather than a no-op build.sh run: with no registry-served variant in scope there
+		// is no image for this phase to stage — `build: variants` on such a scope is a dispatch mistake.
+		log(`>>> no registry-served variant is in scope — nothing to stage on ${pinnedBase}`);
+		return { base: pinnedBase, variants: [] };
+	}
 	log(`>>> rebuilding variants on the published base ${pinnedBase} (no base build)`);
 	await run(["bash", BUILD_SH], log, {
 		BASE_IMAGE: pinnedBase,
-		VARIANTS: PUBLISHED_VARIANTS.map((entry) => entry.variant).join(","),
+		VARIANTS: staged.map((entry) => entry.variant).join(","),
 	});
-	for (const entry of PUBLISHED_VARIANTS) await stagePublishedVariant(entry, log);
-	return pinnedBase;
+	const variants: string[] = [];
+	for (const entry of staged) variants.push(await stagePublishedVariant(entry, log));
+	return { base: pinnedBase, variants };
 }
 
 /** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */

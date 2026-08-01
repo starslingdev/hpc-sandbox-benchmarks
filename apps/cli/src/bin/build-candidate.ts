@@ -20,16 +20,16 @@
 //     GitHub would reject it. stdout is left to carry the (inherited) build log, and
 //   • argv[1] (optional): a build-metadata.json diagnostic artifact with the same facts.
 import { config } from "@sandbox-benchmarks/providers";
+import type { ProviderId } from "@sandbox-benchmarks/schema";
+import type { StagedCandidates } from "../lib/bake/image.ts";
 import {
 	buildAndPushCandidate,
 	buildAndPushVariantCandidates,
 	imageDigest,
-	imageRepo,
-	PUBLISHED_VARIANTS,
-	resolveImageDigest,
 } from "../lib/bake/image.ts";
 import type { Log } from "../lib/bake/types.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
+import { selectProviders } from "../lib/matrix.ts";
 import type { BuilderBuildMode } from "../lib/release-inputs.ts";
 import { BUILDER_BUILD_MODES, isBuilderBuildMode } from "../lib/release-inputs.ts";
 
@@ -55,53 +55,46 @@ if (import.meta.main) {
 		process.exit(2);
 	}
 
+	// The release's provider scope, so a scoped build stages only the variants it is releasing rather
+	// than rewriting an out-of-scope provider's candidate tag. Blank/absent → every provider.
+	let scope: ProviderId[] | undefined;
+	try {
+		const raw = (process.env.RELEASE_PROVIDERS ?? "").trim();
+		scope = raw === "" ? undefined : selectProviders(raw);
+	} catch (err) {
+		log(`error: ${err instanceof Error ? err.message : String(err)}`);
+		process.exit(2);
+	}
+
 	// In `variants` mode the base the variants compose on is the PUBLISHED version, not the candidate:
 	// the whole point is to derive the new artifact from the bytes already in production.
 	// A failed build/push is the phase failing: report it as one line on stderr (where the job summary
 	// and the run log read it) and exit non-zero, rather than letting an unhandled rejection print a
 	// stack trace. Mirrors the `--build-push` path in bake.ts.
-	let pinnedBase: string | undefined;
+	let staged: StagedCandidates;
 	try {
-		if (mode === "variants") {
-			pinnedBase = await buildAndPushVariantCandidates(log);
-		} else {
-			await buildAndPushCandidate(log);
-		}
+		staged =
+			mode === "variants"
+				? await buildAndPushVariantCandidates(log, scope)
+				: await buildAndPushCandidate(log, scope);
 	} catch (err) {
 		log(`<<< build/push failed — ${err instanceof Error ? err.message : String(err)}`);
 		process.exit(1);
 	}
 
-	// The ref this phase pinned: the candidate base it just pushed (`full`), or the published version
-	// base the variants were rebuilt on (`variants`). Downstream phases record it as provenance.
-	const baseTag =
-		mode === "variants" ? config.toolchainImageVersion : config.toolchainImageCandidate;
-	// The digest is recorded provenance, not a release gate (promote re-validates the mutable tag), so a
-	// registry-inspect quirk must not block a candidate that pushed fine: fall back to the tag on failure.
-	let digest = "unknown";
-	let digestRef: string = baseTag;
-	// `variants` already resolved the digest to pin the build — reuse it rather than inspecting twice.
-	if (pinnedBase) {
-		digestRef = pinnedBase;
-		digest = imageDigest(pinnedBase);
-	} else {
-		try {
-			digest = await resolveImageDigest(baseTag);
-			digestRef = `${imageRepo(baseTag)}@${digest}`;
-		} catch (err) {
-			log(
-				`::warning::could not resolve candidate digest (${err instanceof Error ? err.message : String(err)}); recording the tag instead.`,
-			);
-		}
-	}
+	// What this phase PRODUCED, which is what the downstream summaries label as the release's image:
+	// a `full` build pushed a new candidate base, while a `variants` build left the base alone and
+	// pushed only the variant candidates — naming the untouched public base there would read as though
+	// the base had been rebuilt. Both are recorded separately in the metadata artifact either way.
+	const digestRef = mode === "variants" ? staged.variants.join(", ") : staged.base;
 
 	const metadata = {
 		mode,
-		base: baseTag,
-		digest,
-		digestRef,
-		// The registry-served variant candidates this run staged (both modes push them).
-		variantCandidates: PUBLISHED_VARIANTS.map((entry) => entry.candidate),
+		/** The digest-pinned base this phase's artifacts derive from. */
+		base: staged.base,
+		/** Digest-pinned refs of the registry-served variant candidates this run actually staged. */
+		variantCandidates: staged.variants,
+		scope: scope ?? "all",
 		version: config.toolchainVersion,
 		buildRef: process.env.GITHUB_SHA ?? null,
 	};
@@ -109,7 +102,14 @@ if (import.meta.main) {
 	const metaPath = process.argv.slice(2).find((a) => !a.startsWith("-"));
 	if (metaPath) await Bun.write(metaPath, `${JSON.stringify(metadata, null, 2)}\n`);
 
-	log(`<<< ${mode} build complete: ${digestRef}`);
+	log(`<<< ${mode} build complete: ${digestRef || staged.base}`);
 	// Straight to $GITHUB_OUTPUT (not stdout) — build.sh's inherited stdout must not reach the outputs.
-	emitStepOutputs([`digest=${digest}`, `candidate-digest-ref=${digestRef}`].join("\n"));
+	// `base-digest-ref` is what downstream phases PIN; `candidate-digest-ref` is what this phase staged.
+	emitStepOutputs(
+		[
+			`digest=${imageDigest(staged.base)}`,
+			`base-digest-ref=${staged.base}`,
+			`candidate-digest-ref=${digestRef || staged.base}`,
+		].join("\n"),
+	);
 }

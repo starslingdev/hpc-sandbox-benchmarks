@@ -131,7 +131,18 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    `force_republish` is rejected together with a `providers` list — they are opposite operations, and
    silently picking one would do something the operator did not ask for. A scoped promote also refuses
    if the version is **not** yet published: there is nothing to backfill onto, so run a full release
-   first.
+   first. Two more refusals keep a scoped release honest, both fail-fast in the plan or before the
+   public base moves:
+
+   - **`providers: blaxel` is refused.** Blaxel boots the vendor's stock image rather than the
+     toolchain, so the release lane carries no `BL_API_KEY`/`BL_WORKSPACE` (they are bench-lane only,
+     see the table above) and has no artifact to publish for it. An *unscoped* release just skips it.
+   - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
+     *from* the base (e2b, daytona, novita). Those providers' candidates are verified but their version
+     artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
+     re-stage with `build: variants`, or bump `TOOLCHAIN_VERSION` and cut a full release. Providers
+     that don't bake from the base (vercel, modal, namespace, microsandbox) are unaffected: their
+     version artifact is a retag of the exact candidate that was just booted.
 
    The Vercel-on-v7 flow, as an example — two dispatches, neither of which touches another provider:
 
