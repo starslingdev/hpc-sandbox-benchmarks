@@ -121,23 +121,19 @@ export async function screenshotHtml(
 	}
 	const timeoutMs = options.timeoutMs ?? 30_000;
 
-	await using view = new Bun.WebView({
-		width: options.width,
-		height: 600,
-		backend: {
-			// Never attach to a running debug session: an inherited tab's zoom, emulation or
-			// extensions would leak into the figure. See ScreenshotOptions.chromePath for the
-			// one-Chrome-per-process caveat on how fresh this actually is.
-			type: "chrome",
-			url: false,
-			...(options.chromePath === undefined ? {} : { path: options.chromePath }),
-		},
-	});
+	// Constructing the view SPAWNS Chrome, so a browser that dies on launch can throw HERE rather
+	// than at the first navigation below — `spawnView` exists so both paths reach the same reading.
+	await using view = spawnView(options);
 
 	// One deadline over the whole capture. `await using` disposes the view on every exit path,
 	// which also rejects Bun.WebView's own in-flight promises — the race exists so the caller
 	// gets a named, actionable error instead of waiting on a wedged renderer forever.
 	let expired: ReturnType<typeof setTimeout> | undefined;
+	// Flips to "session" once the first navigation has succeeded. A "closed the pipe" failure while
+	// still "launch" is a browser that never came up (see diagnoseChromeExit); the same Bun message
+	// afterwards is a mid-session death — a renderer crash, an OOM kill, or the browser killed from
+	// elsewhere — and gets a different, non-sandbox explanation.
+	let phase: ChromePhase = "launch";
 	const deadline = new Promise<never>((_, reject) => {
 		expired = setTimeout(
 			() => reject(new Error(`screenshot timed out after ${timeoutMs} ms — wedged Chrome?`)),
@@ -147,6 +143,7 @@ export async function screenshotHtml(
 
 	const capture = async (): Promise<Uint8Array> => {
 		await view.navigate("about:blank");
+		phase = "session";
 		// One round-trip installs AND measures the document: `document.write` (not an
 		// innerHTML assignment — write preserves the doctype, and losing it would flip the
 		// page into quirks mode and change layout), then the height once fonts have decoded.
@@ -199,26 +196,70 @@ export async function screenshotHtml(
 	try {
 		return await Promise.race([capture(), deadline]);
 	} catch (error) {
-		throw diagnoseLaunch(error);
+		throw diagnoseChromeExit(error, phase);
 	} finally {
 		clearTimeout(expired);
 	}
 }
 
+/** Which side of the first successful navigation a capture died on. */
+export type ChromePhase = "launch" | "session";
+
+/** The view, and a browser death while SPAWNING it routed through the same reading as one that
+ *  dies later. Its own function purely so `await using` keeps a one-expression initializer. */
+function spawnView(options: ScreenshotOptions): Bun.WebView {
+	try {
+		return new Bun.WebView({
+			width: options.width,
+			height: 600,
+			backend: {
+				// Never attach to a running debug session: an inherited tab's zoom, emulation or
+				// extensions would leak into the figure. See ScreenshotOptions.chromePath for the
+				// one-Chrome-per-process caveat on how fresh this actually is.
+				type: "chrome",
+				url: false,
+				...(options.chromePath === undefined ? {} : { path: options.chromePath }),
+			},
+		});
+	} catch (error) {
+		throw diagnoseChromeExit(error, "launch");
+	}
+}
+
 /**
- * A Chrome that dies DURING LAUNCH reaches the caller as Bun's "Chrome process closed the pipe" —
- * true, and silent about the cause: the browser's own explanation went to a stderr the spawn
- * discards. The one cause worth naming is the one that bites every Linux CI runner: Chrome builds
- * its sandbox out of an unprivileged user namespace, Ubuntu 23.10+ forbids that by default
- * (`kernel.apparmor_restrict_unprivileged_userns=1`), and the browser aborts with "No usable
- * sandbox!" before the pipe ever opens. Anything else is passed through untouched.
+ * A dead Chrome reaches the caller as Bun's "Chrome process closed the pipe" — true, and silent
+ * about the cause: the browser's own explanation went to a stderr the spawn discards. This attaches
+ * the reading the PHASE supports, and only that one.
+ *
+ * `"launch"` — the browser never came up. Names the cause that bites every Linux CI runner: Chrome
+ * builds its sandbox out of an unprivileged user namespace, Ubuntu 23.10+ forbids that by default
+ * (`kernel.apparmor_restrict_unprivileged_userns=1`), and it aborts with "No usable sandbox!"
+ * before the pipe ever opens.
+ *
+ * `"session"` — the browser served a navigation and died afterwards, so the sandbox reading is
+ * WRONG by construction and withheld: a renderer crashed, was OOM-killed, or the one browser this
+ * process shares was killed from elsewhere (`Bun.WebView.closeAll()` mid-run does exactly this).
+ * Blaming a startup sysctl there would send a maintainer down a dead end.
+ *
+ * Anything that isn't a pipe death passes through untouched. Exported for the same reason
+ * `webpDimensions` is: the tests assert the readings through the function the module actually uses.
  */
-function diagnoseLaunch(error: unknown): unknown {
+export function diagnoseChromeExit(error: unknown, phase: ChromePhase): unknown {
 	const message = error instanceof Error ? error.message : String(error);
 	if (!/closed the pipe|chrome exited/i.test(message)) return error;
+	if (phase === "session") {
+		return new Error(
+			`${message} — the browser died mid-capture, AFTER it had already served a navigation, so ` +
+				`this is NOT the "No usable sandbox!" startup failure: a renderer crashed, was ` +
+				`OOM-killed, or the one Chrome this process shares was killed from elsewhere ` +
+				`(\`Bun.WebView.closeAll()\` does exactly that to every live view). Re-run with the ` +
+				`backend's \`stderr: "inherit"\` to see what Chrome said on the way out.`,
+			{ cause: error },
+		);
+	}
 	return new Error(
-		`${message} — Chrome died at launch, before the DevTools pipe opened. On Linux the usual ` +
-			`cause is a host that forbids unprivileged user namespaces ` +
+		`${message} — Chrome died at launch, before the DevTools pipe opened. On Linux a common ` +
+			`launch-time cause is a host that forbids unprivileged user namespaces ` +
 			`(kernel.apparmor_restrict_unprivileged_userns=1), which Chrome's sandbox needs: it aborts ` +
 			`with "No usable sandbox!". Run the binary by hand to see its stderr — ` +
 			`\`"$BUN_CHROME_PATH" --headless --dump-dom about:blank\`. In CI, .github/actions/` +

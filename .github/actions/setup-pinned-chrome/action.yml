@@ -99,6 +99,7 @@ runs:
         CHROME: ${{ steps.provision.outputs.chrome-path }}
       run: |
         profile="$(mktemp -d)"
+        trap 'rm -rf "$profile"' EXIT
         if ! output="$("$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check \
           --user-data-dir="$profile" --dump-dom about:blank 2>&1)"; then
           printf '%s\n' "$output" >&2

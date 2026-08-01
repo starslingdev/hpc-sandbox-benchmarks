@@ -8,7 +8,7 @@
  * pixel assertion would be green on exactly one machine.
  */
 import { afterAll, describe, expect, it } from "bun:test";
-import { screenshotHtml, webpDimensions } from "./screenshot.ts";
+import { diagnoseChromeExit, screenshotHtml, webpDimensions } from "./screenshot.ts";
 
 const HTML =
 	`<!doctype html><html><head><style>body{margin:0}</style></head>` +
@@ -62,6 +62,34 @@ describe("screenshotHtml input validation", () => {
 
 	it("rejects a fractional width", () => {
 		expect(screenshotHtml(HTML, { width: 64.5 })).rejects.toThrow(/positive integer/);
+	});
+});
+
+// The phase argument decides WHICH reading a pipe death gets, and getting it backwards is silent:
+// both branches return a plausible-looking Error, so only an assertion on the text catches it.
+describe("diagnoseChromeExit", () => {
+	const pipeDeath = new Error("Chrome process closed the pipe");
+
+	it("blames the sandbox only for a browser that never came up", () => {
+		const diagnosed = diagnoseChromeExit(pipeDeath, "launch") as Error;
+		expect(diagnosed.message).toMatch(/No usable sandbox/);
+		expect(diagnosed.message).toMatch(/died at launch/);
+		expect(diagnosed.cause).toBe(pipeDeath);
+	});
+
+	it("withholds the sandbox reading once a navigation has been served", () => {
+		// The same Bun message, the other phase: naming a startup sysctl here would send a
+		// maintainer after a setting that demonstrably worked moments earlier.
+		const diagnosed = diagnoseChromeExit(pipeDeath, "session") as Error;
+		expect(diagnosed.message).toMatch(/NOT the "No usable sandbox!" startup failure/);
+		expect(diagnosed.message).toMatch(/mid-capture/);
+		expect(diagnosed.cause).toBe(pipeDeath);
+	});
+
+	it("passes anything that is not a pipe death through untouched", () => {
+		const other = new Error("document measured a nonsensical height: 0");
+		expect(diagnoseChromeExit(other, "launch")).toBe(other);
+		expect(diagnoseChromeExit(other, "session")).toBe(other);
 	});
 });
 

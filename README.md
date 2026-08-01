@@ -102,7 +102,7 @@ the Run model or builds a document never spawns a browser.
 | `bun run lint:fix:unsafe` | `biome check . --fix --unsafe` — also applies behavior-changing fixes; review the diff. |
 | `bun run spell`      | `typos` — source-code spell check (run it before pushing).              |
 | `bun run spell:fix`  | `typos --write-changes` — apply typos' suggested corrections.            |
-| `bun run lint:shell` | `shellcheck` on the repo's shell scripts (toolchain images, `lib/`, mise tasks). |
+| `bun run lint:shell` | `shellcheck` on the repo's shell scripts (toolchain images, `lib/`, mise tasks) and the `run:` blocks embedded in `.github/actions/` composite actions. |
 | `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
 | `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
 | `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
