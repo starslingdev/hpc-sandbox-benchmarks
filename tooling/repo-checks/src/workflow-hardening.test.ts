@@ -162,8 +162,16 @@ describe("Vercel CLI authentication", () => {
 		expect(workflowText).not.toContain("api.vercel.com/v1/projects");
 		expect(workflowText).not.toContain("VERCEL_OIDC_TOKEN_FILE");
 		expect(workflowText).not.toContain("docker login vcr.vercel.com");
-		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(2);
+		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(3);
 		expect(workflowText).toContain('vercel vcr push docker "$target_name"');
+		const toolchain = readFileSync(join(root, WORKFLOWS_DIR, "toolchain-image.yml"), "utf8");
+		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeGreaterThan(
+			toolchain.indexOf("- name: Mirror candidate into VCR"),
+		);
+		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeLessThan(
+			toolchain.indexOf("- name: Bake + verify candidate"),
+		);
+		expect(toolchain).toContain("- name: Ensure VCR logout\n        if: always()");
 	});
 
 	test("the composite masks the OIDC token and deletes its temporary env file before export", () => {
