@@ -162,7 +162,8 @@ describe("Vercel CLI authentication", () => {
 		expect(workflowText).not.toContain("api.vercel.com/v1/projects");
 		expect(workflowText).not.toContain("VERCEL_OIDC_TOKEN_FILE");
 		expect(workflowText).not.toContain("docker login vcr.vercel.com");
-		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(3);
+		// Two best-effort `always()` fallbacks remain; the immediate post-mirror logout is fail-closed.
+		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(2);
 		expect(workflowText).toContain('vercel vcr push docker "$target_name"');
 		const toolchain = readFileSync(join(root, WORKFLOWS_DIR, "toolchain-image.yml"), "utf8");
 		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeGreaterThan(
@@ -170,6 +171,12 @@ describe("Vercel CLI authentication", () => {
 		);
 		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeLessThan(
 			toolchain.indexOf("- name: Bake + verify candidate"),
+		);
+		expect(toolchain).toContain(
+			"- name: Log out of VCR after mirror\n        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        run: docker logout vcr.vercel.com\n",
+		);
+		expect(toolchain).not.toContain(
+			"- name: Log out of VCR after mirror\n        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        run: docker logout vcr.vercel.com || true",
 		);
 		expect(toolchain).toContain("- name: Ensure VCR logout\n        if: always()");
 	});

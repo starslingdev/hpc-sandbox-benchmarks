@@ -373,7 +373,7 @@ jobs:
           echo "digest-ref=${target_ref%:*}@${digest}" >> "$GITHUB_OUTPUT"
       - name: Log out of VCR after mirror
         if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'
-        run: docker logout vcr.vercel.com || true
+        run: docker logout vcr.vercel.com
       - name: Bake + verify candidate
         id: bake
         # The cell's provider + required flag reach the script through the environment, never
