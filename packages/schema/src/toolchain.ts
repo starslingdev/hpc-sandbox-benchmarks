@@ -6,14 +6,16 @@
 export const TOOLCHAIN_IMAGE_NAME = "sandbox-benchmarks-toolchain";
 /** Project-scoped VCR repository containing the thin Vercel variant. */
 export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
-// v6: the bake gains pts/iperf-1.2.0 (packages/templates/src/lib/pins.ts — ptsInstallTests 9 → 10
-// profiles) for the network suite's iperf composition. Pre-installing the upstream profile caches
-// its source tarball in the image, so the iperf-localhost leaf's vendored-subset re-install
-// rebuilds offline instead of re-downloading inside every cell's budget (bake↔leaf agreement is
-// gated by tooling/repo-checks pts-profile-pins.test.ts). Every mise-managed toolchain pin is
-// unchanged from v5 (mise 2026.7.11, node 22.23.1, pnpm 10.34.5, jc 1.25.7). Re-bake all providers
-// before the runs that consume v6.
-export const TOOLCHAIN_VERSION = "v6";
+// v7: layer restructure only — NO pin changes. Every version pin (mise 2026.7.11, node 22.23.1,
+// pnpm 10.34.5, jc 1.25.7, PTS 10.8.4) and the full 10-profile ptsInstallTests set are byte-identical
+// to v6; what changed is how the install is spread across layers. v6 shipped two compressed layers
+// over Vercel Container Registry's 500 MB per-layer cap (625 MB apt+mise, 970 MB PTS), which fails a
+// VCR push mid-stream with an opaque 413. The bake now separates apt from mise and installs the PTS
+// profiles group by group (ptsInstallGroups in packages/templates/src/lib/pins.ts); see the layer
+// budget comment in packages/templates/images/base/Dockerfile. The image contents are unchanged, but
+// the layer digests are not, so this is a new version: re-bake all providers before the runs that
+// consume v7.
+export const TOOLCHAIN_VERSION = "v7";
 
 const VCR_NAMESPACE_COMPONENT = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 

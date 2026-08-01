@@ -41,8 +41,16 @@ The base image is built in layers, one install script per concern:
   apt, whose mise repo is rolling and serves only the latest, which would break the pin.
 - `10-mise.sh` — the mise-managed language/CLI toolchain, installed system-wide from the generated
   `mise.toml`. (This is why node/python/etc. are *not* apt packages — mise owns them.)
-- `20-pts.sh` — the Phoronix Test Suite + pre-installed profiles for offline runs.
-- `99-manifest.sh` — a verification manifest that fails the build on any drift.
+- `20-pts.sh` — the Phoronix Test Suite runtime and its state tree (no profiles).
+- `25-pts-profiles.sh` — pre-installs profiles for offline runs, **one group per invocation**. The
+  Dockerfile runs it once per entry in `ptsInstallGroups` (`src/lib/pins.ts`), which partitions the
+  `ptsInstallTests` pin; each invocation is its own layer, so no compressed layer exceeds a provider
+  registry's per-layer cap. Called with no group it takes the whole list, which is what the
+  orchestrator's no-argument debugging mode does. See the layer-budget comment in `base/Dockerfile`
+  for the caps, the measurement method, and why the split is shaped this way.
+- `99-manifest.sh` — a verification manifest that fails the build on any drift. Also the only step
+  that sees the whole PTS install, so it re-verifies every profile in `ptsInstallTests` — a group
+  that was never wired to a Dockerfile `RUN` fails here rather than shipping fewer benchmarks.
 
 > **TODO-pin status.** The pins ship as `__TODO__` placeholders — the reference image they come from
 > is not part of this repo. The shell/Docker **lint** gates and the TypeScript gates are green today;

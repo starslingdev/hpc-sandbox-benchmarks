@@ -15,7 +15,8 @@ benchmarks. There is no server or web UI — everything is exercised through Bun
 
 ### Phoronix Test Suite (PTS)
 The `.mise/tasks/benchmark/**` leaves call `phoronix-test-suite` (via `lib/bench.sh`). In provider
-sandboxes PTS is baked into the toolchain image (`packages/templates/images/base/scripts/20-pts.sh`);
+sandboxes PTS is baked into the toolchain image (`packages/templates/images/base/scripts/20-pts.sh`
+installs the runtime, `25-pts-profiles.sh` the profiles, one layer per group);
 on this host VM it is installed from the same pin as `packages/templates/src/lib/pins.ts`
 (`ptsVersion` 10.8.4 + `ptsDebSha256`).
 

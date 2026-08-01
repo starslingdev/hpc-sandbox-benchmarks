@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Orchestrates the base toolchain build: run either the named scripts passed by the Dockerfile or,
 # when called without arguments, every numbered install script in order. The two-digit prefix encodes
-# the build sequence (00-apt → 10-mise → 20-pts → 99-manifest).
+# the build sequence (00-apt → 10-mise → 20-pts → 25-pts-profiles → 99-manifest).
 #
 # The pins each script needs arrive as environment variables (the Dockerfile passes them from build
 # args sourced, in turn, from the arktype-validated TS config — packages/templates/src/pins.ts). Each
@@ -14,8 +14,10 @@ set -Eeuxo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# > Explicit groups let the Dockerfile bound compressed layer size for provider registries. Keep the
-# > no-argument mode for local debugging and backwards compatibility.
+# > Explicit groups let the Dockerfile bound compressed layer size for provider registries (see the
+# > layer-budget comment in the Dockerfile). Keep the no-argument mode for local debugging and
+# > backwards compatibility: it runs 25-pts-profiles.sh once with whatever PTS_INSTALL_TESTS holds,
+# > which for the full pin list reproduces the old single-layer install.
 if (( $# > 0 )); then
 	scripts=()
 	for name in "$@"; do

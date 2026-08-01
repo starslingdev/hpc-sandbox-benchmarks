@@ -3,7 +3,7 @@
 // (packages/schema/scripts/fetch-profiles.ts). The pin is spelled in several places that only
 // comments keep aligned: the producer leaves' `run_pts_benchmark "pts/<name>-<ver>"` calls (plus
 // run_fio_pts in lib/bench.sh), and the toolchain bake's ptsInstallTests (packages/templates
-// pins.ts, which 20-pts.sh also derives its download-cache list from). A version bump that misses a
+// pins.ts, which 25-pts-profiles.sh also derives its download-cache list from). A version bump that misses a
 // copy is silent in CI and expensive live: the sandbox batch-installs a profile the image didn't
 // bake (pgbench = a full postgres source build per cell), or runs a profile version whose option
 // matrix the catalog never vendored — every result quietly lands as `uncatalogued`.

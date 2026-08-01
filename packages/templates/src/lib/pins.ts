@@ -75,9 +75,10 @@ export const rawPins = {
 	// > Phoronix Test Suite release + self-computed sha256 of phoronix-test-suite_10.8.4_all.deb.
 	ptsVersion: "10.8.4",
 	ptsDebSha256: "be81f71fc0382a7725dc88f4a18f013d1c3f6939d440629231d392a11816feca",
-	// > Profiles pre-installed (and download-cached — 20-pts.sh derives its cache list from this) so
-	// > sandbox wall time goes to benchmarks, not setup: every PTS profile a registered suite runs —
-	// > fio and especially postgres (pgbench) are source builds worth paying at bake time (stream covers
+	// > Profiles pre-installed (and download-cached — 25-pts-profiles.sh derives its cache list from
+	// > its group's slice of this) so sandbox wall time goes to benchmarks, not setup: every PTS
+	// > profile a registered suite runs — fio and especially postgres (pgbench) are source builds
+	// > worth paying at bake time (stream covers
 	// > the memory suite, so no registered suite pays a runtime install). All profiles are VERSION-PINNED
 	// > to exactly what their leaves batch-run (and the catalog vendors): an unversioned name resolves to
 	// > whatever upstream's latest is at bake time, so a profile bump would silently void the pre-install
@@ -94,3 +95,35 @@ export const rawPins = {
 	ptsInstallTests:
 		"node-web-tooling-1.0.1 pybench-1.1.3 sqlite-speedtest-1.0.1 fio-2.1.0 network-loopback-1.0.3 fast-cli-1.0.0 iperf-1.2.0 pgbench-1.15.0 git-1.1.0 stream-1.3.4",
 } satisfies Record<keyof Pins, string>;
+
+/**
+ * How {@link rawPins.ptsInstallTests} is PARTITIONED across the base image's PTS layers — packaging,
+ * not a version pin, which is why it lives beside the pins rather than inside `pinsSchema`.
+ * `ptsInstallTests` above stays the single source of truth for *which* profiles are baked; this only
+ * decides *which layer each one lands in*, and `validatedPtsInstallGroups` (../pins.ts) rejects any
+ * partition that adds, drops, or duplicates a profile relative to that list.
+ *
+ * Why partition at all: registries cap a single compressed layer (Vercel Container Registry 500 MB;
+ * Daytona's snapshot registry ~1 GiB), and one RUN over the whole profile matrix busts both. See the
+ * layer-budget comment in images/base/Dockerfile.
+ *
+ * The boundaries follow install *weight and shape*, since that is what drives layer size — the
+ * numbers are upstream's own declared `EnvironmentSize` (MB, uncompressed) from each vendored
+ * test-definition.xml under packages/schema/src/pts-profiles:
+ *   database — pgbench 1500, a full PostgreSQL source build (its object tree dwarfs everything else)
+ *   browser  — fast-cli, whose npm install pulls a private Chrome build (upstream declares 1 MB and
+ *              means it: the Chrome download is puppeteer's, invisible to EnvironmentSize)
+ *   runtime  — node-web-tooling 236 + pybench 0.5 + stream 0.1, npm/python payloads
+ *   native   — sqlite-speedtest 128 + git + fio 14 + iperf 6 + network-loopback 1, small C builds
+ *
+ * Each key becomes one `PTS_INSTALL_GROUP_<KEY>` build arg and one RUN in the base Dockerfile, so
+ * adding or renaming a key REQUIRES a matching Dockerfile RUN — pins.test.ts gates the two against
+ * each other, and 99-manifest.sh re-verifies every profile in `ptsInstallTests` actually installed,
+ * so a group that never got wired up fails the build rather than silently shipping fewer benchmarks.
+ */
+export const ptsInstallGroups = {
+	database: "pgbench-1.15.0",
+	browser: "fast-cli-1.0.0",
+	runtime: "node-web-tooling-1.0.1 pybench-1.1.3 stream-1.3.4",
+	native: "sqlite-speedtest-1.0.1 git-1.1.0 fio-2.1.0 iperf-1.2.0 network-loopback-1.0.3",
+} as const satisfies Record<string, string>;

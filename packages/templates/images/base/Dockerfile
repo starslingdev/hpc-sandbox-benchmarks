@@ -41,7 +41,18 @@ ARG MISE_SHA256_X64
 ARG MISE_SHA256_ARM64
 ARG PTS_VERSION
 ARG PTS_DEB_SHA256
+# > The complete baked profile set. Only 99-manifest.sh consumes it, to verify every profile below
+# > actually installed; the per-group args carry the same profiles split across the RUNs that install
+# > them (see the layer-budget comment further down).
 ARG PTS_INSTALL_TESTS
+# > One ARG per group in ptsInstallGroups (packages/templates/src/lib/pins.ts). These are packaging,
+# > not pins: pins.ts validates that they partition PTS_INSTALL_TESTS exactly, and pins.test.ts gates
+# > this ARG/RUN pair list against that object, so a group added there without a RUN here fails the
+# > repo checks rather than silently dropping its benchmarks.
+ARG PTS_INSTALL_GROUP_DATABASE
+ARG PTS_INSTALL_GROUP_BROWSER
+ARG PTS_INSTALL_GROUP_RUNTIME
+ARG PTS_INSTALL_GROUP_NATIVE
 
 # > The description is what anonymous visitors see on the public ghcr package page.
 LABEL org.opencontainers.image.title="sandbox-benchmarks-toolchain" \
@@ -77,23 +88,68 @@ COPY mise.toml /etc/mise/config.toml
 # > shipped as-is — 99-manifest.sh confirms it landed; the smoke spec verifies the runtime matches it.
 COPY toolchain-manifest.json /toolchain-manifest.json
 
-# > Split the install into bounded layers. The expanded PTS profile matrix made the former single
-# > compressed layer exceed 1 GiB; Daytona's snapshot registry rejects that layer with an opaque
-# > inspection error. Grouping apt+mise, PTS, and verification separately keeps each layer portable
-# > without moving install logic out of the shellcheck-linted scripts. Pins remain RUN-scoped and are
-# > not baked into the final image's environment.
+# > LAYER BUDGET — why the install is split across this many RUNs rather than one.
+# >
+# > Two provider registries cap what they will accept, and the cap is on the COMPRESSED layer:
+# >   - Vercel Container Registry: 500 MB per layer (the binding constraint today). Over it, the push
+# >     fails mid-stream with an opaque `413 Request Entity Too Large`.
+# >     https://vercel.com/docs/container-registry/limits-and-pricing
+# >   - Daytona's snapshot registry: ~1 GiB per layer, rejected with an opaque inspection error.
+# > Neither caps the total image (VCR allows 15 GB; this image is well under 2 GB), so the fix is
+# > always to split, never to ship fewer benchmarks.
+# >
+# > MEASURE COMPRESSED. `docker history` and `docker image inspect` report UNCOMPRESSED sizes and
+# > will mislead you by more than 2x (v6's 970 MB layer shows as 2.27 GB there). What a registry
+# > receives is the manifest's layer sizes, so read them off a throwaway local registry:
+# >   docker run -d -p 5001:5000 --name tmp-registry registry:2
+# >   docker tag <image> localhost:5001/probe:t && docker push localhost:5001/probe:t
+# >   docker buildx imagetools inspect localhost:5001/probe:t --raw | jq '.layers[].size'
+# > On a multi-platform tag that `--raw` returns the index instead; resolve the linux/amd64 entry
+# > (`.manifests[] | select(.platform.architecture=="amd64")`) and inspect that digest.
+# >
+# > This split is the second iteration. The first (apt+mise | PTS | verify) was what brought the
+# > former single >1 GiB layer under Daytona's cap; VCR's tighter 500 MB then cut both of those
+# > layers, so apt and mise are separate now and the PTS profiles are installed group by group
+# > (ptsInstallGroups in packages/templates/src/lib/pins.ts — grouped by install weight, heaviest
+# > first). Install logic stays in the shellcheck-linted scripts; the RUNs only dispatch. Pins remain
+# > RUN-scoped and are not baked into the final image's environment.
+# >
+# > Order matters beyond dependencies: each profile group's layer also prunes and chmods ONLY what it
+# > added. In overlayfs a cross-layer delete is a whiteout (reclaims nothing) and a cross-layer mode
+# > CHANGE is a full copy-up, so a blanket `chmod -R` after the groups silently re-merges everything
+# > this split exists to separate — measured on a stubbed four-group tree, it added a 267 MB layer and
+# > took the image from 297 MB to 565 MB. That is why 20-pts.sh does its one recursive chmod while the
+# > tree is still empty, and each group re-opens only its own subtree afterwards.
 COPY scripts /tmp/build/scripts
 RUN DEBIAN_FRONTEND="${DEBIAN_FRONTEND}" \
-    MISE_VERSION="${MISE_VERSION}" MISE_SHA256_X64="${MISE_SHA256_X64}" MISE_SHA256_ARM64="${MISE_SHA256_ARM64}" \
-    bash /tmp/build/scripts/orchestrator.sh 00-apt.sh 10-mise.sh
-# Separate layer is the provider portability constraint documented above.
+    bash /tmp/build/scripts/orchestrator.sh 00-apt.sh
+# Separate layer is the registry layer-size constraint documented above.
+# hadolint ignore=DL3059
+RUN MISE_VERSION="${MISE_VERSION}" MISE_SHA256_X64="${MISE_SHA256_X64}" MISE_SHA256_ARM64="${MISE_SHA256_ARM64}" \
+    bash /tmp/build/scripts/orchestrator.sh 10-mise.sh
+# The PTS runtime + its state tree; profiles arrive in the per-group layers below.
 # hadolint ignore=DL3059
 RUN DEBIAN_FRONTEND="${DEBIAN_FRONTEND}" \
-    PTS_VERSION="${PTS_VERSION}" PTS_DEB_SHA256="${PTS_DEB_SHA256}" PTS_INSTALL_TESTS="${PTS_INSTALL_TESTS}" \
+    PTS_VERSION="${PTS_VERSION}" PTS_DEB_SHA256="${PTS_DEB_SHA256}" \
     bash /tmp/build/scripts/orchestrator.sh 20-pts.sh
-# Keep verification/cleanup out of the already bounded install layers.
+# One layer per profile group, heaviest first so a cache miss re-runs as little as possible.
+# hadolint ignore=DL3059
+RUN PTS_INSTALL_TESTS="${PTS_INSTALL_GROUP_DATABASE}" \
+    bash /tmp/build/scripts/orchestrator.sh 25-pts-profiles.sh
+# hadolint ignore=DL3059
+RUN PTS_INSTALL_TESTS="${PTS_INSTALL_GROUP_BROWSER}" \
+    bash /tmp/build/scripts/orchestrator.sh 25-pts-profiles.sh
+# hadolint ignore=DL3059
+RUN PTS_INSTALL_TESTS="${PTS_INSTALL_GROUP_RUNTIME}" \
+    bash /tmp/build/scripts/orchestrator.sh 25-pts-profiles.sh
+# hadolint ignore=DL3059
+RUN PTS_INSTALL_TESTS="${PTS_INSTALL_GROUP_NATIVE}" \
+    bash /tmp/build/scripts/orchestrator.sh 25-pts-profiles.sh
+# Keep verification/cleanup out of the already bounded install layers. This one sees the FULL profile
+# set, so it is where a group that never got wired to a RUN above is caught.
 # hadolint ignore=DL3059
 RUN IMAGE_NAME="${IMAGE_NAME}" IMAGE_VERSION="${IMAGE_VERSION}" BASE_IMAGE="${BASE_IMAGE}" \
+    PTS_INSTALL_TESTS="${PTS_INSTALL_TESTS}" \
     bash /tmp/build/scripts/orchestrator.sh 99-manifest.sh \
     && rm -rf /tmp/build
 
