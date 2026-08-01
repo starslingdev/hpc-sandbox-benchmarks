@@ -57,4 +57,7 @@ REQUIRE_PROVIDERS=vercel bun apps/cli/src/bin/bench-smoke.ts
 The VCR path is fixed to this repository's human-readable namespace. The `EXIT` trap removes the
 temporary environment file and Docker credential even if validation fails. The local ComputeSDK
 provider uses the v2 SDK's name-keyed lifecycle, detached current-session execution, non-resuming
-reconnects, and permanent delete cleanup.
+reconnects, and permanent delete cleanup. A conservative 60-second synchronous policy cap routes
+longer setup and suite steps through native detached execution. Filesystem methods are intentionally
+omitted because Vercel's high-level filesystem wrapper can auto-resume a stopped sandbox; the harness
+observes detached completion with short `cat` polls through the same non-resuming current session.

@@ -41,9 +41,11 @@ export type SpecPinning = "settable" | "fixed" | "unknown";
  *     `onStdout`/`onStderr`)? All three shipped adapters drop those callbacks, so a long synchronous
  *     exec buffers silently. Modeled because a streaming path keeps a connection productive past an
  *     idle gateway cap; today it is uniformly `false`, so it does not yet tip the harness's choice.
- *   - `syncCapMs` — the longest a single *synchronous* exec round-trip is safe before the provider
- *     caps it, or `null` when uncapped. The conservative policy bound the harness compares a step's
- *     timeout budget against: a step that could run past it must not go synchronous. Daytona returns a
+ *   - `syncCapMs` — the configured durability threshold for a single *synchronous* exec round-trip,
+ *     or `null` when validated as uncapped. It may encode a vendor-enforced limit or a conservative
+ *     repository policy where long-lived synchronous transport has not been validated. The harness
+ *     compares each step's timeout budget against it: a step that could reach it must not go
+ *     synchronous. Daytona returns a
  *     server-side HTTP 408 on multi-minute synchronous execs while the process keeps running
  *     (`docs/evidence/daytona-exec-transport.md`); E2B's `commands.run` defaults to a 60s command
  *     timeout the computesdk wrapper never overrides.
@@ -561,8 +563,10 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		// therefore reaches this benchmark's 8 GiB target, but the dimensions are not independent.
 		specPinning: "fixed",
 		transport: {
+			// No hard vendor cap is claimed: long synchronous transport is unvalidated, so the repository's
+			// conservative 60s durability policy routes longer work to current-session detach + exec polling.
 			streaming: false,
-			syncCapMs: null,
+			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
 	},

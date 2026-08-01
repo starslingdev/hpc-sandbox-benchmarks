@@ -249,7 +249,11 @@ describe("Vercel ComputeSDK adapter", () => {
 		await expect(sandbox.runCommand("sleep 10", { background: true })).resolves.toMatchObject({
 			exitCode: 0,
 		});
-		expect(commandParams).toMatchObject({ detached: true });
+		expect(commandParams).toMatchObject({
+			cmd: "/bin/sh",
+			args: ["-lc", "sleep 10"],
+			detached: true,
+		});
 		mockCreate(
 			nativeSandbox({
 				currentSession: () => ({
@@ -260,6 +264,14 @@ describe("Vercel ComputeSDK adapter", () => {
 		const failedSandbox = await provider.sandbox.create();
 		await expect(failedSandbox.runCommand("true", { background: true })).rejects.toBeInstanceOf(
 			VercelTransportError,
+		);
+	});
+
+	it("exposes the unsupported-filesystem stub used by detached exec polling fallback", async () => {
+		mockCreate(nativeSandbox());
+		const sandbox = await vercelCompute(config).sandbox.create();
+		await expect(sandbox.filesystem.exists("/tmp/result")).rejects.toThrow(
+			"Filesystem operations are not supported by vercel's sandbox environment",
 		);
 	});
 });
