@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# The globals this file assigns are part of lib/isolation.sh's OUTPUT CONTRACT — read by the
+# The globals this file assigns are part of lib/probe/isolation/main.sh's OUTPUT CONTRACT — read by the
 # task that sources the facade, never by this file itself.
 # isolation_classify — score, rank and name the isolation, PURELY over the ISO_* signals.
 #

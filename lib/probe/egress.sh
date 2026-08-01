@@ -5,8 +5,8 @@
 # Public-egress identity: which address a sandbox leaves from, which network announces it, and where
 # that network is. Sourced after lib/bench.sh:
 #
-#   source "${REPO_ROOT}/lib/net-identity.sh"
-#   net_identity_probe          # sets PUBLIC_IP ASN ORG_NAME ORG PREFIX ASN_SOURCE
+#   source "${REPO_ROOT}/lib/probe/egress.sh"
+#   egress_probe          # sets PUBLIC_IP ASN ORG_NAME ORG PREFIX ASN_SOURCE
 #                               #      CITY REGION COUNTRY LOC TIMEZONE REVERSE_DNS GEO_SOURCE
 #
 # Lives here rather than inside the provider task because it answers a question about the SANDBOX'S
@@ -91,7 +91,7 @@ _public_ip() {
 	# ipinfo lookups below follow whichever family answered here.
 	#
 	# There is deliberately no ipinfo.io/ip leg: _geo_probe already fetches ipinfo's full document,
-	# whose `.ip` net_identity_probe uses as the last resort. Echoing the address from the same host
+	# whose `.ip` egress_probe uses as the last resort. Echoing the address from the same host
 	# first would be a second TLS round trip for a value the next call already returns.
 	local ip=""
 	if have dig; then
@@ -223,7 +223,7 @@ _geo_probe() {
 }
 
 # --- Entry point -------------------------------------------------------------
-net_identity_probe() {
+egress_probe() {
 	PUBLIC_IP="$(_public_ip)"
 	[ -n "$PUBLIC_IP" ] && { _cymru_lookup "$PUBLIC_IP" || true; }
 	_geo_probe
@@ -274,9 +274,9 @@ net_identity_probe() {
 }
 
 # The human report for this probe, so the sourcing task renders nothing itself — matching the
-# contract lib/isolation.sh offers, rather than leaving one library to format its own output and the
+# contract lib/probe/isolation/main.sh offers, rather than leaving one library to format its own output and the
 # other to be formatted by its caller.
-net_identity_report() {
+egress_report() {
 	echo "=== Egress ==="
 	bench_row "public ip" "${PUBLIC_IP:-N/A}"
 	bench_row "network" "${ORG:-N/A} (asn_source=${ASN_SOURCE})"

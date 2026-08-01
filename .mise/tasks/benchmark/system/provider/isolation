@@ -11,7 +11,7 @@
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
-source "${REPO_ROOT}/lib/isolation.sh"
+source "${REPO_ROOT}/lib/probe/isolation/main.sh"
 
 isolation_collect
 # The classifier reads ISO_EGRESS_OK to recognise libkrun's TSI networking ("egress works AND there

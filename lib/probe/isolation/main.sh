@@ -4,7 +4,7 @@
 # never by the file itself. Scoped to the whole file because that is what the contract is.
 # Which sandboxing technique is confining this workload? Sourced after lib/bench.sh:
 #
-#   source "${REPO_ROOT}/lib/isolation.sh"
+#   source "${REPO_ROOT}/lib/probe/isolation/main.sh"
 #   isolation_collect     # reads /proc, /sys, /dev, dmesg -> the ISO_* signal globals
 #   isolation_classify    # PURE over those globals   -> the verdict globals + ranked candidate rows
 #   isolation_dind        # container-in-sandbox readiness, passive
@@ -65,7 +65,7 @@ ISO_USERNS_MAPPED="false" ISO_CAP_SYS_ADMIN="unknown" ISO_LSM_PROFILE=""
 ISO_KERNEL_NAMES_GVISOR="false" ISO_BOOTLOG_NAMES_GVISOR="false"
 ISO_CC_TECH=""
 # Set by the CALLER between collect and classify: did the sandbox demonstrate public egress? Passed
-# in rather than read from net-identity.sh's PUBLIC_IP so the two libraries stay independent — the
+# in rather than read from lib/probe/egress.sh's PUBLIC_IP so the two libraries stay independent — the
 # libkrun TSI rule needs "egress works AND there is no interface", and the egress half is not this
 # file's to observe.
 ISO_EGRESS_OK="false"
@@ -146,15 +146,18 @@ iso_fstype_has() { _iso_in "$ISO_MOUNT_FSTYPES" "$1"; }
 # process boundary that becomes a serialization format to marshal out and back in, and a `mise run`
 # dispatch measured at ~190ms against ~140ms of actual probe work. The runnable surface is a task
 # group (.mise/tasks/benchmark/system/provider/), which is where a process boundary belongs.
-_ISO_LIB_DIR="${BASH_SOURCE[0]%/*}/isolation"
-# shellcheck source=lib/isolation/rules.sh
-source "${_ISO_LIB_DIR}/rules.sh"
-# shellcheck source=lib/isolation/collect.sh
-source "${_ISO_LIB_DIR}/collect.sh"
-# shellcheck source=lib/isolation/classify.sh
-source "${_ISO_LIB_DIR}/classify.sh"
-# shellcheck source=lib/isolation/dind.sh
-source "${_ISO_LIB_DIR}/dind.sh"
-# shellcheck source=lib/isolation/report.sh
-source "${_ISO_LIB_DIR}/report.sh"
+# The numeric prefixes ARE the dependency order: rules are data the stages read, and each stage
+# consumes what the previous one produced. Sourcing them in filename order is therefore correct by
+# construction, and a reader can see the pipeline without opening a file.
+_ISO_STAGES="${BASH_SOURCE[0]%/*}"
+# shellcheck source=lib/probe/isolation/10-rules.sh
+source "${_ISO_STAGES}/10-rules.sh"
+# shellcheck source=lib/probe/isolation/20-collect.sh
+source "${_ISO_STAGES}/20-collect.sh"
+# shellcheck source=lib/probe/isolation/30-classify.sh
+source "${_ISO_STAGES}/30-classify.sh"
+# shellcheck source=lib/probe/isolation/40-dind.sh
+source "${_ISO_STAGES}/40-dind.sh"
+# shellcheck source=lib/probe/isolation/50-report.sh
+source "${_ISO_STAGES}/50-report.sh"
 

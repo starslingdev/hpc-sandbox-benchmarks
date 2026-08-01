@@ -2,9 +2,9 @@
 #MISE description="Identify a sandbox: egress ASN/geo, SMBIOS identity, the exact isolation technique (Firecracker/libkrun/gVisor/Sysbox/Kata/LXC/…), and Docker-in-Docker readiness"
 # Two questions the benchmark matrix needs answered about every sandbox, and one capability check:
 #
-#   WHOSE NETWORK  — the ASN that announces the public egress IP (lib/net-identity.sh).
-#   WHAT IS CONFINING IT — the specific VMM and/or container runtime (lib/isolation.sh).
-#   CAN IT NEST CONTAINERS — Docker-in-Docker readiness, assessed passively (lib/isolation.sh).
+#   WHOSE NETWORK  — the ASN that announces the public egress IP (lib/lib/probe/egress.sh).
+#   WHAT IS CONFINING IT — the specific VMM and/or container runtime (lib/probe/isolation/main.sh).
+#   CAN IT NEST CONTAINERS — Docker-in-Docker readiness, assessed passively (lib/probe/isolation/main.sh).
 #
 # Both halves live in lib/ because each is a self-contained probe with its own contract, and because
 # the isolation engine's classify step is a pure function of its collected signals — separable, and
@@ -34,8 +34,8 @@
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
-source "${REPO_ROOT}/lib/net-identity.sh"
-source "${REPO_ROOT}/lib/isolation.sh"
+source "${REPO_ROOT}/lib/probe/egress.sh"
+source "${REPO_ROOT}/lib/probe/isolation/main.sh"
 
 RESULT_NAME="$(task_result_name)"
 RESULT_FILE="$(result_path "$RESULT_NAME")"
@@ -44,14 +44,14 @@ SCHEMA_VERSION="2.0"
 # Network first, and its result handed to the isolation probe explicitly: libkrun's TSI networking is
 # visible only as "egress works AND there is no interface at all", and the egress half belongs to the
 # other library. Passing it as an input keeps the two independent — neither reads the other's globals.
-net_identity_probe
+egress_probe
 isolation_collect
 ISO_EGRESS_OK=false
 [ -n "$PUBLIC_IP" ] && ISO_EGRESS_OK=true
 isolation_classify
 isolation_dind
 
-net_identity_report
+egress_report
 echo
 isolation_report
 echo

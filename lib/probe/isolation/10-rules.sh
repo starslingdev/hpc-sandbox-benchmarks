@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# The globals this file assigns are part of lib/isolation.sh's OUTPUT CONTRACT — read by the
+# The globals this file assigns are part of this probe's OUTPUT CONTRACT (see main.sh) — read by the
 # task that sources the facade, never by this file itself.
 # Scoring primitives and the rule tables — the DATA half of the engine, and the reason the other
 # halves stay readable. Every detection that is "match this string, credit that candidate" lives here
 # as a `<glob>|<candidate>|<weight>|<reason>` row rather than as a `case` arm somewhere in the
-# collector or the classifier; see lib/isolation.sh for what the weights mean.
+# collector or the classifier; see main.sh for what the weights mean.
 # =============================================================================
 # Scoring
 # =============================================================================

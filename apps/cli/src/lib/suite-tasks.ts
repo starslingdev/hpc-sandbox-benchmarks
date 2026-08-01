@@ -116,6 +116,21 @@ export function ptsPinsFromScript(
 	return pins;
 }
 
+/**
+ * The `#MISE description=` a file task declares, which is exactly what `mise task info` would report
+ * for it. Read straight from the script so a summary still names its tasks when the mise binary is
+ * absent — the same degradation the conventional task-file path already provides, applied to the
+ * description instead of only to the path. Without it, every task in a summary rendered on a machine
+ * without mise is a bare id with no explanation of what it runs.
+ *
+ * Accepts both quoted and bare forms, and only on the `#MISE` directive line, so ordinary prose in a
+ * task header can never be mistaken for a declaration.
+ */
+export function descriptionFromScript(script: string): string {
+	const match = script.match(/^#MISE\s+description\s*=\s*(?:"([^"]*)"|'([^']*)'|(.*))$/m);
+	return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
+}
+
 /** Strip `#` comment lines so pin mining can't latch onto commented-out calls. */
 function stripBashComments(text: string): string {
 	return text
@@ -299,7 +314,9 @@ export async function describeSuiteTasks(
 		const pins = script ? ptsPinsFromScript(script, { fioProfile, realworldVersion }) : [];
 		tasks.push({
 			task: taskName,
-			description: info?.description ?? "",
+			// mise's answer wins when it has one; the script's own `#MISE description=` is the fallback
+			// so the summary is identical with or without a mise binary on PATH.
+			description: info?.description || (script ? descriptionFromScript(script) : ""),
 			file,
 			role,
 			ptsProfile: joinPins(pins, "ptsProfile"),

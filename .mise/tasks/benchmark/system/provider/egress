@@ -5,7 +5,7 @@
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
-source "${REPO_ROOT}/lib/net-identity.sh"
+source "${REPO_ROOT}/lib/probe/egress.sh"
 
-net_identity_probe
-net_identity_report
+egress_probe
+egress_report
