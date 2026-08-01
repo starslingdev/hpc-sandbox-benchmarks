@@ -348,41 +348,27 @@ jobs:
             --name "sandbox-benchmarks-toolchain-bake-${{ github.run_id }}-${{ github.run_attempt }}" \
             --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
             --token_file "${{ runner.temp }}/nsc-token.json"
-      - name: Mint Vercel OIDC token file
+      - name: Authenticate with Vercel and VCR
         if: matrix.provider == 'vercel'
         continue-on-error: true
-        id: vercel-oidc
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_OIDC_TOKEN_FILE: ${{ runner.temp }}/vercel-oidc-token
-        run: |
-          set -euo pipefail
-          umask 077
-          curl --fail-with-body --silent --show-error \
-            -X POST \
-            -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_ID/token?teamId=$VERCEL_ORG_ID" \
-            -H 'Content-Type: application/json' \
-            --data '{"source":"vercel-cli"}' |
-            jq -er '.token | select(type == "string" and length > 0)' > "$VERCEL_OIDC_TOKEN_FILE"
-          chmod 0600 "$VERCEL_OIDC_TOKEN_FILE"
+        id: vercel-auth
+        uses: ./.github/actions/vercel-auth
+        with:
+          token: ${{ secrets.VERCEL_TOKEN }}
+          org-id: ${{ secrets.VERCEL_ORG_ID }}
+          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vcr-login: "true"
       - name: Mirror candidate into VCR
-        if: matrix.provider == 'vercel' && steps.vercel-oidc.outcome == 'success'
+        if: matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success'
         id: vercel-vcr
-        env:
-          VERCEL_OIDC_TOKEN_FILE: ${{ runner.temp }}/vercel-oidc-token
-          VERCEL_TEAM_SLUG: ${{ secrets.VERCEL_TEAM_SLUG }}
-          VERCEL_PROJECT_NAME: ${{ secrets.VERCEL_PROJECT_NAME }}
         run: |
           set -euo pipefail
           source_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelSourceImageCandidate)')"
           target_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
-          docker login vcr.vercel.com -u oidc --password-stdin < "$VERCEL_OIDC_TOKEN_FILE"
+          target_name="${target_ref##*/}"
           docker pull "$source_ref"
           docker tag "$source_ref" "$target_ref"
-          docker push "$target_ref"
+          ./node_modules/.bin/vercel vcr push docker "$target_name"
           digest="$(docker buildx imagetools inspect "$target_ref" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${target_ref%:*}@${digest}" >> "$GITHUB_OUTPUT"
       - name: Bake + verify candidate
@@ -428,11 +414,7 @@ jobs:
           MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
           MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
           MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
-          VERCEL_OIDC_TOKEN_FILE: ${{ matrix.provider == 'vercel' && steps.vercel-oidc.outcome == 'success' && format('{0}/vercel-oidc-token', runner.temp) || '' }}
-          VERCEL_ORG_ID: ${{ matrix.provider == 'vercel' && secrets.VERCEL_ORG_ID || '' }}
-          VERCEL_PROJECT_ID: ${{ matrix.provider == 'vercel' && secrets.VERCEL_PROJECT_ID || '' }}
-          VERCEL_TEAM_SLUG: ${{ matrix.provider == 'vercel' && secrets.VERCEL_TEAM_SLUG || '' }}
-          VERCEL_PROJECT_NAME: ${{ matrix.provider == 'vercel' && secrets.VERCEL_PROJECT_NAME || '' }}
+          VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail
@@ -455,9 +437,9 @@ jobs:
             bun apps/cli/src/bin/bake.ts "${args[@]}" ||
               echo "::warning title=Non-required provider not validated::${PROVIDER} did not pass its bake/verify — reported, not blocking the release (best-effort variant)"
           fi
-      - name: Remove Vercel OIDC token file
+      - name: Log out of VCR
         if: always()
-        run: rm -f "${{ runner.temp }}/vercel-oidc-token"
+        run: docker logout vcr.vercel.com || true
       - name: Upload bake report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -549,35 +531,20 @@ jobs:
             --name "sandbox-benchmarks-toolchain-promote-${{ github.run_id }}-${{ github.run_attempt }}" \
             --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
             --token_file "${{ runner.temp }}/nsc-token.json"
-      - name: Mint Vercel OIDC token file
+      - name: Authenticate with Vercel and VCR
         continue-on-error: true
-        id: vercel-oidc
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_OIDC_TOKEN_FILE: ${{ runner.temp }}/vercel-oidc-token
-        run: |
-          set -euo pipefail
-          umask 077
-          curl --fail-with-body --silent --show-error \
-            -X POST \
-            -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_ID/token?teamId=$VERCEL_ORG_ID" \
-            -H 'Content-Type: application/json' \
-            --data '{"source":"vercel-cli"}' |
-            jq -er '.token | select(type == "string" and length > 0)' > "$VERCEL_OIDC_TOKEN_FILE"
-          chmod 0600 "$VERCEL_OIDC_TOKEN_FILE"
+        id: vercel-auth
+        uses: ./.github/actions/vercel-auth
+        with:
+          token: ${{ secrets.VERCEL_TOKEN }}
+          org-id: ${{ secrets.VERCEL_ORG_ID }}
+          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vcr-login: "true"
       - name: Log in to VCR and pin candidate
-        if: steps.vercel-oidc.outcome == 'success'
+        if: steps.vercel-auth.outcome == 'success'
         id: vercel-vcr
-        env:
-          VERCEL_OIDC_TOKEN_FILE: ${{ runner.temp }}/vercel-oidc-token
-          VERCEL_TEAM_SLUG: ${{ secrets.VERCEL_TEAM_SLUG }}
-          VERCEL_PROJECT_NAME: ${{ secrets.VERCEL_PROJECT_NAME }}
         run: |
           set -euo pipefail
-          docker login vcr.vercel.com -u oidc --password-stdin < "$VERCEL_OIDC_TOKEN_FILE"
           candidate="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
           digest="$(docker buildx imagetools inspect "$candidate" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${candidate%:*}@${digest}" >> "$GITHUB_OUTPUT"
@@ -613,11 +580,7 @@ jobs:
           MICROSANDBOX_LOCAL_BENCH: "1"
           MSB_API_URL: ${{ secrets.MSB_API_URL }}
           MSB_API_KEY: ${{ secrets.MSB_API_KEY }}
-          VERCEL_OIDC_TOKEN_FILE: ${{ steps.vercel-oidc.outcome == 'success' && format('{0}/vercel-oidc-token', runner.temp) || '' }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_TEAM_SLUG: ${{ secrets.VERCEL_TEAM_SLUG }}
-          VERCEL_PROJECT_NAME: ${{ secrets.VERCEL_PROJECT_NAME }}
+          VERCEL_OIDC_TOKEN: ${{ steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail
@@ -626,9 +589,9 @@ jobs:
           # version; never set on the automated push path.
           if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
           bun apps/cli/src/bin/bake.ts "${args[@]}"
-      - name: Remove Vercel OIDC token file
+      - name: Log out of VCR
         if: always()
-        run: rm -f "${{ runner.temp }}/vercel-oidc-token"
+        run: docker logout vcr.vercel.com || true
       - name: Upload promote payload
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

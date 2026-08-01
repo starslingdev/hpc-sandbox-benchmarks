@@ -61,6 +61,16 @@ describe("@sandbox-benchmarks/providers", () => {
 		expect(gvisor?.createOptions?.experimentalOptions).toBeUndefined();
 	});
 
+	it("passes Vercel's shared VCR image and vCPU target through provider options", () => {
+		const adapter = providers.find((provider) => provider.name === "vercel");
+		expect(adapter?.requiredEnvVars).toEqual(["VERCEL_OIDC_TOKEN"]);
+		expect(adapter?.createOptions).toEqual({
+			image: config.vercelImage,
+			resources: { vcpus: TARGET_SPEC.vcpus },
+		});
+		expect(adapter?.createCompute().name).toBe("vercel");
+	});
+
 	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
 		// Construction must accept an nvta_-prefixed key and still expose the universal manager surface
 		// the harness drives, with the mispointed snapshot/template managers removed (their every call

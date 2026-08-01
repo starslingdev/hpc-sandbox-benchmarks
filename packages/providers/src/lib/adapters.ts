@@ -4,12 +4,12 @@
 // nothing here re-wraps an SDK — these are pure config. Credentials are read from each provider's
 // env vars by its factory.
 
-import { readFileSync } from "node:fs";
 import { blaxel } from "@computesdk/blaxel";
 import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import { namespace } from "@computesdk/namespace";
+import { vercel } from "@computesdk/vercel";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions } from "computesdk";
@@ -20,8 +20,7 @@ import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
-import type { ProviderAdapter } from "./types.ts";
-import { vercelCompute } from "./vercel.ts";
+import type { DirectProvider, ProviderAdapter } from "./types.ts";
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
@@ -216,25 +215,14 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: { image: config.toolchainImage },
 	},
 	vercel: {
-		createCompute: () => {
-			const { tokenFile, teamId, projectId } = config.vercel;
-			if (!tokenFile || !teamId || !projectId) {
-				throw new Error(
-					"vercel requires VERCEL_OIDC_TOKEN_FILE, VERCEL_ORG_ID, and VERCEL_PROJECT_ID",
-				);
-			}
-			// Read immediately before construction: the short-lived bearer never enters process.env or
-			// module-level config and remains scoped to this native SDK client.
-			const token = readFileSync(tokenFile, "utf8").trim();
-			if (!token) throw new Error(`VERCEL_OIDC_TOKEN_FILE is empty: ${tokenFile}`);
-			return vercelCompute({
-				token,
-				teamId,
-				projectId,
-				image: config.vercelImage,
-				vcpus: TARGET_SPEC.vcpus,
-			});
+		// @computesdk/vercel resolves VERCEL_OIDC_TOKEN itself. Its open provider-options passthrough
+		// forwards the shared VCR image and native resource request to Sandbox.create.
+		// The package pins computesdk 4.1.4 while this workspace pins 4.1.3; the provider contracts are
+		// runtime-compatible, but their duplicated generic snapshot types are nominally incompatible.
+		createCompute: () => vercel({}) as unknown as DirectProvider,
+		createOptions: {
+			image: config.vercelImage,
+			resources: { vcpus: TARGET_SPEC.vcpus },
 		},
-		createOptions: { templateId: config.vercelImage },
 	},
 };
