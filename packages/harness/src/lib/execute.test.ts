@@ -57,6 +57,15 @@ describe("selectTransport", () => {
 		expect(selectTransport(transport, 55 * MIN)).toBe("detached");
 		expect(selectTransport(transport, MIN)).toBe("sync");
 	});
+
+	it("detaches 20+ minute Vercel suites instead of holding one synchronous connection", () => {
+		const { transport } = getProvider("vercel");
+		for (const minutes of [20, 30]) {
+			expect(selectTransport(transport, minutes * MIN)).toBe("detached");
+		}
+		expect(selectTransport(transport, MIN)).toBe("detached");
+		expect(selectTransport(transport, MIN - 1)).toBe("sync");
+	});
 });
 
 describe("sandbox preamble", () => {

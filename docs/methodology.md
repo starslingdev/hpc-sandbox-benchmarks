@@ -111,10 +111,11 @@ provider) and its empty-`<Identifier>` `<Result>` nodes would abort extraction â
 
 Providers differ in how their `@computesdk/*` adapter executes a command. Each declares a
 [`ProviderTransport`](../packages/schema/src/providers.ts) capability (`streaming`, `syncCapMs`,
-`detachedPoll`), and the harness selects a transport per step: a step that could outlast the provider's
-synchronous cap runs **detached + poll** where supported, everything else runs directly. This is why a
-multi-minute suite completes on a single-round-trip-capped provider (e.g. Daytona's server-side HTTP 408)
-without being Daytona-specific.
+`detachedPoll`), and the harness selects a transport per step: a step that could reach the integration's
+synchronous durability threshold runs **detached + poll** where supported, everything else runs directly.
+That threshold may be a measured/vendor limit (for example Daytona's server-side HTTP 408) or a
+conservative policy where one long connection is unvalidated. Vercel uses a 60-second policy threshold,
+so 20â€“80-minute suites such as Mastra launch detached and remain observable through short polls.
 
 ## The dataset pipeline
 
