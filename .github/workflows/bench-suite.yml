@@ -185,29 +185,6 @@ jobs:
             --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
             --token_file "$NSC_TOKEN_PATH"
 
-      # Exchange the long-lived bootstrap token for a short-lived project OIDC bearer kept in a
-      # mode-0600 runner.temp file. It never enters step outputs or the benchmark process environment.
-      - name: Mint Vercel OIDC token file
-        if: matrix.provider == 'vercel'
-        continue-on-error: true
-        id: vercel-oidc
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_OIDC_TOKEN_FILE: ${{ runner.temp }}/vercel-oidc-token
-        run: |
-          set -euo pipefail
-          umask 077
-          curl --fail-with-body --silent --show-error \
-            -X POST \
-            -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v1/projects/$VERCEL_PROJECT_ID/token?teamId=$VERCEL_ORG_ID" \
-            -H 'Content-Type: application/json' \
-            --data '{"source":"vercel-cli"}' |
-            jq -er '.token | select(type == "string" and length > 0)' > "$VERCEL_OIDC_TOKEN_FILE"
-          chmod 0600 "$VERCEL_OIDC_TOKEN_FILE"
-
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -216,6 +193,16 @@ jobs:
       # Frozen lockfile + no lifecycle scripts, matching bunfig.toml's supply-chain posture.
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Authenticate with Vercel
+        if: matrix.provider == 'vercel'
+        continue-on-error: true
+        id: vercel-auth
+        uses: ./.github/actions/vercel-auth
+        with:
+          token: ${{ secrets.VERCEL_TOKEN }}
+          org-id: ${{ secrets.VERCEL_ORG_ID }}
+          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
 
       # Drive the provider SDK to create this cell's R replicate sandboxes, run the suite in each,
       # collect results, and normalize one shard Run per replicate. The cell's provider is a matrix value
@@ -272,12 +259,8 @@ jobs:
           # (steps.nsc-token only runs when matrix.provider == 'namespace'), which the harness reads
           # as the standard missing-credentials skip on every other cell.
           NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
-          # The short-lived bearer stays in the file. API IDs scope SDK calls; canonical names select VCR.
-          VERCEL_OIDC_TOKEN_FILE: ${{ matrix.provider == 'vercel' && steps.vercel-oidc.outcome == 'success' && format('{0}/vercel-oidc-token', runner.temp) || '' }}
-          VERCEL_ORG_ID: ${{ matrix.provider == 'vercel' && secrets.VERCEL_ORG_ID || '' }}
-          VERCEL_PROJECT_ID: ${{ matrix.provider == 'vercel' && secrets.VERCEL_PROJECT_ID || '' }}
-          VERCEL_TEAM_SLUG: ${{ matrix.provider == 'vercel' && secrets.VERCEL_TEAM_SLUG || '' }}
-          VERCEL_PROJECT_NAME: ${{ matrix.provider == 'vercel' && secrets.VERCEL_PROJECT_NAME || '' }}
+          # @computesdk/vercel reads the short-lived token exported by the auth action.
+          VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
           # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an
           # optional override for staging or private deployments. Neither value enters the guest.
           MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
@@ -289,10 +272,6 @@ jobs:
           MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
           MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicates "$BENCH_REPLICATES"
-
-      - name: Remove Vercel OIDC token file
-        if: always()
-        run: rm -f "${{ runner.temp }}/vercel-oidc-token"
 
       # Did THIS attempt actually produce shard Runs? The upload below overwrites the cell's artifact,
       # and overwriting is only safe when there is something to put in its place.

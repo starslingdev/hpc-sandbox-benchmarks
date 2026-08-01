@@ -6,7 +6,6 @@ import {
 	TARGET_SPEC,
 	TOOLCHAIN_IMAGE_NAME,
 	TOOLCHAIN_VERSION,
-	VERCEL_VCR_REPOSITORY,
 	validateVercelVcrImageRef,
 	vercelVcrImageRefs,
 } from "@sandbox-benchmarks/schema";
@@ -30,11 +29,6 @@ const envSchema = type({
 	"NOVITA_TEMPLATE?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
 	"MSB_API_KEY?": "string >= 1",
-	"VERCEL_OIDC_TOKEN_FILE?": "string >= 1",
-	"VERCEL_ORG_ID?": "string >= 1",
-	"VERCEL_PROJECT_ID?": "string >= 1",
-	"VERCEL_TEAM_SLUG?": "string >= 1",
-	"VERCEL_PROJECT_NAME?": "string >= 1",
 	"VERCEL_CANDIDATE_IMAGE?": "string >= 1",
 });
 
@@ -50,11 +44,6 @@ const ENV_KEYS = [
 	"NOVITA_TEMPLATE",
 	"MSB_API_URL",
 	"MSB_API_KEY",
-	"VERCEL_OIDC_TOKEN_FILE",
-	"VERCEL_ORG_ID",
-	"VERCEL_PROJECT_ID",
-	"VERCEL_TEAM_SLUG",
-	"VERCEL_PROJECT_NAME",
 	"VERCEL_CANDIDATE_IMAGE",
 ] as const;
 
@@ -103,13 +92,6 @@ export interface MicrosandboxCloudCredentials {
 	apiKey?: string;
 }
 
-/** Short-lived Vercel OIDC credentials minted for the linked project. */
-export interface VercelCredentials {
-	tokenFile?: string;
-	teamId?: string;
-	projectId?: string;
-}
-
 // Candidate↔version naming. The public version (`:v1`, `…-v1`) is immutable and written only by
 // `promote`; iteration happens against a mutable candidate (`:v1-candidate`, `…-v1-candidate`),
 // reused every build so the public registry never accumulates versions. Bumping TOOLCHAIN_VERSION
@@ -134,10 +116,10 @@ const daytonaContainerSnapshotCandidate = `${daytonaContainerSnapshotDefault}${C
 // recomputed, so a change to the e2b naming formula can't silently break the shared-name invariant.
 const novitaTemplateVersion = e2bTemplateVersion;
 const novitaTemplateCandidate = e2bTemplateCandidate;
-// VCR refs use canonical human-readable namespace names, never team_*/prj_* API IDs. The workflow
-// overrides the candidate tag with the immutable fully-qualified digest after mirroring the variant.
-const vercelTeamSlug = env.VERCEL_TEAM_SLUG ?? "starslingdev";
-const vercelProjectName = env.VERCEL_PROJECT_NAME ?? "sandbox-benchmarks";
+// VCR refs use this repository's fixed, human-readable namespace. The workflow overrides the
+// candidate tag with the immutable fully-qualified digest after mirroring the variant.
+const vercelTeamSlug = "starslingdev";
+const vercelProjectName = "sandbox-benchmarks";
 const vercelImages = vercelVcrImageRefs(vercelTeamSlug, vercelProjectName);
 const vercelImageCandidate = env.VERCEL_CANDIDATE_IMAGE
 	? validateVercelVcrImageRef(env.VERCEL_CANDIDATE_IMAGE, vercelTeamSlug, vercelProjectName)
@@ -208,19 +190,9 @@ export const config = {
 		apiUrl: env.MSB_API_URL,
 		apiKey: env.MSB_API_KEY,
 	} satisfies MicrosandboxCloudCredentials,
-	/** Vercel Sandbox credentials. The bearer is a short-lived OIDC token, never the bootstrap PAT. */
-	vercel: {
-		tokenFile: env.VERCEL_OIDC_TOKEN_FILE,
-		teamId: env.VERCEL_ORG_ID,
-		projectId: env.VERCEL_PROJECT_ID,
-	} satisfies VercelCredentials,
-	/** Canonical VCR namespace uses names; API IDs above never enter these Docker references. */
-	vercelTeamSlug,
-	vercelProjectName,
 	vercelImage: vercelImages.version,
 	vercelImageVersion: vercelImages.version,
 	vercelImageCandidate,
-	vercelImageRepository: VERCEL_VCR_REPOSITORY,
 	/** GHCR staging copy built by build.sh before it is mirrored into VCR. */
 	vercelSourceImageVersion,
 	vercelSourceImageCandidate,

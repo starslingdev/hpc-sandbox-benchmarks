@@ -1,0 +1,28 @@
+name: Authenticate with Vercel
+description: Pull a project-scoped OIDC token with the repository-pinned Vercel CLI.
+
+inputs:
+  token:
+    description: Long-lived Vercel token used only to bootstrap the CLI session.
+    required: true
+  org-id:
+    description: Linked Vercel organization ID.
+    required: true
+  project-id:
+    description: Linked Vercel project ID.
+    required: true
+  vcr-login:
+    description: Also authenticate Docker to Vercel Container Registry.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Pull project OIDC environment
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.token }}
+        VERCEL_ORG_ID: ${{ inputs.org-id }}
+        VERCEL_PROJECT_ID: ${{ inputs.project-id }}
+        VCR_LOGIN: ${{ inputs.vcr-login }}
+      run: "${GITHUB_ACTION_PATH}/auth.sh"

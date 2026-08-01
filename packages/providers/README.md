@@ -7,12 +7,12 @@ assembled `providers` registry, and the toolchain image constants (`TOOLCHAIN_IM
 `TOOLCHAIN_VERSION`, `DAYTONA_SNAPSHOT_DEFAULT`).
 
 **Depends on:** `@sandbox-benchmarks/schema` (provider identity / `PROVIDERS`), `computesdk` and the
-`@computesdk/*` wrappers where they preserve the required surface, plus first-class `defineProvider`
-adapters over raw vendor SDKs where they do not (including `@vercel/sandbox` v2).
+`@computesdk/*` wrappers where they preserve the required surface, plus focused compatibility
+adapters over raw vendor SDKs only where required.
 
 **What lives here:** provider factories and focused compatibility adapters. Most `@computesdk/*`
-packages adapt their vendor SDK directly; Microsandbox and Vercel use local `defineProvider`
-implementations so lifecycle, detached exec, and filesystem semantics remain honest. The package also
+packages adapt their vendor SDK directly; Microsandbox uses a local `defineProvider` implementation.
+Vercel uses `@computesdk/vercel` without a local wrapper. The package also
 owns benchmark create-time policy — the pinned `TARGET_SPEC` and toolchain image. The assembled
 `providers` registry joins the schema `PROVIDERS` metadata with the adapter
 map by id; both are keyed by `ProviderId`, so a one-sided provider is a compile error rather than a
@@ -35,32 +35,24 @@ vercel link
 vercel vcr add sandbox-benchmarks-toolchain-vercel
 vercel vcr login docker
 
-# Build and publish the shared Vercel variant. Replace both names with the linked project's values.
-export VERCEL_TEAM_SLUG=your-team-slug
-export VERCEL_PROJECT_NAME=your-project-name
+# Build and publish the shared Vercel variant into this repository's fixed VCR namespace.
 REGISTRY=vcr.vercel.com \
-IMAGE_OWNER="$VERCEL_TEAM_SLUG/$VERCEL_PROJECT_NAME" \
+IMAGE_OWNER="starslingdev/sandbox-benchmarks" \
 packages/templates/images/build.sh
-docker push \
-  "vcr.vercel.com/$VERCEL_TEAM_SLUG/$VERCEL_PROJECT_NAME/sandbox-benchmarks-toolchain-vercel:v6"
+vercel vcr push docker \
+  "sandbox-benchmarks-toolchain-vercel:v6"
 
-# Pull a short-lived project OIDC token, copy only that bearer into a restricted file, and remove the
-# bearer from the process environment before starting the benchmark.
+# Pull a short-lived project OIDC token. @computesdk/vercel discovers it directly from the environment.
+vercel pull --yes
 vercel env pull .env.vercel.local
 set -a; . ./.env.vercel.local; set +a
-export VERCEL_ORG_ID="$(jq -r .orgId .vercel/project.json)"
-export VERCEL_PROJECT_ID="$(jq -r .projectId .vercel/project.json)"
-export VERCEL_OIDC_TOKEN_FILE="$(mktemp)"
-trap 'rm -f "$VERCEL_OIDC_TOKEN_FILE" .env.vercel.local' EXIT
-chmod 0600 "$VERCEL_OIDC_TOKEN_FILE"
-printf %s "$VERCEL_OIDC_TOKEN" > "$VERCEL_OIDC_TOKEN_FILE"
-unset VERCEL_OIDC_TOKEN VERCEL_TOKEN
+trap 'rm -f .env.vercel.local; docker logout vcr.vercel.com >/dev/null 2>&1 || true' EXIT
+unset VERCEL_TOKEN
 
 # Other providers skip when their credentials are absent; Vercel is required to boot and pass.
 REQUIRE_PROVIDERS=vercel bun apps/cli/src/bin/bench-smoke.ts
 ```
 
-The VCR path uses the human-readable team slug and project name; the `team_*` / `prj_*` API IDs
-extracted from `.vercel/project.json` authenticate SDK calls only. The `EXIT` trap removes both local
-bearer files even if validation fails. A successful smoke permanently deletes its ephemeral named
-sandbox during teardown.
+The VCR path is fixed to this repository's human-readable namespace. The `EXIT` trap removes the
+temporary environment file and Docker credential even if validation fails. Sandbox lifecycle
+behavior is provided by the pinned `@computesdk/vercel` package.
