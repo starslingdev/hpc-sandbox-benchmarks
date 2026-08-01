@@ -29,3 +29,16 @@ export type ReleaseBuildMode = (typeof BUILD_MODES)[number];
 export function isBuildMode(value: string): value is ReleaseBuildMode {
 	return (BUILD_MODES as readonly string[]).includes(value);
 }
+
+/** The modes the build job's script actually implements: `skip` is resolved a phase earlier, by the
+ *  plan skipping the job outright, so it never reaches `build-candidate`. DERIVED from the full list
+ *  rather than retyped, so a new mode can't be added to one list and forgotten in the other. */
+export type BuilderBuildMode = Exclude<ReleaseBuildMode, "skip">;
+export const BUILDER_BUILD_MODES = BUILD_MODES.filter(
+	(mode): mode is BuilderBuildMode => mode !== "skip",
+);
+
+/** Whether `value` is a mode `build-candidate` can run (see {@link BUILDER_BUILD_MODES}). */
+export function isBuilderBuildMode(value: string): value is BuilderBuildMode {
+	return (BUILDER_BUILD_MODES as readonly string[]).includes(value);
+}

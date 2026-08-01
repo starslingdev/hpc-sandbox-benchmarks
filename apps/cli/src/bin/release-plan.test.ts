@@ -68,16 +68,20 @@ describe("buildReleasePlan matrix", () => {
 
 	// A named provider that could still skip on a missing secret would report a green release that
 	// published nothing — the exact failure the scoped path is meant to make impossible.
-	test("every provider a scoped dispatch names is required, even a normally best-effort one", () => {
+	test("every provider a partial dispatch names is required, even a normally best-effort one", () => {
 		const plan = buildReleasePlan({ ...base, providers: "blaxel,novita" });
 		expect(plan.required).toEqual(["blaxel", "novita"]);
 		expect(plan.matrix.include.every((c) => c.required)).toBe(true);
 	});
 
-	test("naming the whole registry is a full release, not a partial one", () => {
+	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the
+	// registry would quietly make every best-effort provider gating, and force_republish (rejected only
+	// for a partial release) would land on a release whose required set had silently grown.
+	test("naming the whole registry is an ordinary full release", () => {
 		const plan = buildReleasePlan({ ...base, providers: ALL_PROVIDERS.join(",") });
 		expect(plan.partial).toBe(false);
 		expect(plan.mode).toBe("build");
+		expect(plan.required).toEqual([...RELEASE_REQUIRED_PROVIDERS]);
 	});
 
 	test("an unknown provider id throws instead of silently shrinking the release", () => {
@@ -106,6 +110,18 @@ describe("buildReleasePlan packages", () => {
 		const plan = buildReleasePlan(base);
 		expect(plan.packages[0]).toBe(plan.image.name);
 		expect(plan.packages).toContain(`${plan.image.name}-vercel`);
+	});
+
+	// The guard FAILS the release on a package that isn't public yet, so listing a variant no in-scope
+	// provider pulls would block a release over an image it never reads.
+	test("omits a variant package no provider in scope pulls", () => {
+		const plan = buildReleasePlan({ ...base, providers: "e2b" });
+		expect(plan.packages).toEqual([plan.image.name]);
+	});
+
+	test("keeps the variant package when its own provider is in scope", () => {
+		const plan = buildReleasePlan({ ...base, providers: "vercel" });
+		expect(plan.packages).toEqual([plan.image.name, `${plan.image.name}-vercel`]);
 	});
 });
 

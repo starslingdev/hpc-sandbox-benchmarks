@@ -24,8 +24,15 @@ PINS_TS="${HERE}/../src/pins.ts"
 REGISTRY="${REGISTRY:-ghcr.io}"
 IMAGE_OWNER="${IMAGE_OWNER:-starslingdev}"
 
-# > Every provider variant this script knows how to build (each has a <name>/Dockerfile beside it).
-ALL_VARIANTS=(e2b daytona modal vercel)
+# > Every provider variant this script builds, DERIVED from the directories beside it rather than
+# > hand-listed: a variant is exactly an `images/<name>/Dockerfile` that isn't the base. Adding one is
+# > then a directory, not a directory plus a literal someone has to remember to update — and the list
+# > is now load-bearing twice over (the build loop and the VARIANTS validation below).
+ALL_VARIANTS=()
+for dockerfile in "${HERE}"/*/Dockerfile; do
+	variant_name="$(basename "$(dirname "${dockerfile}")")"
+	[ "${variant_name}" = "base" ] || ALL_VARIANTS+=("${variant_name}")
+done
 
 # > Validate the pins and collect them as KEY=VALUE lines. `bun` exits non-zero (and set -e aborts)
 # > if arktype rejects any pin, so a bad/unfilled pin fails the build before docker is even invoked.
@@ -54,13 +61,8 @@ base_dev_tag="${image_name}:dev"
 # > The variant subset to build. Commas are accepted so the caller can pass one CSV env value.
 IFS=', ' read -r -a variants <<< "${VARIANTS:-${ALL_VARIANTS[*]}}"
 for provider in "${variants[@]}"; do
-	case " ${ALL_VARIANTS[*]} " in
-		*" ${provider} "*) ;;
-		*)
-			echo "unknown variant '${provider}' — known variants: ${ALL_VARIANTS[*]}" >&2
-			exit 1
-			;;
-	esac
+	[[ " ${ALL_VARIANTS[*]} " == *" ${provider} "* ]] ||
+		{ echo "unknown variant '${provider}' — known variants: ${ALL_VARIANTS[*]}" >&2; exit 1; }
 done
 
 # > OCI label inputs — empty on local builds, real values passed by CI. Applied to every image.

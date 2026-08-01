@@ -60,6 +60,22 @@ export function selectProviders(raw: string | undefined): ProviderId[] {
 }
 
 /**
+ * Whether a provider selection covers a strict SUBSET of the registry — the one predicate the whole
+ * scoped-release path turns on. A partial selection means the run is a backfill onto an existing
+ * toolchain version: promote publishes only these providers' artifacts and never rewrites the public
+ * base (see lib/bake/promote.ts), the plan reports `mode: backfill` and refuses to early-skip an
+ * already-published version, and `force_republish` is rejected as the opposite operation.
+ *
+ * It lives here, beside {@link selectProviders}, because three call sites decide on it — the plan, the
+ * credential-free validate gate, and `bake --promote` — and they must not disagree: a gate that reads
+ * "scoped" while the transaction reads "strict subset" would reject dispatches the transaction would
+ * have accepted (and, worse, the reverse). Absent/undefined (the local default) is never partial.
+ */
+export function isPartialScope(selection: readonly ProviderId[] | undefined): boolean {
+	return selection !== undefined && selection.length < PROVIDERS.length;
+}
+
+/**
  * The suites a dispatch asks the matrix to run, parsed from a comma-separated list (the `BENCH_SUITES`
  * dispatch input). Absent or blank → every registered suite. This is the pre-merge/targeted-run knob:
  * `BENCH_SUITES=network` runs only the network suite's jobs.

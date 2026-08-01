@@ -4,6 +4,8 @@
 // The public `:v1` is never pushed here — that is promote's job.
 import { join } from "node:path";
 import { config } from "@sandbox-benchmarks/providers";
+import type { ProviderId } from "@sandbox-benchmarks/schema";
+import type { templateProviders } from "@sandbox-benchmarks/templates";
 import type { Log } from "./types.ts";
 
 // Anchored to this file (not cwd): the `bake` package script runs from apps/cli, where a
@@ -21,28 +23,35 @@ async function run(cmd: string[], log: Log, extraEnv: Record<string, string> = {
 	if (code !== 0) throw new Error(`${cmd[0]} exited ${code}`);
 }
 
+/** One provider variant that is PUSHED to a registry (see {@link PUBLISHED_VARIANTS}). */
+interface PublishedVariant {
+	/** The build.sh variant name — its directory under packages/templates/images. Typed against the
+	 *  templates registry so a typo is a compile error here, not an "unknown variant" at release time. */
+	variant: (typeof templateProviders)[number];
+	/** The provider whose bake cell consumes it — how the release scopes the visibility guard. */
+	provider: ProviderId;
+	version: string;
+	candidate: string;
+}
+
 /**
  * The provider variants that are PUSHED to a registry, and so have candidate/version tags of their
  * own. Every other variant build.sh produces is consumed locally or rebuilt remotely (e2b builds its
  * template on E2B's builder FROM the base digest; daytona/modal boot the base itself), so it has no
  * registry copy to stage. Today only Vercel needs one: VCR is a separate registry the sandbox pulls
  * from, so the variant has to exist in GHCR first for the bake cell to mirror it across.
- *
- * `variant` is the build.sh variant name (its directory under packages/templates/images).
  */
-export const PUBLISHED_VARIANTS = [
+export const PUBLISHED_VARIANTS: readonly PublishedVariant[] = [
 	{
 		variant: "vercel",
+		provider: "vercel",
 		version: config.vercelSourceImageVersion,
 		candidate: config.vercelSourceImageCandidate,
 	},
-] as const;
+];
 
 /** Retag a freshly built variant to its mutable candidate tag and push it (normalized, as below). */
-async function stagePublishedVariant(
-	entry: (typeof PUBLISHED_VARIANTS)[number],
-	log: Log,
-): Promise<void> {
+async function stagePublishedVariant(entry: PublishedVariant, log: Log): Promise<void> {
 	await run(["docker", "tag", entry.version, entry.candidate], log);
 	await run(["docker", "push", entry.candidate], log);
 	await run(imagetoolsNormalizeCmd(entry.candidate), log);
@@ -78,8 +87,8 @@ export async function buildAndPushCandidate(log: Log): Promise<void> {
  * toolchain exists to remove. Composing the thin variant layer on the PUBLISHED base keeps the
  * comparison honest — and the base is pinned by digest, so "the published base" can't drift mid-build.
  */
-export async function buildAndPushVariantCandidates(log: Log, base: string): Promise<string> {
-	const pinnedBase = await resolveImageDigestRef(base);
+export async function buildAndPushVariantCandidates(log: Log): Promise<string> {
+	const pinnedBase = await resolveImageDigestRef(config.toolchainImageVersion);
 	log(`>>> rebuilding variants on the published base ${pinnedBase} (no base build)`);
 	await run(["bash", BUILD_SH], log, {
 		BASE_IMAGE: pinnedBase,
@@ -165,6 +174,22 @@ export function imageRepo(ref: string): string {
 	const lastColon = withoutDigest.lastIndexOf(":");
 	const lastSlash = withoutDigest.lastIndexOf("/");
 	return lastColon > lastSlash ? withoutDigest.slice(0, lastColon) : withoutDigest;
+}
+
+/** The bare package name of an image ref — `ghcr.io/org/image:v1` → `image`. This is the identifier
+ *  the GHCR package API (and so the public-package guard) addresses a package by. Built on
+ *  {@link imageRepo} so ref parsing stays in this one module rather than being re-derived by a caller. */
+export function imageName(ref: string): string {
+	const repo = imageRepo(ref);
+	return repo.split("/").pop() ?? repo;
+}
+
+/** The digest of an already-pinned ref — `repo@sha256:…` → `sha256:…`; empty when `ref` carries no
+ *  digest. The inverse of {@link digestPinnedRef}, for callers holding a ref that was pinned earlier
+ *  and needing the bare digest back without a second registry lookup. */
+export function imageDigest(ref: string): string {
+	const at = ref.lastIndexOf("@");
+	return at === -1 ? "" : ref.slice(at + 1);
 }
 
 /** Resolve a pushed `ref` to its immutable registry digest (`sha256:…`) via a registry-side inspect —

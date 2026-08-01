@@ -17,11 +17,15 @@
 // REFUSES on an uncertain check), so an inconclusive probe here proceeds rather than blocks.
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
-import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
-import { imageExistsInRegistry, imageRepo, PUBLISHED_VARIANTS } from "../lib/bake/image.ts";
+import {
+	imageExistsInRegistry,
+	imageName,
+	imageRepo,
+	PUBLISHED_VARIANTS,
+} from "../lib/bake/image.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
-import { selectProviders } from "../lib/matrix.ts";
+import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import type { ReleaseBuildMode } from "../lib/release-inputs.ts";
 import { isBuildMode } from "../lib/release-inputs.ts";
 
@@ -39,13 +43,6 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
 	"daytona-vm",
 	"modal-gvisor",
 ];
-
-/** Every provider the release CAN fan out over, derived from the registry (never a hand-maintained
- *  literal) so adding a provider grows the default matrix automatically — in registry order, matching
- *  the matrix cell order. `providerArtifact` below is exhaustive over `ProviderId`, so a new provider
- *  is a compile error there until it's handled. The list a given release actually covers is this one
- *  narrowed by the `providers` dispatch input; comparing the two lengths is what makes it `partial`. */
-const REGISTERED_PROVIDERS: readonly ProviderId[] = PROVIDERS.map((p) => p.id);
 
 /** Per-provider baked artifact name (what a cell produces), or a note for the providers that bake none. */
 function providerArtifact(id: ProviderId): string {
@@ -124,8 +121,9 @@ export interface ReleasePlan {
 		candidate: string;
 		toolchainVersion: string;
 	};
-	/** Every GHCR package a provider pulls anonymously, so the visibility guard covers all of them —
-	 *  the base plus each registry-served variant (see PUBLISHED_VARIANTS in lib/bake/image.ts). */
+	/** Every GHCR package an IN-SCOPE provider pulls anonymously, so the visibility guard covers all of
+	 *  them — the base plus each registry-served variant whose provider this release covers (see
+	 *  PUBLISHED_VARIANTS in lib/bake/image.ts). */
 	packages: string[];
 	providers: ReleaseProviderPlan[];
 	/** The providers that must pass before publish (single-sourced for the matrix + promote gate). */
@@ -148,17 +146,16 @@ export interface ReleasePlan {
 export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	// A blank `providers` input means "every provider" (the default full release); a non-blank one is
 	// resolved against the registry by selectProviders, which throws on an unknown id rather than
-	// silently shrinking the release. `scoped` is about what the OPERATOR asked for, so spelling out
-	// the whole registry still counts as a full release below.
-	const scoped = (inputs.providers ?? "").trim() !== "";
+	// silently shrinking the release. Everything below keys off `partial` — a STRICT subset — so
+	// spelling out the whole registry stays an ordinary full release, matching what promote will do.
 	const scope = selectProviders(inputs.providers);
-	const partial = scope.length < REGISTERED_PROVIDERS.length;
+	const partial = isPartialScope(scope);
 
-	// A scoped dispatch names exactly the providers it wants, so every one of them is REQUIRED: the
+	// A partial dispatch names exactly the providers it wants, so every one of them is REQUIRED: the
 	// point of `providers: vercel` is to make that provider ship, and a "best-effort" cell would let it
-	// skip on a missing secret and still report a green release that published nothing. The default
-	// (unscoped) release keeps the standing required set, where best-effort variants are expected.
-	const required: ProviderId[] = scoped ? [...scope] : [...RELEASE_REQUIRED_PROVIDERS];
+	// skip on a missing secret and still report a green release that published nothing. A full release
+	// keeps the standing required set, where best-effort variants are expected.
+	const required: ProviderId[] = partial ? [...scope] : [...RELEASE_REQUIRED_PROVIDERS];
 
 	// force_republish deliberately regenerates the version in place and a partial release deliberately
 	// backfills onto it, so "already published" never skips either; a plain build skips once the
@@ -173,11 +170,6 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	}));
 
 	const { vcpus, memoryGb, diskGb } = config.targetSpec;
-	const repo = imageRepo(config.toolchainImageVersion);
-	const packageName = (ref: string): string => {
-		const packageRepo = imageRepo(ref);
-		return packageRepo.split("/").pop() ?? packageRepo;
-	};
 
 	return {
 		mode,
@@ -188,15 +180,20 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 		sourceRef: inputs.sourceRef,
 		sizeTier: `${vcpus} vCPU / ${memoryGb} GiB / ${diskGb} GB`,
 		image: {
-			repo,
-			name: packageName(config.toolchainImageVersion),
+			repo: imageRepo(config.toolchainImageVersion),
+			name: imageName(config.toolchainImageVersion),
 			version: config.toolchainImageVersion,
 			candidate: config.toolchainImageCandidate,
 			toolchainVersion: config.toolchainVersion,
 		},
+		// Scoped to what this release actually pulls: the guard FAILS a release whose package is still
+		// private, so listing a variant no in-scope provider touches would block a release over a
+		// package it never reads.
 		packages: [
-			packageName(config.toolchainImageVersion),
-			...PUBLISHED_VARIANTS.map((entry) => packageName(entry.version)),
+			imageName(config.toolchainImageVersion),
+			...PUBLISHED_VARIANTS.filter((entry) => scope.includes(entry.provider)).map((entry) =>
+				imageName(entry.version),
+			),
 		],
 		providers,
 		required,
@@ -206,10 +203,7 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 			publishTarget: config.toolchainImageVersion,
 		},
 		matrix: {
-			include: providers.map(({ provider, required: cellRequired }) => ({
-				provider,
-				required: cellRequired,
-			})),
+			include: providers.map((p) => ({ provider: p.provider, required: p.required })),
 		},
 	};
 }
@@ -251,10 +245,11 @@ if (import.meta.main) {
 	const providers = process.env.RELEASE_PROVIDERS ?? "";
 	// The dispatch inputs are already validated (shape and combination) by release-validate.ts, which
 	// runs before this in the same job. Re-derive rather than re-check: an out-of-range value can only
-	// get here if that gate was bypassed, and `build`/`promote` fall back to the safe full-release
-	// default while `providers` still throws through selectProviders on an unknown id.
+	// get here if that gate was bypassed, and an unrecognized `build` is passed through as `undefined`
+	// so buildReleasePlan applies the one full-release default (rather than a second copy of it here);
+	// `providers` still throws through selectProviders on an unknown id.
 	const rawBuild = (process.env.BUILD_MODE ?? "").trim();
-	const build: ReleaseBuildMode = isBuildMode(rawBuild) ? rawBuild : "full";
+	const build: ReleaseBuildMode | undefined = isBuildMode(rawBuild) ? rawBuild : undefined;
 	const promote = process.env.PROMOTE !== "false";
 
 	// Best-effort immutability probe: an inconclusive result (auth/network) proceeds — promote does the

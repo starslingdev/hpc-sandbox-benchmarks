@@ -23,31 +23,31 @@ import { config } from "@sandbox-benchmarks/providers";
 import {
 	buildAndPushCandidate,
 	buildAndPushVariantCandidates,
+	imageDigest,
 	imageRepo,
 	PUBLISHED_VARIANTS,
 	resolveImageDigest,
 } from "../lib/bake/image.ts";
 import type { Log } from "../lib/bake/types.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
-
-/** The build phases this script implements (`skip` is handled by the workflow, not here). */
-const BUILD_MODES = ["full", "variants"] as const;
-type BuildMode = (typeof BUILD_MODES)[number];
+import type { BuilderBuildMode } from "../lib/release-inputs.ts";
+import { BUILDER_BUILD_MODES, isBuilderBuildMode } from "../lib/release-inputs.ts";
 
 /** Parse `BUILD_MODE`; blank → `full`. An unrecognized value THROWS rather than defaulting: silently
- *  falling back to `full` would spend an hour rebuilding a base the operator asked us not to touch. */
-export function buildMode(raw: string | undefined): BuildMode {
+ *  falling back to `full` would spend an hour rebuilding a base the operator asked us not to touch —
+ *  which includes `skip`, a real dispatch value that the plan resolves by skipping this job entirely. */
+export function buildMode(raw: string | undefined): BuilderBuildMode {
 	const value = (raw ?? "").trim() || "full";
-	if (!(BUILD_MODES as readonly string[]).includes(value)) {
-		throw new Error(`BUILD_MODE must be one of ${BUILD_MODES.join(", ")} (got '${value}')`);
+	if (!isBuilderBuildMode(value)) {
+		throw new Error(`BUILD_MODE must be one of ${BUILDER_BUILD_MODES.join(", ")} (got '${value}')`);
 	}
-	return value as BuildMode;
+	return value;
 }
 
 if (import.meta.main) {
 	const log: Log = (m) => console.error(m);
 
-	let mode: BuildMode;
+	let mode: BuilderBuildMode;
 	try {
 		mode = buildMode(process.env.BUILD_MODE);
 	} catch (err) {
@@ -63,7 +63,7 @@ if (import.meta.main) {
 	let pinnedBase: string | undefined;
 	try {
 		if (mode === "variants") {
-			pinnedBase = await buildAndPushVariantCandidates(log, config.toolchainImageVersion);
+			pinnedBase = await buildAndPushVariantCandidates(log);
 		} else {
 			await buildAndPushCandidate(log);
 		}
@@ -83,7 +83,7 @@ if (import.meta.main) {
 	// `variants` already resolved the digest to pin the build — reuse it rather than inspecting twice.
 	if (pinnedBase) {
 		digestRef = pinnedBase;
-		digest = pinnedBase.slice(pinnedBase.indexOf("@") + 1);
+		digest = imageDigest(pinnedBase);
 	} else {
 		try {
 			digest = await resolveImageDigest(baseTag);

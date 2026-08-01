@@ -6,7 +6,7 @@
 // Inputs arrive as env (the composite maps its `with:` inputs).
 import * as core from "@actions/core";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
-import { selectProviders } from "../lib/matrix.ts";
+import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import { BUILD_MODES, isBuildMode } from "../lib/release-inputs.ts";
 
 // The arktype pin gatekeeper lives here; annotate failures on it so the run links straight to the pins.
@@ -14,13 +14,12 @@ const PINS_FILE = "packages/templates/src/lib/pins.ts";
 
 /** A dispatch boolean reaches the release as an env var; reject anything but the two spellings (and
  *  unset) so a hand-typed value can't slip through as a surprise "truthy" string downstream. */
-function validateBoolean(name: string, value: string): boolean {
-	if (["true", "false", ""].includes(value)) return true;
+function validateBoolean(name: string, value: string): void {
+	if (["true", "false", ""].includes(value)) return;
 	core.error(`${name} must be true or false (got '${value}').`, {
 		title: "Invalid dispatch input",
 	});
 	core.setFailed(`Invalid ${name} input.`);
-	return false;
 }
 
 const forceRepublish = process.env.FORCE_REPUBLISH?.trim() ?? "";
@@ -48,24 +47,26 @@ if (providers !== "") {
 	try {
 		const scope = selectProviders(providers);
 		core.info(`Scoped release: ${scope.join(", ")}`);
+		// A PARTIAL release backfills providers onto an already-published version and never rewrites the
+		// base; force_republish regenerates the whole version in place, destructively for daytona (it
+		// deletes each snapshot before recreating it). Refusing the combination is not pedantry: either
+		// interpretation silently does something the operator did not ask for. Gated on the same
+		// `isPartialScope` the promote transaction uses, so this gate can't reject a dispatch the
+		// transaction would have accepted — a list naming every provider is just a full release.
+		if (isPartialScope(scope) && forceRepublish === "true") {
+			core.error(
+				"force_republish cannot be combined with a scoped `providers` list — a scoped release " +
+					"backfills onto the published version, while force_republish regenerates that whole version " +
+					"in place (deleting and rebuilding every provider's artifact). Dispatch one or the other.",
+				{ title: "Conflicting dispatch inputs" },
+			);
+			core.setFailed("force_republish is not valid for a scoped release.");
+		}
 	} catch (err) {
 		core.error(err instanceof Error ? err.message : String(err), {
 			title: "Invalid providers input",
 		});
 		core.setFailed("Invalid providers input.");
-	}
-	// A scoped release BACKFILLS providers onto an already-published version and never rewrites the
-	// base; force_republish regenerates the whole version in place, destructively for daytona (it
-	// deletes each snapshot before recreating it). Refusing the combination is not pedantry: either
-	// interpretation silently does something the operator did not ask for.
-	if (forceRepublish === "true") {
-		core.error(
-			"force_republish cannot be combined with a scoped `providers` list — a scoped release " +
-				"backfills onto the published version, while force_republish regenerates that whole version " +
-				"in place (deleting and rebuilding every provider's artifact). Dispatch one or the other.",
-			{ title: "Conflicting dispatch inputs" },
-		);
-		core.setFailed("force_republish is not valid for a scoped release.");
 	}
 }
 

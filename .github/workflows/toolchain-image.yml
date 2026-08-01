@@ -624,8 +624,13 @@ jobs:
       # relationship (or any transient failure) from failing the release: namespace is best-effort (not
       # in --require), so its re-validation simply skips when the token is absent, exactly like a
       # missing optional secret — and a skipped step leaves `outcome` != 'success', the same path.
+      #
+      # The scope test reads the plan's matrix rather than its `providers` CSV: `contains(array, item)`
+      # is element EQUALITY, while `contains(string, substring)` would also match a future id that
+      # merely contains this one (this registry already splits providers into `-vm`/`-container`/
+      # `-local`/`-cloud` variants, so that is not hypothetical).
       - name: Set up Namespace CLI
-        if: contains(needs.plan.outputs.providers, 'namespace')
+        if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'namespace')
         continue-on-error: true
         id: nsc-setup
         uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
@@ -646,7 +651,7 @@ jobs:
       # Same scope gate as the Namespace mint above: a release that isn't promoting vercel has no reason
       # to pull a project OIDC token or log docker into VCR.
       - name: Authenticate with Vercel and VCR
-        if: contains(needs.plan.outputs.providers, 'vercel')
+        if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel')
         continue-on-error: true
         id: vercel-auth
         uses: ./.github/actions/vercel-auth
