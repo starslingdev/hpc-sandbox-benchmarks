@@ -41,11 +41,13 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 1. **No publish on merge.** Toolchain GHCR promote is `workflow_dispatch` only (never `push`).
 2. **Main only, this repo only.** Privileged jobs require
    `github.ref == 'refs/heads/main'` and
-   `github.repository == 'starslingdev/hpc-sandbox-benchmarks'`. The benchmark matrix additionally
-   permits an explicitly opted-in non-main dispatch for pre-merge validation; those cells still
-   require `privileged` approval, and dataset publishing remains main-only.
+   `github.repository == 'starslingdev/hpc-sandbox-benchmarks'`. The benchmark matrix and the smoke
+   dispatch additionally permit an explicitly opted-in non-main dispatch (`allow_branch`) for
+   pre-merge validation; those runs still require `privileged` approval, and every mutation of the
+   repo — dataset publishing, GHCR promote, leaderboard — remains main-only.
 3. **Environment approval.** `privileged` must require at least one reviewer and restrict
-   deployments to the `main` branch. Write access alone cannot finish a release.
+   deployments to `main` plus whatever branch pattern you want `allow_branch` to reach. Write access
+   alone cannot finish a release.
 4. **Fork PRs.** Same-repo guard on self-hosted PR jobs; fork PR code never runs on
    `starsling-ubuntu-24.04-2`. Forks never receive Environment secrets on `pull_request`.
 5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a
@@ -133,7 +135,18 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
 
 1. Create Environment **`privileged`**.
 2. **Required reviewers:** at least one maintainer (two preferred).
-3. **Deployment branches:** `Selected branches` → `main` only.
+3. **Deployment branches:** `Selected branches` → `main`.
+
+   This rule is a SECOND gate, independent of each workflow's `if:`. `bench-matrix.yml` and
+   `bench-smoke.yml` both offer an `allow_branch` dispatch input for pre-merge validation, but a
+   branch dispatch still fails at the environment with *"Branch is not allowed to deploy to
+   privileged"* until this list admits the branch. To use `allow_branch`, add the branch patterns you
+   want to reach it — e.g. `claude/*`, or a dedicated `bench/*` prefix maintainers push validation
+   branches to. Prefer a narrow pattern over `All branches`: anyone who can push a matching branch can
+   then request a `privileged` run (a reviewer still has to approve it, and the workflows' own
+   same-repo guard still excludes forks, so this widens *who can ask*, not *what runs unattended*).
+   Leave the list at `main` alone if you do not want branch dispatches at all — the input is inert
+   without it.
 4. Add these **environment** secrets (then delete repository-level copies if present):
 
    | Secret | Used by |

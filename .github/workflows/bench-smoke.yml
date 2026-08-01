@@ -2,8 +2,22 @@ name: Bench smoke
 
 # Manually-dispatched live benchmark: spins up a real provider sandbox, runs one suite, normalizes
 # the result into a Run document, and uploads it as an artifact. Off the PR path (it costs real
-# sandbox time and needs provider credentials) — run it on demand from main only, gated by
-# Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md).
+# sandbox time and needs provider credentials) — main is the default, while an explicit
+# `allow_branch` dispatch supports pre-merge validation of a change to the in-sandbox producer (the
+# sandbox clones this repo at the dispatched ref's SHA, so the mise tasks under test are the branch's
+# own). Mirrors bench-matrix.yml's opt-in rather than inventing a second spelling. Every dispatch
+# stays gated by Environment `privileged` (required reviewers + environment secrets — see
+# docs/ci-secrets.md); this workflow writes nothing back to the repo, so there is no publish step to
+# keep main-only.
+#
+# NOTE FOR OPERATORS — two things gate a branch dispatch besides the `if:` below:
+#   1. Environment `privileged` carries its own deployment-branch rule, so a branch dispatch is
+#      refused by GitHub ("Branch is not allowed to deploy to privileged") until that rule also
+#      admits the branch. See docs/ci-secrets.md → Environment `privileged`.
+#   2. GitHub reads the dispatch INPUT DEFINITIONS from the copy of this workflow on the default
+#      branch, so `allow_branch` is not offerable until this file is merged to `main` — the same
+#      constraint commit-dataset.yml carries. Merging it does not run anything; the input stays
+#      opt-in and the environment rule in (1) still has to admit the branch.
 on:
   workflow_dispatch:
     inputs:
@@ -56,6 +70,15 @@ on:
         required: false
         type: string
         default: ''
+      allow_branch:
+        # Same name, type and default as bench-matrix.yml's input: one opt-in spelling across both
+        # live-benchmark dispatches. Default false keeps main the unsurprising target — dispatching
+        # from a branch is a deliberate act, and recording it in the run's inputs is the provenance
+        # that says the numbers came from unmerged code.
+        description: 'Allow the smoke run on a non-main ref (for pre-merge validation of the in-sandbox producer).'
+        required: false
+        type: boolean
+        default: false
 
 # Least privilege: the job only reads the checked-out code and uploads an artifact.
 permissions:
@@ -68,9 +91,12 @@ concurrency:
 jobs:
   smoke:
     name: ${{ inputs.suite }} on ${{ inputs.provider }}
+    # The fork guard is unconditional; only the ref constraint is opt-out-able. A dispatch can only be
+    # triggered by someone with write access, and `workflow_dispatch` resolves refs in THIS repository
+    # (never a fork's branch), so widening the ref does not widen who can spend provider quota.
     if: >
-      github.ref == 'refs/heads/main' &&
-      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks' &&
+      (github.ref == 'refs/heads/main' || inputs.allow_branch)
     # Two constraints pull opposite ways here, so both are recorded. The hosted `ubuntu-24.04` runner is
     # the default because the ephemeral self-hosted label is reaped after 70 minutes even while a step
     # is healthy, while this dispatch exposes suites with a 155-minute sandbox budget. But

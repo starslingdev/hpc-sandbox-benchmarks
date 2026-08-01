@@ -49,7 +49,9 @@ fi
 echo
 echo "Still required in the GitHub UI (Settings → Environments → ${ENV_NAME}):"
 echo "  1. Required reviewers (at least one maintainer)"
-echo "  2. Deployment branches: main only"
+echo "  2. Deployment branches: main (add a narrow pattern such as 'bench/*' only if you want the"
+echo "     allow_branch dispatch on bench-matrix/bench-smoke to reach a pre-merge branch — without"
+echo "     it, a branch dispatch is refused here regardless of the workflow's own gate)"
 echo "  3. Move provider secrets onto this environment; delete repository-level copies"
 echo
 echo "Secret checklist:"
