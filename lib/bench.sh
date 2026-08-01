@@ -17,6 +17,33 @@
 
 # --- Tolerant probes ---
 
+# Is a tool on PATH? Every probe in this repo asks that question, and asking it by name keeps the
+# call sites reading as the capability check they are rather than as shell plumbing.
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- Human report rows ---
+# One aligned "label   value" line, the shape every tolerant probe prints. Shared because the column
+# width would otherwise be hand-kept in agreement across a probe's task and its library — and because
+# the continuation indent below has to be derived from it, not guessed.
+#
+# An EMPTY value prints nothing: a probe reports what it observed, and a blank row is not an
+# observation. A caller that wants a row unconditionally passes a composed value that is never empty.
+BENCH_ROW_LABEL_WIDTH=26
+bench_row() {
+	[ -n "${2:-}" ] && printf '  %-*s %s\n' "$BENCH_ROW_LABEL_WIDTH" "$1" "$2"
+	return 0
+}
+
+# Same row, for a value composed of `|`-joined parts: each part gets its own line, aligned under the
+# first. The indent is computed from the column width so the two cannot drift apart.
+bench_rows() {
+	[ -n "${2:-}" ] || return 0
+	local pad
+	printf -v pad '%*s' "$((BENCH_ROW_LABEL_WIDTH + 3))" ''
+	bench_row "$1" "${2//|/$'\n'${pad}}"
+	return 0
+}
+
 # Run a command; on failure print why and return 0 (never abort).
 try() {
 	"$@" 2>/dev/null && return 0
@@ -123,7 +150,7 @@ json_result() {
 	output="$(result_path "$name")"
 	tmp="$(mktemp "$(results_dir)/.${name}.XXXXXX")" || return 1
 	cat >"$tmp"
-	if [ -s "$tmp" ] && { ! command -v jq &>/dev/null || jq -e . "$tmp" >/dev/null 2>&1; }; then
+	if [ -s "$tmp" ] && { ! have jq || jq -e . "$tmp" >/dev/null 2>&1; }; then
 		# mktemp creates 0600. These artifacts carry no secrets and the collect step may not run as
 		# the user that produced them, so restore the 0644 a plain `>` redirect would have left —
 		# staging must not quietly narrow who can read the result.
@@ -410,9 +437,9 @@ _configure_pts_batch() {
 # this normally just configures batch mode; the apt fallback is for stock images. Returns 1 (without
 # aborting) when PTS can't be made available, so the caller can skip rather than fail.
 ensure_pts() {
-	if ! command -v phoronix-test-suite &>/dev/null; then
+	if ! have phoronix-test-suite; then
 		echo "phoronix-test-suite not found, attempting install..."
-		if command -v apt-get &>/dev/null; then
+		if have apt-get; then
 			local pts_version="10.8.4"
 			local deb_url="https://github.com/phoronix-test-suite/phoronix-test-suite/releases/download/v${pts_version}/phoronix-test-suite_${pts_version}_all.deb"
 			local tmp_deb
@@ -434,7 +461,7 @@ ensure_pts() {
 			rm -f "$tmp_deb"
 		fi
 	fi
-	if ! command -v phoronix-test-suite &>/dev/null; then
+	if ! have phoronix-test-suite; then
 		echo "(could not install phoronix-test-suite, skipping PTS benchmarks)"
 		return 1
 	fi
@@ -749,7 +776,7 @@ fio_direct_choice() {
 	# Without PTS the answer is irrelevant (the leaf's availability guard skips before running fio) —
 	# return without probing OR caching, so a dep-less dry run can't persist a verdict probed against
 	# the wrong filesystem for a later, properly-provisioned run to reuse.
-	if ! command -v phoronix-test-suite >/dev/null 2>&1; then
+	if ! have phoronix-test-suite; then
 		echo "No"
 		return 0
 	fi
@@ -807,7 +834,7 @@ fio_direct_choice() {
 # Usage: run_pinned_pts <versioned-test> <results-prefix> <preset-options>
 run_pinned_pts() {
 	local test_name="$1" prefix="$2" presets="$3"
-	if ! command -v phoronix-test-suite &>/dev/null; then
+	if ! have phoronix-test-suite; then
 		skip_result "phoronix-test-suite not installed" "$prefix"
 		return 0
 	fi
@@ -861,11 +888,11 @@ run_realworld_pts() {
 	local profile="realworld-${repo}-1.0.0"
 	local prefix="pts_realworld-${repo}"
 
-	if ! command -v phoronix-test-suite &>/dev/null; then
+	if ! have phoronix-test-suite; then
 		skip_result "phoronix-test-suite not installed" "$prefix"
 		return 0
 	fi
-	if ! command -v node &>/dev/null; then
+	if ! have node; then
 		skip_result "node not installed" "$prefix"
 		return 0
 	fi
