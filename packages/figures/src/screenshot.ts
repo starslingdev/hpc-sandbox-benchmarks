@@ -198,7 +198,31 @@ export async function screenshotHtml(
 
 	try {
 		return await Promise.race([capture(), deadline]);
+	} catch (error) {
+		throw diagnoseLaunch(error);
 	} finally {
 		clearTimeout(expired);
 	}
+}
+
+/**
+ * A Chrome that dies DURING LAUNCH reaches the caller as Bun's "Chrome process closed the pipe" —
+ * true, and silent about the cause: the browser's own explanation went to a stderr the spawn
+ * discards. The one cause worth naming is the one that bites every Linux CI runner: Chrome builds
+ * its sandbox out of an unprivileged user namespace, Ubuntu 23.10+ forbids that by default
+ * (`kernel.apparmor_restrict_unprivileged_userns=1`), and the browser aborts with "No usable
+ * sandbox!" before the pipe ever opens. Anything else is passed through untouched.
+ */
+function diagnoseLaunch(error: unknown): unknown {
+	const message = error instanceof Error ? error.message : String(error);
+	if (!/closed the pipe|chrome exited/i.test(message)) return error;
+	return new Error(
+		`${message} — Chrome died at launch, before the DevTools pipe opened. On Linux the usual ` +
+			`cause is a host that forbids unprivileged user namespaces ` +
+			`(kernel.apparmor_restrict_unprivileged_userns=1), which Chrome's sandbox needs: it aborts ` +
+			`with "No usable sandbox!". Run the binary by hand to see its stderr — ` +
+			`\`"$BUN_CHROME_PATH" --headless --dump-dom about:blank\`. In CI, .github/actions/` +
+			`setup-pinned-chrome restores the namespace and verifies the launch.`,
+		{ cause: error },
+	);
 }

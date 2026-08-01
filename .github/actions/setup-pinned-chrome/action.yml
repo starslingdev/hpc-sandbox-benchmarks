@@ -9,6 +9,9 @@ description: >-
   everywhere, so no postinstall ever fetches a browser.
 
   Linux x64 hosted runners only, by design: this action serves exactly the update-leaderboard job.
+  It also makes that browser LAUNCHABLE — Ubuntu 24.04 forbids the unprivileged user namespace
+  Chrome's sandbox is built from, so the action restores it (keeping the sandbox; see the step) and
+  then proves the browser starts, rather than letting the render fail later on an opaque pipe error.
   NOTE: assumes the repo is checked out AND `bun install` has run (a local action is read from the
   workspace, and the version detection below reads the installed playwright-core) — the caller
   keeps its explicit checkout + install steps first.
@@ -38,8 +41,10 @@ runs:
 
     # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a moved or
     # compromised tag can't silently change what runs — the repo-wide supply-chain posture.
+    # v6 runs on the Node 24 runtime (v4's Node 20 is past end-of-life and the runner force-migrates
+    # it with a deprecation annotation); it requires runner >= 2.327.1, which hosted runners exceed.
     - name: Cache the pinned browser
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/ms-playwright
         key: chrome-headless-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
@@ -54,3 +59,52 @@ runs:
         chrome="$(./scripts/pin-chrome.sh)"
         echo "chrome-path=$chrome" >> "$GITHUB_OUTPUT"
         echo "BUN_CHROME_PATH=$chrome" >> "$GITHUB_ENV"
+
+    # Chrome's sandbox is built out of an UNPRIVILEGED user namespace, and Ubuntu 23.10+ ships an
+    # AppArmor restriction that forbids one (kernel.apparmor_restrict_unprivileged_userns=1) — so on
+    # the ubuntu-24.04 image the browser aborts the moment it launches ("No usable sandbox!",
+    # SIGTRAP) and the renderer only ever sees Bun's opaque "Chrome process closed the pipe".
+    #
+    # The relaxation is deliberate, and it is the SANDBOX-PRESERVING half of the two available fixes.
+    # The other one — launching with --no-sandbox — would remove Chrome's own layered sandbox
+    # (namespace + seccomp-bpf) everywhere the screenshotter runs, including a maintainer's laptop,
+    # leaving the renderer unconfined while it parses untrusted-shaped input. This instead restores
+    # what Ubuntu <= 23.04 allowed, on one ephemeral hosted VM, for the length of one job, and Chrome
+    # then confines itself exactly as it does on a developer machine. That trade matters here
+    # precisely BECAUSE the repo is public: the figures are rasterised from run documents that
+    # arrive as CI artifacts, so the process that paints them keeps its sandbox.
+    - name: Restore the unprivileged user namespaces Chrome's sandbox needs
+      shell: bash
+      run: |
+        knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+        # Absent on kernels without the AppArmor restriction (and on non-Linux): nothing to relax,
+        # and the launch check below is what decides whether the browser actually works.
+        if [ ! -e "$knob" ]; then
+          echo "kernel.apparmor_restrict_unprivileged_userns is absent — nothing to relax"
+        elif [ "$(cat "$knob")" = "0" ]; then
+          echo "kernel.apparmor_restrict_unprivileged_userns is already 0"
+        elif ! sudo -n sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; then
+          # Not fatal HERE: the launch check owns the one actionable failure message.
+          echo "::warning::could not relax kernel.apparmor_restrict_unprivileged_userns (no passwordless sudo?)"
+        fi
+
+    # Fail here, with the reason, rather than 8 seconds into a render with "Chrome process closed the
+    # pipe" — the symptom that cost a full CI-forensics session the first time this job met a
+    # sandbox-restricted runner. --dump-dom is the smallest end-to-end launch: zygote, sandbox,
+    # renderer, one navigation. Deliberately NO --no-sandbox: this check must fail if the sandbox
+    # cannot start, because a job that renders unsandboxed is the outcome it exists to prevent.
+    - name: Verify the pinned browser launches sandboxed
+      shell: bash
+      env:
+        CHROME: ${{ steps.provision.outputs.chrome-path }}
+      run: |
+        profile="$(mktemp -d)"
+        if ! output="$("$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check \
+          --user-data-dir="$profile" --dump-dom about:blank 2>&1)"; then
+          printf '%s\n' "$output" >&2
+          echo "::error::the pinned Chrome cannot launch sandboxed on this runner. If the log above says" \
+            "\"No usable sandbox!\", the runner forbids unprivileged user namespaces" \
+            "(kernel.apparmor_restrict_unprivileged_userns=1) and the relaxation step before this one" \
+            "could not clear it — chart rendering would fail with \"Chrome process closed the pipe\"." >&2
+          exit 1
+        fi

@@ -59,6 +59,13 @@ Asserting `bars[0].fastest === true` is a unit test; asserting on a PNG is not. 
   locations, then Playwright's cache, and throws if none is found. The process's FIRST view's
   spawn options win; a later `chromePath` is silently ignored. Pin via `BUN_CHROME_PATH` in the
   environment (as the release workflow does); a laptop's installed Chrome is fine for previews.
+- **A discoverable Chrome is not a launchable one.** Chrome builds its sandbox out of an
+  unprivileged user namespace, and Ubuntu 23.10+ forbids that by default
+  (`kernel.apparmor_restrict_unprivileged_userns=1`): the browser aborts with "No usable sandbox!"
+  before the DevTools pipe opens, and every capture fails with `Chrome process closed the pipe`.
+  `.github/actions/setup-pinned-chrome` restores the namespace on the runner and then proves the
+  browser starts — the fix is deliberately NOT `--no-sandbox`, which would rasterise run documents
+  in an unconfined renderer on every machine.
 - **Escape everything interpolated.** The template pipes every model string through
   `escapeHtml` before any markdown replacement, colours through a hex-only guard, and the one
   bare number in a `style` attribute (`flex-grow`) through a finite-number guard. A provider
