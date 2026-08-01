@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
 	TOOLCHAIN_VERSION,
+	VERCEL_PROJECT_NAME_DEFAULT,
+	VERCEL_TEAM_SLUG_DEFAULT,
 	VERCEL_VCR_REPOSITORY,
 	validateVercelVcrImageRef,
 	vercelVcrImageRefs,
@@ -14,6 +16,20 @@ describe("Vercel VCR image refs", () => {
 			version: `vcr.vercel.com/starsling-dev/sandbox-benchmarks/${VERCEL_VCR_REPOSITORY}:${TOOLCHAIN_VERSION}`,
 			candidate: `vcr.vercel.com/starsling-dev/sandbox-benchmarks/${VERCEL_VCR_REPOSITORY}:${TOOLCHAIN_VERSION}-candidate`,
 		});
+	});
+
+	it("ships defaults that are themselves valid namespace components", () => {
+		// The defaults are what every job resolves to when the CI variables are unset, so an invalid one
+		// would throw at config load in EVERY provider's job — not just Vercel's. Gate them here, where
+		// the failure is a unit test rather than a fleet-wide import crash.
+		expect(() =>
+			vercelVcrImageRefs(VERCEL_TEAM_SLUG_DEFAULT, VERCEL_PROJECT_NAME_DEFAULT),
+		).not.toThrow();
+		expect(
+			vercelVcrImageRefs(VERCEL_TEAM_SLUG_DEFAULT, VERCEL_PROJECT_NAME_DEFAULT).repository,
+		).toBe(
+			`vcr.vercel.com/${VERCEL_TEAM_SLUG_DEFAULT}/${VERCEL_PROJECT_NAME_DEFAULT}/${VERCEL_VCR_REPOSITORY}`,
+		);
 	});
 
 	it("rejects API IDs and unsafe Docker path components", () => {

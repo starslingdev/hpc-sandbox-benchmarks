@@ -158,8 +158,27 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    shared `vercel-auth` composite runs the pinned Vercel CLI's `pull` and `env pull` commands, masks
    `VERCEL_OIDC_TOKEN`, exports it through `GITHUB_ENV`, and immediately deletes its temporary env
    file. Toolchain jobs additionally run `vercel vcr login docker`, use `vercel vcr push docker` for
-   publication, and always run `docker logout vcr.vercel.com`. The VCR namespace is fixed in provider
-   config, so no team/project slug secrets are required.
+   publication, and always run `docker logout vcr.vercel.com`.
+
+   GitHub Actions **variables** (Settings → Secrets and variables → Actions → Variables), *not*
+   secrets — a team slug and a project name are not credentials, and leaving them readable in job logs
+   is what makes a mirror into the wrong namespace diagnosable:
+
+   | Variable | Purpose |
+   | --- | --- |
+   | `VERCEL_TEAM_SLUG` | Vercel team slug (org) the VCR namespace is rooted at |
+   | `VERCEL_PROJECT_NAME` | Vercel project name the VCR namespace is scoped to |
+
+   Both are optional: unset, they fall back to `VERCEL_TEAM_SLUG_DEFAULT` /
+   `VERCEL_PROJECT_NAME_DEFAULT` in `packages/schema/src/toolchain.ts`, which is the single place the
+   default namespace is defined. Set them only to publish into a different team or project.
+
+   These are the human-readable **names**; `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` are the `team_*` /
+   `prj_*` **API IDs** that `vercel pull` links with. The two pairs are not interchangeable, and
+   passing an ID where a name belongs is rejected at config load rather than becoming a registry path
+   segment. `VERCEL_PROJECT_NAME` must name the same project as `VERCEL_PROJECT_ID`: the mirror step
+   passes it to `vercel vcr push --project`, so a mismatch fails the push instead of publishing into a
+   repository the providers never pull from.
 
 ### Main ruleset (public-safe bot merges)
 

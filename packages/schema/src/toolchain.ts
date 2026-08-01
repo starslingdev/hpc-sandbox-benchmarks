@@ -17,6 +17,19 @@ export const TOOLCHAIN_VERSION = "v6";
 
 const VCR_NAMESPACE_COMPONENT = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 
+// The Vercel namespace this repository's own CI publishes into. These are DEFAULTS, not constants: a
+// fork, a renamed team, or a second project overrides them through VERCEL_TEAM_SLUG /
+// VERCEL_PROJECT_NAME (see packages/providers/src/lib/config.ts) without touching code.
+//
+// Both are the human-readable *names*, never the `team_*` / `prj_*` API IDs the Vercel CLI consumes
+// as VERCEL_ORG_ID / VERCEL_PROJECT_ID — those two identify the project to `vercel pull` and stay in
+// CI secrets, while these two only ever become Docker path segments. vercelVcrImageRefs() rejects the
+// ID forms outright so the pair can never be swapped by accident.
+/** Default Vercel team slug (the org) the VCR namespace is rooted at. */
+export const VERCEL_TEAM_SLUG_DEFAULT = "starsling";
+/** Default Vercel project name; matches this repository's name so the two stay obviously paired. */
+export const VERCEL_PROJECT_NAME_DEFAULT = "hpc-sandbox-benchmarks";
+
 /**
  * Build canonical VCR refs from human-readable Vercel namespace names. API IDs (`team_*`, `prj_*`)
  * are deliberately rejected so they can never accidentally become Docker path segments.

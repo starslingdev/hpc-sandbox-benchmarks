@@ -63,6 +63,18 @@ env:
   # Only IMAGE_OWNER is consumed (ensure-package-public's `owner`). The former REGISTRY host is owned by
   # the ghcr-login composite default and imageRepo(), so it's not re-declared here.
   IMAGE_OWNER: starslingdev
+  # The human-readable Vercel namespace every VCR ref is built from. Repository VARIABLES, not secrets:
+  # a team slug and a project name are not credentials, and keeping them out of the secret store means
+  # they stay readable in job logs when a mirror lands in the wrong repository.
+  #
+  # Unset vars materialize as "", which the providers config gatekeeper treats as unset and falls back
+  # to the schema defaults — so this passthrough never has to repeat the default. That is deliberately
+  # the opposite of a `|| 'fallback'` expression here: one default, owned by
+  # packages/schema/src/toolchain.ts, instead of two that can drift.
+  #
+  # VERCEL_PROJECT_NAME must name the same project as the VERCEL_PROJECT_ID secret the CLI links with.
+  VERCEL_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
+  VERCEL_PROJECT_NAME: ${{ vars.VERCEL_PROJECT_NAME }}
 
 jobs:
   # ── PR lane ──────────────────────────────────────────────────────────────────────────────────────
@@ -365,10 +377,15 @@ jobs:
           set -euo pipefail
           source_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelSourceImageCandidate)')"
           target_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
+          project="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelProjectName)')"
           target_name="${target_ref##*/}"
           docker pull "$source_ref"
           docker tag "$source_ref" "$target_ref"
-          ./node_modules/.bin/vercel vcr push docker "$target_name"
+          # --project pins the destination to the SAME resolved name the target ref was built from.
+          # Without it the push silently follows whatever project VERCEL_PROJECT_ID linked, so a
+          # mismatched VERCEL_PROJECT_NAME would tag one repository and publish into another — and the
+          # digest read back below would describe an image the providers never pull.
+          ./node_modules/.bin/vercel vcr push docker "$target_name" --project "$project"
           digest="$(docker buildx imagetools inspect "$target_ref" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${target_ref%:*}@${digest}" >> "$GITHUB_OUTPUT"
       - name: Log out of VCR after mirror
