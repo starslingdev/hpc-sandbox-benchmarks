@@ -63,14 +63,6 @@ function shellInstallTokens(path: string, start: RegExp): string[] {
 
 const sources: { path: string; tokens: () => string[] }[] = [
 	{
-		path: "packages/templates/images/base/scripts/00-apt.sh",
-		tokens: (): string[] =>
-			shellInstallTokens(
-				"packages/templates/images/base/scripts/00-apt.sh",
-				/^apt-get install -y --no-install-recommends/,
-			),
-	},
-	{
 		path: "lib/bench.sh",
 		tokens: (): string[] => shellInstallTokens("lib/bench.sh", /apt-get install -y -qq /),
 	},
@@ -99,5 +91,24 @@ describe("PTS apt dep alignment", () => {
 	it("keeps the runtime refresh wired to the canonical PTS_APT_DEPS constant", () => {
 		const text = readFileSync(join(root, "packages/harness/src/lib/setup.ts"), "utf8");
 		expect(text).toContain(`\${PTS_APT_DEPS}`);
+	});
+
+	// 00-apt.sh used to carry its own literal package list and was gated as a third text source. It is
+	// now a group runner: the packages arrive as APT_PACKAGES from TOOLCHAIN_APT_GROUPS, and
+	// PTS_APT_DEPS is DERIVED from those same groups — so bake/runtime alignment is structural, not
+	// asserted. The equivalent tripwire is that the script still takes its list from the environment;
+	// a re-inlined `apt-get install <literal>` would reintroduce exactly the drift this file exists for.
+	it("keeps the bake's apt install driven by the schema-owned group, not a literal list", () => {
+		const text = readFileSync(
+			join(root, "packages/templates/images/base/scripts/00-apt.sh"),
+			"utf8",
+		);
+		// Assembled rather than written inline: a literal `${…}` in a plain string trips biome's
+		// noTemplateCurlyInString, and these are shell expansions, not TS placeholders.
+		const expansion = (name: string) => `\${${name}}`;
+		expect(text).toContain(
+			`apt-get install -y --no-install-recommends ${expansion("APT_PACKAGES")}`,
+		);
+		expect(text).toContain(`"${expansion("APT_PACKAGES:?")}"`);
 	});
 });

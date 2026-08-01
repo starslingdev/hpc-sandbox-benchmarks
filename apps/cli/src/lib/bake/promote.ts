@@ -93,6 +93,7 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		toolchainImageCandidate: pinnedCandidateImage,
+		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,
 		daytonaContainerTarget: config.daytonaContainer.target,
 	};
@@ -159,6 +160,9 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 					break;
 				case "namespace":
 					log("    namespace pulls the published version image — nothing to build");
+					break;
+				case "vercel":
+					await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
 					break;
 				default: {
 					// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).

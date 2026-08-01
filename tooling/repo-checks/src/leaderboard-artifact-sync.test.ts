@@ -8,13 +8,24 @@
 // Run/Metric/provider identity (see schema/analysis.ts `seededRng`), and `generatedAt` is read from the
 // Run document rather than the clock. A Math.random() bootstrap would make this gate flake on every run.
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+// Safe in a browser-free gate: importing the screenshot module costs nothing — only calling
+// screenshotHtml spawns Chrome — and webpDimensions is the pure header parse the captures
+// themselves are verified with.
+import { webpDimensions } from "@sandbox-benchmarks/figures/screenshot";
+import type { LeaderboardFigure } from "@sandbox-benchmarks/results";
 import {
+	benchmarkDataOf,
 	buildLeaderboard,
 	DATASET_RUNS_DIR,
+	FIGURE_DEVICE_SCALE,
+	FIGURE_DIMENSION,
 	LEADERBOARD_DIMENSION_ORDER,
+	LEADERBOARD_FIGURE_DIR,
+	leaderboardFigures,
 	REPO_URL,
+	renderLeaderboardFigureHtml,
 	renderLeaderboardMarkdown,
 	SYNTHETIC_DIMENSIONS,
 } from "@sandbox-benchmarks/results";
@@ -378,12 +389,20 @@ function loadCommittedRun(): {
 	committed: string;
 	runId: string;
 	run: ReturnType<typeof parseRun>;
+	/** The figures the Markdown must link. Re-DERIVED from the Run, exactly as the bin derives
+	 *  them, rather than parsed back out of the committed document — a gate that read the links it
+	 *  is checking would agree with any set of links at all. Browser-free: this is the list, not
+	 *  the pixels. The PNGs themselves are deliberately NOT re-rendered here — Chrome's output is
+	 *  not byte-stable across machines, so pixel identity is unassertable in a gate that must pass
+	 *  on every contributor's machine; the update workflow is where pixels are authored. */
+	figures: LeaderboardFigure[];
 } {
 	const committed = readFileSync(ARTIFACT, "utf8");
 	const runId = runIdOf(committed);
 	const source = runFile(runId);
 	try {
-		return { committed, runId, run: parseRun(JSON.parse(readFileSync(source, "utf8"))) };
+		const run = parseRun(JSON.parse(readFileSync(source, "utf8")));
+		return { committed, runId, run, figures: leaderboardFigures(benchmarkDataOf(run)) };
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 			// A named Run that isn't in the committed dataset means the artifact was rendered from the
@@ -467,14 +486,13 @@ describe("LEADERBOARD.md leads with the real-world workflows", () => {
 		);
 	});
 
-	it("collapses every synthetic dimension and leaves every other one expanded", () => {
-		const { committed } = loadCommittedRun();
-		// Read each `## <dimension>` section's body and ask whether it opens a disclosure block. Parsed
-		// from the committed text, not from the renderer's intent, so this catches an unclosed <details>
-		// swallowing the section after it just as readily as a missing one.
+	/** Each `## <dimension>` section's body, keyed by dimension. Parsed from the committed text, not
+	 *  from the renderer's intent, so an unclosed <details> that swallows the section after it fails
+	 *  as readily as a missing one. */
+	const dimensionSections = (markdown: string): Map<string, string[]> => {
 		const sections = new Map<string, string[]>();
 		let current: string | undefined;
-		for (const line of dimensionBody(committed).split("\n")) {
+		for (const line of dimensionBody(markdown).split("\n")) {
 			if (line.startsWith("## ")) {
 				const heading = line.slice(3);
 				current = (LEADERBOARD_DIMENSION_ORDER as readonly string[]).includes(heading)
@@ -485,17 +503,30 @@ describe("LEADERBOARD.md leads with the real-world workflows", () => {
 			}
 			if (current) sections.get(current)?.push(line);
 		}
+		return sections;
+	};
+
+	it("collapses the tables of every synthetic dimension and of the figure dimension, and no others", () => {
+		const { committed, figures } = loadCommittedRun();
+		const sections = dimensionSections(committed);
 		expect(sections.size).toBeGreaterThan(0);
 
 		for (const [dimension, body] of sections) {
-			const synthetic = SYNTHETIC_DIMENSIONS.has(dimension as never);
+			// The figure dimension collapses for a DIFFERENT reason than the synthetics — its charts
+			// replace the tables as the thing you read, rather than the axis being a side question — but
+			// it only earns the collapse when there are charts. A board with no chartable suite renders
+			// its tables in the open, because hiding them behind a triangle whose figures do not exist
+			// would take the numbers off the page entirely.
+			const collapses =
+				SYNTHETIC_DIMENSIONS.has(dimension as never) ||
+				(dimension === FIGURE_DIMENSION && figures.length > 0);
 			const opens = body.filter((line) => line === "<details>").length;
 			const closes = body.filter((line) => line === "</details>").length;
-			expect(opens, `${dimension} <details> count`).toBe(synthetic ? 1 : 0);
-			expect(closes, `${dimension} </details> count`).toBe(synthetic ? 1 : 0);
-			if (synthetic) {
-				// The heading itself stays OUTSIDE the collapse (it is above this body), and the summary
-				// names what is hidden — a shut section must still disclose that the axis was measured.
+			expect(opens, `${dimension} <details> count`).toBe(collapses ? 1 : 0);
+			expect(closes, `${dimension} </details> count`).toBe(collapses ? 1 : 0);
+			if (collapses) {
+				// The heading stays OUTSIDE the collapse (it is above this body), and the summary names
+				// what is hidden — a shut section must still disclose what it holds.
 				expect(
 					body.some((line) => line.startsWith("<summary>")),
 					`${dimension} summary`,
@@ -505,6 +536,55 @@ describe("LEADERBOARD.md leads with the real-world workflows", () => {
 				);
 			}
 		}
+	});
+
+	it("puts every suite chart above the figure dimension's collapse, and links no other image", () => {
+		const { committed, figures } = loadCommittedRun();
+		expect(figures.length).toBeGreaterThan(0);
+		const body = dimensionSections(committed).get(FIGURE_DIMENSION);
+		expect(body, `no ${FIGURE_DIMENSION} section`).toBeDefined();
+		const lines = body as string[];
+
+		// ABOVE the collapse is the whole editorial point: a chart folded inside the triangle would be
+		// a section that still looks like seventeen tables.
+		const collapseAt = lines.indexOf("<details>");
+		expect(collapseAt).toBeGreaterThan(0);
+		// The charts are `<img src width alt>` rather than bare Markdown images: the images are 2×
+		// rasters, and the width attribute is what shows them at logical size on GitHub.
+		const images = lines
+			.flatMap((line, index) => {
+				const match = line.match(/^<img src="([^"]+)" width="(\d+)" alt="([^"]*)">$/);
+				return match
+					? [
+							{
+								index,
+								src: match[1] as string,
+								width: Number(match[2]),
+								alt: match[3] as string,
+							},
+						]
+					: [];
+			})
+			.filter(({ index }) => index < collapseAt);
+
+		// Exactly the rendered set, in the rendered order — not a superset, and not "at least one".
+		expect(images.map(({ src }) => src)).toEqual(figures.map((figure) => figure.file));
+		for (const [index, image] of images.entries()) {
+			const figure = figures[index] as LeaderboardFigure;
+			// The width attribute must say the figure's logical width, or the 2× raster renders at
+			// double size and the column layout breaks.
+			expect(image.width, `${figure.suiteId} width`).toBe(figure.width);
+			// Alt text is what a reader with the image unavailable gets INSTEAD of the section, so an
+			// empty one is a section that vanishes. Name the suite at minimum.
+			expect(image.alt, `${figure.suiteId} alt text`).toContain(figure.suiteName);
+		}
+		// And the whole document embeds no image the figure list does not name — in either syntax —
+		// so a hand-added screenshot cannot ride along unrendered and unregenerated.
+		const everyImage = [
+			...[...committed.matchAll(/^!\[[^\]]*\]\(([^)]+)\)$/gm)].map((match) => match[1] as string),
+			...[...committed.matchAll(/<img src="([^"]+)"/gm)].map((match) => match[1] as string),
+		];
+		expect(everyImage.sort()).toEqual(figures.map((figure) => figure.file).sort());
 	});
 });
 
@@ -527,8 +607,8 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	});
 
 	it("is byte-identical to a fresh render of the Run it names", () => {
-		const { committed, runId, run } = loadCommittedRun();
-		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run));
+		const { committed, runId, run, figures } = loadCommittedRun();
+		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run), figures);
 		if (committed !== rendered) {
 			// Name the remedy in the failure, rather than leaving whoever hits this to work it out.
 			throw new Error(
@@ -539,12 +619,74 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		expect(committed).toBe(rendered);
 	});
 
+	it("every linked figure is a committed WebP with the geometry the document promises", () => {
+		// What CAN be asserted about the pixels without a browser. The images are authored by the
+		// update workflow's pinned Chrome — re-rendering them here would need that Chrome and would
+		// still differ byte-for-byte on any other machine, so freshness of the raster is the release
+		// job's concern, not this gate's. But a linked file that is missing, is not a WebP, or has the
+		// wrong pixel width is structurally broken on every machine, and each of those has a way to
+		// happen (a render aborted between write and commit; a hand-swapped screenshot; a chart
+		// rasterised at 1×) that would otherwise surface only on the published page.
+		const { runId, figures } = loadCommittedRun();
+		for (const figure of figures) {
+			const path = join(ROOT, ...figure.file.split("/"));
+			let bytes: Uint8Array;
+			try {
+				bytes = readFileSync(path);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					throw new Error(
+						`${figure.file} is linked by LEADERBOARD.md but not committed. The bin writes the ` +
+							`charts alongside the Markdown:\n  ${regenCmd(runId)}`,
+					);
+				}
+				throw error;
+			}
+			// The raster must be exactly FIGURE_DEVICE_SCALE × the logical width the <img> tag
+			// displays it at. Parsed through the screenshotter's own webpDimensions — the same
+			// header read the capture was verified with — so the gate and the producer cannot
+			// drift into asserting different container semantics.
+			expect(webpDimensions(bytes).width, `${figure.file} pixel width`).toBe(
+				figure.width * FIGURE_DEVICE_SCALE,
+			);
+		}
+	});
+
+	it("the figure directory holds exactly the charts the document links", () => {
+		// The orphan case: a chart for a suite that stopped being chartable stays committed, stays
+		// stale forever, and stays green. An unlinked image in a published repo is worse than a
+		// missing one — it looks current and nothing ever regenerates it. Every entry is compared,
+		// not just known image extensions, so a stray file cannot squat in the published directory.
+		// Dotfiles are the one exception: Finder writes `.DS_Store` into any directory a macOS
+		// contributor so much as opens (it is gitignored), and a hidden file failing the artifact
+		// gate on an unrelated branch would be a machine-shape failure, not a repo state.
+		const { figures } = loadCommittedRun();
+		const dir = join(ROOT, ...LEADERBOARD_FIGURE_DIR.split("/"));
+		const onDisk = readdirSync(dir)
+			.filter((entry) => !entry.startsWith("."))
+			.map((entry) => `${LEADERBOARD_FIGURE_DIR}/${entry}`)
+			.sort();
+		expect(onDisk).toEqual(figures.map((figure) => figure.file).sort());
+	});
+
+	it("renders the same chart HTML twice, so a figure regeneration is reviewable", () => {
+		// The deterministic half of the figure pipeline, held to determinism. The PNGs are Chrome's
+		// and vary by machine; the HTML they are made from is pure string building and must not —
+		// a nondeterministic document would make every workflow dispatch commit figure churn that
+		// reviews as noise. (The CLI holds the other half of this line: it rasterises every chart
+		// twice and fails on a byte mismatch, catching nondeterminism that only shows up in paint.)
+		const { run } = loadCommittedRun();
+		const first = renderLeaderboardFigureHtml(run);
+		const second = renderLeaderboardFigureHtml(run);
+		expect(first.map(({ html }) => html)).toEqual(second.map(({ html }) => html));
+	});
+
 	it("renders the same bytes twice, so this gate can't flake on an unseeded bootstrap", () => {
 		// Loads independently of the test above: each resolves the Run itself, so one failing reports
 		// its own diagnosis instead of aborting the file and taking the other down with it.
-		const { run } = loadCommittedRun();
-		expect(renderLeaderboardMarkdown(buildLeaderboard(run))).toBe(
-			renderLeaderboardMarkdown(buildLeaderboard(run)),
+		const { run, figures } = loadCommittedRun();
+		expect(renderLeaderboardMarkdown(buildLeaderboard(run), figures)).toBe(
+			renderLeaderboardMarkdown(buildLeaderboard(run), figures),
 		);
 	});
 

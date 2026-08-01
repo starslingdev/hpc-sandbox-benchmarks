@@ -6,6 +6,8 @@
 // (same precedent as workflow-registry-sync.test.ts); the rest is unit coverage of the pure checks
 // on synthetic drift so a regression names the offender. See ./lib/workflow-hardening.ts.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { CheckoutStep } from "./lib/workflow-hardening.ts";
 import {
 	CI_LINT_WORKFLOW,
@@ -23,6 +25,7 @@ import {
 	TOOLCHAIN_WORKFLOW,
 	WORKFLOWS_DIR,
 } from "./lib/workflow-hardening.ts";
+import { findRepoRoot } from "./lib/workspace.ts";
 
 /** A no-op step — the body for fixtures whose step content is irrelevant to what they assert. */
 const NOOP_STEP = { run: "true" };
@@ -146,6 +149,50 @@ describe("checkCiLintGate", () => {
 		const errors = checkCiLintGate(loosened);
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("--min-confidence high");
+	});
+});
+
+describe("Vercel CLI authentication", () => {
+	test("all Vercel jobs use the shared action without raw token minting", () => {
+		const root = findRepoRoot();
+		const workflowText = ["bench-smoke.yml", "bench-suite.yml", "toolchain-image.yml"]
+			.map((file) => readFileSync(join(root, WORKFLOWS_DIR, file), "utf8"))
+			.join("\n");
+		expect(workflowText.match(/uses: \.\/\.github\/actions\/vercel-auth/g)).toHaveLength(4);
+		expect(workflowText).not.toContain("api.vercel.com/v1/projects");
+		expect(workflowText).not.toContain("VERCEL_OIDC_TOKEN_FILE");
+		expect(workflowText).not.toContain("docker login vcr.vercel.com");
+		// Two best-effort `always()` fallbacks remain; the immediate post-mirror logout is fail-closed.
+		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(2);
+		expect(workflowText).toContain('vercel vcr push docker "$target_name"');
+		const toolchain = readFileSync(join(root, WORKFLOWS_DIR, "toolchain-image.yml"), "utf8");
+		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeGreaterThan(
+			toolchain.indexOf("- name: Mirror candidate into VCR"),
+		);
+		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeLessThan(
+			toolchain.indexOf("- name: Bake + verify candidate"),
+		);
+		expect(toolchain).toContain(
+			"- name: Log out of VCR after mirror\n        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        run: docker logout vcr.vercel.com\n",
+		);
+		expect(toolchain).not.toContain(
+			"- name: Log out of VCR after mirror\n        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        run: docker logout vcr.vercel.com || true",
+		);
+		expect(toolchain).toContain("- name: Ensure VCR logout\n        if: always()");
+	});
+
+	test("the composite masks the OIDC token and deletes its temporary env file before export", () => {
+		const root = join(findRepoRoot(), ".github/actions/vercel-auth");
+		const action = readFileSync(join(root, "action.yml"), "utf8");
+		const script = readFileSync(join(root, "auth.sh"), "utf8");
+		expect(action).toContain(`run: "\${GITHUB_ACTION_PATH}/auth.sh"`);
+		expect(script).toContain("pull --yes --non-interactive");
+		expect(script).toContain('env pull "$env_file" --yes --non-interactive');
+		expect(script).toContain("vcr login docker");
+		expect(script.indexOf('rm -f "$env_file" "$pull_env_file"')).toBeLessThan(
+			script.indexOf("printf '::add-mask::%s\\n'"),
+		);
+		expect(script.indexOf("printf '::add-mask::%s\\n'")).toBeLessThan(script.indexOf("GITHUB_ENV"));
 	});
 });
 

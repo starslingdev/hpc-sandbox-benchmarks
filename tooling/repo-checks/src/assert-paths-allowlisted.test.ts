@@ -2,9 +2,9 @@
 // before merging. A silent widen (or a broken argv parser) would let a release PR touch
 // `.github/` and still merge.
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { findRepoRoot } from "./lib/workspace.ts";
 
 const ROOT = findRepoRoot();
@@ -114,6 +114,58 @@ describe("scripts/assert-paths-allowlisted.sh", () => {
 		const { exitCode, stderr } = runAssert(dir, ["staged", "--", "LEADERBOARD.md"]);
 		expect(exitCode).toBe(1);
 		expect(stderr).toContain("path not allowlisted: secret.yml");
+	});
+
+	test("accepts a single-level glob entry and the files it covers", () => {
+		// The leaderboard commits one WebP chart per realworld suite, and how many there are is a
+		// property of the dataset — so the fence takes `docs/figures/*.webp` rather than three literals
+		// that a fourth suite would silently invalidate.
+		const dir = tempGitRepo();
+		mkdirSync(join(dir, "docs/figures"), { recursive: true });
+		writeFileSync(join(dir, "LEADERBOARD.md"), "# ok\n");
+		writeFileSync(join(dir, "docs/figures/realworld-mastra.webp"), "png\n");
+		writeFileSync(join(dir, "docs/figures/realworld-openclaw.webp"), "png\n");
+		Bun.spawnSync(["git", "add", "-A"], { cwd: dir });
+		const { exitCode, stderr } = runAssert(dir, [
+			"staged",
+			"--",
+			"LEADERBOARD.md",
+			"docs/figures/*.webp",
+		]);
+		expect(stderr).toBe("");
+		expect(exitCode).toBe(0);
+	});
+
+	test("a glob entry does not widen past its own directory or extension", () => {
+		// The three ways the pattern could leak if it were implemented as a substring or a `**`: a
+		// deeper path under the same directory, a different extension beside the allowed one, and the
+		// same extension somewhere else entirely.
+		for (const outside of [
+			"docs/figures/nested/deep.webp",
+			"docs/figures/evil.yml",
+			".github/workflows/evil.webp",
+		]) {
+			const dir = tempGitRepo();
+			mkdirSync(join(dir, dirname(outside)), { recursive: true });
+			writeFileSync(join(dir, outside), "x\n");
+			Bun.spawnSync(["git", "add", "-A"], { cwd: dir });
+			const { exitCode, stderr } = runAssert(dir, ["staged", "--", "docs/figures/*.webp"]);
+			expect(exitCode, outside).toBe(1);
+			expect(stderr, outside).toContain(`path not allowlisted: ${outside}`);
+		}
+	});
+
+	test("refuses an allowlist pattern that is not DIR/*.EXT", () => {
+		// Fail closed on anything broader than the one shape the fence understands, rather than
+		// interpreting it and hoping. `docs/*` and `**` are the two that would actually be dangerous.
+		for (const pattern of ["docs/figures/*", "docs/**/*.webp", "*", "docs/figures/*.we*"]) {
+			const dir = tempGitRepo();
+			writeFileSync(join(dir, "LEADERBOARD.md"), "# ok\n");
+			Bun.spawnSync(["git", "add", "-A"], { cwd: dir });
+			const { exitCode, stderr } = runAssert(dir, ["staged", "--", pattern]);
+			expect(exitCode, pattern).toBe(2);
+			expect(stderr, pattern).toContain("refusing allowlist glob");
+		}
 	});
 
 	test("pr mode accepts a PR file list that is exactly the allowlist", () => {

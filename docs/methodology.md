@@ -29,6 +29,10 @@ runs with its actuals recorded and the mismatch disclosed (`specMatched`). Its m
 rankings, but the leaderboard flags the provider with an explicit **Comparability warning** naming its
 observed allocation, so its ranks are never read as like-for-like with the compute-matched providers.
 
+Vercel exposes only a vCPU resource knob and derives memory at 2048 MB per vCPU, so requesting four
+vCPU reaches the 8 GiB target as a coupled point. Its SDK does not expose a disk-size knob; available
+disk is measured in the guest and disk-gated suites skip honestly when the observed mount is too small.
+
 ## Dimensions and metrics
 
 Results land on a closed, ordered set of [`DIMENSIONS`](../packages/schema/src/metrics.ts): `lifecycle`,
@@ -43,8 +47,10 @@ leads each dimension with its headline.
 Which sections exist is driven by the data — a dimension no provider emitted is simply absent — but the
 order and the emphasis are editorial, and they follow this document's argument:
 
-- **`realworld` leads.** Synthetic scores say what the hardware *can* do; the real-world suites say what
-  a developer or a CI job actually waits on, which is the question the benchmark exists to answer.
+- **`realworld` leads, and it is drawn rather than tabulated.** Synthetic scores say what the hardware
+  *can* do; the real-world suites say what a developer or a CI job actually waits on, which is the
+  question the benchmark exists to answer. That section opens with one stacked chart per repo — see
+  [The realworld charts](#the-realworld-charts) — and folds its per-task tables behind a `<details>`.
 - **The synthetic microbenchmarks collapse.** `cpu`, `disk`, `memory`, `network` and `system` each load
   one hardware axis in isolation, so their tables render inside a collapsed `<details>`. The `##`
   heading stays outside it: a measured axis must never look like one that never ran.
@@ -59,6 +65,45 @@ back to its raw Samples. (A Run spliced from two CI runs — a composite `<runA>
 [`data/dataset/index.json`](../data/dataset/index.json) — links each half separately; no single workflow
 run owns the pair.) The order, the collapse, and the links are all gated
 against the committed artifact by `tooling/repo-checks/src/leaderboard-artifact-sync.test.ts`.
+
+### The realworld charts
+
+Each chart is one repo. Each bar is one environment's whole pipeline for that repo; each segment is one
+task, in the suite's real execution order, coloured on an ordinal ramp so colour order *is* execution
+order. Rows sort fastest-first and the fastest is badged.
+
+Four properties are load-bearing, and each one is a claim the picture would otherwise make silently:
+
+- **A bar is the SUM OF THE PER-TASK MEDIANS, not the median of any pipeline that ran.** In a stacked
+  bar the segments must add up to the bar — that is what stacking means — so the total is arithmetic
+  over the same p50s the tables below print, and no single execution ever took exactly that long. The
+  caption under every chart says so.
+- **All charts share one time scale.** A second is the same length in every one of them, so the
+  repos can be read against each other. Scaling each chart to its own maximum would make unrelated
+  pictures out of one comparison.
+- **An environment is charted only if it completed EVERY task the suite exercised.** Summing the tasks a
+  provider did run and drawing it beside providers that ran them all would show a fast bar for an
+  environment that skipped the work — the same "a gap is not a zero" rule the tables follow.
+- **Environments that did not complete the suite are listed under the bars**, with the outcome and the
+  reason the run recorded. Dropping them would turn a chart that discloses its gaps into one that
+  appears to have none.
+
+A suite is charted only when at least two environments completed it; with fewer, the section keeps its
+tables in the open, because hiding numbers behind a triangle whose figures do not exist would take them
+off the page entirely.
+
+Each chart is drawn from one self-contained HTML document (inline styles, fonts inlined as `data:`
+URIs, no script) built deterministically from the committed Run, then screenshotted by headless Chrome
+at 2× and committed as a WebP that the Markdown embeds at logical size via `<img width>`. The split
+matters for what can be checked where: the HTML is byte-deterministic everywhere, so
+`leaderboard-artifact-sync` re-derives the figure list from the Run, checks the document links exactly
+that set, that each committed WebP has the promised geometry, and that the chart HTML renders the same
+bytes twice — all without a browser. The pixels themselves are Chrome's, and Chrome's rasterisation is
+not byte-stable across machines, so they are authored in one place: the *Update leaderboard* workflow,
+which provisions the browser build its lockfile pins via `scripts/pin-chrome.sh` (the same script a
+maintainer can use for a pinned local render), rasterises every chart twice, and fails on a byte
+mismatch. A raster cannot be reviewed as a diff —
+which is exactly why the per-task tables stay one click below the charts as the auditable receipts.
 
 Metrics come from three sources:
 
@@ -107,10 +152,11 @@ provider) and its empty-`<Identifier>` `<Result>` nodes would abort extraction �
 
 Providers differ in how their `@computesdk/*` adapter executes a command. Each declares a
 [`ProviderTransport`](../packages/schema/src/providers.ts) capability (`streaming`, `syncCapMs`,
-`detachedPoll`), and the harness selects a transport per step: a step that could outlast the provider's
-synchronous cap runs **detached + poll** where supported, everything else runs directly. This is why a
-multi-minute suite completes on a single-round-trip-capped provider (e.g. Daytona's server-side HTTP 408)
-without being Daytona-specific.
+`detachedPoll`), and the harness selects a transport per step: a step that could reach the integration's
+synchronous durability threshold runs **detached + poll** where supported, everything else runs directly.
+That threshold may be a measured/vendor limit (for example Daytona's server-side HTTP 408) or a
+conservative policy where one long connection is unvalidated. Vercel uses a 60-second policy threshold,
+so 20–80-minute suites such as Mastra launch detached and remain observable through short polls.
 
 ## The dataset pipeline
 

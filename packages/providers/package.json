@@ -22,7 +22,8 @@
     "arktype": "catalog:",
     "computesdk": "catalog:computesdk",
     "microsandbox": "catalog:computesdk",
-    "novita-sandbox": "catalog:computesdk"
+    "novita-sandbox": "catalog:computesdk",
+    "@vercel/sandbox": "catalog:computesdk"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

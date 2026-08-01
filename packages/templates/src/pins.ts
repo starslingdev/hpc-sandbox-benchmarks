@@ -9,14 +9,20 @@
 //   bun packages/templates/src/pins.ts --mise-toml  # the mise tool config (node, python, ...)
 //   bun packages/templates/src/pins.ts --e2b-toml   # the e2b template manifest
 
-import { TARGET_SPEC, TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
+import {
+	TARGET_SPEC,
+	TOOLCHAIN_APT_GROUPS,
+	TOOLCHAIN_IMAGE_NAME,
+	TOOLCHAIN_VERSION,
+	VERCEL_VCR_REPOSITORY,
+} from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import type { Pins } from "./lib/pins.ts";
 import { pinsSchema, rawPins } from "./lib/pins.ts";
 
 export type { Pins };
 /** The raw toolchain pins (single source of truth). Validate with {@link validatedPins} before use. */
-export { rawPins as pins };
+export { rawPins as pins, VERCEL_VCR_REPOSITORY };
 
 /**
  * Validate the pins (content included — hex sha256s, non-empty versions) and return the typed object.
@@ -28,7 +34,23 @@ export function validatedPins(): Pins {
 	if (out instanceof type.errors) {
 		throw new Error(`Invalid toolchain pins (packages/templates/src/lib/pins.ts): ${out.summary}`);
 	}
+	// > Exactly one fio entry across all groups. 20-pts.sh patches fio's install.sh to drop
+	// > -march=native (a builder-native binary dies on Modal's AVX2-only gVisor), and that patch has to
+	// > find one unambiguous target. The check lives HERE, not in the shell, because splitting the
+	// > install into per-group layers means no single script sees the whole list any more — a
+	// > per-group assert would fire on every group that legitimately has no fio.
+	const fio = out.ptsInstallTests.split(/\s+/).filter((test) => test.startsWith("fio-"));
+	if (fio.length !== 1) {
+		throw new Error(
+			`Invalid toolchain pins: expected exactly one fio profile in ptsInstallGroups, found ${fio.length} (${out.ptsInstallTests})`,
+		);
+	}
 	return out;
+}
+
+/** The fio profile the bake patches to build portable (`--disable-native`). Exactly one by validation. */
+export function fioProfilePin(pins: Pins = validatedPins()): string {
+	return pins.ptsInstallTests.split(/\s+/).find((test) => test.startsWith("fio-")) as string;
 }
 
 /**
@@ -47,7 +69,25 @@ export function toolchainBuildArgs(pins: Pins = validatedPins()): Record<string,
 		PTS_VERSION: pins.ptsVersion,
 		PTS_DEB_SHA256: pins.ptsDebSha256,
 		PTS_INSTALL_TESTS: pins.ptsInstallTests,
+		FIO_PROFILE_PIN: fioProfilePin(pins),
+		// > One --build-arg per layer group. Generated from the group definitions rather than listed by
+		// > hand, so adding a group is one edit here plus its RUN in the Dockerfile — and the
+		// > layer-groups drift gate fails if the Dockerfile does not consume every arg emitted here.
+		...Object.fromEntries(
+			TOOLCHAIN_APT_GROUPS.map((group) => [aptGroupArg(group.name), group.packages]),
+		),
+		...Object.fromEntries(pins.ptsInstallGroups.map((group, index) => [ptsGroupArg(index), group])),
 	};
+}
+
+/** `--build-arg` name carrying one apt group's package list. */
+export function aptGroupArg(name: string): string {
+	return `APT_GROUP_${name.toUpperCase().replace(/-/g, "_")}`;
+}
+
+/** `--build-arg` name carrying one PTS profile group's list (1-indexed, matching the Dockerfile). */
+export function ptsGroupArg(index: number): string {
+	return `PTS_GROUP_${index + 1}`;
 }
 
 /**

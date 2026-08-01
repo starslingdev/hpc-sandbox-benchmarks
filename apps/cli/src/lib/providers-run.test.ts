@@ -42,6 +42,7 @@ describe("forEachProviderWithCreds `only`", () => {
 			"modal-vm",
 			"novita",
 			"namespace",
+			"vercel",
 		]);
 	});
 

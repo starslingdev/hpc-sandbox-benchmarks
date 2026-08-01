@@ -21,7 +21,8 @@ export type ProviderId =
 	| "microsandbox-local"
 	| "microsandbox-cloud"
 	| "novita"
-	| "namespace";
+	| "namespace"
+	| "vercel";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -40,9 +41,11 @@ export type SpecPinning = "settable" | "fixed" | "unknown";
  *     `onStdout`/`onStderr`)? All three shipped adapters drop those callbacks, so a long synchronous
  *     exec buffers silently. Modeled because a streaming path keeps a connection productive past an
  *     idle gateway cap; today it is uniformly `false`, so it does not yet tip the harness's choice.
- *   - `syncCapMs` — the longest a single *synchronous* exec round-trip is safe before the provider
- *     caps it, or `null` when uncapped. The conservative policy bound the harness compares a step's
- *     timeout budget against: a step that could run past it must not go synchronous. Daytona returns a
+ *   - `syncCapMs` — the configured durability threshold for a single *synchronous* exec round-trip,
+ *     or `null` when validated as uncapped. It may encode a vendor-enforced limit or a conservative
+ *     repository policy where long-lived synchronous transport has not been validated. The harness
+ *     compares each step's timeout budget against it: a step that could reach it must not go
+ *     synchronous. Daytona returns a
  *     server-side HTTP 408 on multi-minute synchronous execs while the process keeps running
  *     (`docs/evidence/daytona-exec-transport.md`); E2B's `commands.run` defaults to a 60s command
  *     timeout the computesdk wrapper never overrides.
@@ -147,8 +150,9 @@ export interface ProviderMeta {
  * so it clears the gate anyway. Blaxel's sandbox root is a RAM-derived tmpfs with no independent disk
  * knob, so it mounts a 40 GiB volume at the PTS data dir where the heavy suites write (see
  * packages/providers/src/lib/blaxel-volume.ts) — clearing the gate like the others. Only e2b/novita
- * (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`) and namespace
- * (`NamespaceConfig` has no disk field at all) still CANNOT express disk:
+ * (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`), namespace
+ * (`NamespaceConfig` has no disk field at all), and Vercel (resources exposes only vCPUs) still
+ * CANNOT express disk:
  * they run with actuals recorded and the heavy suites skip there, surfaced as an explicit coverage gap
  * in the leaderboard, never silently dropped.
  */
@@ -531,6 +535,38 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// this adapter gets — so this declaration depends on that degradation path (isUnsupportedFilesystem).
 			// Each poll is a sub-second exec far under the cap, so a multi-minute benchmark survives as a
 			// sequence of short calls.
+			detachedPoll: true,
+		},
+	},
+	vercel: {
+		displayName: "Vercel Sandbox",
+		website: "https://vercel.com/docs/sandbox",
+		sdkPackage: "@vercel/sandbox",
+		requiredEnvVars: ["VERCEL_OIDC_TOKEN"],
+		isolation: {
+			technology: "Firecracker microVM",
+			notes:
+				"Runs on Vercel's Hive build infrastructure and boots the shared Debian toolchain image mirrored into Vercel Container Registry.",
+		},
+		pricing: {
+			model: "unknown",
+			notes:
+				"Vercel bills active CPU separately from provisioned memory. The registry cannot model utilization-dependent active-CPU cost honestly, so economics remain unknown.",
+			sourceUrl: "https://vercel.com/docs/sandbox/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Custom ComputeSDK provider based on the upstream adapter and updated for the latest Vercel SDK; opt-in until a committed validation run exists.",
+		},
+		// Only vCPU is requested; Vercel derives memory at a fixed 2048 MB/vCPU ratio. Four vCPU
+		// therefore reaches this benchmark's 8 GiB target, but the dimensions are not independent.
+		specPinning: "fixed",
+		transport: {
+			// No hard vendor cap is claimed: long synchronous transport is unvalidated, so the repository's
+			// conservative 60s durability policy routes longer work to current-session detach + exec polling.
+			streaming: false,
+			syncCapMs: 60_000,
 			detachedPoll: true,
 		},
 	},

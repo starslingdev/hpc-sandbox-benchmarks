@@ -15,3 +15,6 @@ extend-exclude = ["bun.lock", "packages/schema/src/pts-profiles/**", "data/datas
 # Domain term: a parsed result not (yet) in the Metric Catalog. International spelling, used as the
 # `uncatalogued` field name and `UncataloguedResult` type throughout the dataset model.
 uncatalogued = "uncatalogued"
+# The plural of the image format: typos tokenises "PNGs" as PN + Gs and would "correct" the PN
+# token to ON, so the token itself is the thing to allow.
+PN = "PN"

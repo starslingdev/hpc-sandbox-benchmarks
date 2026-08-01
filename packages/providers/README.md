@@ -7,17 +7,68 @@ assembled `providers` registry, and the toolchain image constants (`TOOLCHAIN_IM
 `TOOLCHAIN_VERSION`, `DAYTONA_SNAPSHOT_DEFAULT`).
 
 **Depends on:** `@sandbox-benchmarks/schema` (provider identity / `PROVIDERS`), `computesdk` and the
-`@computesdk/{e2b,daytona,modal}` wrappers (the unified provider runtime), plus the raw vendor SDK
-each wrapper peers on (`e2b`, `@daytonaio/sdk`, `modal`).
+`@computesdk/*` wrappers where they preserve the required surface, plus focused compatibility
+adapters over raw vendor SDKs only where required.
 
-**What lives here:** _not_ SDK wrappers. The `@computesdk/*` packages already adapt each raw vendor
-SDK to computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem,
-destroy). This package only holds what the framework can't infer: which factory builds each
-provider, and the benchmark's create-time policy — the pinned `TARGET_SPEC` and toolchain image
-(ADR-0003). The assembled `providers` registry joins the schema `PROVIDERS` metadata with the adapter
+**What lives here:** provider factories and focused compatibility adapters. Most `@computesdk/*`
+packages adapt their vendor SDK directly; Microsandbox uses a local `defineProvider` implementation.
+Vercel's local provider starts from ComputeSDK's upstream adapter but uses pinned `@vercel/sandbox`
+v2, because the published wrapper still pins a pre-VCR SDK. The package also
+owns benchmark create-time policy — the pinned `TARGET_SPEC` and toolchain image. The assembled
+`providers` registry joins the schema `PROVIDERS` metadata with the adapter
 map by id; both are keyed by `ProviderId`, so a one-sided provider is a compile error rather than a
 runtime check. Private glue lives in `src/lib/` and is never imported across a package boundary.
 
 The join also carries each provider's schema-owned `transport` capability (`ProviderTransport`:
 streaming, synchronous cap, detached+poll) onto the `ProviderConfig`, so the harness selects a
 per-step exec transport from the declared capability instead of hardcoding one provider's quirks.
+
+## Validate Vercel locally
+
+Vercel uses a project-issued OIDC token at runtime; do not pass a long-lived `VERCEL_TOKEN` to the
+benchmark process. Enable OIDC Federation in the linked project's Security settings, then run from a
+Vercel-authenticated checkout:
+
+Use the repository-pinned CLI (`./node_modules/.bin/vercel`), not a globally installed one: `vcr` is a
+recent subcommand, and an older global `vercel` fails with `"vcr" is not a valid subcommand`.
+
+```sh
+# Link the checkout and create the VCR repository once.
+./node_modules/.bin/vercel login
+./node_modules/.bin/vercel link
+./node_modules/.bin/vercel vcr add sandbox-benchmarks-toolchain-vercel
+./node_modules/.bin/vercel vcr login docker
+
+# Read the namespace back from the resolved config so this flow and CI cannot drift. Override the
+# defaults with VERCEL_TEAM_SLUG / VERCEL_PROJECT_NAME to publish into a fork's team or project.
+read -r vcr_owner vcr_project vcr_image <<<"$(bun -e 'import { config } from "@sandbox-benchmarks/providers";
+  console.log(`${config.vercelTeamSlug}/${config.vercelProjectName}`, config.vercelProjectName, config.vercelImage)')"
+
+# Build and publish the shared Vercel variant into that namespace.
+REGISTRY=vcr.vercel.com IMAGE_OWNER="$vcr_owner" packages/templates/images/build.sh
+./node_modules/.bin/vercel vcr push docker "${vcr_image##*/}" --project "$vcr_project"
+
+# Pull a short-lived project OIDC token. The Vercel SDK discovers it directly from the environment.
+./node_modules/.bin/vercel pull --yes
+./node_modules/.bin/vercel env pull .env.vercel.local
+set -a; . ./.env.vercel.local; set +a
+trap 'rm -f .env.vercel.local; docker logout vcr.vercel.com >/dev/null 2>&1 || true' EXIT
+unset VERCEL_TOKEN
+
+# Other providers skip when their credentials are absent; Vercel is required to boot and pass.
+REQUIRE_PROVIDERS=vercel bun apps/cli/src/bin/bench-smoke.ts
+```
+
+`vercel link` writes `.vercel/project.json` (the `team_*` / `prj_*` API IDs); CI supplies the same two
+values as `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` secrets instead, so no Git integration between the
+GitHub repository and the Vercel project is required. `VERCEL_PROJECT_NAME` must name the project that
+`prj_*` identifies — `vcr push --project` uses the name, so a mismatch fails loudly rather than
+publishing where nothing pulls from.
+
+The VCR path is rooted at the configured human-readable namespace. The `EXIT` trap removes the
+temporary environment file and Docker credential even if validation fails. The local ComputeSDK
+provider uses the v2 SDK's name-keyed lifecycle, detached current-session execution, non-resuming
+reconnects, and permanent delete cleanup. A conservative 60-second synchronous policy cap routes
+longer setup and suite steps through native detached execution. Filesystem methods are intentionally
+omitted because Vercel's high-level filesystem wrapper can auto-resume a stopped sandbox; the harness
+observes detached completion with short `cat` polls through the same non-resuming current session.

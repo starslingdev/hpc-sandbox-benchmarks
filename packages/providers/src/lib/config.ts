@@ -2,7 +2,15 @@
 // rest of the app imports: process.env is validated here once, at module load, so no unvalidated
 // environment data reaches business logic. Static identity/spec come from the schema (the shared
 // source of truth); the env overrides layer on top.
-import { TARGET_SPEC, TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
+import {
+	TARGET_SPEC,
+	TOOLCHAIN_IMAGE_NAME,
+	TOOLCHAIN_VERSION,
+	VERCEL_PROJECT_NAME_DEFAULT,
+	VERCEL_TEAM_SLUG_DEFAULT,
+	validateVercelVcrImageRef,
+	vercelVcrImageRefs,
+} from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 
 // 1. Env schema — only the variables this app reads, validated at the boundary. All optional; an
@@ -23,6 +31,12 @@ const envSchema = type({
 	"NOVITA_TEMPLATE?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
 	"MSB_API_KEY?": "string >= 1",
+	"VERCEL_CANDIDATE_IMAGE?": "string >= 1",
+	// The two human-readable halves of the VCR namespace. Overrides, not credentials — a fork or a
+	// renamed team sets them as plain CI variables. NOT the `team_*`/`prj_*` API IDs (VERCEL_ORG_ID /
+	// VERCEL_PROJECT_ID) that `vercel pull` consumes; vercelVcrImageRefs rejects those forms.
+	"VERCEL_TEAM_SLUG?": "string >= 1",
+	"VERCEL_PROJECT_NAME?": "string >= 1",
 });
 
 const ENV_KEYS = [
@@ -37,6 +51,9 @@ const ENV_KEYS = [
 	"NOVITA_TEMPLATE",
 	"MSB_API_URL",
 	"MSB_API_KEY",
+	"VERCEL_CANDIDATE_IMAGE",
+	"VERCEL_TEAM_SLUG",
+	"VERCEL_PROJECT_NAME",
 ] as const;
 
 // 2. Startup gatekeeper — validate the environment once, fail fast with a clear message. Only the
@@ -108,6 +125,19 @@ const daytonaContainerSnapshotCandidate = `${daytonaContainerSnapshotDefault}${C
 // recomputed, so a change to the e2b naming formula can't silently break the shared-name invariant.
 const novitaTemplateVersion = e2bTemplateVersion;
 const novitaTemplateCandidate = e2bTemplateCandidate;
+// VCR refs are rooted at a human-readable Vercel namespace resolved from the environment, defaulting
+// to this repository's own team/project (schema-owned, so the build pins and the runtime agree). The
+// workflow overrides the candidate tag with the immutable fully-qualified digest after mirroring the
+// variant. An explicitly-set but malformed slug/name throws here rather than silently publishing into
+// a namespace nobody owns — the same fail-fast contract the rest of this gatekeeper applies.
+const vercelTeamSlug = env.VERCEL_TEAM_SLUG ?? VERCEL_TEAM_SLUG_DEFAULT;
+const vercelProjectName = env.VERCEL_PROJECT_NAME ?? VERCEL_PROJECT_NAME_DEFAULT;
+const vercelImages = vercelVcrImageRefs(vercelTeamSlug, vercelProjectName);
+const vercelImageCandidate = env.VERCEL_CANDIDATE_IMAGE
+	? validateVercelVcrImageRef(env.VERCEL_CANDIDATE_IMAGE, vercelTeamSlug, vercelProjectName)
+	: vercelImages.candidate;
+const vercelSourceImageVersion = `${imageRepo}-vercel:${TOOLCHAIN_VERSION}`;
+const vercelSourceImageCandidate = `${vercelSourceImageVersion}${CANDIDATE_SUFFIX}`;
 
 // 3. The single, fully-typed config object. Everything that needs config imports THIS.
 export const config = {
@@ -172,4 +202,16 @@ export const config = {
 		apiUrl: env.MSB_API_URL,
 		apiKey: env.MSB_API_KEY,
 	} satisfies MicrosandboxCloudCredentials,
+	/** Vercel team slug (org) the VCR namespace is rooted at; `VERCEL_TEAM_SLUG` override. */
+	vercelTeamSlug,
+	/** Vercel project name the VCR namespace is scoped to; `VERCEL_PROJECT_NAME` override. Must name
+	 *  the SAME project as the `VERCEL_PROJECT_ID` the CLI links with, because `vercel vcr push`
+	 *  publishes into the linked project — a mismatch pushes to one repository and pulls from another. */
+	vercelProjectName,
+	vercelImage: vercelImages.version,
+	vercelImageVersion: vercelImages.version,
+	vercelImageCandidate,
+	/** GHCR staging copy built by build.sh before it is mirrored into VCR. */
+	vercelSourceImageVersion,
+	vercelSourceImageCandidate,
 } as const;

@@ -47,9 +47,10 @@ packages/   importable libraries   — scope @sandbox-benchmarks/*
   providers/    provider adapters → schema + computesdk
   templates/    per-provider template builders + toolchain Docker images (images/)
   harness/      benchmark timing → providers + schema
-  results/      normalization → schema only (no provider SDKs)
+  results/      normalization + the comparison surface → schema, figures
+  figures/      realworld charts: Run → figure model → HTML → WebP (headless Chrome) → schema
 apps/
-  cli/          entrypoint with bin commands → all five packages
+  cli/          entrypoint with bin commands → every packages/* library
 tooling/        dev-only            — scope @repo/*
   tsconfig/     shared source-first TS configs (config-only)
   test-utils/   provider conformance suite factory
@@ -68,16 +69,25 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
 | `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
 | `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
-| `@sandbox-benchmarks/results`    | schema                                          | `arktype`, XML tooling (`catalog:xml`) |
-| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results  | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
+| `@sandbox-benchmarks/figures`    | schema                                          | fonts (`@fontsource/*`, `dejavu-fonts-ttf`) |
+| `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
+| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
 | `@repo/tsconfig`            | —                                               | —                                   |
 | `@repo/test-utils`          | schema                                          | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
 
-`results` deliberately depends on `schema` alone among workspace packages — it must normalize
-without any provider SDK, and
-`@repo/repo-checks` enforces that no package reaches across boundaries or into another package's
-private `lib/`.
+`results` depends on `schema` and `figures` alone — it must normalize without any provider SDK,
+and it now also builds the leaderboard's chart documents. `@repo/repo-checks` enforces that no
+package reaches across boundaries or into another package's private `lib/`.
+
+`figures` is typed by `schema` — the workspace's one Run contract and registry shapes — so it
+re-describes nothing the workspace already owns, but the registries still arrive as ARGUMENTS:
+there is no module-level dataset, so its guards run against synthetic runs instead of whatever
+the committed dataset contains. Its charts are pure string building (HTML with fonts inlined
+from pinned packages), and `results` owns the seam that passes the real registries. The one
+impure step — headless Chrome, via `Bun.WebView` — lives behind its own entry point,
+`@sandbox-benchmarks/figures/screenshot`, imported only by the CLI: everything that merely reads
+the Run model or builds a document never spawns a browser.
 
 ## Command contract
 

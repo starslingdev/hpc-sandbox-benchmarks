@@ -486,6 +486,29 @@ describe("checkCredentialExpressions (registry-generated whitelist)", () => {
 		expect(forms.some((f) => f.includes("secrets.NSC_TOKEN_FILE"))).toBe(false);
 	});
 
+	// Both OIDC-federated credentials draw from `env.`/a step output rather than `secrets.*`, so the
+	// generated form would reference a secret that does not exist and evaluate empty forever. They differ
+	// in whether the mint step is itself provider-conditional, which is why one guards and one does not.
+	test("an OIDC-minted credential is held to its declared form, not the generated one", () => {
+		for (const key of ["NSC_TOKEN_FILE", "VERCEL_OIDC_TOKEN"]) {
+			const forms = canonicalCredentialExpressions(key, ["namespace"], "matrix");
+			expect(forms).toHaveLength(1);
+			expect(forms[0]).not.toContain(`secrets.${key}`);
+		}
+		// vercel's auth action runs in every cell, so its scoped lanes must ALSO guard on the provider —
+		// the outcome check alone would hand a non-vercel cell whatever the action last exported.
+		const [scoped] = canonicalCredentialExpressions("VERCEL_OIDC_TOKEN", ["vercel"], "matrix");
+		expect(scoped).toContain("matrix.provider == 'vercel'");
+		// publish is serial over every provider, so there is no provider axis to guard on there.
+		const [serial] = canonicalCredentialExpressions(
+			"VERCEL_OIDC_TOKEN",
+			["vercel"],
+			"unconditional",
+		);
+		expect(serial).not.toContain(".provider ==");
+		expect(serial).toContain("steps.vercel-auth.outcome");
+	});
+
 	test("normalizes whitespace, so a pure reflow does not fail the gate", () => {
 		expect(
 			checkCredentialExpressions(

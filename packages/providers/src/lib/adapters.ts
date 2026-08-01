@@ -1,8 +1,7 @@
-// The whole adapter layer: each schema provider id mapped to its computesdk factory plus the
-// benchmark's create-time policy. The @computesdk/* wrappers already adapt each raw vendor SDK to
-// computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem, destroy), so
-// nothing here re-wraps an SDK — these are pure config. Credentials are read from each provider's
-// env vars by its factory.
+// Each schema provider id maps to a ComputeSDK factory plus benchmark create-time policy. Prefer the
+// maintained @computesdk wrappers; Vercel is the deliberate exception because its published wrapper
+// still pins Sandbox v1 and cannot boot the shared VCR image supported by the latest native SDK.
+
 import { blaxel } from "@computesdk/blaxel";
 import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
@@ -19,6 +18,7 @@ import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
+import { vercelCompute } from "./vercel.ts";
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
@@ -211,5 +211,11 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// from `options.image` (computesdk's open CreateSandboxOptions passthrough), so, like modal's
 		// fromRegistry boot, this points directly at the published toolchain image; nothing to bake.
 		createOptions: { image: config.toolchainImage },
+	},
+	vercel: {
+		// @computesdk/vercel still targets Sandbox v1. Keep its defineProvider shape, but use the latest
+		// native SDK so the shared VCR image and v2 lifecycle/filesystem APIs remain available.
+		createCompute: () => vercelCompute({ image: config.vercelImage, vcpus: TARGET_SPEC.vcpus }),
+		createOptions: {},
 	},
 };

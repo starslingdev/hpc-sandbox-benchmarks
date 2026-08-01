@@ -30,6 +30,10 @@ export const pinsSchema = type({
 	// Phoronix Test Suite (.deb fetched + checksum-verified) + the profiles to pre-install.
 	ptsVersion: filled,
 	ptsDebSha256: sha256,
+	// The pre-install list, partitioned into one bake layer per entry (see ptsInstallGroups below).
+	// ptsInstallTests is the flattened view every existing consumer reads; it is DERIVED from the
+	// groups, so the two cannot disagree.
+	ptsInstallGroups: `${filled}[] >= 1`,
 	ptsInstallTests: filled,
 });
 
@@ -48,6 +52,36 @@ export type Pins = typeof pinsSchema.infer;
  * lines from `.../releases/download/v<ver>/SHASUMS256.txt`. Tool versions are exact (not floating
  * majors) so two builds of the same image tag resolve byte-identically.
  */
+/**
+ * The pre-installed PTS profiles, partitioned into ONE DOCKER LAYER PER GROUP.
+ *
+ * The partition is a size constraint, not a taxonomy. Vercel Container Registry rejects any
+ * compressed layer over 500 MB (HTTP 413 mid-push), and a single PTS layer measured 970.0 MB. The
+ * boundaries come from measured per-profile compressed sizes, so they are not arbitrary:
+ *
+ *   git-1.1.0               451.5 MB gzip  (519 MB raw, ratio 1.15 — git packfiles are already
+ *                                           compressed, so this barely fits and zstd will not help)
+ *   fast-cli-1.0.0          309.9 MB gzip  (823 MB raw)
+ *   node-web-tooling-1.0.1   97.2 MB gzip  (400 MB raw)
+ *   everything else          ~88.0 MB gzip  (pgbench 36.5, sqlite-speedtest 30.2, fio 21.0, rest ~0)
+ *
+ * git is the binding constraint at 90% of the limit: adding to that profile, or bumping it to a
+ * version with more history, re-breaks the bake. Keep it alone in its group.
+ *
+ * Each group is installed AND pruned AND chmod'ed inside its own RUN (25-pts-profiles.sh). That is
+ * required, not stylistic: a later layer that deletes a download-cache file cannot shrink the earlier
+ * layer that added it, and a later blanket `chmod -R` would copy every file it touches into a new
+ * layer — either mistake silently re-inflates the image.
+ */
+const ptsInstallGroups = [
+	// Source-built + tiny profiles. fio and pgbench are the expensive compiles; keeping them together
+	// costs nothing because their payloads are small once built.
+	"pybench-1.1.3 sqlite-speedtest-1.0.1 fio-2.1.0 network-loopback-1.0.3 iperf-1.2.0 pgbench-1.15.0 stream-1.3.4",
+	"node-web-tooling-1.0.1",
+	"fast-cli-1.0.0",
+	"git-1.1.0",
+];
+
 export const rawPins = {
 	// > mise release version (installed from its immutable GitHub release in 00-apt.sh — mise's apt
 	// > repo is rolling and only serves the latest, so we pin the release). Matches the CI mise-action
@@ -91,6 +125,8 @@ export const rawPins = {
 	// > upstream profile (and caches its tarball); the leaf stages the repo's vendored localhost
 	// > subset over it and rebuilds from the cached source at run time (the network-loopback
 	// > override pattern). fast-cli/network-loopback stay baked for the manual composition.
-	ptsInstallTests:
-		"node-web-tooling-1.0.1 pybench-1.1.3 sqlite-speedtest-1.0.1 fio-2.1.0 network-loopback-1.0.3 fast-cli-1.0.0 iperf-1.2.0 pgbench-1.15.0 git-1.1.0 stream-1.3.4",
-} satisfies Record<keyof Pins, string>;
+	ptsInstallGroups,
+	// > Flattened view of the groups above — DERIVED, never restated, so a profile can never be in the
+	// > bake list without landing in exactly one layer.
+	ptsInstallTests: ptsInstallGroups.join(" "),
+} satisfies Pins;

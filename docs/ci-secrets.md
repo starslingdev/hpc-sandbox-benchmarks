@@ -149,6 +149,9 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BL_API_KEY` | bench matrix/smoke only (see the blaxel note below) |
    | `BL_WORKSPACE` | bench matrix/smoke only (see the blaxel note below) |
    | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
+   | `VERCEL_TOKEN` | Bootstrap only: Vercel CLI pulls a short-lived project OIDC token |
+   | `VERCEL_ORG_ID` | Links the Vercel CLI to the repository's organization (`team_*`) |
+   | `VERCEL_PROJECT_ID` | Links the Vercel CLI to the repository's project (`prj_*`) |
 
    **"Optional" means the release still completes, not that nothing is lost.** Only the providers in
    `RELEASE_REQUIRED_PROVIDERS` (`e2b`, `daytona-vm`, `modal-gvisor`) gate a toolchain release, so
@@ -178,6 +181,33 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
      is the only sanctioned way for a provider to skip the release lane's credential invariant.
 
    `MSB_API_URL` is an optional Microsandbox Cloud endpoint override for staging or private deployments. Leave it unset to use the SDK's `https://api.microsandbox.dev` default.
+
+   Enable **OIDC Federation** in the linked Vercel project's Security settings and create the
+   `sandbox-benchmarks-toolchain-vercel` VCR repository once (for example with `vercel vcr add`). The
+   shared `vercel-auth` composite runs the pinned Vercel CLI's `pull` and `env pull` commands, masks
+   `VERCEL_OIDC_TOKEN`, exports it through `GITHUB_ENV`, and immediately deletes its temporary env
+   file. Toolchain jobs additionally run `vercel vcr login docker`, use `vercel vcr push docker` for
+   publication, and always run `docker logout vcr.vercel.com`.
+
+   GitHub Actions **variables** (Settings → Secrets and variables → Actions → Variables), *not*
+   secrets — a team slug and a project name are not credentials, and leaving them readable in job logs
+   is what makes a mirror into the wrong namespace diagnosable:
+
+   | Variable | Purpose |
+   | --- | --- |
+   | `VERCEL_TEAM_SLUG` | Vercel team slug (org) the VCR namespace is rooted at |
+   | `VERCEL_PROJECT_NAME` | Vercel project name the VCR namespace is scoped to |
+
+   Both are optional: unset, they fall back to `VERCEL_TEAM_SLUG_DEFAULT` /
+   `VERCEL_PROJECT_NAME_DEFAULT` in `packages/schema/src/toolchain.ts`, which is the single place the
+   default namespace is defined. Set them only to publish into a different team or project.
+
+   These are the human-readable **names**; `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` are the `team_*` /
+   `prj_*` **API IDs** that `vercel pull` links with. The two pairs are not interchangeable, and
+   passing an ID where a name belongs is rejected at config load rather than becoming a registry path
+   segment. `VERCEL_PROJECT_NAME` must name the same project as `VERCEL_PROJECT_ID`: the mirror step
+   passes it to `vercel vcr push --project`, so a mismatch fails the push instead of publishing into a
+   repository the providers never pull from.
 
 ### Main ruleset (public-safe bot merges)
 

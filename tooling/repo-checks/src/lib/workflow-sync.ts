@@ -405,6 +405,25 @@ export const CREDENTIAL_EXPR_EXCEPTIONS: CredentialExprExceptions = Object.freez
 			unconditional: "1",
 		},
 	},
+	VERCEL_OIDC_TOKEN: {
+		reason:
+			"vercel has no stored secret either — the vercel-auth action federates through GitHub's OIDC " +
+			"identity and exports a short-lived token into the step env, so the value reads `env.` rather " +
+			"than `secrets.`. Unlike NSC_TOKEN_FILE its auth step runs in every cell, so the scoped lanes " +
+			"carry a provider guard AS WELL AS the outcome check: without it a non-vercel cell would pick " +
+			"up whatever the action last exported",
+		expressions: {
+			// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
+			inputs:
+				"${{ inputs.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}",
+			matrix:
+				"${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}",
+			// promote is serial over every provider, so there is no provider axis to guard on and the
+			// outcome check alone decides whether a token was minted.
+			unconditional: "${{ steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}",
+			// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
+		},
+	},
 });
 
 /** Collapse whitespace runs so a pure reflow of a workflow line can't fail the comparison. */

@@ -101,18 +101,30 @@ steps 1–5 are compile errors, and step 6 is the `workflow-registry-sync` gate 
    known-bad spellings, because a malformed expression passes every presence check while handing the
    provider an empty (or over-broad) credential, which reads downstream as "that provider has no results".
    A credential that genuinely cannot use a canonical form needs a `CREDENTIAL_EXPR_EXCEPTIONS` entry
-   naming its reason and its exact expression per lane. Two exist today, and both are cases where there is
-   no secret to draw from: `NSC_TOKEN_FILE` (namespace mints it from GitHub OIDC) and
+   naming its reason and its exact expression per lane. Three exist today, and all three are cases where
+   there is no secret to draw from: `NSC_TOKEN_FILE` (namespace mints it from GitHub OIDC),
+   `VERCEL_OIDC_TOKEN` (same, exported into the step env by the `vercel-auth` action), and
    `MICROSANDBOX_LOCAL_BENCH` (a host-capability opt-in set to the literal `1`). A lane the entry omits
-   permits nothing there, so list every lane the credential is wired into.
+   permits nothing there, so list every lane the credential is wired into. **An OIDC-minted token is the
+   common case for a new exception** — if your provider federates instead of storing a secret, expect to
+   add one, and guard the scoped lanes on the provider as well as the mint outcome unless the mint step
+   is itself provider-conditional.
 7. **Nothing enforces the default matrix.** `bench-matrix.yml`'s `providers` input default is free text;
    a new provider is dispatchable immediately but stays out of the default run until added there. Leave
    it out (and out of `RELEASE_REQUIRED_PROVIDERS`) until a committed run validates it — that is the
    repo's opt-in posture for an unproven provider, so a missing secret skips rather than blocking.
 8. **Credential docs** — [`.env.example`](./.env.example) for local runs and the operator table in
    [CI & secrets](./docs/ci-secrets.md) for the `privileged` environment.
-9. **Free** — `packages/results` is provider-generic, so normalization, aggregation, leaderboard,
-   economics, and stability pick the provider up with no edits. Bring it up live via `bench-smoke.yml`.
+9. **Test oracles** — five tests hardcode the provider-id list and fail (at runtime, not compile time)
+   until the new id is added: [`providers.test.ts`](./packages/schema/src/providers.test.ts),
+   [`index.test.ts`](./packages/providers/src/index.test.ts),
+   [`providers-run.test.ts`](./apps/cli/src/lib/providers-run.test.ts),
+   [`validate.test.ts`](./apps/cli/src/lib/bake/validate.test.ts), and
+   [`release-plan.test.ts`](./apps/cli/src/bin/release-plan.test.ts) — the last also asserts the release
+   plan's cell **count**, so bump it.
+10. **Free** — `packages/results` is provider-generic, so normalization, aggregation, leaderboard,
+    economics, and stability pick the provider up with no edits. Bring it up live via `bench-smoke.yml`,
+    with a single-provider branch dispatch before you add it to the default matrix list.
 
 ## Add a suite
 
