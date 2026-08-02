@@ -15,11 +15,19 @@
 // failure messages on synthetic drift, so a future regression names the offending file + key.
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
+import type { CredentialExprExceptions } from "./lib/workflow-sync.ts";
 import {
+	BAKE_JOB,
+	BAKE_STEP,
 	CELL_BUDGET_ENV_KEY,
+	canonicalCredentialExpressions,
 	checkCellBudgetEnv,
 	checkCredentialEnv,
+	checkCredentialExprExceptions,
+	checkCredentialExpressions,
 	checkProviderInput,
+	checkReleaseCredentialEnv,
+	checkReleaseLaneExemptions,
 	checkSuiteInput,
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
@@ -34,9 +42,14 @@ import {
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
 	matrixSuiteCaller,
+	PROMOTE_STEP,
+	PUBLISH_JOB,
+	RELEASE_LANE_EXEMPT,
+	RELEASE_WORKFLOW,
 	REPLICATES_ENV_KEY,
 	RUN_STEP,
 	readWorkflow,
+	releaseLaneLabel,
 	requiredCredentialKeys,
 	runCheck,
 	SMOKE_JOB,
@@ -50,10 +63,17 @@ import {
 const smoke = readWorkflow(SMOKE_WORKFLOW);
 const matrix = readWorkflow(MATRIX_WORKFLOW);
 const suiteWf = readWorkflow(SUITE_WORKFLOW);
+const release = readWorkflow(RELEASE_WORKFLOW);
 const providerInput = dispatchInput(smoke, "provider", SMOKE_WORKFLOW);
 const suiteInput = dispatchInput(smoke, "suite", SMOKE_WORKFLOW);
 const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
 const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
+// The same helper runCheck uses, so a label change can't silently desync the gate from its tests.
+const BAKE_LABEL = releaseLaneLabel(BAKE_JOB);
+const PROMOTE_LABEL = releaseLaneLabel(PUBLISH_JOB);
+const bakeEnv = stepEnv(release, BAKE_JOB, BAKE_STEP, BAKE_LABEL);
+const promoteEnv = stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, PROMOTE_LABEL);
+const releaseEnv = { [BAKE_LABEL]: bakeEnv, [PROMOTE_LABEL]: promoteEnv };
 
 describe("parsers against the real workflow files", () => {
 	test("dispatchInput extracts the smoke provider choice (type + options + default)", () => {
@@ -271,6 +291,379 @@ describe("checkCredentialEnv", () => {
 			[SUITE_WORKFLOW]: suiteEnv,
 		});
 		expect(errors).toEqual([]);
+	});
+});
+
+describe("checkReleaseCredentialEnv (the toolchain release lane)", () => {
+	test("stepEnv extracts both release-lane credential blocks", () => {
+		// The bake cell scopes each secret on matrix.provider; promote passes them unconditionally
+		// (it is a serial transaction over every provider, not a fan-out) — hence presence-only checks.
+		expect(bakeEnv).toContainKey("E2B_API_KEY");
+		expect(bakeEnv.E2B_API_KEY).toContain("matrix.provider == 'e2b'");
+		expect(promoteEnv).toContainKey("E2B_API_KEY");
+		expect(promoteEnv.E2B_API_KEY).not.toContain("matrix.provider");
+	});
+
+	test("the real release lane wires every non-exempt provider's credentials", () => {
+		expect(checkReleaseCredentialEnv(releaseEnv)).toEqual([]);
+	});
+
+	test("blaxel is exempt, so its absent keys are not flagged", () => {
+		// The invariant's whole escape hatch: blaxel boots a stock vendor image, so BL_* are absent from
+		// both blocks by design. If this ever starts failing, blaxel got wired and the exemption is stale.
+		expect(RELEASE_LANE_EXEMPT).toContainKey("blaxel");
+		expect(bakeEnv).not.toContainKey("BL_API_KEY");
+		expect(promoteEnv).not.toContainKey("BL_API_KEY");
+	});
+
+	test("flags a required key dropped from the bake cell, naming provider and job", () => {
+		const { NOVITA_API_KEY: _, ...drifted } = bakeEnv;
+		const errors = checkReleaseCredentialEnv({
+			[BAKE_LABEL]: drifted,
+			[PROMOTE_LABEL]: promoteEnv,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NOVITA_API_KEY");
+		expect(errors[0]).toContain("required by provider novita");
+		expect(errors[0]).toContain(BAKE_LABEL);
+		expect(errors[0]).not.toContain(PROMOTE_LABEL);
+	});
+
+	test("flags a required key dropped from the promote transaction", () => {
+		// The gap this invariant closes: a provider fully wired for benchmarking whose release-lane
+		// artifact is never validated, with the release still green.
+		const { NSC_TOKEN_FILE: _, ...drifted } = promoteEnv;
+		const errors = checkReleaseCredentialEnv({
+			[BAKE_LABEL]: bakeEnv,
+			[PROMOTE_LABEL]: drifted,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NSC_TOKEN_FILE");
+		expect(errors[0]).toContain("required by provider namespace");
+		expect(errors[0]).toContain(PROMOTE_LABEL);
+	});
+
+	test("a partial exemption does not excuse a key a wired provider still needs", () => {
+		// MODAL_TOKEN_ID is owned by both Modal variants. Exempting only one leaves the other needing it,
+		// so the key stays required — otherwise one exemption would silently unwire a sibling variant.
+		const { MODAL_TOKEN_ID: _, ...drifted } = bakeEnv;
+		// Layered onto the real list, not replacing it — dropping blaxel's exemption would add unrelated
+		// BL_* errors and stop this asserting what it names.
+		const errors = checkReleaseCredentialEnv(
+			{ [BAKE_LABEL]: drifted, [PROMOTE_LABEL]: promoteEnv },
+			{ ...RELEASE_LANE_EXEMPT, "modal-vm": "synthetic partial exemption" },
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("MODAL_TOKEN_ID");
+		expect(errors[0]).toContain("modal-gvisor, modal-vm");
+	});
+
+	test("flags a stale exemption whose provider IS in fact wired", () => {
+		// Keeps the declaration honest in the other direction: an exemption that claims "deliberately not
+		// wired" while the secret is threaded is a false comment the next reader would trust.
+		const errors = checkReleaseCredentialEnv(releaseEnv, {
+			...RELEASE_LANE_EXEMPT,
+			novita: "synthetic stale exemption",
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NOVITA_API_KEY");
+		expect(errors[0]).toContain("declared RELEASE_LANE_EXEMPT");
+		expect(errors[0]).toContain("IS wired");
+	});
+
+	test("tolerates the blocks' non-credential runtime context vars", () => {
+		expect(bakeEnv).toContainKey("PROVIDER");
+		expect(promoteEnv).toContainKey("BAKE_REPORT_FILE");
+		expect(checkReleaseCredentialEnv(releaseEnv)).toEqual([]);
+	});
+});
+
+describe("checkReleaseLaneExemptions", () => {
+	test("the real exemption list names only registered providers, each with a reason", () => {
+		expect(checkReleaseLaneExemptions()).toEqual([]);
+	});
+
+	test("flags an exemption for a provider that is not in the registry", () => {
+		const errors = checkReleaseLaneExemptions({ fly: "retired provider left behind" });
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('names "fly"');
+		expect(errors[0]).toContain("not in PROVIDERS");
+	});
+
+	test("flags a blank reason — an exemption is a permanent bypass, so it must be justified", () => {
+		expect(checkReleaseLaneExemptions({ blaxel: "" })[0]).toContain("blank reason");
+		// Whitespace-only is the same undocumented bypass, just harder to spot in review.
+		expect(checkReleaseLaneExemptions({ blaxel: "   \n" })[0]).toContain("blank reason");
+	});
+
+	test("reports an unregistered id and its blank reason independently", () => {
+		expect(checkReleaseLaneExemptions({ fly: "  " })).toHaveLength(2);
+	});
+});
+
+describe("checkCredentialExpressions (registry-generated whitelist)", () => {
+	// Each lane's provider selector, matching runCheck: only `publish` has no provider axis.
+	const allLanes = {
+		[SMOKE_WORKFLOW]: { env: smokeEnv, scoping: "inputs" as const },
+		[SUITE_WORKFLOW]: { env: suiteEnv, scoping: "matrix" as const },
+		[BAKE_LABEL]: { env: bakeEnv, scoping: "matrix" as const },
+		[PROMOTE_LABEL]: { env: promoteEnv, scoping: "unconditional" as const },
+	};
+	/** A synthetic single-lane input, defaulting to the fan-out scoping most cases exercise. */
+	const lane = (
+		env: Record<string, string>,
+		scoping: "inputs" | "matrix" | "unconditional" = "matrix",
+	) => ({
+		"synthetic.yml": { env, scoping },
+	});
+
+	test("every real credential block matches a generated form", () => {
+		expect(checkCredentialExpressions(allLanes)).toEqual([]);
+	});
+
+	test("generates exactly one form per lane, chosen by that lane's selector", () => {
+		// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
+		expect(canonicalCredentialExpressions("E2B_API_KEY", ["e2b"], "inputs")).toEqual([
+			"${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}",
+		]);
+		expect(canonicalCredentialExpressions("E2B_API_KEY", ["e2b"], "matrix")).toEqual([
+			"${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}",
+		]);
+		expect(canonicalCredentialExpressions("E2B_API_KEY", ["e2b"], "unconditional")).toEqual([
+			"${{ secrets.E2B_API_KEY }}",
+		]);
+		// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
+	});
+
+	// The security property the per-cell scoping exists to provide: a fan-out cell must receive ONLY its
+	// own provider's credential, so the unconditional form belongs to `publish` alone.
+	test("rejects the unconditional form in a provider-scoped lane", () => {
+		const errors = checkCredentialExpressions(lane({ E2B_API_KEY: `\${{ secrets.E2B_API_KEY }}` }));
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('"matrix" lane');
+	});
+
+	test("rejects a scoped form in the unconditional lane, where the guard can never match", () => {
+		// `publish` has no matrix and no dispatch input, so a guard there yields an empty credential.
+		const errors = checkCredentialExpressions(
+			lane(
+				{ E2B_API_KEY: `\${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}` },
+				"unconditional",
+			),
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('"unconditional" lane');
+	});
+
+	test("rejects the wrong selector in a scoped lane — it silently never matches", () => {
+		// `inputs.provider` does not exist in a fan-out, so this is empty on every cell.
+		const errors = checkCredentialExpressions(
+			lane(
+				{ E2B_API_KEY: `\${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}` },
+				"matrix",
+			),
+		);
+		expect(errors).toHaveLength(1);
+	});
+
+	test("parenthesizes the guard for a credential shared by isolation variants", () => {
+		const forms = canonicalCredentialExpressions(
+			"MODAL_TOKEN_ID",
+			["modal-gvisor", "modal-vm"],
+			"matrix",
+		);
+		expect(forms).toContain(
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal, not a JS template.
+			"${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}",
+		);
+	});
+
+	test("a declared exception replaces the canonical forms entirely", () => {
+		const forms = canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "matrix");
+		expect(forms).toHaveLength(1);
+		expect(forms[0]).toContain("steps.nsc-token.outcome");
+		// The generated provider-scoped form must NOT also be accepted for an excepted credential.
+		expect(forms.some((f) => f.includes("secrets.NSC_TOKEN_FILE"))).toBe(false);
+	});
+
+	// Both OIDC-federated credentials draw from `env.`/a step output rather than `secrets.*`, so the
+	// generated form would reference a secret that does not exist and evaluate empty forever. They differ
+	// in whether the mint step is itself provider-conditional, which is why one guards and one does not.
+	test("an OIDC-minted credential is held to its declared form, not the generated one", () => {
+		for (const key of ["NSC_TOKEN_FILE", "VERCEL_OIDC_TOKEN"]) {
+			const forms = canonicalCredentialExpressions(key, ["namespace"], "matrix");
+			expect(forms).toHaveLength(1);
+			expect(forms[0]).not.toContain(`secrets.${key}`);
+		}
+		// vercel's auth action runs in every cell, so its scoped lanes must ALSO guard on the provider —
+		// the outcome check alone would hand a non-vercel cell whatever the action last exported.
+		const [scoped] = canonicalCredentialExpressions("VERCEL_OIDC_TOKEN", ["vercel"], "matrix");
+		expect(scoped).toContain("matrix.provider == 'vercel'");
+		// publish is serial over every provider, so there is no provider axis to guard on there.
+		const [serial] = canonicalCredentialExpressions(
+			"VERCEL_OIDC_TOKEN",
+			["vercel"],
+			"unconditional",
+		);
+		expect(serial).not.toContain(".provider ==");
+		expect(serial).toContain("steps.vercel-auth.outcome");
+	});
+
+	test("normalizes whitespace, so a pure reflow does not fail the gate", () => {
+		expect(
+			checkCredentialExpressions(
+				lane({
+					E2B_API_KEY: `\${{   matrix.provider == 'e2b'   &&   secrets.E2B_API_KEY   ||   ''   }}`,
+				}),
+			),
+		).toEqual([]);
+	});
+
+	// The whole point of inverting to a whitelist: every spelling below satisfied one or more of the
+	// previous rule-based checks and still shipped an empty or over-broad credential. They are kept as a
+	// table because they are the regression history of this invariant, not hypotheticals.
+	const REJECTED: Array<[string, string]> = [
+		["typo'd provider guard", `\${{ matrix.provider == 'e2bb' && secrets.E2B_API_KEY || '' }}`],
+		["reversed operand order", `\${{ 'e2b' == matrix.provider && secrets.E2B_API_KEY || '' }}`],
+		["negated guard", `\${{ matrix.provider != 'e2b' && secrets.E2B_API_KEY || '' }}`],
+		["guard ORed with the secret", `\${{ matrix.provider == 'e2b' || secrets.E2B_API_KEY }}`],
+		["inverted branches", `\${{ matrix.provider == 'e2b' && '' || secrets.E2B_API_KEY }}`],
+		[
+			"extra `||` smuggling the secret into the fallback",
+			`\${{ matrix.provider == 'e2b' && '' || secrets.E2B_API_KEY || '' }}`,
+		],
+		["missing empty-string fallback", `\${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY }}`],
+		["bracket-form secret", `\${{ matrix.provider == 'e2b' && secrets['E2B_API_KEY'] || '' }}`],
+		[
+			"unreadable scoping form",
+			`\${{ contains(matrix.provider, 'e2b') && secrets.E2B_API_KEY || '' }}`,
+		],
+		[
+			"wrong provider's cell",
+			`\${{ matrix.provider == 'daytona-vm' && secrets.E2B_API_KEY || '' }}`,
+		],
+	];
+
+	for (const [label, expr] of REJECTED) {
+		test(`rejects ${label}`, () => {
+			const errors = checkCredentialExpressions(lane({ E2B_API_KEY: expr }));
+			expect(errors).toHaveLength(1);
+			expect(errors[0]).toContain("not the form generated");
+			// The message must show both sides, so the fix is mechanical rather than a puzzle.
+			expect(errors[0]).toContain("actual:");
+			expect(errors[0]).toContain("expected:");
+		});
+	}
+
+	test("rejects a uniform typo — agreeing across every lane is no longer a defence", () => {
+		const typo = `\${{ matrix.provider == 'novita' && secrets.NOVITA_API_KE || '' }}`;
+		const errors = checkCredentialExpressions({
+			"a.yml": { env: { NOVITA_API_KEY: typo }, scoping: "matrix" },
+			"b.yml": { env: { NOVITA_API_KEY: typo }, scoping: "matrix" },
+		});
+		expect(errors).toHaveLength(2);
+	});
+
+	test("rejects an excepted credential wired to anything but its exact declared expression", () => {
+		const errors = checkCredentialExpressions(
+			lane({ NSC_TOKEN_FILE: `\${{ steps.nsc-token.outcome == 'success' && 'x' || '' }}` }),
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("declared exception");
+	});
+
+	test("a lane that omits a key is left to invariants 3/7, not double-reported here", () => {
+		const { E2B_API_KEY: _, ...drifted } = suiteEnv;
+		expect(
+			checkCredentialExpressions({ [SUITE_WORKFLOW]: { env: drifted, scoping: "matrix" } }),
+		).toEqual([]);
+	});
+});
+
+describe("checkCredentialExprExceptions", () => {
+	test("the real exception list is well-formed", () => {
+		expect(checkCredentialExprExceptions()).toEqual([]);
+	});
+
+	test("flags an exception for a key no provider requires", () => {
+		const errors = checkCredentialExprExceptions({
+			FLY_API_TOKEN: { reason: "retired", expressions: { matrix: "x" } },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("FLY_API_TOKEN");
+	});
+
+	test("flags a blank reason — an exception is a permanent exemption from the canonical shape", () => {
+		const errors = checkCredentialExprExceptions({
+			NSC_TOKEN_FILE: { reason: "  ", expressions: { matrix: "x" } },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("blank reason");
+	});
+
+	test("flags an exception that declares no lane, which would permit nothing anywhere", () => {
+		const errors = checkCredentialExprExceptions({
+			NSC_TOKEN_FILE: { reason: "real reason", expressions: {} },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("declares no lane");
+	});
+
+	test("flags a declared lane whose expression is blank", () => {
+		const errors = checkCredentialExprExceptions({
+			NSC_TOKEN_FILE: { reason: "real reason", expressions: { matrix: "  " } },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("expressions.matrix is blank");
+	});
+
+	// An exception is per-lane, so one lane's declared spelling must not pass in another lane. Both real
+	// entries declare every lane they are wired into, so this exercises the WRONG-EXPRESSION branch: the
+	// `inputs` lane has a declared form and "1" simply is not it.
+	test("one lane's declared spelling does not pass in another lane", () => {
+		expect(
+			canonicalCredentialExpressions("MICROSANDBOX_LOCAL_BENCH", ["microsandbox-local"], "inputs"),
+		).toHaveLength(1);
+		const errors = checkCredentialExpressions({
+			"synthetic.yml": {
+				env: { MICROSANDBOX_LOCAL_BENCH: "1" },
+				scoping: "inputs",
+			},
+		});
+		// "1" is the declared `unconditional` spelling, so it must NOT pass in the `inputs` lane.
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("declared exception");
+		expect(errors[0]).toContain("expected:");
+	});
+
+	// The other branch: an entry that omits a lane permits NOTHING there, rather than falling back to the
+	// generated form — otherwise declaring one lane would silently re-permit the canonical shape in every
+	// lane the entry forgot. Reached only through an injected table, since no real entry omits a lane.
+	const OMITS_INPUTS: CredentialExprExceptions = {
+		NSC_TOKEN_FILE: { reason: "declares matrix only", expressions: { matrix: "x" } },
+	};
+
+	test("an exception permits nothing in a lane it does not declare", () => {
+		expect(
+			canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "inputs", OMITS_INPUTS),
+		).toEqual([]);
+		// The declared lane still permits its one spelling — omission is per-lane, not entry-wide.
+		expect(
+			canonicalCredentialExpressions("NSC_TOKEN_FILE", ["namespace"], "matrix", OMITS_INPUTS),
+		).toEqual(["x"]);
+	});
+
+	test("names the undeclared lane as the fix, rather than printing an empty expected form", () => {
+		const errors = checkCredentialExpressions(
+			{ "synthetic.yml": { env: { NSC_TOKEN_FILE: "anything" }, scoping: "inputs" } },
+			OMITS_INPUTS,
+		);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("declares no expression");
+		expect(errors[0]).toContain('"inputs" lane');
+		// No form is permitted, so there is nothing to suggest — the message must not imply otherwise.
+		expect(errors[0]).not.toContain("expected:");
+		expect(errors[0]).not.toContain("must match that exact expression");
 	});
 });
 

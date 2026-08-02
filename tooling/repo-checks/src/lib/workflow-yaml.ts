@@ -16,6 +16,19 @@ export const RUN_STEP = "Run suite and normalize";
 export const SMOKE_JOB = "smoke";
 /** The fan-out job inside the reusable bench-suite.yml (its credential env + timeout). */
 export const SUITE_JOB = "bench";
+// The staged toolchain release lane (plan → build → bake → promote). Its two credentialed jobs each
+// boot a provider sandbox, so both carry a per-provider credential block of their own — separate from
+// the bench lanes' and, until this gate covered them, mirrored by hand with nothing checking them.
+/** The toolchain release workflow: it bakes each provider's candidate artifact and promotes it. */
+export const RELEASE_WORKFLOW = ".github/workflows/toolchain-image.yml";
+/** The bake fan-out job (one matrix cell per provider) in {@link RELEASE_WORKFLOW}. */
+export const BAKE_JOB = "bake";
+/** The step inside {@link BAKE_JOB} that bakes + validates one provider's candidate; it owns the env. */
+export const BAKE_STEP = "Bake + verify candidate";
+/** The promote job — a serial transaction over every provider, not a fan-out. */
+export const PUBLISH_JOB = "publish";
+/** The step inside {@link PUBLISH_JOB} that re-validates and publishes; it owns the env. */
+export const PROMOTE_STEP = "Promote candidate → version";
 /** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. Re-exported
  *  from the schema, which owns it — `bench-suite`'s fan-out budget guard adds the SAME margin, and the
  *  two must not drift (see the constant's own note). */

@@ -27,6 +27,19 @@
 //      be killed by Actions first.
 //   6. Nesting wiring (suite-matrix caller + reusable provider job name) and the replicate axis
 //      reaching the cell as BENCH_REPLICATES data rather than as a matrix axis — see workflow-nesting.ts.
+//   7. Every provider's requiredEnvVars is present in the credential env of BOTH credentialed jobs of
+//      the toolchain release lane (toolchain-image.yml's `bake` cell and `publish` promote step), or the
+//      provider is explicitly declared in {@link RELEASE_LANE_EXEMPT}. Invariant 3 covers only the two
+//      bench lanes, so before this a new provider could be fully wired for benchmarking and still be a
+//      silent missing-credentials skip through bake and promote — its toolchain artifact never built and
+//      never validated, with a green release.
+//   8. Every credential expression, in all four credential blocks, EXACTLY matches one of the forms
+//      GENERATED for that credential from the registry (declared exceptions aside). Invariants 3/7 only
+//      check a key is present, which a mistyped or malformed expression satisfies while supplying an
+//      empty or over-broad credential — read downstream as "that provider has no results", not "the
+//      wiring never matched". A whitelist rather than a set of rules against known-bad forms: see
+//      checkCredentialExpressions for why the rule-based version had an unbounded tail.
+//   9. The fan-out cell's advertised budget matches its own job timeout — see checkCellBudgetEnv.
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -39,9 +52,14 @@ import {
 } from "./workflow-nesting.ts";
 import type { DispatchInput } from "./workflow-yaml.ts";
 import {
+	BAKE_JOB,
+	BAKE_STEP,
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
+	PROMOTE_STEP,
+	PUBLISH_JOB,
+	RELEASE_WORKFLOW,
 	RUN_STEP,
 	readWorkflow,
 	SMOKE_JOB,
@@ -68,9 +86,14 @@ export {
 } from "./workflow-nesting.ts";
 export type { DispatchInput } from "./workflow-yaml.ts";
 export {
+	BAKE_JOB,
+	BAKE_STEP,
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
+	PROMOTE_STEP,
+	PUBLISH_JOB,
+	RELEASE_WORKFLOW,
 	RUN_STEP,
 	readWorkflow,
 	SMOKE_JOB,
@@ -225,6 +248,346 @@ export function checkCredentialEnv(
 	return errors;
 }
 
+/**
+ * Providers deliberately NOT wired into the toolchain release lane, each with the reason — the explicit
+ * escape hatch for Invariant 7. A provider belongs here only when the release lane has nothing to do
+ * with it: it bakes no artifact AND its boot proves nothing the lane needs.
+ *
+ * Note that "bakes no artifact" alone is NOT sufficient: `namespace` and both `modal` variants also bake
+ * nothing (they boot the toolchain image directly), yet all three are wired, because the bake cell's
+ * validate boot and promote's re-validation are what prove the published image is actually reachable and
+ * runnable on that provider. `blaxel` is the sole exemption because it boots a stock VENDOR base image
+ * instead of the toolchain image, so booting it during a release would validate nothing about the bytes
+ * being released.
+ *
+ * Keyed by provider id — typed as a plain string record so a test can inject a synthetic list, and
+ * validated against the registry by {@link checkReleaseLaneExemptions} instead, so a typo'd or removed
+ * id can't sit here silently exempting nothing.
+ */
+export const RELEASE_LANE_EXEMPT: Readonly<Record<string, string>> = Object.freeze({
+	blaxel:
+		"boots a stock vendor base image, not the toolchain image — it bakes no candidate artifact and " +
+		"booting it would validate nothing about the bytes being released, so the release lane leaves it " +
+		"unwired and its bake cell takes the missing-credentials skip",
+});
+
+/**
+ * Every exemption names a registered provider AND carries a non-blank reason. The reason is the entire
+ * cost of the bypass: an exemption is a permanent, silent opt-out of Invariant 7, so an empty or
+ * whitespace-only string would let one land undocumented — passing the gate while telling the next
+ * reader nothing about why this provider needs no release-lane boot. `exempt` is injectable so both
+ * failure messages are unit-testable without mutating the real declaration.
+ */
+export function checkReleaseLaneExemptions(
+	exempt: Readonly<Record<string, string>> = RELEASE_LANE_EXEMPT,
+): string[] {
+	const registered = new Set(providerIds());
+	const errors: string[] = [];
+	for (const [id, reason] of Object.entries(exempt)) {
+		if (!registered.has(id)) {
+			errors.push(
+				`RELEASE_LANE_EXEMPT names "${id}", which is not in PROVIDERS ` +
+					`(packages/schema/src/providers.ts) — drop the stale exemption or fix the id`,
+			);
+		}
+		if (reason.trim() === "") {
+			errors.push(
+				`RELEASE_LANE_EXEMPT["${id}"] has a blank reason — an exemption is a permanent opt-out of ` +
+					"the release-lane credential invariant, so it must state why this provider needs no " +
+					"release-lane boot (see the blaxel entry)",
+			);
+		}
+	}
+	return errors;
+}
+
+/**
+ * Invariant 7: every provider requiredEnvVar is present in the credential env of BOTH credentialed
+ * release-lane jobs, unless every provider that owns the key is declared in {@link RELEASE_LANE_EXEMPT}.
+ *
+ * Presence only — deliberately NOT the cross-lane value-expression equality of Invariant 4. The two
+ * release jobs legitimately scope credentials differently: `bake` is a per-provider fan-out and guards
+ * each secret on `matrix.provider` like the bench lanes, while `publish` is a serial transaction over
+ * every provider and so passes them unconditionally. Requiring one expression across both would demand
+ * they be wrong somewhere.
+ *
+ * `envByStep` keys are human labels (workflow + job) so an error names the file AND which of its two
+ * blocks drifted. `exempt` is injectable for the same reason as {@link checkReleaseLaneExemptions}.
+ */
+export function checkReleaseCredentialEnv(
+	envByStep: Record<string, Record<string, string>>,
+	exempt: Readonly<Record<string, string>> = RELEASE_LANE_EXEMPT,
+): string[] {
+	const errors: string[] = [];
+	const steps = Object.keys(envByStep);
+	for (const [key, owners] of requiredCredentialKeys()) {
+		// biome-ignore lint/style/noNonNullAssertion: keys come from Object.keys(envByStep).
+		const present = steps.filter((step) => key in envByStep[step]!);
+		// A key is exempt only when EVERY provider needing it is exempt: a key shared by an exempt and a
+		// wired provider is still required (the wired one needs it), so partial exemption never excuses it.
+		if (owners.every((id) => id in exempt)) {
+			// The exemption claims the lane doesn't wire this. If it does, the declaration is a false
+			// comment the next reader will trust — fail so the entry is dropped along with the wire-up.
+			if (present.length > 0) {
+				errors.push(
+					`${key}: provider ${owners.join(", ")} is declared RELEASE_LANE_EXEMPT ("deliberately ` +
+						`not wired into the release lane") but ${key} IS wired into ${present.join(" and ")} — ` +
+						"the wiring and the exemption disagree; remove the RELEASE_LANE_EXEMPT entry",
+				);
+			}
+			continue;
+		}
+		// biome-ignore lint/style/noNonNullAssertion: keys come from Object.keys(envByStep).
+		const missing = steps.filter((step) => !(key in envByStep[step]!));
+		if (missing.length > 0) {
+			errors.push(
+				`${key}: required by provider ${owners.join(", ")} (packages/schema/src/providers.ts ` +
+					`requiredEnvVars) but missing from the credential env of ${missing.join(" and ")} — the ` +
+					"release lane would record it as a missing-credentials skip, so its toolchain artifact is " +
+					"never baked or validated while the release still goes green. Wire the secret, or add the " +
+					"provider to RELEASE_LANE_EXEMPT with the reason it needs no release-lane boot.",
+			);
+		}
+	}
+	return errors;
+}
+
+/** The label an error uses for one release-lane job — shared with the gate's tests so the
+ *  error-message contract lives in one place. */
+export function releaseLaneLabel(job: string): string {
+	return `${RELEASE_WORKFLOW} (${job})`;
+}
+
+/**
+ * Credentials whose wiring is deliberately NOT the canonical provider-scoped form, each with the reason
+ * and the EXACT expression allowed PER LANE. This is the whitelist's only escape hatch, and the values are
+ * literals rather than patterns on purpose: a declared exception should permit exactly one known-good
+ * spelling per lane, not a family of them.
+ *
+ * Keyed by lane scoping because an exception is not automatically lane-independent. A lane the entry does
+ * not list is an error, not a pass — the same fail-closed posture the generated forms have.
+ */
+export type CredentialExprExceptions = Readonly<
+	Record<string, { reason: string; expressions: Readonly<Partial<Record<LaneScoping, string>>> }>
+>;
+
+export const CREDENTIAL_EXPR_EXCEPTIONS: CredentialExprExceptions = Object.freeze({
+	NSC_TOKEN_FILE: {
+		reason:
+			"namespace has no stored secret — CI federates through GitHub's OIDC identity and mints a " +
+			"scoped token file per job, so the value is gated on the mint step's outcome rather than on a " +
+			"provider, and references no `secrets.*` at all. Every lane mints its own token the same way, " +
+			"so all three share one spelling",
+		expressions: {
+			// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
+			inputs:
+				"${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}",
+			matrix:
+				"${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}",
+			unconditional:
+				"${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}",
+			// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
+		},
+	},
+	MICROSANDBOX_LOCAL_BENCH: {
+		reason:
+			"an explicit capability opt-in, not a credential: microsandbox-local runs on the harness host " +
+			"itself and needs KVM (Linux) or Hypervisor.framework (macOS), so the flag is the literal '1' " +
+			"and there is no secret to draw from. It still rides requiredEnvVars — that is what makes an " +
+			"unequipped runner skip rather than fail — so the whitelist has to know its shape",
+		expressions: {
+			// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
+			inputs: "${{ inputs.provider == 'microsandbox-local' && '1' || '' }}",
+			matrix: "${{ matrix.provider == 'microsandbox-local' && '1' || '' }}",
+			// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
+			// promote has no provider axis, so the opt-in is simply on for its serial microsandbox-local
+			// re-validation; a guard there could never match.
+			unconditional: "1",
+		},
+	},
+	VERCEL_OIDC_TOKEN: {
+		reason:
+			"vercel has no stored secret either — the vercel-auth action federates through GitHub's OIDC " +
+			"identity and exports a short-lived token into the step env, so the value reads `env.` rather " +
+			"than `secrets.`. Unlike NSC_TOKEN_FILE its auth step runs in every cell, so the scoped lanes " +
+			"carry a provider guard AS WELL AS the outcome check: without it a non-vercel cell would pick " +
+			"up whatever the action last exported",
+		expressions: {
+			// biome-ignore-start lint/suspicious/noTemplateCurlyInString: GHA expression literals, not JS templates.
+			inputs:
+				"${{ inputs.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}",
+			matrix:
+				"${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}",
+			// promote is serial over every provider, so there is no provider axis to guard on and the
+			// outcome check alone decides whether a token was minted.
+			unconditional: "${{ steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}",
+			// biome-ignore-end lint/suspicious/noTemplateCurlyInString: end of GHA expression literals.
+		},
+	},
+});
+
+/** Collapse whitespace runs so a pure reflow of a workflow line can't fail the comparison. */
+function normalizeExpr(expr: string): string {
+	return expr.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * How a lane selects the provider a credential is scoped to, and therefore which single expression is
+ * correct there. Carrying the SELECTOR rather than a scoped/unscoped boolean makes the whitelist tight in
+ * both directions, because the wrong selector fails the same way an absent guard does — silently:
+ *
+ *   • `"inputs"` — the smoke dispatch, scoped on the dispatched `inputs.provider`.
+ *   • `"matrix"` — a per-provider fan-out (the bench suite, the release bake matrix), scoped on
+ *     `matrix.provider`. `inputs.provider` does not exist here, so it would evaluate empty on every cell.
+ *   • `"unconditional"` — a job with no provider axis at all: the release lane's `publish` is a SERIAL
+ *     transaction over every provider, so there is nothing to scope on and a guard would never match.
+ */
+export type LaneScoping = "inputs" | "matrix" | "unconditional";
+
+/**
+ * The EXACT expression a credential may be wired to IN A GIVEN LANE — the whitelist Invariant 8 compares
+ * against. Returns a single form (an array only so a declared exception can carry its own literal):
+ *
+ *   • scoped, single owner: `${{ <sel>.provider == 'P' && secrets.KEY || '' }}`
+ *   • scoped, shared by a vendor's isolation variants:
+ *     `${{ (<sel>.provider == 'P1' || <sel>.provider == 'P2') && secrets.KEY || '' }}`
+ *   • unconditional: `${{ secrets.KEY }}`
+ *
+ * The form is chosen by the LANE, not offered as a menu. Accepting the unconditional form in a
+ * provider-scoped lane would let a fan-out hand one provider's secret to every cell — the blast-radius
+ * property the per-cell scoping exists to provide — and accepting a scoped form in `publish` would
+ * guarantee an empty credential, since it has no provider axis to match. Owner order follows the registry,
+ * which is where the expected multi-owner spelling comes from.
+ *
+ * Returns an EMPTY array — permitting nothing — only when an exception omits `scoping`; the generated path
+ * always yields exactly one form. `exceptions` is injectable so that fail-closed branch is reachable from
+ * a test, since every real entry declares each lane its credential is wired into.
+ */
+export function canonicalCredentialExpressions(
+	key: string,
+	owners: readonly string[],
+	scoping: LaneScoping,
+	exceptions: CredentialExprExceptions = CREDENTIAL_EXPR_EXCEPTIONS,
+): string[] {
+	const exception = exceptions[key];
+	if (exception !== undefined) {
+		const declared = exception.expressions[scoping];
+		// An exception that says nothing about this lane permits nothing in it — returning [] makes any
+		// expression there fail, which is the fail-closed reading of an incomplete declaration.
+		return declared === undefined ? [] : [normalizeExpr(declared)];
+	}
+	if (scoping === "unconditional") return [normalizeExpr(`\${{ secrets.${key} }}`)];
+	const tests = owners.map((id) => `${scoping}.provider == '${id}'`).join(" || ");
+	const guard = owners.length > 1 ? `(${tests})` : tests;
+	return [normalizeExpr(`\${{ ${guard} && secrets.${key} || '' }}`)];
+}
+
+/** Every exception names a real credential key, carries a non-blank reason, and declares at least one
+ *  lane — the same anti-rot check {@link checkReleaseLaneExemptions} applies to its own escape hatch.
+ *  An entry declaring no lane would permit nothing anywhere, which is a silently broken declaration
+ *  rather than a deliberate one. */
+export function checkCredentialExprExceptions(
+	exceptions: CredentialExprExceptions = CREDENTIAL_EXPR_EXCEPTIONS,
+): string[] {
+	const errors: string[] = [];
+	const known = requiredCredentialKeys();
+	for (const [key, { reason, expressions }] of Object.entries(exceptions)) {
+		if (!known.has(key)) {
+			errors.push(
+				`CREDENTIAL_EXPR_EXCEPTIONS names "${key}", which no provider lists in requiredEnvVars ` +
+					"(packages/schema/src/providers.ts) — drop the stale exception or fix the key",
+			);
+		}
+		if (reason.trim() === "") {
+			errors.push(
+				`CREDENTIAL_EXPR_EXCEPTIONS["${key}"] has a blank reason — an exception permanently exempts ` +
+					"a credential from the canonical shape, so it must say why that shape does not apply",
+			);
+		}
+		const lanes = Object.entries(expressions);
+		if (lanes.length === 0) {
+			errors.push(
+				`CREDENTIAL_EXPR_EXCEPTIONS["${key}"] declares no lane, so it permits nothing anywhere — ` +
+					"list the expression for each lane the credential is wired into",
+			);
+		}
+		for (const [lane, expr] of lanes) {
+			if (expr === undefined || expr.trim() === "") {
+				errors.push(
+					`CREDENTIAL_EXPR_EXCEPTIONS["${key}"].expressions.${lane} is blank — a declared lane must ` +
+						"carry the exact expression allowed there",
+				);
+			}
+		}
+	}
+	return errors;
+}
+
+/**
+ * Invariant 8: every credential expression EXACTLY matches one of the forms generated from the registry
+ * for that credential — a whitelist, not a hunt for bad forms.
+ *
+ * This started as a set of targeted rules (no typo'd guard, no negated comparison, no missing fallback,
+ * secret named for its key, …) and each round of review found another spelling that satisfied all of them
+ * and still shipped an empty or over-broad credential: a reversed operand order, a uniform typo that
+ * agreed with itself across lanes, `guard || secret` (a valid guard gating nothing), `secrets['NAME']`
+ * bracket form, an extra `||` smuggling the secret into the fallback. That tail is unbounded because
+ * every one of those rules is a BLACKLIST: it can only reject the wrong forms someone thought to name.
+ *
+ * Inverting it removes the tail. The registry already knows a credential's name and its owning providers,
+ * which is everything needed to write the correct expression, so the gate generates it and demands an
+ * exact match (whitespace-normalized). Anything else fails — including every spelling above and every one
+ * nobody has thought of. A legitimately new shape needs a {@link CREDENTIAL_EXPR_EXCEPTIONS} entry with
+ * its reason, which is friction on purpose: hand-mirrored credential wiring is exactly where an unreviewed
+ * "clever" expression should be hard to land.
+ */
+export function checkCredentialExpressions(
+	lanes: Record<string, { env: Record<string, string>; scoping: LaneScoping }>,
+	exceptions: CredentialExprExceptions = CREDENTIAL_EXPR_EXCEPTIONS,
+): string[] {
+	const errors: string[] = [];
+	for (const [key, owners] of requiredCredentialKeys()) {
+		for (const [lane, { env, scoping }] of Object.entries(lanes)) {
+			const allowed = canonicalCredentialExpressions(key, owners, scoping, exceptions);
+			const expr = env[key];
+			// Presence is Invariants 3/7's job; reporting the same omission twice buries the useful message.
+			if (expr === undefined) continue;
+			if (!allowed.includes(normalizeExpr(expr))) {
+				const exception = exceptions[key];
+				// Nothing is permitted here at all, so there is no expected form to print and no expression
+				// the author could write to pass. Saying "it must match that exact expression" under an empty
+				// `expected:` would send them to rewrite the workflow when the fix is in the exception entry.
+				if (allowed.length === 0) {
+					const reason = exception === undefined ? "" : ` (${exception.reason})`;
+					errors.push(
+						`${key} in ${lane}: its CREDENTIAL_EXPR_EXCEPTIONS entry${reason} declares no ` +
+							`expression for a "${scoping}" lane, so NOTHING is permitted here.\n` +
+							`    actual: ${normalizeExpr(expr)}\n` +
+							"  An entry that omits a lane fails closed rather than falling back to the generated " +
+							"form, since a half-declared exception silently re-permits the canonical shape " +
+							"everywhere it forgot to mention. Add this lane to the entry's `expressions` map with " +
+							"the exact expression allowed there, or stop wiring the credential into this lane.",
+					);
+					continue;
+				}
+				errors.push(
+					`${key} in ${lane}: credential expression is not the form generated for it from the ` +
+						`registry for a "${scoping}" lane.\n    actual:   ${normalizeExpr(expr)}\n` +
+						allowed.map((form) => `    expected: ${form}`).join("\n") +
+						(exception === undefined
+							? "\n  Any other spelling is rejected on purpose — a guard that gates nothing, a " +
+								"mistyped secret, or an inverted fallback all read as plausible while shipping an " +
+								"empty or over-broad credential. Use a canonical form, or add a " +
+								"CREDENTIAL_EXPR_EXCEPTIONS entry with the reason."
+							: `\n  This credential has a declared exception (${exception.reason}), so it must match ` +
+								"that exact expression."),
+				);
+			}
+		}
+	}
+	return errors;
+}
+
 /** Invariant 5: every live-run job has margin beyond the longest registered sandbox lifetime. */
 export function checkWorkflowTimeouts(timeoutByWorkflow: Record<string, number>): string[] {
 	const longestSuite = Math.max(...Object.values(SUITES).map((suite) => suite.timeoutMinutes));
@@ -288,12 +651,35 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 	// gate, and its job timeout feeds both the margin gate and that same budget gate.
 	const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 	const suiteTimeout = jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW);
+	// The release lane's two credentialed jobs each own their own credential block (see Invariant 7).
+	const release = readWorkflow(RELEASE_WORKFLOW, root);
+	const bakeLabel = releaseLaneLabel(BAKE_JOB);
+	const promoteLabel = releaseLaneLabel(PUBLISH_JOB);
+	const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
+	const bakeEnv = stepEnv(release, BAKE_JOB, BAKE_STEP, bakeLabel);
+	const promoteEnv = stepEnv(release, PUBLISH_JOB, PROMOTE_STEP, promoteLabel);
 	return [
 		...checkProviderInput(dispatchInput(smoke, "provider", SMOKE_WORKFLOW)),
 		...checkSuiteInput(dispatchInput(smoke, "suite", SMOKE_WORKFLOW)),
 		...checkCredentialEnv({
-			[SMOKE_WORKFLOW]: stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW),
+			[SMOKE_WORKFLOW]: smokeEnv,
 			[SUITE_WORKFLOW]: suiteEnv,
+		}),
+		...checkReleaseLaneExemptions(),
+		...checkCredentialExprExceptions(),
+		...checkReleaseCredentialEnv({
+			[bakeLabel]: bakeEnv,
+			[promoteLabel]: promoteEnv,
+		}),
+		// Invariant 8 spans every credential block in the repo — the two bench lanes and both release-lane
+		// jobs — because a typo'd guard or a swapped secret is the same silent-skip bug wherever it lands.
+		// Each lane declares how it selects a provider, so the expected expression is derived per lane —
+		// see LaneScoping. `publish` is the only unconditional one: a serial transaction, no provider axis.
+		...checkCredentialExpressions({
+			[SMOKE_WORKFLOW]: { env: smokeEnv, scoping: "inputs" },
+			[SUITE_WORKFLOW]: { env: suiteEnv, scoping: "matrix" },
+			[bakeLabel]: { env: bakeEnv, scoping: "matrix" },
+			[promoteLabel]: { env: promoteEnv, scoping: "unconditional" },
 		}),
 		...checkWorkflowTimeouts({
 			[SMOKE_WORKFLOW]: jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW),

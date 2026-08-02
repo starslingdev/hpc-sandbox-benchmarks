@@ -45,21 +45,91 @@ bun run check:catalog-drift                                    # fail if the com
 
 ## Add a provider
 
+Start by picking the **archetype**, because it decides most of the work below:
+
+| Archetype | Examples | Boots |
+| --- | --- | --- |
+| **A. Direct image** | `namespace`, `modal-gvisor`, `modal-vm` | The published GHCR toolchain image, by ref, at create time — nothing to bake |
+| **B. Stock vendor image** | `blaxel` | The vendor's own base image; setup steps run fallbacks instead of the baked toolchain |
+| **C. Baked artifact** | `e2b`, `daytona-vm`, `daytona-container`, `novita` | A provider-side template/snapshot built FROM the toolchain image |
+
+Then work through the steps. `bun run typecheck && bun run test` catches every one except 7 and 8 —
+steps 1–5 are compile errors, and step 6 is the `workflow-registry-sync` gate under `bun run test`.
+
 1. **Identity & economics** — add the id to `ProviderId` and a `REGISTRY` entry in
    [`packages/schema/src/providers.ts`](./packages/schema/src/providers.ts): `displayName`, `website`,
    `sdkPackage`, `requiredEnvVars`, `isolation`, vetted `pricing` (per-vCPU/per-GiB, normalized to USD),
    `maturity`, `specPinning`, and the `transport` capability (`streaming`/`syncCapMs`/`detachedPoll`).
    The `Record<ProviderId, …>` type makes a missing entry a compile error.
+
+   > **Get `transport` right — it is the one field a wrong guess turns into lost benchmark data.** A
+   > finite `syncCapMs` REQUIRES `detachedPoll: true` (asserted in `providers.test.ts`), and
+   > `detachedPoll` does *not* require a filesystem API: `StepRunner.runDetached` polls the done-file
+   > over the sandbox filesystem where one works and `cat`s it over exec where none does. Reading it as
+   > "needs a filesystem" is what stranded a 55-minute namespace benchmark on a synchronous exec its own
+   > server cut at ~4m19s.
+
 2. **Adapter** — add a matching entry to the adapter map in
    [`packages/providers`](./packages/providers): how to `createCompute()` and the create-time
-   `createOptions` (the pinned target spec + toolchain image). The two registries are joined by id, so a
-   one-sided provider is a compile error.
-3. **Template** — add a template builder under [`packages/templates`](./packages/templates) so the
-   provider can be baked with the toolchain image.
-4. **Exhaustive consumers** — update the CLI bake map, candidate create-options switch, release-plan
-   artifact switch, provider-id test oracles, and both benchmark workflows' synchronized credential
-   environment. Provider matrix fan-out, normalization, leaderboard, and economics remain automatic.
-5. Bring it up live with a single-provider branch dispatch before adding it to the default matrix list.
+   `createOptions`. Pin the target spec from `TARGET_SPEC` (some SDKs take it on the factory config, some
+   per-create) and point at `config.toolchainImage` (A), the vendor image (B), or the baked artifact
+   name (C). The two registries are joined by id, so a one-sided provider is a compile error.
+3. **The CLI's four exhaustive sites** — each is a compile error until handled, and for archetypes A/B
+   each is a one-line no-op: the baker map in [`bake.ts`](./apps/cli/src/bin/bake.ts),
+   `candidateCreateOptions` in [`validate.ts`](./apps/cli/src/lib/bake/validate.ts), the promote switch
+   in [`promote.ts`](./apps/cli/src/lib/bake/promote.ts), and `providerArtifact` in
+   [`release-plan.ts`](./apps/cli/src/bin/release-plan.ts).
+4. **Archetype C only** — the bake pipeline: add the env keys to *both* `envSchema` and `ENV_KEYS` in
+   [`config.ts`](./packages/providers/src/lib/config.ts) (they are hand-parallel) along with the
+   version/candidate artifact names; add a baker under `apps/cli/src/lib/bake/`; add a `CandidateRefs`
+   field and thread it through the `candidateRefs` literals in **both** `bake.ts` and `promote.ts`. Add a
+   template builder under [`packages/templates`](./packages/templates) only if the artifact is built from
+   a `TemplateSpec` — most providers ship none.
+5. **Dependencies** — add the `@computesdk/*` wrapper to `workspaces.catalogs.computesdk` in the root
+   `package.json` and reference it as `catalog:computesdk` from `packages/providers` (the
+   `package-meta` gate enforces the `catalog:` form).
+6. **Workflows.** The `workflow-registry-sync` gate covers the bench lanes: add the id to
+   `bench-smoke.yml`'s `provider` choice `options`, and each `requiredEnvVars` key to the *"Run suite and
+   normalize"* step env of **both** `bench-smoke.yml` and `bench-suite.yml` (same value expression modulo
+   each lane's `inputs.provider` / `matrix.provider` selector). It also covers the release lane: wire the
+   same keys into `toolchain-image.yml`'s `bake` and `publish` credential blocks, or declare the provider
+   in `RELEASE_LANE_EXEMPT` with the reason it needs no release-lane boot.
+
+   Across all four blocks the gate also requires each credential expression to **exactly match the single
+   form it generates from the registry for that lane** — `${{ <selector>.provider == '<id>' &&
+   secrets.<KEY> || '' }}` (or its parenthesized multi-owner variant) in the provider-scoped lanes, with
+   `<selector>` being `inputs` in the smoke dispatch and `matrix` in a fan-out; and the unconditional
+   `${{ secrets.<KEY> }}` only in the release lane's `publish`, which is a serial transaction with no
+   provider axis. Copy the shape from an existing provider in the same lane and only the id and key change.
+   The lane matters: the unconditional form in a fan-out would hand one provider's secret to every cell,
+   and a guard in `publish` would never match, so each is rejected where it does not belong. It is a whitelist rather than a set of checks against
+   known-bad spellings, because a malformed expression passes every presence check while handing the
+   provider an empty (or over-broad) credential, which reads downstream as "that provider has no results".
+   A credential that genuinely cannot use a canonical form needs a `CREDENTIAL_EXPR_EXCEPTIONS` entry
+   naming its reason and its exact expression per lane. Three exist today, and all three are cases where
+   there is no secret to draw from: `NSC_TOKEN_FILE` (namespace mints it from GitHub OIDC),
+   `VERCEL_OIDC_TOKEN` (same, exported into the step env by the `vercel-auth` action), and
+   `MICROSANDBOX_LOCAL_BENCH` (a host-capability opt-in set to the literal `1`). A lane the entry omits
+   permits nothing there, so list every lane the credential is wired into. **An OIDC-minted token is the
+   common case for a new exception** — if your provider federates instead of storing a secret, expect to
+   add one, and guard the scoped lanes on the provider as well as the mint outcome unless the mint step
+   is itself provider-conditional.
+7. **Nothing enforces the default matrix.** `bench-matrix.yml`'s `providers` input default is free text;
+   a new provider is dispatchable immediately but stays out of the default run until added there. Leave
+   it out (and out of `RELEASE_REQUIRED_PROVIDERS`) until a committed run validates it — that is the
+   repo's opt-in posture for an unproven provider, so a missing secret skips rather than blocking.
+8. **Credential docs** — [`.env.example`](./.env.example) for local runs and the operator table in
+   [CI & secrets](./docs/ci-secrets.md) for the `privileged` environment.
+9. **Test oracles** — five tests hardcode the provider-id list and fail (at runtime, not compile time)
+   until the new id is added: [`providers.test.ts`](./packages/schema/src/providers.test.ts),
+   [`index.test.ts`](./packages/providers/src/index.test.ts),
+   [`providers-run.test.ts`](./apps/cli/src/lib/providers-run.test.ts),
+   [`validate.test.ts`](./apps/cli/src/lib/bake/validate.test.ts), and
+   [`release-plan.test.ts`](./apps/cli/src/bin/release-plan.test.ts) — the last also asserts the release
+   plan's cell **count**, so bump it.
+10. **Free** — `packages/results` is provider-generic, so normalization, aggregation, leaderboard,
+    economics, and stability pick the provider up with no edits. Bring it up live via `bench-smoke.yml`,
+    with a single-provider branch dispatch before you add it to the default matrix list.
 
 ## Add a suite
 
