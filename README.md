@@ -1,197 +1,80 @@
+<div align="center">
+
 # High-Performance Sandbox Benchmarks
 
-Compare top sandbox providers on the same pinned machine shape for real developer and CI/CD workloads.
+**Reproducible performance benchmarks for remote code sandboxes.**
 
-**Same target everywhere:** 4 vCPU · 8 GiB RAM · 40 GB disk. One headline metric per dimension, ranked with honest statistics.
+[Leaderboard](./LEADERBOARD.md) · [Methodology](./docs/methodology.md) · [Dataset](./data/dataset/) · [Architecture](./docs/architecture.md) · [Contributing](./CONTRIBUTING.md)
 
-## How the benchmarks work
+</div>
 
-Every provider is created at the same pinned spec, runs the same workloads, and every number is
-normalized into one schema-validated dataset. Those numbers come from three sources, and for the
-synthetic half we deliberately did **not** write our own workloads.
+## What this measures
 
-**Synthetic microbenchmarks run under the [Phoronix Test Suite](https://www.phoronix-test-suite.com/)
-(PTS).** A public performance comparison is only as credible as its workload provenance, so each
-synthetic result comes from a versioned, inspectable
-[OpenBenchmarking](https://openbenchmarking.org/) profile that declares its own setup, arguments,
-repetition, output parsing, units, and result direction — and that anyone can re-run outside this
-repo. That removes most of the benchmark-author degrees of freedom a bespoke harness leaves open:
-hand-rolled shell timing, ad-hoc output parsing, undeclared warm-up, hand-maintained metadata. We
-vendor the exact profiles ([`pts-profiles/`](./packages/schema/src/pts-profiles), pinned to an
-upstream commit — the directory name *is* the version pin), generate the metric catalog from their
-XML instead of transcribing it, and fail CI on any drift (`bun run check:catalog-drift`,
-[ADR-0003](./docs/adr/0003-generated-pts-catalog-and-drift-gate.md)).
+Every provider is tested on the same target shape — **4 vCPU · 8 GiB RAM · 40 GB disk** — and
+measured on what developers actually wait on:
 
-**Our own harness covers what PTS is not the right abstraction for:** provider lifecycle latency
-(spawn / exec / snapshot / teardown) and control-plane calls, measured around the provider SDK; and
-whole developer workflows — clone, install, lint, build, test — on real OSS repos. The real-world
-suites are still authored as repo-local profiles in the *same* PTS format
-([`pts-profiles/local/`](./packages/schema/src/pts-profiles/local)), so a workload we own inherits
-the same execution, repetition, and parsing contract as an upstream one.
+- sandbox creation, exec, snapshot, teardown, and control-plane latency;
+- clone, install, lint, build, and test workflows on real OSS repositories;
+- CPU, disk, memory, network, and database performance;
+- isolation technology and in-sandbox Docker capability;
+- cost normalized against measured runtime.
 
-**Economics is derived, never measured:** published, vetted pricing × the measured runtime already on
-the run. A provider with no vetted rate emits no economics — a null rate must never read as free.
+Real-world workflows are the primary result; synthetic benchmarks explain the performance
+characteristics underneath them. A provider can top a creation-time or CPU chart and still lose the
+run — dependency install is thousands of small random writes that a network-attached disk turns into
+the longest step, cloning is sequential and network-bound, and most developer tooling is
+single-threaded.
 
-The result is a hybrid: externally recognizable microbenchmarks where a shared definition already
-exists, domain-specific measurement where none does, and no requirement that you trust a benchmarking
-framework we invented ourselves. Full detail in [Methodology](./docs/methodology.md).
+## Why the Phoronix Test Suite
 
-## Why real-world workflows lead
+Synthetic workloads use versioned [Phoronix Test Suite](https://www.phoronix-test-suite.com/)
+profiles published through [OpenBenchmarking](https://openbenchmarking.org/), rather than a benchmark
+harness invented for this comparison. Each result therefore has an inspectable definition for
+installation, arguments, repetition, parsing, units, and result direction, and can be reproduced
+independently outside this repository. The profiles are vendored, their metric definitions are
+generated rather than transcribed, and [CI rejects
+drift](./docs/adr/0003-generated-pts-catalog-and-drift-gate.md).
 
-Synthetic scores say what the hardware *can* do; the real-world suites say what a developer or a CI
-job actually waits on. A provider can top a creation-time or CPU chart and still lose the run:
+Custom instrumentation is limited to measurements PTS cannot represent: provider lifecycle latency,
+sandbox capabilities, pricing, and complete developer workflows. Those workflows are still authored
+as repo-local profiles in the same PTS format, so a workload we own inherits the same execution and
+parsing contract as an upstream one.
 
-- **Dependency install** is thousands of small, random writes — a network-attached or
-  bandwidth-capped disk turns it into the longest step of your run.
-- **Cloning a repo** has the opposite profile: mostly sequential writes, bounded by network.
-- **Most developer tooling is single-threaded**, so it is limited by single-thread CPU, not core count.
+## Methodology
 
-## Start here
+Each result is produced from fresh, independently created sandboxes. Workloads, toolchains,
+arguments, and target resources are pinned; raw samples and observed machine properties are retained;
+normalized runs are schema-validated before publication.
 
-| | |
-| --- | --- |
-| **[Leaderboard](./LEADERBOARD.md)** | Provider rankings from the latest published run |
-| **[Methodology](./docs/methodology.md)** | How a measurement is produced |
-| **[Docs hub](./docs/README.md)** | ADRs, CI secrets, security, contributing |
+Within-sandbox passes and between-sandbox replicates are tracked separately. Failed, missing,
+unsupported, and resource-mismatched results are disclosed rather than treated as zero or silently
+excluded.
 
-Live provider benches and toolchain releases are **maintainer-only** (GitHub Environment `privileged`). Pull requests never receive provider secrets — see [CI & secrets](./docs/ci-secrets.md).
+Read the full [methodology](./docs/methodology.md).
 
----
+## Development
 
-## The repository
-
-This repo is a **Bun workspace monorepo** with a strict, enforced dependency DAG and a uniform
-package shape. The guiding rule: *"can I import this?"* is answered by the path alone, and
-boundary violations fail CI.
-
-## Source-first, no build step
-
-Every package's `exports` map points at TypeScript **source** (`./src/index.ts`), and Bun resolves
-workspace sources natively. There is no compile step: `bun install` → `typecheck` → `test` →
-`lint` are all green with zero compilation. The committed `bun.lock` pins the whole graph.
-
-## Layout
-
-```text
-packages/   importable libraries   — scope @sandbox-benchmarks/*
-  schema/       shared types + arktype schemas, vendored PTS profiles + generated metric catalog (bottom of the DAG)
-  providers/    provider adapters → schema + computesdk
-  templates/    per-provider template builders + toolchain Docker images (images/)
-  harness/      benchmark timing → providers + schema
-  results/      normalization + the comparison surface → schema, figures
-  figures/      realworld charts: Run → figure model → HTML → WebP (headless Chrome) → schema
-apps/
-  cli/          entrypoint with bin commands → every packages/* library
-tooling/        dev-only            — scope @repo/*
-  tsconfig/     shared source-first TS configs (config-only)
-  test-utils/   provider conformance suite factory
-  repo-checks/  boundary + package-meta invariant tests
-lib/        in-sandbox benchmark runner (bench.sh), realworld PTS runner overlay, isolation probe
-data/       committed benchmark dataset (published run results)
-scripts/    maintainer scripts (dataset backfill, leaderboard update)
-docs/       methodology, ADRs, CI & secrets
+```bash
+mise install                     # pinned non-Bun tools (typos, shellcheck, hadolint)
+bun install --frozen-lockfile
+bun run typecheck
+bun run test
+bun run lint
 ```
 
-## Dependency DAG (enforced)
+The full command contract, workspace layout, and enforced dependency DAG are in
+[Architecture](./docs/architecture.md).
 
-| Member                      | Internal deps (`workspace:*`)                   | External (catalog)                  |
-|-----------------------------|-------------------------------------------------|-------------------------------------|
-| `@sandbox-benchmarks/schema`     | —                                               | `arktype`                           |
-| `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
-| `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
-| `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
-| `@sandbox-benchmarks/figures`    | schema                                          | fonts (`@fontsource/*`, `dejavu-fonts-ttf`) |
-| `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
-| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
-| `@repo/tsconfig`            | —                                               | —                                   |
-| `@repo/test-utils`          | schema                                          | —                                   |
-| `@repo/repo-checks`         | —                                               | —                                   |
+Provider benchmarks, dataset publication, and toolchain releases require protected credentials and
+run only from maintainer-controlled workflows; pull requests never receive provider secrets. See
+[CI & secrets](./docs/ci-secrets.md).
 
-`results` depends on `schema` and `figures` alone — it must normalize without any provider SDK,
-and it now also builds the leaderboard's chart documents. `@repo/repo-checks` enforces that no
-package reaches across boundaries or into another package's private `lib/`.
+## Contributing
 
-`figures` is typed by `schema` — the workspace's one Run contract and registry shapes — so it
-re-describes nothing the workspace already owns, but the registries still arrive as ARGUMENTS:
-there is no module-level dataset, so its guards run against synthetic runs instead of whatever
-the committed dataset contains. Its charts are pure string building (HTML with fonts inlined
-from pinned packages), and `results` owns the seam that passes the real registries. The one
-impure step — headless Chrome, via `Bun.WebView` — lives behind its own entry point,
-`@sandbox-benchmarks/figures/screenshot`, imported only by the CLI: everything that merely reads
-the Run model or builds a document never spawns a browser.
+Contributions must preserve three invariants:
 
-## Command contract
+1. Every provider performs equivalent work.
+2. Every number is traceable to raw samples and exact workload provenance.
+3. Missing or non-comparable results remain visible.
 
-| Command              | What it does                                                            |
-|----------------------|-------------------------------------------------------------------------|
-| `bun install`        | Resolve the graph, symlink workspaces, install catalogs (≥7-day-old releases). |
-| `bun run typecheck`  | `tsc --noEmit` per member — proof of source-first/no-build.             |
-| `bun run test`       | Browser-free `bun test` per member, including repo-checks invariants, excluding the Chrome-backed figures suite. |
-| `bun run test:figures` | Chrome-backed figures screenshot tests; CI's `figures` job runs this on a hosted runner with pinned headless Chrome. |
-| `bun run lint`       | `biome check . --error-on-warnings` — CI gate; warnings fail (root-only Biome config). |
-| `bun run format`     | `biome format . --write` — formatting only (no import sorting / lint fixes). |
-| `bun run lint:fix`   | `biome check . --write` — formatting + import sorting + safe lint fixes. |
-| `bun run lint:fix:unsafe` | `biome check . --fix --unsafe` — also applies behavior-changing fixes; review the diff. |
-| `bun run spell`      | `typos` — source-code spell check (run it before pushing).              |
-| `bun run spell:fix`  | `typos --write-changes` — apply typos' suggested corrections.            |
-| `bun run lint:shell` | `shellcheck` on the repo's shell scripts (toolchain images, `lib/`, mise tasks) and the `run:` blocks embedded in `.github/actions/` composite actions. |
-| `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
-| `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
-| `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
-
-Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
-
-## Toolchain (mise)
-
-Non-Bun tools are version-pinned in [`mise.toml`](mise.toml) and managed with
-[mise](https://mise.jdx.dev): [`typos`](https://github.com/crate-ci/typos) (spell check),
-`shellcheck` + `hadolint` (shell/Dockerfile lint for the toolchain images), and
-`actionlint` + `zizmor` (workflow lint + security audit, run by the `ci-lint` workflow). After
-cloning, run `mise install` (and `mise trust` once) so the pinned binaries are available; the
-`bun run` wrappers invoke these tools through `mise exec`, so they always use the pinned versions.
-mise fetches from official release sources with checksum verification — no npm republisher and no
-install-time postinstall.
-
-## Continuous integration
-
-`.github/workflows/ci.yml` runs the command contract on every pull request and every push to
-`main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
-`bun run lint:shell` → `bun run lint:docker` → `bun run typecheck` → browser-free `bun run test` →
-`bun run check:catalog-drift` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
-A second `figures` job runs pinned-Chrome `bun run test:figures` on a hosted `ubuntu-24.04` runner —
-the same image that renders the committed figures, and the one where Chrome can keep its sandbox.
-A separate `ci-lint.yml` lints the workflows themselves (actionlint + zizmor). The browser-free
-checks run locally; CI additionally exercises the Chrome-backed figures suite with its pinned browser.
-
-CI runs on a maintainer-controlled runner, so it never executes fork-PR code — the gate runs only
-for pushes and same-repo pull requests. Anything that needs provider credentials additionally runs
-only from `main`, behind Environment [`privileged`](./docs/ci-secrets.md); pull requests never
-receive provider secrets.
-
-## Git hooks (pre-commit)
-
-[Lefthook](https://lefthook.dev) runs a fast local mirror of CI on every commit, configured in
-`lefthook.yml`:
-
-- **Biome** on staged files (`biome check --write`, restaging any auto-fixes; unfixable issues or
-  warnings block the commit).
-- **Typos** repo-wide (`bun run spell`) — read-only, so run `bun run spell:fix` to apply corrections.
-- **Lockfile** check (`bun install --frozen-lockfile`) when a manifest or `bun.lock` is staged, so
-  `package.json` and `bun.lock` can't drift apart.
-
-`bun install` wires the hooks automatically via the project's own `prepare` script
-(`lefthook install`) — no third-party postinstall runs. Re-install them with `bunx lefthook
-install`, and bypass a single commit with `LEFTHOOK=0 git commit`.
-
-## Supply-chain posture
-
-`bunfig.toml` sets `minimumReleaseAge = 604800` (7 days) so freshly published — possibly
-compromised — releases are not installed, and **no third-party lifecycle scripts run** (empty
-`trustedDependencies`). The git hooks above are wired by the project's own first-party `prepare`
-script, not a dependency's postinstall, and CI installs with `--ignore-scripts` so it runs none
-either. Lint and formatting are root-only via a single `biome.json`.
-
-## Community
-
-- [Contributing](./CONTRIBUTING.md) — local gate; how to add a provider, suite, or metric
-- [Security](./SECURITY.md) — vulnerability reporting; never paste secrets into issues or PRs
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and [SECURITY.md](./SECURITY.md).

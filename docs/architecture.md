@@ -1,0 +1,138 @@
+# Architecture
+
+How the repository itself is put together: the workspace, its enforced boundaries, the command
+contract, and the gates that hold them. For how a *measurement* is produced, see
+[methodology](./methodology.md).
+
+## The repository
+
+This repo is a **Bun workspace monorepo** with a strict, enforced dependency DAG and a uniform
+package shape. The guiding rule: *"can I import this?"* is answered by the path alone, and
+boundary violations fail CI.
+
+## Source-first, no build step
+
+Every package's `exports` map points at TypeScript **source** (`./src/index.ts`), and Bun resolves
+workspace sources natively. There is no compile step: `bun install` → `typecheck` → `test` →
+`lint` are all green with zero compilation. The committed `bun.lock` pins the whole graph.
+
+## Layout
+
+```text
+packages/   importable libraries   — scope @sandbox-benchmarks/*
+  schema/       shared types + arktype schemas, vendored PTS profiles + generated metric catalog (bottom of the DAG)
+  providers/    provider adapters → schema + computesdk
+  templates/    per-provider template builders + toolchain Docker images (images/)
+  harness/      benchmark timing → providers + schema
+  results/      normalization + the comparison surface → schema, figures
+  figures/      realworld charts: Run → figure model → HTML → WebP (headless Chrome) → schema
+apps/
+  cli/          entrypoint with bin commands → every packages/* library
+tooling/        dev-only            — scope @repo/*
+  tsconfig/     shared source-first TS configs (config-only)
+  test-utils/   provider conformance suite factory
+  repo-checks/  boundary + package-meta invariant tests
+lib/        in-sandbox benchmark runner (bench.sh), realworld PTS runner overlay, isolation probe
+data/       committed benchmark dataset (published run results)
+scripts/    maintainer scripts (dataset backfill, leaderboard update)
+docs/       methodology, ADRs, CI & secrets
+```
+
+## Dependency DAG (enforced)
+
+| Member                      | Internal deps (`workspace:*`)                   | External (catalog)                  |
+|-----------------------------|-------------------------------------------------|-------------------------------------|
+| `@sandbox-benchmarks/schema`     | —                                               | `arktype`                           |
+| `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
+| `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
+| `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
+| `@sandbox-benchmarks/figures`    | schema                                          | fonts (`@fontsource/*`, `dejavu-fonts-ttf`) |
+| `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
+| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
+| `@repo/tsconfig`            | —                                               | —                                   |
+| `@repo/test-utils`          | schema                                          | —                                   |
+| `@repo/repo-checks`         | —                                               | —                                   |
+
+`results` depends on `schema` and `figures` alone — it must normalize without any provider SDK,
+and it now also builds the leaderboard's chart documents. `@repo/repo-checks` enforces that no
+package reaches across boundaries or into another package's private `lib/`.
+
+`figures` is typed by `schema` — the workspace's one Run contract and registry shapes — so it
+re-describes nothing the workspace already owns, but the registries still arrive as ARGUMENTS:
+there is no module-level dataset, so its guards run against synthetic runs instead of whatever
+the committed dataset contains. Its charts are pure string building (HTML with fonts inlined
+from pinned packages), and `results` owns the seam that passes the real registries. The one
+impure step — headless Chrome, via `Bun.WebView` — lives behind its own entry point,
+`@sandbox-benchmarks/figures/screenshot`, imported only by the CLI: everything that merely reads
+the Run model or builds a document never spawns a browser.
+
+## Command contract
+
+| Command              | What it does                                                            |
+|----------------------|-------------------------------------------------------------------------|
+| `bun install`        | Resolve the graph, symlink workspaces, install catalogs (≥7-day-old releases). |
+| `bun run typecheck`  | `tsc --noEmit` per member — proof of source-first/no-build.             |
+| `bun run test`       | Browser-free `bun test` per member, including repo-checks invariants, excluding the Chrome-backed figures suite. |
+| `bun run test:figures` | Chrome-backed figures screenshot tests; CI's `figures` job runs this on a hosted runner with pinned headless Chrome. |
+| `bun run lint`       | `biome check . --error-on-warnings` — CI gate; warnings fail (root-only Biome config). |
+| `bun run format`     | `biome format . --write` — formatting only (no import sorting / lint fixes). |
+| `bun run lint:fix`   | `biome check . --write` — formatting + import sorting + safe lint fixes. |
+| `bun run lint:fix:unsafe` | `biome check . --fix --unsafe` — also applies behavior-changing fixes; review the diff. |
+| `bun run spell`      | `typos` — source-code spell check (run it before pushing).              |
+| `bun run spell:fix`  | `typos --write-changes` — apply typos' suggested corrections.            |
+| `bun run lint:shell` | `shellcheck` on the repo's shell scripts (toolchain images, `lib/`, mise tasks) and the `run:` blocks embedded in `.github/actions/` composite actions. |
+| `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
+| `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
+| `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
+
+Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
+
+## Toolchain (mise)
+
+Non-Bun tools are version-pinned in [`mise.toml`](../mise.toml) and managed with
+[mise](https://mise.jdx.dev): [`typos`](https://github.com/crate-ci/typos) (spell check),
+`shellcheck` + `hadolint` (shell/Dockerfile lint for the toolchain images), and
+`actionlint` + `zizmor` (workflow lint + security audit, run by the `ci-lint` workflow). After
+cloning, run `mise install` (and `mise trust` once) so the pinned binaries are available; the
+`bun run` wrappers invoke these tools through `mise exec`, so they always use the pinned versions.
+mise fetches from official release sources with checksum verification — no npm republisher and no
+install-time postinstall.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the command contract on every pull request and every push to
+`main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
+`bun run lint:shell` → `bun run lint:docker` → `bun run typecheck` → browser-free `bun run test` →
+`bun run check:catalog-drift` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
+A second `figures` job runs pinned-Chrome `bun run test:figures` on a hosted `ubuntu-24.04` runner —
+the same image that renders the committed figures, and the one where Chrome can keep its sandbox.
+A separate `ci-lint.yml` lints the workflows themselves (actionlint + zizmor). The browser-free
+checks run locally; CI additionally exercises the Chrome-backed figures suite with its pinned browser.
+
+CI runs on a maintainer-controlled runner, so it never executes fork-PR code — the gate runs only
+for pushes and same-repo pull requests. Anything that needs provider credentials additionally runs
+only from `main`, behind Environment [`privileged`](./ci-secrets.md); pull requests never
+receive provider secrets.
+
+## Git hooks (pre-commit)
+
+[Lefthook](https://lefthook.dev) runs a fast local mirror of CI on every commit, configured in
+`lefthook.yml`:
+
+- **Biome** on staged files (`biome check --write`, restaging any auto-fixes; unfixable issues or
+  warnings block the commit).
+- **Typos** repo-wide (`bun run spell`) — read-only, so run `bun run spell:fix` to apply corrections.
+- **Lockfile** check (`bun install --frozen-lockfile`) when a manifest or `bun.lock` is staged, so
+  `package.json` and `bun.lock` can't drift apart.
+
+`bun install` wires the hooks automatically via the project's own `prepare` script
+(`lefthook install`) — no third-party postinstall runs. Re-install them with `bunx lefthook
+install`, and bypass a single commit with `LEFTHOOK=0 git commit`.
+
+## Supply-chain posture
+
+`bunfig.toml` sets `minimumReleaseAge = 604800` (7 days) so freshly published — possibly
+compromised — releases are not installed, and **no third-party lifecycle scripts run** (empty
+`trustedDependencies`). The git hooks above are wired by the project's own first-party `prepare`
+script, not a dependency's postinstall, and CI installs with `--ignore-scripts` so it runs none
+either. Lint and formatting are root-only via a single `biome.json`.

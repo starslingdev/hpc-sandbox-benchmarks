@@ -3,8 +3,8 @@
 Thanks for helping improve sandbox provider comparisons. Read the
 [methodology](./docs/methodology.md) for how a measurement is produced before extending the matrix.
 
-This repo is a Bun workspace monorepo with a strict, enforced dependency DAG (see the
-[README](./README.md)) and a source-first, no-build layout.
+This repo is a Bun workspace monorepo with a strict, enforced dependency DAG (see
+[architecture](./docs/architecture.md)) and a source-first, no-build layout.
 
 ## Pull requests from forks
 
@@ -110,5 +110,5 @@ don't trip the drift gate.
   the runtime schema, never hand-written twice.
 - **Cross-registry invariants** (id-uniqueness, one-headline-per-dimension, the suite contract) are
   plain throws at module load over typed in-repo constants — fail fast at import.
-- Keep packages within the [dependency DAG](./README.md#dependency-dag-enforced); `@repo/repo-checks`
+- Keep packages within the [dependency DAG](./docs/architecture.md#dependency-dag-enforced); `@repo/repo-checks`
   fails CI on a boundary violation.

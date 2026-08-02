@@ -30,7 +30,8 @@ on this host VM it is installed from the same pin as `packages/templates/src/lib
 - `benchmark:realworld:selftest` requires Docker (not installed in this Cloud VM by default).
 
 ### Running checks / the app
-The command contract lives in the root `package.json` and `README.md`; run those scripts directly:
+The command contract lives in the root `package.json` and `docs/architecture.md`; run those scripts
+directly:
 - `bun run lint`, `bun run typecheck`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
   `bun run lint:shell`, `bun run lint:docker`.
 - Run a CLI bin directly, e.g. `bun apps/cli/src/bin/plan-matrix.ts --list-providers` or

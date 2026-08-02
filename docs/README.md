@@ -3,6 +3,7 @@
 | Doc | What it covers |
 | --- | --- |
 | [Methodology](./methodology.md) | Target spec, dimensions, economics, host vs effective specs, dataset pipeline |
+| [Architecture](./architecture.md) | Workspace layout, enforced dependency DAG, command contract, CI, supply-chain posture |
 | [Leaderboard](../LEADERBOARD.md) | Public provider rankings (generated from the published Run dataset) |
 | [ADRs](./adr/README.md) | Load-bearing architecture decisions |
 | [Contributing](../CONTRIBUTING.md) | Local gate; adding a provider, suite, or metric |
