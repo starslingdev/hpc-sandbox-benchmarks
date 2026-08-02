@@ -190,6 +190,13 @@ so 20–80-minute suites such as Mastra launch detached and remain observable th
      rule on `network`, or is a k=1 cold-start whose install/build IS the metric (realworld). Everything
      fixed carries its spread via replicates, not in-sandbox repeats; a number or `converge` forces one
      policy across every suite.
+
+   The `bench-smoke` workflow is this same step, narrowed: the same plan action over a single
+   dispatched provider and suite, calling the same reusable `bench-suite` workflow, defaulting to one
+   replicate — and then stopping. It has no step 3, so a smoke run exercises the live lane end to end
+   (credentials, sandbox lifecycle, the in-sandbox producer, normalization, artifacts) without moving
+   the published dataset. Its one behavioural difference is that it *requires* its dispatched provider
+   to reach `validated`, so a missing credential fails the run rather than being recorded as a skip.
 3. **Aggregate → promote → commit** — the `commit-dataset` workflow (the matrix's `publish` job calls
    it) collects every shard, `aggregate`s them into one candidate Run (measured metrics unioned, the ≥2
    replicate sandboxes of one `(provider, suite)` folded into per-metric replicate breakdowns, economics

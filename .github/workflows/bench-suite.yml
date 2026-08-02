@@ -1,12 +1,20 @@
 name: Benchmark suite (reusable)
 
-# One suite, fanned out across the provider matrix — ONE runner per (suite, provider) cell, which drives
-# that cell's whole replicate fleet itself. bench-matrix.yml calls this once per suite via its
-# suite-matrix job (`name: ${{ matrix.suite }}`), passing the plan's selected provider list AND that
-# suite's replicate index array — so cells display as "<suite> / <provider>" and nest under one suite
-# label in the Actions UI. The replicate axis is the BETWEEN-MACHINE knob: R sandboxes of one
-# (provider, suite) capture a provider's fleet variation (two can land on different host hardware),
-# which the aggregate folds into per-metric replicate breakdowns.
+# THE benchmark cell — the one implementation of "create real sandboxes, run a suite in them, collect
+# the raw results, normalize them into shard Run documents, upload them". Both live-benchmark
+# dispatches call it and neither has a second copy: bench-matrix.yml fans it out over the whole
+# provider × suite matrix and then commits the aggregated dataset, and bench-smoke.yml calls it with a
+# single provider × suite and stops after the upload. A smoke run is therefore the same code path as a
+# published run minus the commit phase — the credential wiring, the runner routing, the budget guard,
+# the artifact contract and the failure isolation below cannot drift between the two lanes, because
+# there is only one of each.
+#
+# ONE runner per (suite, provider) cell, which drives that cell's whole replicate fleet itself.
+# bench-matrix.yml calls this once per suite via its suite-matrix job (`name: ${{ matrix.suite }}`),
+# passing the plan's selected provider list AND that suite's replicate index array — so cells display
+# as "<suite> / <provider>" and nest under one suite label in the Actions UI. The replicate axis is the
+# BETWEEN-MACHINE knob: R sandboxes of one (provider, suite) capture a provider's fleet variation (two
+# can land on different host hardware), which the aggregate folds into per-metric replicate breakdowns.
 #
 # Replicates are NOT a matrix axis. A bench runner spends effectively all of its wall time waiting on a
 # sandbox (create → poll a detached step → poll again), so a runner-per-replicate matrix billed R idle
@@ -29,20 +37,17 @@ name: Benchmark suite (reusable)
 # runner eviction, OOM, or a "re-run failed jobs" click now costs all R replicates of the cell rather
 # than one. Sizing `max_concurrency` against `timeout-minutes` below is what keeps that risk bounded.
 #
-# Factoring the shared cell here (checkout → run → upload, plus the per-provider credential wiring)
-# keeps that block in ONE place instead of copy-pasted into every suite job, mirroring
-# runner-benchmarking's reusable bench-suite.yml.
-#
 # The artifact name (bench-<suite>-<provider>-<run_id>) is load-bearing: commit-dataset.yml downloads
 # the shards by the `bench-*-<run_id>` pattern and aggregates them — keep the two in lockstep. One
 # artifact now carries the cell's R shards, each written to its own `data/runs/<run_id>-r<idx>.json`
 # (every shard of one run shares the same `runId` FIELD, so the `-r<idx>` filename suffix is what keeps
-# them distinct); the aggregate keys them by the --replicate index stamped on each Run.
+# them distinct); the aggregate keys them by the --replicate index stamped on each Run. A smoke run
+# produces exactly the same shapes; nothing downstream aggregates them, which is the whole difference.
 #
 # Environment `privileged` (required reviewers + environment secrets — see docs/ci-secrets.md) lives on
 # the fan-out job here: a `uses:` caller can't declare `environment:`, so the approval gate and the
-# provider secrets are enforced at this layer. Environment secrets resolve from this job's
-# `environment:` declaration; the caller may still pass `secrets: inherit` for repository-level
+# provider secrets are enforced at this layer for BOTH lanes. Environment secrets resolve from this
+# job's `environment:` declaration; the caller may still pass `secrets: inherit` for repository-level
 # secrets / token context.
 on:
   workflow_call:
@@ -86,11 +91,23 @@ on:
         required: false
         type: string
         default: ''
+      require_providers:
+        description: >-
+          Comma-separated provider ids that MUST reach "validated" in this cell, or the cell fails
+          (REQUIRE_PROVIDERS). Blank — the MATRIX default — is the graceful posture: a provider whose
+          secret is absent or misnamed is recorded as a skip, so one unauthenticated cell doesn't sink a
+          whole matrix run. bench-smoke.yml sets its dispatched provider here instead, because the entire
+          point of a smoke run is to prove that one lane end to end: without it a missing credential
+          exits 0 having benchmarked nothing, and a green smoke would hide that the provider was never
+          actually smoked.
+        required: false
+        type: string
+        default: ''
 
 # Least privilege: the fan-out only reads the checked-out code and uploads artifacts, plus the OIDC
-# id-token the namespace cell exchanges for a Namespace login (no stored secret — see the CLI steps
-# below). The caller must grant `id-token: write` too: a called workflow's token can never exceed its
-# caller's.
+# id-token the namespace cell exchanges for a Namespace login (no stored secret — see the
+# ./.github/actions/namespace-token step below). The caller must grant `id-token: write` too: a called
+# workflow's token can never exceed its caller's.
 permissions:
   contents: read
   id-token: write
@@ -140,59 +157,30 @@ jobs:
           # checkout's credentials), so don't persist the job token in .git/config.
           persist-credentials: false
 
-      # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write
-      # above), logging the `nsc` CLI into the workspace via `nsc auth exchange-github-token` under
-      # the hood. That login lives in the CLI's own local session store, not a discoverable file —
-      # /var/run/nsc/token.json is only pre-populated on Namespace-hosted runners (confirmed by a
-      # live smoke run: ENOENT on a regular GitHub-hosted runner) — so the next step mints a portable
-      # token file from that session for @computesdk/namespace to read. Requires a trust relationship
-      # (this repo -> the Namespace tenant) registered once on the Namespace side — continue-on-error
-      # so a not-yet-registered trust relationship (or any transient failure) degrades to the same
-      # "missing credentials" skip every other provider gets from an absent secret, rather than
-      # failing the whole cell.
-      - name: Set up Namespace CLI
+      # Bun + `bun install --frozen-lockfile --ignore-scripts` (bunfig.toml's supply-chain posture),
+      # from the repo's single setup action. Runs before any credential is introduced.
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
+
+      # Namespace is the one provider with no stored secret: it federates on this job's OIDC identity
+      # (id-token: write above) and mints a portable token file from the resulting CLI session — see
+      # the action for the grant and why a file is needed at all. The cell's suite + run attempt name
+      # the token, through the action's input rather than the shell.
+      #
+      # continue-on-error buys a LEGIBLE failure, not a passing job — and it has to live here because a
+      # composite action's own steps can't declare it. A not-yet-registered trust relationship (or any
+      # transient mint failure) leaves `token-file` empty and the harness records the standard
+      # "missing credentials" skip, which is graceful in the matrix lane (no REQUIRE_PROVIDERS, so one
+      # unauthenticated cell doesn't sink the run) and fatal in the smoke lane (which requires its
+      # dispatched provider by name). What it avoids in both is the raw step abort, which would kill the
+      # cell with no Run document and no summary to diagnose from.
+      - name: Set up Namespace credentials
         if: matrix.provider == 'namespace'
         continue-on-error: true
-        id: nsc-setup
-        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
-
-      # `nsc token create` mints a scoped, revocable token from the CLI session above and writes it as
-      # a {"bearer_token": "..."} JSON file @computesdk/namespace can read via NSC_TOKEN_FILE. The
-      # grant below is the minimal permission set the harness needs against the Compute API's
-      # instance resource: create (CreateInstance), list (ListInstances), get (DescribeInstance),
-      # destroy (DestroyInstance), and exec (RunCommandSync) — found by live trial: a wildcard action
-      # is rejected outright ("not allowed in revokable tokens"), and each wrong verb name (e.g.
-      # "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error.
-      #
-      # The cell's suite names the token so a leaked one is traceable to the cell that minted it; it
-      # reaches the shell through the environment, never interpolated into the run block, so a
-      # dispatch-controlled suite name can't inject into the runner command (zizmor template-injection).
-      # One token per cell now covers all R of its replicate sandboxes (they share this process's
-      # credentials, exactly as they share every other provider secret in the run step below).
-      # run_attempt is part of the name because run_id is PRESERVED across re-runs: without it a retry
-      # collides with the first attempt's token, and continue-on-error would turn that name clash into a
-      # silent namespace skip — on exactly the re-run where you wanted the validation.
-      - name: Mint a portable Namespace token
-        if: matrix.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
-        continue-on-error: true
-        id: nsc-token
-        env:
-          BENCH_SUITE: ${{ inputs.suite }}
-          NSC_TOKEN_PATH: ${{ runner.temp }}/nsc-token.json
-        run: |
-          nsc token create \
-            --name "sandbox-benchmarks-${BENCH_SUITE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
-            --token_file "$NSC_TOKEN_PATH"
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        id: namespace
+        uses: ./.github/actions/namespace-token
         with:
-          bun-version: 1.3.14
-
-      # Frozen lockfile + no lifecycle scripts, matching bunfig.toml's supply-chain posture.
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
+          token-name: sandbox-benchmarks-${{ inputs.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Authenticate with Vercel
         if: matrix.provider == 'vercel'
@@ -235,6 +223,10 @@ jobs:
           # PTS passes-per-case policy: blank = the suite's own policy (cpu-node + memory converge, the rest
           # fixed), a number or "converge" overrides every suite. Read by the harness preamble.
           BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
+          # Blank in the matrix lane (a skipped provider stays a skip); the smoke lane names its dispatched
+          # provider so a missing/misnamed secret fails the job by name instead of exiting 0 having
+          # benchmarked nothing. See the require_providers input above.
+          REQUIRE_PROVIDERS: ${{ inputs.require_providers }}
           # Scope every provider credential to the cell that actually uses it: a cell receives ONLY
           # the secret(s) for its own `matrix.provider`, so a compromised adapter or suite can't read
           # another provider's credential out of the environment. A non-matching provider evaluates to
@@ -254,11 +246,11 @@ jobs:
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-          # OIDC-federated per-cell token file (see the Namespace CLI steps above). Not a stored
-          # secret: it is empty unless THIS cell is the namespace cell AND the mint above succeeded
-          # (steps.nsc-token only runs when matrix.provider == 'namespace'), which the harness reads
-          # as the standard missing-credentials skip on every other cell.
-          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          # OIDC-federated per-cell token file (see the Namespace step above). Not a stored secret: it is
+          # empty unless THIS cell is the namespace cell AND the mint succeeded (the step only runs when
+          # matrix.provider == 'namespace', and only writes the output once `nsc token create` returned),
+          # which the harness reads as the standard missing-credentials skip on every other cell.
+          NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
           # @computesdk/vercel reads the short-lived token exported by the auth action.
           VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
           # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an

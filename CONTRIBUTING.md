@@ -57,8 +57,11 @@ bun run check:catalog-drift                                    # fail if the com
 3. **Template** — add a template builder under [`packages/templates`](./packages/templates) so the
    provider can be baked with the toolchain image.
 4. **Exhaustive consumers** — update the CLI bake map, candidate create-options switch, release-plan
-   artifact switch, provider-id test oracles, and both benchmark workflows' synchronized credential
-   environment. Provider matrix fan-out, normalization, leaderboard, and economics remain automatic.
+   artifact switch, provider-id test oracles, the credential environment in
+   [`bench-suite.yml`](./.github/workflows/bench-suite.yml) (the one benchmark cell both dispatch lanes
+   call, so there is a single block to edit), and the `provider` dispatch options in
+   [`bench-smoke.yml`](./.github/workflows/bench-smoke.yml). Provider matrix fan-out, normalization,
+   leaderboard, and economics remain automatic.
 5. Bring it up live with a single-provider branch dispatch before adding it to the default matrix list.
 
 ## Add a suite
@@ -79,8 +82,9 @@ bun run check:catalog-drift                                    # fail if the com
 3. **No matrix job edit** — `bench-matrix.yml` matrices over `plan.outputs.suites` (from `SUITE_NAMES`
    via `plan-suites`), so a new suite is picked up automatically and nests as `<suite> / <provider>` in
    the Actions UI; a dispatch can still narrow to a subset with the `suites` input. The
-   workflow-registry-sync drift gate keeps that nesting wiring honest. Add it to the `bench-smoke` suite
-   `options` too so it stays dispatchable on its own.
+   workflow-registry-sync drift gate keeps that nesting wiring honest. `bench-smoke.yml` runs the same
+   plan → `bench-suite.yml` pipeline, so it needs no edit either — except adding the name to its `suite`
+   dispatch `options`, which is what makes the suite selectable for a single-cell smoke.
 
 ## Add a metric
 

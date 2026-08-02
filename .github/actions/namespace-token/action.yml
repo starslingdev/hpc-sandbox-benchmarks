@@ -1,0 +1,67 @@
+name: Mint a portable Namespace token
+description: >-
+  Log the `nsc` CLI into the workspace via GitHub OIDC federation, then mint a scoped, revocable
+  token file @computesdk/namespace can read through NSC_TOKEN_FILE. Namespace is the one provider
+  with no stored secret — it federates on the job's `id-token: write` identity, which the caller must
+  grant.
+
+  The login itself lives in the CLI's own local session store, not a discoverable file
+  (/var/run/nsc/token.json is only pre-populated on Namespace-hosted runners — confirmed by a live
+  smoke run: ENOENT on a regular GitHub-hosted runner), so a portable token file has to be minted
+  from that session. The grant below is the minimal permission set the harness needs against the
+  Compute API's instance resource: create (CreateInstance), list (ListInstances), get
+  (DescribeInstance), destroy (DestroyInstance), and exec (RunCommandSync) — found by live trial: a
+  wildcard action is rejected outright ("not allowed in revokable tokens"), and each wrong verb name
+  (e.g. "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error. All of
+  this requires a trust relationship (this repo -> the Namespace tenant) registered once on the
+  Namespace side.
+
+  FAILURE POSTURE is the caller's to choose, because a composite action's own steps cannot declare
+  `continue-on-error`. Put `continue-on-error: true` on the `uses:` step instead: the whole action
+  then degrades to "no token", `token-file` stays empty, and the harness records the standard
+  missing-credentials skip — the same shape every other provider gets from an absent secret — rather
+  than aborting the job with no Run document and no summary. Whether that skip is tolerated or fatal
+  is decided downstream by REQUIRE_PROVIDERS, not here.
+
+inputs:
+  token-name:
+    description: >-
+      Name recorded on the minted token, so a leaked one is traceable to the cell that minted it.
+      Include github.run_attempt as well as github.run_id: run_id is PRESERVED across re-runs, so
+      without it a retry collides with the first attempt's token — and a caller's
+      `continue-on-error` would turn that name clash into a silent namespace skip on exactly the
+      re-run where the run was wanted.
+    required: true
+
+outputs:
+  token-file:
+    description: >-
+      Path to the minted {"bearer_token": "…"} JSON file, or empty if the mint did not complete.
+      Wire it straight into NSC_TOKEN_FILE — empty reads as "unset" to the config gatekeeper.
+    value: ${{ steps.mint.outputs.token-file }}
+
+runs:
+  using: composite
+  steps:
+    # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
+    # moved/compromised tag can't silently change what runs.
+    - name: Set up Namespace CLI
+      uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+
+    # The token name reaches the shell through the environment, never interpolated into the run
+    # block, so a dispatch-controlled suite name inside it can't inject into the runner command
+    # (zizmor template-injection). The output is written only after the mint succeeds — the default
+    # `bash -e` shell aborts the step first otherwise — so an empty `token-file` always means "no
+    # usable token", never "a token that was never written".
+    - name: Mint a portable Namespace token
+      id: mint
+      shell: bash
+      env:
+        NSC_TOKEN_NAME: ${{ inputs.token-name }}
+        NSC_TOKEN_PATH: ${{ runner.temp }}/nsc-token.json
+      run: |
+        nsc token create \
+          --name "$NSC_TOKEN_NAME" \
+          --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
+          --token_file "$NSC_TOKEN_PATH"
+        echo "token-file=$NSC_TOKEN_PATH" >> "$GITHUB_OUTPUT"

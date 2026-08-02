@@ -1,11 +1,13 @@
 // Invariant: the GitHub workflows that dispatch live benchmarks stay in lockstep with the schema
 // registries (PROVIDERS + SUITE_NAMES). GHA can't import TypeScript, so the provider/suite choices and
-// the per-provider credential env block are hand-mirrored across .github/workflows/bench-*.yml; this
-// gate re-derives the truth from the registries and fails if someone adds a provider/suite (or its
-// required secret) without updating the workflows. bench-matrix.yml has one suite-matrix job that calls
-// the reusable bench-suite.yml (native nesting: suite / provider) — so the credential block + run-job
-// timeout live in the reusable (the "matrix side" of the credential/timeout checks reads it), and a
-// separate invariant asserts the suite-matrix caller stays wired to plan.outputs.suites. Mirrors
+// the per-provider credential env block are hand-written YAML; this gate re-derives the truth from the
+// registries and fails if someone adds a provider/suite (or its required secret) without updating the
+// workflows. Both dispatch lanes — bench-matrix.yml (the full matrix, ending in a dataset commit) and
+// bench-smoke.yml (the same pipeline narrowed to one provider × suite and stopped before that commit) —
+// are one `plan` job plus one suite-matrix job calling the reusable bench-suite.yml (native nesting:
+// suite / provider). The credential block + run-job timeout live in that single reusable, so the
+// credential/timeout checks read it; separate invariants assert both callers stay wired to
+// plan.outputs.suites and that neither lane grows a benchmark cell of its own again. Mirrors
 // runner-benchmarking's test/workflow-{env,suite}-sync.test.ts. See ./lib/workflow-sync.ts for the
 // parsers + pure checks. Nesting (invariant 6) lives in ./lib/workflow-nesting.ts; YAML helpers in
 // ./lib/workflow-yaml.ts — workflow-sync.ts re-exports the public surface.
@@ -19,6 +21,7 @@ import {
 	CELL_BUDGET_ENV_KEY,
 	checkCellBudgetEnv,
 	checkCredentialEnv,
+	checkLaneDelegates,
 	checkProviderInput,
 	checkSuiteInput,
 	checkSuiteMatrixCaller,
@@ -29,6 +32,7 @@ import {
 	EXPECTED_REPLICATES_ARG,
 	EXPECTED_REPLICATES_ENV_EXPR,
 	EXPECTED_REPLICATES_INPUT_EXPR,
+	EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR,
 	EXPECTED_SUITE_MATRIX_EXPR,
 	EXPECTED_SUITE_NAME_EXPR,
 	jobTimeoutMinutes,
@@ -39,7 +43,6 @@ import {
 	readWorkflow,
 	requiredCredentialKeys,
 	runCheck,
-	SMOKE_JOB,
 	SMOKE_WORKFLOW,
 	SUITE_JOB,
 	SUITE_WORKFLOW,
@@ -52,7 +55,6 @@ const matrix = readWorkflow(MATRIX_WORKFLOW);
 const suiteWf = readWorkflow(SUITE_WORKFLOW);
 const providerInput = dispatchInput(smoke, "provider", SMOKE_WORKFLOW);
 const suiteInput = dispatchInput(smoke, "suite", SMOKE_WORKFLOW);
-const smokeEnv = stepEnv(smoke, SMOKE_JOB, RUN_STEP, SMOKE_WORKFLOW);
 const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 
 describe("parsers against the real workflow files", () => {
@@ -68,16 +70,14 @@ describe("parsers against the real workflow files", () => {
 		expect(suiteInput.type).toBe("choice");
 	});
 
-	test("stepEnv extracts a realistic credential block from both lanes", () => {
-		expect(smokeEnv).toContainKey("DAYTONA_API_KEY");
-		// The matrix lane's credential block lives in the reusable bench-suite.yml.
+	test("stepEnv extracts the one real credential block, in the reusable cell", () => {
 		expect(suiteEnv).toContainKey("E2B_API_KEY");
+		expect(suiteEnv).toContainKey("DAYTONA_API_KEY");
 		// A real block (credentials + runtime context), not a parse fragment.
-		expect(Object.keys(smokeEnv).length).toBeGreaterThanOrEqual(8);
+		expect(Object.keys(suiteEnv).length).toBeGreaterThanOrEqual(8);
 	});
 
-	test("both live-run jobs reserve host margin beyond the longest suite", () => {
-		expect(jobTimeoutMinutes(smoke, SMOKE_JOB, SMOKE_WORKFLOW)).toBe(180);
+	test("the live-run job reserves host margin beyond the longest suite", () => {
 		expect(jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW)).toBe(180);
 	});
 
@@ -88,10 +88,10 @@ describe("parsers against the real workflow files", () => {
 	});
 
 	test("stepEnv throws on a missing job, step, or env mapping", () => {
-		expect(() => stepEnv(smoke, "no-such-job", RUN_STEP, SMOKE_WORKFLOW)).toThrow(
+		expect(() => stepEnv(suiteWf, "no-such-job", RUN_STEP, SUITE_WORKFLOW)).toThrow(
 			'job "no-such-job" not found',
 		);
-		expect(() => stepEnv(smoke, SMOKE_JOB, "No Such Step", SMOKE_WORKFLOW)).toThrow(
+		expect(() => stepEnv(suiteWf, SUITE_JOB, "No Such Step", SUITE_WORKFLOW)).toThrow(
 			'has no step named "No Such Step"',
 		);
 		const yaml = Bun.YAML.stringify({ jobs: { j: { steps: [{ name: "bare" }] } } });
@@ -103,7 +103,7 @@ describe("parsers against the real workflow files", () => {
 
 describe("checkWorkflowTimeouts", () => {
 	test("passes timeouts with the required host margin", () => {
-		expect(checkWorkflowTimeouts({ smoke: 180, matrix: 180 })).toEqual([]);
+		expect(checkWorkflowTimeouts({ bench: 180 })).toEqual([]);
 	});
 
 	test("flags a job cap that cannot outlast the longest suite", () => {
@@ -232,6 +232,16 @@ describe("checkSuiteInput", () => {
 });
 
 describe("checkCredentialEnv", () => {
+	// A hypothetical second lane declaring its own block, spelled with the OTHER provider selector —
+	// the shape the fold exists for. The real repo has exactly one block (Invariant 3b keeps it that
+	// way), so the cross-workflow half of this check is exercised synthetically.
+	const laneEnv = Object.fromEntries(
+		Object.entries(suiteEnv).map(([key, value]) => [
+			key,
+			value.replaceAll("matrix.provider", "inputs.provider"),
+		]),
+	);
+
 	test("requiredCredentialKeys records provenance per provider", () => {
 		const required = requiredCredentialKeys();
 		expect(required.get("E2B_API_KEY")).toEqual(["e2b"]);
@@ -240,37 +250,76 @@ describe("checkCredentialEnv", () => {
 		expect(required.get("DAYTONA_API_KEY")).toEqual(["daytona-vm", "daytona-container"]);
 	});
 
-	test("flags a required key dropped from the matrix (reusable) block, naming key and file", () => {
+	test("the real reusable block covers every registered provider's credentials", () => {
+		expect(checkCredentialEnv({ [SUITE_WORKFLOW]: suiteEnv })).toEqual([]);
+	});
+
+	test("flags a required key dropped from the reusable block, naming key and file", () => {
 		const { E2B_API_KEY: _, ...drifted } = suiteEnv;
-		const errors = checkCredentialEnv({
-			[SMOKE_WORKFLOW]: smokeEnv,
-			[SUITE_WORKFLOW]: drifted,
-		});
+		const errors = checkCredentialEnv({ [SUITE_WORKFLOW]: drifted });
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("E2B_API_KEY");
 		expect(errors[0]).toContain("required by provider e2b");
 		expect(errors[0]).toContain(SUITE_WORKFLOW);
-		expect(errors[0]).not.toContain(SMOKE_WORKFLOW);
 	});
 
-	test("flags a shared key whose value expression differs across the two lanes", () => {
+	// The selector fold: the same secret guarded on `inputs.provider` rather than `matrix.provider` is
+	// the same wiring, not drift, so two lanes spelling it either way must still agree.
+	test("folds the two provider selectors together across workflows", () => {
+		expect(checkCredentialEnv({ [SMOKE_WORKFLOW]: laneEnv, [SUITE_WORKFLOW]: suiteEnv })).toEqual(
+			[],
+		);
+	});
+
+	test("flags a shared key whose value expression differs across two workflows", () => {
 		const drifted = { ...suiteEnv, DAYTONA_API_KEY: `\${{ secrets.DAYTONA_API_KEY_OTHER }}` };
 		const errors = checkCredentialEnv({
-			[SMOKE_WORKFLOW]: smokeEnv,
+			[SMOKE_WORKFLOW]: laneEnv,
 			[SUITE_WORKFLOW]: drifted,
 		});
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("DAYTONA_API_KEY:");
-		expect(errors[0]).toContain(smokeEnv.DAYTONA_API_KEY);
+		expect(errors[0]).toContain(laneEnv.DAYTONA_API_KEY);
 		expect(errors[0]).toContain("DAYTONA_API_KEY_OTHER");
 	});
 
 	test("tolerates extra runtime-context vars beyond the required credentials", () => {
 		const errors = checkCredentialEnv({
-			[SMOKE_WORKFLOW]: { ...smokeEnv, SOME_RUNTIME_CONTEXT: "x" },
-			[SUITE_WORKFLOW]: suiteEnv,
+			[SUITE_WORKFLOW]: { ...suiteEnv, SOME_RUNTIME_CONTEXT: "x" },
 		});
 		expect(errors).toEqual([]);
+	});
+});
+
+describe("checkLaneDelegates", () => {
+	// Invariant 3b: the consolidation itself. Both dispatch lanes must reach sandboxes only through the
+	// reusable — a re-introduced cell in either is the copy-paste this change removed.
+	test("the real dispatch lanes own no benchmark cell", () => {
+		expect(checkLaneDelegates(smoke, SMOKE_WORKFLOW)).toEqual([]);
+		expect(checkLaneDelegates(matrix, MATRIX_WORKFLOW)).toEqual([]);
+	});
+
+	test("the reusable itself is where the cell lives (so it would NOT pass this lane check)", () => {
+		const errors = checkLaneDelegates(suiteWf, SUITE_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain(SUITE_JOB);
+	});
+
+	test("flags a lane that re-grows its own run step, naming the job", () => {
+		const yaml = Bun.YAML.stringify({
+			jobs: {
+				plan: { "runs-on": "ubuntu-24.04", steps: [{ name: "Plan" }] },
+				smoke: {
+					"runs-on": "ubuntu-24.04",
+					steps: [{ name: RUN_STEP, run: "bun bench-suite.ts" }],
+				},
+			},
+		});
+		const errors = checkLaneDelegates(Bun.YAML.parse(yaml), "synthetic.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("smoke");
+		expect(errors[0]).toContain(RUN_STEP);
+		expect(errors[0]).not.toContain("plan,");
 	});
 });
 
@@ -383,6 +432,57 @@ describe("checkSuiteMatrixCaller", () => {
 		expect(() => matrixSuiteCaller(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
 			'without a string "suite" input',
 		);
+	});
+});
+
+describe("checkSuiteMatrixCaller on the smoke lane", () => {
+	const smokeCaller = matrixSuiteCaller(smoke, SMOKE_WORKFLOW);
+
+	// The consolidation in one assertion: the smoke lane's caller is the matrix lane's caller, down to
+	// the job id and every nesting expression. If these diverge, "a smoke is a real run minus the
+	// commit" has stopped being true.
+	test("the smoke caller is wired identically to the matrix caller", () => {
+		const matrixCaller = matrixSuiteCaller(matrix);
+		expect(smokeCaller.jobId).toBe(matrixCaller.jobId);
+		expect(smokeCaller.name).toBe(matrixCaller.name);
+		expect(smokeCaller.suiteInput).toBe(matrixCaller.suiteInput);
+		expect(smokeCaller.replicatesInput).toBe(matrixCaller.replicatesInput);
+		expect(smokeCaller.matrixSuiteExpr).toBe(matrixCaller.matrixSuiteExpr);
+	});
+
+	test("the real smoke caller passes its dispatched provider as require_providers", () => {
+		expect(smokeCaller.requireProvidersInput).toBe(EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR);
+		expect(
+			checkSuiteMatrixCaller(smokeCaller, SMOKE_WORKFLOW, { requireProviderAssertion: true }),
+		).toEqual([]);
+	});
+
+	// Dropping it is the silent regression: every nesting check still passes, the job still goes green,
+	// and a missing credential is recorded as a skip on a run that benchmarked nothing.
+	test("flags a smoke caller that stopped requiring its provider", () => {
+		const { requireProvidersInput: _dropped, ...caller } = smokeCaller;
+		const errors = checkSuiteMatrixCaller(caller, SMOKE_WORKFLOW, {
+			requireProviderAssertion: true,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("with.require_providers must be");
+		expect(errors[0]).toContain("no such input");
+	});
+
+	// The smoke lane deliberately has NO publish job — that missing third phase IS the difference
+	// between the lanes — so the publish dependency must not be demanded of it.
+	test("does not demand a publish dependency of the smoke lane", () => {
+		expect(smokeCaller.publishNeeds).toEqual([]);
+		expect(
+			checkSuiteMatrixCaller(smokeCaller, SMOKE_WORKFLOW, { requireProviderAssertion: true }),
+		).toEqual([]);
+	});
+
+	// ...and the matrix lane must not be let off its own assertion by the shared default.
+	test("still demands a publish dependency by default", () => {
+		const errors = checkSuiteMatrixCaller({ ...smokeCaller, publishNeeds: [] }, SMOKE_WORKFLOW);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('publish" must need');
 	});
 });
 

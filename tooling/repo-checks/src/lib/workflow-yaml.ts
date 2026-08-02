@@ -9,11 +9,11 @@ import { findRepoRoot } from "./workspace.ts";
 
 export const SMOKE_WORKFLOW = ".github/workflows/bench-smoke.yml";
 export const MATRIX_WORKFLOW = ".github/workflows/bench-matrix.yml";
-/** The reusable workflow each bench-matrix suite job calls; it owns the credential block + run timeout. */
+/** The reusable workflow BOTH dispatch lanes call; it owns the credential block + run timeout. */
 export const SUITE_WORKFLOW = ".github/workflows/bench-suite.yml";
-/** The step (in bench-smoke.yml and bench-suite.yml) that drives the provider SDK; it owns the env. */
+/** The step that drives the provider SDK; it owns the credential env. It exists exactly once, in the
+ *  reusable bench-suite.yml — a copy in either dispatch lane is the drift Invariant 3b rejects. */
 export const RUN_STEP = "Run suite and normalize";
-export const SMOKE_JOB = "smoke";
 /** The fan-out job inside the reusable bench-suite.yml (its credential env + timeout). */
 export const SUITE_JOB = "bench";
 /** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. Re-exported

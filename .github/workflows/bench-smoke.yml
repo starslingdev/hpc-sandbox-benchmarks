@@ -1,27 +1,54 @@
 name: Bench smoke
 
-# Manually-dispatched live benchmark: spins up a real provider sandbox, runs one suite, normalizes
-# the result into a Run document, and uploads it as an artifact. Off the PR path (it costs real
-# sandbox time and needs provider credentials) — main is the default, while an explicit
-# `allow_branch` dispatch supports pre-merge validation of a change to the in-sandbox producer (the
-# sandbox clones this repo at the dispatched ref's SHA, so the mise tasks under test are the branch's
-# own). Mirrors bench-matrix.yml's opt-in rather than inventing a second spelling. Every dispatch
-# stays gated by Environment `privileged` (required reviewers + environment secrets — see
-# docs/ci-secrets.md); this workflow writes nothing back to the repo, so there is no publish step to
-# keep main-only.
+# A real benchmark run, narrowed to one provider × suite and stopped before the dataset is committed.
+#
+# This is bench-matrix.yml with two of its three phases: the same `plan` step
+# (./.github/actions/plan-bench-axes) with its axes narrowed to the dispatched provider and suite, then
+# the same suite-matrix job calling the same reusable bench-suite.yml — which spins up real sandboxes,
+# runs the suite, normalizes shard Run documents and uploads them as an artifact. What it does NOT do
+# is the third phase: no `publish` job, so nothing is aggregated, promoted or committed back to the
+# repo. That is the whole difference, and it is the point — a smoke run proves the live lane end to end
+# (credentials, runner routing, sandbox lifecycle, the in-sandbox producer, normalization, artifacts)
+# without moving the published dataset.
+#
+# Everything the run actually does therefore has exactly ONE implementation, shared with the matrix:
+# the credential wiring, the 180-minute cell budget, the microsandbox-local runner routing, the
+# Namespace OIDC mint, the replicate fan-out and the artifact contract all live in bench-suite.yml and
+# cannot drift between the lanes. Historically they were copy-pasted here and kept in sync by hand
+# (with a drift gate to catch the mistakes); now there is nothing to keep in sync.
+#
+# Two knobs differ in DEFAULT, not in kind:
+#   * `replicas` defaults to 1 — a smoke is a single sandbox per cell, where the matrix defaults to
+#     each suite's Suite.defaultReplicas (R=3 synthetic, R=12 realworld). Raise it to rehearse a real
+#     replicate fleet.
+#   * the dispatched provider is passed to bench-suite.yml as `require_providers`, so a missing or
+#     misnamed secret FAILS the job by name instead of being recorded as a skip. A green smoke must
+#     never hide that the provider was never actually smoked. The matrix deliberately leaves that
+#     blank so one unauthenticated cell doesn't sink a whole run.
+#
+# Off the PR path (it costs real sandbox time and needs provider credentials) — main is the default,
+# while an explicit `allow_branch` dispatch supports pre-merge validation of a change to the in-sandbox
+# producer (the sandbox clones this repo at the dispatched ref's SHA, so the mise tasks under test are
+# the branch's own). Every dispatch stays gated by Environment `privileged` (required reviewers +
+# environment secrets — see docs/ci-secrets.md), declared inside bench-suite.yml because a `uses:`
+# caller can't declare `environment:` itself.
 #
 # NOTE FOR OPERATORS — two things gate a branch dispatch besides the `if:` below:
 #   1. Environment `privileged` carries its own deployment-branch rule, so a branch dispatch is
 #      refused by GitHub ("Branch is not allowed to deploy to privileged") until that rule also
 #      admits the branch. See docs/ci-secrets.md → Environment `privileged`.
 #   2. GitHub reads the dispatch INPUT DEFINITIONS from the copy of this workflow on the default
-#      branch, so `allow_branch` is not offerable until this file is merged to `main` — the same
-#      constraint commit-dataset.yml carries. Merging it does not run anything; the input stays
+#      branch, so a newly added input is not offerable until this file is merged to `main` — the same
+#      constraint commit-dataset.yml carries. Merging it does not run anything; the inputs stay
 #      opt-in and the environment rule in (1) still has to admit the branch.
 on:
   workflow_dispatch:
     inputs:
       provider:
+        # Constrained to the PROVIDERS registry (packages/schema/src/providers.ts); the
+        # workflow-registry-sync drift gate keeps this list in lockstep, so a new provider must be
+        # added here too. The plan step re-validates it against the registry anyway, so a stale option
+        # fails the plan rather than running nothing.
         description: Provider to benchmark
         type: choice
         default: daytona-vm
@@ -41,9 +68,9 @@ on:
           ]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
-        # workflow-registry-sync drift gate (tooling/repo-checks) keeps this list in lockstep, so a
-        # new suite must be added here too. Still passed through the environment below (never
-        # interpolated into the shell) as defense-in-depth.
+        # workflow-registry-sync drift gate keeps this list in lockstep, so a new suite must be added
+        # here too. Still passed through the plan step (never interpolated into a shell) as
+        # defense-in-depth.
         # Defaults to `system` (PyBench + SQLite Speedtest + Git): a quick multi-probe suite that
         # exercises the broadest slice of the lane in a couple of minutes of benchmark on top of setup.
         # (`memory`/STREAM has a shorter budget but covers only a single dimension.)
@@ -62,12 +89,30 @@ on:
             realworld-better-auth,
             realworld-openclaw,
           ]
+      replicas:
+        # The between-machine axis, same spelling as bench-matrix.yml's input — but defaulting to 1
+        # rather than to each suite's schema default, because a smoke exists to prove the lane, not to
+        # tighten an interval, and R=12 on a realworld suite would spend a matrix cell's worth of
+        # provider quota to do it. Set it higher to rehearse a real replicate fleet (the cell drives
+        # them concurrently from its one runner, exactly as in the matrix).
+        description: 'Replicate sandboxes for the cell — the between-machine axis. Default 1 (a single sandbox); blank = the suite''s configured default (Suite.defaultReplicas); a whole number overrides it.'
+        required: false
+        type: string
+        default: '1'
       pts_passes:
         # The within-machine axis, matched to bench-matrix.yml so a policy can be smoke-tested on one cell
         # before spending the whole matrix. Blank uses the suite's own policy (the cpu-node and memory
         # suites converge; every other suite keeps a fixed count); a whole number
-        # forces that many; "converge" forces PTS's convergence. Passed via BENCH_PTS_PASSES; harness-validated.
+        # forces that many; "converge" forces PTS's convergence. Forwarded verbatim; harness-validated.
         description: 'PTS passes per case: blank = suite default policy, a number, or "converge".'
+        required: false
+        type: string
+        default: ''
+      max_concurrency:
+        # Inert at the default replicas=1 (one sandbox can't exceed any cap), and forwarded verbatim so
+        # a raised `replicas` can still be held under a tight provider quota — the same knob, and the
+        # same up-front rejection of a cap whose serial waves cannot fit the cell budget, as the matrix.
+        description: 'Cap replicate sandboxes in flight (blank = unbounded, i.e. all at once). Only meaningful when replicas > 1.'
         required: false
         type: string
         default: ''
@@ -81,178 +126,103 @@ on:
         type: boolean
         default: false
 
-# Least privilege: the job only reads the checked-out code and uploads an artifact.
+# Least privilege, workflow default: the plan job only reads the checked-out code. `id-token: write` is
+# deliberately NOT granted here — only the `suite` fan-out needs it (it must pass the scope down to
+# bench-suite.yml's cell for Namespace's GitHub OIDC federation), so it is scoped to that job; zizmor
+# flags a workflow-level id-token: write as overly broad since `plan` never touches it.
 permissions:
   contents: read
 
+# Serialize smoke runs per (ref, provider, suite) so two dispatches of the same cell don't contend for
+# the same provider quota; different cells still run in parallel.
 concurrency:
   group: bench-smoke-${{ github.ref }}-${{ inputs.provider }}-${{ inputs.suite }}
   cancel-in-progress: false
 
 jobs:
-  smoke:
-    name: ${{ inputs.suite }} on ${{ inputs.provider }}
+  # The matrix's plan phase, narrowed to the dispatched cell: the same three planners re-validate the
+  # provider and suite against the registries (a stale dispatch option fails here rather than running
+  # nothing) and emit the replicate map. No secrets — plan stays off the privileged environment so
+  # approval isn't needed just to dry-run the axes. The suite job `needs: plan`, so this guard also
+  # gates the run: a skipped plan (fork, or a non-main run without allow_branch) skips the cell.
+  plan:
+    name: Plan smoke
     # The fork guard is unconditional; only the ref constraint is opt-out-able. A dispatch can only be
     # triggered by someone with write access, and `workflow_dispatch` resolves refs in THIS repository
     # (never a fork's branch), so widening the ref does not widen who can spend provider quota.
     if: >
       github.repository == 'starslingdev/hpc-sandbox-benchmarks' &&
       (github.ref == 'refs/heads/main' || inputs.allow_branch)
-    # Two constraints pull opposite ways here, so both are recorded. The hosted `ubuntu-24.04` runner is
-    # the default because the ephemeral self-hosted label is reaped after 70 minutes even while a step
-    # is healthy, while this dispatch exposes suites with a 155-minute sandbox budget. But
-    # microsandbox-local needs KVM, which only the self-hosted label has — so it is routed there and
-    # accepts the shorter lifetime, declared below as BENCH_RUNNER_LIFETIME_MINUTES so bench-suite
-    # refuses an over-budget suite up front instead of being reaped mid-run with no logs and no
-    # artifact. Cloud and every other provider keep the hosted runner and its full lifetime.
-    runs-on: ${{ inputs.provider == 'microsandbox-local' && 'starsling-ubuntu-24.04-2' || 'ubuntu-24.04' }}
-    environment: privileged
-    timeout-minutes: 180
-    # `id-token: write` is scoped to this job (not the workflow, which only has this one job today),
-    # matching bench-matrix.yml/toolchain-image.yml: a job added later must opt in explicitly rather
-    # than silently inheriting the ability to request OIDC tokens. Only Namespace uses it (GitHub
-    # OIDC federation, no stored secret); widened from the workflow default (contents: read).
-    permissions:
-      contents: read
-      id-token: write
+    runs-on: ubuntu-24.04
+    outputs:
+      providers: ${{ steps.plan.outputs.providers }}
+      suites: ${{ steps.plan.outputs.suites }}
+      # A JSON object mapping the selected suite to its replicate index array (e.g. {"system":[0]}).
+      # The suite job indexes it by matrix.suite and passes that slice down, exactly as the matrix does.
+      replicates: ${{ steps.plan.outputs.replicates }}
     steps:
       # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
       # moved/compromised tag can't silently change what runs.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The job only reads code (the sandbox clones via BENCH_REPO_TOKEN when set, not the
-          # checkout's credentials), so don't persist the job token in .git/config.
+          # Planning only reads code; don't persist the job token in .git/config.
           persist-credentials: false
-
-      # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write
-      # above), logging the `nsc` CLI into the workspace via `nsc auth exchange-github-token` under
-      # the hood. That login lives in the CLI's own local session store, not a discoverable file —
-      # /var/run/nsc/token.json is only pre-populated on Namespace-hosted runners (confirmed by a
-      # live smoke run: ENOENT on a regular GitHub-hosted runner) — so the next step mints a portable
-      # token file from that session for @computesdk/namespace to read. Requires a trust relationship
-      # (this repo -> the Namespace tenant) registered once on the Namespace side.
-      #
-      # continue-on-error buys a LEGIBLE failure, not a passing job. This lane sets
-      # `REQUIRE_PROVIDERS: ${{ inputs.provider }}`, so the one provider you dispatched is required by
-      # construction: a not-yet-registered trust relationship (or any transient mint failure) leaves
-      # NSC_TOKEN_FILE empty, the harness records the standard "missing credentials" skip, and the D1
-      # gate in bench-smoke.ts then fails the job by name ("required providers did not pass"). That is
-      # deliberate — a green smoke must never hide that the provider was never actually smoked. What
-      # continue-on-error avoids is the raw step abort, which would kill the job with no Run document
-      # and no summary to diagnose from. The genuinely graceful skip lives in the matrix lanes
-      # (bench-suite.yml), which set no REQUIRE_PROVIDERS, so one unauthenticated cell doesn't sink
-      # the run.
-      - name: Set up Namespace CLI
-        if: inputs.provider == 'namespace'
-        continue-on-error: true
-        id: nsc-setup
-        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
-
-      # `nsc token create` mints a scoped, revocable token from the CLI session above and writes it as
-      # a {"bearer_token": "..."} JSON file @computesdk/namespace can read via NSC_TOKEN_FILE. The
-      # grant below is the minimal permission set the harness needs against the Compute API's
-      # instance resource: create (CreateInstance), list (ListInstances), get (DescribeInstance),
-      # destroy (DestroyInstance), and exec (RunCommandSync) — found by live trial: a wildcard action
-      # is rejected outright ("not allowed in revokable tokens"), and each wrong verb name (e.g.
-      # "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error.
-      # run_attempt is part of the name because run_id is PRESERVED across re-runs: without it a retry
-      # collides with the first attempt's token, and continue-on-error would turn that name clash into a
-      # silent namespace skip — on exactly the re-run where you wanted the smoke to run.
-      - name: Mint a portable Namespace token
-        if: inputs.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
-        continue-on-error: true
-        id: nsc-token
-        run: |
-          nsc token create \
-            --name "sandbox-benchmarks-smoke-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
-            --token_file "${{ runner.temp }}/nsc-token.json"
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
+      # Single-element axes: the dispatched provider and suite. They reach the planners through the
+      # action's inputs (never interpolated into a shell), and an unregistered name fails the step.
+      - name: Plan
+        id: plan
+        uses: ./.github/actions/plan-bench-axes
         with:
-          bun-version: 1.3.14
+          providers: ${{ inputs.provider }}
+          suites: ${{ inputs.suite }}
+          replicas: ${{ inputs.replicas }}
 
-      # Frozen lockfile + no lifecycle scripts, matching bunfig.toml's supply-chain posture.
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-
-      - name: Authenticate with Vercel
-        if: inputs.provider == 'vercel'
-        continue-on-error: true
-        id: vercel-auth
-        uses: ./.github/actions/vercel-auth
-        with:
-          token: ${{ secrets.VERCEL_TOKEN }}
-          org-id: ${{ secrets.VERCEL_ORG_ID }}
-          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      # Drives the provider SDK to create a sandbox, run the suite, collect results, and normalize.
-      # The sandbox clones THIS repo at the run's SHA so the in-sandbox producer matches the harness.
-      - name: Run suite and normalize
-        env:
-          BENCH_REPO_REF: ${{ github.sha }}
-          # Optional once the repo is public (anonymous clone works). Still passed so private forks and
-          # rate-limited clones keep working via the short-lived job token.
-          BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Pass the dispatch inputs through the environment, never interpolated into the `run` script.
-          # `provider` and `suite` are both constrained choices, but env passthrough is kept as
-          # defense-in-depth so no input value can ever expand straight into the self-hosted runner
-          # shell. `$GITHUB_RUN_ID` is built-in.
-          BENCH_PROVIDER: ${{ inputs.provider }}
-          BENCH_SUITE: ${{ inputs.suite }}
-          # PTS passes-per-case policy (blank = suite default, a number, or "converge"); read by the
-          # harness preamble. A smoke run is single-sandbox, so there is no replicate axis here.
-          BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
-          # The point of a smoke run is to prove the lane end to end. Without this, a missing or
-          # misnamed provider secret is recorded as a skip and the job still exits 0 having
-          # benchmarked nothing — assert the dispatched provider actually reached "validated".
-          REQUIRE_PROVIDERS: ${{ inputs.provider }}
-          # Scope every provider credential to the dispatched provider: this run receives ONLY the
-          # secret(s) for `inputs.provider`, so a compromised adapter or suite can't read another
-          # provider's credential out of the environment. A non-matching provider evaluates to '',
-          # which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
-          # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
-          # Both Daytona isolation variants share the account key; scope it to either being dispatched.
-          DAYTONA_API_KEY: ${{ (inputs.provider == 'daytona-vm' || inputs.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
-          # Each Daytona variant pins its region via a variant-specific secret so operators can
-          # retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET (us-west-2
-          # default), daytona-container reads DAYTONA_CONTAINER_TARGET (us-west-2 default).
-          DAYTONA_TARGET: ${{ inputs.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ inputs.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
-          E2B_API_KEY: ${{ inputs.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          # Both Modal variants share the account tokens; scope them to either being dispatched.
-          MODAL_TOKEN_ID: ${{ (inputs.provider == 'modal-gvisor' || inputs.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ (inputs.provider == 'modal-gvisor' || inputs.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
-          BL_API_KEY: ${{ inputs.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
-          BL_WORKSPACE: ${{ inputs.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
-          NOVITA_API_KEY: ${{ inputs.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-          # OIDC-federated per-run token file (see the Namespace CLI steps above). Not a stored secret:
-          # empty unless namespace was dispatched AND the mint above succeeded (steps.nsc-token only
-          # runs when inputs.provider == 'namespace'), which the harness reads as the standard
-          # missing-credentials skip on every other dispatch.
-          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
-          # @computesdk/vercel reads the short-lived token exported by the auth action.
-          VERCEL_OIDC_TOKEN: ${{ inputs.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
-          # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an
-          # optional override for staging or private deployments. Neither value enters the guest.
-          MICROSANDBOX_LOCAL_BENCH: ${{ inputs.provider == 'microsandbox-local' && '1' || '' }}
-          # Paired with the microsandbox-local runner route above: that self-hosted label is reaped at
-          # 70 minutes regardless of timeout-minutes, which no expression can encode (the workflow gate
-          # requires a literal). Declaring it here lets bench-suite reject a suite that cannot finish
-          # inside it, before any sandbox is created. Empty on the hosted runner, which outlives the job.
-          BENCH_RUNNER_LIFETIME_MINUTES: ${{ inputs.provider == 'microsandbox-local' && '70' || '' }}
-          MSB_API_URL: ${{ inputs.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
-          MSB_API_KEY: ${{ inputs.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
-        run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID"
-
-      - name: Upload Run + raw results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bench-${{ inputs.suite }}-${{ inputs.provider }}-${{ github.run_id }}
-          path: data/
-          # A successful run always writes data/runs/<id>.json (even an all-skipped Run), so an empty
-          # data/ means the job is genuinely broken — fail the upload rather than bury a warning.
-          if-no-files-found: error
+  # The matrix's benchmark phase, over a one-element suite axis → one reusable-workflow call → one
+  # provider cell. Structurally identical to bench-matrix.yml's `suite` job (same job id, same nesting
+  # wiring, same reusable) so the Actions UI reads the same "<suite> / <provider>", and so the
+  # workflow-registry-sync gate can hold both callers to one set of invariants.
+  # The fork/branch guard is repeated here (not only inherited via `needs: plan`) so the job stays
+  # explicit when read in isolation — matching every other live-run job in the repo.
+  suite:
+    name: ${{ matrix.suite }}
+    needs: plan
+    if: >
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks' &&
+      (github.ref == 'refs/heads/main' || inputs.allow_branch)
+    # A called workflow's token can never exceed its caller's, so the id-token: write that
+    # bench-suite.yml's cell needs for Namespace's GitHub OIDC federation has to be granted here too.
+    # Scoped to this job, not the workflow level, per zizmor's excessive-permissions audit; `contents`
+    # is restated because a job-level `permissions:` replaces the workflow default rather than adding
+    # to it.
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      # A one-element axis today, kept as a matrix (rather than a bare call) so this caller is the same
+      # shape as the matrix lane's: `fromJSON(needs.plan.outputs.suites)` is what makes the suite axis
+      # registry-driven, and fail-fast off is what it means for a cell to own its own outcome.
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
+    # `secrets: inherit` keeps repository secrets / token context available to the callee; Environment
+    # secrets on `privileged` are resolved by the reusable job's own `environment:` declaration (a
+    # `uses:` caller can't set `environment:`).
+    uses: ./.github/workflows/bench-suite.yml
+    with:
+      providers: ${{ needs.plan.outputs.providers }}
+      suite: ${{ matrix.suite }}
+      # This suite's slice of the plan's per-suite map, re-serialized to the JSON array string the cell
+      # passes straight to `bench-suite --replicates` — the matrix expression, verbatim.
+      replicates: ${{ toJSON(fromJSON(needs.plan.outputs.replicates)[matrix.suite]) }}
+      # Forward the PTS passes-per-case override unchanged (blank = suite default, a number, or converge).
+      pts_passes: ${{ inputs.pts_passes }}
+      # Forward the replicate concurrency cap unchanged (blank = all replicates at once).
+      max_concurrency: ${{ inputs.max_concurrency }}
+      # The one input the matrix lane leaves blank: require the dispatched provider to reach
+      # "validated", so an absent or misnamed credential fails the job ("required providers did not
+      # pass") instead of being recorded as a skip on a job that still exits 0.
+      require_providers: ${{ inputs.provider }}
+    secrets: inherit

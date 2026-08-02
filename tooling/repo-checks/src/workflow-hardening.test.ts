@@ -158,7 +158,11 @@ describe("Vercel CLI authentication", () => {
 		const workflowText = ["bench-smoke.yml", "bench-suite.yml", "toolchain-image.yml"]
 			.map((file) => readFileSync(join(root, WORKFLOWS_DIR, file), "utf8"))
 			.join("\n");
-		expect(workflowText.match(/uses: \.\/\.github\/actions\/vercel-auth/g)).toHaveLength(4);
+		// Three call sites: the reusable benchmark cell (bench-suite.yml) plus toolchain-image.yml's two.
+		// bench-smoke.yml is still read here — not because it authenticates (it reaches Vercel only
+		// through the reusable cell now) but so the "no hand-minted token" assertions below still cover
+		// it if a lane ever grows its own credential handling again.
+		expect(workflowText.match(/uses: \.\/\.github\/actions\/vercel-auth/g)).toHaveLength(3);
 		expect(workflowText).not.toContain("api.vercel.com/v1/projects");
 		expect(workflowText).not.toContain("VERCEL_OIDC_TOKEN_FILE");
 		expect(workflowText).not.toContain("docker login vcr.vercel.com");

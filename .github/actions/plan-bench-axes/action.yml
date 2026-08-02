@@ -1,0 +1,62 @@
+name: Plan benchmark axes
+description: >-
+  Resolve the three benchmark axes — providers, suites, and the per-suite replicate index map — from
+  the schema registries, and expose them as step outputs. This is the ONE planning implementation
+  both live-benchmark dispatches share: bench-matrix.yml plans the full matrix, and bench-smoke.yml
+  plans the same axes narrowed to a single provider × suite, so a smoke run reaches the reusable
+  bench-suite.yml through exactly the code path a real matrix run does.
+
+  The three `plan-*` bins each write their axis to $GITHUB_OUTPUT via emitStepOutputs and log through
+  @actions/core (foldable groups + notices). An unregistered provider or suite name fails the step, so
+  a typo fails the plan instead of quietly publishing a dataset with it missing — or running nothing.
+
+  NOTE: like ./.github/actions/setup-workspace, this composite runs no checkout and no install; the
+  caller does both (a local action is read from the already-checked-out workspace).
+
+inputs:
+  providers:
+    description: >-
+      Comma-separated providers to fan out over (blank = every registered provider). Rejected by
+      plan-providers if any name is not in the PROVIDERS registry.
+    default: ""
+  suites:
+    description: >-
+      Comma-separated suites to run (blank = every registered suite). Rejected by plan-suites if any
+      name is not in SUITE_NAMES. plan-replicates reads the SAME selection, so the replicate map is
+      keyed by exactly the emitted suite axis.
+    default: ""
+  replicas:
+    description: >-
+      Replicate sandboxes per (provider, suite) cell (blank = each suite's Suite.defaultReplicas; a
+      positive integer scales every suite). A non-positive or non-integer value fails the plan.
+    default: ""
+
+outputs:
+  providers:
+    description: JSON array of the selected provider ids, in registry order.
+    value: ${{ steps.plan.outputs.providers }}
+  suites:
+    description: JSON array of the selected suite names, in registry order.
+    value: ${{ steps.plan.outputs.suites }}
+  replicates:
+    description: >-
+      JSON object mapping each selected suite to its replicate index array (e.g.
+      {"cpu-node":[0,1,2],…}). A caller passes each suite its own slice down to bench-suite.yml.
+    value: ${{ steps.plan.outputs.replicates }}
+
+runs:
+  using: composite
+  steps:
+    # The dispatch inputs reach the planners through the environment, never interpolated into the
+    # shell, so a crafted input can't inject into the runner command.
+    - name: Plan
+      id: plan
+      shell: bash
+      env:
+        BENCH_PROVIDERS: ${{ inputs.providers }}
+        BENCH_SUITES: ${{ inputs.suites }}
+        BENCH_REPLICAS: ${{ inputs.replicas }}
+      run: |
+        bun apps/cli/src/bin/plan-providers.ts
+        bun apps/cli/src/bin/plan-suites.ts
+        bun apps/cli/src/bin/plan-replicates.ts

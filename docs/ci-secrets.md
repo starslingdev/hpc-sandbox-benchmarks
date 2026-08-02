@@ -13,19 +13,24 @@ and toolchain publish must not trigger on `push`.
 | Workflow | Job | Why |
 | --- | --- | --- |
 | `toolchain-image.yml` | `publish` | Provider bake secrets + `packages: write` (GHCR release) |
-| `bench-suite.yml` | `bench` | Provider API keys (reusable fan-out `bench-matrix.yml`'s suite-matrix job calls) |
+| `bench-suite.yml` | `bench` | Provider API keys (the reusable benchmark cell BOTH `bench-matrix.yml` and `bench-smoke.yml` call) |
 | `commit-dataset.yml` | `commit` | Dataset JSON commit (`contents: write` + `pull-requests: write`) |
 | `update-leaderboard.yml` | `leaderboard` | Public `LEADERBOARD.md` commit (`contents: write` + `pull-requests: write`) |
-| `bench-smoke.yml` | `smoke` | Provider API keys |
+
+`bench-matrix.yml` and `bench-smoke.yml` are **not** listed: neither reads a provider secret itself.
+Both are a `plan` job plus a suite-matrix job that calls `bench-suite.yml`, so every credential — and
+the approval gate that protects it — is enforced once, at that callee. A smoke dispatch is therefore
+gated exactly as a matrix cell is; it simply stops before the dataset commit.
 
 Two of these are reusable workflows whose `privileged` gate lives on their own job, because a `uses:`
 caller can't declare `environment:` (the workflow-hardening drift gate checks the callee and passes the
 local caller):
 
-- `bench-suite.yml` runs one suite across a provider matrix; `bench-matrix.yml`'s suite-matrix job
-  calls it once per suite. Environment secrets on `privileged` resolve from the reusable job's own
-  `environment:` declaration (a `uses:` caller can't set `environment:`). The caller still passes
-  `secrets: inherit` for repository-level secrets / token context.
+- `bench-suite.yml` runs one suite across a provider matrix. It is the single benchmark-cell
+  implementation: `bench-matrix.yml`'s suite-matrix job calls it once per planned suite, and
+  `bench-smoke.yml`'s calls it once for the dispatched suite. Environment secrets on `privileged`
+  resolve from the reusable job's own `environment:` declaration (a `uses:` caller can't set
+  `environment:`). Both callers pass `secrets: inherit` for repository-level secrets / token context.
 - `commit-dataset.yml` commits the machine-readable dataset: `bench-matrix.yml`'s `publish` job calls it
   at the end of a matrix run, and a maintainer can dispatch it standalone to backfill (see rule 6). It
   lands `data/dataset/` only — the public `LEADERBOARD.md` is regenerated separately (see rule 7), so the
