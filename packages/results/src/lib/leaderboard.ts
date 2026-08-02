@@ -33,9 +33,9 @@ import type {
 	TargetSpec,
 } from "@sandbox-benchmarks/schema";
 import {
-	bootstrapMedianDifferenceInterval,
 	bootstrapMedianInterval,
 	canSeparate,
+	clusterSeparation,
 	DEFAULT_ALPHA,
 	DIMENSIONS,
 	getProvider,
@@ -517,20 +517,22 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 		};
 
 		// Replicate-aware separation: when EITHER row carries ≥2 replicate sandboxes, the decider is the
-		// EXACT cluster-level rank permutation inside bootstrapMedianDifferenceInterval — Mann-Whitney U on
-		// the per-sandbox medians, whole sandboxes the exchangeable unit. That is cluster-honest where MW on
-		// samples pooled across replicates is anti-conservative, and it carries the real 2/C(2R,R) floor, so
-		// small R reads as UNDERPOWERED rather than a false tie or a false separation. A row with no
-		// replicate breakdown enters as a single cluster of its pooled Samples, so a mixed-R pair is judged
-		// the same honest way. MW/KS above stay as descriptive columns only. At R=1 on BOTH sides this is
-		// skipped and Mann-Whitney on the pooled Samples decides the rank, as before.
+		// EXACT cluster-level rank permutation `clusterSeparation` — Mann-Whitney U on the per-sandbox
+		// medians, whole sandboxes the exchangeable unit. That is cluster-honest where MW on samples pooled
+		// across replicates is anti-conservative, and it carries the real 2/C(2R,R) floor, so small R reads
+		// as UNDERPOWERED rather than a false tie or a false separation. A row with no replicate breakdown
+		// enters as a single cluster of its pooled Samples, so a mixed-R pair is judged the same honest way.
+		// MW/KS above stay as descriptive columns only. At R=1 on BOTH sides this is skipped and
+		// Mann-Whitney on the pooled Samples decides the rank, as before.
+		//
+		// The verdict only, not the whole `bootstrapMedianDifferenceInterval`: the table renders no
+		// difference interval, and the seeded 10 000-resample hierarchical bootstrap behind `lo`/`hi` was
+		// the single largest cost of building this board — computed once per adjacent pair and discarded.
+		// `clusterSeparation` is the identical (RNG-free) verdict that function returns.
 		if (previous.replicates || candidate.replicates) {
-			const diff = bootstrapMedianDifferenceInterval(
+			const diff = clusterSeparation(
 				previous.replicates ?? [previous.samples],
 				candidate.replicates ?? [candidate.samples],
-				{
-					seed: `${run.runId}:${metric.id}:${previous.row.providerId}:${candidate.row.providerId}`,
-				},
 			);
 			// The same "a test that can never reach α is not evidence of sameness" rule as the R=1 path:
 			// when the between-sandbox floor already meets α (2/C(6,3)=0.1 at R=3), no data could separate

@@ -4,6 +4,7 @@ import {
 	bootstrapMedianDifferenceInterval,
 	bootstrapMedianInterval,
 	canSeparate,
+	clusterSeparation,
 	DEFAULT_ALPHA,
 	hierarchicalBootstrapMedianInterval,
 	kolmogorovSmirnov,
@@ -395,6 +396,74 @@ describe("bootstrapMedianDifferenceInterval", () => {
 		expect(() => bootstrapMedianDifferenceInterval([[1]], [[2]], { resamples: -1 })).toThrow(
 			/positive integer/,
 		);
+	});
+});
+
+describe("clusterSeparation", () => {
+	// The load-bearing invariant: a ranking that reads only the VERDICT may call this instead of paying
+	// for the difference interval's 10 000-resample bootstrap. That substitution is only sound while the
+	// two agree on every verdict field, for every shape the leaderboard actually feeds them — including
+	// the degenerate one-Sample-per-side case that returns early inside the interval function.
+	const SHAPES: ReadonlyArray<
+		readonly [readonly (readonly number[])[], readonly (readonly number[])[]]
+	> = [
+		[[[5]], [[8]]], // single pooled Sample per side: the interval's early return
+		[[MODAL_COPY], [DAYTONA_COPY]], // R=1 both sides, entered as one cluster each
+		[
+			[[10, 12], [11]],
+			[[20, 22], [21]],
+		], // ragged replicates, R=2
+		[
+			[[100], [101], [102], [103]],
+			[[1], [2], [3], [4]],
+		], // R=4: the smallest R that can clear the 5% floor
+		[
+			[
+				[1, 2],
+				[3, 4],
+				[5, 6],
+			],
+			[
+				[1, 2],
+				[3, 4],
+				[5, 6],
+			],
+		], // identical sides, R=3: underpowered, never "separated"
+	];
+
+	it("returns exactly the verdict bootstrapMedianDifferenceInterval reports", () => {
+		for (const [a, b] of SHAPES) {
+			const verdict = clusterSeparation(a, b);
+			const full = bootstrapMedianDifferenceInterval(a, b, { seed: "verdict-parity" });
+			expect(verdict, JSON.stringify([a, b])).toEqual({
+				level: full.level,
+				method: full.method,
+				pValue: full.pValue,
+				minAttainablePValue: full.minAttainablePValue,
+				separated: full.separated,
+			});
+		}
+	});
+
+	it("is order-invariant, unlike the interval it was split out of", () => {
+		const hi = [[100], [101], [102], [103]];
+		const lo = [[1], [2], [3], [4]];
+		expect(clusterSeparation(hi, lo)).toEqual(clusterSeparation(lo, hi));
+		expect(clusterSeparation(hi, lo).separated).toBe(true);
+	});
+
+	it("carries the between-sandbox floor, so R=3 cannot separate however far apart the sides are", () => {
+		const verdict = clusterSeparation([[1000], [1001], [1002]], [[1], [2], [3]]);
+		// 2/C(6,3) = 0.1 — already above α, so no data at this R is evidence of a difference.
+		expect(verdict.minAttainablePValue).toBeCloseTo(0.1, 12);
+		expect(verdict.minAttainablePValue).toBeGreaterThanOrEqual(DEFAULT_ALPHA);
+		expect(verdict.separated).toBe(false);
+	});
+
+	it("rejects an empty side, a non-finite Sample, and a bad level", () => {
+		expect(() => clusterSeparation([], [[1]])).toThrow(/at least one replicate/);
+		expect(() => clusterSeparation([[1]], [[Number.NaN]])).toThrow(/finite/);
+		expect(() => clusterSeparation([[1]], [[2]], { level: 1 })).toThrow(/level/);
 	});
 });
 

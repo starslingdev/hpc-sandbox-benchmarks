@@ -52,15 +52,23 @@ const runFile = (runId: string) => join(ROOT, ...DATASET_RUNS_DIR.split("/"), `$
 const regenCmd = (runId: string) =>
 	`bun apps/cli/src/bin/leaderboard.ts ${DATASET_RUNS_DIR}/${runId}.json LEADERBOARD.md`;
 
-/** Independent R-7 percentile implementation for auditing the persisted Aggregates and displayed p50. */
-function auditPercentile(samples: readonly number[], p: number): number {
-	const sorted = [...samples].sort((a, b) => a - b);
-	const h = (sorted.length - 1) * p;
+/** R-7 percentile of an ALREADY-SORTED buffer's first `length` entries. Split out so the bootstraps
+ *  below can sort one reused scratch buffer in place instead of allocating a fresh sorted copy per
+ *  resample — the audit still reaches its order statistics BY SORTING, deliberately unlike the
+ *  quickselect the renderer uses, so the two remain independent implementations. */
+function auditPercentileOfSorted(sorted: ArrayLike<number>, length: number, p: number): number {
+	const h = (length - 1) * p;
 	const lo = Math.floor(h);
 	const hi = Math.ceil(h);
 	const a = sorted[lo] as number;
 	const b = sorted[hi] as number;
 	return a + (h - lo) * (b - a);
+}
+
+/** Independent R-7 percentile implementation for auditing the persisted Aggregates and displayed p50. */
+function auditPercentile(samples: readonly number[], p: number): number {
+	const sorted = [...samples].sort((a, b) => a - b);
+	return auditPercentileOfSorted(sorted, sorted.length, p);
 }
 
 /** Conventional two-pass aggregates: intentionally separate from schema.aggregate's Welford path. */
@@ -102,18 +110,21 @@ function auditMedianInterval(
 ): { lo: number; hi: number } | null {
 	if (samples.length === 1) return null;
 	const rng = auditRng(seed);
-	const medians = new Array<number>(10_000);
+	const n = samples.length;
+	const medians = new Float64Array(10_000);
+	// One scratch draw for all 10 000 resamples: a fresh Array per resample dominated this gate's
+	// runtime, and each draw is dead the moment its median is read.
+	const draw = new Float64Array(n);
 	for (let iteration = 0; iteration < medians.length; iteration++) {
-		const draw = Array.from(
-			{ length: samples.length },
-			() => samples[Math.floor(rng() * samples.length)] as number,
-		);
-		medians[iteration] = auditPercentile(draw, 0.5);
+		for (let i = 0; i < n; i++) draw[i] = samples[Math.floor(rng() * n)] as number;
+		draw.sort();
+		medians[iteration] = auditPercentileOfSorted(draw, n, 0.5);
 	}
+	medians.sort();
 	const tail = (1 - 0.95) / 2;
 	return {
-		lo: auditPercentile(medians, tail),
-		hi: auditPercentile(medians, 1 - tail),
+		lo: auditPercentileOfSorted(medians, medians.length, tail),
+		hi: auditPercentileOfSorted(medians, medians.length, 1 - tail),
 	};
 }
 
@@ -134,20 +145,25 @@ function auditHierarchicalMedianInterval(
 	if (replicates.reduce((sum, replicate) => sum + replicate.length, 0) === 1) return null;
 	const rng = auditRng(seed);
 	const R = replicates.length;
-	const medians = new Array<number>(10_000);
+	const medians = new Float64Array(10_000);
+	// Worst case for one resample: R cluster draws that each land on the longest replicate.
+	const pool = new Float64Array(R * Math.max(...replicates.map((r) => r.length)));
 	for (let iteration = 0; iteration < medians.length; iteration++) {
-		const pool: number[] = [];
+		let size = 0;
 		for (let r = 0; r < R; r++) {
 			const chosen = replicates[Math.floor(rng() * R)] as readonly number[];
 			for (let i = 0; i < chosen.length; i++)
-				pool.push(chosen[Math.floor(rng() * chosen.length)] as number);
+				pool[size++] = chosen[Math.floor(rng() * chosen.length)] as number;
 		}
-		medians[iteration] = auditPercentile(pool, 0.5);
+		const drawn = pool.subarray(0, size);
+		drawn.sort();
+		medians[iteration] = auditPercentileOfSorted(drawn, size, 0.5);
 	}
+	medians.sort();
 	const tail = (1 - 0.95) / 2;
 	return {
-		lo: auditPercentile(medians, tail),
-		hi: auditPercentile(medians, 1 - tail),
+		lo: auditPercentileOfSorted(medians, medians.length, tail),
+		hi: auditPercentileOfSorted(medians, medians.length, 1 - tail),
 	};
 }
 
@@ -417,6 +433,23 @@ function loadCommittedRun(): {
 	}
 }
 
+/**
+ * ONE canonical board, shared by every test that only needs "what the renderer produces from the
+ * committed Run right now" — which is all of them except the determinism check below, and that one
+ * wants a genuinely separate build by construction. Four tests each building their own cost four full
+ * renders of a board whose construction is the most expensive thing in this package; two of those were
+ * asking the identical question.
+ *
+ * Memoized lazily, never at module scope, for the same reason {@link loadCommittedRun} is called inside
+ * each test: a throw here must surface as the failure of the test that asked for it, not abort the file
+ * during collection and silently take the other checks with it.
+ */
+let sharedBoard: ReturnType<typeof buildLeaderboard> | undefined;
+function committedBoard(): ReturnType<typeof buildLeaderboard> {
+	sharedBoard ??= buildLeaderboard(loadCommittedRun().run);
+	return sharedBoard;
+}
+
 // This gate renders the WHOLE committed board — up to twice, for the determinism check — and both the
 // renderer and this file's independent audit run a seeded 10 000-resample bootstrap per provider/Metric.
 // That is legitimately slow and scales with the dataset: the replicate fan-out took one run from ~400 to
@@ -607,8 +640,8 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	});
 
 	it("is byte-identical to a fresh render of the Run it names", () => {
-		const { committed, runId, run, figures } = loadCommittedRun();
-		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run), figures);
+		const { committed, runId, figures } = loadCommittedRun();
+		const rendered = renderLeaderboardMarkdown(committedBoard(), figures);
 		if (committed !== rendered) {
 			// Name the remedy in the failure, rather than leaving whoever hits this to work it out.
 			throw new Error(
@@ -683,16 +716,19 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 
 	it("renders the same bytes twice, so this gate can't flake on an unseeded bootstrap", () => {
 		// Loads independently of the test above: each resolves the Run itself, so one failing reports
-		// its own diagnosis instead of aborting the file and taking the other down with it.
+		// its own diagnosis instead of aborting the file and taking the other down with it. The fresh
+		// build is deliberately fed a freshly parsed Run rather than the shared board's — two builds from
+		// two independent parses is what regenerating the artifact actually does, so an unseeded bootstrap
+		// OR a build that mutated its input both show up here as a byte difference.
 		const { run, figures } = loadCommittedRun();
-		expect(renderLeaderboardMarkdown(buildLeaderboard(run), figures)).toBe(
+		expect(renderLeaderboardMarkdown(committedBoard(), figures)).toBe(
 			renderLeaderboardMarkdown(buildLeaderboard(run), figures),
 		);
 	});
 
 	it("renders one row for every provider/Metric record in the source Run", () => {
 		const { run } = loadCommittedRun();
-		const board = buildLeaderboard(run);
+		const board = committedBoard();
 		const expected = run.providers
 			.flatMap((provider) =>
 				provider.metrics

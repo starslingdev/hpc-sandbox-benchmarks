@@ -107,7 +107,29 @@ afterAll(() => {
 	for (const dir of tempRoots) rmSync(dir, { recursive: true, force: true });
 });
 
-function runDriver(script: { steps: Step[]; done?: boolean }) {
+interface DriverRun {
+	exitCode: number;
+	elapsedMs: number;
+	stderr: string;
+	stopReason: string | undefined;
+	json: Partial<MockValue> | null;
+}
+
+/**
+ * Stage a scenario and START its driver subprocess, returning a promise for the outcome.
+ *
+ * Launching rather than blocking is the point. Every scenario below is bounded by the driver's own
+ * wall-clock timers -- three of them run to the 5s backstop -- so awaiting each in turn made this file
+ * cost the SUM of those ceilings (~15s) for work that is almost entirely sleeping. The scenarios share
+ * nothing: each gets its own temp dir, its own scripted mock, and its own process. Calling this at
+ * collection time (see below) starts them all at once, so the file costs the LONGEST ceiling instead.
+ *
+ * `elapsedMs` is therefore measured under concurrency. The assertions that read it are lower bounds on
+ * driver-internal timers, which contention only pushes further into the safe direction; the single
+ * upper bound keeps ~2.7s of slack against a ~1.7s expected settle. The processes are timer-bound and
+ * idle between yields, so they overlap rather than compete.
+ */
+function runDriver(script: { steps: Step[]; done?: boolean }): Promise<DriverRun> {
 	const dir = mkdtempSync(join(tmpdir(), "fast-cli-driver-"));
 	tempRoots.push(dir);
 	writeFileSync(join(dir, "fast-driver.mjs"), DRIVER_SOURCE);
@@ -118,7 +140,7 @@ function runDriver(script: { steps: Step[]; done?: boolean }) {
 	const scriptPath = join(dir, "scenario.json");
 	writeFileSync(scriptPath, JSON.stringify(script));
 	const startedAt = Date.now();
-	const proc = Bun.spawnSync([process.execPath, "fast-driver.mjs"], {
+	const proc = Bun.spawn([process.execPath, "fast-driver.mjs"], {
 		cwd: dir,
 		env: {
 			...process.env,
@@ -131,18 +153,24 @@ function runDriver(script: { steps: Step[]; done?: boolean }) {
 		stdout: "pipe",
 		stderr: "pipe",
 	});
-	const elapsedMs = Date.now() - startedAt;
-	const stdout = proc.stdout.toString();
-	const stderr = proc.stderr.toString();
-	return {
-		exitCode: proc.exitCode,
-		elapsedMs,
+	// Drain both pipes concurrently with the wait: a driver that outgrew its pipe buffer would
+	// otherwise block on write while we block on exit.
+	return Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]).then(([stdout, stderr, exitCode]) => ({
+		exitCode,
+		elapsedMs: Date.now() - startedAt,
 		stderr,
 		stopReason: stderr.match(/stop=(\w+)/)?.[1],
-		json: stdout.trim() ? JSON.parse(stdout) : null,
-	};
+		json: stdout.trim() ? (JSON.parse(stdout) as Partial<MockValue>) : null,
+	}));
 }
 
+// Each scenario is launched HERE, in the describe body -- which Bun evaluates during collection, before
+// it runs the first test -- so all seven drivers are already counting down by the time any `it` awaits
+// one. Moving a launch inside its own `it` would silently restore the sequential ~15s.
 describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 	it("imports exactly the two fast-cli modules the mocks replace", () => {
 		// If the driver's import specifiers drift, the mocks would silently stop intercepting.
@@ -150,25 +178,27 @@ describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 		expect(DRIVER_SOURCE).toContain('from "./node_modules/fast-cli/distribution/utilities.js"');
 	});
 
+	// The P1 shape (e2b/novita): bufferbloat renders during the download phase and holds while
+	// uploadSpeed stays 0 for the whole run. Settle must NOT fire at ~MIN_MS -- the run must be
+	// bounded by BACKSTOP_MS, labeled backstop, and exit 1 so PTS records a failed trial.
+	const noUploadSteps: Step[] = [];
+	for (let i = 0; i < 9; i++) {
+		noUploadSteps.push({
+			delayMs: 250,
+			value: value({
+				downloadSpeed: 100 + i * 40,
+				downloaded: (i + 1) * 5,
+				latency: 12,
+				bufferBloat: 34,
+			}),
+		});
+	}
+	const noUploadRun = runDriver({ steps: noUploadSteps });
+
 	it(
 		"backstops (never settles) when bufferbloat holds but the upload phase never starts",
-		() => {
-			// The P1 shape (e2b/novita): bufferbloat renders during the download phase and holds while
-			// uploadSpeed stays 0 for the whole run. Settle must NOT fire at ~MIN_MS -- the run must be
-			// bounded by BACKSTOP_MS, labeled backstop, and exit 1 so PTS records a failed trial.
-			const steps: Step[] = [];
-			for (let i = 0; i < 9; i++) {
-				steps.push({
-					delayMs: 250,
-					value: value({
-						downloadSpeed: 100 + i * 40,
-						downloaded: (i + 1) * 5,
-						latency: 12,
-						bufferBloat: 34,
-					}),
-				});
-			}
-			const result = runDriver({ steps });
+		async () => {
+			const result = await noUploadRun;
 			expect(result.stopReason).toBe("backstop");
 			expect(result.exitCode).toBe(1);
 			expect(result.json?.uploadSpeed).toBe(0);
@@ -178,31 +208,33 @@ describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 		TEST_TIMEOUT_MS,
 	);
 
+	// The modal-gvisor shape: upload goes positive but keeps strictly increasing (gaps well under
+	// SETTLE_MS) all the way to the ceiling. A positivity-hold would bank a mid-ramp value SETTLE_MS
+	// after the first byte with exit 0; the plateau-hold must defer until the max stops increasing --
+	// which never happens here -- so the run ends at the backstop with exit 1.
+	const rampingSteps: Step[] = [
+		{ delayMs: 100, value: value({ downloadSpeed: 200, latency: 12, bufferBloat: 34 }) },
+	];
+	let ramping = 0;
+	for (let at = 400; at <= 4650; at += 250) {
+		ramping += 10;
+		rampingSteps.push({
+			delayMs: at === 400 ? 300 : 250,
+			value: value({
+				downloadSpeed: 200,
+				uploadSpeed: ramping,
+				uploaded: ramping,
+				latency: 12,
+				bufferBloat: 34,
+			}),
+		});
+	}
+	const rampingRun = runDriver({ steps: rampingSteps });
+
 	it(
 		"defers settle while the upload max is still ramping and labels a ceiling tie backstop",
-		() => {
-			// The modal-gvisor shape: upload goes positive but keeps strictly increasing (gaps well under
-			// SETTLE_MS) all the way to the ceiling. A positivity-hold would bank a mid-ramp value
-			// SETTLE_MS after the first byte with exit 0; the plateau-hold must defer until the max stops
-			// increasing -- which never happens here -- so the run ends at the backstop with exit 1.
-			const steps: Step[] = [
-				{ delayMs: 100, value: value({ downloadSpeed: 200, latency: 12, bufferBloat: 34 }) },
-			];
-			let upload = 0;
-			for (let at = 400; at <= 4650; at += 250) {
-				upload += 10;
-				steps.push({
-					delayMs: at === 400 ? 300 : 250,
-					value: value({
-						downloadSpeed: 200,
-						uploadSpeed: upload,
-						uploaded: upload,
-						latency: 12,
-						bufferBloat: 34,
-					}),
-				});
-			}
-			const result = runDriver({ steps });
+		async () => {
+			const result = await rampingRun;
 			expect(result.stopReason).toBe("backstop");
 			expect(result.exitCode).toBe(1);
 			expect(result.elapsedMs).toBeGreaterThanOrEqual(BACKSTOP_MS - 100);
@@ -210,41 +242,40 @@ describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 		TEST_TIMEOUT_MS,
 	);
 
+	// Healthy-path shape: upload ramps (last increase ~1000ms), then the displayed max holds while only
+	// the uploaded-bytes counter keeps changing (the real generator yields on ANY change). The plateau
+	// yields continue until just before the backstop: if the stability stamp bumped on equal readings
+	// (>= instead of >), settle could never fire pre-ceiling here and the run would wrongly hit the
+	// backstop -- pinning the strict-increase rule without tight timing.
+	const plateauSteps: Step[] = [
+		{ delayMs: 100, value: value({ downloadSpeed: 500, latency: 12, bufferBloat: 34 }) },
+		{ delayMs: 300, value: value({ uploadSpeed: 50, uploaded: 5, latency: 12, bufferBloat: 34 }) },
+		{
+			delayMs: 300,
+			value: value({ uploadSpeed: 120, uploaded: 15, latency: 12, bufferBloat: 34 }),
+		},
+		{
+			delayMs: 300,
+			value: value({ uploadSpeed: 200, uploaded: 30, latency: 12, bufferBloat: 34 }),
+		},
+	];
+	for (let at = 1250; at <= 4800; at += 250) {
+		plateauSteps.push({
+			delayMs: 250,
+			value: value({
+				uploadSpeed: 200,
+				uploaded: 30 + (at - 1000) / 10,
+				latency: 12,
+				bufferBloat: 34,
+			}),
+		});
+	}
+	const plateauRun = runDriver({ steps: plateauSteps });
+
 	it(
 		"settles only after the upload max has plateaued for SETTLE_MS, and banks the plateau value",
-		() => {
-			// Healthy-path shape: upload ramps (last increase ~1000ms), then the displayed max holds while
-			// only the uploaded-bytes counter keeps changing (the real generator yields on ANY change).
-			// The plateau yields continue until just before the backstop: if the stability stamp bumped on
-			// equal readings (>= instead of >), settle could never fire pre-ceiling here and the run would
-			// wrongly hit the backstop -- pinning the strict-increase rule without tight timing.
-			const steps: Step[] = [
-				{ delayMs: 100, value: value({ downloadSpeed: 500, latency: 12, bufferBloat: 34 }) },
-				{
-					delayMs: 300,
-					value: value({ uploadSpeed: 50, uploaded: 5, latency: 12, bufferBloat: 34 }),
-				},
-				{
-					delayMs: 300,
-					value: value({ uploadSpeed: 120, uploaded: 15, latency: 12, bufferBloat: 34 }),
-				},
-				{
-					delayMs: 300,
-					value: value({ uploadSpeed: 200, uploaded: 30, latency: 12, bufferBloat: 34 }),
-				},
-			];
-			for (let at = 1250; at <= 4800; at += 250) {
-				steps.push({
-					delayMs: 250,
-					value: value({
-						uploadSpeed: 200,
-						uploaded: 30 + (at - 1000) / 10,
-						latency: 12,
-						bufferBloat: 34,
-					}),
-				});
-			}
-			const result = runDriver({ steps });
+		async () => {
+			const result = await plateauRun;
 			expect(result.stopReason).toBe("settle");
 			expect(result.exitCode).toBe(0);
 			expect(result.json?.uploadSpeed).toBe(200);
@@ -257,24 +288,28 @@ describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 		TEST_TIMEOUT_MS,
 	);
 
+	// fast-cli 5.2.0 RETURNS once fast.com reports success -- it never yields isDone=true.
+	const convergedRun = runDriver({
+		steps: [
+			{ delayMs: 50, value: value({ downloadSpeed: 300, latency: 10, bufferBloat: 20 }) },
+			{
+				delayMs: 50,
+				value: value({
+					downloadSpeed: 300,
+					uploadSpeed: 150,
+					uploaded: 20,
+					latency: 10,
+					bufferBloat: 20,
+				}),
+			},
+		],
+		done: true,
+	});
+
 	it(
 		"classifies the generator returning as natural convergence (stop=done, exit 0)",
-		() => {
-			// fast-cli 5.2.0 RETURNS once fast.com reports success -- it never yields isDone=true.
-			const steps: Step[] = [
-				{ delayMs: 50, value: value({ downloadSpeed: 300, latency: 10, bufferBloat: 20 }) },
-				{
-					delayMs: 50,
-					value: value({
-						downloadSpeed: 300,
-						uploadSpeed: 150,
-						uploaded: 20,
-						latency: 10,
-						bufferBloat: 20,
-					}),
-				},
-			];
-			const result = runDriver({ steps, done: true });
+		async () => {
+			const result = await convergedRun;
 			expect(result.stopReason).toBe("done");
 			expect(result.exitCode).toBe(0);
 			expect(result.json?.downloadSpeed).toBe(300);
@@ -283,33 +318,36 @@ describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 		TEST_TIMEOUT_MS,
 	);
 
+	// A yielded bufferBloat drop to 0 must restart the hold: settle may only fire SETTLE_MS after the
+	// FINAL positive stretch began (~1800ms here), never off the stale first stamp (~100ms). Upload is
+	// stable from ~500ms and MIN_MS passes at 1500ms, so the bufferbloat restart is the binding
+	// constraint.
+	const flapRun = runDriver({
+		steps: [
+			{ delayMs: 100, value: value({ downloadSpeed: 400, latency: 11, bufferBloat: 30 }) },
+			{
+				delayMs: 200,
+				value: value({ uploadSpeed: 100, uploaded: 10, latency: 11, bufferBloat: 30 }),
+			},
+			{
+				delayMs: 200,
+				value: value({ uploadSpeed: 200, uploaded: 20, latency: 11, bufferBloat: 30 }),
+			},
+			{
+				delayMs: 200,
+				value: value({ uploadSpeed: 200, uploaded: 30, latency: 11, bufferBloat: 0 }),
+			},
+			{
+				delayMs: 1100,
+				value: value({ uploadSpeed: 200, uploaded: 60, latency: 11, bufferBloat: 25 }),
+			},
+		],
+	});
+
 	it(
 		"restarts the bufferbloat hold window on a flap back to zero",
-		() => {
-			// A yielded bufferBloat drop to 0 must restart the hold: settle may only fire SETTLE_MS after
-			// the FINAL positive stretch began (~1800ms here), never off the stale first stamp (~100ms).
-			// Upload is stable from ~500ms and MIN_MS passes at 1500ms, so the bufferbloat restart is the
-			// binding constraint.
-			const steps: Step[] = [
-				{ delayMs: 100, value: value({ downloadSpeed: 400, latency: 11, bufferBloat: 30 }) },
-				{
-					delayMs: 200,
-					value: value({ uploadSpeed: 100, uploaded: 10, latency: 11, bufferBloat: 30 }),
-				},
-				{
-					delayMs: 200,
-					value: value({ uploadSpeed: 200, uploaded: 20, latency: 11, bufferBloat: 30 }),
-				},
-				{
-					delayMs: 200,
-					value: value({ uploadSpeed: 200, uploaded: 30, latency: 11, bufferBloat: 0 }),
-				},
-				{
-					delayMs: 1100,
-					value: value({ uploadSpeed: 200, uploaded: 60, latency: 11, bufferBloat: 25 }),
-				},
-			];
-			const result = runDriver({ steps });
+		async () => {
+			const result = await flapRun;
 			expect(result.stopReason).toBe("settle");
 			expect(result.exitCode).toBe(0);
 			expect(result.json?.bufferBloat).toBe(25);
@@ -318,25 +356,29 @@ describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 		TEST_TIMEOUT_MS,
 	);
 
+	// PTS drops parser results whose numeric value duplicates an earlier one; loaded latency == idle
+	// latency is the common tie. The later duplicate is nudged UP by 0.01.
+	const tieRun = runDriver({
+		steps: [
+			{ delayMs: 50, value: value({ downloadSpeed: 300, latency: 12, bufferBloat: 12 }) },
+			{
+				delayMs: 50,
+				value: value({
+					downloadSpeed: 300,
+					uploadSpeed: 150,
+					uploaded: 20,
+					latency: 12,
+					bufferBloat: 12,
+				}),
+			},
+		],
+		done: true,
+	});
+
 	it(
 		"nudges exact value ties apart so PTS's value-dedup keeps all four metrics",
-		() => {
-			// PTS drops parser results whose numeric value duplicates an earlier one; loaded latency ==
-			// idle latency is the common tie. The later duplicate is nudged UP by 0.01.
-			const steps: Step[] = [
-				{ delayMs: 50, value: value({ downloadSpeed: 300, latency: 12, bufferBloat: 12 }) },
-				{
-					delayMs: 50,
-					value: value({
-						downloadSpeed: 300,
-						uploadSpeed: 150,
-						uploaded: 20,
-						latency: 12,
-						bufferBloat: 12,
-					}),
-				},
-			];
-			const result = runDriver({ steps, done: true });
+		async () => {
+			const result = await tieRun;
 			expect(result.exitCode).toBe(0);
 			expect(result.json?.latency).toBe(12);
 			expect(result.json?.bufferBloat).toBe(12.01);
@@ -351,14 +393,16 @@ describe("fast-cli driver (extracted verbatim from install.sh)", () => {
 		TEST_TIMEOUT_MS,
 	);
 
+	// The nudge perturbs only what PTS parses; a genuine zero must never become a passing metric.
+	const zeroUploadRun = runDriver({
+		steps: [{ delayMs: 50, value: value({ downloadSpeed: 300, latency: 12, bufferBloat: 12 }) }],
+		done: true,
+	});
+
 	it(
 		"decides completeness on the true values, before the nudge (upload 0 still exits 1)",
-		() => {
-			// The nudge perturbs only what PTS parses; a genuine zero must never become a passing metric.
-			const steps: Step[] = [
-				{ delayMs: 50, value: value({ downloadSpeed: 300, latency: 12, bufferBloat: 12 }) },
-			];
-			const result = runDriver({ steps, done: true });
+		async () => {
+			const result = await zeroUploadRun;
 			expect(result.stopReason).toBe("done");
 			expect(result.exitCode).toBe(1);
 			expect(result.json?.uploadSpeed).toBe(0);
