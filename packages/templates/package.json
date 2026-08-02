@@ -8,7 +8,6 @@
     "./e2b": "./src/e2b.ts",
     "./daytona": "./src/daytona.ts",
     "./modal": "./src/modal.ts",
-    "./vercel": "./src/vercel.ts",
     "./pins": "./src/pins.ts",
     "./manifest": "./src/manifest.ts",
     "./smoke": "./src/smoke.ts"

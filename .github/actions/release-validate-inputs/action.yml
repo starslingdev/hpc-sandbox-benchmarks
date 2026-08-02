@@ -17,7 +17,7 @@ inputs:
       fails as an annotation instead of silently shrinking the release.
     default: ""
   build:
-    description: The build dispatch input (full / variants / skip).
+    description: The build dispatch input (full / skip).
     default: "full"
   promote:
     description: The promote dispatch input (run the publish phase, or bake + verify only).

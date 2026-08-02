@@ -3,14 +3,12 @@ import { buildDaytonaTemplate } from "./daytona.ts";
 import { buildE2bTemplate } from "./e2b.ts";
 import { templateBuilders, templateProviders } from "./index.ts";
 import { buildModalTemplate } from "./modal.ts";
-import { buildVercelTemplate } from "./vercel.ts";
 
 describe("@sandbox-benchmarks/templates", () => {
 	it("builds one template spec per provider subpath", () => {
 		expect(buildE2bTemplate("v1").provider).toBe("e2b");
 		expect(buildDaytonaTemplate("v1").provider).toBe("daytona");
 		expect(buildModalTemplate("v1").provider).toBe("modal");
-		expect(buildVercelTemplate("v1").provider).toBe("vercel");
 	});
 
 	it("points each spec at its in-repo variant Dockerfile", () => {
@@ -19,13 +17,12 @@ describe("@sandbox-benchmarks/templates", () => {
 			"packages/templates/images/daytona/Dockerfile",
 		);
 		expect(buildModalTemplate("v1").dockerfile).toBe("packages/templates/images/modal/Dockerfile");
-		expect(buildVercelTemplate("v1").dockerfile).toBe(
-			"packages/templates/images/vercel/Dockerfile",
-		);
 	});
 
 	it("lists every provider that has a builder", () => {
-		expect([...templateProviders]).toEqual(["e2b", "daytona", "modal", "vercel"]);
+		// Vercel is deliberately absent: it boots the shared base mirrored into VCR, with no variant
+		// Dockerfile of its own. A builder here must correspond to a real images/<name>/Dockerfile.
+		expect([...templateProviders]).toEqual(["e2b", "daytona", "modal"]);
 	});
 
 	it("routes every advertised provider to a builder", () => {

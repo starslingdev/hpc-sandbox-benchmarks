@@ -1,12 +1,11 @@
 name: Ensure GHCR package is public
 description: >-
   Fail fast (with @actions/core annotations, via release-ensure-public.ts) if a candidate package is not
-  public. e2b builds its template on E2B's REMOTE builder (FROM the ghcr candidate base) and
-  daytona/modal/novita pull it to snapshot/boot; the vercel bake cell pulls the staged variant with no
-  ghcr login of its own — none are handed ghcr pull credentials, so every candidate package MUST be
-  public. GHCR packages are created PRIVATE on first push with no API to flip visibility, so making one
-  public is a one-time manual bootstrap; this guard surfaces that plainly instead of an opaque provider
-  "unauthorized" pull error.
+  public. e2b builds its template on E2B's REMOTE builder (FROM the ghcr candidate base), daytona/modal/
+  novita pull it to snapshot/boot, and the vercel bake cell pulls it to mirror into VCR — none are
+  handed ghcr pull credentials, so every candidate package MUST be public. GHCR packages are created
+  PRIVATE on first push with no API to flip visibility, so making one public is a one-time manual
+  bootstrap; this guard surfaces that plainly instead of an opaque provider "unauthorized" pull error.
 
 inputs:
   owner:
@@ -15,7 +14,8 @@ inputs:
   package:
     description: >-
       The container package name(s) — comma-separated, so one step covers every package a provider
-      pulls anonymously (the base plus each registry-served variant).
+      pulls anonymously. Today that is just the shared toolchain base: every provider derives its
+      artifact from it, so adding a provider never adds a package.
     required: true
   token:
     description: A token with read:packages for the GHCR package API.

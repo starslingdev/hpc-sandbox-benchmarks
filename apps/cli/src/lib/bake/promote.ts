@@ -39,6 +39,7 @@ import {
 	imageDigest,
 	imageExistsInRegistry,
 	promoteImage,
+	releaseBaseTag,
 	resolveImageDigestRef,
 } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
@@ -144,7 +145,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	//    again (the candidate tag is mutable). Abort the whole promote if any provider fails to validate.
 	//    A PARTIAL promote pins the PUBLISHED version instead: it is not cutting a new version, it is
 	//    attaching a provider to the one already live, so the base under test must be that one.
-	const baseTag = partial ? config.toolchainImageVersion : config.toolchainImageCandidate;
+	const baseTag = releaseBaseTag(partial);
 	let pinnedBaseImage: string;
 	try {
 		pinnedBaseImage = await resolveImageDigestRef(baseTag);
@@ -178,7 +179,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		}
 		if (imageDigest(pinnedCandidate) !== imageDigest(pinnedBaseImage)) {
 			return refuse(
-				`the candidate base has drifted from the published version (${pinnedCandidate} vs ${pinnedBaseImage}), so a backfill of ${bakesFromBase.join(", ")} would verify one image and publish an artifact built from another. Re-stage the candidate from the published base (\`build: variants\`), or bump TOOLCHAIN_VERSION and cut a full release`,
+				`the candidate base has drifted from the published version (${pinnedCandidate} vs ${pinnedBaseImage}), so a backfill of ${bakesFromBase.join(", ")} would verify one image and publish an artifact built from another. Bump TOOLCHAIN_VERSION and cut a full release`,
 				"aborted",
 			);
 		}

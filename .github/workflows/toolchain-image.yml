@@ -28,16 +28,18 @@ name: Toolchain image
 #              becomes a BACKFILL: it publishes just those providers' version artifacts onto the
 #              already-published version and never rewrites the public base or anyone else's artifact.
 #              A scoped dispatch names what it wants, so every provider it names is REQUIRED.
-#   build      `full` rebuilds the base (the default; what a version bump needs). `variants` restages
-#              only the registry-served provider variants on top of the PUBLISHED base — minutes, and
-#              the new provider gets the same bytes the fleet already runs (the toolchain build is not
-#              reproducible, so a rebuild would quietly hand it a different `:vN`). `skip` skips the
-#              build job outright and reuses what the registry already holds.
+#   build      `full` rebuilds the base (the default; what a version bump needs). `skip` skips the
+#              build job outright and derives everything from what the registry already holds — which
+#              for a scoped backfill is the PUBLISHED base, so the new provider gets exactly the bytes
+#              the fleet already runs (the toolchain build is not reproducible, so a rebuild would
+#              quietly hand it a different `:vN`).
 #   promote    off ⇒ the publish job is skipped: bake + verify, look at the report, promote later.
 #
 # The canonical use is adding a provider to a version everyone else already runs — e.g. Vercel on v7:
-#   1. providers=vercel, build=variants, promote=false  → stage + verify the candidate, nothing public
-#   2. providers=vercel, build=skip,     promote=true   → publish just the Vercel v7 artifact
+#   1. providers=vercel, build=skip, promote=false  → bake + verify against the published base, nothing public
+#   2. providers=vercel, build=skip, promote=true   → publish just the Vercel v7 artifact
+# Neither dispatch runs a build job: there is nothing per-provider to stage, because every provider
+# derives its artifact from the one shared base at bake/promote time.
 #
 # Cross-cutting GitHub Actions mechanics live in .github/actions/* composites (setup, ghcr login,
 # input validation, package-visibility guard, summaries); provider bake/verify/promote logic lives in
@@ -57,9 +59,9 @@ on:
         type: string
         default: ""
       build:
-        description: "Build phase: full (rebuild the base) / variants (restage variants on the published base) / skip"
+        description: "Build phase: full (rebuild the base) / skip (reuse what the registry holds)"
         type: choice
-        options: [full, variants, skip]
+        options: [full, skip]
         default: full
       promote:
         description: "Run the promote phase (uncheck to bake + verify only)"
@@ -198,6 +200,10 @@ jobs:
       run-publish: ${{ steps.plan.outputs.run-publish }}
       size-tier: ${{ steps.plan.outputs.size-tier }}
       image-candidate: ${{ steps.plan.outputs.image-candidate }}
+      # The GHCR base ref a vendor-registry mirror pulls: the PUBLISHED version on a backfill, the
+      # mutable candidate otherwise. From the plan rather than the build job, because a backfill runs
+      # no build job — and because only the plan knows the scope that decides which of the two it is.
+      image-source: ${{ steps.plan.outputs.image-source }}
       toolchain-version: ${{ steps.plan.outputs.toolchain-version }}
       publish-target: ${{ steps.plan.outputs.publish-target }}
     steps:
@@ -272,21 +278,18 @@ jobs:
           published: ${{ steps.plan.outputs.publish-target }}
           diagnostics: release-plan-${{ github.run_id }}
 
-  # BUILD: build the base image (+ variants) and push the mutable candidate base to GHCR ONCE, then
+  # BUILD: build the base image (+ provider variants) and push the mutable candidate base to GHCR ONCE, then
   # record its immutable digest. The providers below all fan out from this single pushed candidate.
   #
-  # Dynamic job skipping #1: `build: skip` drops this job entirely (`run-build` is false), so a re-verify
-  # or a promote of an already-staged candidate spends no build at all. `build: variants` still runs the
-  # job, but build-candidate.ts takes the cheap path — no base rebuild, just the registry-served variants
-  # restaged on the published base. Everything downstream tolerates this job being skipped (see `bake`).
+  # Dynamic job skipping #1: `build: skip` drops this job entirely (`run-build` is false), so a re-verify,
+  # a promote of an already-staged candidate, or a scoped backfill onto a published version spends no
+  # build at all. Everything downstream tolerates this job being skipped (see `bake`).
   build:
-    name: Build + push candidate (${{ needs.plan.outputs.build-mode }})
+    name: Build + push candidate
     needs: plan
     if: needs.plan.outputs.skip != 'true' && needs.plan.outputs.run-build == 'true'
     # 8 vCPUs — the same compile-bound base-image build as pr-gate (see the note there), and it sits on
-    # the critical path of every release: nothing bakes until the candidate is pushed. A `variants` build
-    # does not need the cores (it composes one thin layer on a pulled base), but it is minutes long
-    # either way, so it keeps the same label rather than making runs-on an expression.
+    # the critical path of every release: nothing bakes until the candidate is pushed.
     runs-on: starsling-ubuntu-24.04-8
     # The heavy phase: a full base-image build (apt, mise, the PTS install) plus the push.
     timeout-minutes: 60
@@ -296,11 +299,9 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-      # Two different facts, deliberately not one: `candidate-digest-ref` is what this phase STAGED
-      # (the new candidate base on a `full` build, the variant candidates on a `variants` one), while
-      # `base-digest-ref` is the base every downstream phase pins — which a `variants` build leaves as
-      # the published version it composed on, having never touched the candidate base.
-      candidate-digest-ref: ${{ steps.build.outputs.candidate-digest-ref }}
+      # One ref: this phase stages exactly one image, the candidate base, which is also the base every
+      # downstream phase pins. (It was two outputs while a `variants` build could stage per-provider
+      # images on top of an untouched base.)
       base-digest-ref: ${{ steps.build.outputs.base-digest-ref }}
     steps:
       - name: Checkout
@@ -321,13 +322,6 @@ jobs:
         env:
           BUILD_REF: ${{ github.sha }}
           BUILD_VERSION: ${{ needs.plan.outputs.toolchain-version }}
-          # `full` or `variants` — the plan already rejected anything else, and `skip` never gets here.
-          BUILD_MODE: ${{ needs.plan.outputs.build-mode }}
-          # The resolved scope, so the build stages only the registry-served variants this release is
-          # actually publishing. Without it a scoped release would rewrite an out-of-scope provider's
-          # candidate tag — a mutation nobody asked for, on an image the plan dropped from the
-          # visibility guard, so nothing would even check it is still pullable afterwards.
-          RELEASE_PROVIDERS: ${{ needs.plan.outputs.providers }}
           # Same mise rate-limit fix as pr-gate: the release build runs the identical build.sh, so give
           # it the authenticated GitHub API limit too. Built-in token; this job is already privileged.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -359,7 +353,7 @@ jobs:
           mode: ${{ needs.plan.outputs.mode }}
           scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
-          image: ${{ steps.build.outputs.candidate-digest-ref }}
+          image: ${{ steps.build.outputs.base-digest-ref }}
           base-image: ${{ steps.build.outputs.base-digest-ref }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
           verify: bun apps/cli/src/bin/build-candidate.ts
@@ -452,17 +446,29 @@ jobs:
           org-id: ${{ secrets.VERCEL_ORG_ID }}
           project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vcr-login: "true"
-      - name: Mirror candidate into VCR
+      # Vercel Sandbox can only boot images from VCR, so the shared toolchain base is mirrored across
+      # rather than pulled from GHCR like every other provider. It is the SAME base image the rest of
+      # the fleet runs — Vercel injects its own session agent at boot, so there is no provider delta to
+      # bake in and no separate GHCR image to keep in step.
+      #
+      # SOURCE_REF comes from the plan, not from `config` or the build job, and that is load-bearing: on
+      # a backfill it names the PUBLISHED version, while the mutable candidate tag may already have moved
+      # on toward the next one. Mirroring the candidate there would verify one image and ship another,
+      # and nothing downstream would catch it — promote's drift check exempts vercel precisely because
+      # its version artifact is a retag of whatever was mirrored here. See releaseBaseTag().
+      - name: Mirror the toolchain base into VCR
         if: matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success'
         id: vercel-vcr
+        env:
+          SOURCE_REF: ${{ needs.plan.outputs.image-source }}
         run: |
           set -euo pipefail
-          source_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelSourceImageCandidate)')"
           target_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
           project="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelProjectName)')"
           target_name="${target_ref##*/}"
-          docker pull "$source_ref"
-          docker tag "$source_ref" "$target_ref"
+          echo ">>> mirroring $SOURCE_REF into VCR as $target_ref"
+          docker pull "$SOURCE_REF"
+          docker tag "$SOURCE_REF" "$target_ref"
           # --project pins the destination to the SAME resolved name the target ref was built from.
           # Without it the push silently follows whatever project VERCEL_PROJECT_ID linked, so a
           # mismatched VERCEL_PROJECT_NAME would tag one repository and publish into another — and the
@@ -564,7 +570,7 @@ jobs:
           source-ref: ${{ github.sha }}
           # The build job may have been skipped (`build: skip`), leaving its outputs empty — fall back
           # to the candidate tag the plan resolved, which is the ref this cell baked against anyway.
-          image: ${{ needs.build.outputs.candidate-digest-ref || needs.plan.outputs.image-candidate }}
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
           base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
           provider-target: ${{ matrix.provider }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
@@ -749,7 +755,7 @@ jobs:
           scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
           # Empty when the build job was skipped (`build: skip`) — fall back to the planned candidate tag.
-          image: ${{ needs.build.outputs.candidate-digest-ref || needs.plan.outputs.image-candidate }}
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
           base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
           verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}

@@ -171,7 +171,7 @@ if (import.meta.main) {
 	if (process.argv.includes("--build-push")) {
 		log(">>> building + pushing candidate image…");
 		try {
-			await buildAndPushCandidate(log, only);
+			await buildAndPushCandidate(log);
 		} catch (err) {
 			log(`<<< build/push failed — ${err instanceof Error ? err.message : String(err)}`);
 			process.exit(1);
@@ -184,8 +184,8 @@ if (import.meta.main) {
 	//
 	// Only providers that actually reference the base need it: vercel boots its own VCR mirror and
 	// blaxel the vendor's stock image, so a cell restricted to those must not die on a base candidate it
-	// never reads — under `build: variants`/`skip` that ref may legitimately be stale or absent, and
-	// failing there would break the one flow the scoped release exists for.
+	// never reads — under `build: skip` that ref may legitimately be stale or absent, and failing there
+	// would break the one flow the scoped release exists for.
 	const needsBase = (only ?? PROVIDERS.map((p) => p.id)).some((id) => baseImageUse(id) !== "none");
 	let pinnedCandidateImage: string = config.toolchainImageCandidate;
 	if (needsBase) {

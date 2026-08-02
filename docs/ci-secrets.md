@@ -127,8 +127,14 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    | Input | Effect |
    | --- | --- |
    | `providers` | Comma-separated provider ids the release covers; blank = all. Scoping produces only those bake cells, and makes promote a **backfill**: it publishes just those providers' version artifacts onto the already-published version and never rewrites the public base or anyone else's artifact. Every provider a scoped dispatch names is **required** — you asked for it, so it must ship. |
-   | `build` | `full` rebuilds the base (the default). `variants` restages only the registry-served provider variants on top of the **published** base — minutes instead of an hour, and the new provider gets the same bytes the fleet already runs (the toolchain build is not reproducible, so a rebuild would quietly hand it a different `:vN`). `skip` skips the build job outright and reuses what the registry holds. |
+   | `build` | `full` rebuilds the base (the default). `skip` skips the build job outright and derives everything from what the registry already holds. A backfill wants `skip`: it attaches to the **published** base, so the new provider gets exactly the bytes the fleet already runs — and since the toolchain build is not reproducible, a rebuild would quietly hand it a different `:vN`. |
    | `promote` | Uncheck to bake + verify only; the publish job is skipped. |
+
+   A backfill needs no build phase at all, because **nothing is staged per provider**: every provider
+   derives its artifact from the one shared toolchain base at bake/promote time. That includes Vercel —
+   its platform can only boot images from VCR, so the bake cell mirrors the shared base across rather
+   than pulling from GHCR, but the bytes are the same base image every other provider runs (Vercel
+   injects its own session agent at boot, so there is no provider delta to bake in).
 
    `force_republish` is rejected together with a `providers` list — they are opposite operations, and
    silently picking one would do something the operator did not ask for. A scoped promote also refuses
@@ -142,25 +148,25 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
      *from* the base (e2b, daytona, novita). Those providers' candidates are verified but their version
      artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
-     re-stage with `build: variants`, or bump `TOOLCHAIN_VERSION` and cut a full release. Providers
-     that don't bake from the base (vercel, modal, namespace, microsandbox) are unaffected: their
-     version artifact is a retag of the exact candidate that was just booted.
+     bump `TOOLCHAIN_VERSION` and cut a full release. Providers that don't bake from the base (vercel,
+     modal, namespace, microsandbox) are unaffected: their version artifact is a retag of the exact
+     candidate that was just booted.
 
-   The Vercel-on-v7 flow, as an example — two dispatches, neither of which touches another provider:
+   The Vercel-on-v7 flow, as an example — two dispatches, neither of which touches another provider,
+   and neither of which runs a build job:
 
-   1. **Actions → Toolchain image → Run workflow** with `providers=vercel`, `build=variants`,
-      `promote` unchecked. Stages `…-vercel:v7-candidate` in GHCR from the published `:v7`, mirrors it
-      into VCR, boots it and runs the smoke spec. Nothing public moves.
-   2. Same dispatch with `build=skip` and `promote` checked. Re-validates the VCR candidate and
-      publishes it as the Vercel `v7` image. The GHCR base `:v7` is never rewritten.
+   1. **Actions → Toolchain image → Run workflow** with `providers=vercel`, `build=skip`, `promote`
+      unchecked. Mirrors the published GHCR `:v7` base into VCR as the Vercel candidate, boots it and
+      runs the smoke spec. Nothing public moves.
+   2. Same dispatch with `promote` checked. Re-validates the VCR candidate and publishes it as the
+      Vercel `v7` image. The GHCR base `:v7` is never rewritten.
 
-   Each registry-served variant is its own GHCR package (`sandbox-benchmarks-toolchain-vercel`), and the
-   bake cell pulls it **anonymously**, so it needs the same one-time Public bootstrap as the base
-   package — GHCR creates a package private on first push and offers no API to flip it. The plan's
-   visibility guard checks every package the release needs and warns when one does not exist yet, so on
-   the very first dispatch expect: build pushes the variant (creating it private) → the bake cell's pull
-   fails → set the package Public in the org package settings → re-run the same dispatch. Every dispatch
-   after that is clean.
+   The release pulls exactly **one** GHCR package (`sandbox-benchmarks-toolchain`), anonymously, so the
+   one-time Public bootstrap it needs has already been done. Adding a provider never adds a package —
+   which matters because GHCR creates a package private on first push and offers **no API to flip it**,
+   so a per-provider package would put a manual, un-automatable step in the middle of every new
+   provider's first release. The plan's visibility guard still checks the package and warns if it is
+   ever not public.
 
 > **Two approval gates per bench-matrix run.** The suite-matrix fan-out (each cell calling
 > `bench-suite.yml` with `environment: privileged`) and the `publish` job both carry the environment

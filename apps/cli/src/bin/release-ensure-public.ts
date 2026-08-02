@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
 // `release-ensure-public` — the script behind the `ensure-package-public` composite action. Fails fast
 // (with rich @actions/core annotations) if a candidate package is not public. e2b builds its template
-// on E2B's REMOTE builder (FROM the ghcr candidate base) and daytona/modal/novita pull it to
-// snapshot/boot; the vercel bake cell pulls the staged variant with no ghcr login of its own — none are
-// handed ghcr pull credentials, so every candidate package MUST be public. GHCR packages are created
-// PRIVATE on first push with no API to flip visibility, so making one public is a one-time manual
-// bootstrap; this guard surfaces that plainly instead of an opaque provider pull error.
+// on E2B's REMOTE builder (FROM the ghcr candidate base), daytona/modal/novita pull it to snapshot/boot,
+// and the vercel bake cell pulls it to mirror into VCR — none are handed ghcr pull credentials, so every
+// candidate package MUST be public. GHCR packages are created PRIVATE on first push with no API to flip
+// visibility, so making one public is a one-time manual bootstrap; this guard surfaces that plainly
+// instead of an opaque provider pull error.
 //
-// `PACKAGE` is a comma-separated list (the plan emits every anonymously-pulled package: the base plus
-// each registry-served variant). EVERY name is checked before the gate reports, so one run tells the
-// operator about all the packages needing the bootstrap rather than one per re-dispatch.
+// `PACKAGE` is a comma-separated list (the plan emits every anonymously-pulled package, which today is
+// just the shared base — every provider derives from it, so adding a provider adds no package). EVERY
+// name is checked before the gate reports, so one run tells the operator about all the packages needing
+// the bootstrap rather than one per re-dispatch.
 //
 // Inputs arrive as env (the composite maps its `with:` inputs). Uses Bun's fetch + a real JSON parse
 // (not a curl+grep), and core.setFailed/warning so the outcome renders as a run annotation.

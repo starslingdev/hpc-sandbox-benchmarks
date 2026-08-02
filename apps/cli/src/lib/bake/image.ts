@@ -4,8 +4,6 @@
 // The public `:v1` is never pushed here — that is promote's job.
 import { join } from "node:path";
 import { config } from "@sandbox-benchmarks/providers";
-import type { ProviderId } from "@sandbox-benchmarks/schema";
-import type { templateProviders } from "@sandbox-benchmarks/templates";
 import type { Log } from "./types.ts";
 
 // Anchored to this file (not cwd): the `bake` package script runs from apps/cli, where a
@@ -23,131 +21,40 @@ async function run(cmd: string[], log: Log, extraEnv: Record<string, string> = {
 	if (code !== 0) throw new Error(`${cmd[0]} exited ${code}`);
 }
 
-/** One provider variant that is PUSHED to a registry (see {@link PUBLISHED_VARIANTS}). */
-interface PublishedVariant {
-	/** The build.sh variant name — its directory under packages/templates/images. Typed against the
-	 *  templates registry so a typo is a compile error here, not an "unknown variant" at release time. */
-	variant: (typeof templateProviders)[number];
-	/** The provider whose bake cell consumes it — how the release scopes the visibility guard. */
-	provider: ProviderId;
-	version: string;
-	candidate: string;
-}
-
 /**
- * The provider variants that are PUSHED to a registry, and so have candidate/version tags of their
- * own. Every other variant build.sh produces is consumed locally or rebuilt remotely (e2b builds its
- * template on E2B's builder FROM the base digest; daytona/modal boot the base itself), so it has no
- * registry copy to stage. Today only Vercel needs one: VCR is a separate registry the sandbox pulls
- * from, so the variant has to exist in GHCR first for the bake cell to mirror it across.
+ * The GHCR base ref a release phase pins, given whether its scope is PARTIAL.
+ *
+ * A partial release attaches providers to the version already live, so every phase must pin THAT
+ * published version: it is not cutting a new version, and the candidate tag is mutable — it may
+ * already have moved on toward the next one. A full release pins the candidate it just built.
+ *
+ * Single-sourced because three phases have to agree on it and disagreeing is silent: promote pins it
+ * to re-validate before publishing, the plan emits it so the bake cell knows which bytes to mirror
+ * into a vendor registry, and a mismatch would verify one image and ship another.
  */
-export const PUBLISHED_VARIANTS: readonly PublishedVariant[] = [
-	{
-		variant: "vercel",
-		provider: "vercel",
-		version: config.vercelSourceImageVersion,
-		candidate: config.vercelSourceImageCandidate,
-	},
-];
-
-/**
- * The variants this release is allowed to stage: those whose provider is in `scope` (omitted → every
- * one, the unscoped default). A scoped release must not rewrite an out-of-scope provider's candidate
- * tag — that is a mutation outside what the dispatch asked for, on an image the plan has deliberately
- * dropped from the public-package guard, so nothing would even check it is still pullable.
- */
-function variantsInScope(scope?: readonly ProviderId[]): readonly PublishedVariant[] {
-	if (!scope) return PUBLISHED_VARIANTS;
-	return PUBLISHED_VARIANTS.filter((entry) => scope.includes(entry.provider));
+export function releaseBaseTag(partial: boolean): string {
+	return partial ? config.toolchainImageVersion : config.toolchainImageCandidate;
 }
 
-/** Retag a freshly built variant to its mutable candidate tag and push it (normalized, as below),
- *  returning the pushed candidate's digest-pinned ref. */
-async function stagePublishedVariant(entry: PublishedVariant, log: Log): Promise<string> {
-	await run(["docker", "tag", entry.version, entry.candidate], log);
-	await run(["docker", "push", entry.candidate], log);
-	await run(imagetoolsNormalizeCmd(entry.candidate), log);
-	return resolveImageDigestRef(entry.candidate);
-}
-
-/** What a build phase staged: the digest-pinned base it pins, plus each registry-served variant
- *  candidate it pushed (empty when no in-scope provider has one). */
+/** What the build phase staged: the digest-pinned candidate base every downstream phase pins. */
 export interface StagedCandidates {
-	/** The base ref every downstream phase pins — the candidate base for a full build, the published
-	 *  version base for a variants-only build (which does not touch the candidate base at all). */
 	base: string;
-	/** Digest-pinned refs of the variant candidates this run actually pushed. */
-	variants: string[];
 }
 
 /** build.sh (base + variants, tagged `:dev` and `:v1`) → retag base `:v1`→`:v1-candidate` → push the
- *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run. `scope`
- *  restricts which registry-served variants are staged (see {@link variantsInScope}).
+ *  candidate. Idempotent: the candidate tag is mutable and simply overwritten each run.
  *
  *  A plain `docker push` publishes a bare image manifest, while the public version is a one-platform
  *  image index produced by `imagetools create`. Daytona's registry importer rejects the bare
  *  candidate with an opaque inspection error even when its total compressed size is below the
  *  accepted public image. Normalize the mutable candidate to the same envelope before providers
  *  consume it; the config and layers stay byte-identical. */
-export async function buildAndPushCandidate(
-	log: Log,
-	scope?: readonly ProviderId[],
-): Promise<StagedCandidates> {
+export async function buildAndPushCandidate(log: Log): Promise<StagedCandidates> {
 	await run(["bash", BUILD_SH], log);
 	await run(["docker", "tag", config.toolchainImageVersion, config.toolchainImageCandidate], log);
 	await run(["docker", "push", config.toolchainImageCandidate], log);
 	await run(imagetoolsNormalizeCmd(config.toolchainImageCandidate), log);
-	// The thin Vercel variant is staged in GHCR so the separate Vercel matrix cell can mirror the
-	// exact bytes into VCR after obtaining its short-lived OIDC registry login.
-	const variants: string[] = [];
-	for (const entry of variantsInScope(scope))
-		variants.push(await stagePublishedVariant(entry, log));
-	return { base: await resolveImageDigestRef(config.toolchainImageCandidate), variants };
-}
-
-/**
- * Variants-only rebuild: restage the registry-served provider variants FROM an already-published base,
- * without rebuilding the base or touching its candidate tag. `scope` restricts which variants are
- * staged (see {@link variantsInScope}).
- *
- * This is the build phase of a scoped backfill — adding a provider to a version the rest of the fleet
- * already runs. The alternative (a full rebuild) would take an hour AND produce different base bytes:
- * the toolchain build is not reproducible (apt/mise resolve at build time), so the new provider would
- * end up benchmarking a different `:vN` than everyone else, which is precisely the confound the pinned
- * toolchain exists to remove. Composing the thin variant layer on the PUBLISHED base keeps the
- * comparison honest — and the base is pinned by digest, so "the published base" can't drift mid-build.
- */
-export async function buildAndPushVariantCandidates(
-	log: Log,
-	scope?: readonly ProviderId[],
-): Promise<StagedCandidates> {
-	const staged = variantsInScope(scope);
-	// This mode has one hard prerequisite — the published base it composes on. The plan refuses the
-	// combination up front when it can see the version is absent, but that probe is best-effort, so this
-	// is the authoritative check. It is spelled out here rather than left to `resolveImageDigestRef`
-	// because that would surface as a raw `imagetools inspect exited 1`, which reads like a registry
-	// outage rather than "you asked for the wrong build mode".
-	if (!(await imageExistsInRegistry(config.toolchainImageVersion))) {
-		throw new Error(
-			`${config.toolchainImageVersion} is not published, so there is no base to rebuild the variants on — ` +
-				"`build: variants` adds a provider to a version that already shipped; use `build: full` to cut it first",
-		);
-	}
-	const pinnedBase = await resolveImageDigestRef(config.toolchainImageVersion);
-	if (staged.length === 0) {
-		// Nothing to do rather than a no-op build.sh run: with no registry-served variant in scope there
-		// is no image for this phase to stage — `build: variants` on such a scope is a dispatch mistake.
-		log(`>>> no registry-served variant is in scope — nothing to stage on ${pinnedBase}`);
-		return { base: pinnedBase, variants: [] };
-	}
-	log(`>>> rebuilding variants on the published base ${pinnedBase} (no base build)`);
-	await run(["bash", BUILD_SH], log, {
-		BASE_IMAGE: pinnedBase,
-		VARIANTS: staged.map((entry) => entry.variant).join(","),
-	});
-	const variants: string[] = [];
-	for (const entry of staged) variants.push(await stagePublishedVariant(entry, log));
-	return { base: pinnedBase, variants };
+	return { base: await resolveImageDigestRef(config.toolchainImageCandidate) };
 }
 
 /** Pure: the buildx command that retags one pushed image ref to another registry-side (no pull). */

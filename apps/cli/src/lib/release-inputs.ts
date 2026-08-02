@@ -10,35 +10,21 @@
 /**
  * How the BUILD phase runs — the `build` dispatch input.
  *
- *   • `full`     — rebuild the base image and push a new mutable candidate base (the default; what a
- *                  version bump does).
- *   • `variants` — leave the base alone and restage only the registry-served provider variants on top
- *                  of the ALREADY-PUBLISHED version base. The backfill path: it gives a newly added
- *                  provider the same bytes the rest of the fleet already runs, in minutes rather than
- *                  the hour a base rebuild costs — and, because the toolchain build is not
- *                  reproducible, without silently producing a *different* `:vN` for that provider.
- *   • `skip`     — build nothing; reuse whatever candidates the registry already holds. The build job
- *                  is skipped outright (dynamic job skipping), so a re-verify or a promote of an
- *                  already-staged candidate costs no build at all.
+ *   • `full` — rebuild the base image and push a new mutable candidate base (the default; what a
+ *              version bump does).
+ *   • `skip` — build nothing; reuse whatever the registry already holds. The build job is skipped
+ *              outright (dynamic job skipping), so a re-verify, or a scoped backfill onto a version
+ *              that already shipped, costs no build at all.
+ *
+ * There is deliberately no third "rebuild just this provider's artifact" mode. Every provider's
+ * version artifact is derived from the base at bake/promote time — nothing is staged per-provider
+ * ahead of the matrix — so a backfill needs no build phase, only the published base to derive from.
  */
-export const BUILD_MODES = ["full", "variants", "skip"] as const;
+export const BUILD_MODES = ["full", "skip"] as const;
 export type ReleaseBuildMode = (typeof BUILD_MODES)[number];
 
-/** Whether `value` names one of the three build modes (a `type: choice` input in the dispatch UI, but
- *  an API dispatch can send anything). */
+/** Whether `value` names one of the build modes (a `type: choice` input in the dispatch UI, but an
+ *  API dispatch can send anything). */
 export function isBuildMode(value: string): value is ReleaseBuildMode {
 	return (BUILD_MODES as readonly string[]).includes(value);
-}
-
-/** The modes the build job's script actually implements: `skip` is resolved a phase earlier, by the
- *  plan skipping the job outright, so it never reaches `build-candidate`. DERIVED from the full list
- *  rather than retyped, so a new mode can't be added to one list and forgotten in the other. */
-export type BuilderBuildMode = Exclude<ReleaseBuildMode, "skip">;
-export const BUILDER_BUILD_MODES = BUILD_MODES.filter(
-	(mode): mode is BuilderBuildMode => mode !== "skip",
-);
-
-/** Whether `value` is a mode `build-candidate` can run (see {@link BUILDER_BUILD_MODES}). */
-export function isBuilderBuildMode(value: string): value is BuilderBuildMode {
-	return (BUILDER_BUILD_MODES as readonly string[]).includes(value);
 }

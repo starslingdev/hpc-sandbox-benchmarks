@@ -135,31 +135,44 @@ describe("buildReleasePlan phases", () => {
 	});
 
 	test("carries the build mode and promote toggle through to the plan", () => {
-		const plan = buildReleasePlan({ ...base, build: "variants", promote: false });
-		expect(plan.build).toBe("variants");
+		const plan = buildReleasePlan({ ...base, build: "skip", promote: false });
+		expect(plan.build).toBe("skip");
 		expect(plan.promote).toBe(false);
 	});
 });
 
 describe("buildReleasePlan packages", () => {
-	// The vercel bake cell pulls its staged variant from GHCR with no login, so the variant package has
-	// to be covered by the visibility guard too — the base alone is not enough.
-	test("lists the base package and every registry-served variant package", () => {
+	// Every provider derives from the one shared toolchain base — including vercel, which mirrors it
+	// into VCR rather than pulling a GHCR image of its own. So the guard covers exactly one package,
+	// whatever the scope: a per-provider GHCR package would be another one-time Public bootstrap with
+	// no API to automate it, for bytes that are already published.
+	test("lists the shared base package, whatever the scope", () => {
+		expect(buildReleasePlan(base).packages).toEqual([buildReleasePlan(base).image.name]);
+		const scoped = buildReleasePlan({ ...base, providers: "vercel" });
+		expect(scoped.packages).toEqual([scoped.image.name]);
+	});
+});
+
+describe("buildReleasePlan image source", () => {
+	// The ref a vendor-registry mirror pulls. A backfill attaches to the version already live, so it
+	// must name THAT — the mutable candidate may already point at the next version's bytes, and
+	// mirroring those would verify one image and publish another.
+	test("a full release mirrors the mutable candidate", () => {
 		const plan = buildReleasePlan(base);
-		expect(plan.packages[0]).toBe(plan.image.name);
-		expect(plan.packages).toContain(`${plan.image.name}-vercel`);
+		expect(plan.image.source).toBe(plan.image.candidate);
 	});
 
-	// The guard FAILS the release on a package that isn't public yet, so listing a variant no in-scope
-	// provider pulls would block a release over an image it never reads.
-	test("omits a variant package no provider in scope pulls", () => {
-		const plan = buildReleasePlan({ ...base, providers: "e2b" });
-		expect(plan.packages).toEqual([plan.image.name]);
-	});
-
-	test("keeps the variant package when its own provider is in scope", () => {
+	test("a scoped backfill mirrors the published version instead", () => {
 		const plan = buildReleasePlan({ ...base, providers: "vercel" });
-		expect(plan.packages).toEqual([plan.image.name, `${plan.image.name}-vercel`]);
+		expect(plan.partial).toBe(true);
+		expect(plan.image.source).toBe(plan.image.version);
+	});
+
+	// Naming every provider is an ordinary full release, not a backfill — so it pins the candidate.
+	test("naming the whole registry stays on the candidate", () => {
+		const plan = buildReleasePlan({ ...base, providers: ALL_PROVIDERS.join(",") });
+		expect(plan.partial).toBe(false);
+		expect(plan.image.source).toBe(plan.image.candidate);
 	});
 });
 

@@ -136,8 +136,6 @@ const vercelImages = vercelVcrImageRefs(vercelTeamSlug, vercelProjectName);
 const vercelImageCandidate = env.VERCEL_CANDIDATE_IMAGE
 	? validateVercelVcrImageRef(env.VERCEL_CANDIDATE_IMAGE, vercelTeamSlug, vercelProjectName)
 	: vercelImages.candidate;
-const vercelSourceImageVersion = `${imageRepo}-vercel:${TOOLCHAIN_VERSION}`;
-const vercelSourceImageCandidate = `${vercelSourceImageVersion}${CANDIDATE_SUFFIX}`;
 
 // 3. The single, fully-typed config object. Everything that needs config imports THIS.
 export const config = {
@@ -211,7 +209,4 @@ export const config = {
 	vercelImage: vercelImages.version,
 	vercelImageVersion: vercelImages.version,
 	vercelImageCandidate,
-	/** GHCR staging copy built by build.sh before it is mirrored into VCR. */
-	vercelSourceImageVersion,
-	vercelSourceImageCandidate,
 } as const;

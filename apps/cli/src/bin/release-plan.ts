@@ -18,12 +18,7 @@
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
-import {
-	imageExistsInRegistry,
-	imageName,
-	imageRepo,
-	PUBLISHED_VARIANTS,
-} from "../lib/bake/image.ts";
+import { imageExistsInRegistry, imageName, imageRepo, releaseBaseTag } from "../lib/bake/image.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import type { ReleaseBuildMode } from "../lib/release-inputs.ts";
@@ -120,9 +115,7 @@ export interface ReleasePlan {
 	 *  or a scoped backfill (both of which deliberately target an existing version). */
 	skip: boolean;
 	/** How the BUILD phase runs. `full` rebuilds the base and pushes a new mutable candidate base;
-	 *  `variants` leaves the base alone and restages only the registry-served provider variants on top
-	 *  of the already-published version base (the backfill path — same bytes as the running fleet);
-	 *  `skip` runs no build job at all and reuses whatever candidates the registry already holds. */
+	 *  `skip` runs no build job at all and reuses whatever the registry already holds. */
 	build: ReleaseBuildMode;
 	/** Whether the publish (promote) phase runs at all — false bakes and verifies, then stops. */
 	promote: boolean;
@@ -139,10 +132,14 @@ export interface ReleasePlan {
 		version: string;
 		candidate: string;
 		toolchainVersion: string;
+		/** The GHCR base ref this release's bytes come from — the published version for a backfill, the
+		 *  mutable candidate otherwise (see {@link releaseBaseTag}). A provider whose platform cannot pull
+		 *  from GHCR mirrors THIS ref into its vendor registry, so a backfill mirrors the bytes the fleet
+		 *  already runs rather than whatever the candidate tag currently points at. */
+		source: string;
 	};
 	/** Every GHCR package an IN-SCOPE provider pulls anonymously, so the visibility guard covers all of
-	 *  them — the base plus each registry-served variant whose provider this release covers (see
-	 *  PUBLISHED_VARIANTS in lib/bake/image.ts). */
+	 *  them. One package: every provider derives from the shared toolchain base. */
 	packages: string[];
 	providers: ReleaseProviderPlan[];
 	/** The providers that must pass before publish (single-sourced for the matrix + promote gate). */
@@ -224,16 +221,9 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 			version: config.toolchainImageVersion,
 			candidate: config.toolchainImageCandidate,
 			toolchainVersion: config.toolchainVersion,
+			source: releaseBaseTag(partial),
 		},
-		// Scoped to what this release actually pulls: the guard FAILS a release whose package is still
-		// private, so listing a variant no in-scope provider touches would block a release over a
-		// package it never reads.
-		packages: [
-			imageName(config.toolchainImageVersion),
-			...PUBLISHED_VARIANTS.filter((entry) => scope.includes(entry.provider)).map((entry) =>
-				imageName(entry.version),
-			),
-		],
+		packages: [imageName(config.toolchainImageVersion)],
 		providers,
 		required,
 		gates: {
@@ -256,6 +246,10 @@ export function planOutputs(plan: ReleasePlan): string {
 		`skip=${plan.skip}`,
 		`packages=${plan.packages.join(",")}`,
 		`image-candidate=${plan.image.candidate}`,
+		// The base ref a vendor-registry mirror pulls. Emitted by the PLAN, not the build job, because a
+		// backfill runs no build job at all — and because it must name the PUBLISHED version there, which
+		// a build output could not describe.
+		`image-source=${plan.image.source}`,
 		`toolchain-version=${plan.image.toolchainVersion}`,
 		`size-tier=${plan.sizeTier}`,
 		// The RESOLVED scope, never the raw dispatch input: a blank input becomes the full registry list
@@ -329,17 +323,17 @@ if (import.meta.main) {
 		);
 	}
 
-	// `build: variants` composes the provider variants ON the published version base, so it cannot run
-	// before that version exists — the build job would die resolving it, after a `privileged` approval
-	// this (unprivileged) job can refuse ahead of. Unlike the warning above this is a hard failure: there
-	// is no path where the phase works without that base. It is gated on a CONCLUSIVE probe, though, so a
-	// registry blip degrades to the opaque-but-honest failure in the build job rather than a false refusal.
-	if (plan.build === "variants" && probeConclusive && !alreadyPublished) {
+	// A backfill derives every artifact from the published base, so `build: skip` on a scoped release
+	// cannot work before that version exists — there is nothing to derive from, and no build job to
+	// produce it either. Unlike the warning above this is a hard failure, refused by this (unprivileged)
+	// job ahead of the `privileged` approval the bake matrix would otherwise spend. Gated on a CONCLUSIVE
+	// probe, so a registry blip degrades to an honest downstream failure rather than a false refusal.
+	if (plan.partial && plan.build === "skip" && probeConclusive && !alreadyPublished) {
 		console.error(
-			`::error title=No published base to compose variants on::${config.toolchainImageVersion} is not ` +
-				"published, and `build: variants` rebuilds only the provider variants ON TOP of it — there is " +
-				"nothing to compose against. Use `build: full` to cut this version first; `variants` is for " +
-				"adding a provider to a version that already shipped.",
+			`::error title=No published base to backfill onto::${config.toolchainImageVersion} is not ` +
+				"published, and a scoped `build: skip` release derives its artifacts from that base without " +
+				"building anything — there is nothing to derive from. Cut this version with a full release " +
+				"first; a scoped backfill adds a provider to a version that already shipped.",
 		);
 		process.exit(1);
 	}
