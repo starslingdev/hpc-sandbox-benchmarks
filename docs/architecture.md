@@ -46,7 +46,7 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
 | `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
 | `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
-| `@sandbox-benchmarks/figures`    | schema                                          | fonts (`@fontsource/*`, `dejavu-fonts-ttf`) |
+| `@sandbox-benchmarks/figures`    | schema                                          | `arktype`, fonts (`@fontsource/*`)  |
 | `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
 | `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
 | `@repo/tsconfig`            | —                                               | —                                   |

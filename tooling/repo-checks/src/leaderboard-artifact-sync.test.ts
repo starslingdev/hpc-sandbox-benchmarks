@@ -392,7 +392,7 @@ function loadCommittedRun(): {
 	/** The figures the Markdown must link. Re-DERIVED from the Run, exactly as the bin derives
 	 *  them, rather than parsed back out of the committed document — a gate that read the links it
 	 *  is checking would agree with any set of links at all. Browser-free: this is the list, not
-	 *  the pixels. The PNGs themselves are deliberately NOT re-rendered here — Chrome's output is
+	 *  the pixels. The rasters themselves are deliberately NOT re-rendered here — Chrome's output is
 	 *  not byte-stable across machines, so pixel identity is unassertable in a gate that must pass
 	 *  on every contributor's machine; the update workflow is where pixels are authored. */
 	figures: LeaderboardFigure[];
@@ -670,7 +670,7 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 	});
 
 	it("renders the same chart HTML twice, so a figure regeneration is reviewable", () => {
-		// The deterministic half of the figure pipeline, held to determinism. The PNGs are Chrome's
+		// The deterministic half of the figure pipeline, held to determinism. The rasters are Chrome's
 		// and vary by machine; the HTML they are made from is pure string building and must not —
 		// a nondeterministic document would make every workflow dispatch commit figure churn that
 		// reviews as noise. (The CLI holds the other half of this line: it rasterises every chart

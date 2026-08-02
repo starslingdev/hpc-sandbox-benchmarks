@@ -38,7 +38,7 @@ export interface WrittenFigures {
  * Every chart is rasterised TWICE and the bytes compared. Chrome's output is not promised to be
  * stable across machines, but it must be stable across two runs on this one — a mismatch means
  * something nondeterministic leaked into the figure (an animation, a timestamp, a race), and the
- * committed PNG would differ on every regeneration for no reviewable reason. Three charts,
+ * committed WebP would differ on every regeneration for no reviewable reason. Three charts,
  * sub-second each; cheap enough to hold unconditionally rather than only in the release job.
  *
  * `dryRun` renders no pixels — and no documents: printing to stdout has no file for a relative
@@ -61,16 +61,16 @@ export async function writeLeaderboardFigures(
 	for (const { figure, html } of rendered) {
 		const shoot = () =>
 			screenshotHtml(html, { width: figure.width, deviceScaleFactor: FIGURE_DEVICE_SCALE });
-		const png = await shoot();
+		const webp = await shoot();
 		const again = await shoot();
-		if (!Bun.deepEquals(png, again)) {
+		if (!Bun.deepEquals(webp, again)) {
 			throw new Error(
 				`${figure.suiteId}: two renders of the same HTML produced different images — ` +
 					`something nondeterministic leaked into the chart document`,
 			);
 		}
 		// Bun.write creates the destination's directory by default — no mkdir preamble.
-		await Bun.write(join(markdownDir, figure.file), png);
+		await Bun.write(join(markdownDir, figure.file), webp);
 		written.push(figure.file);
 	}
 	const pruned = prune(

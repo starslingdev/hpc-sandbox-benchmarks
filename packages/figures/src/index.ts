@@ -18,11 +18,11 @@
  *                   test can assert on) and the HTML template that marks it up. Pure string
  *                   building; fonts come from pinned npm packages, inlined as data: URIs.
  *   screenshot.ts   the ONLY impure module: hands a document to headless Chrome via
- *                   `Bun.WebView` and returns PNG bytes. Behind its own entry point,
+ *                   `Bun.WebView` and returns WebP bytes. Behind its own entry point,
  *                   `@sandbox-benchmarks/figures/screenshot`, so importing anything above
  *                   never spawns a browser.
  *
- * Everything on `.` is pure and deterministic: same model, same bytes. The rasterised PNG is
+ * Everything on `.` is pure and deterministic: same model, same bytes. The rasterised WebP is
  * NOT — Chrome's output depends on its version and platform — which is exactly why the split
  * sits where it does: the deterministic half is what gates and tests hold onto, the browser
  * half is a leaf with one job.

@@ -162,7 +162,7 @@ describe("renderLeaderboardFigureHtml", () => {
 		expect(rendered.map(({ figure }) => figure.suiteId)).toEqual(["realworld-mastra"]);
 		const html = rendered[0]?.html as string;
 		// The document must carry everything the screenshot needs: the chart, the caption, the
-		// faces. A reference to anything outside the string would make the PNG depend on the
+		// faces. A reference to anything outside the string would make the WebP depend on the
 		// machine that rendered it.
 		expect(html).toContain("<title>Mastra</title>");
 		expect(html).toContain("retained trials");

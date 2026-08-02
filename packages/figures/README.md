@@ -3,7 +3,7 @@
 Turns a Run document into chart figures: `model.ts` derives the realworld figure model —
 exactly the three fields the charts consume (suites, providers, phase order) — and `chart/`
 builds a view-model per suite and marks it up as one self-contained HTML document, the input a
-headless-browser screenshot turns into a published PNG.
+headless-browser screenshot turns into a published WebP.
 
 **The document is the whole input.** Inline styles, `data:`-URI fonts, no script, no server,
 no external reference of any kind: whatever a browser draws is a function of one string. That
@@ -31,7 +31,7 @@ derivation over a Run (tables, coverage, economics) is its jurisdiction, not thi
 | `exports` | what it costs to import |
 |---|---|
 | `.` | nothing but string building — the model derivation, the view-model, the HTML template, the inlined fonts. |
-| `./screenshot` | a browser. Constructing a `Bun.WebView` spawns headless Chrome; import this only where a PNG is actually wanted. |
+| `./screenshot` | a browser. Constructing a `Bun.WebView` spawns headless Chrome; import this only where a raster is actually wanted. |
 
 ## Layering
 
@@ -40,12 +40,12 @@ derivation over a Run (tables, coverage, economics) is its jurisdiction, not thi
 | `src/phases.ts` | The pipeline phase vocabulary: id, printed label and ramp colour defined ONCE per phase, ordered by execution. Colour order = execution order holds by construction. |
 | `src/model.ts` | Run + registries → `RealworldFigureModel`. Which suites are chartable is decided here (≥2 environments completing every exercised task), and nowhere else. |
 | `src/chart/model.ts` | The view-model. **Every decision the picture makes** — sort order, badge, shared scale, disclosure rows — as plain data a unit test can assert on. The bulk of the tests. |
-| `src/chart/html.ts` | The template. Dumb on purpose: it knows widths and styles, and the one piece of arithmetic in it is `scaleFraction × TRACK_WIDTH`. |
+| `src/chart/html.ts` | The template. Dumb on purpose: it knows widths and styles, and its only arithmetic is geometric — `scaleFraction × TRACK_WIDTH` for a bar, and the header's wordmark sizing over the ratios `wordmark.ts` exports. |
 | `src/chart/wordmark.ts` | The StarSling artwork, inline SVG, painted from `currentColor` — the one brand asset in the document. Exports the ratios (`ASPECT`, `CAP_RATIO`, `BASELINE_RATIO`) the template sizes and aligns it by, so the header is arithmetic over the artwork rather than numbers somebody eyeballed. |
-| `src/chart/fonts.ts` | The faces, read from pinned npm packages (`@fontsource/*`) and inlined as `data:` URIs — the lockfile pins the glyphs like it pins code. Brand faces only: `assertCovered` fails the render on a character none of them can draw, rather than shipping a full Unicode fallback to hide it. |
-| `src/screenshot.ts` | The **only** impure module: `Bun.WebView` → CDP → PNG bytes. Returns bytes, never writes a file. |
+| `src/chart/fonts.ts` | The faces, read from pinned npm packages (`@fontsource/*`, `@fontsource-variable/afacad`) and inlined as `data:` URIs — the lockfile pins the glyphs like it pins code. Brand faces only: `assertCovered` fails the render on a character none of them can draw, rather than shipping a full Unicode fallback to hide it. |
+| `src/screenshot.ts` | The **only** impure module: `Bun.WebView` → CDP → WebP bytes. Returns bytes, never writes a file. |
 
-Asserting `bars[0].fastest === true` is a unit test; asserting on a PNG is not. That is why
+Asserting `bars[0].fastest === true` is a unit test; asserting on a raster is not. That is why
 `chart/model.ts` exists and why the decisions live there rather than in the template.
 
 ## Things that will bite you

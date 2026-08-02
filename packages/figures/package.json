@@ -2,7 +2,7 @@
   "name": "@sandbox-benchmarks/figures",
   "version": "0.0.0",
   "private": true,
-  "description": "Chart figures for the comparison surface: a Run document -> the realworld figure model -> one self-contained HTML document per chart -> PNG via headless Chrome (Bun.WebView). Everything but ./screenshot is pure, deterministic string building.",
+  "description": "Chart figures for the comparison surface: a Run document -> the realworld figure model -> one self-contained HTML document per chart -> WebP via headless Chrome (Bun.WebView). Everything but ./screenshot is pure, deterministic string building.",
   "type": "module",
   "sideEffects": false,
   "exports": {

@@ -9,12 +9,14 @@
  * The template is deliberately dumb. Every decision the picture makes — sort order, badge,
  * colours, disclosure rows, the shared scale — arrives already made in the
  * {@link PipelineChartModel}; this file only knows how wide things are and what they look
- * like. The one piece of arithmetic here is the track: a bar's drawn length is
- * `scaleFraction × TRACK_WIDTH` with TRACK_WIDTH constant across every chart, which is the
- * whole mechanism behind "a second is the same length in all of them". Within a bar the
+ * like. The arithmetic it does own is geometric, never editorial. The track: a bar's drawn
+ * length is `scaleFraction × TRACK_WIDTH` with TRACK_WIDTH constant across every chart, which
+ * is the whole mechanism behind "a second is the same length in all of them". Within a bar the
  * browser distributes the track by `flex-grow: share`, which reproduces the page's
  * gap-then-proportion layout without any of the width bookkeeping the satori renderer
- * needed — flexbox with `gap` IS that algorithm.
+ * needed — flexbox with `gap` IS that algorithm. And the header: the wordmark's size and
+ * placement are solved from the title's measured metrics and the ratios `wordmark.ts` exports,
+ * because CSS has no way to say "match this artwork's letterforms to that text's".
  */
 import { pageColors } from "../page-theme.ts";
 import { assertCovered, fontFaceCss } from "./fonts.ts";
@@ -27,7 +29,7 @@ import {
 } from "./wordmark.ts";
 
 /** Canvas width in CSS px, padding included — every chart, fixed, so the three figures sit
- *  on the page as one column. 2× this is the committed PNG's pixel width. */
+ *  on the page as one column. 2× this is the committed WebP's pixel width. */
 export const FIGURE_WIDTH = 960;
 /** Margin around the content, matching the crops the old pipeline was calibrated against. */
 const PADDING = 24;

@@ -1344,7 +1344,7 @@ describe("the figure dimension: charts above, receipts below", () => {
 	});
 
 	it("embeds each chart at its logical width, with the claim in the alt text", () => {
-		// The PNG is a 2× raster, so the `<img width>` attribute — which GitHub preserves — is what
+		// The WebP is a 2× raster, so the `<img width>` attribute — which GitHub preserves — is what
 		// shows it at logical size. Alt text is what a reader with the image unavailable gets
 		// INSTEAD of the section, so it carries the claim rather than the word "chart".
 		const md = render(board(), [chart({ incomplete: 1 })]);

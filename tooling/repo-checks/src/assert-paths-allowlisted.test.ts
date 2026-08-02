@@ -123,8 +123,9 @@ describe("scripts/assert-paths-allowlisted.sh", () => {
 		const dir = tempGitRepo();
 		mkdirSync(join(dir, "docs/figures"), { recursive: true });
 		writeFileSync(join(dir, "LEADERBOARD.md"), "# ok\n");
-		writeFileSync(join(dir, "docs/figures/realworld-mastra.webp"), "png\n");
-		writeFileSync(join(dir, "docs/figures/realworld-openclaw.webp"), "png\n");
+		// Placeholder bytes: the fence matches on PATH, and never opens what it is fencing.
+		writeFileSync(join(dir, "docs/figures/realworld-mastra.webp"), "webp\n");
+		writeFileSync(join(dir, "docs/figures/realworld-openclaw.webp"), "webp\n");
 		Bun.spawnSync(["git", "add", "-A"], { cwd: dir });
 		const { exitCode, stderr } = runAssert(dir, [
 			"staged",

@@ -79,7 +79,7 @@ if (import.meta.main) {
 	// The figures go in FIRST, and their paths are relative to wherever the Markdown lands, so a
 	// render into a scratch directory produces a self-contained document exactly as the repo-root
 	// render does. `dryRun` when printing to stdout: there is no Markdown file for a relative image
-	// path to resolve against, so writing PNGs into the working directory would be a side effect
+	// path to resolve against, so writing rasters into the working directory would be a side effect
 	// nobody asked a pipe for. The links are still rendered, which is what makes the piped output
 	// the same document.
 	const figureDir = outFile ? dirname(outFile) : ".";
