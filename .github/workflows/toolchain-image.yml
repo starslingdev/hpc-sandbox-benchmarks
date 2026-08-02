@@ -461,6 +461,11 @@ jobs:
         id: vercel-vcr
         env:
           SOURCE_REF: ${{ needs.plan.outputs.image-source }}
+          # `vercel vcr push` is a CLI call, so it needs CLI credentials of its own — the vercel-auth
+          # composite's docker login covers the REGISTRY, not the CLI, and its `--token` lives in that
+          # composite's step env, which does not carry across steps. Without this the push dies with
+          # "No existing credentials found", after the multi-GB pull above has already run.
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
           target_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
@@ -473,7 +478,9 @@ jobs:
           # Without it the push silently follows whatever project VERCEL_PROJECT_ID linked, so a
           # mismatched VERCEL_PROJECT_NAME would tag one repository and publish into another — and the
           # digest read back below would describe an image the providers never pull.
-          ./node_modules/.bin/vercel vcr push docker "$target_name" --project "$project"
+          # --token explicitly rather than relying on the CLI's env pickup: one documented contract,
+          # and it fails loudly here rather than silently falling back to some ambient session.
+          ./node_modules/.bin/vercel vcr push docker "$target_name" --project "$project" --token="$VERCEL_TOKEN"
           digest="$(docker buildx imagetools inspect "$target_ref" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${target_ref%:*}@${digest}" >> "$GITHUB_OUTPUT"
       - name: Log out of VCR after mirror
