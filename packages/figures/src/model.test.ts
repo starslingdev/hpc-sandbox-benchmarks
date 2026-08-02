@@ -179,6 +179,9 @@ describe("buildRealworldFigureModel", () => {
 			{ kind: "microVM", technology: "Firecracker" },
 			{ kind: "microVM", technology: "Firecracker" },
 		]);
+		// The chart shortens the vendor name the way it already does for Daytona/Modal/microsandbox;
+		// the Markdown tables keep the registry's "Vercel Sandbox".
+		expect(model.providers.map((p) => p.name)).toEqual(["Vercel", "Namespace"]);
 	});
 
 	// Modal's gVisor cell exposes no VMM, so the nested-layer preference must fall through rather

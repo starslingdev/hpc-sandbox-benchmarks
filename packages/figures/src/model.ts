@@ -106,6 +106,7 @@ function figureProviderName(providerId: string, displayName: string): string {
 	if (providerId.startsWith("daytona")) return "Daytona";
 	if (providerId.startsWith("modal")) return "Modal";
 	if (providerId.startsWith("microsandbox")) return "microsandbox";
+	if (providerId.startsWith("vercel")) return "Vercel";
 	return displayName;
 }
 
