@@ -530,7 +530,7 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 		// the single largest cost of building this board — computed once per adjacent pair and discarded.
 		// `clusterSeparation` is the identical (RNG-free) verdict that function returns.
 		if (previous.replicates || candidate.replicates) {
-			const diff = clusterSeparation(
+			const cluster = clusterSeparation(
 				previous.replicates ?? [previous.samples],
 				candidate.replicates ?? [candidate.samples],
 			);
@@ -538,13 +538,13 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 			// when the between-sandbox floor already meets α (2/C(6,3)=0.1 at R=3), no data could separate
 			// the pair, so it is underpowered — never a "tied" verdict, which would claim the test had the
 			// power to find a difference and didn't. Rank on the value; the renderer discloses it.
-			if (diff.minAttainablePValue >= DEFAULT_ALPHA) {
+			if (cluster.minAttainablePValue >= DEFAULT_ALPHA) {
 				candidate.row.verdict = "underpowered";
 				settle(identical ? "identical-value" : null);
 				return;
 			}
-			candidate.row.verdict = diff.separated ? "separated" : "tied";
-			settle(diff.separated ? null : "statistical");
+			candidate.row.verdict = cluster.separated ? "separated" : "tied";
+			settle(cluster.separated ? null : "statistical");
 			return;
 		}
 

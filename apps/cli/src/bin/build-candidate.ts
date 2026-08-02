@@ -15,7 +15,7 @@
 //     `bun … >> "$GITHUB_OUTPUT"` redirect would splice build.sh's progress into the outputs file and
 //     GitHub would reject it. stdout is left to carry the (inherited) build log, and
 //   • argv[1] (optional): a build-metadata.json diagnostic artifact with the same facts.
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import type { StagedCandidates } from "../lib/bake/image.ts";
 import { buildAndPushCandidate, imageDigest } from "../lib/bake/image.ts";
 import type { Log } from "../lib/bake/types.ts";

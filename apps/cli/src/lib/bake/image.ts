@@ -3,7 +3,7 @@
 // digest-pinned registry ref, so the candidate base must be pushed before any provider bake.
 // The public `:v1` is never pushed here — that is promote's job.
 import { join } from "node:path";
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import type { Log } from "./types.ts";
 
 // Anchored to this file (not cwd): the `bake` package script runs from apps/cli, where a

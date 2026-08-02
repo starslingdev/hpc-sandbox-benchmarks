@@ -214,6 +214,19 @@ function assertFiniteSamples(fn: string, samples: readonly number[]): void {
 }
 
 /**
+ * Resolve and validate a coverage level, naming the caller — the same fail-fast posture as
+ * {@link assertFiniteSamples}, applied to the one option every interval below shares. `!(0 < l < 1)`
+ * rather than `l <= 0 || l >= 1` so a NaN level is rejected too.
+ */
+function coverageLevel(fn: string, level: number | undefined): number {
+	const resolved = level ?? 0.95;
+	if (!(resolved > 0 && resolved < 1)) {
+		throw new Error(`${fn}() requires level in (0, 1); got ${resolved}`);
+	}
+	return resolved;
+}
+
+/**
  * A deterministic PRNG (mulberry32) seeded by hashing `seed`. The leaderboard is a COMMITTED
  * artifact, so a `Math.random()`-driven bootstrap would rewrite every confidence bound on each
  * regeneration and make the diff meaningless. Seeding from stable Run/Metric/provider identity keeps
@@ -272,10 +285,7 @@ export function bootstrapMedianInterval(
 	options: { resamples?: number; level?: number; seed?: string } = {},
 ): MedianInterval {
 	assertFiniteSamples("bootstrapMedianInterval", samples);
-	const level = options.level ?? 0.95;
-	if (!(level > 0 && level < 1)) {
-		throw new Error(`bootstrapMedianInterval() requires level in (0, 1); got ${level}`);
-	}
+	const level = coverageLevel("bootstrapMedianInterval", options.level);
 	// Validate EVERY option before the n=1 early return, so a misconfigured call is rejected regardless
 	// of how many Samples it happens to carry. `0`/`NaN` would otherwise build an empty Float64Array,
 	// skip the resampling loop, and hand back NaN bounds — which serialize into the committed leaderboard
@@ -391,10 +401,7 @@ export function hierarchicalBootstrapMedianInterval(
 	options: { resamples?: number; level?: number; seed?: string } = {},
 ): MedianInterval {
 	assertReplicates("hierarchicalBootstrapMedianInterval", replicates);
-	const level = options.level ?? 0.95;
-	if (!(level > 0 && level < 1)) {
-		throw new Error(`hierarchicalBootstrapMedianInterval() requires level in (0, 1); got ${level}`);
-	}
+	const level = coverageLevel("hierarchicalBootstrapMedianInterval", options.level);
 	const resamples = options.resamples ?? DEFAULT_RESAMPLES;
 	if (!Number.isInteger(resamples) || resamples < 1) {
 		throw new Error(
@@ -424,19 +431,17 @@ export function hierarchicalBootstrapMedianInterval(
 	};
 }
 
-/** A bootstrapped interval around the DIFFERENCE in two Metrics' medians, plus the cluster-level
- *  separation verdict a ranking reads. Interval and verdict come from deliberately-different methods. */
-export interface MedianDifferenceInterval {
-	/** Observed difference: median(pooled A) − median(pooled B). Sign follows the argument order. */
-	difference: number;
-	/** Lower/upper bound of the hierarchical-bootstrap interval at {@link level} — the DISPLAYED interval. */
-	lo: number;
-	hi: number;
-	/** Coverage, e.g. 0.95. */
+/**
+ * Whether two Metrics' replicate SANDBOXES separate, and how much power the comparison had — the
+ * verdict a replicate-aware ranking reads, with no interval attached. {@link clusterSeparation}
+ * produces it; {@link MedianDifferenceInterval} carries it alongside a bootstrapped interval.
+ *
+ * Declared here rather than projected out of the interval type: this is the shape the leaderboard
+ * consumes, so it owns its own field docs and cannot lose one to a change in the interval's shape.
+ */
+export interface ClusterSeparation {
+	/** Coverage, e.g. 0.95. The significance level α the verdict is decided at is `1 − level`. */
 	level: number;
-	/** Resamples drawn for the interval. `0` is the degenerate single-pooled-Sample-per-side case: the
-	 *  bounds collapse to the observed `difference`. */
-	resamples: number;
 	/**
 	 * How the verdict's p-value was computed, straight from the underlying {@link mannWhitneyU}: `exact` —
 	 * enumerated over the cluster permutation null — up to that test's exact-N ceiling (`MAX_EXACT_N` total
@@ -446,10 +451,11 @@ export interface MedianDifferenceInterval {
 	method: PValueMethod;
 	/**
 	 * Two-sided p-value of the cluster-level rank permutation — Mann-Whitney U on each side's per-sandbox
-	 * medians, with whole replicate sandboxes as the exchangeable unit (exact per {@link method}). This,
-	 * not the interval, decides {@link separated}: MW on Samples pooled across replicates treats clustered
-	 * draws as independent (anti-conservative), while the CI's `lo > 0 || hi < 0` rule read between-provider
-	 * power off within-sandbox spread and over-claimed at small R. Resampling the sandboxes is honest.
+	 * medians, with whole replicate sandboxes as the exchangeable unit (exact per {@link method}). This is
+	 * what decides {@link separated}: MW on Samples pooled across replicates treats clustered draws as
+	 * independent (anti-conservative), while the superseded "confidence interval clears 0" rule read
+	 * between-provider power off within-sandbox spread and over-claimed at small R. Resampling the
+	 * sandboxes is honest.
 	 */
 	pValue: number;
 	/**
@@ -470,14 +476,19 @@ export interface MedianDifferenceInterval {
 	separated: boolean;
 }
 
-/**
- * The cluster-level separation verdict on its own — every field of {@link MedianDifferenceInterval}
- * except the bootstrapped interval.
- */
-export type ClusterSeparation = Pick<
-	MedianDifferenceInterval,
-	"level" | "method" | "pValue" | "minAttainablePValue" | "separated"
->;
+/** A bootstrapped interval around the DIFFERENCE in two Metrics' medians, plus the cluster-level
+ *  separation verdict a ranking reads. Interval and verdict come from deliberately-different methods:
+ *  the added fields below are the interval, the inherited ones are the verdict. */
+export interface MedianDifferenceInterval extends ClusterSeparation {
+	/** Observed difference: median(pooled A) − median(pooled B). Sign follows the argument order. */
+	difference: number;
+	/** Lower/upper bound of the hierarchical-bootstrap interval at {@link level} — the DISPLAYED interval. */
+	lo: number;
+	hi: number;
+	/** Resamples drawn for the interval. `0` is the degenerate single-pooled-Sample-per-side case: the
+	 *  bounds collapse to the observed `difference`. */
+	resamples: number;
+}
 
 /**
  * The verdict half of {@link bootstrapMedianDifferenceInterval}, callable without the interval half:
@@ -497,10 +508,7 @@ export function clusterSeparation(
 ): ClusterSeparation {
 	assertReplicates("clusterSeparation", a);
 	assertReplicates("clusterSeparation", b);
-	const level = options.level ?? 0.95;
-	if (!(level > 0 && level < 1)) {
-		throw new Error(`clusterSeparation() requires level in (0, 1); got ${level}`);
-	}
+	const level = coverageLevel("clusterSeparation", options.level);
 	const { pValue, minAttainablePValue, method } = mannWhitneyU(
 		a.map((replicate) => percentileOf(replicate, 0.5)),
 		b.map((replicate) => percentileOf(replicate, 0.5)),
@@ -535,10 +543,7 @@ export function bootstrapMedianDifferenceInterval(
 ): MedianDifferenceInterval {
 	assertReplicates("bootstrapMedianDifferenceInterval", a);
 	assertReplicates("bootstrapMedianDifferenceInterval", b);
-	const level = options.level ?? 0.95;
-	if (!(level > 0 && level < 1)) {
-		throw new Error(`bootstrapMedianDifferenceInterval() requires level in (0, 1); got ${level}`);
-	}
+	const level = coverageLevel("bootstrapMedianDifferenceInterval", options.level);
 	const resamples = options.resamples ?? DEFAULT_RESAMPLES;
 	if (!Number.isInteger(resamples) || resamples < 1) {
 		throw new Error(
@@ -553,25 +558,16 @@ export function bootstrapMedianDifferenceInterval(
 	// VERDICT — the cluster-level rank permutation, in full in {@link clusterSeparation}: Mann-Whitney U on
 	// each side's per-sandbox medians (one summary per replicate), so the sandboxes themselves are the
 	// exchangeable unit. Its `minAttainablePValue` is the honest between-sandbox floor — 1 at R=1, 0.1 at
-	// R=3 — the power the CI rule below cannot see. `separated` reads this, never the interval.
-	const { pValue, minAttainablePValue, method } = clusterSeparation(a, b, { level });
-	const separated = pValue < 1 - level;
+	// R=3 — the power the CI rule below cannot see. Spread WHOLE into both returns rather than field by
+	// field: that is what makes "these two can never disagree" structural instead of a promise, and it
+	// carries any field later added to ClusterSeparation without a second edit here.
+	const verdict = clusterSeparation(a, b, { level });
 
 	// INTERVAL — one pooled Sample per side carries no spread, so the DISPLAYED interval degenerates to a
 	// point (resamples: 0) rather than 10 000 identical draws. The verdict above already forced `separated`
 	// false for it (its 1-vs-1 cluster test floors at p = 1).
 	if (pooledA.length === 1 && pooledB.length === 1) {
-		return {
-			difference,
-			lo: difference,
-			hi: difference,
-			level,
-			resamples: 0,
-			method,
-			pValue,
-			minAttainablePValue,
-			separated,
-		};
+		return { ...verdict, difference, lo: difference, hi: difference, resamples: 0 };
 	}
 	const rng = seededRng(options.seed ?? "sandbox-benchmarks");
 	const diffs = new Float64Array(resamples);
@@ -583,9 +579,13 @@ export function bootstrapMedianDifferenceInterval(
 	}
 	diffs.sort();
 	const tail = (1 - level) / 2;
-	const lo = percentile(diffs, tail);
-	const hi = percentile(diffs, 1 - tail);
-	return { difference, lo, hi, level, resamples, method, pValue, minAttainablePValue, separated };
+	return {
+		...verdict,
+		difference,
+		lo: percentile(diffs, tail),
+		hi: percentile(diffs, 1 - tail),
+		resamples,
+	};
 }
 
 /** Standard normal CDF, via a rational approximation to erfc (Numerical Recipes `erfcc`,

@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./config": "./src/lib/config.ts"
+    "./config": "./src/config.ts"
   },
   "scripts": {
     "test": "bun test",

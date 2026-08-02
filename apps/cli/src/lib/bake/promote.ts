@@ -29,7 +29,7 @@
 // daytona create fails leaves that snapshot ABSENT, not stale. Recovery is a rerun with force_republish
 // (a plain rerun is refused at step 1, since the base image is still there).
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { isPartialScope } from "../matrix.ts";

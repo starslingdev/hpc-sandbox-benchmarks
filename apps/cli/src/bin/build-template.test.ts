@@ -24,33 +24,36 @@ async function run(...args: string[]) {
 // unknown provider, never invoked off the prototype chain.
 const INHERITED = ["__proto__", "toString", "constructor"];
 
-// Every case is one `bun build-template.ts` boot, and a boot is dominated by loading the CLI's module
-// graph — the assertions themselves are string compares. Run sequentially, the seven boots cost seven
-// times that load for work that is independent case by case, so they are all launched here, at
-// collection time, and each test awaits its own. Nothing is shared between them: separate processes,
-// separate argv, no filesystem writes.
-const routed = templateProviders.map((provider) => [provider, run(provider, "v1")] as const);
-const unknown = run("nope");
-const inherited = INHERITED.map((name) => [name, run(name)] as const);
+/** Run every case of one scenario at once, tagged with its input so a failure names the case. */
+function runAll<T extends string>(cases: readonly T[], args: (value: T) => string[]) {
+	return Promise.all(cases.map(async (value) => [value, await run(...args(value))] as const));
+}
 
-describe("build-template CLI", () => {
+// `describe.concurrent` because every case here is one `bun build-template.ts` boot, and a boot is
+// dominated by loading the CLI's module graph — the assertions are string compares. Serially the seven
+// boots cost seven module loads for work that is independent case by case. The runner's own construct,
+// rather than launching at collection time and awaiting later: a hoisted promise that rejects before
+// its await is reported against whichever test happens to be running, and hoisting spawns every
+// subprocess even under `bun test -t`.
+describe.concurrent("build-template CLI", () => {
 	it("routes every provider the templates package advertises", async () => {
-		for (const [provider, pending] of routed) {
-			const { stdout, exitCode } = await pending;
+		for (const [provider, { stdout, exitCode }] of await runAll(templateProviders, (p) => [
+			p,
+			"v1",
+		])) {
 			expect(`${provider}:${exitCode}`).toBe(`${provider}:0`);
 			expect(JSON.parse(stdout).provider).toBe(provider);
 		}
 	});
 
 	it("rejects an unknown provider with a usable message, not a stack trace", async () => {
-		const { stderr, exitCode } = await unknown;
+		const { stderr, exitCode } = await run("nope");
 		expect(exitCode).toBe(1);
 		expect(stderr).toContain('Unknown provider "nope"');
 	});
 
 	it("rejects inherited Object properties instead of invoking them", async () => {
-		for (const [name, pending] of inherited) {
-			const { stderr, exitCode } = await pending;
+		for (const [name, { stderr, exitCode }] of await runAll(INHERITED, (n) => [n])) {
 			expect(`${name}:${exitCode}`).toBe(`${name}:1`);
 			expect(stderr).toContain(`Unknown provider "${name}"`);
 		}

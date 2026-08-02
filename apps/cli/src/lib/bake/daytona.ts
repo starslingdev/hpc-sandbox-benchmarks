@@ -26,7 +26,7 @@
 import type { RegistryPushAccessDto } from "@daytona/api-client";
 import { Configuration, DockerRegistryApi } from "@daytona/api-client";
 import { Daytona, SandboxClass } from "@daytona/sdk";
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import type { Log } from "./types.ts";
 
 /** Whether a snapshot delete error is a genuine "no such snapshot" (so the idempotent path may

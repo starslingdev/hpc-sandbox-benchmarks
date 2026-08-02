@@ -15,7 +15,7 @@
 // a `docker manifest inspect` that needs the GHCR login the plan job does first). That probe is only
 // a best-effort EARLY skip — the authoritative immutable-version guard lives in `promote` (which
 // REFUSES on an uncertain check), so an inconclusive probe here proceeds rather than blocks.
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
 import { imageExistsInRegistry, imageName, imageRepo, releaseBaseTag } from "../lib/bake/image.ts";

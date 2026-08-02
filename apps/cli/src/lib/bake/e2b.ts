@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import { e2bToml } from "@sandbox-benchmarks/templates/pins";
 import { resolveImageDigestRef } from "./image.ts";
 import type { Log } from "./types.ts";

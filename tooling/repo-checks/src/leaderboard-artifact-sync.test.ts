@@ -52,12 +52,12 @@ const runFile = (runId: string) => join(ROOT, ...DATASET_RUNS_DIR.split("/"), `$
 const regenCmd = (runId: string) =>
 	`bun apps/cli/src/bin/leaderboard.ts ${DATASET_RUNS_DIR}/${runId}.json LEADERBOARD.md`;
 
-/** R-7 percentile of an ALREADY-SORTED buffer's first `length` entries. Split out so the bootstraps
- *  below can sort one reused scratch buffer in place instead of allocating a fresh sorted copy per
- *  resample — the audit still reaches its order statistics BY SORTING, deliberately unlike the
- *  quickselect the renderer uses, so the two remain independent implementations. */
-function auditPercentileOfSorted(sorted: ArrayLike<number>, length: number, p: number): number {
-	const h = (length - 1) * p;
+/** R-7 percentile of an ALREADY-SORTED buffer. Split out so the bootstraps below can sort one reused
+ *  scratch buffer in place instead of allocating a fresh sorted copy per resample — the audit still
+ *  reaches its order statistics BY SORTING, deliberately unlike the quickselect the renderer uses, so
+ *  the two remain independent implementations. */
+function auditPercentileOfSorted(sorted: ArrayLike<number>, p: number): number {
+	const h = (sorted.length - 1) * p;
 	const lo = Math.floor(h);
 	const hi = Math.ceil(h);
 	const a = sorted[lo] as number;
@@ -68,7 +68,7 @@ function auditPercentileOfSorted(sorted: ArrayLike<number>, length: number, p: n
 /** Independent R-7 percentile implementation for auditing the persisted Aggregates and displayed p50. */
 function auditPercentile(samples: readonly number[], p: number): number {
 	const sorted = [...samples].sort((a, b) => a - b);
-	return auditPercentileOfSorted(sorted, sorted.length, p);
+	return auditPercentileOfSorted(sorted, p);
 }
 
 /** Conventional two-pass aggregates: intentionally separate from schema.aggregate's Welford path. */
@@ -118,13 +118,13 @@ function auditMedianInterval(
 	for (let iteration = 0; iteration < medians.length; iteration++) {
 		for (let i = 0; i < n; i++) draw[i] = samples[Math.floor(rng() * n)] as number;
 		draw.sort();
-		medians[iteration] = auditPercentileOfSorted(draw, n, 0.5);
+		medians[iteration] = auditPercentileOfSorted(draw, 0.5);
 	}
 	medians.sort();
 	const tail = (1 - 0.95) / 2;
 	return {
-		lo: auditPercentileOfSorted(medians, medians.length, tail),
-		hi: auditPercentileOfSorted(medians, medians.length, 1 - tail),
+		lo: auditPercentileOfSorted(medians, tail),
+		hi: auditPercentileOfSorted(medians, 1 - tail),
 	};
 }
 
@@ -147,7 +147,11 @@ function auditHierarchicalMedianInterval(
 	const R = replicates.length;
 	const medians = new Float64Array(10_000);
 	// Worst case for one resample: R cluster draws that each land on the longest replicate.
-	const pool = new Float64Array(R * Math.max(...replicates.map((r) => r.length)));
+	const capacity = R * Math.max(...replicates.map((r) => r.length));
+	const pool = new Float64Array(capacity);
+	// A resample's size varies only because replicates are ragged, so it takes very few distinct values
+	// across the 10 000 draws — cache one sortable view per size rather than minting one per iteration.
+	const views: (Float64Array | undefined)[] = new Array(capacity + 1);
 	for (let iteration = 0; iteration < medians.length; iteration++) {
 		let size = 0;
 		for (let r = 0; r < R; r++) {
@@ -155,15 +159,19 @@ function auditHierarchicalMedianInterval(
 			for (let i = 0; i < chosen.length; i++)
 				pool[size++] = chosen[Math.floor(rng() * chosen.length)] as number;
 		}
-		const drawn = pool.subarray(0, size);
+		let drawn = views[size];
+		if (drawn === undefined) {
+			drawn = pool.subarray(0, size);
+			views[size] = drawn;
+		}
 		drawn.sort();
-		medians[iteration] = auditPercentileOfSorted(drawn, size, 0.5);
+		medians[iteration] = auditPercentileOfSorted(drawn, 0.5);
 	}
 	medians.sort();
 	const tail = (1 - 0.95) / 2;
 	return {
-		lo: auditPercentileOfSorted(medians, medians.length, tail),
-		hi: auditPercentileOfSorted(medians, medians.length, 1 - tail),
+		lo: auditPercentileOfSorted(medians, tail),
+		hi: auditPercentileOfSorted(medians, 1 - tail),
 	};
 }
 
@@ -434,11 +442,10 @@ function loadCommittedRun(): {
 }
 
 /**
- * ONE canonical board, shared by every test that only needs "what the renderer produces from the
- * committed Run right now" — which is all of them except the determinism check below, and that one
- * wants a genuinely separate build by construction. Four tests each building their own cost four full
- * renders of a board whose construction is the most expensive thing in this package; two of those were
- * asking the identical question.
+ * ONE canonical board — "what the renderer produces from the committed Run right now" — used by every
+ * test below, including the determinism check, whose SECOND operand is deliberately a fresh build from
+ * a freshly parsed Run. Building a board is the most expensive thing in this package, and the tests
+ * were paying for four of them to ask three questions.
  *
  * Memoized lazily, never at module scope, for the same reason {@link loadCommittedRun} is called inside
  * each test: a throw here must surface as the failure of the test that asked for it, not abort the file

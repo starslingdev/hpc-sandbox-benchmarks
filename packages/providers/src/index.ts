@@ -8,7 +8,7 @@ import { assertProviderJoin } from "./lib/join.ts";
 import type { ProviderConfig } from "./lib/types.ts";
 
 // The runtime configuration gatekeeper — the single validated config object consumers import.
-export { config } from "./lib/config.ts";
+export { config } from "./config.ts";
 export type {
 	MicrosandboxCloudConfig,
 	MicrosandboxConfig,

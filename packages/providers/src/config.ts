@@ -2,15 +2,18 @@
 // rest of the app imports: process.env is validated here once, at module load, so no unvalidated
 // environment data reaches business logic. Static identity/spec come from the schema (the shared
 // source of truth); the env overrides layer on top.
+// The two LEAF modules, not the `@sandbox-benchmarks/schema` barrel. Every consumer of this gatekeeper
+// pays its module init, and the barrel arktype-compiles every Run/suite/catalog schema at load — 474 ms
+// against 17 ms for these two, which carry no arktype at all. The constants are identical either way.
+import { TARGET_SPEC } from "@sandbox-benchmarks/schema/providers";
 import {
-	TARGET_SPEC,
 	TOOLCHAIN_IMAGE_NAME,
 	TOOLCHAIN_VERSION,
 	VERCEL_PROJECT_NAME_DEFAULT,
 	VERCEL_TEAM_SLUG_DEFAULT,
 	validateVercelVcrImageRef,
 	vercelVcrImageRefs,
-} from "@sandbox-benchmarks/schema";
+} from "@sandbox-benchmarks/schema/toolchain";
 import { type } from "arktype";
 
 // 1. Env schema — only the variables this app reads, validated at the boundary. All optional; an

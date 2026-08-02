@@ -96,6 +96,18 @@ describe("package metadata invariants", () => {
 					);
 					expect(missing).toEqual([]);
 				});
+
+				it("no exports subpath reaches into the package's private lib/", () => {
+					// boundary.test.ts forbids IMPORTERS from naming another package's `lib/`, but it matches
+					// on the specifier text — so an exports entry that maps a public-looking subpath onto a
+					// `src/lib/` file makes that private module public while every importer still reads as
+					// clean. The privacy rule then holds only by the checker's blind spot. Enforce it at the
+					// manifest end too: a module worth exporting belongs at the top of `src/`.
+					const private_ = exportTargets(pkg.exports ?? {}).filter((target) =>
+						/(^|\/)lib(\/|$)/.test(target),
+					);
+					expect(private_).toEqual([]);
+				});
 			}
 
 			if (isApp) {

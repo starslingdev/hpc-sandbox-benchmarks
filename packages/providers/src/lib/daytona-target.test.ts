@@ -7,8 +7,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { daytona } from "@computesdk/daytona";
 import type { SandboxMethods } from "@computesdk/provider";
 import { Daytona } from "@daytonaio/sdk";
+import { config } from "../config.ts";
 import { adapters } from "./adapters.ts";
-import { config } from "./config.ts";
 import { daytonaClientTarget } from "./daytona-target.ts";
 
 interface CapturedRequest {
