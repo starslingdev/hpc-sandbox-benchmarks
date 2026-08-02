@@ -75,10 +75,26 @@ describe("pipelineChartHtml", () => {
 	});
 
 	it("draws the shared scale as track widths against one constant", () => {
-		// Beta is the run's slowest bar (scaleFraction 1) → the full 680 px track; Alpha is
+		// Beta is the run's slowest bar (scaleFraction 1) → the full 648 px track; Alpha is
 		// a quarter of it. The constant is the same in every chart, which is the claim.
-		expect(html).toContain("width: 680.00px");
-		expect(html).toContain("width: 170.00px");
+		expect(html).toContain("width: 648.00px");
+		expect(html).toContain("width: 162.00px");
+	});
+
+	it("puts every track on one origin — a label column no chip can widen", () => {
+		// The bug this pins: the provider cell was 128 px of flex-basis with `min-width: auto`,
+		// so the widest isolation chip (`microVM` + `dedicated instance`, 154 px) became the
+		// cell's min-content width and pushed ITS row's bar ~26 px right of the others. The
+		// column is a constant AND cannot grow, so the second half is what makes it structural.
+		expect(html).toContain(`flex: 0 0 160px; min-width: 0;`);
+	});
+
+	it("runs the header and the legend to the figure's full width", () => {
+		// The eyebrow sits on the right edge and the legend note on the far end of the legend
+		// row, so the top of the figure spans the same width the bars are drawn across — before
+		// this, both stopped short and the longest bar read as overflowing the header.
+		expect(html).toContain("justify-content: space-between");
+		expect(html).toContain(".legend-note { margin-left: auto;");
 	});
 
 	it("badges exactly the fastest bar", () => {

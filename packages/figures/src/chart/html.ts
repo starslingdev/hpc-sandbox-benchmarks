@@ -25,8 +25,17 @@ import type { PipelineChartModel } from "./model.ts";
 export const FIGURE_WIDTH = 960;
 /** Margin around the content, matching the crops the old pipeline was calibrated against. */
 const PADDING = 24;
-/** `grid-cols-[8rem_1fr] gap-x-4` — the provider label column and the gutter after it. */
-const LABEL_COLUMN = 128;
+/**
+ * The provider label column and the gutter after it.
+ *
+ * 160 px is the isolation chip's budget, not the provider name's: the widest chip the chip
+ * vocabulary produces (`microVM` + `dedicated instance`) measures 154 px, and the column has to
+ * hold it because the column is what puts every track on the same origin. Sized at the name
+ * alone (the 128 px this used to be) the chip became the cell's min-content width and pushed
+ * THAT ROW'S bar right — one row starting 26 px further in than the seven under it, which is
+ * the misalignment `min-width: 0` below now makes structurally impossible.
+ */
+const LABEL_COLUMN = 160;
 const COLUMN_GAP = 16;
 /**
  * The full-scale bar's length. Fixed rather than solved from the content: with the label
@@ -35,7 +44,7 @@ const COLUMN_GAP = 16;
  * canvas cannot fit would overflow INTO the padding and still be captured, not clipped;
  * ugly beats silently sliced, and the eyeball pass catches ugly.
  */
-const TRACK_WIDTH = 680;
+const TRACK_WIDTH = 648;
 /** `h-5` bars with a `gap-[2px]` between task segments and `gap-2.5` before the total. */
 const BAR_HEIGHT = 20;
 const SEGMENT_GAP = 2;
@@ -121,23 +130,23 @@ const STYLE = `
 * { box-sizing: border-box; }
 body { margin: 0; background: ${pageColors.bg}; }
 .figure { width: ${FIGURE_WIDTH}px; padding: ${PADDING}px; background: ${pageColors.bg}; }
-header { display: flex; align-items: baseline; gap: ${COLUMN_GAP}px; margin: 0 0 6px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: ${COLUMN_GAP}px; margin: 0 0 6px; }
 h1 { margin: 0; font: 500 24px/32px ${HEADING}; color: ${pageColors.fg}; }
-.summary { margin: 0; font: 400 11px/16.5px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted70}; }
+.summary { margin: 0; text-align: right; font: 400 11px/16.5px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted70}; }
 .note { margin: 0 0 20px; max-width: ${NOTE_WIDTH}px; font: 400 14px/22.75px ${SANS}; color: ${pageColors.muted}; }
 .note code { font: 400 13px ${MONO}; }
 .note .disk { font: 400 11px ${MONO}; color: ${pageColors.muted40}; }
 .legend { display: flex; align-items: center; gap: ${COLUMN_GAP}px; margin: 0 0 ${COLUMN_GAP}px; padding: 0; list-style: none; font: 400 11px/16.5px ${MONO}; color: ${pageColors.muted}; }
 .legend li { display: flex; align-items: center; gap: 6px; }
 .swatch { width: 10px; height: 10px; border-radius: 2px; }
-.legend-note { font: 400 10px/15px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted50}; }
+.legend-note { margin-left: auto; font: 400 10px/15px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted50}; }
 .row { display: flex; align-items: center; gap: ${COLUMN_GAP}px; min-height: ${BAR_HEIGHT}px; }
 .row + .row { margin-top: ${ROW_GAP}px; }
-.provider { flex: 0 0 ${LABEL_COLUMN}px; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font: 400 12px/16px ${MONO}; color: ${pageColors.fg90}; }
-.provider-title { white-space: nowrap; }
-.isolation-chip { display: inline-flex; align-items: stretch; overflow: hidden; border: 1px solid ${pageColors.muted40}; border-radius: 4px; font: 400 9px/13.5px ${MONO}; color: ${pageColors.muted70}; white-space: nowrap; }
-.isolation-chip span { padding: 1px 4px; }
-.isolation-chip span + span { border-left: 1px solid ${pageColors.muted40}; color: ${pageColors.teal}; }
+.provider { flex: 0 0 ${LABEL_COLUMN}px; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font: 400 12px/16px ${MONO}; color: ${pageColors.fg90}; }
+.provider-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.isolation-chip { display: inline-flex; align-items: stretch; max-width: 100%; overflow: hidden; border: 1px solid ${pageColors.muted40}; border-radius: 4px; font: 400 9px/13.5px ${MONO}; color: ${pageColors.muted70}; white-space: nowrap; }
+.isolation-chip span { flex: 0 0 auto; padding: 1px 4px; }
+.isolation-chip span + span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; border-left: 1px solid ${pageColors.muted40}; color: ${pageColors.teal}; }
 .bar { display: flex; align-items: center; gap: ${TOTAL_GAP}px; }
 .track { display: flex; gap: ${SEGMENT_GAP}px; height: ${BAR_HEIGHT}px; }
 .segment { flex-shrink: 1; flex-basis: 0; }
