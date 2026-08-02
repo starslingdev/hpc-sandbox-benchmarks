@@ -142,6 +142,95 @@ describe("buildRealworldFigureModel", () => {
 		]);
 	});
 
+	// Vercel and Namespace run the workload in an OCI container INSIDE a Firecracker microVM, so the
+	// probe reports both layers at once. Reading `isolation_runtime` first took the innermost one and
+	// chipped two microVMs as "Container · OCI" — contradicting the Markdown table for the same run,
+	// which called them microVMs. The outer boundary is what the chip claims, so the VMM wins.
+	it("prefers the outer VMM over a nested container runtime", () => {
+		const nested = (providerId: string): ProviderRun =>
+			provider(providerId, [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])], {
+				hostMetadata: [
+					{
+						source: "mise/system-provider",
+						sourceFile: "system/system-provider.json",
+						fields: [
+							{ path: "container_runtime", value: "oci-container" },
+							{ path: "isolation_runtime", value: "oci-container" },
+							{ path: "machine_vmm", value: "firecracker" },
+						],
+					},
+				],
+			});
+		const model = buildRealworldFigureModel({
+			run: run([nested("vercel"), nested("namespace")]),
+			metrics: METRICS,
+			providers: [
+				{ id: "vercel", displayName: "Vercel Sandbox", isolationTechnology: "Firecracker microVM" },
+				{
+					id: "namespace",
+					displayName: "Namespace",
+					isolationTechnology: "microVM (dedicated instance)",
+				},
+			],
+			suites: SUITES,
+		});
+
+		expect(model.providers.map((p) => p.isolation)).toEqual([
+			{ kind: "microVM", technology: "Firecracker" },
+			{ kind: "microVM", technology: "Firecracker" },
+		]);
+	});
+
+	// Modal's gVisor cell exposes no VMM, so the nested-layer preference must fall through rather
+	// than leave the chip blank.
+	it("falls through to the container runtime when no VMM is observable", () => {
+		const model = buildRealworldFigureModel({
+			run: run([
+				provider("modal-gvisor", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])], {
+					hostMetadata: [
+						{
+							source: "mise/system-provider",
+							sourceFile: "system/system-provider.json",
+							fields: [
+								{ path: "container_runtime", value: "gvisor" },
+								{ path: "isolation_runtime", value: "gvisor" },
+								{ path: "machine_vmm", value: "not-observable" },
+							],
+						},
+					],
+				}),
+				provider("blaxel", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])], {
+					hostMetadata: [
+						{
+							source: "mise/system-provider",
+							sourceFile: "system/system-provider.json",
+							fields: [
+								{ path: "container_runtime", value: "none" },
+								{ path: "isolation_runtime", value: "firecracker" },
+								{ path: "machine_vmm", value: "firecracker" },
+							],
+						},
+					],
+				}),
+			]),
+			metrics: METRICS,
+			providers: [
+				{
+					id: "modal-gvisor",
+					displayName: "Modal (gVisor)",
+					isolationTechnology: "gVisor container",
+				},
+				{ id: "blaxel", displayName: "Blaxel", isolationTechnology: "Firecracker microVM" },
+			],
+			suites: SUITES,
+		});
+
+		expect(model.providers.map((p) => p.isolation)).toEqual([
+			{ kind: "Userspace", technology: "gVisor" },
+			{ kind: "microVM", technology: "Firecracker" },
+		]);
+	});
+
 	it("charts a suite two environments completed, named from its task labels", () => {
 		const model = build([
 			provider("alpha", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])]),

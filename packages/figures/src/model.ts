@@ -151,9 +151,27 @@ function isolationFromDeclaration(declared: string | undefined): FigureIsolation
 	return undefined;
 }
 
-/** Read the dominant exact runtime from the aggregated mise/system-provider records. */
+/**
+ * Read the dominant exact runtime from the aggregated mise/system-provider records.
+ *
+ * `machine_vmm` is consulted FIRST because the probe reports NESTED isolation and these paths name
+ * different layers of it. Vercel and Namespace run the workload in an OCI container inside a
+ * Firecracker microVM, so they report `machine_vmm=firecracker` AND `isolation_runtime=oci-container`
+ * — both true. Reading `isolation_runtime` first returned the innermost layer and threw away the
+ * hardware boundary, chipping two Firecracker microVMs as "Container · OCI" while the Markdown table
+ * for the same run called them microVMs.
+ *
+ * The outer boundary wins because that is what the chip claims: the isolation the workload is
+ * actually confined by, and the thing a reader comparing environments is weighing. It also puts this
+ * derivation back in agreement with `packages/results`, whose roster treats the registry declaration
+ * as authoritative and documents (see `isolationClass`) that the probe's container signal is a
+ * cgroup-quota heuristic a microVM trips too — so it must never override a VM.
+ *
+ * `machine_vmm` is skipped when it is `not-observable` (Modal's gVisor cell, where no VMM is exposed
+ * and `isolation_runtime=gvisor` is the correct answer) by the same emptiness filter below.
+ */
 function observedIsolationRuntime(provider: ProviderRun): string | undefined {
-	const paths = ["isolation_runtime", "machine_vmm", "container_runtime"];
+	const paths = ["machine_vmm", "isolation_runtime", "container_runtime"];
 	for (const path of paths) {
 		const counts = new Map<string, number>();
 		for (const record of provider.hostMetadata ?? []) {
