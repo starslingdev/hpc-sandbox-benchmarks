@@ -29,10 +29,14 @@ export const WORDMARK_CAP_RATIO = 57 / 125;
 
 /**
  * Where the `STARSLING` baseline sits inside the artwork's box, as a fraction of its height
- * (y≈91 of 125). Exported because it is the only way to CHECK the lockup: the drawn baseline is
- * `box.top + box.height × this`, which is what a browser-side assertion compares against the
- * title's own baseline. Nothing in the stylesheet consumes it — see the header rule in `html.ts`
- * for why the alignment is `center` rather than arithmetic over this number.
+ * (y≈91 of 125) — so the drawn baseline is `box.top + box.height × this`.
+ *
+ * This is what makes the lockup PLACEABLE. An SVG is a replaced element, and no value of
+ * `align-items` can put a replaced element's interior on a text baseline: Chrome offers the box's
+ * bottom edge and nothing else, which is why `baseline` floats the mark ten pixels high and why a
+ * negative bottom margin does not bring it back. The template subtracts this from the title's own
+ * baseline to get a top offset instead, and with the cap heights already matched by
+ * {@link WORDMARK_CAP_RATIO}, landing the baselines lands the cap tops too.
  */
 export const WORDMARK_BASELINE_RATIO = 91 / 125;
 

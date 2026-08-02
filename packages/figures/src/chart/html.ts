@@ -19,7 +19,12 @@
 import { pageColors } from "../page-theme.ts";
 import { assertCovered, fontFaceCss } from "./fonts.ts";
 import type { PipelineChartModel } from "./model.ts";
-import { WORDMARK_ASPECT, WORDMARK_CAP_RATIO, WORDMARK_SVG } from "./wordmark.ts";
+import {
+	WORDMARK_ASPECT,
+	WORDMARK_BASELINE_RATIO,
+	WORDMARK_CAP_RATIO,
+	WORDMARK_SVG,
+} from "./wordmark.ts";
 
 /** Canvas width in CSS px, padding included — every chart, fixed, so the three figures sit
  *  on the page as one column. 2× this is the committed PNG's pixel width. */
@@ -53,16 +58,36 @@ const TOTAL_GAP = 10;
 /** `space-y-3` between bar rows. */
 const ROW_GAP = 12;
 /**
+ * The title's own metrics, at `500 24px Afacad`, READ OFF THE PINNED FACE rather than assumed —
+ * canvas `TextMetrics` in the rendered document, which is the only thing that knows what the
+ * embedded woff2 actually draws. Afacad's caps are 15 px at 24 px (0.625 em, not the ~0.7 a
+ * generic sans would give: assuming that made the wordmark 12% oversized), and its ascent+descent
+ * come to exactly the 32 px line box, so the baseline sits flush at 24 px with no half-leading to
+ * account for. The lockfile pins the glyphs, so these are as fixed as the font-size beside them.
+ */
+const TITLE_CAP_HEIGHT = 15;
+const TITLE_BASELINE = 24;
+/**
  * The wordmark's drawn height, solved from the title rather than guessed.
  *
  * The artwork is a lockup — a disc that fills its box, and letterforms that occupy the middle
  * {@link WORDMARK_CAP_RATIO} of it — so matching its BOX to the title's 24 px would set
- * `STARSLING` at about 11 px and read as a footnote beside the name. Matching cap height to cap
- * height is what "the same size as the title" means to the eye, so that is what this solves:
- * Afacad's caps run ~0.7 em, and dividing that through the artwork's own ratio lands the two sets
- * of letterforms on the same optical size.
+ * `STARSLING` at about 11 px and read as a footnote beside the name. Cap height to cap height is
+ * what "the size of the title" means to the eye, so that is what this solves.
  */
-const WORDMARK_HEIGHT = Math.round((24 * 0.7) / WORDMARK_CAP_RATIO);
+const WORDMARK_HEIGHT = Math.round(TITLE_CAP_HEIGHT / WORDMARK_CAP_RATIO);
+/**
+ * Where the artwork's box starts, so its letterforms sit in the title's cap band.
+ *
+ * Solved, not aligned: `align-items` has no setting that means "put THIS part of a replaced
+ * element on the text's baseline" — Chrome offers the box's bottom edge and nothing else (which
+ * is why `baseline` floated the mark 10 px high, and why a negative bottom margin did not move
+ * it). Sizing to the cap band already makes the two cap heights equal, so landing the baselines
+ * lands the cap tops too, and this is the one number that does it: the title's baseline, less
+ * however far the wordmark's own baseline sits down its box. It comes out near zero at this size,
+ * which is a coincidence of the two ratios and not a licence to drop the term.
+ */
+const WORDMARK_TOP = TITLE_BASELINE - WORDMARK_HEIGHT * WORDMARK_BASELINE_RATIO;
 
 // Every stack ends on Geist before the generic: Geist Mono and Afacad lack `†` and `→`, and the
 // embedded Geist Sans subset has both — so the fallback glyph is a brand glyph, not a foreign
@@ -140,14 +165,13 @@ const STYLE = `
 * { box-sizing: border-box; }
 body { margin: 0; background: ${pageColors.bg}; }
 .figure { width: ${FIGURE_WIDTH}px; padding: ${PADDING}px; background: ${pageColors.bg}; }
-/* CENTER, not baseline. An SVG is a replaced element and Chrome takes its BORDER-BOX BOTTOM as
-   its baseline, so \`align-items: baseline\` hangs the artwork's box off the title's baseline and
-   floats the letterforms 10 px above it — and a negative bottom margin does not move it, because
-   the box bottom is what is consulted. Centring the lockup on the title's line box instead puts
-   the two sets of letterforms within half a pixel of one line (measured, at these exact sizes). */
-header { display: flex; align-items: center; gap: 24px; margin: 0 0 4px; }
+/* The title anchors the row's top edge and the wordmark is placed against it by WORDMARK_TOP —
+   hence flex-start, which is the only alignment that leaves that offset meaning what it says.
+   An auto left margin rather than justify-content, so the mark still sits on the right edge if
+   the row ever gains a third element. */
+header { display: flex; align-items: flex-start; gap: 24px; margin: 0 0 4px; }
 h1 { margin: 0; font: 500 24px/32px ${HEADING}; color: ${pageColors.fg}; }
-.wordmark { flex: 0 0 auto; width: ${px(WORDMARK_HEIGHT * WORDMARK_ASPECT)}; height: ${px(WORDMARK_HEIGHT)}; color: ${pageColors.fg}; }
+.wordmark { flex: 0 0 auto; margin: ${px(WORDMARK_TOP)} 0 0 auto; width: ${px(WORDMARK_HEIGHT * WORDMARK_ASPECT)}; height: ${px(WORDMARK_HEIGHT)}; color: ${pageColors.fg}; }
 .summary { margin: 0 0 14px; font: 400 11px/16.5px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted70}; }
 .note { margin: 0 0 24px; font: 400 14px/22.75px ${SANS}; color: ${pageColors.muted}; }
 .note code { font: 400 13px ${MONO}; }

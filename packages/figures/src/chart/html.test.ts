@@ -2,7 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { FIXTURE } from "./__fixtures__/data.ts";
 import { pipelineChartHtml } from "./html.ts";
 import { buildPipelineChartModel } from "./model.ts";
-import { WORDMARK_ASPECT, WORDMARK_CAP_RATIO, WORDMARK_SVG } from "./wordmark.ts";
+import {
+	WORDMARK_ASPECT,
+	WORDMARK_BASELINE_RATIO,
+	WORDMARK_CAP_RATIO,
+	WORDMARK_SVG,
+} from "./wordmark.ts";
 
 const suite = FIXTURE.suites[0];
 if (!suite) throw new Error("fixture must carry a chartable suite");
@@ -130,15 +135,29 @@ describe("pipelineChartHtml", () => {
 		expect(WORDMARK_SVG.match(/fill="currentColor"/g)?.length).toBe(17);
 	});
 
-	it("sizes the wordmark by cap height, so it reads level with the title", () => {
+	it("sizes the wordmark to the title's cap band, from the pinned face's real metrics", () => {
 		// Matching the artwork's BOX to the 24 px title would set `STARSLING` at ~11 px, because
 		// the letterforms are only WORDMARK_CAP_RATIO of the box — the disc takes the rest. The
-		// template solves for the letterforms instead; this pins the arithmetic, not the taste.
-		const height = Math.round((24 * 0.7) / WORDMARK_CAP_RATIO);
-		expect(height).toBe(37);
+		// template solves for the letterforms instead, off Afacad's MEASURED 15 px cap height;
+		// the ~0.7 em a generic sans would give drew it 12% oversized. Arithmetic, not taste.
+		const height = Math.round(15 / WORDMARK_CAP_RATIO);
+		expect(height).toBe(33);
+		// Placed, not aligned: `align-items` cannot put a replaced element's INTERIOR on a text
+		// baseline, so the offset is solved — the title's baseline less the wordmark's own.
+		const top = 24 - height * WORDMARK_BASELINE_RATIO;
 		expect(html).toContain(
-			`.wordmark { flex: 0 0 auto; width: ${(height * WORDMARK_ASPECT).toFixed(2)}px; height: ${height.toFixed(2)}px;`,
+			`.wordmark { flex: 0 0 auto; margin: ${top.toFixed(2)}px 0 0 auto; ` +
+				`width: ${(height * WORDMARK_ASPECT).toFixed(2)}px; height: ${height.toFixed(2)}px;`,
 		);
+	});
+
+	it("keeps the title on the left edge and the wordmark on the right", () => {
+		// An auto LEFT margin is what pushes the mark to the far edge; the title is simply first.
+		// `justify-content: space-between` would do it today and quietly stop the day the row
+		// gains a third element, so the rule lives on the element that has to move.
+		expect(html).toContain("header { display: flex; align-items: flex-start;");
+		expect(html).toMatch(/\.wordmark \{[^}]*margin: [-\d.]+px 0 0 auto;/);
+		expect(html).not.toContain("justify-content: space-between");
 	});
 
 	it("badges exactly the fastest bar", () => {
