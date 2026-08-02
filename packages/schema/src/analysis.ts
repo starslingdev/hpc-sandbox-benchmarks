@@ -101,7 +101,11 @@ function medianInPlace(buffer: Float64Array, length: number): number {
 	const lo = Math.floor(h);
 	const loValue = selectNth(buffer, length, lo);
 	// Odd length: h is an integer, the interpolation weight is 0, and one order statistic is the answer.
-	if (h === lo) return loValue;
+	// `+ 0` is not redundant — it normalizes a -0 order statistic to +0, which is what `percentile`'s
+	// `loValue + (h - lo) * (…)` does for free and what makes the bit-identity claim above literally true.
+	// Nothing downstream can observe the difference today (every median is written into a Float64Array and
+	// re-read through `percentile`), so this is here to keep the invariant real rather than accidental.
+	if (h === lo) return loValue + 0;
 	// Even length: selectNth left every element past `lo` ≥ loValue, so the next order statistic up is
 	// that tail's minimum — an O(n) scan rather than a second selection pass.
 	let hiValue = buffer[lo + 1] as number;
