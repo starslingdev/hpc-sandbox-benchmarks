@@ -497,7 +497,8 @@ describe("renderLeaderboardMarkdown statistics", () => {
 		const mainRows = md.split("\n").filter((l) => /^\| \d+ \| (Daytona \(VM\)|E2B) \|/.test(l));
 		expect(mainRows).toHaveLength(2);
 		for (const row of mainRows) {
-			expect(row.split("|").filter((c) => c.trim() !== "").length).toBe(6);
+			// rank | provider | value | interval | sandboxes | trials | note
+			expect(row.split("|").filter((c) => c.trim() !== "").length).toBe(7);
 		}
 
 		const detailRows = md
@@ -513,8 +514,9 @@ describe("renderLeaderboardMarkdown statistics", () => {
 
 	it("renders a point value with no interval for a single-Sample Metric", () => {
 		const md = render(buildLeaderboard(run([provider("daytona-vm", [metric(HEADLINE, [10])])])));
-		// n=1 → em-dash for the bootstrap interval; no Note column when nothing needs calling out.
-		expect(md).toMatch(/\| 1 \| Daytona \(VM\) \| 10 \| — \| 1 \|\n/);
+		// n=1 → em-dash for the bootstrap interval; no Note column when nothing needs calling out. One
+		// sandbox, one trial: an unreplicated Metric reports R=1 rather than hiding the distinction.
+		expect(md).toMatch(/\| 1 \| Daytona \(VM\) \| 10 \| — \| 1 \| 1 \|\n/);
 	});
 
 	it("never prints a p-value as a misleading 0", () => {
@@ -565,8 +567,10 @@ describe("underpowered comparisons", () => {
 				]),
 			),
 		);
-		expect(md).toContain("(here 4 v 3 floors at p ≈ 0.057)");
-		expect(md).not.toContain("0.1)");
+		// Both sides are unreplicated, so the pooled Mann-Whitney is genuinely the deciding test here and
+		// trials are genuinely its unit — the footnote says so explicitly rather than leaving it ambiguous.
+		expect(md).toContain("here 4 v 3 trials floors at p ≈ 0.057");
+		expect(md).not.toContain("0.1.");
 	});
 
 	it("omits the n-too-small explanation entirely when no comparison was underpowered", () => {

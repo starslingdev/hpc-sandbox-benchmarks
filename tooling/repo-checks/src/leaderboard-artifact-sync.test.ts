@@ -129,43 +129,34 @@ function auditMedianInterval(
 }
 
 /**
- * Independently reproduce the seeded 10k HIERARCHICAL median bootstrap the renderer uses once a Metric
- * carries a replicate breakdown (≥2 sandboxes): each resample draws R replicates WITH REPLACEMENT, then
- * within each drawn replicate draws its own Samples with replacement, pools the lot, and takes the median.
- * Mirrors schema/analysis.ts `hierarchicalBootstrapMedianInterval` — including the single shared RNG's
- * exact draw order (replicate index, then that replicate's sample indices, R times) — so the reproduced
- * bounds are byte-identical to the committed table rather than merely statistically close.
+ * Independently reproduce the seeded 10k CLUSTER bootstrap the renderer uses once a Metric carries a
+ * replicate breakdown (≥2 sandboxes): summarise each sandbox by its own median, then draw R of those
+ * summaries WITH REPLACEMENT and take the median of the draw. Whole sandboxes are resampled INTACT —
+ * there is deliberately no second, within-sandbox resampling stage, because each sandbox's observed
+ * Samples already carry one realization of that machine's within-noise and drawing them again would
+ * add a second copy of it.
+ *
+ * Mirrors schema/analysis.ts `clusterMedianInterval` — including the single shared RNG's exact draw
+ * order (R summary indices per resample) — so the reproduced bounds are byte-identical to the committed
+ * table rather than merely statistically close. Reaches its order statistics BY SORTING, deliberately
+ * unlike the renderer's quickselect, so the two stay independent implementations.
  */
-function auditHierarchicalMedianInterval(
+function auditClusterMedianInterval(
 	replicates: readonly (readonly number[])[],
 	seed: string,
 ): { lo: number; hi: number } | null {
-	// The pooled union is what the displayed median ranks on; a single pooled Sample has no spread, so the
-	// renderer degenerates to a point interval (rendered "—"), matching auditMedianInterval's n=1 return.
-	if (replicates.reduce((sum, replicate) => sum + replicate.length, 0) === 1) return null;
+	// One sandbox carries no between-machine information, so the renderer degenerates to a point interval
+	// (rendered "—"). Note this keys on the SANDBOX count, not the pooled Sample count.
+	if (replicates.length === 1) return null;
+	const summaries = replicates.map((replicate) => auditPercentile(replicate, 0.5));
 	const rng = auditRng(seed);
-	const R = replicates.length;
+	const R = summaries.length;
 	const medians = new Float64Array(10_000);
-	// Worst case for one resample: R cluster draws that each land on the longest replicate.
-	const capacity = R * Math.max(...replicates.map((r) => r.length));
-	const pool = new Float64Array(capacity);
-	// A resample's size varies only because replicates are ragged, so it takes very few distinct values
-	// across the 10 000 draws — cache one sortable view per size rather than minting one per iteration.
-	const views: (Float64Array | undefined)[] = new Array(capacity + 1);
+	const draw = new Float64Array(R);
 	for (let iteration = 0; iteration < medians.length; iteration++) {
-		let size = 0;
-		for (let r = 0; r < R; r++) {
-			const chosen = replicates[Math.floor(rng() * R)] as readonly number[];
-			for (let i = 0; i < chosen.length; i++)
-				pool[size++] = chosen[Math.floor(rng() * chosen.length)] as number;
-		}
-		let drawn = views[size];
-		if (drawn === undefined) {
-			drawn = pool.subarray(0, size);
-			views[size] = drawn;
-		}
-		drawn.sort();
-		medians[iteration] = auditPercentileOfSorted(drawn, 0.5);
+		for (let i = 0; i < R; i++) draw[i] = summaries[Math.floor(rng() * R)] as number;
+		draw.sort();
+		medians[iteration] = auditPercentileOfSorted(draw, 0.5);
 	}
 	medians.sort();
 	const tail = (1 - 0.95) / 2;
@@ -192,6 +183,7 @@ interface AuditRow {
 	rank: number;
 	interval: string;
 	n: number;
+	sandboxes: number;
 	note: string;
 	p: string;
 	ks: string;
@@ -202,13 +194,19 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 	const candidates = run.providers.flatMap((provider) => {
 		const result = provider.metrics.find(({ metricId }) => metricId === metric.id);
 		if (!result) return [];
-		const value = auditPercentile(result.samples, 0.5);
-		// Mirror the renderer's branch: once a Metric merged ≥2 replicate sandboxes it takes the
-		// hierarchical bootstrap (between-sandbox variance), else the ordinary percentile bootstrap.
 		const seed = `${run.runId}:${metric.id}:${provider.providerId}`;
 		const replicates = result.replicates?.map((replicate) => replicate.samples);
+		// Mirror the renderer's branch: with ≥2 replicate sandboxes the value is the median of the
+		// per-sandbox medians (one machine one vote, NOT the pooled trials) and the interval is the
+		// cluster bootstrap of that same statistic; without them, the ordinary percentile bootstrap.
+		const value = replicates
+			? auditPercentile(
+					replicates.map((replicate) => auditPercentile(replicate, 0.5)),
+					0.5,
+				)
+			: auditPercentile(result.samples, 0.5);
 		const interval = replicates
-			? auditHierarchicalMedianInterval(replicates, seed)
+			? auditClusterMedianInterval(replicates, seed)
 			: auditMedianInterval(result.samples, seed);
 		return [
 			{
@@ -237,6 +235,7 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 				...candidate,
 				rank: 1,
 				n: candidate.result.samples.length,
+				sandboxes: candidate.result.replicates?.length ?? 1,
 				note: "",
 				p: "—",
 				ks: "—",
@@ -266,6 +265,7 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 			// exact cluster permutation, never the bootstrapped difference interval.
 			const previousReplicates = previousCandidate.result.replicates?.map((r) => r.samples);
 			const candidateReplicates = candidate.result.replicates?.map((r) => r.samples);
+			let clusterP = Number.NaN;
 			if (previousReplicates || candidateReplicates) {
 				const cluster = mannWhitneyU(
 					(previousReplicates ?? [previousCandidate.result.samples]).map((c) =>
@@ -273,10 +273,12 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 					),
 					(candidateReplicates ?? [candidate.result.samples]).map((c) => auditPercentile(c, 0.5)),
 				);
+				clusterP = cluster.pValue;
 				// The between-sandbox floor already meets α (2/C(6,3)=0.1 at R=3) → underpowered, never a
 				// tie; else the cluster test's own p decides separation.
 				if (cluster.minAttainablePValue >= DEFAULT_ALPHA) {
-					note = identical ? "n too small, equal medians" : "n too small";
+					// The cluster path decided, so the binding constraint is the SANDBOX count, not `n`.
+					note = identical ? "too few sandboxes, equal medians" : "too few sandboxes";
 					if (identical) rank = previousRow.rank;
 				} else if (cluster.pValue >= DEFAULT_ALPHA) {
 					rank = previousRow.rank;
@@ -289,7 +291,11 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 				rank = previousRow.rank;
 				note = "tied";
 			}
-			p = `${formatPValue(mw.pValue)}${note ? ` (${note})` : ""}`;
+			// The rendered `p vs. above` is the p of the test that DECIDED — the cluster test wherever
+			// replicate sandboxes exist, the pooled Mann-Whitney only where a single sandbox left nothing
+			// else to test on. `p (KS)` stays the pooled shape diagnostic.
+			const decidingP = previousReplicates || candidateReplicates ? clusterP : mw.pValue;
+			p = `${formatPValue(decidingP)}${note ? ` (${note})` : ""}`;
 			ks = formatPValue(shape.pValue);
 		}
 
@@ -297,6 +303,7 @@ function auditRows(run: Run, metric: MetricDef): AuditRow[] {
 			...candidate,
 			rank,
 			n: candidate.result.samples.length,
+			sandboxes: candidate.result.replicates?.length ?? 1,
 			note,
 			p: p === "—" && note ? `— (${note})` : p,
 			ks,
@@ -310,6 +317,8 @@ interface MarkdownMetricRow {
 	provider: string;
 	value: string;
 	interval: string;
+	/** Sandboxes (the unit of replication) and pooled trials — rendered as two distinct columns. */
+	sandboxes: string;
 	n: string;
 	note: string;
 }
@@ -347,7 +356,7 @@ function parseMetricTables(markdown: string, emitted: Map<string, MetricDef>) {
 				.slice(1, -1)
 				.split("|")
 				.map((cell) => cell.trim());
-			const [rank, provider, value, interval, n, rawNote] = cells;
+			const [rank, provider, value, interval, sandboxes, n, rawNote] = cells;
 			const note = rawNote === "—" || rawNote === undefined ? "" : rawNote;
 			const key = metric.id;
 			const metricRows = rows.get(key) ?? [];
@@ -356,6 +365,7 @@ function parseMetricTables(markdown: string, emitted: Map<string, MetricDef>) {
 				provider: provider as string,
 				value: value as string,
 				interval: interval as string,
+				sandboxes: sandboxes as string,
 				n: n as string,
 				note,
 			});
@@ -833,6 +843,7 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 				provider: row.displayName,
 				value: formatValue(row.value),
 				interval: row.interval,
+				sandboxes: String(row.sandboxes),
 				n: String(row.n),
 				note: row.note,
 			}));

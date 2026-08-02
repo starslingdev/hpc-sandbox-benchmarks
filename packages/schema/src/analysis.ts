@@ -191,8 +191,16 @@ export function aggregate(samples: number[]): Aggregates {
 // distributions differ at all.
 // ---------------------------------------------------------------------------------------------
 
-/** Bootstrap resamples per interval. 10k puts the Monte-Carlo error on a 95% bound well under the
- *  precision the leaderboard prints (4 significant digits). */
+/**
+ * Bootstrap resamples per interval.
+ *
+ * This does NOT make the printed bound seed-independent, and it is worth being precise about why, because
+ * the obvious reading ("10k puts the Monte-Carlo error under the 4 significant digits we print") is false:
+ * re-seeding the committed dataset changes a printed `lo`/`hi` on ~45% of rows (e.g. a STREAM bound moving
+ * 81400 → 81020). At R=3 the resample distribution has only a handful of atoms, so the quantile jumps
+ * between them; raising this number does not smooth that away — more sandboxes would. What 10k DOES buy is
+ * a stable answer for a FIXED seed, which is what makes the committed artifact reproducible.
+ */
 const DEFAULT_RESAMPLES = 10_000;
 /** Two-sided significance level for "are these two providers actually different?". */
 export const DEFAULT_ALPHA = 0.05;
@@ -387,10 +395,95 @@ function resamplePool(replicates: readonly (readonly number[])[]): Float64Array 
 }
 
 /**
- * Hierarchical (two-level) percentile bootstrap of the median across replicate sandboxes. The reported
- * `median` is the observed median of the POOLED Samples — the same ranking value the leaderboard prints
- * — and `[lo, hi]` is the [α/2, 1−α/2] envelope of the resampled medians, where each resample first
- * draws replicates with replacement and then Samples within each.
+ * Median of each replicate sandbox, one summary per machine. The unit of replication in this benchmark
+ * is the SANDBOX, not the trial, so this is the vector every sandbox-level statistic below reduces to.
+ */
+function sandboxMedians(replicates: readonly (readonly number[])[]): number[] {
+	return replicates.map((replicate) => percentileOf(replicate, 0.5));
+}
+
+/**
+ * The typical MACHINE's value: the unweighted median of the per-sandbox medians.
+ *
+ * This, not the median of the pooled Samples, is what a reader means by "what does a sandbox from this
+ * provider do". Pooling weights each sandbox by its TRIAL COUNT, and PTS's convergence mode chooses that
+ * count by watching the variance — so a sandbox that measured noisy earns more votes in the published
+ * number (measured on the committed dataset: Spearman ρ(trials, within-sandbox CV) = 0.76). One machine
+ * one vote removes that, and matches the unit {@link clusterSeparation} already tests on.
+ */
+export function sandboxMedianOf(replicates: readonly (readonly number[])[]): number {
+	assertReplicates("sandboxMedianOf", replicates);
+	return percentileOf(sandboxMedians(replicates), 0.5);
+}
+
+/**
+ * Cluster bootstrap of {@link sandboxMedianOf}: resample the R sandboxes WITH REPLACEMENT, keeping each
+ * drawn sandbox's Samples INTACT, and take the median of the drawn sandboxes' medians.
+ *
+ * No second, within-sandbox resampling stage. Each observed sandbox's Samples already contain one
+ * realization of that machine's within-noise, so the spread of the R summaries already carries both
+ * variance components (σ²_between + σ²_within/k). Drawing the Samples again inside each drawn sandbox
+ * adds a SECOND independent copy of the within-component on top of the one already there, inflating the
+ * standard error by √(1 + (k−1)/k) — measured 1.219 against a predicted 1.2247 at k=2. That is why this
+ * function, not {@link hierarchicalBootstrapMedianInterval}, is what the leaderboard reports.
+ *
+ * COVERAGE IS NOT NOMINAL AT SMALL R, and no percentile method makes it so: at R=3 the true coverage of
+ * a "95%" interval is ≈77%, rising to ≈92% at R=6 and ≈95% at R=20. That is a property of having three
+ * clusters, not of this estimator. Callers rendering the interval must disclose it (see the leaderboard's
+ * methodology section) rather than presenting the nominal level as achieved.
+ *
+ * Degenerates deterministically: one sandbox → a point interval (`resamples: 0`), never a bound
+ * fabricated from within-machine noise that says nothing about machine-to-machine spread.
+ */
+export function clusterMedianInterval(
+	replicates: readonly (readonly number[])[],
+	options: { resamples?: number; level?: number; seed?: string } = {},
+): MedianInterval {
+	assertReplicates("clusterMedianInterval", replicates);
+	const level = coverageLevel("clusterMedianInterval", options.level);
+	const resamples = options.resamples ?? DEFAULT_RESAMPLES;
+	if (!Number.isInteger(resamples) || resamples < 1) {
+		throw new Error(
+			`clusterMedianInterval() requires resamples to be a positive integer; got ${resamples}`,
+		);
+	}
+
+	const summaries = sandboxMedians(replicates);
+	const median = percentileOf(summaries, 0.5);
+	// One sandbox carries no between-machine information; a bound drawn from its trials would describe
+	// that machine, not the provider. Mirrors bootstrapMedianInterval's single-Sample posture.
+	if (summaries.length === 1) return { median, lo: median, hi: median, level, resamples: 0 };
+
+	const rng = seededRng(options.seed ?? "sandbox-benchmarks");
+	const R = summaries.length;
+	const medians = new Float64Array(resamples);
+	const draw = new Float64Array(R);
+	for (let b = 0; b < resamples; b++) {
+		for (let i = 0; i < R; i++) draw[i] = summaries[Math.floor(rng() * R)] as number;
+		medians[b] = medianInPlace(draw, R);
+	}
+	medians.sort();
+	const tail = (1 - level) / 2;
+	return {
+		median,
+		lo: percentile(medians, tail),
+		hi: percentile(medians, 1 - tail),
+		level,
+		resamples,
+	};
+}
+
+/**
+ * Hierarchical (two-level) percentile bootstrap of the median across replicate sandboxes.
+ *
+ * SUPERSEDED for reporting by {@link clusterMedianInterval} — its inner within-sandbox resampling stage
+ * double-counts within-machine variance (see that function). Retained as the textbook two-stage variant
+ * (Davison & Hinkley Algorithm 3.2) and because the committed pre-2026-08 leaderboards were rendered
+ * from it; nothing in the current pipeline calls it.
+ *
+ * The reported `median` is the observed median of the POOLED Samples — the trial-count-weighted value
+ * the leaderboard used to print — and `[lo, hi]` is the [α/2, 1−α/2] envelope of the resampled medians,
+ * where each resample first draws replicates with replacement and then Samples within each.
  *
  * Degenerates deterministically:
  *  - one replicate  → the cluster draw always re-selects it, so this is the ordinary percentile

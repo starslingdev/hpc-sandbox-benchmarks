@@ -14,12 +14,14 @@
  * and {@link SYNTHETIC_DIMENSIONS}. Which sections exist stays driven by the data — a Dimension no
  * provider emitted is absent, collapsed or not.
  *
- * Ranking is INFERENTIAL, not a bare sort. A provider's Samples are repeated trials inside one sandbox,
- * so their spread is environmental noise, and ordering on the median alone would let a lucky draw buy a
- * position: a live run had modal's STREAM Copy span 9.7k–65k MB/s against daytona's 66.5k ±0.14%. Each
- * row therefore carries a bootstrapped interval around its median, and two rows share a rank unless
- * their full distributions separate under Mann-Whitney U (with Kolmogorov-Smirnov reported alongside,
- * since a bimodal provider can match another's median while behaving nothing like it).
+ * Ranking is INFERENTIAL, not a bare sort, and the unit it reasons about is the SANDBOX. A provider is
+ * measured on R independent sandboxes, each running k trials; trials capture within-machine noise while
+ * sandboxes capture the machine-to-machine variation a user meets on every fresh environment. Ordering
+ * on a median alone would let a lucky draw buy a position: a live run had modal's STREAM Copy span
+ * 9.7k–65k MB/s against daytona's 66.5k ±0.14%. So each row carries a cluster-bootstrapped interval
+ * around the median of its per-sandbox medians, and two rows share a rank unless their per-sandbox
+ * medians separate under Mann-Whitney U (with Kolmogorov-Smirnov reported alongside, since a bimodal
+ * provider can match another's median while behaving nothing like it).
  */
 import type {
 	Dimension,
@@ -35,16 +37,17 @@ import type {
 import {
 	bootstrapMedianInterval,
 	canSeparate,
+	clusterMedianInterval,
 	clusterSeparation,
 	DEFAULT_ALPHA,
 	DIMENSIONS,
 	getProvider,
-	hierarchicalBootstrapMedianInterval,
 	kolmogorovSmirnov,
 	METRIC_CATALOG,
 	mannWhitneyU,
 	providerReportedNothing,
 	SUITE_NAMES,
+	sandboxMedianOf,
 } from "@sandbox-benchmarks/schema";
 
 /**
@@ -142,10 +145,25 @@ export interface LeaderboardRow {
 	 * median earned inside the noise is not a faster provider.
 	 */
 	rank: number;
-	/** Descriptive percentile-bootstrap interval around {@link value}. */
+	/**
+	 * Descriptive bootstrap interval around {@link value}, over the same estimand. NOT a calibrated
+	 * interval at small R: simulated coverage of a nominal 95% is ≈77% at R=3, ≈92% at R=6, ≈95% at R=20.
+	 * That is a property of the sandbox count, not of the method — renderers must disclose it.
+	 */
 	interval: MedianInterval;
-	/** Retained Sample count and their spread, so a wide/unstable row is legible at a glance. */
+	/**
+	 * Retained TRIAL count pooled across sandboxes, and their spread. `n` is not the unit of replication
+	 * and must never be rendered as if it were: {@link sandboxes} is. Under convergence a large `n` is
+	 * evidence the machines were UNSTABLE (PTS kept re-running), not that the estimate is precise.
+	 */
 	n: number;
+	/** Replicate sandboxes behind {@link value} — the actual unit of replication. `null` at R=1. */
+	sandboxes: number | null;
+	/**
+	 * Sample standard deviation of the POOLED trials, so it conflates between-machine and within-machine
+	 * variance (measured median ICC 0.53 — roughly half of it is within-machine). Not rendered anywhere
+	 * for exactly that reason; do not surface it without decomposing it first.
+	 */
 	stdev: number;
 	/**
 	 * Two-sided p-values against the row immediately above (`null` for rank 1, which has no predecessor).
@@ -156,7 +174,19 @@ export interface LeaderboardRow {
 	 * Both are rendered: `mannWhitney` as `p vs. above`, `ks` as `p (KS)`. Only `mannWhitney` decides the
 	 * rank; `ks` is shown so a reader can see the two disagree.
 	 */
-	pVsPrevious: { mannWhitney: number; ks: number; floor: number } | null;
+	pVsPrevious: {
+		mannWhitney: number;
+		ks: number;
+		floor: number;
+		/**
+		 * The test that ACTUALLY decided {@link verdict}, when the sandbox-level path decided it. Carried
+		 * separately because the two floors differ by orders of magnitude and quoting the wrong one made
+		 * the published footnote self-refuting: it asserted "the best attainable p already exceeds α" while
+		 * printing the POOLED floor of <0.001. `null` when the pooled Mann-Whitney above decided (R=1 both
+		 * sides), in which case `mannWhitney`/`floor` are the deciding numbers.
+		 */
+		cluster: { p: number; floor: number; sandboxesA: number; sandboxesB: number } | null;
+	} | null;
 	/**
 	 * What the test said about this row and the one above it (`null` for rank 1, which has nothing above):
 	 *
@@ -440,16 +470,25 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 		const row: LeaderboardRow = {
 			providerId: provider.providerId,
 			displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
-			value: result.aggregates.p50,
+			// ONE MACHINE, ONE VOTE. With replicate sandboxes the ranking value is the median of the
+			// per-sandbox medians, not `aggregates.p50` (the median of the POOLED trials). Pooling weights
+			// each sandbox by its trial count, and PTS convergence sets that count by watching the variance,
+			// so the noisiest machine earned the most votes: on the committed data ρ(trials, within-sandbox
+			// CV) = 0.76, and one headline row published 20.99 from sandbox medians {18.87, 21.06, 18.95}
+			// because the 15-pass machine held 71% of the weight. The pooled Samples stay in the dataset as
+			// the raw evidence; they are no longer the ranking statistic.
+			value: replicates ? sandboxMedianOf(replicates) : result.aggregates.p50,
 			rank: 0, // assigned after sort
 			// Seed from stable identity so a committed leaderboard is byte-identical on every regeneration —
-			// a Math.random() bootstrap would churn the diff on every run. With replicate sandboxes the
-			// interval is the HIERARCHICAL bootstrap (resample sandboxes, then samples within), reflecting
-			// between-sandbox variance; at R=1 it stays the ordinary percentile bootstrap, byte-for-byte.
+			// a Math.random() bootstrap would churn the diff on every run. The interval is the CLUSTER
+			// bootstrap of that same statistic (resample sandboxes intact), so estimate and interval share
+			// an estimand; at R=1 there is no between-machine information and it stays the ordinary
+			// percentile bootstrap over the single sandbox's trials.
 			interval: replicates
-				? hierarchicalBootstrapMedianInterval(replicates, { seed })
+				? clusterMedianInterval(replicates, { seed })
 				: bootstrapMedianInterval(result.samples, { seed }),
 			n: result.aggregates.n,
+			sandboxes: replicates?.length ?? null,
 			stdev: result.aggregates.stdev,
 			pVsPrevious: null,
 			verdict: null,
@@ -514,6 +553,8 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 			mannWhitney: mw.pValue,
 			ks: ks.pValue,
 			floor: mw.minAttainablePValue,
+			// Filled in below when the sandbox-level test decides; stays null on the R=1 path.
+			cluster: null,
 		};
 
 		// Replicate-aware separation: when EITHER row carries ≥2 replicate sandboxes, the decider is the
@@ -530,10 +571,19 @@ function rankMetric(run: Run, metric: MetricDef): LeaderboardRow[] {
 		// the single largest cost of building this board — computed once per adjacent pair and discarded.
 		// `clusterSeparation` is the identical (RNG-free) verdict that function returns.
 		if (previous.replicates || candidate.replicates) {
-			const cluster = clusterSeparation(
-				previous.replicates ?? [previous.samples],
-				candidate.replicates ?? [candidate.samples],
-			);
+			const clustersA = previous.replicates ?? [previous.samples];
+			const clustersB = candidate.replicates ?? [candidate.samples];
+			const cluster = clusterSeparation(clustersA, clustersB);
+			// Record the DECIDING test beside the descriptive one, so the renderer never has to guess which
+			// floor produced the verdict it is explaining.
+			if (candidate.row.pVsPrevious) {
+				candidate.row.pVsPrevious.cluster = {
+					p: cluster.pValue,
+					floor: cluster.minAttainablePValue,
+					sandboxesA: clustersA.length,
+					sandboxesB: clustersB.length,
+				};
+			}
 			// The same "a test that can never reach α is not evidence of sameness" rule as the R=1 path:
 			// when the between-sandbox floor already meets α (2/C(6,3)=0.1 at R=3), no data could separate
 			// the pair, so it is underpowered — never a "tied" verdict, which would claim the test had the
@@ -691,8 +741,16 @@ function underpoweredFloors(board: Leaderboard): string[] {
 			rows.forEach((row, i) => {
 				const previous = rows[i - 1];
 				if (row.verdict !== "underpowered" || !previous || !row.pVsPrevious) return;
-				const key = `${previous.n} v ${row.n}`;
-				seen.set(key, `${key} floors at p ≈ ${formatPValue(row.pVsPrevious.floor)}`);
+				// Quote the test that DECIDED, in ITS unit. When the sandbox-level test decided, the binding
+				// constraint is the number of machines and the floor is 2/C(Ra+Rb, Ra) — keying this on the
+				// pooled trial counts and printing the pooled floor is what made the published footnote assert
+				// "the floor exceeds α" beside a printed <0.001. Only the R=1-both-sides path falls through to
+				// the pooled Mann-Whitney, where trial counts genuinely are the unit.
+				const { cluster, floor } = row.pVsPrevious;
+				const key = cluster
+					? `${cluster.sandboxesA} v ${cluster.sandboxesB} sandboxes`
+					: `${previous.n} v ${row.n} trials`;
+				seen.set(key, `${key} floors at p ≈ ${formatPValue(cluster ? cluster.floor : floor)}`);
 			});
 		}
 	}
@@ -859,17 +917,26 @@ function rowNote(r: LeaderboardRow): string {
 		return equalValues ? "equal values" : "";
 	}
 	if (r.verdict === "underpowered") {
-		return equalValues ? "n too small, equal medians" : "n too small";
+		// "too few sandboxes", not "n too small": at R=3 the row can print n=70 trials and still be
+		// undecidable, because the exchangeable unit is the machine. Naming `n` pointed at the one number
+		// on the row that was not the constraint.
+		const cause = r.pVsPrevious?.cluster ? "too few sandboxes" : "n too small";
+		return equalValues ? `${cause}, equal medians` : cause;
 	}
 	if (r.verdict === "tied") return "tied";
 	return "";
 }
 
-/** Mann-Whitney cell in the pairwise details table — reuses {@link rowNote} for the verdict suffix. */
+/**
+ * `p vs. above` cell — the p-value of the test that DECIDED this row's verdict, not the descriptive one.
+ * Where replicate sandboxes exist that is the sandbox-level cluster test; the pooled Mann-Whitney is
+ * shown only where a single sandbox per side left nothing else to test on. Printing the pooled p here
+ * was how the table came to advertise `<0.001` beside a note saying the comparison was undecidable.
+ */
 function formatPairwiseP(r: LeaderboardRow): string {
 	const note = rowNote(r);
 	if (r.pVsPrevious === null) return note ? `— (${note})` : "—";
-	const p = formatPValue(r.pVsPrevious.mannWhitney);
+	const p = formatPValue(r.pVsPrevious.cluster?.p ?? r.pVsPrevious.mannWhitney);
 	return note ? `${p} (${note})` : p;
 }
 
@@ -1037,11 +1104,12 @@ export function renderLeaderboardMarkdown(
 		`Requested target for every provider: **${spec}**. This run contains **${rows.length} metric records**`,
 		`backed by **${observationCount} retained trial observations**, across **${metricCount} ${metricNoun}** and`,
 		`**${providerCount} ${providerNoun}**; every emitted, catalogued metric has a ranked table below`,
-		`(median of retained trials), grouped by dimension with its headline first${collapseNote}.`,
+		`(median across sandboxes), grouped by dimension with its headline first${collapseNote}.`,
 		"Generated from the published Run dataset — do not edit by hand. Methodology:",
 		"[`docs/methodology.md`](docs/methodology.md).",
 		"",
-		"**How to read:** value = median (p50) · 95% CI = bootstrap around that median · rows share a rank only",
+		"**How to read:** value = median across sandboxes (one machine, one vote) · interval = cluster bootstrap,",
+		"labelled 95% but ≈77% actual coverage at 3 sandboxes (see methodology) · rows share a rank only",
 		"when statistically indistinguishable or tied on the median (see details below) · a coverage gap means unmeasured, never a score of zero.",
 		"CPU/RAM comparability uses observed vCPU and RAM (±10% RAM); disk is a workload-capacity gate",
 		"surfaced through coverage gaps, not part of the compute-match verdict.",
@@ -1125,14 +1193,16 @@ export function renderLeaderboardMarkdown(
 				"",
 				`_${metricTakeaway(dimension, metric, metricRows)}_`,
 				"",
+				// Sandboxes BEFORE trials, and both labelled. The unit of replication is the machine, and a
+				// single `n` column silently mixed the two: n=12 meant twelve machines, n=70 meant three.
 				hasNotes
-					? `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% bootstrap interval | n | Note |`
-					: `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% bootstrap interval | n |`,
+					? `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% bootstrap interval | Sandboxes | Trials | Note |`
+					: `| Rank | Provider | ${metric.label} (${metric.unit}) | 95% bootstrap interval | Sandboxes | Trials |`,
 				hasNotes
-					? "| ---: | --- | ---: | ---: | ---: | --- |"
-					: "| ---: | --- | ---: | ---: | ---: |",
+					? "| ---: | --- | ---: | ---: | ---: | ---: | --- |"
+					: "| ---: | --- | ---: | ---: | ---: | ---: |",
 				...metricRows.map((row, i) => {
-					const base = `| ${row.rank} | ${row.displayName} | ${formatValue(row.value)} | ${formatInterval(row)} | ${row.n} |`;
+					const base = `| ${row.rank} | ${row.displayName} | ${formatValue(row.value)} | ${formatInterval(row)} | ${row.sandboxes ?? 1} | ${row.n} |`;
 					return hasNotes ? `${base} ${notes[i] || "—"} |` : base;
 				}),
 				"",
@@ -1196,16 +1266,29 @@ export function renderLeaderboardMarkdown(
 		"<details>",
 		"<summary>How rankings are decided</summary>",
 		"",
-		"The value is the median (p50) of the retained per-trial Samples, not the mean — a single stalled",
-		"pass drags a mean far more than it moves a median. The 95% interval is a percentile bootstrap of",
-		"that median (10,000 resamples, seeded from the Run id so the table is reproducible byte-for-byte).",
-		"It is a descriptive interval conditional on the retained trials, **not a calibrated frequentist",
-		"confidence interval**: n is small and within-sandbox trials may be dependent on host scheduling.",
+		"The value is the median of the PER-SANDBOX medians — one machine, one vote — not the median of all",
+		"trials pooled together. Pooling would weight each machine by how many trials it ran, and the harness",
+		"chooses that count adaptively by watching the variance, so the noisiest machine would carry the most",
+		"weight in the published number. The median, not the mean, because a single stalled pass drags a mean",
+		"far more than it moves a median.",
+		"",
+		"The interval is a cluster bootstrap of that same statistic (10,000 resamples, seeded from the Run id",
+		"so the table is reproducible byte-for-byte): whole sandboxes are resampled with replacement, keeping",
+		"each machine's trials intact.",
+		"",
+		"**The interval is labelled 95%, and at these sandbox counts it does not achieve 95%.** Coverage is a",
+		"property of how many machines were measured, not of the estimator: simulated at ≈77% for 3 sandboxes,",
+		"≈92% at 6, and ≈95% at 20. No percentile bootstrap reaches nominal coverage at 3 clusters. Read a",
+		"3-sandbox interval as a resampling envelope over three machines, **not** as a calibrated frequentist",
+		"confidence interval. Within-sandbox trials may also be dependent on host scheduling.",
 		"",
 		`Rows are separated only when Mann-Whitney U (two-sided, α = ${DEFAULT_ALPHA}, enumerated exactly`,
 		"over the permutation null rather than approximated) finds evidence of stochastic ordering — at these",
-		"sample sizes the normal approximation can report a p the exact test cannot actually produce. KS is",
-		"reported separately for distribution *shape* and does not drive the ranking.",
+		"sample sizes the normal approximation can report a p the exact test cannot actually produce. Where",
+		"replicate sandboxes exist that test runs on the PER-SANDBOX MEDIANS, so whole machines are the",
+		"exchangeable unit; testing pooled trials instead would treat repeated measurements of one machine as",
+		"independent evidence about the provider. KS is reported separately for distribution *shape* and does",
+		"not drive the ranking.",
 		"",
 	);
 
@@ -1232,12 +1315,15 @@ export function renderLeaderboardMarkdown(
 	}
 
 	lines.push(
-		"Samples are repeated trials inside one sandbox, so their spread is environmental (neighbours, host",
-		"contention, virtualization), and a wide bootstrap interval or a large `n` (the harness re-runs a test that will not",
-		"converge) is itself the signal that the provider's performance is unstable, not that the measurement",
-		"is imprecise.",
+		"Each metric is measured on several independent sandboxes (the **Sandboxes** column), and within each",
+		"sandbox the benchmark runs several trials (**Trials**). Trials capture within-machine noise —",
+		"neighbours, host contention, virtualization; sandboxes capture the machine-to-machine variation a",
+		"user actually experiences when they start a new environment. The ranking and its interval both treat",
+		"the SANDBOX as the unit, so more trials on the same machine never make a row look better-evidenced.",
+		"Under adaptive trial counts a large **Trials** figure is in fact a sign the machines were unstable",
+		"(the harness kept re-running), not that the estimate is precise.",
 		"",
-		"At the small `n` this suite produces, a non-significant result means *not enough evidence to",
+		"At the sandbox counts this suite produces, a non-significant result means *not enough evidence to",
 		"separate*, never *the providers are equal*.",
 		"",
 	);
@@ -1245,8 +1331,12 @@ export function renderLeaderboardMarkdown(
 	const floors = underpoweredFloors(board);
 	if (floors.length > 0) {
 		lines.push(
-			"`n too small` is the extreme of that: Mann-Whitney's best attainable p already exceeds α for those",
-			`Samples, so the test could not have separated the rows at any effect size (here ${floors.join("; ")}).`,
+			"`too few sandboxes` is the extreme of that: the deciding test's best attainable p already exceeds α,",
+			"so it could not have separated the rows at any effect size, however far apart their values are.",
+			`The floor is a property of the design — here ${floors.join("; ")}.`,
+			"At three sandboxes a side the floor is 2/C(6,3) = 0.1, which is above α, so **no** three-sandbox",
+			"comparison in this table can ever be declared separated. That is a fact about the replicate count,",
+			"not about the providers.",
 			"Such rows are ranked on their observed medians and are **not** claimed to be tied — read the gap",
 			"between the values, and treat the p-value as unable to settle them either way. Where such a row",
 			"nevertheless shares the rank above it, the note reads `equal medians`: the two values are simply",
@@ -1261,7 +1351,11 @@ export function renderLeaderboardMarkdown(
 		lines.push(
 			"### Pairwise tests (vs. row above)",
 			"",
-			"`p vs. above` is Mann-Whitney (drives rank). `p (KS)` is Kolmogorov-Smirnov on distribution",
+			"`p vs. above` is the SANDBOX-LEVEL test that decides the rank wherever replicate sandboxes exist —",
+			"Mann-Whitney U on each provider's per-sandbox medians, whole machines as the exchangeable unit.",
+			"(Only where a provider ran in a single sandbox does it fall back to Mann-Whitney on pooled trials,",
+			"which treats repeated measurements of one machine as independent and is anti-conservative.)",
+			"`p (KS)` is Kolmogorov-Smirnov on distribution",
 			"*shape* — it does not drive the ranking. A tied Mann-Whitney beside a small KS often means the",
 			"same typical speed with different behaviour (e.g. bimodal stalls).",
 			"These are unadjusted, exploratory per-comparison p-values; no family-wise or false-discovery-rate",
