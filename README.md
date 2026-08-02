@@ -4,16 +4,47 @@ Compare top sandbox providers on the same pinned machine shape for real develope
 
 **Same target everywhere:** 4 vCPU · 8 GiB RAM · 40 GB disk. One headline metric per dimension, ranked with honest statistics.
 
-## Why real-world workflows?
+## How the benchmarks work
 
-Synthetic scores tell you what the hardware can do. We measure what developers actually
-experience — clone a repo, install dependencies, lint, build, test, etc.
+Every provider is created at the same pinned spec, runs the same workloads, and every number is
+normalized into one schema-validated dataset. Those numbers come from three sources, and for the
+synthetic half we deliberately did **not** write our own workloads.
 
-A sandbox provider can top a creation time or CPU performance chart and still lose badly on:
-- dependency installation is thousands of small, random file writes, and a network-attached
-or bandwidth-capped disk turns that into the longest step of your run.
-- cloning a repo has the opposite profile: mostly sequential writes, bounded by network.
-- single-threaded developer tools are limited by single-thread CPU not threads
+**Synthetic microbenchmarks run under the [Phoronix Test Suite](https://www.phoronix-test-suite.com/)
+(PTS).** A public performance comparison is only as credible as its workload provenance, so each
+synthetic result comes from a versioned, inspectable
+[OpenBenchmarking](https://openbenchmarking.org/) profile that declares its own setup, arguments,
+repetition, output parsing, units, and result direction — and that anyone can re-run outside this
+repo. That removes most of the benchmark-author degrees of freedom a bespoke harness leaves open:
+hand-rolled shell timing, ad-hoc output parsing, undeclared warm-up, hand-maintained metadata. We
+vendor the exact profiles ([`pts-profiles/`](./packages/schema/src/pts-profiles), pinned to an
+upstream commit — the directory name *is* the version pin), generate the metric catalog from their
+XML instead of transcribing it, and fail CI on any drift (`bun run check:catalog-drift`,
+[ADR-0003](./docs/adr/0003-generated-pts-catalog-and-drift-gate.md)).
+
+**Our own harness covers what PTS is not the right abstraction for:** provider lifecycle latency
+(spawn / exec / snapshot / teardown) and control-plane calls, measured around the provider SDK; and
+whole developer workflows — clone, install, lint, build, test — on real OSS repos. The real-world
+suites are still authored as repo-local profiles in the *same* PTS format
+([`pts-profiles/local/`](./packages/schema/src/pts-profiles/local)), so a workload we own inherits
+the same execution, repetition, and parsing contract as an upstream one.
+
+**Economics is derived, never measured:** published, vetted pricing × the measured runtime already on
+the run. A provider with no vetted rate emits no economics — a null rate must never read as free.
+
+The result is a hybrid: externally recognizable microbenchmarks where a shared definition already
+exists, domain-specific measurement where none does, and no requirement that you trust a benchmarking
+framework we invented ourselves. Full detail in [Methodology](./docs/methodology.md).
+
+## Why real-world workflows lead
+
+Synthetic scores say what the hardware *can* do; the real-world suites say what a developer or a CI
+job actually waits on. A provider can top a creation-time or CPU chart and still lose the run:
+
+- **Dependency install** is thousands of small, random writes — a network-attached or
+  bandwidth-capped disk turns it into the longest step of your run.
+- **Cloning a repo** has the opposite profile: mostly sequential writes, bounded by network.
+- **Most developer tooling is single-threaded**, so it is limited by single-thread CPU, not core count.
 
 ## Start here
 
@@ -43,7 +74,7 @@ workspace sources natively. There is no compile step: `bun install` → `typeche
 
 ```text
 packages/   importable libraries   — scope @sandbox-benchmarks/*
-  schema/       shared types + arktype schemas (bottom of the DAG)
+  schema/       shared types + arktype schemas, vendored PTS profiles + generated metric catalog (bottom of the DAG)
   providers/    provider adapters → schema + computesdk
   templates/    per-provider template builders + toolchain Docker images (images/)
   harness/      benchmark timing → providers + schema
@@ -55,7 +86,7 @@ tooling/        dev-only            — scope @repo/*
   tsconfig/     shared source-first TS configs (config-only)
   test-utils/   provider conformance suite factory
   repo-checks/  boundary + package-meta invariant tests
-lib/        in-sandbox benchmark runner (bench.sh) + vendored PTS profiles
+lib/        in-sandbox benchmark runner (bench.sh), realworld PTS runner overlay, isolation probe
 data/       committed benchmark dataset (published run results)
 scripts/    maintainer scripts (dataset backfill, leaderboard update)
 docs/       methodology, ADRs, CI & secrets
