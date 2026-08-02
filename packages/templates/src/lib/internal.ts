@@ -1,5 +1,5 @@
 // Private implementation detail of @sandbox-benchmarks/templates.
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import type { ProviderDescriptor } from "@sandbox-benchmarks/schema";
 
 /** A built sandbox template descriptor, carrying the build context for the provider's image. */

@@ -1,5 +1,5 @@
 // `@sandbox-benchmarks/templates/modal` — one subpath, one module (the template policy).
-import { config } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers/config";
 import type { TemplateSpec } from "./lib/internal.ts";
 import { makeTemplateSpec } from "./lib/internal.ts";
 
