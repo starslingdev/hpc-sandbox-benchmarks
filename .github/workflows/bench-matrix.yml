@@ -40,12 +40,19 @@ on:
         type: string
         # The default set is every provider that has produced comparable committed results across
         # isolation technologies: e2b, daytona-vm (the LINUX_VM reference), modal-gvisor (Modal's default
-        # gVisor runtime), modal-vm (Modal's gVisor-free microVM), blaxel (stock base image), and novita
-        # (its own pre-baked template). modal-vm + blaxel graduated into the default once committed runs
-        # validated them. daytona-container is the one registered variant still opt-in (pass it explicitly);
+        # gVisor runtime), modal-vm (Modal's gVisor-free microVM), blaxel (stock base image), novita
+        # (its own pre-baked template), microsandbox-cloud, and vercel (the shared toolchain base
+        # mirrored into VCR). modal-vm + blaxel graduated into the default once committed runs validated
+        # them; microsandbox-cloud and vercel followed. daytona-container and microsandbox-local are the
+        # registered variants still opt-in (pass them explicitly);
         # `plan-providers` rejects any name that is not in the registry. Listed in registry order — the
         # plan re-sorts to registry order regardless, so the spelling here is cosmetic.
-        default: e2b,daytona-vm,blaxel,modal-gvisor,modal-vm,novita
+        #
+        # Vercel reports the fleet's smallest disk (~32 GB against the 40 GB target). That does not
+        # affect comparability — computeSpecMatched covers vCPUs and memory, the two axes providers are
+        # ranked on — but a disk-hungry suite will SKIP there and surface as a leaderboard coverage gap
+        # rather than a bad score. See packages/results/src/lib/specs.ts.
+        default: e2b,daytona-vm,blaxel,microsandbox-cloud,modal-gvisor,modal-vm,novita,vercel
       suites:
         description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
         required: false
