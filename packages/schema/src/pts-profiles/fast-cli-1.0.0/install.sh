@@ -60,6 +60,14 @@ fi
 # The generator is read by hand (never `for await`, whose implicit break would call the generator's
 # .return() and trigger the hanging browser.close()); the driver then HARD-exits without closing the
 # browser and the launcher below reaps the orphaned Chrome.
+#
+# UNGATED. The driver below used to carry a subprocess test (schema/src/fast-cli-driver.test.ts) that
+# extracted this heredoc verbatim and replayed scripted fast.com yields through it, pinning the settle
+# rules against the P1 in run 29799034615. It was deleted: the network SUITE measures WAN throughput
+# via iperf3 (see schema/src/suites.ts), this profile is manual-only, and the gate's seven scripted
+# scenarios ran to real wall-clock timers for ~5s of every test run. Nothing now checks the settle
+# logic, so edit the stop rules below with the failure modes documented above in hand — or restore the
+# gate from git history first (it is intact, and re-extracts this heredoc by its DRIVER_EOF markers).
 cat <<'DRIVER_EOF' >fast-driver.mjs
 import fs from "node:fs";
 // Relative ESM specifiers resolve against THIS module's location (the installed-tests dir), not the
