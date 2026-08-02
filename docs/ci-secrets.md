@@ -99,7 +99,7 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
       (`GITHUB_TOKEN` — no extra App or PAT; requires the "Allow GitHub Actions to create and approve
       pull requests" toggle, see operator setup).
    2. Runs `scripts/assert-paths-allowlisted.sh` on the staged index **and** the PR file list; anything
-      other than `LEADERBOARD.md` aborts before any merge is attempted.
+      other than `LEADERBOARD.md` and `docs/figures/*.webp` aborts before any merge is attempted.
    3. Merges the PR with a direct `gh pr merge` (deliberately not `--auto`: on a `GITHUB_TOKEN` PR a
       required check never runs, so arming auto-merge could only ever strand the PR behind a green
       job). GitHub still enforces the ruleset on the merge call; this is not a bypass — it succeeds

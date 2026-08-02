@@ -20,4 +20,18 @@
 # Rendered by the leaderboard job alongside LEADERBOARD.md. Scoped to the generated `.webp` files at
 # one level, matching the job's `docs/figures/*.webp` fence — a hand-written doc or script added
 # under docs/figures/ stays owned.
+#
+# CODEOWNERS matches on path alone, so this cannot tell renderer output from a hand-authored WebP at
+# the same path. That residual is bounded and accepted rather than unnoticed:
+#   - ADDING one is already blocked — `leaderboard-artifact-sync` ("the figure directory holds
+#     exactly the charts the document links") fails CI on any file in docs/figures/ that
+#     LEADERBOARD.md does not link, so a new image cannot squat here.
+#   - REPLACING a linked chart with an image of the same pixel width is what remains: the gate
+#     verifies each file is a WebP of the promised geometry, not that Chrome produced it.
+#   - Landing that still needs repo WRITE access — the ruleset governs what may merge, not who may
+#     press merge, so this opens nothing to fork or drive-by PRs.
+# Do NOT "fix" this by listing the three charts literally: how many exist is a property of the
+# dataset, and hard-coding them is exactly what broke every leaderboard dispatch when #311 added a
+# fourth artifact. Tightening it properly means verifying raster provenance in the gate (re-render
+# under the pinned Chrome and compare), which is a separate change.
 /docs/figures/*.webp
