@@ -41,6 +41,7 @@ derivation over a Run (tables, coverage, economics) is its jurisdiction, not thi
 | `src/model.ts` | Run + registries → `RealworldFigureModel`. Which suites are chartable is decided here (≥2 environments completing every exercised task), and nowhere else. |
 | `src/chart/model.ts` | The view-model. **Every decision the picture makes** — sort order, badge, shared scale, disclosure rows — as plain data a unit test can assert on. The bulk of the tests. |
 | `src/chart/html.ts` | The template. Dumb on purpose: it knows widths and styles, and the one piece of arithmetic in it is `scaleFraction × TRACK_WIDTH`. |
+| `src/chart/wordmark.ts` | The StarSling artwork, inline SVG, painted from `currentColor` — the one brand asset in the document. Exports the ratios (`ASPECT`, `CAP_RATIO`, `BASELINE_RATIO`) the template sizes and aligns it by, so the header is arithmetic over the artwork rather than numbers somebody eyeballed. |
 | `src/chart/fonts.ts` | The faces, read from pinned npm packages (`@fontsource/*`) and inlined as `data:` URIs — the lockfile pins the glyphs like it pins code. Brand faces only: `assertCovered` fails the render on a character none of them can draw, rather than shipping a full Unicode fallback to hide it. |
 | `src/screenshot.ts` | The **only** impure module: `Bun.WebView` → CDP → PNG bytes. Returns bytes, never writes a file. |
 

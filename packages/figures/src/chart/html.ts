@@ -19,6 +19,7 @@
 import { pageColors } from "../page-theme.ts";
 import { assertCovered, fontFaceCss } from "./fonts.ts";
 import type { PipelineChartModel } from "./model.ts";
+import { WORDMARK_ASPECT, WORDMARK_CAP_RATIO, WORDMARK_SVG } from "./wordmark.ts";
 
 /** Canvas width in CSS px, padding included — every chart, fixed, so the three figures sit
  *  on the page as one column. 2× this is the committed PNG's pixel width. */
@@ -51,8 +52,17 @@ const SEGMENT_GAP = 2;
 const TOTAL_GAP = 10;
 /** `space-y-3` between bar rows. */
 const ROW_GAP = 12;
-/** `max-w-2xl` on the authored note. */
-const NOTE_WIDTH = 672;
+/**
+ * The wordmark's drawn height, solved from the title rather than guessed.
+ *
+ * The artwork is a lockup — a disc that fills its box, and letterforms that occupy the middle
+ * {@link WORDMARK_CAP_RATIO} of it — so matching its BOX to the title's 24 px would set
+ * `STARSLING` at about 11 px and read as a footnote beside the name. Matching cap height to cap
+ * height is what "the same size as the title" means to the eye, so that is what this solves:
+ * Afacad's caps run ~0.7 em, and dividing that through the artwork's own ratio lands the two sets
+ * of letterforms on the same optical size.
+ */
+const WORDMARK_HEIGHT = Math.round((24 * 0.7) / WORDMARK_CAP_RATIO);
 
 // Every stack ends on Geist before the generic: Geist Mono and Afacad lack `†` and `→`, and the
 // embedded Geist Sans subset has both — so the fallback glyph is a brand glyph, not a foreign
@@ -130,13 +140,23 @@ const STYLE = `
 * { box-sizing: border-box; }
 body { margin: 0; background: ${pageColors.bg}; }
 .figure { width: ${FIGURE_WIDTH}px; padding: ${PADDING}px; background: ${pageColors.bg}; }
-header { display: flex; align-items: baseline; justify-content: space-between; gap: ${COLUMN_GAP}px; margin: 0 0 6px; }
+/* CENTER, not baseline. An SVG is a replaced element and Chrome takes its BORDER-BOX BOTTOM as
+   its baseline, so \`align-items: baseline\` hangs the artwork's box off the title's baseline and
+   floats the letterforms 10 px above it — and a negative bottom margin does not move it, because
+   the box bottom is what is consulted. Centring the lockup on the title's line box instead puts
+   the two sets of letterforms within half a pixel of one line (measured, at these exact sizes). */
+header { display: flex; align-items: center; gap: 24px; margin: 0 0 4px; }
 h1 { margin: 0; font: 500 24px/32px ${HEADING}; color: ${pageColors.fg}; }
-.summary { margin: 0; text-align: right; font: 400 11px/16.5px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted70}; }
-.note { margin: 0 0 20px; max-width: ${NOTE_WIDTH}px; font: 400 14px/22.75px ${SANS}; color: ${pageColors.muted}; }
+.wordmark { flex: 0 0 auto; width: ${px(WORDMARK_HEIGHT * WORDMARK_ASPECT)}; height: ${px(WORDMARK_HEIGHT)}; color: ${pageColors.fg}; }
+.summary { margin: 0 0 14px; font: 400 11px/16.5px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted70}; }
+.note { margin: 0 0 24px; font: 400 14px/22.75px ${SANS}; color: ${pageColors.muted}; }
 .note code { font: 400 13px ${MONO}; }
-.note .disk { font: 400 11px ${MONO}; color: ${pageColors.muted40}; }
-.legend { display: flex; align-items: center; gap: ${COLUMN_GAP}px; margin: 0 0 ${COLUMN_GAP}px; padding: 0; list-style: none; font: 400 11px/16.5px ${MONO}; color: ${pageColors.muted}; }
+/* The disk aside wraps as ONE unit. It is a parenthetical in a different face at a different
+   size, so a line break through the middle of it ("Needs 30 GB" / "free disk.") reads as two
+   fragments rather than one aside — the full-width note made that break reachable. It is ~145 px
+   at its longest, so refusing to break it can never overflow a 912 px line. */
+.note .disk { white-space: nowrap; font: 400 11px ${MONO}; color: ${pageColors.muted40}; }
+.legend { display: flex; align-items: center; gap: ${COLUMN_GAP}px; margin: 22px 0 0; padding: 14px 0 0; border-top: 1px solid ${pageColors.muted40}; list-style: none; font: 400 11px/16.5px ${MONO}; color: ${pageColors.muted}; }
 .legend li { display: flex; align-items: center; gap: 6px; }
 .swatch { width: 10px; height: 10px; border-radius: 2px; }
 .legend-note { margin-left: auto; font: 400 10px/15px ${MONO}; letter-spacing: 0.14em; text-transform: uppercase; color: ${pageColors.muted50}; }
@@ -213,12 +233,13 @@ ${STYLE}
 </head>
 <body>
 <main class="figure">
-<header><h1>${escapeHtml(model.suiteName)}</h1><p class="summary">${escapeHtml(model.summary)}</p></header>
+<header><h1>${escapeHtml(model.suiteName)}</h1>${WORDMARK_SVG}</header>
+<p class="summary">${escapeHtml(model.summary)}</p>
 <p class="note">${inlineMarkdown(model.note)}${disk}</p>
-<ul class="legend">${legend}<li class="legend-note">${escapeHtml(model.legendNote)}</li></ul>
 <section>
 ${[...barRows, ...incompleteRows].join("\n")}
 </section>
+<ul class="legend">${legend}<li class="legend-note">${escapeHtml(model.legendNote)}</li></ul>
 </main>
 </body>
 </html>

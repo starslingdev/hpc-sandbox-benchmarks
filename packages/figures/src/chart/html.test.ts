@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { FIXTURE } from "./__fixtures__/data.ts";
 import { pipelineChartHtml } from "./html.ts";
 import { buildPipelineChartModel } from "./model.ts";
+import { WORDMARK_ASPECT, WORDMARK_CAP_RATIO, WORDMARK_SVG } from "./wordmark.ts";
 
 const suite = FIXTURE.suites[0];
 if (!suite) throw new Error("fixture must carry a chartable suite");
@@ -89,12 +90,55 @@ describe("pipelineChartHtml", () => {
 		expect(html).toContain(`flex: 0 0 160px; min-width: 0;`);
 	});
 
-	it("runs the header and the legend to the figure's full width", () => {
-		// The eyebrow sits on the right edge and the legend note on the far end of the legend
-		// row, so the top of the figure spans the same width the bars are drawn across — before
-		// this, both stopped short and the longest bar read as overflowing the header.
-		expect(html).toContain("justify-content: space-between");
+	it("reads top to bottom: title, subtitle, note, bars, then the legend", () => {
+		// The document ORDER is the reading order, and the figure's is deliberate: the eyebrow is
+		// a subtitle under the title rather than a right-aligned tail on its row, and the legend
+		// is a footer under the chart rather than a preamble above it. Asserted as offsets
+		// because CSS cannot reorder what is not there — this is the structure, not the styling.
+		const at = (needle: string) => {
+			const index = html.indexOf(needle);
+			expect(index, `${needle} missing`).toBeGreaterThan(-1);
+			return index;
+		};
+		expect(at("<h1>")).toBeLessThan(at(`<p class="summary">`));
+		expect(at(`<p class="summary">`)).toBeLessThan(at(`<p class="note">`));
+		expect(at(`<p class="note">`)).toBeLessThan(at("<section>"));
+		expect(at("<section>")).toBeLessThan(at(`<ul class="legend">`));
+		// The subtitle is a SIBLING of the header, not a child: inside it, it would sit on the
+		// title's row again, which is the arrangement this replaced.
+		expect(html).toContain(`</h1>${WORDMARK_SVG}</header>\n<p class="summary">`);
+	});
+
+	it("lets the note run the full content width", () => {
+		// It used to carry `max-width: 672px` — a prose measure that left it wrapping short of
+		// every other block in the figure and reading as a column that had lost its column.
+		expect(html).not.toContain("max-width: 672px");
+		expect(html).toMatch(/\.note \{ margin: [^;]+; font:/);
+	});
+
+	it("keeps the legend note on the far end of its row", () => {
 		expect(html).toContain(".legend-note { margin-left: auto;");
+	});
+
+	it("carries the wordmark inline, with the artwork's own geometry", () => {
+		// Inline SVG, not a fetch: the whole point of the document is that it is self-contained.
+		expect(html).toContain(`<svg class="wordmark" viewBox="0 0 508 125"`);
+		expect(html).not.toContain("<image");
+		// Every path paints from `currentColor`, so the figure's palette is the only thing that
+		// decides the mark's colour — a hard-coded `black` would survive a theme change.
+		expect(WORDMARK_SVG).not.toContain("black");
+		expect(WORDMARK_SVG.match(/fill="currentColor"/g)?.length).toBe(17);
+	});
+
+	it("sizes the wordmark by cap height, so it reads level with the title", () => {
+		// Matching the artwork's BOX to the 24 px title would set `STARSLING` at ~11 px, because
+		// the letterforms are only WORDMARK_CAP_RATIO of the box — the disc takes the rest. The
+		// template solves for the letterforms instead; this pins the arithmetic, not the taste.
+		const height = Math.round((24 * 0.7) / WORDMARK_CAP_RATIO);
+		expect(height).toBe(37);
+		expect(html).toContain(
+			`.wordmark { flex: 0 0 auto; width: ${(height * WORDMARK_ASPECT).toFixed(2)}px; height: ${height.toFixed(2)}px;`,
+		);
 	});
 
 	it("badges exactly the fastest bar", () => {
