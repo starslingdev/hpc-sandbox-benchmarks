@@ -18,9 +18,11 @@ and toolchain publish must not trigger on `push`.
 | `update-leaderboard.yml` | `leaderboard` | Public `LEADERBOARD.md` commit (`contents: write` + `pull-requests: write`) |
 
 `bench-matrix.yml` and `bench-smoke.yml` are **not** listed: neither reads a provider secret itself.
-Both are a `plan` job plus a suite-matrix job that calls `bench-suite.yml`, so every credential — and
-the approval gate that protects it — is enforced once, at that callee. A smoke dispatch is therefore
-gated exactly as a matrix cell is; it simply stops before the dataset commit.
+`bench-smoke.yml` is a `plan` job plus a suite-matrix job that calls `bench-suite.yml`;
+`bench-matrix.yml` is the same, plus a `publish` job that calls `commit-dataset.yml`. Both callees are
+in the table above and carry their own `privileged` gate, so a dispatch lane's jobs only plan and
+orchestrate. A smoke dispatch is gated exactly as a matrix cell is — same approval, same Environment
+secrets, same callee — it simply has no third phase to gate.
 
 Two of these are reusable workflows whose `privileged` gate lives on their own job, because a `uses:`
 caller can't declare `environment:` (the workflow-hardening drift gate checks the callee and passes the

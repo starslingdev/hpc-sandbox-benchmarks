@@ -1,14 +1,7 @@
 // Invariant 6: GitHub-native suite→provider nesting wiring for the two dispatch lanes
 // (bench-matrix.yml, bench-smoke.yml) + the reusable bench-suite.yml they share. Kept out of
 // workflow-sync.ts so credential/timeout gates and nesting gates don't grow as one file.
-import {
-	asRecord,
-	MATRIX_WORKFLOW,
-	RUN_STEP,
-	SUITE_JOB,
-	SUITE_WORKFLOW,
-	stepByName,
-} from "./workflow-yaml.ts";
+import { asRecord, RUN_STEP, SUITE_JOB, SUITE_WORKFLOW, stepByName } from "./workflow-yaml.ts";
 
 /** A suite-matrix job is one that `uses` this reusable workflow (matched by path suffix). */
 const SUITE_WORKFLOW_USES_SUFFIX = "/bench-suite.yml";
@@ -78,10 +71,7 @@ export const EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR = "${{ inputs.provider }}";
  * except that `publish.needs` is captured for the dependency check. Used for both bench-matrix.yml
  * and bench-smoke.yml; `label` names the lane in error messages.
  */
-export function matrixSuiteCaller(
-	doc: unknown,
-	label: string = MATRIX_WORKFLOW,
-): SuiteMatrixCaller {
+export function matrixSuiteCaller(doc: unknown, label: string): SuiteMatrixCaller {
 	const root = asRecord(doc, `${label}: not a YAML mapping`);
 	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
 	const callers: Array<Omit<SuiteMatrixCaller, "publishNeeds">> = [];
@@ -157,7 +147,13 @@ export function matrixSuiteCaller(
 	return { ...caller, publishNeeds };
 }
 
-/** Options for {@link checkSuiteMatrixCaller}, so one check covers both dispatch lanes. */
+/**
+ * The two ways the dispatch lanes are ALLOWED to differ, declared per lane. Both fields are required
+ * on purpose: a partial object would replace a defaulted one wholesale, so `{ requireProviderAssertion:
+ * true }` would silently read as `requirePublishNeeds: undefined` and switch off an assertion the
+ * caller never meant to waive. Making every call site state both flags means the complete list of
+ * permitted differences is written out at each lane, which is the point of the invariant.
+ */
 export interface SuiteMatrixCallerOptions {
 	/**
 	 * Require a `publish` job that needs the caller. True for bench-matrix.yml, where aggregation must
@@ -165,26 +161,28 @@ export interface SuiteMatrixCallerOptions {
 	 * phase at all — that missing third phase is the entire difference between the lanes, so demanding
 	 * it there would be demanding the smoke commit a dataset.
 	 */
-	requirePublishNeeds?: boolean;
+	requirePublishNeeds: boolean;
 	/**
 	 * Require `with.require_providers` to be {@link EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR}. True for
-	 * bench-smoke.yml (a smoke must fail when its dispatched provider never ran); false for the matrix,
-	 * whose lenient default lets one unauthenticated cell skip without sinking the run.
+	 * bench-smoke.yml (a smoke must fail when its dispatched provider never ran). When false the input
+	 * must be ABSENT, not merely different: the matrix's lenient posture is a property worth pinning,
+	 * since a stray value there would fail every cell whose provider it names.
 	 */
-	requireProviderAssertion?: boolean;
+	requireProviderAssertion: boolean;
 }
 
 /**
  * Invariant 6: a dispatch lane's suite-matrix caller is wired for GitHub-native nesting and depends on
  * the plan's suite axis — display name and `with.suite` are `${{ matrix.suite }}`, `with.replicates` is
  * the plan's per-suite slice, and the matrix axis is `fromJSON(needs.plan.outputs.suites)`. The two
- * per-lane differences (a `publish` job that needs the caller; a `require_providers` assertion) are
- * opt-in via {@link SuiteMatrixCallerOptions}. `label` names the workflow in error messages.
+ * per-lane differences are declared explicitly via {@link SuiteMatrixCallerOptions}. `label` names the
+ * workflow in error messages and is required — with two lanes sharing this check, a defaulted label
+ * would misattribute the smoke lane's drift to bench-matrix.yml.
  */
 export function checkSuiteMatrixCaller(
 	caller: SuiteMatrixCaller,
-	label: string = MATRIX_WORKFLOW,
-	options: SuiteMatrixCallerOptions = { requirePublishNeeds: true },
+	label: string,
+	options: SuiteMatrixCallerOptions,
 ): string[] {
 	const errors: string[] = [];
 	if (caller.name !== EXPECTED_SUITE_NAME_EXPR) {
@@ -219,18 +217,91 @@ export function checkSuiteMatrixCaller(
 				`matrix cell (publish.needs=${JSON.stringify(caller.publishNeeds)})`,
 		);
 	}
-	if (
-		options.requireProviderAssertion &&
-		caller.requireProvidersInput !== EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR
-	) {
+	if (options.requireProviderAssertion) {
+		if (caller.requireProvidersInput !== EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR) {
+			errors.push(
+				`${label}: job "${caller.jobId}" with.require_providers must be ` +
+					`"${EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR}" so a missing or misnamed credential fails the ` +
+					`run instead of being recorded as a skip on a job that still exits 0 (got ` +
+					`${caller.requireProvidersInput === undefined ? "no such input" : `"${caller.requireProvidersInput}"`})`,
+			);
+		}
+	} else if (caller.requireProvidersInput !== undefined) {
+		// The lenient posture is a property too. A value here fails every cell whose provider it names —
+		// loudly, but across a whole matrix run's worth of provider quota before anyone reads the error.
 		errors.push(
-			`${label}: job "${caller.jobId}" with.require_providers must be ` +
-				`"${EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR}" so a missing or misnamed credential fails the ` +
-				`run instead of being recorded as a skip on a job that still exits 0 (got ` +
-				`${caller.requireProvidersInput === undefined ? "no such input" : `"${caller.requireProvidersInput}"`})`,
+			`${label}: job "${caller.jobId}" must not pass with.require_providers (got ` +
+				`"${caller.requireProvidersInput}") — this lane's posture is that a provider with no ` +
+				`credential SKIPS, so one unauthenticated cell cannot sink the run`,
 		);
 	}
 	return errors;
+}
+
+/** The bin a benchmark cell runs. A lane job whose `run:` mentions it is driving sandboxes itself,
+ *  whatever the step is called. */
+const CELL_DRIVER_BIN = "bench-suite.ts";
+
+/** The step in a lane's `plan` job that resolves the axes (the shared plan-bench-axes action). */
+export const PLAN_STEP = "Plan";
+/** The expression bench-smoke's plan step must pass as `with.replicas`.
+ *
+ *  A smoke is one sandbox, and `default: '1'` alone does NOT guarantee that: a dispatch `default:`
+ *  applies only when the field is ABSENT, while both the Actions UI (clear the box) and an API
+ *  dispatch can send an empty string. Blank reaches plan-replicates as an unset BENCH_REPLICAS, which
+ *  means "each suite's Suite.defaultReplicas" — R=12 on every realworld suite. So the fallback is what
+ *  actually holds the property, and it is pinned here rather than left to a comment: losing it turns a
+ *  cleared text field into twelve real sandboxes with no error anywhere. */
+export const EXPECTED_SMOKE_REPLICAS_INPUT_EXPR =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal matched verbatim against the workflow, not a JS template.
+	"${{ inputs.replicas || '1' }}";
+
+/**
+ * Invariant 7: a smoke dispatch measures ONE sandbox unless an operator explicitly asks for more —
+ * both halves of it, the dispatch `default:` and the blank-value fallback (see
+ * {@link EXPECTED_SMOKE_REPLICAS_INPUT_EXPR} for why the default alone is not enough).
+ */
+export function checkSmokeSingleSandboxDefault(doc: unknown, label: string): string[] {
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	const plan = jobs.plan;
+	if (plan === undefined) {
+		return [`${label}: job "plan" is missing — the smoke lane resolves its axes there`];
+	}
+	const step = stepByName(
+		asRecord(plan, `${label}: job "plan" is not a mapping`),
+		PLAN_STEP,
+		label,
+	);
+	if (step === undefined) {
+		return [`${label}: job "plan" has no step named "${PLAN_STEP}"`];
+	}
+	const withMap = asRecord(step.with ?? {}, `${label}: step "${PLAN_STEP}" with is not a mapping`);
+	const replicas = withMap.replicas;
+	if (replicas === EXPECTED_SMOKE_REPLICAS_INPUT_EXPR) return [];
+	return [
+		`${label}: job "plan" step "${PLAN_STEP}" must pass replicas: ` +
+			`"${EXPECTED_SMOKE_REPLICAS_INPUT_EXPR}" so a CLEARED replicas field still means one sandbox ` +
+			`(blank falls through to each suite's Suite.defaultReplicas — R=12 on every realworld suite — ` +
+			`with no error raised anywhere) (got ` +
+			`${replicas === undefined ? "no replicas input" : `"${String(replicas)}"`})`,
+	];
+}
+
+/** Every `env:` key a job could carry, step-level or job-level, as one flat list. Job-level `env` is
+ *  included deliberately: it is inherited by every step, so hanging provider credentials there is a way
+ *  to build a cell that no per-step scan would ever see. */
+function jobEnvKeys(job: Record<string, unknown>, label: string): string[] {
+	const keys: string[] = [];
+	const collect = (value: unknown): void => {
+		if (value === undefined || value === null) return;
+		keys.push(...Object.keys(asRecord(value, `${label}: env is not a mapping`)));
+	};
+	collect(job.env);
+	if (Array.isArray(job.steps)) {
+		for (const rawStep of job.steps) collect(asRecord(rawStep, `${label}: malformed step`).env);
+	}
+	return keys;
 }
 
 /**
@@ -242,25 +313,53 @@ export function checkSuiteMatrixCaller(
  * honest took a cross-lane credential gate (Invariant 4) and still let everything the gate did not
  * compare — the runner routing, the cell budget, the shard-gated upload, the replicate fan-out — drift
  * silently, so a smoke run could pass while exercising a different pipeline than the one it was meant
- * to rehearse. Now both lanes call the reusable, and the way to re-enter that failure mode is to add
- * the {@link RUN_STEP} step back into a lane. Reject it here: a lane's jobs may plan, publish and
- * orchestrate, but the step that drives a provider SDK exists once, in {@link SUITE_WORKFLOW}.
+ * to rehearse. Now both lanes call the reusable, and this rejects the ways back in.
+ *
+ * THREE probes, because one is not enough. Matching {@link RUN_STEP} by name alone catches the literal
+ * copy-paste and nothing else: a re-grown cell under a fresh step name, or provider credentials hung
+ * off a job-level `env:`, would both sail through — and those are the shapes someone re-adding a cell
+ * by hand actually writes. So also reject a `run:` that invokes the cell driver, and any provider
+ * credential appearing anywhere in a lane's env at all. `credentialKeys` is passed in (rather than
+ * imported) to keep this module free of the schema dependency; runCheck hands it the registry's
+ * requiredEnvVars, so the probe widens automatically when a provider is added.
  */
-export function checkLaneDelegates(doc: unknown, label: string): string[] {
+export function checkLaneDelegates(
+	doc: unknown,
+	label: string,
+	credentialKeys: Iterable<string>,
+): string[] {
 	const root = asRecord(doc, `${label}: not a YAML mapping`);
 	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
-	const offenders: string[] = [];
+	const credentials = new Set(credentialKeys);
+	const errors: string[] = [];
+	const cell =
+		`the benchmark cell (credentials, runner routing, cell budget, replicate fan-out, artifact ` +
+		`upload) must live only in ${SUITE_WORKFLOW}, which both dispatch lanes call; a second copy is ` +
+		`exactly the drift this consolidation removed`;
 	for (const [jobId, rawJob] of Object.entries(jobs)) {
 		const job = asRecord(rawJob, `${label}: job "${jobId}" is not a mapping`);
-		if (stepByName(job, RUN_STEP, label) !== undefined) offenders.push(jobId);
+		if (stepByName(job, RUN_STEP, label) !== undefined) {
+			errors.push(`${label}: job "${jobId}" declares a "${RUN_STEP}" step — ${cell}`);
+		}
+		const steps = Array.isArray(job.steps) ? job.steps : [];
+		for (const rawStep of steps) {
+			const step = asRecord(rawStep, `${label}: malformed step`);
+			if (typeof step.run === "string" && step.run.includes(CELL_DRIVER_BIN)) {
+				errors.push(
+					`${label}: job "${jobId}" has a step whose run: invokes ${CELL_DRIVER_BIN} — ${cell}`,
+				);
+			}
+		}
+		const leaked = [...new Set(jobEnvKeys(job, label))].filter((k) => credentials.has(k)).sort();
+		if (leaked.length > 0) {
+			errors.push(
+				`${label}: job "${jobId}" puts provider credential(s) ${leaked.join(", ")} in its env — ` +
+					`${cell}. A lane never needs a provider secret: it passes none down, and the cell resolves ` +
+					`its own from Environment "privileged"`,
+			);
+		}
 	}
-	if (offenders.length === 0) return [];
-	return [
-		`${label}: job(s) ${offenders.join(", ")} declare a "${RUN_STEP}" step — the benchmark cell ` +
-			`(credentials, runner routing, cell budget, replicate fan-out, artifact upload) must live only ` +
-			`in ${SUITE_WORKFLOW}, which both dispatch lanes call; a second copy is exactly the drift this ` +
-			`consolidation removed`,
-	];
+	return errors;
 }
 
 /**

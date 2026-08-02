@@ -159,16 +159,26 @@ jobs:
 
       # Bun + `bun install --frozen-lockfile --ignore-scripts` (bunfig.toml's supply-chain posture),
       # from the repo's single setup action. Runs before any credential is introduced.
+      #
+      # no-cache is tied to the runner route above, not to a preference: the self-hosted label restores
+      # a setup-bun cache without a working ~/.bun/bin/bun, which fails the setup step outright — so the
+      # microsandbox-local cell, the one cell that lands there, must download Bun fresh. A hosted cell
+      # keeps the cache. (The cache is repo-scoped and OS/arch-keyed, so the entry a hosted cell saves
+      # is exactly what the self-hosted one would restore; ci.yml and setup-toolchain opt out for the
+      # same reason.)
       - name: Set up workspace
         uses: ./.github/actions/setup-workspace
+        with:
+          no-cache: ${{ matrix.provider == 'microsandbox-local' && 'true' || 'false' }}
 
       # Namespace is the one provider with no stored secret: it federates on this job's OIDC identity
       # (id-token: write above) and mints a portable token file from the resulting CLI session — see
       # the action for the grant and why a file is needed at all. The cell's suite + run attempt name
       # the token, through the action's input rather than the shell.
       #
-      # continue-on-error buys a LEGIBLE failure, not a passing job — and it has to live here because a
-      # composite action's own steps can't declare it. A not-yet-registered trust relationship (or any
+      # continue-on-error buys a LEGIBLE failure, not a passing job. It lives on the `uses:` step so the
+      # whole action degrades as a UNIT (the action's steps could each carry their own, and deliberately
+      # don't — see its header). A not-yet-registered trust relationship (or any
       # transient mint failure) leaves `token-file` empty and the harness records the standard
       # "missing credentials" skip, which is graceful in the matrix lane (no REQUIRE_PROVIDERS, so one
       # unauthenticated cell doesn't sink the run) and fatal in the smoke lane (which requires its
@@ -280,6 +290,14 @@ jobs:
       # So: gate on the shard files by name. A pass that wrote shards replaces the attempt it retried; a
       # pass that wrote none leaves the previous attempt's artifact standing. The job's own red/green is
       # unaffected — bench-suite already decided that — this only governs what gets published.
+      #
+      # ...EXCEPT on the first attempt, where there is nothing to protect. The guard exists to stop a
+      # broken retry from deleting a healthy predecessor; at run_attempt 1 no predecessor exists, so
+      # applying it there is pure loss — a cell that dies before normalization (a failed install, a
+      # create that never succeeded, an early crash) would upload nothing at all, discarding the raw
+      # tree and the harness's failure markers. That is the diagnostic the smoke lane exists to
+      # produce, and it is what the old bench-smoke.yml's unconditional `if: always()` upload gave.
+      # Upload on attempt 1 regardless; from attempt 2 on, the shard gate rules.
       - name: Check this attempt wrote shard Runs
         id: shards
         if: always()
@@ -294,7 +312,7 @@ jobs:
           fi
 
       - name: Upload Run + raw results
-        if: always() && steps.shards.outputs.count != '0'
+        if: always() && (steps.shards.outputs.count != '0' || github.run_attempt == '1')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Per-cell artifact name so every (provider, suite) cell uploads independently, carrying its R

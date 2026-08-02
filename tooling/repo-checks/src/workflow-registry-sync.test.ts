@@ -17,12 +17,14 @@
 // failure messages on synthetic drift, so a future regression names the offending file + key.
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
+import type { SuiteMatrixCaller } from "./lib/workflow-sync.ts";
 import {
 	CELL_BUDGET_ENV_KEY,
 	checkCellBudgetEnv,
 	checkCredentialEnv,
 	checkLaneDelegates,
 	checkProviderInput,
+	checkSmokeSingleSandboxDefault,
 	checkSuiteInput,
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
@@ -33,11 +35,13 @@ import {
 	EXPECTED_REPLICATES_ENV_EXPR,
 	EXPECTED_REPLICATES_INPUT_EXPR,
 	EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR,
+	EXPECTED_SMOKE_REPLICAS_INPUT_EXPR,
 	EXPECTED_SUITE_MATRIX_EXPR,
 	EXPECTED_SUITE_NAME_EXPR,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
 	matrixSuiteCaller,
+	PLAN_STEP,
 	REPLICATES_ENV_KEY,
 	RUN_STEP,
 	readWorkflow,
@@ -292,39 +296,140 @@ describe("checkCredentialEnv", () => {
 });
 
 describe("checkLaneDelegates", () => {
+	const CREDENTIALS = [...requiredCredentialKeys().keys()];
+	const lane = (doc: unknown, label = "synthetic.yml"): string[] =>
+		checkLaneDelegates(doc, label, CREDENTIALS);
+	const laneYaml = (jobs: object): string[] => lane(Bun.YAML.parse(Bun.YAML.stringify({ jobs })));
+
 	// Invariant 3b: the consolidation itself. Both dispatch lanes must reach sandboxes only through the
 	// reusable — a re-introduced cell in either is the copy-paste this change removed.
 	test("the real dispatch lanes own no benchmark cell", () => {
-		expect(checkLaneDelegates(smoke, SMOKE_WORKFLOW)).toEqual([]);
-		expect(checkLaneDelegates(matrix, MATRIX_WORKFLOW)).toEqual([]);
+		expect(lane(smoke, SMOKE_WORKFLOW)).toEqual([]);
+		expect(lane(matrix, MATRIX_WORKFLOW)).toEqual([]);
 	});
 
 	test("the reusable itself is where the cell lives (so it would NOT pass this lane check)", () => {
-		const errors = checkLaneDelegates(suiteWf, SUITE_WORKFLOW);
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain(SUITE_JOB);
+		const errors = lane(suiteWf, SUITE_WORKFLOW);
+		// All three probes fire on the real cell: the step name, the run: that drives it, and its
+		// credential block. That is the shape the lanes must never have.
+		expect(errors.length).toBeGreaterThanOrEqual(3);
+		for (const error of errors) expect(error).toContain(SUITE_JOB);
 	});
 
 	test("flags a lane that re-grows its own run step, naming the job", () => {
+		const errors = laneYaml({
+			plan: { "runs-on": "ubuntu-24.04", steps: [{ name: "Plan" }] },
+			smoke: { "runs-on": "ubuntu-24.04", steps: [{ name: RUN_STEP }] },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('job "smoke"');
+		expect(errors[0]).toContain(RUN_STEP);
+	});
+
+	// The bypass a name-only check misses: same cell, fresh step name. This is the shape someone
+	// re-adding a cell by hand writes — they do not copy the reusable's step name along with it.
+	test("flags a re-grown cell hiding under a different step name", () => {
+		const errors = laneYaml({
+			smoke: {
+				"runs-on": "ubuntu-24.04",
+				steps: [
+					{ name: "Benchmark the cell", run: "bun apps/cli/src/bin/bench-suite.ts e2b system" },
+				],
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("bench-suite.ts");
+	});
+
+	// The other bypass: credentials on a JOB-level env, which every step inherits, so no per-step scan
+	// would ever see them.
+	test("flags provider credentials hung off a job-level env", () => {
+		const errors = laneYaml({
+			smoke: {
+				"runs-on": "ubuntu-24.04",
+				env: { E2B_API_KEY: "x", DAYTONA_API_KEY: "y", SOME_RUNTIME_CONTEXT: "z" },
+				steps: [{ name: "Something else" }],
+			},
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("DAYTONA_API_KEY, E2B_API_KEY");
+		// Non-credential env is not the lane's business.
+		expect(errors[0]).not.toContain("SOME_RUNTIME_CONTEXT");
+	});
+
+	test("flags provider credentials on a step env too", () => {
+		const errors = laneYaml({
+			smoke: { "runs-on": "ubuntu-24.04", steps: [{ name: "x", env: { NOVITA_API_KEY: "k" } }] },
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("NOVITA_API_KEY");
+	});
+
+	// A lane legitimately runs bun bins (the planners) and carries non-credential env; neither is a cell.
+	test("passes a lane that plans and orchestrates without touching a credential", () => {
+		expect(
+			laneYaml({
+				plan: {
+					"runs-on": "ubuntu-24.04",
+					steps: [
+						{
+							name: "Plan",
+							run: "bun apps/cli/src/bin/plan-suites.ts",
+							env: { BENCH_SUITES: "s" },
+						},
+					],
+				},
+				suite: { uses: "./.github/workflows/bench-suite.yml", with: { suite: "system" } },
+			}),
+		).toEqual([]);
+	});
+});
+
+describe("checkSmokeSingleSandboxDefault", () => {
+	// Invariant 7. `default: '1'` does NOT hold this on its own — a cleared dispatch field sends "",
+	// which means "each suite's Suite.defaultReplicas" (R=12 on realworld). The fallback is the guard.
+	test("the real smoke lane pins one sandbox against a cleared field", () => {
+		expect(checkSmokeSingleSandboxDefault(smoke, SMOKE_WORKFLOW)).toEqual([]);
+		expect(dispatchInput(smoke, "replicas", SMOKE_WORKFLOW).default).toBe("1");
+	});
+
+	test("flags a plan step that forwards replicas without the blank fallback", () => {
 		const yaml = Bun.YAML.stringify({
 			jobs: {
-				plan: { "runs-on": "ubuntu-24.04", steps: [{ name: "Plan" }] },
-				smoke: {
-					"runs-on": "ubuntu-24.04",
-					steps: [{ name: RUN_STEP, run: "bun bench-suite.ts" }],
+				plan: {
+					steps: [
+						// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal, not a JS template.
+						{ name: PLAN_STEP, with: { replicas: "${{ inputs.replicas }}" } },
+					],
 				},
 			},
 		});
-		const errors = checkLaneDelegates(Bun.YAML.parse(yaml), "synthetic.yml");
+		const errors = checkSmokeSingleSandboxDefault(Bun.YAML.parse(yaml), "synthetic.yml");
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("smoke");
-		expect(errors[0]).toContain(RUN_STEP);
-		expect(errors[0]).not.toContain("plan,");
+		expect(errors[0]).toContain(EXPECTED_SMOKE_REPLICAS_INPUT_EXPR);
+		expect(errors[0]).toContain("R=12");
+	});
+
+	test("flags a missing plan job or plan step rather than passing vacuously", () => {
+		const noJob = Bun.YAML.stringify({ jobs: { suite: {} } });
+		expect(checkSmokeSingleSandboxDefault(Bun.YAML.parse(noJob), "synthetic.yml")[0]).toContain(
+			'job "plan" is missing',
+		);
+		const noStep = Bun.YAML.stringify({ jobs: { plan: { steps: [{ name: "Checkout" }] } } });
+		expect(checkSmokeSingleSandboxDefault(Bun.YAML.parse(noStep), "synthetic.yml")[0]).toContain(
+			`no step named "${PLAN_STEP}"`,
+		);
 	});
 });
 
 describe("checkSuiteMatrixCaller", () => {
-	const realCaller = matrixSuiteCaller(matrix);
+	const realCaller = matrixSuiteCaller(matrix, MATRIX_WORKFLOW);
+	// The matrix lane's complete, declared posture: it owns the publish dependency and must NOT require
+	// a provider. Every call states both — a partial object would silently waive the flag it omits,
+	// which is exactly why the options type has no optional fields.
+	const MATRIX_LANE = { requirePublishNeeds: true, requireProviderAssertion: false } as const;
+	const check = (caller: SuiteMatrixCaller, label = MATRIX_WORKFLOW): string[] =>
+		checkSuiteMatrixCaller(caller, label, MATRIX_LANE);
 
 	test("matrixSuiteCaller extracts the real suite-matrix nesting wiring", () => {
 		expect(realCaller.jobId).toBe("suite");
@@ -335,24 +440,24 @@ describe("checkSuiteMatrixCaller", () => {
 	});
 
 	test("the real suite-matrix caller is wired for native nesting", () => {
-		expect(checkSuiteMatrixCaller(realCaller)).toEqual([]);
+		expect(check(realCaller)).toEqual([]);
 	});
 
 	test("flags a caller whose display name is not matrix.suite", () => {
-		const errors = checkSuiteMatrixCaller({ ...realCaller, name: "Bench suites" });
+		const errors = check({ ...realCaller, name: "Bench suites" });
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("name must be");
 		expect(errors[0]).toContain(EXPECTED_SUITE_NAME_EXPR);
 	});
 
 	test("flags a caller whose with.suite is not matrix.suite", () => {
-		const errors = checkSuiteMatrixCaller({ ...realCaller, suiteInput: "cpu-node" });
+		const errors = check({ ...realCaller, suiteInput: "cpu-node" });
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("with.suite must be");
 	});
 
 	test("flags a caller whose suite axis is not plan.outputs.suites", () => {
-		const errors = checkSuiteMatrixCaller({
+		const errors = check({
 			...realCaller,
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: a GHA expression literal (wrong axis), not a JS template.
 			matrixSuiteExpr: "${{ fromJSON(needs.plan.outputs.providers) }}",
@@ -363,7 +468,7 @@ describe("checkSuiteMatrixCaller", () => {
 	});
 
 	test("flags publish that does not need the suite-matrix caller", () => {
-		const errors = checkSuiteMatrixCaller({ ...realCaller, publishNeeds: ["plan"] });
+		const errors = check({ ...realCaller, publishNeeds: ["plan"] });
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain('publish" must need "suite"');
 	});
@@ -401,10 +506,10 @@ describe("checkSuiteMatrixCaller", () => {
 	// check while quietly measuring one sandbox per cell.
 	test("flags a caller that hardcodes with.replicates instead of taking the plan's slice", () => {
 		const caller = {
-			...matrixSuiteCaller(matrix),
+			...matrixSuiteCaller(matrix, MATRIX_WORKFLOW),
 			replicatesInput: "[0]",
 		};
-		const errors = checkSuiteMatrixCaller(caller, "synthetic.yml");
+		const errors = check(caller, "synthetic.yml");
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("with.replicates must be");
 		expect(errors[0]).toContain(EXPECTED_REPLICATES_INPUT_EXPR);
@@ -437,12 +542,14 @@ describe("checkSuiteMatrixCaller", () => {
 
 describe("checkSuiteMatrixCaller on the smoke lane", () => {
 	const smokeCaller = matrixSuiteCaller(smoke, SMOKE_WORKFLOW);
+	// The smoke lane's complete, declared posture — the exact mirror of MATRIX_LANE above.
+	const SMOKE_LANE = { requirePublishNeeds: false, requireProviderAssertion: true } as const;
 
 	// The consolidation in one assertion: the smoke lane's caller is the matrix lane's caller, down to
 	// the job id and every nesting expression. If these diverge, "a smoke is a real run minus the
 	// commit" has stopped being true.
 	test("the smoke caller is wired identically to the matrix caller", () => {
-		const matrixCaller = matrixSuiteCaller(matrix);
+		const matrixCaller = matrixSuiteCaller(matrix, MATRIX_WORKFLOW);
 		expect(smokeCaller.jobId).toBe(matrixCaller.jobId);
 		expect(smokeCaller.name).toBe(matrixCaller.name);
 		expect(smokeCaller.suiteInput).toBe(matrixCaller.suiteInput);
@@ -452,18 +559,14 @@ describe("checkSuiteMatrixCaller on the smoke lane", () => {
 
 	test("the real smoke caller passes its dispatched provider as require_providers", () => {
 		expect(smokeCaller.requireProvidersInput).toBe(EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR);
-		expect(
-			checkSuiteMatrixCaller(smokeCaller, SMOKE_WORKFLOW, { requireProviderAssertion: true }),
-		).toEqual([]);
+		expect(checkSuiteMatrixCaller(smokeCaller, SMOKE_WORKFLOW, SMOKE_LANE)).toEqual([]);
 	});
 
 	// Dropping it is the silent regression: every nesting check still passes, the job still goes green,
 	// and a missing credential is recorded as a skip on a run that benchmarked nothing.
 	test("flags a smoke caller that stopped requiring its provider", () => {
 		const { requireProvidersInput: _dropped, ...caller } = smokeCaller;
-		const errors = checkSuiteMatrixCaller(caller, SMOKE_WORKFLOW, {
-			requireProviderAssertion: true,
-		});
+		const errors = checkSuiteMatrixCaller(caller, SMOKE_WORKFLOW, SMOKE_LANE);
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain("with.require_providers must be");
 		expect(errors[0]).toContain("no such input");
@@ -473,16 +576,20 @@ describe("checkSuiteMatrixCaller on the smoke lane", () => {
 	// between the lanes — so the publish dependency must not be demanded of it.
 	test("does not demand a publish dependency of the smoke lane", () => {
 		expect(smokeCaller.publishNeeds).toEqual([]);
-		expect(
-			checkSuiteMatrixCaller(smokeCaller, SMOKE_WORKFLOW, { requireProviderAssertion: true }),
-		).toEqual([]);
+		expect(checkSuiteMatrixCaller(smokeCaller, SMOKE_WORKFLOW, SMOKE_LANE)).toEqual([]);
 	});
 
-	// ...and the matrix lane must not be let off its own assertion by the shared default.
-	test("still demands a publish dependency by default", () => {
-		const errors = checkSuiteMatrixCaller({ ...smokeCaller, publishNeeds: [] }, SMOKE_WORKFLOW);
+	// The mirror image, and the reason `requireProviderAssertion: false` asserts ABSENCE rather than
+	// merely not-checking: a stray value on the matrix lane fails every cell whose provider it names —
+	// loudly, but only after a whole matrix run's worth of provider quota is committed.
+	test("flags a matrix-lane caller that grew a require_providers input", () => {
+		const errors = checkSuiteMatrixCaller(
+			{ ...matrixSuiteCaller(matrix, MATRIX_WORKFLOW), requireProvidersInput: "e2b" },
+			MATRIX_WORKFLOW,
+			{ requirePublishNeeds: true, requireProviderAssertion: false },
+		);
 		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain('publish" must need');
+		expect(errors[0]).toContain("must not pass with.require_providers");
 	});
 });
 

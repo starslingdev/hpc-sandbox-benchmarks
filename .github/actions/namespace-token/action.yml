@@ -16,12 +16,17 @@ description: >-
   this requires a trust relationship (this repo -> the Namespace tenant) registered once on the
   Namespace side.
 
-  FAILURE POSTURE is the caller's to choose, because a composite action's own steps cannot declare
-  `continue-on-error`. Put `continue-on-error: true` on the `uses:` step instead: the whole action
-  then degrades to "no token", `token-file` stays empty, and the harness records the standard
-  missing-credentials skip — the same shape every other provider gets from an absent secret — rather
-  than aborting the job with no Run document and no summary. Whether that skip is tolerated or fatal
-  is decided downstream by REQUIRE_PROVIDERS, not here.
+  FAILURE POSTURE is deliberately left to the caller, as a property of the action AS A WHOLE: put
+  `continue-on-error: true` on the `uses:` step, and any failure inside here degrades to "no token" —
+  `token-file` stays empty, and the harness records the standard missing-credentials skip, the same
+  shape every other provider gets from an absent secret, rather than aborting the job with no Run
+  document and no summary. Whether that skip is tolerated or fatal is decided downstream by
+  REQUIRE_PROVIDERS, not here.
+
+  Both steps below could take their own `continue-on-error` (composite steps do support it), and
+  deliberately don't: an asymmetric posture — say, masking a transient `nsc token create` while
+  letting a broken CLI install abort the cell — is a real option, but it is the caller's call to make,
+  and splitting it across two files would hide half of it here.
 
 inputs:
   token-name:

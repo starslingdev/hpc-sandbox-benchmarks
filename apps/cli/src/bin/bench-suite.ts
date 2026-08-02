@@ -225,10 +225,11 @@ async function writeCellSummary(
 
 /**
  * The single-sandbox report: ONE cell, described in full. Deliberately richer per-provider than
- * {@link reportFleet} rather than a special case of it — this is what a human reads after a manual
- * bench-smoke dispatch or a local run, so it keeps the whole-Run provider table (every registered
+ * {@link reportFleet} rather than a special case of it — this is what a human reads after a local run
+ * or an explicit `--replicate <idx>`, so it keeps the whole-Run provider table (every registered
  * provider, with the skipped/failed gap split) that a fleet's one-row-per-replicate table has no room
- * for, and names the target provider's validation state in the annotation itself.
+ * for, and names the target provider's validation state in the annotation itself. CI no longer reaches
+ * it: both dispatch lanes go through the reusable cell, which always passes `--replicates`.
  */
 async function reportCell(
 	opts: CellIdentity & {
@@ -725,19 +726,25 @@ if (import.meta.main) {
 	});
 
 	if (replicateIndices === undefined) {
-		// Single-sandbox path (local dev, bench-smoke, and an explicit `--replicate <idx>`): one shard at
-		// the un-suffixed `data/runs/<runId>.json`, which bench-smoke.yml and commit-dataset.yml's legacy
-		// glob both name directly — so the filename is a contract, not the `-r<idx>` convention minus a
-		// suffix.
+		// Single-sandbox path (local dev and an explicit `--replicate <idx>`): one shard at the
+		// un-suffixed `data/runs/<runId>.json`, which commit-dataset.yml's legacy glob names directly —
+		// so the filename is a contract, not the `-r<idx>` convention minus a suffix. No CI lane takes
+		// this path any more: both dispatch lanes go through the reusable cell, which always passes
+		// `--replicates`, so a smoke is `[0]` on the fan-out path rather than a bare single run.
 		//
 		// Kept as its own path rather than "the fan-out with one replicate", deliberately. The audience
 		// differs, and so does the useful report: this is a human reading ONE cell, who wants the
-		// whole-Run provider table (every registered provider, skipped/failed gaps split out) and the
-		// foldable `::group::` sections — neither of which a fleet report can give, because its table is
-		// one row per replicate and its grouping is off so R interleaved transcripts stay readable. Fan
-		// out to R=1 and you would have to special-case all of that back in, trading two honest paths for
-		// one path full of `length === 1` branches. What the two DO share — heading, cell identity, task
-		// plan, annotation wiring — is shared for real, in writeCellSummary.
+		// whole-Run provider table (every registered provider, skipped/failed gaps split out), which a
+		// fleet report has no room for — its table is one row per replicate. What the two DO share —
+		// heading, cell identity, task plan, annotation wiring — is shared for real, in writeCellSummary.
+		//
+		// The fan-out path DOES carry one `length === 1` branch: it keeps foldable groups and skips line
+		// tagging at R=1, because those exist purely to disentangle concurrent replicates and a lone one
+		// has nothing to disentangle. That is the whole special case, and it is worth it — a smoke
+		// dispatch lands on the fan-out path at R=1 and would otherwise read as an untagged-problem's
+		// tagged transcript. The summary shape is deliberately NOT special-cased back: a required
+		// provider that skipped still names its gaps verbatim in the fleet failure detail and the
+		// annotation, which is the diagnostic that actually matters when a cell produces nothing.
 		const outcome = await runReplicate({
 			provider,
 			suite,
@@ -769,8 +776,16 @@ if (import.meta.main) {
 	// every line is tagged with its replicate instead — Actions groups are a single ordered stream, so
 	// R concurrent replicates opening and closing them produces folds containing other replicates'
 	// output. The tag is what keeps an interleaved 12-way transcript attributable.
-	setGroupingEnabled(false);
-	installLineTagging();
+	//
+	// Neither applies at R=1: one replicate cannot interleave with itself, so turning groups off and
+	// tagging every line would cost a readable transcript to solve a problem that doesn't exist. This
+	// is not hypothetical tidiness — bench-smoke.yml reaches this path with `--replicates "[0]"` (the
+	// reusable cell always passes the flag), so the lane whose whole output is read by a human would
+	// otherwise lose its foldable sections to a fan-out concern it never has.
+	if (replicateIndices.length > 1) {
+		setGroupingEnabled(false);
+		installLineTagging();
+	}
 	logInfo(
 		`Driving ${replicateIndices.length} replicate sandbox(es) [${replicateIndices.join(", ")}] ` +
 			`for ${cell}` +

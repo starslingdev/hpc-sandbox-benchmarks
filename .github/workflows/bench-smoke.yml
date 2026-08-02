@@ -95,7 +95,7 @@ on:
         # tighten an interval, and R=12 on a realworld suite would spend a matrix cell's worth of
         # provider quota to do it. Set it higher to rehearse a real replicate fleet (the cell drives
         # them concurrently from its one runner, exactly as in the matrix).
-        description: 'Replicate sandboxes for the cell — the between-machine axis. Default 1 (a single sandbox); blank = the suite''s configured default (Suite.defaultReplicas); a whole number overrides it.'
+        description: 'Replicate sandboxes for the cell — the between-machine axis. Default 1 (a single sandbox); a whole number raises it. Blank also means 1 in this lane, NOT the suite''s schema default.'
         required: false
         type: string
         default: '1'
@@ -178,7 +178,13 @@ jobs:
         with:
           providers: ${{ inputs.provider }}
           suites: ${{ inputs.suite }}
-          replicas: ${{ inputs.replicas }}
+          # `|| '1'` is load-bearing, not belt-and-braces: the `default:` above only applies when the
+          # field is ABSENT, and both the dispatch UI (clear the box) and an API dispatch can send an
+          # empty string. Blank reaches plan-replicates as an unset BENCH_REPLICAS, which means "each
+          # suite's Suite.defaultReplicas" — R=12 on every realworld suite. A cleared field would then
+          # quietly spend twelve real sandboxes on the lane whose entire premise is one. Blank means 1
+          # here; raising it is an explicit act. (workflow-registry-sync pins this expression.)
+          replicas: ${{ inputs.replicas || '1' }}
 
   # The matrix's benchmark phase, over a one-element suite axis → one reusable-workflow call → one
   # provider cell. Structurally identical to bench-matrix.yml's `suite` job (same job id, same nesting

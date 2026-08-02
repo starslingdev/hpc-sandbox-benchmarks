@@ -18,9 +18,12 @@
 //   3. Every provider's requiredEnvVars (schema) is present in the "Run suite and normalize" step env
 //      of the reusable bench-suite.yml — the secret a new provider needs must be wired into the one
 //      cell implementation, or every live run silently skips that provider.
-//  3b. NEITHER dispatch lane declares a "Run suite and normalize" step of its own: the cell is the
-//      reusable's, not a copy (see checkLaneDelegates — this is the invariant that replaces the old
-//      cross-lane credential comparison, by removing the second lane's copy rather than diffing it).
+//  3b. NEITHER dispatch lane owns a benchmark cell: no "Run suite and normalize" step, no `run:` that
+//      invokes the cell driver, and no provider credential in any job- or step-level env (see
+//      checkLaneDelegates). This is the invariant that replaces the old cross-lane credential
+//      comparison — by removing the second lane's copy rather than diffing it. All three probes are
+//      needed: a name match alone misses a cell re-grown under a fresh step name, and a step-level
+//      scan alone misses credentials hung off a job-level env that every step inherits.
 //   4. checkCredentialEnv still compares a key's value expression ACROSS whatever workflows it is
 //      handed, folding each lane's provider selector. With one lane left it degenerates to a presence
 //      check; it stays cross-workflow so a future third caller is compared, not assumed.
@@ -29,8 +32,11 @@
 //      Actions first; and the budget literal it advertises equals that timeout.
 //   6. Nesting wiring for BOTH lanes' suite-matrix callers (they are held to one shape, with the two
 //      deliberate per-lane differences — the matrix's publish dependency, the smoke's
-//      require_providers assertion — declared explicitly) plus the reusable's provider job name and
-//      the replicate axis reaching the cell as BENCH_REPLICATES data — see workflow-nesting.ts.
+//      require_providers assertion — stated explicitly at each lane, in both directions) plus the
+//      reusable's provider job name and the replicate axis reaching the cell as BENCH_REPLICATES data.
+//   7. A smoke dispatch measures ONE sandbox unless asked otherwise — the dispatch default AND the
+//      blank-value fallback, since `default:` alone does not survive a cleared field and blank means
+//      "each suite's Suite.defaultReplicas" (R=12 on realworld). See workflow-nesting.ts.
 //
 // YAML navigation lives in workflow-yaml.ts; nesting checks in workflow-nesting.ts. This file owns
 // credential/timeout invariants plus runCheck orchestration, and re-exports the public surface the
@@ -38,6 +44,7 @@
 import { PROVIDERS, SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
 import {
 	checkLaneDelegates,
+	checkSmokeSingleSandboxDefault,
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
 	matrixSuiteCaller,
@@ -60,6 +67,7 @@ import { findRepoRoot } from "./workspace.ts";
 export type { SuiteMatrixCaller, SuiteMatrixCallerOptions } from "./workflow-nesting.ts";
 export {
 	checkLaneDelegates,
+	checkSmokeSingleSandboxDefault,
 	checkSuiteMatrixCaller,
 	checkSuiteWorkflowNesting,
 	EXPECTED_PROVIDER_NAME_EXPR,
@@ -67,9 +75,11 @@ export {
 	EXPECTED_REPLICATES_ENV_EXPR,
 	EXPECTED_REPLICATES_INPUT_EXPR,
 	EXPECTED_REQUIRE_PROVIDERS_INPUT_EXPR,
+	EXPECTED_SMOKE_REPLICAS_INPUT_EXPR,
 	EXPECTED_SUITE_MATRIX_EXPR,
 	EXPECTED_SUITE_NAME_EXPR,
 	matrixSuiteCaller,
+	PLAN_STEP,
 	REPLICATES_ENV_KEY,
 } from "./workflow-nesting.ts";
 export type { DispatchInput } from "./workflow-yaml.ts";
@@ -295,23 +305,30 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 	// gate, and its job timeout feeds both the margin gate and that same budget gate.
 	const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 	const suiteTimeout = jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW);
+	const credentialKeys = [...requiredCredentialKeys().keys()];
 	return [
 		...checkProviderInput(dispatchInput(smoke, "provider", SMOKE_WORKFLOW)),
 		...checkSuiteInput(dispatchInput(smoke, "suite", SMOKE_WORKFLOW)),
 		...checkCredentialEnv({ [SUITE_WORKFLOW]: suiteEnv }),
-		...checkLaneDelegates(smoke, SMOKE_WORKFLOW),
-		...checkLaneDelegates(matrix, MATRIX_WORKFLOW),
+		// The credential keys are what make Invariant 3b more than a step-name match: a lane that hangs
+		// any of them off a job- or step-level env is building a cell, whatever it calls the step.
+		...checkLaneDelegates(smoke, SMOKE_WORKFLOW, credentialKeys),
+		...checkLaneDelegates(matrix, MATRIX_WORKFLOW, credentialKeys),
 		...checkWorkflowTimeouts({ [SUITE_WORKFLOW]: suiteTimeout }),
 		...checkCellBudgetEnv(suiteEnv, suiteTimeout, SUITE_WORKFLOW),
-		// Both lanes are held to one caller shape. The matrix additionally owns the publish dependency;
-		// the smoke additionally asserts its dispatched provider actually ran. Those two flags are the
-		// complete, declared list of ways the lanes are allowed to differ.
+		// Both lanes are held to one caller shape, and each states BOTH flags: the matrix owns the
+		// publish dependency and must not require a provider; the smoke is the mirror image. Spelling
+		// out both at each lane is what makes this the complete, declared list of permitted differences
+		// rather than a default someone can drift past.
 		...checkSuiteMatrixCaller(matrixSuiteCaller(matrix, MATRIX_WORKFLOW), MATRIX_WORKFLOW, {
 			requirePublishNeeds: true,
+			requireProviderAssertion: false,
 		}),
 		...checkSuiteMatrixCaller(matrixSuiteCaller(smoke, SMOKE_WORKFLOW), SMOKE_WORKFLOW, {
+			requirePublishNeeds: false,
 			requireProviderAssertion: true,
 		}),
+		...checkSmokeSingleSandboxDefault(smoke, SMOKE_WORKFLOW),
 		...checkSuiteWorkflowNesting(suiteWf, SUITE_WORKFLOW),
 	];
 }
