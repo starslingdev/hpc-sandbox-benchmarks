@@ -3,13 +3,21 @@
 # https://docs.github.com/en/repositories/managing-your-repos-settings-and-features/customizing-your-repository/about-code-owners
 #
 # Everything is owned by default and the LAST matching entry wins; an entry with NO owner un-owns
-# its paths. Exactly two surfaces are deliberately unowned — the artifacts the github-actions bot
-# lands hands-off (docs/ci-secrets.md rules 5 and 7). A PR touching only those needs no code-owner
-# review; anything else — code, workflows, docs — requires @dbworku. In particular the leaderboard
+# its paths. Only the artifacts the github-actions bot lands hands-off are deliberately unowned
+# (docs/ci-secrets.md rules 5 and 7). A PR touching only those needs no code-owner review; anything
+# else — code, workflows, docs — requires @dbworku. In particular the leaderboard
 # renderer and its backing packages must stay owned: their output is committed by a job inside the
 # `privileged` environment, so unreviewed renderer changes would run with release credentials.
 * @dbworku
 
 # Bot-landed release artifacts — no owner, so the bot's direct merge needs no human review.
+# These must stay in lockstep with the path allowlists the landing jobs assert against
+# (`assert-paths-allowlisted.sh` in commit-dataset.yml and update-leaderboard.yml): an artifact the
+# bot commits but CODEOWNERS still owns requests a review from @dbworku, and the direct merge dies
+# on "the base branch policy prohibits the merge".
 /LEADERBOARD.md
 /data/dataset/
+# Rendered by the leaderboard job alongside LEADERBOARD.md. Scoped to the generated `.webp` files at
+# one level, matching the job's `docs/figures/*.webp` fence — a hand-written doc or script added
+# under docs/figures/ stays owned.
+/docs/figures/*.webp

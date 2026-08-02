@@ -62,7 +62,7 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    Biome formats JSON, so an unformatted Run document would fail the PR — and aborts before opening a
    doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the existing open PR instead of
    colliding on the deterministic branch. Leaderboard landing follows the same `GITHUB_TOKEN` + PR
-   pattern, path-fenced to exactly `LEADERBOARD.md` (rule 7).
+   pattern, path-fenced to exactly `LEADERBOARD.md` and `docs/figures/*.webp` (rule 7).
 
    > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
    > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI
@@ -259,10 +259,17 @@ Configure the `main` ruleset so the bot-authored dataset/leaderboard PRs can mer
      path allowlist.
 2. Keep [`.github/CODEOWNERS`](../.github/CODEOWNERS) owning **everything by default** (`*` owner)
    with ownerless overrides for exactly the bot-landed artifacts (`/LEADERBOARD.md`,
-   `/data/dataset/` — a CODEOWNERS entry with no owner un-owns its paths; last match wins). Those
-   two must stay unowned so code-owner review is not required for the bot's PRs; everything else —
-   in particular the leaderboard renderer and its backing packages, whose output a `privileged` job
-   commits — must stay owned so no code change can merge without maintainer review.
+   `/data/dataset/`, `/docs/figures/*.webp` — a CODEOWNERS entry with no owner un-owns its paths;
+   last match wins). Those must stay unowned so code-owner review is not required for the bot's PRs;
+   everything else — in particular the leaderboard renderer and its backing packages, whose output a
+   `privileged` job commits — must stay owned so no code change can merge without maintainer review.
+
+   > **Keep this list in lockstep with the landing jobs' path allowlists.** The un-owned set must be
+   > a superset of everything `assert-paths-allowlisted.sh` permits the bot to commit. Widening a
+   > job's fence without un-owning the new path is a silent break: the PR still opens, GitHub
+   > requests a code-owner review, and the direct merge fails with *"the base branch policy
+   > prohibits the merge"* — a red job on an otherwise-correct PR. This is exactly how #311 broke
+   > the leaderboard flow: it started committing `docs/figures/*.webp`, which `*` still owned.
 3. **Do not** add `github-actions` (or a broad actor) as a ruleset bypass. The bot does not need
    bypass when code-owner review is the only review requirement and its two landing paths are
    unowned.
@@ -271,7 +278,8 @@ Configure the `main` ruleset so the bot-authored dataset/leaderboard PRs can mer
    whose required check can never run would strand it behind a green job).
 
 With that posture: a fork/public PR that touches `/.github/` still needs `@dbworku`; a
-`leaderboard/update-*` PR that only changes `LEADERBOARD.md` merges as soon as the workflow opens it.
+`leaderboard/update-*` PR that only changes `LEADERBOARD.md` and its rendered `docs/figures/*.webp`
+merges as soon as the workflow opens it.
 
 ### Other Actions settings
 
