@@ -7,6 +7,7 @@ import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import { namespace } from "@computesdk/namespace";
+import { runloop } from "@computesdk/runloop";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions } from "computesdk";
@@ -17,7 +18,7 @@ import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
-import type { ProviderAdapter } from "./types.ts";
+import type { DirectProvider, ProviderAdapter } from "./types.ts";
 import { vercelCompute } from "./vercel.ts";
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
@@ -94,6 +95,46 @@ const MICROSANDBOX_MAX_DURATION_SECS = 3 * 60 * 60;
  * that loss is not retried: the cell records `sandbox-create-failed` and produces zero results.
  */
 const MICROSANDBOX_CREATE_TIMEOUT_MS = 20 * 60 * 1000;
+
+/** The longest suite has a 155-minute budget; leave setup/collection margin while ensuring a leaked
+ * Runloop Devbox expires. Runloop allows keep-alive durations up to 48 hours. */
+const RUNLOOP_KEEP_ALIVE_SECS = 3 * 60 * 60;
+
+/** Normalize @computesdk/runloop's native snapshot records to ComputeSDK's public DirectProvider
+ * contract. The published wrapper exposes `{create_time_ms}` while `computesdk` 4.1 expects
+ * `{provider, createdAt}`; the lifecycle harness only needs `id`, but keeping the full contract here
+ * avoids an unsafe cast and preserves Runloop's snapshot benchmark. */
+function runloopCompute(): DirectProvider {
+	const compute = runloop({});
+	const snapshots = compute.snapshot;
+	return {
+		name: compute.name,
+		sandbox: compute.sandbox,
+		...(snapshots
+			? {
+					snapshot: {
+						create: async (sandboxId, options) => {
+							const snapshot = await snapshots.create(sandboxId, options);
+							return {
+								id: snapshot.id,
+								provider: "runloop",
+								createdAt: new Date(snapshot.create_time_ms),
+								metadata: snapshot.metadata,
+							};
+						},
+						list: async () =>
+							(await snapshots.list()).map((snapshot) => ({
+								id: snapshot.id,
+								provider: "runloop",
+								createdAt: new Date(snapshot.create_time_ms),
+								metadata: snapshot.metadata,
+							})),
+						delete: (snapshotId) => snapshots.delete(snapshotId),
+					},
+				}
+			: {}),
+	};
+}
 
 function microsandboxCloudCredentials(): { kind: "cloud"; url?: string; apiKey: string } {
 	const { apiUrl, apiKey } = config.microsandboxCloud;
@@ -195,6 +236,22 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// template name); cpu/memory are pinned at template create, not per-sandbox.
 		createCompute: () => novitaCompute(config.novita.apiKey),
 		createOptions: { snapshotId: config.novitaTemplate },
+	},
+	runloop: {
+		// Runloop's custom Devbox size can express the full target, including the disk gate. It boots the
+		// stock image, so the harness's pinned fallback setup installs the same runtime and PTS versions
+		// before collecting results. The API key stays in the factory's RUNLOOP_API_KEY fallback and is
+		// never included in provider options that can reach the guest.
+		createCompute: runloopCompute,
+		createOptions: {
+			launch_parameters: {
+				resource_size_request: "CUSTOM_SIZE",
+				custom_cpu_cores: TARGET_SPEC.vcpus,
+				custom_gb_memory: TARGET_SPEC.memoryGb,
+				custom_disk_size: TARGET_SPEC.diskGb,
+				keep_alive_time_seconds: RUNLOOP_KEEP_ALIVE_SECS,
+			},
+		},
 	},
 	namespace: {
 		// The token rides the factory's own NSC_TOKEN_FILE env fallback (getAndValidateCredentials) —

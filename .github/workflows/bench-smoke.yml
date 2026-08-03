@@ -61,6 +61,7 @@ on:
             modal-vm,
             blaxel,
             novita,
+            runloop,
             vercel,
             namespace,
             microsandbox-local,

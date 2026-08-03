@@ -67,6 +67,7 @@ describe("buildReleasePlan matrix", () => {
 			"modal-gvisor",
 			"modal-vm",
 			"novita",
+			"runloop",
 			"namespace",
 			"vercel",
 		]);
@@ -101,15 +102,18 @@ describe("buildReleasePlan matrix", () => {
 		expect(() => buildReleasePlan({ ...base, providers: "e2b,blaxel" })).toThrow(
 			/BL_API_KEY|cannot ship/,
 		);
+		expect(() => buildReleasePlan({ ...base, providers: "runloop" })).toThrow(/runloop/);
 	});
 
-	// Unscoped, the same provider is simply skipped — it is not in the required set, so a missing
+	// Unscoped, the same providers are simply skipped — they are not in the required set, so a missing
 	// credential is a skip and the release proceeds. Only a scope makes it a demand.
 	test("the same provider is fine in an unscoped release", () => {
 		const plan = buildReleasePlan(base);
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("blaxel");
+		expect(plan.matrix.include.map((c) => c.provider)).toContain("runloop");
 		expect(plan.required).not.toContain("blaxel");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel"]);
+		expect(plan.required).not.toContain("runloop");
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel", "runloop"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the
@@ -186,7 +190,7 @@ describe("planOutputs", () => {
 		expect(matrixLine).toBeDefined();
 		// The matrix value must be valid, single-line JSON (the fromJSON contract).
 		const parsed = JSON.parse((matrixLine as string).slice("matrix=".length));
-		expect(parsed.include).toHaveLength(11);
+		expect(parsed.include).toHaveLength(12);
 		expect((matrixLine as string).includes("\n")).toBe(false);
 	});
 

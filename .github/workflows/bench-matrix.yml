@@ -49,7 +49,8 @@ on:
         # (its own pre-baked template), microsandbox-cloud, and vercel (the shared toolchain base
         # mirrored into VCR). modal-vm + blaxel graduated into the default once committed runs validated
         # them; microsandbox-cloud and vercel followed. daytona-container and microsandbox-local are the
-        # registered variants still opt-in (pass them explicitly);
+        # registered variants still opt-in; Runloop is also opt-in until it has a committed validation
+        # run (pass any of them explicitly);
         # `plan-providers` rejects any name that is not in the registry. Listed in registry order — the
         # plan re-sorts to registry order regardless, so the spelling here is cosmetic.
         #

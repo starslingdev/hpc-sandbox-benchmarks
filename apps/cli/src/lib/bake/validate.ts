@@ -28,8 +28,8 @@ export interface CandidateRefs {
  *   • `bakes` — builds its own artifact FROM the base (an e2b/novita template, a daytona snapshot), so
  *     the artifact's bytes are decided at bake time by whichever base it was handed.
  *   • `boots` — no artifact of its own; it boots the base image by ref at create time.
- *   • `none`  — never references the base at all: blaxel boots the vendor's stock image, and vercel
- *     boots its own VCR mirror (staged from the base by the build phase, not by this ref).
+ *   • `none`  — never references the base at all: blaxel and runloop boot vendor stock images, and
+ *     vercel boots its own VCR mirror (staged from the base by the build phase, not by this ref).
  */
 export type BaseImageUse = "bakes" | "boots" | "none";
 
@@ -48,6 +48,7 @@ export function baseImageUse(id: ProviderId): BaseImageUse {
 		case "namespace":
 			return "boots";
 		case "blaxel":
+		case "runloop":
 		case "vercel":
 			return "none";
 	}
@@ -89,6 +90,9 @@ export function candidateCreateOptions(
 		case "novita":
 			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.
 			return { snapshotId: refs.novitaTemplateCandidate };
+		case "runloop":
+			// Stock Devbox image — no candidate artifact to point at.
+			return {};
 		case "namespace":
 			// No template/snapshot system — points create() at the candidate image directly, same as modal.
 			return { image: refs.toolchainImageCandidate };

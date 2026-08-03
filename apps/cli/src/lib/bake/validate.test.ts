@@ -103,10 +103,10 @@ describe("baseImageUse", () => {
 		]);
 	});
 
-	// The two that make a vercel-only release able to run without the candidate base existing at all.
+	// Providers that can validate without the candidate base existing at all.
 	it("marks the providers that never reference the toolchain base", () => {
 		const none = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "none");
-		expect(none).toEqual(["blaxel", "vercel"]);
+		expect(none).toEqual(["blaxel", "runloop", "vercel"]);
 	});
 
 	// Anything that reads the base ref in candidateCreateOptions must not be classified "none", or the

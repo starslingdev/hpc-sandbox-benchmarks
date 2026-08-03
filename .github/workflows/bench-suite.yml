@@ -256,6 +256,7 @@ jobs:
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
           # OIDC-federated per-cell token file (see the Namespace step above). Not a stored secret: it is
           # empty unless THIS cell is the namespace cell AND the mint succeeded (the step only runs when
           # matrix.provider == 'namespace', and only writes the output once `nsc token create` returned),

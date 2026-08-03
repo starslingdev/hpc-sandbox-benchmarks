@@ -68,6 +68,26 @@ describe("@sandbox-benchmarks/providers", () => {
 		expect(adapter?.createCompute().name).toBe("vercel");
 	});
 
+	it("pins Runloop's custom Devbox to the shared target spec", () => {
+		const adapter = providers.find((provider) => provider.name === "runloop");
+		expect(adapter).toBeDefined();
+		expect(adapter?.requiredEnvVars).toEqual(["RUNLOOP_API_KEY"]);
+		const compute = adapter?.createCompute();
+		expect(compute?.name).toBe("runloop");
+		expect(compute?.snapshot).toBeDefined();
+		expect(adapter?.createOptions).toEqual({
+			launch_parameters: {
+				resource_size_request: "CUSTOM_SIZE",
+				custom_cpu_cores: TARGET_SPEC.vcpus,
+				custom_gb_memory: TARGET_SPEC.memoryGb,
+				custom_disk_size: TARGET_SPEC.diskGb,
+				keep_alive_time_seconds: 3 * 60 * 60,
+			},
+		});
+		// The credential belongs only to the SDK control plane, never guest-visible create options.
+		expect(JSON.stringify(adapter?.createOptions)).not.toContain("RUNLOOP_API_KEY");
+	});
+
 	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
 		// Construction must accept an nvta_-prefixed key and still expose the universal manager surface
 		// the harness drives, with the mispointed snapshot/template managers removed (their every call

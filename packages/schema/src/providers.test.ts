@@ -32,6 +32,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"modal-vm",
 			"namespace",
 			"novita",
+			"runloop",
 			"vercel",
 		]);
 	});
@@ -118,6 +119,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			e2b: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * TARGET_SPEC.memoryGb,
 			"daytona-vm": 0.0504 * TARGET_SPEC.vcpus + 0.0162 * Math.max(0, TARGET_SPEC.memoryGb - 5),
 			novita: 0.03528 * TARGET_SPEC.vcpus + 0.01152 * TARGET_SPEC.memoryGb,
+			runloop: 0.108 * TARGET_SPEC.vcpus + 0.0252 * TARGET_SPEC.memoryGb,
 		};
 		for (const [id, cost] of Object.entries(expected)) {
 			const meta = getProvider(id);
@@ -136,6 +138,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		expect(diskRate("modal-gvisor")).toBe(0); // volumes free under the 1 TiB/mo tier
 		expect(diskRate("e2b")).toBeUndefined(); // no published overage rate
 		expect(diskRate("novita")).toBe(0); // 20 GB target spec inside the 60 GB free tier
+		expect(diskRate("runloop")).toBeCloseTo(0.00034236);
 	});
 
 	it("resolves retired provider ids through the legacy aliases", () => {

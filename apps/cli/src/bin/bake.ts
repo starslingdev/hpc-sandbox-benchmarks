@@ -48,6 +48,9 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 		log("blaxel boots the stock base image — no candidate artifact to bake");
 	},
 	novita: (image, log) => bakeNovitaTemplate(config.novitaTemplateCandidate, image, log),
+	runloop: async (_image, log) => {
+		log("runloop boots the stock Devbox image — no candidate artifact to bake");
+	},
 	// Same shape as blaxel: namespace pulls the toolchain image straight into a container instance at
 	// create time (no template/snapshot system), so there's no candidate artifact to bake — the
 	// validate boot right after this proves reachability. Takes the pinned candidate image like the
@@ -182,8 +185,8 @@ if (import.meta.main) {
 	// Resolve once after the push and validate the exact candidate bytes by immutable digest. This also
 	// makes a tag change between provider bakes unable to redirect Modal's validation to different bytes.
 	//
-	// Only providers that actually reference the base need it: vercel boots its own VCR mirror and
-	// blaxel the vendor's stock image, so a cell restricted to those must not die on a base candidate it
+	// Only providers that actually reference the base need it: vercel boots its own VCR mirror while
+	// blaxel and runloop boot vendor stock images, so a cell restricted to those must not die on a base candidate it
 	// never reads — under `build: skip` that ref may legitimately be stale or absent, and failing there
 	// would break the one flow the scoped release exists for.
 	const needsBase = (only ?? PROVIDERS.map((p) => p.id)).some((id) => baseImageUse(id) !== "none");

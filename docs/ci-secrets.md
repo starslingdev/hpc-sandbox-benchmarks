@@ -149,15 +149,17 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    first. Two more refusals keep a scoped release honest, both fail-fast in the plan or before the
    public base moves:
 
-   - **`providers: blaxel` is refused.** Blaxel boots the vendor's stock image rather than the
-     toolchain, so the release lane carries no `BL_API_KEY`/`BL_WORKSPACE` (they are bench-lane only,
-     see the table above) and has no artifact to publish for it. An *unscoped* release just skips it.
+   - **`providers: blaxel` and `providers: runloop` are refused.** Both boot vendor stock images rather
+     than the toolchain, so the release lane has no artifact to publish for either one. Blaxel's
+     `BL_API_KEY`/`BL_WORKSPACE` and Runloop's `RUNLOOP_API_KEY` are bench-lane only (see the table
+     above). An *unscoped* release simply skips them.
    - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
      *from* the base (e2b, daytona, novita). Those providers' candidates are verified but their version
      artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
      bump `TOOLCHAIN_VERSION` and cut a full release. Providers that don't bake from the base (vercel,
      modal, namespace, microsandbox) are unaffected: their version artifact is a retag of the exact
-     candidate that was just booted.
+     candidate that was just booted. Runloop is also unaffected by candidate drift, but has no release
+     artifact and therefore cannot be scoped into this lane.
 
    The Vercel-on-v7 flow, as an example — two dispatches, neither of which touches another provider,
    and neither of which runs a build job:
@@ -215,6 +217,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `MODAL_TOKEN_ID` | toolchain bake, bench matrix/smoke |
    | `MODAL_TOKEN_SECRET` | toolchain bake, bench matrix/smoke |
    | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
+   | `RUNLOOP_API_KEY` | bench matrix/smoke only |
    | `BL_API_KEY` | bench matrix/smoke only |
    | `BL_WORKSPACE` | bench matrix/smoke only |
    | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
@@ -310,6 +313,8 @@ Copy [`.env.example`](../.env.example) to a gitignored `.env` and fill in the pr
 commit them; never paste them into issues or pull requests. See [SECURITY.md](../SECURITY.md).
 
 `microsandbox-local` uses `MICROSANDBOX_LOCAL_BENCH=1` as an explicit capability opt-in rather than a credential. The runner must provide KVM on Linux or Hypervisor.framework on macOS. `microsandbox-cloud` needs `MSB_API_KEY`; `MSB_API_URL` is an optional endpoint override. The cloud adapter keeps the key in the SDK control-plane backend and never adds it to sandbox metadata, create-time environment variables, or guest commands.
+
+Runloop needs `RUNLOOP_API_KEY`. The adapter keeps it in the SDK control-plane client and launches a custom-sized stock Devbox; the harness installs its pinned fallback toolchain inside the guest before benchmarking.
 
 The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
 credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.

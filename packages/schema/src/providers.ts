@@ -21,6 +21,7 @@ export type ProviderId =
 	| "microsandbox-local"
 	| "microsandbox-cloud"
 	| "novita"
+	| "runloop"
 	| "namespace"
 	| "vercel";
 
@@ -479,6 +480,43 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// options applies the E2B SDK's default 60s command timeout, and onStdout/onStderr are never
 			// passed through. The compat API exposes the same filesystem + `background`, so detached+poll
 			// is the long-step path.
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
+	runloop: {
+		displayName: "Runloop",
+		website: "https://runloop.ai",
+		sdkPackage: "@computesdk/runloop",
+		requiredEnvVars: ["RUNLOOP_API_KEY"],
+		isolation: {
+			technology: "microVM",
+			notes:
+				"Runloop Devboxes are isolated, ephemeral virtual machines. This adapter launches the stock Devbox image at the repository's custom target size; the harness installs its pinned fallback toolchain before benchmarking.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// $0.00003/CPU-s × 3600 = $0.108/CPU-hr; $0.000007/GB-s × 3600 = $0.0252/GB-hr.
+			usdPerVcpuHour: 0.108,
+			usdPerGibHour: 0.0252,
+			// $0.0000000951/GB-s × 3600 = $0.00034236/GB-hr.
+			usdPerGibDiskHour: 0.00034236,
+			notes:
+				"Published per-second rates (exact): CPU $0.00003/s, memory $0.000007/GB-s, and active Devbox storage $0.0000000951/GB-s.",
+			sourceUrl: "https://runloop.ai/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Official ComputeSDK adapter with custom CPU, memory, and disk sizing; opt-in until a committed benchmark run validates the integration.",
+		},
+		// CUSTOM_SIZE exposes independent CPU, memory, and disk fields and can express 4 / 8 / 40 exactly.
+		specPinning: "settable",
+		transport: {
+			// The adapter waits for completed command output and does not forward streaming callbacks.
+			// Keep long steps off one control-plane request by using its background exec plus filesystem
+			// polling path; short setup commands remain synchronous.
 			streaming: false,
 			syncCapMs: 60_000,
 			detachedPoll: true,

@@ -41,6 +41,7 @@ describe("forEachProviderWithCreds `only`", () => {
 			"modal-gvisor",
 			"modal-vm",
 			"novita",
+			"runloop",
 			"namespace",
 			"vercel",
 		]);
