@@ -55,7 +55,13 @@ let cachedClient: Client | undefined;
 // A create response can arrive after every local deadline has expired. Keep that final cleanup
 // visible to the benchmark entrypoints: they intentionally use process.exit(), which otherwise
 // terminates promise continuations even while a billable sandbox is being destroyed.
-const pendingLateCreateCleanups = new Set<Promise<void>>();
+interface PendingLateCreateCleanup {
+	promise: Promise<void>;
+	/** Wall-clock ceiling covering one late response plus the complete cleanup retry sequence. */
+	deadline: number;
+}
+
+const pendingLateCreateCleanups = new Set<PendingLateCreateCleanup>();
 
 const controlPlaneFetch: typeof fetch = Object.assign(
 	(...args: Parameters<typeof fetch>) =>
@@ -304,8 +310,27 @@ function retainLateCreateCleanup(
 		},
 		() => {},
 	);
-	pendingLateCreateCleanups.add(cleanup);
-	void cleanup.finally(() => pendingLateCreateCleanups.delete(cleanup));
+	const controlPlaneTimeoutMs = Math.max(
+		1,
+		Math.floor(options.controlPlaneTimeoutMs ?? CONTROL_PLANE_REQUEST_TIMEOUT_MS),
+	);
+	const cleanupAttempts = Math.max(
+		1,
+		Math.floor(options.cleanupAttempts ?? CREATE_FAILURE_CLEANUP_ATTEMPTS),
+	);
+	const cleanupRetryMs = Math.max(0, options.cleanupRetryMs ?? CREATE_FAILURE_CLEANUP_RETRY_MS);
+	// Allow one still-pending create response, then every destroy + confirmation deadline and every
+	// inter-attempt delay. Production's default is 338s; injected tests derive a correspondingly small
+	// ceiling. The task remains registered after expiry so it can still finish and unregister itself if
+	// the caller elects to keep the process alive after the warning.
+	const deadline =
+		Date.now() +
+		controlPlaneTimeoutMs +
+		cleanupAttempts * 2 * controlPlaneTimeoutMs +
+		(cleanupAttempts - 1) * cleanupRetryMs;
+	const pending = { promise: cleanup, deadline };
+	pendingLateCreateCleanups.add(pending);
+	void cleanup.finally(() => pendingLateCreateCleanups.delete(pending));
 }
 
 /**
@@ -314,8 +339,29 @@ function retainLateCreateCleanup(
  * the deadline race is allowed to finish its fully awaited destroy/retry sequence.
  */
 export async function drainRuncloudBackgroundWork(): Promise<void> {
+	const startedAt = Date.now();
 	while (pendingLateCreateCleanups.size > 0) {
-		await Promise.all([...pendingLateCreateCleanups]);
+		const pending = [...pendingLateCreateCleanups];
+		const deadline = Math.max(...pending.map((entry) => entry.deadline));
+		const remainingMs = Math.max(0, deadline - Date.now());
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const completed = await Promise.race([
+			Promise.all(pending.map((entry) => entry.promise)).then(() => true),
+			new Promise<false>((resolve) => {
+				timer = setTimeout(() => resolve(false), remainingMs);
+			}),
+		]).finally(() => {
+			if (timer !== undefined) clearTimeout(timer);
+		});
+		if (completed) continue;
+		// A task may have been registered with a later ceiling while the previous snapshot was waiting.
+		// Recompute before giving up so concurrent provider cells retain their own full cleanup budget.
+		if ([...pendingLateCreateCleanups].some((entry) => entry.deadline > Date.now())) continue;
+		console.error(
+			`run.cloud left ${pendingLateCreateCleanups.size} late-create cleanup task(s) unfinished ` +
+				`after ${Date.now() - startedAt}ms; manual cleanup may be required`,
+		);
+		return;
 	}
 }
 

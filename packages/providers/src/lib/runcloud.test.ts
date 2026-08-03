@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type { ExecOptions, Sandbox, SandboxState } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
 import { drainRuncloudBackgroundWork, runcloudCompute, sandboxMethods } from "./runcloud.ts";
@@ -292,6 +292,8 @@ describe("run.cloud ComputeSDK adapter", () => {
 				client,
 				controlPlaneTimeoutMs: 5,
 				createRecoveryAttempts: 2,
+				cleanupAttempts: 1,
+				cleanupRetryMs: 0,
 				sleep: async () => {},
 			}).sandbox.create(),
 		).rejects.toThrow(
@@ -299,8 +301,17 @@ describe("run.cloud ComputeSDK adapter", () => {
 		);
 		expect(idempotencyKeys).toHaveLength(3);
 		expect(new Set(idempotencyKeys).size).toBe(1);
-		// Let the retained Promise.any settle so this deliberately hung fake cannot pollute later drain
-		// assertions in the same process. Real SDK fetches reject themselves through the abort signal.
+		const consoleError = spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await drainRuncloudBackgroundWork();
+			expect(consoleError).toHaveBeenCalledWith(
+				expect.stringContaining("late-create cleanup task(s) unfinished"),
+			);
+		} finally {
+			consoleError.mockRestore();
+		}
+		// Let the retained Promise.any settle after proving the drain is bounded, so this deliberately
+		// hung fake cannot pollute later assertions. Real SDK fetches reject through the abort signal.
 		for (const reject of rejectAttempts) reject(new Error("test request cancelled"));
 		await drainRuncloudBackgroundWork();
 	});
