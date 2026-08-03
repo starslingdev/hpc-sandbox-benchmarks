@@ -45,11 +45,13 @@ if (import.meta.main) {
 		...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
 		...(run.value && run.value.checks.length > 0 ? { checks: run.value.checks } : {}),
 	}));
-	console.log(JSON.stringify({ summary }, null, 2));
-
-	// A timed-out run.cloud create can return a handle during teardown. Do not let the explicit failure
-	// exits below terminate that tracked cleanup while the billable sandbox is still being destroyed.
-	await drainRuncloudBackgroundWork();
+	try {
+		console.log(JSON.stringify({ summary }, null, 2));
+	} finally {
+		// A timed-out run.cloud create can return a handle during teardown. Output/reporting failures and
+		// the explicit exits below must not terminate cleanup while the sandbox is still being destroyed.
+		await drainRuncloudBackgroundWork();
+	}
 
 	// Skips never fail the run; only a provider that ran and broke does.
 	if (anyFailed(runs)) process.exit(1);

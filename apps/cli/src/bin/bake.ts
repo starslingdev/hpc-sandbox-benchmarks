@@ -170,29 +170,35 @@ if (import.meta.main) {
 			);
 			process.exit(2);
 		}
-		const promoted = await promoteAll(log, { force, only });
-		writeReport({
-			// The scope is recorded alongside the version names because those names are the FULL set the
-			// version owns — on a partial promote most of them were not touched, and the payload has to
-			// say which run this was rather than leave a reader to infer it from `reports`.
-			scope: only ?? PROVIDERS.map((p) => p.id),
-			partial: isPartialScope(only),
-			version: {
-				image: config.toolchainImageVersion,
-				e2bTemplate: config.e2bTemplateVersion,
-				daytonaSnapshot: config.daytonaSnapshotDefault,
-				daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
-				novitaTemplate: config.novitaTemplateVersion,
-			},
-			reports: promoted,
-		});
+		let promoted: Awaited<ReturnType<typeof promoteAll>>;
+		try {
+			promoted = await promoteAll(log, { force, only });
+			writeReport({
+				// The scope is recorded alongside the version names because those names are the FULL set the
+				// version owns — on a partial promote most of them were not touched, and the payload has to
+				// say which run this was rather than leave a reader to infer it from `reports`.
+				scope: only ?? PROVIDERS.map((p) => p.id),
+				partial: isPartialScope(only),
+				version: {
+					image: config.toolchainImageVersion,
+					e2bTemplate: config.e2bTemplateVersion,
+					daytonaSnapshot: config.daytonaSnapshotDefault,
+					daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
+					novitaTemplate: config.novitaTemplateVersion,
+				},
+				reports: promoted,
+			});
+		} finally {
+			// Promotion can validate run.cloud before writing its report. Preserve teardown even if either
+			// operation throws instead of returning a structured failed report.
+			await drainRuncloudBackgroundWork();
+		}
 		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona-vm,modal-gvisor`)
 		// runs INSIDE promoteAll before the immutable base is written, and every abort path (version already
 		// published, candidate re-validation failed, artifact failed, unmet requirements) pushes a structured
 		// `{ status: "failed" }` report. So a single `some(failed)` is the whole exit contract — re-deriving
 		// `unmet` here would mislabel an early abort (e.g. "version already exists") as a provider-credentials
 		// failure, since the early `reports` carry no provider "ok" entries.
-		await drainRuncloudBackgroundWork();
 		process.exit(promoted.some((r) => r.status === "failed") ? 1 : 0);
 	}
 
@@ -285,20 +291,22 @@ if (import.meta.main) {
 		...(run.value && run.value.checks.length > 0 ? { checks: run.value.checks } : {}),
 	}));
 
-	writeReport({
-		candidate: {
-			image: pinnedBaseImage,
-			e2bTemplate: config.e2bTemplateCandidate,
-			daytonaSnapshot: config.daytonaSnapshotCandidate,
-			daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
-			novitaTemplate: config.novitaTemplateCandidate,
-		},
-		reports,
-	});
-
-	// Candidate validation can exercise run.cloud. Its retained failed-create cleanup must finish before
-	// either explicit failure exit below terminates the process.
-	await drainRuncloudBackgroundWork();
+	try {
+		writeReport({
+			candidate: {
+				image: pinnedBaseImage,
+				e2bTemplate: config.e2bTemplateCandidate,
+				daytonaSnapshot: config.daytonaSnapshotCandidate,
+				daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
+				novitaTemplate: config.novitaTemplateCandidate,
+			},
+			reports,
+		});
+	} finally {
+		// Candidate validation can exercise run.cloud. Its retained failed-create cleanup must finish even
+		// when report output throws, and before either explicit failure exit below terminates the process.
+		await drainRuncloudBackgroundWork();
+	}
 
 	if (anyFailed(runs)) process.exit(1);
 
