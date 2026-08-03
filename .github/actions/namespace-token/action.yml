@@ -14,7 +14,8 @@ description: >-
   wildcard action is rejected outright ("not allowed in revokable tokens"), and each wrong verb name
   (e.g. "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error. All of
   this requires a trust relationship (this repo -> the Namespace tenant) registered once on the
-  Namespace side.
+  Namespace side. The token expires after four hours: one hour beyond the caller's 180-minute cell
+  budget, and explicit here rather than inherited from the CLI's longer default.
 
   FAILURE POSTURE is deliberately left to the caller, as a property of the action AS A WHOLE: put
   `continue-on-error: true` on the `uses:` step, and any failure inside here degrades to "no token" —
@@ -67,6 +68,7 @@ runs:
       run: |
         nsc token create \
           --name "$NSC_TOKEN_NAME" \
+          --expires_in 4h \
           --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
           --token_file "$NSC_TOKEN_PATH"
         echo "token-file=$NSC_TOKEN_PATH" >> "$GITHUB_OUTPUT"

@@ -92,8 +92,14 @@ export function matrixSuiteCaller(doc: unknown, label: string): SuiteMatrixCalle
 			throw new Error(`${label}: job "${jobId}" calls ${uses} without a string "replicates" input`);
 		}
 		// Optional by design: absent IS the matrix lane's posture (no provider is required, so a
-		// credential-less cell skips). A non-string present value is malformed YAML, so drop it to
-		// undefined and let the smoke-side check report the miss rather than throwing here.
+		// credential-less cell skips). A present non-string value is malformed YAML and must not read
+		// as absent: GitHub coerces it into a real workflow input, bypassing the matrix lane's absence
+		// assertion below.
+		if ("require_providers" in withMap && typeof withMap.require_providers !== "string") {
+			throw new Error(
+				`${label}: job "${jobId}" calls ${uses} with a non-string "require_providers" input`,
+			);
+		}
 		const requireProvidersInput =
 			typeof withMap.require_providers === "string" ? withMap.require_providers : undefined;
 		const name = typeof job.name === "string" ? job.name : "";

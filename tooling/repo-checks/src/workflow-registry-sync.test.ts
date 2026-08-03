@@ -538,6 +538,26 @@ describe("checkSuiteMatrixCaller", () => {
 			'without a string "suite" input',
 		);
 	});
+
+	test("matrixSuiteCaller rejects a present non-string require_providers input", () => {
+		const yaml = Bun.YAML.stringify({
+			jobs: {
+				bad: {
+					name: EXPECTED_SUITE_NAME_EXPR,
+					uses: "./.github/workflows/bench-suite.yml",
+					with: {
+						suite: EXPECTED_SUITE_NAME_EXPR,
+						replicates: EXPECTED_REPLICATES_INPUT_EXPR,
+						require_providers: true,
+					},
+					strategy: { matrix: { suite: EXPECTED_SUITE_MATRIX_EXPR } },
+				},
+			},
+		});
+		expect(() => matrixSuiteCaller(Bun.YAML.parse(yaml), "synthetic.yml")).toThrow(
+			'with a non-string "require_providers" input',
+		);
+	});
 });
 
 describe("checkSuiteMatrixCaller on the smoke lane", () => {

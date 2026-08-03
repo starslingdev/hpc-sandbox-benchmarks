@@ -200,6 +200,17 @@ describe("Vercel CLI authentication", () => {
 	});
 });
 
+describe("Namespace token authentication", () => {
+	test("the composite explicitly bounds each minted token to the benchmark cell window", () => {
+		const action = readFileSync(
+			join(findRepoRoot(), ".github/actions/namespace-token/action.yml"),
+			"utf8",
+		);
+		expect(action).toContain("--expires_in 4h");
+		expect(action).not.toContain("--no_expiry");
+	});
+});
+
 describe("customSecretsIn", () => {
 	test("ignores GITHUB_TOKEN and extracts provider secrets in dot and bracket notation", () => {
 		expect(
