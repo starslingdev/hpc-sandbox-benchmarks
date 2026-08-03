@@ -216,6 +216,16 @@ describe("Namespace token authentication", () => {
 	});
 });
 
+describe("run.cloud credential scoping", () => {
+	test("the promote step exposes the key only when the resolved plan contains runcloud", () => {
+		const workflow = readFileSync(join(findRepoRoot(), WORKFLOWS_DIR, TOOLCHAIN_WORKFLOW), "utf8");
+		expect(workflow).toContain(
+			`RUN_CLOUD_API_KEY: \${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}`,
+		);
+		expect(workflow).not.toContain(`RUN_CLOUD_API_KEY: \${{ secrets.RUN_CLOUD_API_KEY }}`);
+	});
+});
+
 describe("customSecretsIn", () => {
 	test("ignores GITHUB_TOKEN and extracts provider secrets in dot and bracket notation", () => {
 		expect(
