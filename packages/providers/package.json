@@ -18,6 +18,7 @@
     "@computesdk/modal": "catalog:computesdk",
     "@computesdk/namespace": "catalog:computesdk",
     "@computesdk/provider": "catalog:computesdk",
+    "@run-cloud/sdk": "catalog:computesdk",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
     "computesdk": "catalog:computesdk",

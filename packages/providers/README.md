@@ -13,7 +13,8 @@ adapters over raw vendor SDKs only where required.
 **What lives here:** provider factories and focused compatibility adapters. Most `@computesdk/*`
 packages adapt their vendor SDK directly; Microsandbox uses a local `defineProvider` implementation.
 Vercel's local provider starts from ComputeSDK's upstream adapter but uses pinned `@vercel/sandbox`
-v2, because the published wrapper still pins a pre-VCR SDK. The package also
+v2, because the published wrapper still pins a pre-VCR SDK. run.cloud also uses a local
+`defineProvider` adapter over `@run-cloud/sdk`, for which no `@computesdk/*` wrapper is published. The package also
 owns benchmark create-time policy — the pinned `TARGET_SPEC` and toolchain image. The assembled
 `providers` registry joins the schema `PROVIDERS` metadata with the adapter
 map by id; both are keyed by `ProviderId`, so a one-sided provider is a compile error rather than a

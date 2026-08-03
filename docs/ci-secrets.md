@@ -218,6 +218,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BL_API_KEY` | bench matrix/smoke only |
    | `BL_WORKSPACE` | bench matrix/smoke only |
    | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
+   | `RUN_CLOUD_API_KEY` | optional for toolchain validation; bench matrix/smoke |
    | `VERCEL_TOKEN` | Bootstrap only: Vercel CLI pulls a short-lived project OIDC token |
    | `VERCEL_ORG_ID` | Links the Vercel CLI to the repository's organization (`team_*`) |
    | `VERCEL_PROJECT_ID` | Links the Vercel CLI to the repository's project (`prj_*`) |
@@ -310,6 +311,8 @@ Copy [`.env.example`](../.env.example) to a gitignored `.env` and fill in the pr
 commit them; never paste them into issues or pull requests. See [SECURITY.md](../SECURITY.md).
 
 `microsandbox-local` uses `MICROSANDBOX_LOCAL_BENCH=1` as an explicit capability opt-in rather than a credential. The runner must provide KVM on Linux or Hypervisor.framework on macOS. `microsandbox-cloud` needs `MSB_API_KEY`; `MSB_API_URL` is an optional endpoint override. The cloud adapter keeps the key in the SDK control-plane backend and never adds it to sandbox metadata, create-time environment variables, or guest commands.
+
+run.cloud needs `RUN_CLOUD_API_KEY`. Its SDK reads the key directly from the benchmark process; the adapter never adds it to sandbox metadata, create-time environment variables, or guest commands.
 
 The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
 credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.

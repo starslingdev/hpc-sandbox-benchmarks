@@ -43,6 +43,7 @@ describe("forEachProviderWithCreds `only`", () => {
 			"novita",
 			"namespace",
 			"vercel",
+			"runcloud",
 		]);
 	});
 

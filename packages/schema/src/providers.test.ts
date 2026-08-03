@@ -32,6 +32,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"modal-vm",
 			"namespace",
 			"novita",
+			"runcloud",
 			"vercel",
 		]);
 	});

@@ -67,6 +67,12 @@ describe("candidateCreateOptions", () => {
 		});
 	});
 
+	it("points run.cloud directly at the candidate image", () => {
+		expect(candidateCreateOptions("runcloud", refs)).toEqual({
+			image: "ghcr.io/o/tc:v1-candidate",
+		});
+	});
+
 	it("points Vercel at the digest-pinned VCR candidate image", () => {
 		expect(candidateCreateOptions("vercel", refs)).toEqual({
 			templateId: refs.vercelImageCandidate,
@@ -100,6 +106,7 @@ describe("baseImageUse", () => {
 			"modal-gvisor",
 			"modal-vm",
 			"namespace",
+			"runcloud",
 		]);
 	});
 

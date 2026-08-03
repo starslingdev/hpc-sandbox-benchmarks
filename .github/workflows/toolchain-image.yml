@@ -520,6 +520,8 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
           # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          # run.cloud boots the candidate OCI image directly; the key is needed only for its validate boot.
+          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
           # Namespace pulls the candidate image directly (no bake artifact) — its validate boot reads
           # this OIDC-federated token file (see the Namespace CLI steps above). Not a stored secret:
           # empty unless THIS is the namespace cell AND the mint succeeded, which the harness reads as
@@ -717,6 +719,7 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          RUN_CLOUD_API_KEY: ${{ secrets.RUN_CLOUD_API_KEY }}
           # Namespace's re-validation boot reads this OIDC-federated token file (see the Namespace CLI
           # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
           # skips namespace's re-validation without failing the promote (namespace is not in --require).

@@ -58,6 +58,9 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	vercel: async (_image, log) => {
 		log("vercel boots the candidate image mirrored to VCR — no separate sandbox artifact to bake");
 	},
+	runcloud: async (_image, log) => {
+		log("runcloud boots the candidate image directly — no candidate artifact to bake");
+	},
 };
 
 /**

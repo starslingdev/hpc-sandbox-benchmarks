@@ -104,9 +104,8 @@ export const DEFAULT_TRANSPORT: ProviderTransport = Object.freeze({
  * not `>`: when `syncCapMs` equals a provider's hard limit (E2B's `syncCapMs` *is* its SDK
  * `defaultProcessConnectionTimeout`), a step budgeted at exactly the cap could run right up to it and
  * drop the connection with no margin — so a budget that *reaches* the cap detaches, not just one that
- * exceeds it. `streaming` is modeled on the capability but does not tip this decision today: no shipped
- * `@computesdk/*` adapter delivers incremental output, so there is no streaming transport to prefer —
- * when one lands, it is selected here.
+ * exceeds it. `streaming` is modeled on the capability but does not tip this decision today: run.cloud
+ * delivers incremental output, while the selector still uses the same conservative synchronous cap.
  */
 export function selectTransport(transport: ProviderTransport, timeoutMs: number): TransportKind {
 	const couldExceedSyncCap = transport.syncCapMs !== null && timeoutMs >= transport.syncCapMs;
