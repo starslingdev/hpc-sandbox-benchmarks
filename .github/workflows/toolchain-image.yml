@@ -454,16 +454,16 @@ jobs:
       # the fleet runs — Vercel injects its own session agent at boot, so there is no provider delta to
       # bake in and no separate GHCR image to keep in step.
       #
-      # SOURCE_REF comes from the plan, not from `config` or the build job, and that is load-bearing: on
-      # a backfill it names the PUBLISHED version, while the mutable candidate tag may already have moved
-      # on toward the next one. Mirroring the candidate there would verify one image and ship another,
-      # and nothing downstream would catch it — promote's drift check exempts vercel precisely because
-      # its version artifact is a retag of whatever was mirrored here. See releaseBaseTag().
+      # SOURCE_REF follows the same resolved source as every bake cell. A full build uses that job's
+      # immutable output digest; a build-skipped backfill uses the plan's PUBLISHED version, while the
+      # mutable candidate may already have moved toward the next release. Mirroring any other ref would
+      # verify one image and ship another, and promote cannot catch it because Vercel's version artifact
+      # is a retag of whatever was mirrored here. See releaseBaseTag().
       - name: Mirror the toolchain base into VCR
         if: matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success'
         id: vercel-vcr
         env:
-          SOURCE_REF: ${{ needs.plan.outputs.image-source }}
+          SOURCE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           # `vercel vcr push` is a CLI call, so it needs CLI credentials of its own — the vercel-auth
           # composite's docker login covers the REGISTRY, not the CLI, and its `--token` lives in that
           # composite's step env, which does not carry across steps. Without this the push dies with

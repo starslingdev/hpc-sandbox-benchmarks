@@ -40,7 +40,7 @@ const oneJob = (id: string, job: object, root: object = {}) => ({ ...root, jobs:
 const SCOPED_RUNCLOUD_KEY =
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}";
-const PLANNED_BASE_IMAGE =
+const SELECTED_BASE_IMAGE =
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 	"${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}";
 // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansion under test
@@ -252,10 +252,17 @@ describe("run.cloud credential scoping", () => {
 });
 
 describe("toolchain bake base-image selection", () => {
-	test("threads the release plan's source through every bake cell", () => {
+	test("threads one immutable source through every bake cell and the Vercel mirror", () => {
 		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
 		const env = stepEnv(doc, "bake", "Bake + verify candidate", TOOLCHAIN_WORKFLOW);
-		expect(env.BASE_IMAGE_REF).toBe(PLANNED_BASE_IMAGE);
+		expect(env.BASE_IMAGE_REF).toBe(SELECTED_BASE_IMAGE);
+		const mirrorEnv = stepEnv(
+			doc,
+			"bake",
+			"Mirror the toolchain base into VCR",
+			TOOLCHAIN_WORKFLOW,
+		);
+		expect(mirrorEnv.SOURCE_REF).toBe(SELECTED_BASE_IMAGE);
 		const step = stepByName(
 			workflowJob(doc, "bake", TOOLCHAIN_WORKFLOW),
 			"Bake + verify candidate",
