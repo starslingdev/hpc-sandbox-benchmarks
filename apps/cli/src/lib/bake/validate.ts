@@ -11,6 +11,8 @@ export interface CandidateRefs {
 	daytonaContainerSnapshotCandidate: string;
 	/** Candidate template on Novita's E2B-compatible control plane (its own namespace). */
 	novitaTemplateCandidate: string;
+	/** Candidate Blueprint on Runloop's control plane. */
+	runloopBlueprintCandidate: string;
 	toolchainImageCandidate: string;
 	/** Candidate image mirrored into the linked project's Vercel Container Registry. */
 	vercelImageCandidate: string;
@@ -25,10 +27,10 @@ export interface CandidateRefs {
  * needs, kept beside {@link candidateCreateOptions} because it is the same per-provider knowledge and
  * must stay exhaustive over `ProviderId` in the same way.
  *
- *   • `bakes` — builds its own artifact FROM the base (an e2b/novita template, a daytona snapshot), so
+ *   • `bakes` — builds its own artifact FROM the base (a template, snapshot, or Runloop Blueprint), so
  *     the artifact's bytes are decided at bake time by whichever base it was handed.
  *   • `boots` — no artifact of its own; it boots the base image by ref at create time.
- *   • `none`  — never references the base at all: blaxel and runloop boot vendor stock images, and
+ *   • `none`  — never references the base at all: blaxel boots a vendor stock image, and
  *     vercel boots its own VCR mirror (staged from the base by the build phase, not by this ref).
  */
 export type BaseImageUse = "bakes" | "boots" | "none";
@@ -40,6 +42,7 @@ export function baseImageUse(id: ProviderId): BaseImageUse {
 		case "daytona-vm":
 		case "daytona-container":
 		case "novita":
+		case "runloop":
 			return "bakes";
 		case "modal-gvisor":
 		case "modal-vm":
@@ -48,7 +51,6 @@ export function baseImageUse(id: ProviderId): BaseImageUse {
 		case "namespace":
 			return "boots";
 		case "blaxel":
-		case "runloop":
 		case "vercel":
 			return "none";
 	}
@@ -91,8 +93,7 @@ export function candidateCreateOptions(
 			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.
 			return { snapshotId: refs.novitaTemplateCandidate };
 		case "runloop":
-			// Stock Devbox image — no candidate artifact to point at.
-			return {};
+			return { blueprint_name: refs.runloopBlueprintCandidate };
 		case "namespace":
 			// No template/snapshot system — points create() at the candidate image directly, same as modal.
 			return { image: refs.toolchainImageCandidate };

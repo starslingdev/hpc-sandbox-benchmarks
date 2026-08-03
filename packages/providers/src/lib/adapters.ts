@@ -238,12 +238,13 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: { snapshotId: config.novitaTemplate },
 	},
 	runloop: {
-		// Runloop's custom Devbox size can express the full target, including the disk gate. It boots the
-		// stock image, so the harness's pinned fallback setup installs the same runtime and PTS versions
-		// before collecting results. The API key stays in the factory's RUNLOOP_API_KEY fallback and is
-		// never included in provider options that can reach the guest.
+		// Boot the immutable version-scoped Blueprint by name. Runloop resolves that name to its latest
+		// successful build; the release lane owns creation from the shared toolchain image. Per-run launch
+		// parameters retain the benchmark's target sizing and keep-alive override. The API key stays in
+		// the factory's RUNLOOP_API_KEY fallback and never enters guest-visible create options.
 		createCompute: runloopCompute,
 		createOptions: {
+			blueprint_name: config.runloopBlueprint,
 			launch_parameters: {
 				resource_size_request: "CUSTOM_SIZE",
 				custom_cpu_cores: TARGET_SPEC.vcpus,

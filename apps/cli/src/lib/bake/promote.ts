@@ -43,6 +43,7 @@ import {
 	resolveImageDigestRef,
 } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
+import { bakeRunloopBlueprint } from "./runloop.ts";
 import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
 import { baseImageUse } from "./validate.ts";
@@ -163,7 +164,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	//     would verify one image and publish an artifact built from another. Require that identity when
 	//     such a provider is in scope. The rest don't bake from the base at all (vercel's version artifact
 	//     is a retag of the exact candidate step 2 just booted; modal/namespace/microsandbox boot the
-	//     published base directly; runloop boots its stock Devbox), so a drifted candidate tag is simply
+	//     published base directly), so a drifted candidate tag is simply
 	//     irrelevant to them.
 	const bakesFromBase = (only ?? PROVIDERS.map((p) => p.id)).filter(
 		(id) => baseImageUse(id) === "bakes",
@@ -190,6 +191,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
+		runloopBlueprintCandidate: config.runloopBlueprintCandidate,
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,
@@ -256,7 +258,9 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 					);
 					break;
 				case "runloop":
-					log("    runloop boots the stock Devbox image — nothing to promote");
+					await bakeRunloopBlueprint(config.runloopBlueprintVersion, pinnedBaseImage, (m) =>
+						log(`    ${m}`),
+					);
 					break;
 				case "namespace":
 					log("    namespace pulls the published version image — nothing to build");

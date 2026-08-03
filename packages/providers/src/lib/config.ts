@@ -29,6 +29,7 @@ const envSchema = type({
 	"DAYTONA_CONTAINER_SNAPSHOT?": "string >= 1",
 	"NOVITA_API_KEY?": "string >= 1",
 	"NOVITA_TEMPLATE?": "string >= 1",
+	"RUNLOOP_BLUEPRINT?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
 	"MSB_API_KEY?": "string >= 1",
 	"VERCEL_CANDIDATE_IMAGE?": "string >= 1",
@@ -49,6 +50,7 @@ const ENV_KEYS = [
 	"DAYTONA_CONTAINER_SNAPSHOT",
 	"NOVITA_API_KEY",
 	"NOVITA_TEMPLATE",
+	"RUNLOOP_BLUEPRINT",
 	"MSB_API_URL",
 	"MSB_API_KEY",
 	"VERCEL_CANDIDATE_IMAGE",
@@ -125,6 +127,11 @@ const daytonaContainerSnapshotCandidate = `${daytonaContainerSnapshotDefault}${C
 // recomputed, so a change to the e2b naming formula can't silently break the shared-name invariant.
 const novitaTemplateVersion = e2bTemplateVersion;
 const novitaTemplateCandidate = e2bTemplateCandidate;
+// Runloop Blueprints live in their own provider namespace, so they can share the canonical
+// version-scoped toolchain name while remaining independent from e2b/Novita templates. Reusing the
+// same candidate suffix means every provider artifact advances together when TOOLCHAIN_VERSION bumps.
+const runloopBlueprintVersion = e2bTemplateVersion;
+const runloopBlueprintCandidate = e2bTemplateCandidate;
 // VCR refs are rooted at a human-readable Vercel namespace resolved from the environment, defaulting
 // to this repository's own team/project (schema-owned, so the build pins and the runtime agree). The
 // workflow overrides the candidate tag with the immutable fully-qualified digest after mirroring the
@@ -194,6 +201,13 @@ export const config = {
 	novita: {
 		apiKey: env.NOVITA_API_KEY,
 	} satisfies NovitaConfig,
+	/** The Runloop Blueprint runtime boots by name. `RUNLOOP_BLUEPRINT` is a local/CI validation
+	 * override; ordinary benchmark runs use the immutable version-scoped public Blueprint. */
+	runloopBlueprint: env.RUNLOOP_BLUEPRINT ?? runloopBlueprintVersion,
+	/** Public (version-scoped) Runloop Blueprint name; the promote target. */
+	runloopBlueprintVersion,
+	/** Mutable candidate Runloop Blueprint name the bake creates while iterating. */
+	runloopBlueprintCandidate,
 	/** Microsandbox Cloud connection. The provider gate requires the key before construction, while
 	 * the URL stays optional so the SDK can use its production default. */
 	microsandboxCloud: {

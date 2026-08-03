@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 // The stock wrapper factory, imported so the novita test can prove the connection methods were
 // actually REPLACED (identity inequality against an unpatched instance's methods table).
 import { e2b } from "@computesdk/e2b";
-import { PROVIDERS, TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { PROVIDERS, TARGET_SPEC, TOOLCHAIN_IMAGE_NAME } from "@sandbox-benchmarks/schema";
 import {
 	config,
 	microsandboxCloudCompute,
@@ -76,6 +76,7 @@ describe("@sandbox-benchmarks/providers", () => {
 		expect(compute?.name).toBe("runloop");
 		expect(compute?.snapshot).toBeDefined();
 		expect(adapter?.createOptions).toEqual({
+			blueprint_name: config.runloopBlueprintVersion,
 			launch_parameters: {
 				resource_size_request: "CUSTOM_SIZE",
 				custom_cpu_cores: TARGET_SPEC.vcpus,
@@ -84,6 +85,11 @@ describe("@sandbox-benchmarks/providers", () => {
 				keep_alive_time_seconds: 3 * 60 * 60,
 			},
 		});
+		expect(config.runloopBlueprint).toBe(config.runloopBlueprintVersion);
+		expect(config.runloopBlueprintVersion).toBe(
+			`${TOOLCHAIN_IMAGE_NAME}-${config.toolchainVersion}`,
+		);
+		expect(config.runloopBlueprintCandidate).toBe(`${config.runloopBlueprintVersion}-candidate`);
 		// The credential belongs only to the SDK control plane, never guest-visible create options.
 		expect(JSON.stringify(adapter?.createOptions)).not.toContain("RUNLOOP_API_KEY");
 	});

@@ -493,7 +493,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		isolation: {
 			technology: "microVM",
 			notes:
-				"Runloop Devboxes are isolated, ephemeral virtual machines. This adapter launches the stock Devbox image at the repository's custom target size; the harness installs its pinned fallback toolchain before benchmarking.",
+				"Runloop Devboxes are isolated, ephemeral virtual machines. This adapter boots a version-scoped Blueprint built from the shared toolchain image and retains per-run custom sizing.",
 		},
 		pricing: {
 			model: "per_vcpu_hour",
@@ -509,7 +509,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		maturity: {
 			status: "beta",
 			notes:
-				"Official ComputeSDK adapter with custom CPU, memory, and disk sizing; opt-in until a committed benchmark run validates the integration.",
+				"Official ComputeSDK adapter with a released toolchain Blueprint plus custom CPU, memory, and disk sizing; opt-in until a committed benchmark run validates the integration.",
 		},
 		// CUSTOM_SIZE exposes independent CPU, memory, and disk fields and can express 4 / 8 / 40 exactly.
 		specPinning: "settable",

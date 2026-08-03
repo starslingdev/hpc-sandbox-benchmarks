@@ -9,6 +9,7 @@ const refs: CandidateRefs = {
 	daytonaContainerSnapshotCandidate: "snap-v1-container-candidate",
 	// Distinct from the e2b value so the novita case fails if it ever reads the e2b field.
 	novitaTemplateCandidate: "tc-v1-novita-candidate",
+	runloopBlueprintCandidate: "tc-v1-runloop-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
 	vercelImageCandidate: "sandbox-benchmarks-toolchain-vercel:v1-candidate",
 	daytonaVmTarget: "us-west-2",
@@ -43,6 +44,12 @@ describe("candidateCreateOptions", () => {
 	it("points novita at its candidate template via snapshotId (e2b mapping, Novita's control plane)", () => {
 		expect(candidateCreateOptions("novita", refs)).toEqual({
 			snapshotId: "tc-v1-novita-candidate",
+		});
+	});
+
+	it("points Runloop at its candidate Blueprint by name", () => {
+		expect(candidateCreateOptions("runloop", refs)).toEqual({
+			blueprint_name: "tc-v1-runloop-candidate",
 		});
 	});
 
@@ -89,7 +96,7 @@ describe("candidateCreateOptions", () => {
 describe("baseImageUse", () => {
 	it("marks the providers that bake their own artifact from the base", () => {
 		const bakes = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "bakes");
-		expect(bakes).toEqual(["e2b", "daytona-vm", "daytona-container", "novita"]);
+		expect(bakes).toEqual(["e2b", "daytona-vm", "daytona-container", "novita", "runloop"]);
 	});
 
 	it("marks the providers that boot the base image directly", () => {
@@ -106,7 +113,7 @@ describe("baseImageUse", () => {
 	// Providers that can validate without the candidate base existing at all.
 	it("marks the providers that never reference the toolchain base", () => {
 		const none = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "none");
-		expect(none).toEqual(["blaxel", "runloop", "vercel"]);
+		expect(none).toEqual(["blaxel", "vercel"]);
 	});
 
 	// Anything that reads the base ref in candidateCreateOptions must not be classified "none", or the

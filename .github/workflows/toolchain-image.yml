@@ -35,11 +35,11 @@ name: Toolchain image
 #              quietly hand it a different `:vN`).
 #   promote    off ⇒ the publish job is skipped: bake + verify, look at the report, promote later.
 #
-# The canonical use is adding a provider to a version everyone else already runs — e.g. Vercel on v7:
-#   1. providers=vercel, build=skip, promote=false  → bake + verify against the published base, nothing public
-#   2. providers=vercel, build=skip, promote=true   → publish just the Vercel v7 artifact
-# Neither dispatch runs a build job: there is nothing per-provider to stage, because every provider
-# derives its artifact from the one shared base at bake/promote time.
+# The canonical use is adding a provider to a version everyone else already runs — e.g. Runloop on v7:
+#   1. providers=runloop, build=skip, promote=false → bake + verify a candidate Blueprint, nothing public
+#   2. providers=runloop, build=skip, promote=true  → publish just the Runloop v7 Blueprint
+# Neither dispatch runs the shared build job: Runloop derives its candidate/version Blueprints from
+# the one already-published base during bake/promote.
 #
 # Cross-cutting GitHub Actions mechanics live in .github/actions/* composites (setup, ghcr login,
 # input validation, package-visibility guard, summaries); provider bake/verify/promote logic lives in
@@ -497,9 +497,8 @@ jobs:
         # it skips, exactly as the previous monolithic lane did.
         #
         # Each cell is handed ONLY its own provider's credentials. The cell already restricts execution
-        # to one provider (`--provider`), so injecting all five providers' secrets into all five cells
-        # would hand a compromised dependency in any one cell (a provider SDK, the bun toolchain) every
-        # other provider's key for no benefit — a 5× blast radius across a parallel fan-out. Scoping
+        # to one provider (`--provider`), so injecting every provider secret into every cell would hand
+        # a compromised dependency in any one cell every other provider's key for no benefit. Scoping
         # them here is what makes the fan-out least-privilege rather than just concurrent.
         env:
           PROVIDER: ${{ matrix.provider }}
@@ -520,6 +519,9 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
           # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          # Runloop builds and validates a candidate Blueprint. Best-effort in an unscoped release;
+          # required (and therefore fail-closed on a missing key/build failure) when explicitly scoped.
+          RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
           # Namespace pulls the candidate image directly (no bake artifact) — its validate boot reads
           # this OIDC-federated token file (see the Namespace CLI steps above). Not a stored secret:
           # empty unless THIS is the namespace cell AND the mint succeeded, which the harness reads as
@@ -717,6 +719,9 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+          # The serial transaction re-validates the candidate Blueprint, then builds the version-named
+          # Blueprint from the same pinned base. The key remains in the SDK control-plane client.
+          RUNLOOP_API_KEY: ${{ secrets.RUNLOOP_API_KEY }}
           # Namespace's re-validation boot reads this OIDC-federated token file (see the Namespace CLI
           # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
           # skips namespace's re-validation without failing the promote (namespace is not in --require).

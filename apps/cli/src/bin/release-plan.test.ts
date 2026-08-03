@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { config } from "@sandbox-benchmarks/providers";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import {
 	buildReleasePlan,
@@ -102,7 +103,13 @@ describe("buildReleasePlan matrix", () => {
 		expect(() => buildReleasePlan({ ...base, providers: "e2b,blaxel" })).toThrow(
 			/BL_API_KEY|cannot ship/,
 		);
-		expect(() => buildReleasePlan({ ...base, providers: "runloop" })).toThrow(/runloop/);
+	});
+
+	test("accepts a scoped Runloop release and makes it required", () => {
+		const plan = buildReleasePlan({ ...base, providers: "runloop" });
+		expect(plan.matrix.include).toEqual([{ provider: "runloop", required: true }]);
+		expect(plan.required).toEqual(["runloop"]);
+		expect(plan.providers[0]?.artifact).toBe(config.runloopBlueprintCandidate);
 	});
 
 	// Unscoped, the same providers are simply skipped — they are not in the required set, so a missing
@@ -113,7 +120,7 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("runloop");
 		expect(plan.required).not.toContain("blaxel");
 		expect(plan.required).not.toContain("runloop");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel", "runloop"]);
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the

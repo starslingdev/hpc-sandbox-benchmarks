@@ -137,11 +137,10 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    | `build` | `full` rebuilds the base (the default). `skip` skips the build job outright and derives everything from what the registry already holds. A backfill wants `skip`: it attaches to the **published** base, so the new provider gets exactly the bytes the fleet already runs — and since the toolchain build is not reproducible, a rebuild would quietly hand it a different `:vN`. |
    | `promote` | Uncheck to bake + verify only; the publish job is skipped. |
 
-   A backfill needs no build phase at all, because **nothing is staged per provider**: every provider
-   derives its artifact from the one shared toolchain base at bake/promote time. That includes Vercel —
-   its platform can only boot images from VCR, so the bake cell mirrors the shared base across rather
-   than pulling from GHCR, but the bytes are the same base image every other provider runs (Vercel
-   injects its own session agent at boot, so there is no provider delta to bake in).
+   A backfill needs no shared build phase: every provider derives its candidate or version artifact
+   from the one already-published toolchain base during bake/promote. Runloop builds a named Blueprint
+   whose Dockerfile starts from that digest. Vercel mirrors the same base into VCR because its platform
+   cannot pull GHCR directly (and injects its own session agent at boot, so there is no provider delta).
 
    `force_republish` is rejected together with a `providers` list — they are opposite operations, and
    silently picking one would do something the operator did not ask for. A scoped promote also refuses
@@ -149,26 +148,25 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    first. Two more refusals keep a scoped release honest, both fail-fast in the plan or before the
    public base moves:
 
-   - **`providers: blaxel` and `providers: runloop` are refused.** Both boot vendor stock images rather
-     than the toolchain, so the release lane has no artifact to publish for either one. Blaxel's
-     `BL_API_KEY`/`BL_WORKSPACE` and Runloop's `RUNLOOP_API_KEY` are bench-lane only (see the table
-     above). An *unscoped* release simply skips them.
+   - **`providers: blaxel` is refused.** It still boots a vendor stock image, so the release lane has
+     no artifact to publish and carries no `BL_API_KEY`/`BL_WORKSPACE`. An *unscoped* release simply
+     skips it. Runloop is scopable: its protected `RUNLOOP_API_KEY` builds and validates a candidate
+     Blueprint, and a scoped Runloop dispatch is required/fail-closed.
    - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
-     *from* the base (e2b, daytona, novita). Those providers' candidates are verified but their version
+     *from* the base (e2b, daytona, novita, runloop). Those providers' candidates are verified but their version
      artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
      bump `TOOLCHAIN_VERSION` and cut a full release. Providers that don't bake from the base (vercel,
      modal, namespace, microsandbox) are unaffected: their version artifact is a retag of the exact
-     candidate that was just booted. Runloop is also unaffected by candidate drift, but has no release
-     artifact and therefore cannot be scoped into this lane.
+     candidate that was just booted.
 
-   The Vercel-on-v7 flow, as an example — two dispatches, neither of which touches another provider,
+   The Runloop-on-v7 flow, as an example — two dispatches, neither of which touches another provider,
    and neither of which runs a build job:
 
-   1. **Actions → Toolchain image → Run workflow** with `providers=vercel`, `build=skip`, `promote`
-      unchecked. Mirrors the published GHCR `:v7` base into VCR as the Vercel candidate, boots it and
+   1. **Actions → Toolchain image → Run workflow** with `providers=runloop`, `build=skip`, `promote`
+      unchecked. Builds the candidate Blueprint from the published GHCR `:v7` digest, boots it, and
       runs the smoke spec. Nothing public moves.
-   2. Same dispatch with `promote` checked. Re-validates the VCR candidate and publishes it as the
-      Vercel `v7` image. The GHCR base `:v7` is never rewritten.
+   2. Same dispatch with `promote` checked. Re-validates the candidate Blueprint and builds the
+      version-named Blueprint from the pinned base. The GHCR base `:v7` is never rewritten.
 
    The release pulls exactly **one** GHCR package (`sandbox-benchmarks-toolchain`), anonymously, so the
    one-time Public bootstrap it needs has already been done. Adding a provider never adds a package —
@@ -217,7 +215,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `MODAL_TOKEN_ID` | toolchain bake, bench matrix/smoke |
    | `MODAL_TOKEN_SECRET` | toolchain bake, bench matrix/smoke |
    | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
-   | `RUNLOOP_API_KEY` | bench matrix/smoke only |
+   | `RUNLOOP_API_KEY` | protected toolchain Blueprint bake/promote, bench matrix/smoke |
    | `BL_API_KEY` | bench matrix/smoke only |
    | `BL_WORKSPACE` | bench matrix/smoke only |
    | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
@@ -314,7 +312,12 @@ commit them; never paste them into issues or pull requests. See [SECURITY.md](..
 
 `microsandbox-local` uses `MICROSANDBOX_LOCAL_BENCH=1` as an explicit capability opt-in rather than a credential. The runner must provide KVM on Linux or Hypervisor.framework on macOS. `microsandbox-cloud` needs `MSB_API_KEY`; `MSB_API_URL` is an optional endpoint override. The cloud adapter keeps the key in the SDK control-plane backend and never adds it to sandbox metadata, create-time environment variables, or guest commands.
 
-Runloop needs `RUNLOOP_API_KEY`. The adapter keeps it in the SDK control-plane client and launches a custom-sized stock Devbox; the harness installs its pinned fallback toolchain inside the guest before benchmarking.
+Runloop needs `RUNLOOP_API_KEY`. The release lane keeps it in the SDK control-plane client while
+building versioned Blueprints from digest-pinned public toolchain images; the runtime adapter boots the
+released Blueprint by name. The credential is never copied into Blueprint parameters, Devbox create
+options, or the guest. `RUNLOOP_BLUEPRINT` is an optional local runtime override; leave it unset to use
+the canonical version-scoped Blueprint. Runloop disk snapshots remain temporary lifecycle-benchmark
+measurements; they are not release artifacts and are never selected for ordinary benchmark startup.
 
 The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
 credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.
