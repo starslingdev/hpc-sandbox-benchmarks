@@ -582,8 +582,19 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Dedicated microVM sandboxes booting an arbitrary OCI image; CPU, memory, and writable disk are independently requested at create time.",
 		},
 		pricing: {
-			model: "unknown",
-			notes: "Not yet vetted against a stable published compute rate.",
+			model: "per_vcpu_hour",
+			// Published rates are per physical core-second and per GiB-second
+			// (https://run.cloud/pricing). One physical core = two vCPUs, so the
+			// vCPU-hour rate is half the physical-core-hour rate:
+			//   CPU:  $0.00000492/core-s ÷ 2 × 3600 = $0.008856/vCPU-hr
+			//   mem:  $0.00000083175/GiB-s × 3600 = $0.0029943/GiB-hr
+			// The size is a reserved billing floor; CPU above it bills at the same
+			// rate (burst). Economics here price the reserved TARGET_SPEC floor only.
+			usdPerVcpuHour: 0.008856,
+			usdPerGibHour: 0.0029943,
+			notes:
+				"Published per-second rates (exact): $0.00000492/physical-core-s (1 physical core = 2 vCPUs → $0.00000246/vCPU-s), $0.00000083175/GiB-s. No published disk overage rate.",
+			sourceUrl: "https://run.cloud/pricing",
 		},
 		maturity: {
 			status: "beta",

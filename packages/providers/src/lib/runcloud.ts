@@ -14,6 +14,13 @@ import { Client, RunCloudError } from "@run-cloud/sdk";
 
 const PROVIDER = "runcloud";
 
+/** Create returns as soon as the control plane accepts the sandbox; the OCI pull/boot happens
+ *  asynchronously (`building_image`). The harness expects `create()` to resolve only once commands
+ *  can run, so the adapter polls until `running` (or a terminal failure). */
+const CREATE_READY_POLL_MS = 2_000;
+/** Cold pulls of the ~1.5 GiB toolchain image on a first-use host can take several minutes. */
+const CREATE_READY_TIMEOUT_MS = 20 * 60 * 1000;
+
 let cachedClient: Client | undefined;
 
 function client(): Client {
@@ -25,12 +32,44 @@ function isNotFound(error: unknown): boolean {
 	return error instanceof RunCloudError && error.status === 404;
 }
 
-function mapStatus(state: Sandbox["state"]): SandboxInfo["status"] {
+function mapStatus(state: string): SandboxInfo["status"] {
 	if (state === "running") return "running";
-	if (["paused", "stopped", "destroying", "interrupted", "destroyed"].includes(state)) {
-		return "stopped";
+	// Interrupted / failed are hard errors (not a clean stop); match the official SDK adapter.
+	if (state === "interrupted" || state === "failed") return "error";
+	// Clean stops and transitional boot states (building_image / starting) report as stopped —
+	// create() waits for running before returning, so getInfo rarely sees a transitional state.
+	return "stopped";
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Terminal states that mean boot failed and we should stop waiting. */
+function isTerminalBootFailure(state: string): boolean {
+	return ["failed", "interrupted", "destroyed", "destroying", "stopped"].includes(state);
+}
+
+/**
+ * Poll until the sandbox can accept execs. Returns the freshest record so callers don't keep a
+ * stale `building_image` handle from the original create response.
+ */
+async function waitUntilRunning(sandboxId: string): Promise<Sandbox> {
+	const deadline = Date.now() + CREATE_READY_TIMEOUT_MS;
+	let last: Sandbox | undefined;
+	while (Date.now() < deadline) {
+		last = await client().sandboxes.get(sandboxId);
+		if (last.state === "running") return last;
+		if (isTerminalBootFailure(last.state)) {
+			throw new Error(
+				`run.cloud sandbox ${sandboxId} entered terminal state "${last.state}" while booting`,
+			);
+		}
+		await sleep(CREATE_READY_POLL_MS);
 	}
-	return "error";
+	throw new Error(
+		`run.cloud sandbox ${sandboxId} not running after ${CREATE_READY_TIMEOUT_MS}ms (last state: ${last?.state ?? "unknown"})`,
+	);
 }
 
 function createdAt(value: string | undefined): Date {
@@ -90,7 +129,7 @@ const methods: SandboxMethods<Sandbox, undefined> = {
 		if (options?.snapshotId) {
 			throw new Error("run.cloud snapshots are not supported by this adapter");
 		}
-		const sandbox = await client().sandboxes.create({
+		const created = await client().sandboxes.create({
 			...(options?.templateId || options?.image
 				? { image: options.templateId ?? options.image }
 				: {}),
@@ -104,6 +143,9 @@ const methods: SandboxMethods<Sandbox, undefined> = {
 			...(options?.region ? { region: options.region } : {}),
 			...(options?.name ? { name: options.name } : {}),
 		});
+		// Do not return until the guest can accept commands — cold image pulls leave the sandbox in
+		// `building_image` for minutes, and exec during that window fails with API 4409.
+		const sandbox = await waitUntilRunning(created.id);
 		return { sandbox, sandboxId: sandbox.id };
 	},
 

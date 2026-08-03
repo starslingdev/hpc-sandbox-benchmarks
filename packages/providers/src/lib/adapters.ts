@@ -223,7 +223,9 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	runcloud: {
 		// run.cloud boots the OCI image directly and exposes independent CPU, memory, and writable-disk
 		// knobs. Keep both its lifetime and idle-pause window above the longest 155-minute suite so a
-		// detached benchmark is not paused while the harness is polling its done file.
+		// detached benchmark is not paused while the harness is polling its done file. create() polls
+		// until the sandbox is running, so the toolchain pull lives inside create — same budget as
+		// Microsandbox's cold-pull path.
 		createCompute: runcloudCompute,
 		createOptions: {
 			image: config.toolchainImage,
@@ -233,5 +235,6 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			idlePauseSeconds: RUNCLOUD_MAX_DURATION_SECS,
 			timeoutSeconds: RUNCLOUD_MAX_DURATION_SECS,
 		},
+		createTimeoutMs: 20 * 60 * 1000,
 	},
 };

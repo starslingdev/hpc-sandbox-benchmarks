@@ -119,6 +119,9 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			e2b: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * TARGET_SPEC.memoryGb,
 			"daytona-vm": 0.0504 * TARGET_SPEC.vcpus + 0.0162 * Math.max(0, TARGET_SPEC.memoryGb - 5),
 			novita: 0.03528 * TARGET_SPEC.vcpus + 0.01152 * TARGET_SPEC.memoryGb,
+			// $0.00000492/physical-core-s ÷ 2 × 3600 = $0.008856/vCPU-hr;
+			// $0.00000083175/GiB-s × 3600 = $0.0029943/GiB-hr.
+			runcloud: 0.008856 * TARGET_SPEC.vcpus + 0.0029943 * TARGET_SPEC.memoryGb,
 		};
 		for (const [id, cost] of Object.entries(expected)) {
 			const meta = getProvider(id);
