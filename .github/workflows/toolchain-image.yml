@@ -29,10 +29,10 @@ name: Toolchain image
 #              already-published version and never rewrites the public base or anyone else's artifact.
 #              A scoped dispatch names what it wants, so every provider it names is REQUIRED.
 #   build      `full` rebuilds the base (the default; what a version bump needs). `skip` skips the
-#              build job outright and derives everything from what the registry already holds — which
-#              for a scoped backfill is the PUBLISHED base, so the new provider gets exactly the bytes
-#              the fleet already runs (the toolchain build is not reproducible, so a rebuild would
-#              quietly hand it a different `:vN`).
+#              build job outright and derives everything from what the registry already holds. A
+#              scoped release is a backfill and therefore REQUIRES `skip`: its source is the PUBLISHED
+#              base, so the new provider gets exactly the bytes the fleet already runs (the toolchain
+#              build is not reproducible, so a rebuild would quietly hand it a different `:vN`).
 #   promote    off ⇒ the publish job is skipped: bake + verify, look at the report, promote later.
 #
 # The canonical use is adding a provider to a version everyone else already runs — e.g. Vercel on v7:
@@ -59,7 +59,7 @@ on:
         type: string
         default: ""
       build:
-        description: "Build phase: full (rebuild the base) / skip (reuse what the registry holds)"
+        description: "Build: full (rebuild base) / skip (reuse registry; required when providers is scoped)"
         type: choice
         options: [full, skip]
         default: full
