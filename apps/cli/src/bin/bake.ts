@@ -114,6 +114,30 @@ export function requestedProviders(argv: string[]): ProviderId[] | undefined {
 	return selectProviders(raw);
 }
 
+/**
+ * Optional immutable/shared base ref for the bake phase. CI always supplies the release plan's
+ * resolved source: the just-built candidate digest for a full release, or the published version for
+ * a scoped backfill. Local runs omit it and retain the mutable candidate default.
+ */
+export function requestedBaseImage(argv: string[]): string | undefined {
+	let raw: string | undefined;
+	const eq = argv.find((arg) => arg.startsWith("--base-image="));
+	if (eq) {
+		raw = eq.slice("--base-image=".length);
+	} else {
+		const i = argv.indexOf("--base-image");
+		if (i !== -1) {
+			const next = argv[i + 1];
+			raw = next !== undefined && !next.startsWith("-") ? next : "";
+		}
+	}
+	if (raw === undefined) return undefined;
+	if (raw.trim() === "") {
+		throw new Error("--base-image requires a non-empty image reference");
+	}
+	return raw;
+}
+
 if (import.meta.main) {
 	const log: Log = (m) => console.error(m);
 
@@ -121,8 +145,10 @@ if (import.meta.main) {
 	// provider); on the promote path it scopes the transaction to a backfill. Parsed before any build
 	// or registry call so a typo'd id fails fast (clean message, no stack) before anything is touched.
 	let only: ProviderId[] | undefined;
+	let baseImageRef: string;
 	try {
 		only = requestedProviders(process.argv);
+		baseImageRef = requestedBaseImage(process.argv) ?? config.toolchainImageCandidate;
 	} catch (err) {
 		log(`error: ${err instanceof Error ? err.message : String(err)}`);
 		process.exit(2);
@@ -190,26 +216,26 @@ if (import.meta.main) {
 	// never reads — under `build: skip` that ref may legitimately be stale or absent, and failing there
 	// would break the one flow the scoped release exists for.
 	const needsBase = (only ?? PROVIDERS.map((p) => p.id)).some((id) => baseImageUse(id) !== "none");
-	let pinnedCandidateImage: string = config.toolchainImageCandidate;
+	let pinnedBaseImage = baseImageRef;
 	if (needsBase) {
 		try {
-			pinnedCandidateImage = await resolveImageDigestRef(config.toolchainImageCandidate);
-			log(`>>> candidate image pinned for validation: ${pinnedCandidateImage}`);
+			pinnedBaseImage = await resolveImageDigestRef(baseImageRef);
+			log(`>>> base image pinned for validation: ${pinnedBaseImage}`);
 		} catch (err) {
 			log(
-				`<<< could not resolve candidate image digest — ${err instanceof Error ? err.message : String(err)}`,
+				`<<< could not resolve base image digest for ${baseImageRef} — ${err instanceof Error ? err.message : String(err)}`,
 			);
 			process.exit(1);
 		}
 	} else {
-		log(`>>> no provider in scope reads ${config.toolchainImageCandidate} — not resolving it`);
+		log(`>>> no provider in scope reads ${baseImageRef} — not resolving it`);
 	}
 	const candidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		toolchainImageCandidate: pinnedCandidateImage,
+		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,
 		daytonaContainerTarget: config.daytonaContainer.target,
@@ -218,7 +244,7 @@ if (import.meta.main) {
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {
 			log(`>>> ${provider.name}: baking candidate…`);
-			await bakers[provider.name](pinnedCandidateImage, (m) => log(`    ${m}`));
+			await bakers[provider.name](pinnedBaseImage, (m) => log(`    ${m}`));
 
 			log(`>>> ${provider.name}: validating (boot + smoke)…`);
 			// Boot the just-baked candidate (override the registry adapter's version create-options).
@@ -260,7 +286,7 @@ if (import.meta.main) {
 
 	writeReport({
 		candidate: {
-			image: pinnedCandidateImage,
+			image: pinnedBaseImage,
 			e2bTemplate: config.e2bTemplateCandidate,
 			daytonaSnapshot: config.daytonaSnapshotCandidate,
 			daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,

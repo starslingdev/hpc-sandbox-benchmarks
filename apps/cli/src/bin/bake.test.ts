@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { requestedProviders } from "./bake.ts";
+import { requestedBaseImage, requestedProviders } from "./bake.ts";
 
 describe("requestedProviders", () => {
 	test("no flag → undefined (drive every registered provider, the local default)", () => {
@@ -28,5 +28,26 @@ describe("requestedProviders", () => {
 			/requires at least one provider/,
 		);
 		expect(() => requestedProviders(["--provider", " "])).toThrow(/requires at least one provider/);
+	});
+});
+
+describe("requestedBaseImage", () => {
+	test("defaults to undefined so local bakes keep the configured candidate", () => {
+		expect(requestedBaseImage(["--provider", "runcloud"])).toBeUndefined();
+	});
+
+	test("accepts the release plan's base as a separate or equals-form argument", () => {
+		expect(requestedBaseImage(["--base-image", "ghcr.io/o/tc@sha256:abc"])).toBe(
+			"ghcr.io/o/tc@sha256:abc",
+		);
+		expect(requestedBaseImage(["--base-image=ghcr.io/o/tc:v1"])).toBe("ghcr.io/o/tc:v1");
+	});
+
+	test("rejects a present-but-empty base ref", () => {
+		expect(() => requestedBaseImage(["--base-image"])).toThrow(/non-empty image reference/);
+		expect(() => requestedBaseImage(["--base-image="])).toThrow(/non-empty image reference/);
+		expect(() => requestedBaseImage(["--base-image", "--provider", "runcloud"])).toThrow(
+			/non-empty image reference/,
+		);
 	});
 });

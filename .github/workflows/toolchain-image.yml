@@ -362,8 +362,9 @@ jobs:
           diagnostics: build-metadata-${{ github.run_id }}
 
   # BAKE + verify: one matrix cell per provider (from the plan). Each cell bakes its candidate artifact
-  # from the pushed candidate base and validates it by booting a sandbox and running the shared smoke
-  # spec. fail-fast: false so a flaky provider doesn't cancel the others' diagnostics — but ANY cell
+  # from the plan-selected base (the pushed candidate for a full release, published version for a
+  # backfill) and validates it by booting a sandbox and running the shared smoke spec. fail-fast: false
+  # so a flaky provider doesn't cancel the others' diagnostics — but ANY cell
   # that RAN and failed still fails this job (and, being a `needs`, blocks promote). Required cells
   # (plan `required`) additionally pass `--require`, so a missing/misnamed secret fails the cell instead
   # of silently skipping a provider the release must ship.
@@ -504,6 +505,10 @@ jobs:
         env:
           PROVIDER: ${{ matrix.provider }}
           REQUIRED: ${{ matrix.required }}
+          # Pin every cell to the one base selected by the release plan. A full build supplies its
+          # immutable output digest; a build-skipped scoped backfill supplies the published version,
+          # never the mutable candidate that may already contain the next release's bytes.
+          BASE_IMAGE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           # Both Daytona isolation variants share the account key and bake in their own region.
           DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
@@ -537,7 +542,7 @@ jobs:
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail
-          args=(--provider "${PROVIDER}")
+          args=(--provider "${PROVIDER}" --base-image "${BASE_IMAGE_REF}")
           # Required providers must not silently skip: --require fails the cell if this provider's
           # secret is missing/misnamed or it fails to validate.
           if [ "${REQUIRED}" = "true" ]; then args+=(--require "${PROVIDER}"); fi
@@ -580,12 +585,12 @@ jobs:
           scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
           # The build job may have been skipped (`build: skip`), leaving its outputs empty — fall back
-          # to the candidate tag the plan resolved, which is the ref this cell baked against anyway.
-          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
-          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
+          # to the plan's source (the published version for a scoped backfill, candidate otherwise).
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           provider-target: ${{ matrix.provider }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
-          verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }}${{ matrix.required && format(' --require {0}', matrix.provider) || '' }}
+          verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }} --base-image ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}${{ matrix.required && format(' --require {0}', matrix.provider) || '' }}
           diagnostics: bake-${{ matrix.provider }}-${{ github.run_id }}
 
   # PROMOTE: the serialized publication barrier and the ONLY job that mutates the public :v1. Runs only
@@ -768,9 +773,10 @@ jobs:
           mode: ${{ needs.plan.outputs.mode }}
           scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
-          # Empty when the build job was skipped (`build: skip`) — fall back to the planned candidate tag.
-          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
-          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
+          # Empty when the build job was skipped (`build: skip`) — fall back to the same plan-selected
+          # source the partial promote re-validates (published version for a backfill, candidate otherwise).
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
           verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}
           published: ${{ needs.plan.outputs.publish-target }}
