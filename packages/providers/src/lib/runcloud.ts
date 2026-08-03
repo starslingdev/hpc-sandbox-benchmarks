@@ -240,7 +240,7 @@ async function cleanupFailedCreate(
 async function recoverTimedOutCreate(
 	native: RuncloudSandboxClient,
 	createInput: NonNullable<Parameters<RuncloudSandboxClient["create"]>[0]>,
-	original: Promise<Sandbox>,
+	createAttempts: Promise<Sandbox>[],
 	options: RuncloudComputeOptions,
 ): Promise<Sandbox> {
 	const attempts = Math.max(
@@ -252,9 +252,12 @@ async function recoverTimedOutCreate(
 	let lastError: unknown;
 	for (let attempt = 1; attempt <= attempts; attempt++) {
 		try {
+			// Retain every issued promise. A previous attempt may resolve during a later recovery window,
+			// and all of them need cleanup continuations if every bounded window ultimately expires.
+			createAttempts.push(Promise.resolve().then(() => native.create(createInput)));
 			return await boundedNativeCall(
 				`create recovery attempt ${attempt}`,
-				() => Promise.any([original, native.create(createInput)]),
+				() => Promise.any(createAttempts),
 				options,
 			);
 		} catch (error) {
@@ -263,6 +266,38 @@ async function recoverTimedOutCreate(
 		}
 	}
 	throw lastError;
+}
+
+/**
+ * Last-resort cleanup for a client/runtime that ignores abort and returns a create response only after
+ * every bounded recovery window expired. Production fetches are actively aborted, so they settle
+ * before this point; retaining these continuations prevents an injected/alternate client from
+ * discarding a late sandbox handle. The idempotency key means every response names the same sandbox,
+ * and the set prevents concurrent duplicate cleanup loops.
+ */
+function retainLateCreateCleanup(
+	native: RuncloudSandboxClient,
+	createAttempts: readonly Promise<Sandbox>[],
+	options: RuncloudComputeOptions,
+): void {
+	const claimed = new Set<string>();
+	for (const attempt of createAttempts) {
+		void attempt.then(
+			async (late) => {
+				if (claimed.has(late.id)) return;
+				claimed.add(late.id);
+				try {
+					await cleanupFailedCreate(native, late.id, options);
+				} catch (error) {
+					console.error(
+						`run.cloud late create returned sandbox ${late.id}, but cleanup failed ` +
+							`(${errorMessage(error)}); manual cleanup may be required`,
+					);
+				}
+			},
+			() => {},
+		);
+	}
 }
 
 function errorMessage(error: unknown): string {
@@ -352,6 +387,7 @@ export function sandboxMethods(
 				...(createOptions?.name ? { name: createOptions.name } : {}),
 			};
 			const createPromise = Promise.resolve().then(() => sdk.create(createInput));
+			const createAttempts = [createPromise];
 			let created: Sandbox;
 			try {
 				created = await boundedNativeCall("create", () => createPromise, adapterOptions);
@@ -359,8 +395,9 @@ export function sandboxMethods(
 				if (!isNativeCallTimeout(error)) throw error;
 				let recovered: Sandbox;
 				try {
-					recovered = await recoverTimedOutCreate(sdk, createInput, createPromise, adapterOptions);
+					recovered = await recoverTimedOutCreate(sdk, createInput, createAttempts, adapterOptions);
 				} catch (recoveryError) {
+					retainLateCreateCleanup(sdk, createAttempts, adapterOptions);
 					throw new AggregateError(
 						[error, recoveryError],
 						`run.cloud create timed out and its idempotent allocation could not be recovered; ` +

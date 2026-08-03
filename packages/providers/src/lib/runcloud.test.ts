@@ -247,6 +247,40 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(new Set(idempotencyKeys).size).toBe(1);
 	});
 
+	it("retains cleanup for a create response that arrives after recovery exhaustion", async () => {
+		let resolveInitial: ((sandbox: Sandbox) => void) | undefined;
+		let createCalls = 0;
+		const destroyed: string[] = [];
+		const client = nativeClient({
+			create: () => {
+				createCalls++;
+				if (createCalls === 1) {
+					return new Promise<Sandbox>((resolve) => {
+						resolveInitial = resolve;
+					});
+				}
+				return new Promise<Sandbox>(() => {});
+			},
+			destroy: async (id) => {
+				destroyed.push(id);
+			},
+		});
+
+		await expect(
+			runcloudCompute({
+				client,
+				controlPlaneTimeoutMs: 5,
+				createRecoveryAttempts: 1,
+				cleanupAttempts: 1,
+			}).sandbox.create(),
+		).rejects.toThrow(/idempotent allocation could not be recovered/);
+		expect(destroyed).toEqual([]);
+		expect(resolveInitial).toBeDefined();
+		resolveInitial?.(nativeSandbox("building_image"));
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(destroyed).toEqual(["sb-test"]);
+	});
+
 	it("retries a transient failed-create cleanup before preserving the readiness error", async () => {
 		let destroyCalls = 0;
 		const client = nativeClient({
