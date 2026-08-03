@@ -20,6 +20,7 @@ export { microsandboxCloudCompute, microsandboxLocalCompute } from "./lib/micros
 // Novita's E2B-compat surface: the pinned regional domain + connection the bake pipeline reuses,
 // and the compat factory (exported for tests and for anyone driving Novita outside the harness join).
 export { NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection } from "./lib/novita.ts";
+export { drainRuncloudBackgroundWork } from "./lib/runcloud.ts";
 export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/types.ts";
 
 /**

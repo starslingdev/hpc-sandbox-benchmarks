@@ -21,6 +21,7 @@ import {
 	SuiteUsageError,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
+import { drainRuncloudBackgroundWork } from "@sandbox-benchmarks/providers";
 import { writeNormalizedRun } from "@sandbox-benchmarks/results";
 import type { Run, SuiteName } from "@sandbox-benchmarks/schema";
 import { SUITES } from "@sandbox-benchmarks/schema";
@@ -768,6 +769,9 @@ if (import.meta.main) {
 			...(outcome.detail !== undefined ? { detail: outcome.detail } : {}),
 			...(taskPlan ? { taskPlan } : {}),
 		});
+		// run.cloud may still be destroying an allocation whose create response lost a deadline race.
+		// Drain that tracked work before fail()/process.exit() can terminate its promise continuation.
+		await drainRuncloudBackgroundWork();
 		if (outcome.failed) fail(outcome.detail ?? `Cell ${cell} failed`, { annotate: false });
 		process.exit(0);
 	}
@@ -842,6 +846,8 @@ if (import.meta.main) {
 		outcomes,
 		...(taskPlan ? { taskPlan } : {}),
 	});
+	// See the single-sandbox path above. This is a no-op unless run.cloud retained a late response.
+	await drainRuncloudBackgroundWork();
 
 	const failures = outcomes.filter((o) => o.failed);
 	if (failures.length > 0) {

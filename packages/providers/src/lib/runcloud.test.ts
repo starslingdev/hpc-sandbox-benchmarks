@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ExecOptions, Sandbox, SandboxState } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
-import { runcloudCompute, sandboxMethods } from "./runcloud.ts";
+import { drainRuncloudBackgroundWork, runcloudCompute, sandboxMethods } from "./runcloud.ts";
 
 type ComputeOptions = NonNullable<Parameters<typeof runcloudCompute>[0]>;
 type NativeClient = NonNullable<ComputeOptions["client"]>;
@@ -277,10 +277,13 @@ describe("run.cloud ComputeSDK adapter", () => {
 
 	it("fails within bounded recovery attempts when a timed-out create cannot be recovered", async () => {
 		const idempotencyKeys: Array<string | undefined> = [];
+		const rejectAttempts: Array<(error: Error) => void> = [];
 		const client = nativeClient({
 			create: (input) => {
 				idempotencyKeys.push(input?.idempotencyKey);
-				return new Promise<Sandbox>(() => {});
+				return new Promise<Sandbox>((_resolve, reject) => {
+					rejectAttempts.push(reject);
+				});
 			},
 		});
 
@@ -296,9 +299,13 @@ describe("run.cloud ComputeSDK adapter", () => {
 		);
 		expect(idempotencyKeys).toHaveLength(3);
 		expect(new Set(idempotencyKeys).size).toBe(1);
+		// Let the retained Promise.any settle so this deliberately hung fake cannot pollute later drain
+		// assertions in the same process. Real SDK fetches reject themselves through the abort signal.
+		for (const reject of rejectAttempts) reject(new Error("test request cancelled"));
+		await drainRuncloudBackgroundWork();
 	});
 
-	it("retains cleanup for a create response that arrives after recovery exhaustion", async () => {
+	it("drains cleanup for a create response that arrives after recovery exhaustion", async () => {
 		let resolveInitial: ((sandbox: Sandbox) => void) | undefined;
 		let createCalls = 0;
 		const destroyed: string[] = [];
@@ -327,9 +334,16 @@ describe("run.cloud ComputeSDK adapter", () => {
 		).rejects.toThrow(/idempotent allocation could not be recovered/);
 		expect(destroyed).toEqual([]);
 		expect(resolveInitial).toBeDefined();
+		let drained = false;
+		const drain = drainRuncloudBackgroundWork().then(() => {
+			drained = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 1));
+		expect(drained).toBe(false);
 		resolveInitial?.(nativeSandbox("building_image"));
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await drain;
 		expect(destroyed).toEqual(["sb-test"]);
+		expect(drained).toBe(true);
 	});
 
 	it("retries a transient failed-create cleanup before preserving the readiness error", async () => {

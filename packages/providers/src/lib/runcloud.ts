@@ -52,6 +52,11 @@ interface RuncloudComputeOptions {
 
 let cachedClient: Client | undefined;
 
+// A create response can arrive after every local deadline has expired. Keep that final cleanup
+// visible to the benchmark entrypoints: they intentionally use process.exit(), which otherwise
+// terminates promise continuations even while a billable sandbox is being destroyed.
+const pendingLateCreateCleanups = new Set<Promise<void>>();
+
 const controlPlaneFetch: typeof fetch = Object.assign(
 	(...args: Parameters<typeof fetch>) =>
 		fetch(args[0], {
@@ -277,30 +282,40 @@ async function recoverAmbiguousCreate(
  * every bounded recovery window expired. Production fetches are actively aborted, so they settle
  * before this point; retaining these continuations prevents an injected/alternate client from
  * discarding a late sandbox handle. The idempotency key means every response names the same sandbox,
- * and the set prevents concurrent duplicate cleanup loops.
+ * so the first fulfilled attempt identifies the one allocation that needs cleanup.
  */
 function retainLateCreateCleanup(
 	native: RuncloudSandboxClient,
 	createAttempts: readonly Promise<Sandbox>[],
 	options: RuncloudComputeOptions,
 ): void {
-	const claimed = new Set<string>();
-	for (const attempt of createAttempts) {
-		void attempt.then(
-			async (late) => {
-				if (claimed.has(late.id)) return;
-				claimed.add(late.id);
-				try {
-					await cleanupFailedCreate(native, late.id, options);
-				} catch (error) {
-					console.error(
-						`run.cloud late create returned sandbox ${late.id}, but cleanup failed ` +
-							`(${errorMessage(error)}); manual cleanup may be required`,
-					);
-				}
-			},
-			() => {},
-		);
+	// Every replay uses one idempotency key, so the first successful response identifies the sole
+	// allocation. Promise.any also stays pending while a transport-ignoring attempt might still return.
+	const cleanup = Promise.any(createAttempts).then(
+		async (late) => {
+			try {
+				await cleanupFailedCreate(native, late.id, options);
+			} catch (error) {
+				console.error(
+					`run.cloud late create returned sandbox ${late.id}, but cleanup failed ` +
+						`(${errorMessage(error)}); manual cleanup may be required`,
+				);
+			}
+		},
+		() => {},
+	);
+	pendingLateCreateCleanups.add(cleanup);
+	void cleanup.finally(() => pendingLateCreateCleanups.delete(cleanup));
+}
+
+/**
+ * Await every late-create cleanup retained by the run.cloud adapter. Benchmark bins call this before
+ * their explicit process exit; production REST requests are abort-bounded, while a response that won
+ * the deadline race is allowed to finish its fully awaited destroy/retry sequence.
+ */
+export async function drainRuncloudBackgroundWork(): Promise<void> {
+	while (pendingLateCreateCleanups.size > 0) {
+		await Promise.all([...pendingLateCreateCleanups]);
 	}
 }
 

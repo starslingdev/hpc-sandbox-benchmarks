@@ -11,7 +11,7 @@
 import { writeFileSync } from "node:fs";
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
-import { config } from "@sandbox-benchmarks/providers";
+import { config, drainRuncloudBackgroundWork } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "../lib/bake/daytona.ts";
@@ -192,6 +192,7 @@ if (import.meta.main) {
 		// `{ status: "failed" }` report. So a single `some(failed)` is the whole exit contract — re-deriving
 		// `unmet` here would mislabel an early abort (e.g. "version already exists") as a provider-credentials
 		// failure, since the early `reports` carry no provider "ok" entries.
+		await drainRuncloudBackgroundWork();
 		process.exit(promoted.some((r) => r.status === "failed") ? 1 : 0);
 	}
 
@@ -294,6 +295,10 @@ if (import.meta.main) {
 		},
 		reports,
 	});
+
+	// Candidate validation can exercise run.cloud. Its retained failed-create cleanup must finish before
+	// either explicit failure exit below terminates the process.
+	await drainRuncloudBackgroundWork();
 
 	if (anyFailed(runs)) process.exit(1);
 
