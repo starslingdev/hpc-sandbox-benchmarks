@@ -28,8 +28,8 @@ const CREATE_FAILURE_CLEANUP_RETRY_MS = 2_000;
 /** Bound each REST control-plane call independently. The adapter owns the longer readiness window,
  * but a fetch that never settles must not suspend its deadline check or failed-create cleanup. */
 const CONTROL_PLANE_REQUEST_TIMEOUT_MS = 30_000;
-/** A timed-out create response is ambiguous: the server may have allocated the sandbox. Retry the
- * same idempotent request to recover its handle so cleanup can be awaited before returning. */
+/** A timed-out, transport-failed, or 5xx create response is ambiguous: the server may have allocated
+ * the sandbox. Retry the same idempotent request to recover its handle before returning. */
 const CREATE_RECOVERY_ATTEMPTS = 3;
 
 type RuncloudSandboxClient = Pick<
@@ -78,10 +78,14 @@ class NativeCallTimeoutError extends Error {
 	}
 }
 
-function isNativeCallTimeout(error: unknown): boolean {
+/** A non-timeout 4xx is a definitive rejection: no allocation was accepted, and replaying it would
+ * only delay the real error (especially 429, which the harness recognizes for capacity retries). */
+function isDefinitiveCreateFailure(error: unknown): boolean {
 	return (
-		error instanceof NativeCallTimeoutError ||
-		(error instanceof DOMException && error.name === "TimeoutError")
+		error instanceof RunCloudError &&
+		error.status >= 400 &&
+		error.status < 500 &&
+		error.status !== 408
 	);
 }
 
@@ -233,11 +237,11 @@ async function cleanupFailedCreate(
 }
 
 /**
- * Recover the handle for an ambiguous timed-out create by replaying the SAME idempotent request. The
+ * Recover the handle for an ambiguous create failure by replaying the SAME idempotent request. The
  * original promise participates too: if its delayed response arrives during recovery, its sandbox is
  * cleaned up without waiting for another API response. Every recovery attempt has its own deadline.
  */
-async function recoverTimedOutCreate(
+async function recoverAmbiguousCreate(
 	native: RuncloudSandboxClient,
 	createInput: NonNullable<Parameters<RuncloudSandboxClient["create"]>[0]>,
 	createAttempts: Promise<Sandbox>[],
@@ -392,15 +396,21 @@ export function sandboxMethods(
 			try {
 				created = await boundedNativeCall("create", () => createPromise, adapterOptions);
 			} catch (error) {
-				if (!isNativeCallTimeout(error)) throw error;
+				if (isDefinitiveCreateFailure(error)) throw error;
 				let recovered: Sandbox;
 				try {
-					recovered = await recoverTimedOutCreate(sdk, createInput, createAttempts, adapterOptions);
+					recovered = await recoverAmbiguousCreate(
+						sdk,
+						createInput,
+						createAttempts,
+						adapterOptions,
+					);
 				} catch (recoveryError) {
 					retainLateCreateCleanup(sdk, createAttempts, adapterOptions);
 					throw new AggregateError(
 						[error, recoveryError],
-						`run.cloud create timed out and its idempotent allocation could not be recovered; ` +
+						`run.cloud create failed ambiguously (${errorMessage(error)}) and its idempotent ` +
+							`allocation could not be recovered; ` +
 							`manual cleanup may be required (idempotency key: ${createInput.idempotencyKey})`,
 					);
 				}
@@ -409,7 +419,8 @@ export function sandboxMethods(
 				} catch (cleanupError) {
 					throw new AggregateError(
 						[error, cleanupError],
-						`run.cloud create timed out, recovered sandbox ${recovered.id}, and could not destroy it ` +
+						`run.cloud create failed ambiguously (${errorMessage(error)}), recovered sandbox ` +
+							`${recovered.id}, and could not destroy it ` +
 							`after retries (${errorMessage(cleanupError)}); manual cleanup may be required`,
 					);
 				}

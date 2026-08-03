@@ -224,6 +224,57 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(destroyed).toEqual(["sb-test"]);
 	});
 
+	it("recovers and destroys after an ambiguous create 5xx", async () => {
+		const initialError = new RunCloudError(503, "response lost after allocation");
+		const idempotencyKeys: Array<string | undefined> = [];
+		const destroyed: string[] = [];
+		let createCalls = 0;
+		const client = nativeClient({
+			create: async (input) => {
+				createCalls++;
+				idempotencyKeys.push(input?.idempotencyKey);
+				if (createCalls === 1) throw initialError;
+				return nativeSandbox("building_image");
+			},
+			destroy: async (id) => {
+				destroyed.push(id);
+			},
+		});
+
+		try {
+			await runcloudCompute({
+				client,
+				createRecoveryAttempts: 1,
+				cleanupAttempts: 1,
+			}).sandbox.create();
+			expect.unreachable();
+		} catch (error) {
+			expect(error).toBe(initialError);
+		}
+		expect(createCalls).toBe(2);
+		expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+		expect(destroyed).toEqual(["sb-test"]);
+	});
+
+	it("rethrows definitive create 4xx responses without replaying", async () => {
+		const clientError = new RunCloudError(422, "invalid image");
+		let createCalls = 0;
+		const client = nativeClient({
+			create: async () => {
+				createCalls++;
+				throw clientError;
+			},
+		});
+
+		try {
+			await runcloudCompute({ client }).sandbox.create();
+			expect.unreachable();
+		} catch (error) {
+			expect(error).toBe(clientError);
+		}
+		expect(createCalls).toBe(1);
+	});
+
 	it("fails within bounded recovery attempts when a timed-out create cannot be recovered", async () => {
 		const idempotencyKeys: Array<string | undefined> = [];
 		const client = nativeClient({
