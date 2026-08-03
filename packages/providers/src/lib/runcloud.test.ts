@@ -1,11 +1,11 @@
-import { describe, expect, it, spyOn } from "bun:test";
-import type { SandboxMethods } from "@computesdk/provider";
+import { describe, expect, it } from "bun:test";
 import type { ExecOptions, Sandbox, SandboxState } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
 import {
 	RUNCLOUD_CREATE_TIMEOUT_MS,
 	RUNCLOUD_READY_TIMEOUT_MS,
 	runcloudCompute,
+	sandboxMethods,
 } from "./runcloud.ts";
 
 type ComputeOptions = NonNullable<Parameters<typeof runcloudCompute>[0]>;
@@ -148,27 +148,77 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(destroyed).toEqual(["sb-test"]);
 	});
 
-	it("preserves the readiness error when best-effort cleanup also fails", async () => {
-		const consoleError = spyOn(console, "error").mockImplementation(() => {});
-		try {
-			const client = nativeClient({
-				create: async () => nativeSandbox("building_image"),
-				get: async () => {
-					throw new Error("readiness failed");
-				},
-				destroy: async () => {
-					throw new Error("cleanup failed");
-				},
-			});
+	it("retries a transient failed-create cleanup before preserving the readiness error", async () => {
+		let destroyCalls = 0;
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => {
+				throw new Error("readiness failed");
+			},
+			destroy: async () => {
+				destroyCalls++;
+				if (destroyCalls === 1) throw new Error("transient cleanup failure");
+			},
+		});
 
-			await expect(runcloudCompute({ client }).sandbox.create()).rejects.toThrow(
-				"readiness failed",
-			);
-			expect(consoleError).toHaveBeenCalledTimes(1);
-			expect(String(consoleError.mock.calls[0]?.[0])).toContain("after readiness failure");
-		} finally {
-			consoleError.mockRestore();
+		await expect(
+			runcloudCompute({ client, cleanupAttempts: 2, sleep: async () => {} }).sandbox.create(),
+		).rejects.toThrow("readiness failed");
+		expect(destroyCalls).toBe(2);
+	});
+
+	it("accepts a destroying confirmation after an ambiguous cleanup response", async () => {
+		let getCalls = 0;
+		let destroyCalls = 0;
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => {
+				getCalls++;
+				if (getCalls === 1) throw new Error("readiness failed");
+				return nativeSandbox("destroying");
+			},
+			destroy: async () => {
+				destroyCalls++;
+				throw new Error("response lost after request");
+			},
+		});
+
+		await expect(
+			runcloudCompute({ client, cleanupAttempts: 3, sleep: async () => {} }).sandbox.create(),
+		).rejects.toThrow("readiness failed");
+		expect(destroyCalls).toBe(1);
+		expect(getCalls).toBe(2);
+	});
+
+	it("surfaces the sandbox id and both failures when failed-create cleanup exhausts retries", async () => {
+		let destroyCalls = 0;
+		const readinessError = new Error("readiness failed");
+		const cleanupError = new Error("cleanup failed");
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => {
+				throw readinessError;
+			},
+			destroy: async () => {
+				destroyCalls++;
+				throw cleanupError;
+			},
+		});
+
+		try {
+			await runcloudCompute({
+				client,
+				cleanupAttempts: 3,
+				sleep: async () => {},
+			}).sandbox.create();
+			expect.unreachable();
+		} catch (error) {
+			expect(error).toBeInstanceOf(AggregateError);
+			expect((error as AggregateError).errors).toEqual([readinessError, cleanupError]);
+			expect((error as Error).message).toContain("sandbox sb-test");
+			expect((error as Error).message).toContain("manual cleanup may be required");
 		}
+		expect(destroyCalls).toBe(3);
 	});
 
 	it("filters destroyed and destroying tombstones from list", async () => {
@@ -201,10 +251,7 @@ describe("run.cloud ComputeSDK adapter", () => {
 				return { stdout: "out", stderr: "err", exit_code: 7, exitCode: 7 };
 			},
 		});
-		const provider = runcloudCompute({ client });
-		const methods = (
-			provider as unknown as { sandbox: { methods: SandboxMethods<Sandbox, undefined> } }
-		).sandbox.methods;
+		const methods = sandboxMethods({ client });
 		const sandbox = nativeSandbox();
 		let stdout = "";
 		let stderr = "";

@@ -23,6 +23,10 @@ export const RUNCLOUD_READY_TIMEOUT_MS = 20 * 60 * 1000;
 /** The harness's outer create race starts before the allocation request, while the readiness clock
  * starts after it. Keep five minutes of headroom for allocation latency and cleanup. */
 export const RUNCLOUD_CREATE_TIMEOUT_MS = RUNCLOUD_READY_TIMEOUT_MS + 5 * 60 * 1000;
+/** A destroy request can fail transiently after allocation succeeded. Retry inside create(), because
+ * the harness has no sandbox handle (and therefore no generic cleanup path) until create resolves. */
+const CREATE_FAILURE_CLEANUP_ATTEMPTS = 5;
+const CREATE_FAILURE_CLEANUP_RETRY_MS = 2_000;
 
 type RuncloudSandboxClient = Pick<
 	Client["sandboxes"],
@@ -34,6 +38,8 @@ interface RuncloudComputeOptions {
 	client?: RuncloudSandboxClient;
 	readyPollMs?: number;
 	readyTimeoutMs?: number;
+	cleanupAttempts?: number;
+	cleanupRetryMs?: number;
 	sleep?: (ms: number) => Promise<void>;
 	now?: () => number;
 }
@@ -49,12 +55,14 @@ function isNotFound(error: unknown): boolean {
 	return error instanceof RunCloudError && error.status === 404;
 }
 
-function mapStatus(state: string): SandboxInfo["status"] {
+function mapStatus(state: Sandbox["state"]): SandboxInfo["status"] {
 	if (state === "running") return "running";
 	// Interrupted / failed are hard errors (not a clean stop); match the official SDK adapter.
 	if (state === "interrupted" || state === "failed") return "error";
 	// Clean stops and transitional boot states (building_image / starting) report as stopped —
-	// create() waits for running before returning, so getInfo rarely sees a transitional state.
+	// create() waits for running before returning, so getInfo rarely sees a transitional state. The SDK
+	// intentionally ends SandboxState with `| string`, so unknown future/control-plane states cannot be
+	// made compile-time exhaustive and must retain a safe fallback.
 	return "stopped";
 }
 
@@ -63,7 +71,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** Terminal states that mean boot failed and we should stop waiting. */
-function isTerminalBootFailure(state: string): boolean {
+function isTerminalBootFailure(state: Sandbox["state"]): boolean {
 	return ["failed", "interrupted", "destroyed", "destroying", "stopped"].includes(state);
 }
 
@@ -104,6 +112,47 @@ async function destroySandbox(native: RuncloudSandboxClient, sandboxId: string):
 		if (isNotFound(error)) return;
 		throw error;
 	}
+}
+
+/**
+ * Tear down an allocation whose readiness wait failed. A rejected destroy is ambiguous: the request
+ * may have reached the control plane before the response was lost. Confirm an accepted teardown via
+ * get(), otherwise retry. Exhaustion is surfaced together with the readiness error by create().
+ */
+async function cleanupFailedCreate(
+	native: RuncloudSandboxClient,
+	sandboxId: string,
+	options: RuncloudComputeOptions,
+): Promise<void> {
+	const attempts = Math.max(
+		1,
+		Math.floor(options.cleanupAttempts ?? CREATE_FAILURE_CLEANUP_ATTEMPTS),
+	);
+	const retryMs = Math.max(0, options.cleanupRetryMs ?? CREATE_FAILURE_CLEANUP_RETRY_MS);
+	const wait = options.sleep ?? sleep;
+	let lastError: unknown;
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		try {
+			await destroySandbox(native, sandboxId);
+			return;
+		} catch (error) {
+			lastError = error;
+			// A lost response after an accepted destroy must not turn into a false leak report. Both states
+			// mean the control plane owns the remaining teardown; 404 means it has already completed.
+			try {
+				const current = await native.get(sandboxId);
+				if (current.state === "destroying" || current.state === "destroyed") return;
+			} catch (confirmError) {
+				if (isNotFound(confirmError)) return;
+			}
+			if (attempt < attempts) await wait(retryMs);
+		}
+	}
+	throw lastError;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 function createdAt(value: string | undefined): Date {
@@ -159,7 +208,7 @@ async function runCommand(
 	};
 }
 
-function sandboxMethods(
+export function sandboxMethods(
 	adapterOptions: RuncloudComputeOptions,
 ): SandboxMethods<Sandbox, undefined> {
 	const native = () => adapterOptions.client ?? defaultClient().sandboxes;
@@ -191,14 +240,16 @@ function sandboxMethods(
 				const sandbox = await waitUntilRunning(sdk, created.id, adapterOptions);
 				return { sandbox, sandboxId: sandbox.id };
 			} catch (error) {
-				// Allocation already succeeded, but the harness has no handle until create() resolves. Clean up
-				// here so a terminal boot, transient poll failure, or readiness timeout cannot leak a sandbox.
+				// Allocation already succeeded, but the harness has no handle until create() resolves. Own the
+				// cleanup (including transient destroy retries) here rather than reducing it to one best-effort
+				// request that can silently strand a billable sandbox.
 				try {
-					await destroySandbox(sdk, created.id);
+					await cleanupFailedCreate(sdk, created.id, adapterOptions);
 				} catch (destroyError) {
-					console.error(
-						`run.cloud: failed to destroy sandbox ${created.id} after readiness failure:`,
-						destroyError,
+					throw new AggregateError(
+						[error, destroyError],
+						`run.cloud sandbox ${created.id} failed readiness (${errorMessage(error)}) and ` +
+							`could not be destroyed after retries (${errorMessage(destroyError)}); manual cleanup may be required`,
 					);
 				}
 				throw error;
