@@ -226,7 +226,9 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// detached benchmark is not paused while the harness is polling its done file. create() polls
 		// until the sandbox is running and owns failed-allocation cleanup. Disable the harness's
 		// non-cancellable outer race: abandoning create while it is cleaning up would let bench-suite's
-		// explicit process exit terminate that teardown and strand the billable sandbox.
+		// explicit process exit terminate that teardown and strand the billable sandbox. The adapter
+		// independently bounds each native control-plane call, so awaiting its ownership does not turn a
+		// wedged SDK request into an unbounded create.
 		createCompute: runcloudCompute,
 		createOptions: {
 			image: config.toolchainImage,

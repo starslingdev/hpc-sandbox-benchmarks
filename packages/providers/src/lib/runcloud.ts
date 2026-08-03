@@ -1,6 +1,7 @@
 // ComputeSDK provider built directly over run.cloud's native SDK. The SDK reads
 // RUN_CLOUD_API_KEY itself; construction stays lazy so importing the provider registry never needs
 // credentials. One benchmark cell drives one provider, so a process-local client is sufficient.
+import { randomUUID } from "node:crypto";
 import type {
 	CommandResult,
 	CreateSandboxOptions,
@@ -24,6 +25,12 @@ export const RUNCLOUD_READY_TIMEOUT_MS = 20 * 60 * 1000;
  * the harness has no sandbox handle (and therefore no generic cleanup path) until create resolves. */
 const CREATE_FAILURE_CLEANUP_ATTEMPTS = 5;
 const CREATE_FAILURE_CLEANUP_RETRY_MS = 2_000;
+/** Bound each REST control-plane call independently. The adapter owns the longer readiness window,
+ * but a fetch that never settles must not suspend its deadline check or failed-create cleanup. */
+const CONTROL_PLANE_REQUEST_TIMEOUT_MS = 30_000;
+/** A timed-out create response is ambiguous: the server may have allocated the sandbox. Retry the
+ * same idempotent request to recover its handle so cleanup can be awaited before returning. */
+const CREATE_RECOVERY_ATTEMPTS = 3;
 
 type RuncloudSandboxClient = Pick<
 	Client["sandboxes"],
@@ -37,15 +44,76 @@ interface RuncloudComputeOptions {
 	readyTimeoutMs?: number;
 	cleanupAttempts?: number;
 	cleanupRetryMs?: number;
+	controlPlaneTimeoutMs?: number;
+	createRecoveryAttempts?: number;
 	sleep?: (ms: number) => Promise<void>;
 	now?: () => number;
 }
 
 let cachedClient: Client | undefined;
 
+const controlPlaneFetch: typeof fetch = Object.assign(
+	(...args: Parameters<typeof fetch>) =>
+		fetch(args[0], {
+			...args[1],
+			signal: AbortSignal.timeout(CONTROL_PLANE_REQUEST_TIMEOUT_MS),
+		}),
+	{ preconnect: fetch.preconnect },
+);
+
 function defaultClient(): Client {
-	cachedClient ??= new Client();
+	// Promise deadlines below bound every adapter call, while the fetch signal also cancels the actual
+	// socket so a timed-out request does not remain as floating work until process exit.
+	cachedClient ??= new Client({ fetch: controlPlaneFetch });
 	return cachedClient;
+}
+
+class NativeCallTimeoutError extends Error {
+	constructor(
+		readonly operation: string,
+		readonly timeoutMs: number,
+	) {
+		super(`run.cloud ${operation} did not settle within ${timeoutMs}ms`);
+		this.name = "NativeCallTimeoutError";
+	}
+}
+
+function isNativeCallTimeout(error: unknown): boolean {
+	return (
+		error instanceof NativeCallTimeoutError ||
+		(error instanceof DOMException && error.name === "TimeoutError")
+	);
+}
+
+/**
+ * Race one native control-plane operation with a local deadline. Production's fetch signal cancels
+ * the underlying HTTP request too; the race remains necessary for injected clients and runtimes whose
+ * fetch ignores abort. Promise.race attaches a rejection handler to late promises, so they cannot
+ * become unhandled rejections after the deadline wins.
+ */
+async function boundedNativeCall<T>(
+	operation: string,
+	call: () => Promise<T>,
+	options: RuncloudComputeOptions,
+): Promise<T> {
+	const timeoutMs = Math.max(
+		1,
+		Math.floor(options.controlPlaneTimeoutMs ?? CONTROL_PLANE_REQUEST_TIMEOUT_MS),
+	);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			Promise.resolve().then(call),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(
+					() => reject(new NativeCallTimeoutError(operation, timeoutMs)),
+					timeoutMs,
+				);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
 }
 
 function isNotFound(error: unknown): boolean {
@@ -88,7 +156,11 @@ async function waitUntilRunning(
 	const deadline = now() + timeoutMs;
 	let last: Sandbox | undefined;
 	while (now() < deadline) {
-		last = await native.get(sandboxId);
+		last = await boundedNativeCall(
+			`readiness get for sandbox ${sandboxId}`,
+			() => native.get(sandboxId),
+			options,
+		);
 		if (last.state === "running") return last;
 		if (isTerminalBootFailure(last.state)) {
 			throw new Error(
@@ -102,9 +174,17 @@ async function waitUntilRunning(
 	);
 }
 
-async function destroySandbox(native: RuncloudSandboxClient, sandboxId: string): Promise<void> {
+async function destroySandbox(
+	native: RuncloudSandboxClient,
+	sandboxId: string,
+	options: RuncloudComputeOptions,
+): Promise<void> {
 	try {
-		await native.destroy(sandboxId);
+		await boundedNativeCall(
+			`destroy sandbox ${sandboxId}`,
+			() => native.destroy(sandboxId),
+			options,
+		);
 	} catch (error) {
 		if (isNotFound(error)) return;
 		throw error;
@@ -130,18 +210,55 @@ async function cleanupFailedCreate(
 	let lastError: unknown;
 	for (let attempt = 1; attempt <= attempts; attempt++) {
 		try {
-			await destroySandbox(native, sandboxId);
+			await destroySandbox(native, sandboxId, options);
 			return;
 		} catch (error) {
 			lastError = error;
 			// A lost response after an accepted destroy must not turn into a false leak report. Both states
 			// mean the control plane owns the remaining teardown; 404 means it has already completed.
 			try {
-				const current = await native.get(sandboxId);
+				const current = await boundedNativeCall(
+					`confirm cleanup for sandbox ${sandboxId}`,
+					() => native.get(sandboxId),
+					options,
+				);
 				if (current.state === "destroying" || current.state === "destroyed") return;
 			} catch (confirmError) {
 				if (isNotFound(confirmError)) return;
 			}
+			if (attempt < attempts) await wait(retryMs);
+		}
+	}
+	throw lastError;
+}
+
+/**
+ * Recover the handle for an ambiguous timed-out create by replaying the SAME idempotent request. The
+ * original promise participates too: if its delayed response arrives during recovery, its sandbox is
+ * cleaned up without waiting for another API response. Every recovery attempt has its own deadline.
+ */
+async function recoverTimedOutCreate(
+	native: RuncloudSandboxClient,
+	createInput: NonNullable<Parameters<RuncloudSandboxClient["create"]>[0]>,
+	original: Promise<Sandbox>,
+	options: RuncloudComputeOptions,
+): Promise<Sandbox> {
+	const attempts = Math.max(
+		1,
+		Math.floor(options.createRecoveryAttempts ?? CREATE_RECOVERY_ATTEMPTS),
+	);
+	const retryMs = Math.max(0, options.cleanupRetryMs ?? CREATE_FAILURE_CLEANUP_RETRY_MS);
+	const wait = options.sleep ?? sleep;
+	let lastError: unknown;
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		try {
+			return await boundedNativeCall(
+				`create recovery attempt ${attempt}`,
+				() => Promise.any([original, native.create(createInput)]),
+				options,
+			);
+		} catch (error) {
+			lastError = error;
 			if (attempt < attempts) await wait(retryMs);
 		}
 	}
@@ -215,7 +332,10 @@ export function sandboxMethods(
 				throw new Error("run.cloud snapshots are not supported by this adapter");
 			}
 			const sdk = native();
-			const created = await sdk.create({
+			// The stable key makes a timed-out response recoverable: replaying create returns the original
+			// allocation instead of creating a second sandbox, so we can await its teardown before rejecting.
+			const createInput = {
+				idempotencyKey: `sandbox-benchmarks-${randomUUID()}`,
 				...(createOptions?.templateId || createOptions?.image
 					? { image: createOptions.templateId ?? createOptions.image }
 					: {}),
@@ -230,7 +350,34 @@ export function sandboxMethods(
 					: {}),
 				...(createOptions?.region ? { region: createOptions.region } : {}),
 				...(createOptions?.name ? { name: createOptions.name } : {}),
-			});
+			};
+			const createPromise = Promise.resolve().then(() => sdk.create(createInput));
+			let created: Sandbox;
+			try {
+				created = await boundedNativeCall("create", () => createPromise, adapterOptions);
+			} catch (error) {
+				if (!isNativeCallTimeout(error)) throw error;
+				let recovered: Sandbox;
+				try {
+					recovered = await recoverTimedOutCreate(sdk, createInput, createPromise, adapterOptions);
+				} catch (recoveryError) {
+					throw new AggregateError(
+						[error, recoveryError],
+						`run.cloud create timed out and its idempotent allocation could not be recovered; ` +
+							`manual cleanup may be required (idempotency key: ${createInput.idempotencyKey})`,
+					);
+				}
+				try {
+					await cleanupFailedCreate(sdk, recovered.id, adapterOptions);
+				} catch (cleanupError) {
+					throw new AggregateError(
+						[error, cleanupError],
+						`run.cloud create timed out, recovered sandbox ${recovered.id}, and could not destroy it ` +
+							`after retries (${errorMessage(cleanupError)}); manual cleanup may be required`,
+					);
+				}
+				throw error;
+			}
 			// Do not return until the guest can accept commands — cold image pulls leave the sandbox in
 			// `building_image` for minutes, and exec during that window fails with API 4409.
 			try {
@@ -255,7 +402,11 @@ export function sandboxMethods(
 
 		getById: async (_config, sandboxId) => {
 			try {
-				const sandbox = await native().get(sandboxId);
+				const sandbox = await boundedNativeCall(
+					`get sandbox ${sandboxId}`,
+					() => native().get(sandboxId),
+					adapterOptions,
+				);
 				return { sandbox, sandboxId: sandbox.id };
 			} catch (error) {
 				if (isNotFound(error)) return null;
@@ -264,19 +415,23 @@ export function sandboxMethods(
 		},
 
 		list: async () =>
-			(await native().list())
+			(await boundedNativeCall("list sandboxes", () => native().list(), adapterOptions))
 				// The native API retains destroyed tombstones. ComputeSDK's list contract is active sandboxes;
 				// keep paused/stopped/failed records available for recovery, but omit irreversible teardown.
 				.filter((sandbox) => sandbox.state !== "destroyed" && sandbox.state !== "destroying")
 				.map((sandbox) => ({ sandbox, sandboxId: sandbox.id })),
 
-		destroy: async (_config, sandboxId) => destroySandbox(native(), sandboxId),
+		destroy: async (_config, sandboxId) => destroySandbox(native(), sandboxId, adapterOptions),
 
 		runCommand: (sandbox, command, runOptions) =>
 			runCommand(native(), sandbox, command, runOptions),
 
 		getInfo: async (sandbox) => {
-			const current = await native().get(sandbox.id);
+			const current = await boundedNativeCall(
+				`get sandbox ${sandbox.id}`,
+				() => native().get(sandbox.id),
+				adapterOptions,
+			);
 			return {
 				id: current.id,
 				provider: PROVIDER,
@@ -294,7 +449,14 @@ export function sandboxMethods(
 			};
 		},
 
-		getUrl: async (sandbox, options) => (await native().openTunnel(sandbox.id, options.port)).url,
+		getUrl: async (sandbox, options) =>
+			(
+				await boundedNativeCall(
+					`open tunnel for sandbox ${sandbox.id}`,
+					() => native().openTunnel(sandbox.id, options.port),
+					adapterOptions,
+				)
+			).url,
 	};
 }
 

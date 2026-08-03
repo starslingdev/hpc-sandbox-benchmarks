@@ -71,6 +71,7 @@ describe("run.cloud ComputeSDK adapter", () => {
 
 		expect(sandbox.sandboxId).toBe("sb-test");
 		expect(createInput).toEqual({
+			idempotencyKey: expect.stringMatching(/^sandbox-benchmarks-[0-9a-f-]+$/),
 			image: "ghcr.io/starslingdev/toolchain:candidate",
 			cpu: 4,
 			memory: 8_192,
@@ -136,6 +137,114 @@ describe("run.cloud ComputeSDK adapter", () => {
 		);
 		expect(getCalls).toBe(0);
 		expect(destroyed).toEqual(["sb-test"]);
+	});
+
+	it("bounds a hung readiness request and still awaits cleanup", async () => {
+		const destroyed: string[] = [];
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: () => new Promise<Sandbox>(() => {}),
+			destroy: async (id) => {
+				destroyed.push(id);
+			},
+		});
+
+		await expect(
+			runcloudCompute({
+				client,
+				controlPlaneTimeoutMs: 5,
+				cleanupAttempts: 1,
+			}).sandbox.create(),
+		).rejects.toThrow(/readiness get for sandbox sb-test did not settle within 5ms/);
+		expect(destroyed).toEqual(["sb-test"]);
+	});
+
+	it("bounds hung cleanup calls, retries, and surfaces both failures", async () => {
+		let getCalls = 0;
+		let destroyCalls = 0;
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => {
+				getCalls++;
+				if (getCalls === 1) throw new Error("readiness failed");
+				return nativeSandbox("running");
+			},
+			destroy: () => {
+				destroyCalls++;
+				return new Promise<void>(() => {});
+			},
+		});
+
+		try {
+			await runcloudCompute({
+				client,
+				controlPlaneTimeoutMs: 5,
+				cleanupAttempts: 2,
+				sleep: async () => {},
+			}).sandbox.create();
+			expect.unreachable();
+		} catch (error) {
+			expect(error).toBeInstanceOf(AggregateError);
+			expect((error as AggregateError).errors[0]).toEqual(new Error("readiness failed"));
+			expect((error as AggregateError).errors[1]).toMatchObject({
+				message: "run.cloud destroy sandbox sb-test did not settle within 5ms",
+			});
+		}
+		expect(destroyCalls).toBe(2);
+		expect(getCalls).toBe(3);
+	});
+
+	it("recovers and destroys an allocation whose create response timed out", async () => {
+		const idempotencyKeys: Array<string | undefined> = [];
+		const destroyed: string[] = [];
+		let createCalls = 0;
+		const client = nativeClient({
+			create: (input) => {
+				createCalls++;
+				idempotencyKeys.push(input?.idempotencyKey);
+				if (createCalls === 1) return new Promise<Sandbox>(() => {});
+				return Promise.resolve(nativeSandbox("building_image"));
+			},
+			destroy: async (id) => {
+				destroyed.push(id);
+			},
+		});
+
+		await expect(
+			runcloudCompute({
+				client,
+				controlPlaneTimeoutMs: 5,
+				createRecoveryAttempts: 1,
+				cleanupAttempts: 1,
+			}).sandbox.create(),
+		).rejects.toThrow("run.cloud create did not settle within 5ms");
+		expect(createCalls).toBe(2);
+		expect(idempotencyKeys[0]).toBeDefined();
+		expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+		expect(destroyed).toEqual(["sb-test"]);
+	});
+
+	it("fails within bounded recovery attempts when a timed-out create cannot be recovered", async () => {
+		const idempotencyKeys: Array<string | undefined> = [];
+		const client = nativeClient({
+			create: (input) => {
+				idempotencyKeys.push(input?.idempotencyKey);
+				return new Promise<Sandbox>(() => {});
+			},
+		});
+
+		await expect(
+			runcloudCompute({
+				client,
+				controlPlaneTimeoutMs: 5,
+				createRecoveryAttempts: 2,
+				sleep: async () => {},
+			}).sandbox.create(),
+		).rejects.toThrow(
+			/idempotent allocation could not be recovered; manual cleanup may be required/,
+		);
+		expect(idempotencyKeys).toHaveLength(3);
+		expect(new Set(idempotencyKeys).size).toBe(1);
 	});
 
 	it("retries a transient failed-create cleanup before preserving the readiness error", async () => {
