@@ -70,11 +70,13 @@ on:
         type: boolean
         default: false
   pull_request:
+    # Composite-action changes are exercised by toolchain-actions-smoke.yml on the standard
+    # 2-vCPU runner. Keeping them out of this list matters: PR path filters use the whole PR diff,
+    # so one setup-action edit would otherwise rebuild the PTS-heavy base after every later push.
     paths:
       - "packages/templates/**"
       - "packages/schema/src/toolchain.ts"
       - ".github/workflows/toolchain-image.yml"
-      - ".github/actions/**"
 
 # Serialize publishes by ref: concurrent dispatches on the same ref must not race on the version tag.
 # PR runs key off their own head ref (separate group) and may cancel superseded runs; a publish is

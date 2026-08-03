@@ -15,6 +15,8 @@
 //      A reusable-workflow caller (`uses:` job) can't declare `environment:`; a LOCAL call defers the
 //      gate to the called file (checked here in its own right), a REMOTE one is flagged (unverifiable).
 //   4. Toolchain publish is dispatch-only — toolchain-image.yml must not fire a release on push/merge.
+//   5. Toolchain PR ownership stays split — image inputs run the expensive docker smoke, while the
+//      three setup/reporting composites run a lightweight smoke on the standard 2-vCPU runner.
 //
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
 import { readFileSync } from "node:fs";
@@ -25,6 +27,22 @@ import { findRepoRoot } from "./workspace.ts";
 export const WORKFLOWS_DIR = ".github/workflows";
 export const CI_LINT_WORKFLOW = ".github/workflows/ci-lint.yml";
 export const TOOLCHAIN_WORKFLOW = "toolchain-image.yml";
+export const TOOLCHAIN_ACTION_SMOKE_WORKFLOW = "toolchain-actions-smoke.yml";
+
+/** Inputs that can alter the toolchain image and therefore own the expensive PR docker smoke. */
+export const TOOLCHAIN_IMAGE_PR_PATHS = [
+	"packages/templates/**",
+	"packages/schema/src/toolchain.ts",
+	".github/workflows/toolchain-image.yml",
+] as const;
+
+/** Local composites executed by the toolchain PR lane, plus the lightweight smoke itself. */
+export const TOOLCHAIN_ACTION_SMOKE_PR_PATHS = [
+	".github/actions/setup-toolchain/**",
+	".github/actions/setup-workspace/**",
+	".github/actions/release-summary/**",
+	".github/workflows/toolchain-actions-smoke.yml",
+] as const;
 
 /** GitHub Environment name that holds provider secrets and gates releases. See docs/ci-secrets.md. */
 export const PRIVILEGED_ENVIRONMENT = "privileged";
@@ -489,6 +507,110 @@ export function checkToolchainDispatchOnly(
 	return errors;
 }
 
+function pullRequestPaths(doc: unknown, file: string): string[] {
+	const root = asRecord(doc, `${file}: not a YAML mapping`);
+	const triggers = asRecord(root.on, `${file}: missing or malformed \`on:\` trigger map`);
+	const pullRequest = asRecord(
+		triggers.pull_request,
+		`${file}: missing or malformed \`pull_request:\` trigger`,
+	);
+	if (
+		!Array.isArray(pullRequest.paths) ||
+		!pullRequest.paths.every((path) => typeof path === "string")
+	) {
+		throw new Error(`${file}: \`pull_request.paths\` must be a string list`);
+	}
+	return pullRequest.paths;
+}
+
+function exactSetError(
+	actual: readonly string[],
+	expected: readonly string[],
+	label: string,
+): string | undefined {
+	const sortedActual = [...actual].sort();
+	const sortedExpected = [...expected].sort();
+	if (JSON.stringify(sortedActual) === JSON.stringify(sortedExpected)) return undefined;
+	return `${label} must be exactly [${expected.join(", ")}], got [${actual.join(", ")}]`;
+}
+
+/**
+ * Invariant 5: image inputs own the expensive toolchain PR smoke; the setup/reporting composites
+ * own a bounded smoke on the standard runner. This prevents a broad action glob from turning every
+ * later push in an action-touching PR into another PTS-heavy image build.
+ */
+export function checkToolchainPrScope(
+	toolchainDoc: unknown,
+	actionSmokeDoc: unknown,
+	toolchainFile: string = TOOLCHAIN_WORKFLOW,
+	actionSmokeFile: string = TOOLCHAIN_ACTION_SMOKE_WORKFLOW,
+): string[] {
+	const errors: string[] = [];
+	const imagePathError = exactSetError(
+		pullRequestPaths(toolchainDoc, toolchainFile),
+		TOOLCHAIN_IMAGE_PR_PATHS,
+		`${toolchainFile}: \`pull_request.paths\``,
+	);
+	if (imagePathError !== undefined) errors.push(imagePathError);
+
+	const actionPathError = exactSetError(
+		pullRequestPaths(actionSmokeDoc, actionSmokeFile),
+		TOOLCHAIN_ACTION_SMOKE_PR_PATHS,
+		`${actionSmokeFile}: \`pull_request.paths\``,
+	);
+	if (actionPathError !== undefined) errors.push(actionPathError);
+
+	const root = asRecord(actionSmokeDoc, `${actionSmokeFile}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${actionSmokeFile}: no jobs mapping`);
+	const smoke = asRecord(jobs.smoke, `${actionSmokeFile}: missing or malformed "smoke" job`);
+	const jobLabel = `${actionSmokeFile}::smoke`;
+	if (smoke["runs-on"] !== "starsling-ubuntu-24.04-2") {
+		errors.push(`${jobLabel}: must use the standard 2-vCPU runner \`starsling-ubuntu-24.04-2\``);
+	}
+	if (smoke["timeout-minutes"] !== 5) {
+		errors.push(`${jobLabel}: must keep \`timeout-minutes: 5\` to bound runner spend`);
+	}
+	if (smoke.if !== "github.event.pull_request.head.repo.full_name == github.repository") {
+		errors.push(`${jobLabel}: must keep the same-repository guard before executing PR code`);
+	}
+
+	if (!Array.isArray(smoke.steps)) {
+		throw new Error(`${jobLabel}: steps must be a list`);
+	}
+	const steps = smoke.steps.map((step) => asRecord(step, `${jobLabel}: malformed step`));
+	const setup = steps.find((step) => step.uses === "./.github/actions/setup-toolchain");
+	if (setup === undefined) {
+		errors.push(`${jobLabel}: must execute ./.github/actions/setup-toolchain`);
+	} else {
+		const withBlock = asRecord(setup.with, `${jobLabel}: setup-toolchain has malformed \`with:\``);
+		if (withBlock.buildx !== "true") {
+			errors.push(`${jobLabel}: setup-toolchain must pass \`buildx: "true"\``);
+		}
+	}
+	const summary = steps.find((step) => step.uses === "./.github/actions/release-summary");
+	if (summary === undefined) {
+		errors.push(`${jobLabel}: must execute ./.github/actions/release-summary`);
+	} else if (summary.if !== "always()") {
+		errors.push(`${jobLabel}: release-summary must use \`if: always()\` so failures are reported`);
+	}
+
+	const runText = steps
+		.map((step) => step.run)
+		.filter((run): run is string => typeof run === "string")
+		.join("\n");
+	for (const probe of [
+		"bun --version",
+		"1.3.14",
+		"bun packages/templates/src/pins.ts",
+		"docker buildx inspect --bootstrap",
+	] as const) {
+		if (!runText.includes(probe)) {
+			errors.push(`${jobLabel}: runtime probe is missing \`${probe}\``);
+		}
+	}
+	return errors;
+}
+
 /** The whole gate against the real .github files under `root`. */
 export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 	const files = listWorkflowFiles(root);
@@ -526,6 +648,19 @@ export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 		errors.push(`${TOOLCHAIN_WORKFLOW}: missing from ${WORKFLOWS_DIR}`);
 	} else {
 		errors.push(...checkToolchainDispatchOnly(toolchainDoc, TOOLCHAIN_WORKFLOW));
+		const actionSmokeDoc = docs.get(TOOLCHAIN_ACTION_SMOKE_WORKFLOW);
+		if (actionSmokeDoc === undefined) {
+			errors.push(`${TOOLCHAIN_ACTION_SMOKE_WORKFLOW}: missing from ${WORKFLOWS_DIR}`);
+		} else {
+			errors.push(
+				...checkToolchainPrScope(
+					toolchainDoc,
+					actionSmokeDoc,
+					TOOLCHAIN_WORKFLOW,
+					TOOLCHAIN_ACTION_SMOKE_WORKFLOW,
+				),
+			);
+		}
 	}
 	return errors;
 }
