@@ -14,6 +14,7 @@ import {
 } from "./index.ts";
 import { runE2bCommandAsRoot } from "./lib/e2b-root.ts";
 import { assertProviderJoin } from "./lib/join.ts";
+import { RUNCLOUD_CREATE_TIMEOUT_MS, RUNCLOUD_READY_TIMEOUT_MS } from "./lib/runcloud.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
 	it("wires every schema provider through to a computesdk factory", () => {
@@ -77,6 +78,8 @@ describe("@sandbox-benchmarks/providers", () => {
 			memory: TARGET_SPEC.memoryGb * 1024,
 			disk: TARGET_SPEC.diskGb,
 		});
+		expect(adapter?.createTimeoutMs).toBe(RUNCLOUD_CREATE_TIMEOUT_MS);
+		expect(adapter?.createTimeoutMs).toBeGreaterThan(RUNCLOUD_READY_TIMEOUT_MS);
 		expect(adapter?.createCompute().name).toBe("runcloud");
 	});
 

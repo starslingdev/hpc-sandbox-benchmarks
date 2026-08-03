@@ -17,7 +17,7 @@ import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
-import { runcloudCompute } from "./runcloud.ts";
+import { RUNCLOUD_CREATE_TIMEOUT_MS, runcloudCompute } from "./runcloud.ts";
 import type { ProviderAdapter } from "./types.ts";
 import { vercelCompute } from "./vercel.ts";
 
@@ -224,8 +224,8 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// run.cloud boots the OCI image directly and exposes independent CPU, memory, and writable-disk
 		// knobs. Keep both its lifetime and idle-pause window above the longest 155-minute suite so a
 		// detached benchmark is not paused while the harness is polling its done file. create() polls
-		// until the sandbox is running, so the toolchain pull lives inside create — same budget as
-		// Microsandbox's cold-pull path.
+		// until the sandbox is running, so the toolchain pull lives inside create. Its outer harness
+		// budget includes margin beyond the adapter's readiness deadline for allocation and cleanup.
 		createCompute: runcloudCompute,
 		createOptions: {
 			image: config.toolchainImage,
@@ -235,6 +235,6 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			idlePauseSeconds: RUNCLOUD_MAX_DURATION_SECS,
 			timeoutSeconds: RUNCLOUD_MAX_DURATION_SECS,
 		},
-		createTimeoutMs: 20 * 60 * 1000,
+		createTimeoutMs: RUNCLOUD_CREATE_TIMEOUT_MS,
 	},
 };
