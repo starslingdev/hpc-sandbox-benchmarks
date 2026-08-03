@@ -1,12 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ExecOptions, Sandbox, SandboxState } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
-import {
-	RUNCLOUD_CREATE_TIMEOUT_MS,
-	RUNCLOUD_READY_TIMEOUT_MS,
-	runcloudCompute,
-	sandboxMethods,
-} from "./runcloud.ts";
+import { runcloudCompute, sandboxMethods } from "./runcloud.ts";
 
 type ComputeOptions = NonNullable<Parameters<typeof runcloudCompute>[0]>;
 type NativeClient = NonNullable<ComputeOptions["client"]>;
@@ -48,11 +43,6 @@ function nativeClient(overrides: Partial<NativeClient> = {}): NativeClient {
 }
 
 describe("run.cloud ComputeSDK adapter", () => {
-	it("keeps the harness create timeout beyond the adapter readiness window", () => {
-		expect(RUNCLOUD_CREATE_TIMEOUT_MS).toBeGreaterThan(RUNCLOUD_READY_TIMEOUT_MS);
-		expect(RUNCLOUD_CREATE_TIMEOUT_MS - RUNCLOUD_READY_TIMEOUT_MS).toBe(5 * 60 * 1000);
-	});
-
 	it("forwards create policy and waits through a transitional state", async () => {
 		let createInput: Record<string, unknown> | undefined;
 		const states = [nativeSandbox("building_image"), nativeSandbox("running")];

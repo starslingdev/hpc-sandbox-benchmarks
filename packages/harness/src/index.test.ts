@@ -403,7 +403,7 @@ describe("runSuite (resolution + credential gate)", () => {
 describe("createSuiteSandbox (creation-failure marker)", () => {
 	// The daytona-container incident shape: creation itself throws, so no sandbox — and no result —
 	// ever exists for the cell. The marker is the shard's ONLY record of the failure.
-	const createCtx = (resultsDir: string, overrides: { createTimeoutMs?: number } = {}) => ({
+	const createCtx = (resultsDir: string, overrides: { createTimeoutMs?: number | null } = {}) => ({
 		suite: suite({}),
 		suiteName: "cpu-node",
 		providerName: "daytona-container",
@@ -489,6 +489,22 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		// Let the late create settle and the attached cleanup run.
 		await new Promise((r) => setTimeout(r, 60));
 		expect(destroyed.hit).toBe(true);
+	});
+
+	it("does not abandon an adapter-owned create/cleanup promise when its timeout is disabled", async () => {
+		const resultsDir = freshDir();
+		const handle = makeSandbox({ destroyed: { hit: false } });
+		const compute = {
+			sandbox: {
+				create: (): Promise<SandboxHandle> =>
+					new Promise((resolve) => setTimeout(() => resolve(handle), 30)),
+			},
+		};
+
+		await expect(
+			createSuiteSandbox(() => compute, createCtx(resultsDir, { createTimeoutMs: null })),
+		).resolves.toBe(handle);
+		expect(existsSync(join(resultsDir, MARKER))).toBe(false);
 	});
 
 	it("folds into a suite-scope FAILED gap through the extractor's marker reader", async () => {

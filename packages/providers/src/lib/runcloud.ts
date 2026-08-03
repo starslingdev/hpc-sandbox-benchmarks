@@ -20,9 +20,6 @@ const PROVIDER = "runcloud";
 const CREATE_READY_POLL_MS = 2_000;
 /** Cold pulls of the ~1.5 GiB toolchain image on a first-use host can take several minutes. */
 export const RUNCLOUD_READY_TIMEOUT_MS = 20 * 60 * 1000;
-/** The harness's outer create race starts before the allocation request, while the readiness clock
- * starts after it. Keep five minutes of headroom for allocation latency and cleanup. */
-export const RUNCLOUD_CREATE_TIMEOUT_MS = RUNCLOUD_READY_TIMEOUT_MS + 5 * 60 * 1000;
 /** A destroy request can fail transiently after allocation succeeded. Retry inside create(), because
  * the harness has no sandbox handle (and therefore no generic cleanup path) until create resolves. */
 const CREATE_FAILURE_CLEANUP_ATTEMPTS = 5;
