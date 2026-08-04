@@ -41,7 +41,9 @@
   },
   "overrides": {
     "@blaxel/core": "0.3.5",
-    "@daytonaio/sdk": "npm:@daytona/sdk@0.192.0"
+    "@daytonaio/sdk": "npm:@daytona/sdk@0.192.0",
+    "form-data": "4.0.6",
+    "tar": "7.5.22"
   },
   "scripts": {
     "typecheck": "bun --filter '!./' --filter '*' --if-present typecheck",
