@@ -255,11 +255,13 @@ bench_cmd() {
 # --- Phoronix Test Suite (PTS) helpers ---
 
 # The toolchain bakes profiles as root under /var/lib, but E2B-compatible providers inject an
-# unprivileged runtime user. PTS 10.8.4 supports this official override when the directory exists.
-# Set it here as a fallback in case an image importer strips the Docker ENV; the harness preamble does
-# the same before setup/smoke commands, so all PTS call sites see one registry.
+# unprivileged runtime user. PTS 10.8.4 has separate supported overrides for user state and installed
+# profile discovery; without the latter an unprivileged Runloop Devbox sees the profile payloads but
+# reports zero installed tests because the root bake's /etc config is not writable. Set both here as
+# a fallback in case an image importer strips the Docker ENV; the harness preamble does the same.
 if [ -d /var/lib/phoronix-test-suite ]; then
 	export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/
+	export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/
 fi
 
 # Locate PTS's effective data directory. Prefer its supported override, then probe legacy root/user

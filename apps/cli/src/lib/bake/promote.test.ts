@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { fullPromotionResult, promotionScopeAfterValidation } from "./promote.ts";
+import {
+	effectivePromotionRequirements,
+	fullPromotionResult,
+	promotionScopeAfterValidation,
+} from "./promote.ts";
+
+describe("effectivePromotionRequirements", () => {
+	test("makes every scoped provider required without needing a redundant --require", () => {
+		expect(effectivePromotionRequirements([], ["runloop"])).toEqual(["runloop"]);
+	});
+
+	test("preserves explicit requirements and leaves a full release's optional providers optional", () => {
+		expect(effectivePromotionRequirements(["e2b"], ["runloop"])).toEqual(["e2b", "runloop"]);
+		expect(effectivePromotionRequirements(["e2b"], undefined)).toEqual(["e2b"]);
+	});
+});
 
 describe("promotionScopeAfterValidation", () => {
 	test("does not publish an optional provider artifact after its candidate validation fails", () => {

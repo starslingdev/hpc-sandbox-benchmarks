@@ -317,9 +317,9 @@ const PREAMBLE_HEAD = [
 	// Distro pythons are PEP 668 externally-managed, but PTS profiles pip-install their harness —
 	// fine in a throwaway sandbox; the baked image sets the same.
 	"export PIP_BREAK_SYSTEM_PACKAGES=1",
-	// E2B-compatible builders inject an unprivileged runtime user. Point PTS at the root-baked profile
-	// registry explicitly even if a provider strips the Docker ENV while importing the image.
-	"if [ -d /var/lib/phoronix-test-suite ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/; fi",
+	// Some providers inject an unprivileged runtime user. Point both PTS state and installed-profile
+	// discovery at the root-baked registry even if an image importer strips the Docker ENV/config.
+	"if [ -d /var/lib/phoronix-test-suite ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/; fi",
 ];
 
 /**

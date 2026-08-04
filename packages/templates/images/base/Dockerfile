@@ -77,6 +77,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_CONFIG_DIR=/etc/mise \
     PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ \
+    PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/ \
     PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # > Login bash with pipefail so a failure anywhere in a piped RUN (and inside the scripts) aborts

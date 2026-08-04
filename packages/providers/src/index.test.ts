@@ -76,6 +76,7 @@ describe("@sandbox-benchmarks/providers", () => {
 		expect(compute?.name).toBe("runloop");
 		expect(compute?.snapshot).toBeDefined();
 		expect(adapter?.createOptions).toEqual({
+			timeout: 20 * 60 * 1000,
 			blueprint_name: config.runloopBlueprintVersion,
 			launch_parameters: {
 				resource_size_request: "CUSTOM_SIZE",

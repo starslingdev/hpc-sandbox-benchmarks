@@ -21,11 +21,20 @@ describe("Runloop Blueprint bake", () => {
 
 	it("creates and awaits the Blueprint without putting credentials in build parameters", async () => {
 		let received: unknown;
+		const deleted: string[] = [];
+		let listedWith: unknown;
 		const sdk = {
 			blueprint: {
 				create: async (params: unknown) => {
 					received = params;
 					return { id: "bpt_test" };
+				},
+				list: async (params: unknown) => {
+					listedWith = params;
+					return [
+						{ id: "bpt_test", delete: async () => undefined },
+						{ id: "bpt_old", delete: async () => deleted.push("bpt_old") },
+					];
 				},
 			},
 		} as unknown as Pick<RunloopSDK, "blueprint">;
@@ -42,6 +51,55 @@ describe("Runloop Blueprint bake", () => {
 		);
 		expect(JSON.stringify(received)).not.toContain("RUNLOOP_API_KEY");
 		expect(JSON.stringify(received)).not.toContain("bearerToken");
-		expect(logs.at(-1)).toContain("bpt_test");
+		expect(listedWith).toEqual({
+			name: "sandbox-benchmarks-toolchain-v7-candidate",
+			status: "build_complete",
+			limit: 100,
+		});
+		expect(deleted).toEqual(["bpt_old"]);
+		expect(logs).toContain("runloop Blueprint built: bpt_test");
+		expect(logs.at(-1)).toContain("bpt_old");
+	});
+
+	it("keeps a successful successor when stale cleanup is blocked", async () => {
+		const sdk = {
+			blueprint: {
+				create: async () => ({ id: "bpt_new" }),
+				list: async () => [
+					{
+						id: "bpt_old",
+						delete: async () => {
+							throw new Error("dependent snapshot");
+						},
+					},
+				],
+			},
+		} as unknown as Pick<RunloopSDK, "blueprint">;
+		const logs: string[] = [];
+
+		await expect(
+			bakeRunloopBlueprint("toolchain-v7-candidate", DIGEST, logs.push.bind(logs), sdk),
+		).resolves.toBeUndefined();
+		expect(logs.at(-1)).toContain("dependent snapshot");
+	});
+
+	it("removes failed build records while preserving the build error", async () => {
+		const deleted: string[] = [];
+		const sdk = {
+			blueprint: {
+				create: async () => {
+					throw new Error("docker build failed");
+				},
+				list: async (params: { status?: string }) => {
+					expect(params.status).toBe("failed");
+					return [{ id: "bpt_failed", delete: async () => deleted.push("bpt_failed") }];
+				},
+			},
+		} as unknown as Pick<RunloopSDK, "blueprint">;
+
+		await expect(
+			bakeRunloopBlueprint("toolchain-v7-candidate", DIGEST, () => {}, sdk),
+		).rejects.toThrow("docker build failed");
+		expect(deleted).toEqual(["bpt_failed"]);
 	});
 });

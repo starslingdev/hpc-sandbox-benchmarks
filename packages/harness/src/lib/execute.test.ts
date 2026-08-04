@@ -75,6 +75,9 @@ describe("sandbox preamble", () => {
 
 	it("reuses the baked PTS registry for an injected unprivileged runtime user", () => {
 		expect(PREAMBLE).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
+		expect(PREAMBLE).toContain(
+			"PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/",
+		);
 	});
 
 	it("never disables the mise python — baked images have no distro python3 to fall back to", () => {

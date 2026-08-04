@@ -123,6 +123,16 @@ export function promotionScopeAfterValidation(
 	return { eligible, rejected };
 }
 
+/** A scoped promote is an explicit request to publish every named provider, so that scope is required
+ * even for a direct local invocation that did not also pass `--require`. Preserve any configured
+ * requirements as well so a typo or contradictory invocation still fails closed. */
+export function effectivePromotionRequirements(
+	configured: readonly string[],
+	only: readonly ProviderId[] | undefined,
+): string[] {
+	return [...new Set([...configured, ...(isPartialScope(only) ? (only ?? []) : [])])];
+}
+
 export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<PromoteResult> {
 	const { force = false, only } = options;
 	const partial = isPartialScope(only);
@@ -137,9 +147,10 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	};
 	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
 	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
-	// skips, so its re-validation or artifact failure is recorded but must NOT abort the publish. Locally
-	// (nothing required) any failure aborts, as a safety net for a hand-run promote.
-	const required = requiredProviders();
+	// skips, so its re-validation or artifact failure is recorded but must NOT abort a full publish.
+	// A scoped backfill is inherently strict: every provider explicitly named is required even if a
+	// direct local caller omitted the redundant `--require` flag.
+	const required = effectivePromotionRequirements(requiredProviders(), only);
 	const blocks = (r: { provider: string; status: string }): boolean =>
 		r.status === "failed" && (required.length === 0 || required.includes(r.provider));
 

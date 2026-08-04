@@ -56,7 +56,7 @@ export function ptsInstalledTestsSmokeCheck(installTests: string): SmokeCheck {
 	return {
 		name: "pts-installed-tests",
 		cmd:
-			'installed="$(PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ phoronix-test-suite list-installed-tests 2>/dev/null)"; ' +
+			'installed="$(PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/ phoronix-test-suite list-installed-tests 2>/dev/null)"; ' +
 			`profiles="$(printf '%s\\n' "$installed" | awk '$1 ~ /^pts\\// { print $1 }')"; ` +
 			verifyExpected +
 			`actual="$(printf '%s\\n' "$profiles" | awk 'NF { count++ } END { print count + 0 }')"; ` +

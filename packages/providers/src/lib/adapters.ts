@@ -7,7 +7,6 @@ import { daytona } from "@computesdk/daytona";
 import { e2b } from "@computesdk/e2b";
 import { modal } from "@computesdk/modal";
 import { namespace } from "@computesdk/namespace";
-import { runloop } from "@computesdk/runloop";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions } from "computesdk";
@@ -19,7 +18,8 @@ import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
 import { runcloudCompute } from "./runcloud.ts";
-import type { DirectProvider, ProviderAdapter } from "./types.ts";
+import { runloopCompute } from "./runloop.ts";
+import type { ProviderAdapter } from "./types.ts";
 import { vercelCompute } from "./vercel.ts";
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
@@ -101,42 +101,9 @@ const MICROSANDBOX_CREATE_TIMEOUT_MS = 20 * 60 * 1000;
 /** The longest suite has a 155-minute budget; leave setup/collection margin while ensuring a leaked
  * Runloop Devbox expires. Runloop allows keep-alive durations up to 48 hours. */
 const RUNLOOP_KEEP_ALIVE_SECS = 3 * 60 * 60;
-
-/** Normalize @computesdk/runloop's native snapshot records to ComputeSDK's public DirectProvider
- * contract. The published wrapper exposes `{create_time_ms}` while `computesdk` 4.1 expects
- * `{provider, createdAt}`; the lifecycle harness only needs `id`, but keeping the full contract here
- * avoids an unsafe cast and preserves Runloop's snapshot benchmark. */
-function runloopCompute(): DirectProvider {
-	const compute = runloop({});
-	const snapshots = compute.snapshot;
-	return {
-		name: compute.name,
-		sandbox: compute.sandbox,
-		...(snapshots
-			? {
-					snapshot: {
-						create: async (sandboxId, options) => {
-							const snapshot = await snapshots.create(sandboxId, options);
-							return {
-								id: snapshot.id,
-								provider: "runloop",
-								createdAt: new Date(snapshot.create_time_ms),
-								metadata: snapshot.metadata,
-							};
-						},
-						list: async () =>
-							(await snapshots.list()).map((snapshot) => ({
-								id: snapshot.id,
-								provider: "runloop",
-								createdAt: new Date(snapshot.create_time_ms),
-								metadata: snapshot.metadata,
-							})),
-						delete: (snapshotId) => snapshots.delete(snapshotId),
-					},
-				}
-			: {}),
-	};
-}
+/** Bound Runloop's create-and-await-running poll. The hardened adapter tears down an accepted
+ * allocation if this deadline expires, so a cold start cannot hang the runner or leak a Devbox. */
+const RUNLOOP_CREATE_TIMEOUT_MS = 20 * 60 * 1000;
 
 function microsandboxCloudCredentials(): { kind: "cloud"; url?: string; apiKey: string } {
 	const { apiUrl, apiKey } = config.microsandboxCloud;
@@ -243,9 +210,10 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// Boot the immutable version-scoped Blueprint by name. Runloop resolves that name to its latest
 		// successful build; the release lane owns creation from the shared toolchain image. Per-run launch
 		// parameters retain the benchmark's target sizing and keep-alive override. The API key stays in
-		// the factory's RUNLOOP_API_KEY fallback and never enters guest-visible create options.
+		// the SDK's RUNLOOP_API_KEY fallback and never enters guest-visible create options.
 		createCompute: runloopCompute,
 		createOptions: {
+			timeout: RUNLOOP_CREATE_TIMEOUT_MS,
 			blueprint_name: config.runloopBlueprint,
 			launch_parameters: {
 				resource_size_request: "CUSTOM_SIZE",

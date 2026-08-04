@@ -39,6 +39,9 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		expect(pts?.expect).toBe("pts-profile-count=10");
 		expect(pts?.cmd).toContain("phoronix-test-suite list-installed-tests");
 		expect(pts?.cmd).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
+		expect(pts?.cmd).toContain(
+			"PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/",
+		);
 		expect(pts?.cmd).toContain("node-web-tooling-1.0.1");
 		expect(pts?.cmd).toContain("fast-cli-1.0.0");
 		expect(pts?.cmd).toContain("iperf-1.2.0");

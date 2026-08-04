@@ -19,6 +19,7 @@
     "@computesdk/namespace": "catalog:computesdk",
     "@computesdk/provider": "catalog:computesdk",
     "@computesdk/runloop": "catalog:computesdk",
+    "@runloop/api-client": "catalog:computesdk",
     "@run-cloud/sdk": "catalog:computesdk",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",

@@ -35,7 +35,7 @@
     "@sandbox-benchmarks/figures": "workspace:*",
     "@daytona/api-client": "catalog:computesdk",
     "@daytona/sdk": "catalog:computesdk",
-    "@runloop/api-client": "1.28.0",
+    "@runloop/api-client": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk",
     "dotenv": "catalog:"
   },
