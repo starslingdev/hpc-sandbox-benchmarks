@@ -159,14 +159,14 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
      modal, namespace, microsandbox) are unaffected: their version artifact is a retag of the exact
      candidate that was just booted.
 
-   The Runloop-on-v7 flow, as an example — two dispatches, neither of which touches another provider,
+   The Runloop-on-v8 flow, as an example — two dispatches, neither of which touches another provider,
    and neither of which runs a build job:
 
    1. **Actions → Toolchain image → Run workflow** with `providers=runloop`, `build=skip`, `promote`
-      unchecked. Builds the candidate Blueprint from the published GHCR `:v7` digest, boots it, and
+      unchecked. Builds the candidate Blueprint from the published GHCR `:v8` digest, boots it, and
       runs the smoke spec. Nothing public moves.
    2. Same dispatch with `promote` checked. Re-validates the candidate Blueprint and builds the
-      version-named Blueprint from the pinned base. The GHCR base `:v7` is never rewritten.
+      version-named Blueprint from the pinned base. The GHCR base `:v8` is never rewritten.
 
    The release pulls exactly **one** GHCR package (`sandbox-benchmarks-toolchain`), anonymously, so the
    one-time Public bootstrap it needs has already been done. Adding a provider never adds a package —

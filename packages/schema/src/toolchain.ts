@@ -19,7 +19,26 @@ export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
 // (https://vercel.com/docs/container-registry/limits-and-pricing), so the bake now installs apt in
 // TOOLCHAIN_APT_GROUPS-sized layers and PTS one profile group at a time. The image content is
 // identical; only its layer boundaries moved. Re-bake all providers before the runs that consume v7.
-export const TOOLCHAIN_VERSION = "v7";
+// v8: no toolchain pin changed from v7 — mise 2026.7.11, node 22.23.1, pnpm 10.34.5, jc 1.25.7, PTS
+// 10.8.4 and the same 10 pre-installed profiles. The delta is entirely about the UNPRIVILEGED runtime
+// user E2B-compatible providers inject (Runloop runs its whole lane that way), and it is two things:
+//   - The image ENV no longer exports PTS_USER_PATH_OVERRIDE, only PTS_TEST_INSTALL_ROOT_PATH. Sharing
+//     root's mutable state put an injected user on a 0600 core.pt2so and — because PTS expands its
+//     non-daemon ResultsDirectory through HOME regardless of the override — on a results tree
+//     lib/bench.sh's composite finder never searched. Dropping the override leaves that user on PTS's
+//     own $HOME default while the baked profiles stay shared, which is the only path PTS 10.8.4
+//     exposes an override for. Root is unaffected: its daemonized branch pins the baked root anyway.
+//   - installed-tests/pts and its parent are now group/other-writable. batch-install created them 0755
+//     root inside the profile layers, AFTER 20-pts.sh's blanket chmod, so an unprivileged user could
+//     read every baked profile but could neither install a new one nor discard a baked install — the
+//     latter is what install_vendored_pts_profile must do to replace a broken upstream runner, and its
+//     silent no-op meant the network suite benchmarked the unrepaired iperf profile.
+// v7 published WITHOUT PTS_TEST_INSTALL_ROOT_PATH (the ENV postdates that bake), which is why an
+// unprivileged run on it reports 0 of 10 installed profiles; the runtime entry points now set it
+// themselves, so v7 images keep working, but Runloop's vendored-profile path needs THIS image.
+// Numbers stay comparable across v7↔v8: no pin, profile, or build flag changed — only an env var and
+// a directory mode. Re-bake all providers before the runs that consume v8.
+export const TOOLCHAIN_VERSION = "v8";
 
 const VCR_NAMESPACE_COMPONENT = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 
