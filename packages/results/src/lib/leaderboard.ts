@@ -137,12 +137,19 @@ export interface LeaderboardFigure {
 export interface LeaderboardRow {
 	providerId: string;
 	displayName: string;
-	/** Representative value (Samples' p50) of the Metric for this provider. */
+	/**
+	 * Representative value of the Metric for this provider: with replicate sandboxes, the median of the
+	 * PER-SANDBOX medians (one machine one vote — NOT `aggregates.p50`, which weights each machine by its
+	 * trial count); without them, the p50 of that single sandbox's Samples.
+	 */
 	value: number;
 	/**
-	 * 1-based rank by the Metric's Direction. Providers whose Sample distributions are NOT
-	 * distinguishable (Mann-Whitney U, two-sided, α = {@link DEFAULT_ALPHA}) share a rank: a faster
-	 * median earned inside the noise is not a faster provider.
+	 * 1-based rank by the Metric's Direction. Providers that are NOT distinguishable share a rank: a
+	 * faster median earned inside the noise is not a faster provider. The deciding test is the
+	 * SANDBOX-LEVEL one wherever replicate sandboxes exist — Mann-Whitney U (two-sided,
+	 * α = {@link DEFAULT_ALPHA}) on each side's per-sandbox medians, whole machines as the exchangeable
+	 * unit; only where both sides ran in a single sandbox does it fall back to Mann-Whitney on the pooled
+	 * trials. See {@link pVsPrevious} for which one decided a given row.
 	 */
 	rank: number;
 	/**
@@ -727,12 +734,15 @@ export function buildLeaderboard(run: Run): Leaderboard {
 }
 
 /**
- * Describe every underpowered comparison the board actually contains, as `"3 v 3 floors at p ≈ 0.1"` —
- * quoting the floor THE TEST REPORTED for that row, not one recomputed from the sample sizes here. The
- * floor depends on the tie pattern as well as the sizes, so a footer that re-derived it from `n` alone
- * could print a number the row's own test never produced. An underpowered row is always compared against
- * the row above it, which is what supplies the other n. Deduplicated (several dimensions usually share
- * one shape) and ordered so the committed markdown stays byte-stable.
+ * Describe every underpowered comparison the board actually contains, as
+ * `"3 v 3 sandboxes floors at p ≈ 0.1"` — quoting the floor THE TEST REPORTED for that row, never one
+ * recomputed from the counts here. The floor depends on the TIE PATTERN as well as the counts, so a
+ * footer that re-derived it, or that deduplicated on the counts alone, could print a number the row's
+ * own test never produced: the committed run contains 3-v-3 comparisons floored at 0.1, 0.2, 0.4 AND
+ * 1.0, the last three from ties among the per-sandbox medians. Deduplication therefore keys on the
+ * (counts, floor) pair, so every distinct floor the board contains is listed. An underpowered row is
+ * always compared against the row above it, which is what supplies the other count. Ordered so the
+ * committed markdown stays byte-stable.
  */
 function underpoweredFloors(board: Leaderboard): string[] {
 	const seen = new Map<string, string>();
@@ -746,11 +756,18 @@ function underpoweredFloors(board: Leaderboard): string[] {
 				// pooled trial counts and printing the pooled floor is what made the published footnote assert
 				// "the floor exceeds α" beside a printed <0.001. Only the R=1-both-sides path falls through to
 				// the pooled Mann-Whitney, where trial counts genuinely are the unit.
+				//
+				// Key on the unit counts AND the floor, never the counts alone: the attainable floor depends on
+				// the TIE PATTERN among the per-sandbox medians as well as their number (see
+				// `minAttainablePValue`), so one shape yields several floors. The committed run has 3-v-3
+				// comparisons floored at 0.1, 0.2, 0.4 and 1.0 — a count-only key silently kept whichever
+				// landed last and printed it as if it were the floor for all of them.
 				const { cluster, floor } = row.pVsPrevious;
-				const key = cluster
+				const unit = cluster
 					? `${cluster.sandboxesA} v ${cluster.sandboxesB} sandboxes`
 					: `${previous.n} v ${row.n} trials`;
-				seen.set(key, `${key} floors at p ≈ ${formatPValue(cluster ? cluster.floor : floor)}`);
+				const attainable = cluster ? cluster.floor : floor;
+				seen.set(`${unit}\0${attainable}`, `${unit} floors at p ≈ ${formatPValue(attainable)}`);
 			});
 		}
 	}
@@ -1336,7 +1353,9 @@ export function renderLeaderboardMarkdown(
 			`The floor is a property of the design — here ${floors.join("; ")}.`,
 			"At three sandboxes a side the floor is 2/C(6,3) = 0.1, which is above α, so **no** three-sandbox",
 			"comparison in this table can ever be declared separated. That is a fact about the replicate count,",
-			"not about the providers.",
+			"not about the providers. One shape can appear more than once above with different floors: ties",
+			"among a provider's per-sandbox medians raise the floor further (to 1.0 when every median in the",
+			"comparison is equal), so the count alone does not determine it.",
 			"Such rows are ranked on their observed medians and are **not** claimed to be tied — read the gap",
 			"between the values, and treat the p-value as unable to settle them either way. Where such a row",
 			"nevertheless shares the rank above it, the note reads `equal medians`: the two values are simply",

@@ -64,7 +64,7 @@ fi
 # UNGATED. The driver below used to carry a subprocess test (schema/src/fast-cli-driver.test.ts) that
 # extracted this heredoc verbatim and replayed scripted fast.com yields through it, pinning the settle
 # rules against the P1 in run 29799034615. It was deleted: the network SUITE measures WAN throughput
-# via iperf3 (see schema/src/suites.ts), this profile is manual-only, and the gate's seven scripted
+# via iperf3 (see packages/schema/src/suites.ts), this profile is manual-only, and the gate's seven scripted
 # scenarios ran to real wall-clock timers for ~5s of every test run. Nothing now checks the settle
 # logic, so edit the stop rules below with the failure modes documented above in hand — or restore the
 # gate from git history first (it is intact, and re-extracts this heredoc by its DRIVER_EOF markers).

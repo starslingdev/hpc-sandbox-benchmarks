@@ -1007,10 +1007,12 @@ separate*, never *the providers are equal*.
 
 `too few sandboxes` is the extreme of that: the deciding test's best attainable p already exceeds α,
 so it could not have separated the rows at any effect size, however far apart their values are.
-The floor is a property of the design — here 2 v 3 sandboxes floors at p ≈ 0.20; 3 v 2 sandboxes floors at p ≈ 0.20; 3 v 3 sandboxes floors at p ≈ 0.10.
+The floor is a property of the design — here 2 v 3 sandboxes floors at p ≈ 0.20; 3 v 2 sandboxes floors at p ≈ 0.20; 3 v 3 sandboxes floors at p ≈ 0.10; 3 v 3 sandboxes floors at p ≈ 0.20; 3 v 3 sandboxes floors at p ≈ 0.40; 3 v 3 sandboxes floors at p ≈ 1.0.
 At three sandboxes a side the floor is 2/C(6,3) = 0.1, which is above α, so **no** three-sandbox
 comparison in this table can ever be declared separated. That is a fact about the replicate count,
-not about the providers.
+not about the providers. One shape can appear more than once above with different floors: ties
+among a provider's per-sandbox medians raise the floor further (to 1.0 when every median in the
+comparison is equal), so the count alone does not determine it.
 Such rows are ranked on their observed medians and are **not** claimed to be tied — read the gap
 between the values, and treat the p-value as unable to settle them either way. Where such a row
 nevertheless shares the rank above it, the note reads `equal medians`: the two values are simply

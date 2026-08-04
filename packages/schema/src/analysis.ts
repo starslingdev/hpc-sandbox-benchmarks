@@ -268,7 +268,14 @@ export function seededRng(seed: string): () => number {
 
 /** A bootstrapped interval around a Metric's median. */
 export interface MedianInterval {
-	/** The observed median (identical to `Aggregates.p50`). */
+	/**
+	 * The observed value of whatever this interval brackets — the SAME estimand `lo`/`hi` envelope, which
+	 * differs by producer: {@link bootstrapMedianInterval} and
+	 * {@link hierarchicalBootstrapMedianInterval} report the median of the POOLED Samples (identical to
+	 * `Aggregates.p50`), while {@link clusterMedianInterval} reports the median of the PER-SANDBOX medians.
+	 * Those two coincide only when every sandbox contributed the same number of trials, so a consumer must
+	 * not assume this equals `Aggregates.p50`.
+	 */
 	median: number;
 	/** Lower/upper bound of the percentile-bootstrap interval at {@link level}. */
 	lo: number;

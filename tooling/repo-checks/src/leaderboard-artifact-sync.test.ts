@@ -735,12 +735,15 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		// Loads independently of the test above: each resolves the Run itself, so one failing reports
 		// its own diagnosis instead of aborting the file and taking the other down with it. The fresh
 		// build is deliberately fed a freshly parsed Run rather than the shared board's — two builds from
-		// two independent parses is what regenerating the artifact actually does, so an unseeded bootstrap
-		// OR a build that mutated its input both show up here as a byte difference.
+		// two independent parses is what regenerating the artifact actually does.
 		const { run, figures } = loadCommittedRun();
-		expect(renderLeaderboardMarkdown(committedBoard(), figures)).toBe(
-			renderLeaderboardMarkdown(buildLeaderboard(run), figures),
-		);
+		// Mutation is asserted SEPARATELY, not inferred from the byte comparison: because the two builds
+		// read two independently parsed Runs, a `buildLeaderboard` that mutated its input after reading it
+		// would still render identical bytes and slip through. Snapshot the Run and diff it afterwards.
+		const before = JSON.stringify(run);
+		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run), figures);
+		expect(JSON.stringify(run), "buildLeaderboard mutated the Run it was given").toBe(before);
+		expect(renderLeaderboardMarkdown(committedBoard(), figures)).toBe(rendered);
 	});
 
 	it("renders one row for every provider/Metric record in the source Run", () => {

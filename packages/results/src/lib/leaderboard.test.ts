@@ -573,6 +573,28 @@ describe("underpowered comparisons", () => {
 		expect(md).not.toContain("0.1.");
 	});
 
+	it("lists every distinct floor a shape produced, because ties raise it above the count's floor", () => {
+		// The attainable floor depends on the TIE PATTERN as well as the counts, so one shape yields
+		// several floors. Three providers on one metric give two adjacent 3-v-3 sandbox comparisons: the
+		// first between distinct per-sandbox medians (floors at 2/C(6,3) = 0.1), the second between two
+		// providers whose every sandbox median is identical (nothing is rankable at all — floor 1.0).
+		// Keying the footer on the counts alone collapsed the two and printed whichever landed last as if
+		// it covered both, which is how a reader gets told 3-v-3 floors at 0.1 for a row that floors at 1.
+		const md = render(
+			buildLeaderboard(
+				run([
+					provider("daytona-vm", [replicatedMetric(HEADLINE, [[30], [31], [32]])]),
+					provider("e2b", [replicatedMetric(HEADLINE, [[10], [10], [10]])]),
+					provider("modal-gvisor", [replicatedMetric(HEADLINE, [[10], [10], [10]])]),
+				]),
+			),
+		);
+		expect(md).toContain("3 v 3 sandboxes floors at p ≈ 0.10");
+		expect(md).toContain("3 v 3 sandboxes floors at p ≈ 1");
+		// And the prose must explain why one shape can appear twice, or the repetition reads as a bug.
+		expect(md).toContain("ties");
+	});
+
 	it("omits the n-too-small explanation entirely when no comparison was underpowered", () => {
 		const md = render(
 			buildLeaderboard(
