@@ -43,14 +43,17 @@ on:
         description: 'Comma-separated providers to benchmark (blank = every registered provider).'
         required: false
         type: string
-        # The default set is every provider that has produced comparable committed results across
-        # isolation technologies: e2b, daytona-vm (the LINUX_VM reference), modal-gvisor (Modal's default
-        # gVisor runtime), modal-vm (Modal's gVisor-free microVM), blaxel (stock base image), novita
-        # (its own pre-baked template), microsandbox-cloud, and vercel (the shared toolchain base
-        # mirrored into VCR). modal-vm + blaxel graduated into the default once committed runs validated
-        # them; microsandbox-cloud and vercel followed. daytona-container and microsandbox-local are the
-        # registered variants still opt-in; Runloop is also opt-in until it has a committed validation
-        # run (pass any of them explicitly);
+        # The default set spans the isolation technologies compared here: e2b, daytona-vm (the LINUX_VM
+        # reference), modal-gvisor (Modal's default gVisor runtime), modal-vm (Modal's gVisor-free
+        # microVM), blaxel (stock base image), novita (its own pre-baked template), microsandbox-cloud,
+        # namespace (dedicated instance), and vercel (the shared toolchain base mirrored into VCR) have
+        # all produced comparable committed results. modal-vm + blaxel graduated into the default once
+        # committed runs validated them; microsandbox-cloud, vercel, and namespace followed. runloop and
+        # runcloud join the default WITHOUT a committed validation run — the matrix itself is how they
+        # get one, so until then they surface as pending providers / leaderboard coverage gaps rather
+        # than scores, and a cell whose credential is missing skips cleanly instead of failing the run.
+        # daytona-container and microsandbox-local are the registered variants still opt-in (pass either
+        # explicitly);
         # `plan-providers` rejects any name that is not in the registry. Listed in registry order — the
         # plan re-sorts to registry order regardless, so the spelling here is cosmetic.
         #
@@ -58,7 +61,7 @@ on:
         # affect comparability — computeSpecMatched covers vCPUs and memory, the two axes providers are
         # ranked on — but a disk-hungry suite will SKIP there and surface as a leaderboard coverage gap
         # rather than a bad score. See packages/results/src/lib/specs.ts.
-        default: e2b,daytona-vm,blaxel,microsandbox-cloud,modal-gvisor,modal-vm,novita,vercel
+        default: e2b,daytona-vm,blaxel,microsandbox-cloud,modal-gvisor,modal-vm,novita,runloop,namespace,vercel,runcloud
       suites:
         description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
         required: false
