@@ -100,6 +100,15 @@ for t in "${pts_tests[@]}"; do
 		[ -d "${dir}" ] && chmod -R a+rwX "${dir}"
 	done
 done
+# > The `pts/` PARENT dirs too, and NOT recursively — batch-install creates them 0755 root inside this
+# > layer, and 20-pts.sh's blanket chmod ran before they existed. Without write on the parent, an
+# > unprivileged runtime user can read every baked profile but can neither install a new one nor
+# > discard a baked install, which is exactly what install_vendored_pts_profile must do to replace a
+# > broken upstream runner (lib/bench.sh). A bare chmod on the directory copies only that directory
+# > entry into this layer, so this cannot re-inflate the image the way a `chmod -R` would.
+for dir in "${installed_dir}/pts" "${installed_dir}" "/var/lib/phoronix-test-suite/test-profiles/pts"; do
+	[ -d "${dir}" ] && chmod a+rwX "${dir}"
+done
 chmod -R a+rwX "${cache_dir}" 2>/dev/null || true
 
 # > That blanket chmod would ship pgbench broken: its install.sh initdb'd pg_/data/db as 0700, and

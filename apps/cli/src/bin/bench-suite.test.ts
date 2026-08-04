@@ -97,9 +97,22 @@ describe("formatDuration", () => {
 });
 
 describe("runtimeUserSummary", () => {
-	it("keeps root quiet and marks any other observed identity as unexpected", () => {
-		expect(runtimeUserSummary("root")).toBe("root");
-		expect(runtimeUserSummary("user")).toBe("⚠ user (expected root)");
-		expect(runtimeUserSummary(undefined)).toBe("—");
+	it("keeps a root-by-contract provider quiet and flags any other identity", () => {
+		expect(runtimeUserSummary("e2b", "root")).toBe("root");
+		expect(runtimeUserSummary("e2b", "user")).toBe("⚠ user (expected root)");
+		expect(runtimeUserSummary("e2b", undefined)).toBe("—");
+	});
+
+	// Runloop's lane runs unprivileged by design. Flagging that would put a warning on all twelve
+	// replicates of a healthy run — the noise that teaches readers to skip the column entirely.
+	it("stays quiet for a provider that declares an unprivileged runtime identity", () => {
+		expect(runtimeUserSummary("runloop", "user")).toBe("user");
+		expect(runtimeUserSummary("runloop", "sandbox")).toBe("sandbox");
+	});
+
+	// The other direction is drift too: a provider that silently gained root changed the security
+	// posture the isolation notes describe, and setup would start writing root-owned state.
+	it("flags root where an unprivileged identity was declared", () => {
+		expect(runtimeUserSummary("runloop", "root")).toBe("⚠ root (expected unprivileged)");
 	});
 });

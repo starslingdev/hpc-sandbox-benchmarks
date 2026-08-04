@@ -167,3 +167,42 @@ export const TOOLCHAIN_APT_GROUPS: readonly ToolchainAptGroup[] = Object.freeze(
 export const PTS_APT_DEPS = TOOLCHAIN_APT_GROUPS.filter((group) => !group.bakeOnly)
 	.map((group) => group.packages)
 	.join(" ");
+
+/** The bake's PTS root: profiles, installed tests and root's own mutable state all live under here. */
+export const PTS_BAKED_ROOT = "/var/lib/phoronix-test-suite";
+
+/**
+ * How every runtime entry point selects PTS's state directory, as ONE shell snippet.
+ *
+ * The bake installs profiles as root under {@link PTS_BAKED_ROOT}, but E2B-compatible providers
+ * (Runloop especially) inject an unprivileged runtime user. Those two identities need DIFFERENT
+ * mutable state and the SAME installed profiles, which is exactly the split below:
+ *
+ *   - `PTS_TEST_INSTALL_ROOT_PATH` keeps the baked installed tests shared. It is the only path PTS
+ *     10.8.4 exposes its own env override for, and without it an unprivileged run falls back to the
+ *     config's `~/.phoronix-test-suite/installed-tests/` and reports ZERO installed tests — the
+ *     Runloop failure this exists to prevent. The published v7 image predates this ENV, so setting it
+ *     at runtime is what makes an already-published image work.
+ *   - `PTS_USER_PATH_OVERRIDE` is UNSET for a non-root user rather than pointed anywhere. PTS's own
+ *     per-user default is already `$HOME/.phoronix-test-suite`, and it creates that directory itself —
+ *     so there is no mkdir here to fail under `set -e` when HOME is unset or unwritable. Pointing an
+ *     unprivileged user at the baked root instead is what breaks: root's `core.pt2so` is mode 0600
+ *     (the bake's chmod runs before the profile layers rewrite it), and PTS expands its non-daemon
+ *     `ResultsDirectory` through HOME regardless of the override — so the shared setting yields
+ *     permission errors AND a results tree lib/bench.sh's composite finder never searches.
+ *
+ * Root keeps the explicit override. It is redundant when PTS reaches its daemonized branch (writable
+ * /var/lib + /etc, which forces PTS_USER_PATH to the baked root anyway), and load-bearing when it
+ * does not — without it a root sandbox with a read-only /etc silently switches to
+ * /root/.phoronix-test-suite and loses every baked profile.
+ *
+ * Interpolated verbatim by the harness preamble (packages/harness/src/lib/execute.ts) and the
+ * generated smoke probe (packages/templates/src/smoke.ts). lib/bench.sh cannot import TS and restates
+ * the same decision in multi-line shell; tooling/repo-checks/src/pts-state-alignment.test.ts gates
+ * that copy as text, matching the {@link PTS_APT_DEPS} precedent.
+ */
+export const PTS_STATE_SELECT_SH =
+	`if [ -d ${PTS_BAKED_ROOT} ]; then ` +
+	`export PTS_TEST_INSTALL_ROOT_PATH=${PTS_BAKED_ROOT}/installed-tests/; ` +
+	`if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=${PTS_BAKED_ROOT}/; ` +
+	`else unset PTS_USER_PATH_OVERRIDE; fi; fi`;

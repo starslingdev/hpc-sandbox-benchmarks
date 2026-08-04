@@ -24,7 +24,11 @@ import {
 import { drainRuncloudBackgroundWork } from "@sandbox-benchmarks/providers";
 import { writeNormalizedRun } from "@sandbox-benchmarks/results";
 import type { Run, SuiteName } from "@sandbox-benchmarks/schema";
-import { SUITES } from "@sandbox-benchmarks/schema";
+import {
+	expectedRuntimeIdentity,
+	isUnexpectedRuntimeUser,
+	SUITES,
+} from "@sandbox-benchmarks/schema";
 import type { CellKind, SummaryRow } from "../lib/actions-log.ts";
 import {
 	escapeHtml,
@@ -62,16 +66,16 @@ function plural(n: number, singular: string, pluralForm: string = `${singular}s`
 }
 
 /**
- * Benchmark setup, baked PTS state, and provider adapters all target root. Keep this explicit in the
- * Actions report: a provider silently injecting another identity changes HOME, permissions, and tool
- * state even when every hardware-spec probe still matches.
+ * Job-summary rendering for the observed effective user, with a visible warning on contract drift.
+ *
+ * The expectation is per-provider ({@link isUnexpectedRuntimeUser}), NOT a hardcoded "root": Runloop
+ * runs its lane as an unprivileged user by design, so a fixed expectation would mark all twelve of its
+ * replicates anomalous on a healthy run and bury the identity change this column exists to surface.
  */
-export const EXPECTED_SANDBOX_USER = "root";
-
-/** Job-summary rendering for the observed effective user, with a visible warning on contract drift. */
-export function runtimeUserSummary(user: string | undefined): string {
+export function runtimeUserSummary(providerId: string, user: string | undefined): string {
 	if (!user) return "—";
-	return user === EXPECTED_SANDBOX_USER ? user : `⚠ ${user} (expected ${EXPECTED_SANDBOX_USER})`;
+	if (!isUnexpectedRuntimeUser(providerId, user)) return user;
+	return `⚠ ${user} (expected ${expectedRuntimeIdentity(providerId)})`;
 }
 
 function miseTaskSummary(plan: SuiteTaskPlan): string {
@@ -265,7 +269,7 @@ async function reportCell(
 			["Metrics", provider ? String(provider.metrics.length) : "", "plain"],
 			["Suites covered", provider ? String(provider.suitesCovered.length) : "", "plain"],
 			["Gaps", provider ? String(provider.gaps.length) : "", "plain"],
-			["Runtime user", runtimeUserSummary(provider?.observedSpecs.user), "plain"],
+			["Runtime user", runtimeUserSummary(opts.provider, provider?.observedSpecs.user), "plain"],
 			["Observed CPU", provider?.observedSpecs.cpuModel ?? "", "code"],
 			[
 				"Spec matched",
@@ -356,7 +360,7 @@ export function replicateSummaryRows(
 			escapeHtml(run ? String(run.metrics.length) : "—"),
 			escapeHtml(run ? String(run.suitesCovered.length) : "—"),
 			escapeHtml(run ? String(run.gaps.length) : "—"),
-			escapeHtml(runtimeUserSummary(run?.observedSpecs.user)),
+			escapeHtml(runtimeUserSummary(provider, run?.observedSpecs.user)),
 			renderCell(run?.observedSpecs.cpuModel || "—", "code"),
 			escapeHtml(run?.observedSpecs.region || "—"),
 			escapeHtml(run?.specMatched === undefined ? "—" : String(run.specMatched)),
@@ -385,11 +389,13 @@ async function reportFleet(
 			o.run?.providers.find((p) => p.providerId === opts.provider)?.validationStatus ===
 			"validated",
 	).length;
-	const unexpectedRuntimeUsers = opts.outcomes.filter((outcome) => {
-		const user = outcome.run?.providers.find((provider) => provider.providerId === opts.provider)
-			?.observedSpecs.user;
-		return Boolean(user && user !== EXPECTED_SANDBOX_USER);
-	}).length;
+	const unexpectedRuntimeUsers = opts.outcomes.filter((outcome) =>
+		isUnexpectedRuntimeUser(
+			opts.provider,
+			outcome.run?.providers.find((provider) => provider.providerId === opts.provider)
+				?.observedSpecs.user,
+		),
+	).length;
 	await writeCellSummary({
 		// Identity rides through as-is; `outcomes` is spent on the counts and the table below.
 		...opts,
@@ -401,7 +407,7 @@ async function reportFleet(
 			[
 				"Unexpected runtime users",
 				unexpectedRuntimeUsers > 0
-					? `${unexpectedRuntimeUsers}/${opts.outcomes.length} sandbox(es) (expected ${EXPECTED_SANDBOX_USER})`
+					? `${unexpectedRuntimeUsers}/${opts.outcomes.length} sandbox(es) (expected ${expectedRuntimeIdentity(opts.provider)})`
 					: "",
 				"plain",
 			],

@@ -37,11 +37,11 @@ done
 # > /var/lib/phoronix-test-suite lines up at runtime.
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
 
-# > E2B and Novita inject an unprivileged runtime user after importing this image. PTS otherwise
-# > switches from the root bake's /var/lib state to $HOME/.phoronix-test-suite, making every baked
-# > profile invisible. The image ENV pins PTS_USER_PATH_OVERRIDE to this existing directory; make the
-# > ephemeral benchmark state writable so that user can create batch config and result XML beside the
-# > read-mostly installed profiles. Provider isolation is the outer security boundary for this image.
+# > E2B, Novita and Runloop inject an unprivileged runtime user after importing this image. That user
+# > keeps its OWN mutable PTS state under $HOME (PTS's default, which it creates itself) and shares only
+# > the baked profiles, via the image's PTS_TEST_INSTALL_ROOT_PATH — so what has to be writable here is
+# > the install bookkeeping PTS writes beside the profiles it installs, not root's private state.
+# > Provider isolation is the outer security boundary for this image.
 # >
 # > Only the STATE created above is chmod'ed here. Each profile group chmods its own installed tree
 # > inside its own layer (25-pts-profiles.sh): a blanket `chmod -R` in a later layer would copy every

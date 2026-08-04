@@ -254,25 +254,45 @@ bench_cmd() {
 
 # --- Phoronix Test Suite (PTS) helpers ---
 
-# The toolchain bakes profiles as root under /var/lib. PTS 10.8.4 has separate supported overrides for
-# mutable user state and installed-profile discovery: keep the payload registry shared, but give an
-# injected unprivileged runtime user state under its own HOME. Root's core.pt2so is mode 0600, and PTS
-# expands its non-daemon ResultsDirectory through HOME regardless of a shared-state override; pointing
-# both users at /var/lib therefore warns on every invocation while the composite finder searches the
-# wrong result tree. Set this here as a fallback in case an image importer strips the Docker ENV; the
-# harness preamble makes the same choice before setup commands run.
+# The toolchain bakes profiles as root under /var/lib, but E2B-compatible providers (Runloop) inject
+# an unprivileged runtime user. Keep the installed profiles SHARED via the one path PTS 10.8.4 gives
+# its own env override, and leave that user's mutable state on PTS's own per-user default:
+#
+#   - Without PTS_TEST_INSTALL_ROOT_PATH an unprivileged run falls back to the config's
+#     ~/.phoronix-test-suite/installed-tests/ and reports ZERO installed tests, even though it can read
+#     the baked tree perfectly well. Set here as a fallback in case an image importer strips the Docker
+#     ENV, and because the published v7 image predates that ENV entirely.
+#   - PTS_USER_PATH_OVERRIDE is UNSET rather than repointed for a non-root user: PTS's default already
+#     IS $HOME/.phoronix-test-suite and PTS creates it itself, so there is no mkdir here to fail under
+#     `set -e` when HOME is unset or unwritable. Pointing that user at the baked root is what breaks —
+#     root's core.pt2so is mode 0600, and PTS expands its non-daemon ResultsDirectory through HOME
+#     regardless of the override, so the shared setting both warns on every invocation and leaves the
+#     composite finder below searching a tree PTS never writes.
+#
+# Root keeps the explicit override: redundant when PTS reaches its daemonized branch (writable /var/lib
+# AND /etc force PTS_USER_PATH to the baked root anyway), load-bearing when it does not.
+#
+# Mirrors PTS_STATE_SELECT_SH in packages/schema/src/toolchain.ts, which the harness preamble and the
+# generated smoke probe interpolate; this file cannot import TS, so the copy is gated as text by
+# tooling/repo-checks/src/pts-state-alignment.test.ts.
 if [ -d /var/lib/phoronix-test-suite ]; then
 	export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/
 	if [ "$(id -u)" -eq 0 ]; then
 		export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/
 	else
-		mkdir -p "${HOME}/.phoronix-test-suite"
-		export PTS_USER_PATH_OVERRIDE="${HOME}/.phoronix-test-suite/"
+		unset PTS_USER_PATH_OVERRIDE
 	fi
 fi
 
-# Locate PTS's effective data directory. Prefer its supported override, then probe legacy root/user
-# locations by core.pt2so, which pts_init guarantees exists. Cached for the shell.
+# Locate PTS's effective data directory — where it keeps MUTABLE state (core.pt2so, user-config.xml,
+# test-results, and any vendored/local test-profiles we stage). Prefer its supported override, then
+# probe legacy root/user locations by core.pt2so, which pts_init guarantees exists. Cached for the
+# shell.
+#
+# The probe requires core.pt2so to be READABLE, not merely present: the baked /var/lib copy is mode
+# 0600 root, so an unprivileged run that fell through to it would resolve every caller below onto a
+# tree it cannot read or write — pts_config_file would name a config PTS never reads, and the
+# composite finder would search for results in a directory PTS never writes.
 _pts_user_dir_cached=""
 pts_init() {
 	# system-info is cheap and writes core.pt2so on first run; swallow all output.
@@ -286,13 +306,23 @@ pts_user_dir() {
 	local cand dir="${PTS_USER_PATH_OVERRIDE:-${HOME}/.phoronix-test-suite}"
 	for cand in "${PTS_USER_PATH_OVERRIDE:-}" "${HOME}/.phoronix-test-suite" "/var/lib/phoronix-test-suite" "/root/.phoronix-test-suite"; do
 		[ -n "$cand" ] || continue
-		if [ -e "${cand}/core.pt2so" ]; then
+		if [ -r "${cand}/core.pt2so" ]; then
 			dir="$cand"
 			break
 		fi
 	done
-	_pts_user_dir_cached="$dir"
-	echo "$dir"
+	_pts_user_dir_cached="${dir%/}"
+	echo "$_pts_user_dir_cached"
+}
+
+# Where PTS keeps INSTALLED tests. Distinct from pts_user_dir since the non-root split: the baked
+# installed tree stays shared under /var/lib via PTS_TEST_INSTALL_ROOT_PATH while an unprivileged
+# user's mutable state lives under its own HOME. Anything that inspects or removes an INSTALL must
+# resolve it through here — deriving it from pts_user_dir silently targets the wrong tree for every
+# non-root provider, so the removal no-ops and PTS keeps reporting the stale install as present.
+pts_install_root() {
+	local root="${PTS_TEST_INSTALL_ROOT_PATH:-$(pts_user_dir)/installed-tests}"
+	echo "${root%/}"
 }
 
 # Resolve the config file PTS itself reads and writes, mirroring its own selection order
@@ -348,6 +378,7 @@ _pts_install_diagnostics() {
 	echo "--- PTS install diagnostics: ${test_name} ---"
 	echo "user=$(id -un 2>/dev/null) HOME=${HOME}"
 	echo "resolved pts_user_dir=${pts_dir}"
+	echo "resolved pts_install_root=$(pts_install_root)"
 	echo "resolved pts_config_file=$(pts_config_file)"
 	for d in "${data_dirs[@]}"; do
 		[ -e "$d/core.pt2so" ] && echo "  core.pt2so present in: $d"
@@ -357,8 +388,8 @@ _pts_install_diagnostics() {
 	echo "  install manifests on disk:"
 	find "${data_dirs[@]}" -maxdepth 5 \( -name pts-install.json -o -name pts-install.xml \) \
 		2>/dev/null | sed 's/^/    /' || true
-	echo "  installed-tests tree (${pts_dir}/installed-tests):"
-	find "${pts_dir}/installed-tests" -maxdepth 3 2>/dev/null | sed 's/^/    /' | head -40 || true
+	echo "  installed-tests tree ($(pts_install_root)):"
+	find "$(pts_install_root)" -maxdepth 3 2>/dev/null | sed 's/^/    /' | head -40 || true
 	local log
 	log=$(find "${data_dirs[@]}" -name install-failed.log -exec ls -t {} + 2>/dev/null | head -1)
 	if [ -n "$log" ] && [ -f "$log" ]; then
@@ -598,13 +629,26 @@ install_vendored_pts_profile() {
 	local pts_dir profile_dst installed_dst
 	pts_dir="$(pts_user_dir)"
 	profile_dst="${pts_dir}/test-profiles/pts/${name}"
-	installed_dst="${pts_dir}/installed-tests/pts/${name}"
+	# The INSTALL root, not pts_user_dir: for a non-root sandbox the baked installed tree stays under
+	# /var/lib while mutable state moved to HOME. Removing "${pts_dir}/installed-tests/..." there would
+	# delete nothing, _pts_is_installed would still report the BAKED upstream copy as present, and the
+	# leaf would benchmark the very runner this override exists to replace — silently, since a skipped
+	# reinstall is the normal fast path.
+	installed_dst="$(pts_install_root)/pts/${name}"
 	mkdir -p "$(dirname "$profile_dst")"
 	rm -rf "$profile_dst"
 	cp -r "$src" "$profile_dst"
 	# The image bakes the upstream profile. Removing only this pinned install makes the ordinary
 	# run_pts_benchmark path reinstall our staged source and retain all of its exit/registry checks.
 	rm -rf "$installed_dst"
+
+	# Assert the discard actually landed: a stale install here is the difference between benchmarking
+	# the vendored repair and benchmarking the broken upstream runner, and both look identical in the
+	# leaf's output. Cheap, and it fails loudly at stage time instead of publishing wrong numbers.
+	if [ -e "$installed_dst" ]; then
+		echo "ERROR: install_vendored_pts_profile: baked install still present at ${installed_dst}" >&2
+		return 1
+	fi
 
 	echo "Staged vendored PTS override: ${profile_dst} (removed ${installed_dst})"
 }
@@ -812,7 +856,14 @@ fio_direct_choice() {
 	# /var/lib/phoronix-test-suite while run_pts_benchmark's composite finder searches the stale
 	# cached dir and records a bogus "produced no composite.xml" skip for every scenario.
 	pts_init
-	dir="$(pts_user_dir)"
+	# Probe the INSTALL root, because that is where fio's own scratch file goes (its installed-test
+	# dir), and O_DIRECT is a property of the filesystem, not of the process. Since the non-root split
+	# these can be different filesystems on the same sandbox — on Blaxel /var/lib/phoronix-test-suite is
+	# a separate mounted volume while HOME is the RAM-backed root — so probing pts_user_dir would pin
+	# Direct=Yes against an overlay that supports it while every fio scenario EINVALs on the real
+	# target, or pin Direct=No and publish buffered numbers under the same metric id as the root
+	# providers' O_DIRECT ones.
+	dir="$(pts_install_root)"
 	mkdir -p "$dir"
 	probe="${dir}/.o-direct-probe"
 	# bs=4096, not 512: O_DIRECT requires logical-sector alignment, so a 512-byte write EINVALs on a

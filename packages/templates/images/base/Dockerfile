@@ -74,9 +74,16 @@ ARG DEBIAN_FRONTEND=noninteractive
 # > mise lives system-wide: one shared toolchain for every sandbox user, on PATH via its shims dir.
 # > 10-mise.sh installs from the config at MISE_CONFIG_DIR (the generated mise.toml, COPY'd below).
 # > These MUST persist at runtime, so they stay ENV.
+# > PTS_TEST_INSTALL_ROOT_PATH — and deliberately NOT PTS_USER_PATH_OVERRIDE. It is the one PTS path
+# > every identity must agree on: it keeps the baked installed tests visible to an injected
+# > unprivileged runtime user, who otherwise falls back to the config's ~/.phoronix-test-suite and
+# > reports zero installed tests. Mutable state is left to PTS's own per-user default instead, so root
+# > keeps /var/lib (its daemonized branch forces that regardless) while an unprivileged user gets
+# > $HOME — sharing root's 0600 core.pt2so and a HOME-expanded results tree is what broke Runloop. The
+# > runtime entry points restate this (PTS_STATE_SELECT_SH in packages/schema/src/toolchain.ts) because
+# > already-published images predate this ENV.
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_CONFIG_DIR=/etc/mise \
-    PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ \
     PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/ \
     PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -152,11 +159,13 @@ RUN IMAGE_NAME="${IMAGE_NAME}" IMAGE_VERSION="${IMAGE_VERSION}" BASE_IMAGE="${BA
     bash /tmp/build/scripts/orchestrator.sh 99-manifest.sh \
     && rm -rf /tmp/build
 
-# > Security note: the generic image defaults to root, while E2B-compatible template builders inject
-# > an unprivileged runtime user. PTS_USER_PATH_OVERRIDE keeps both identities on the same pre-baked
-# > state under /var/lib/phoronix-test-suite; 20-pts.sh grants sandbox users write access because PTS
-# > writes per-run config and results there. Isolation remains the provider's outer VM/container
-# > boundary. Any setuid binary added later should be justified here.
+# > Security note: the generic image defaults to root, while E2B-compatible template builders inject an
+# > unprivileged runtime user. The two SHARE the read-mostly baked profiles (PTS_TEST_INSTALL_ROOT_PATH
+# > above) and keep SEPARATE mutable state — root under /var/lib/phoronix-test-suite, the injected user
+# > under its own $HOME, which PTS creates itself. 20-pts.sh still grants sandbox users write access to
+# > the baked tree because PTS writes install bookkeeping beside the profiles it installs. Isolation
+# > remains the provider's outer VM/container boundary. Any setuid binary added later should be
+# > justified here.
 #
 # > Plain `docker build` yields the generic toolchain image. Provider glue lives in the variant
 # > Dockerfiles (FROM this image) — never here — so these layers stay shared across providers.

@@ -115,6 +115,15 @@ export interface ProviderMaturity {
 	notes?: string;
 }
 
+/**
+ * Which identity a provider's benchmark lane runs as INSIDE the sandbox.
+ *
+ * `"unprivileged"` deliberately does not name the user: the point is the privilege level, which is
+ * what the toolchain has to accommodate (separate PTS state, no writes to root-owned trees). The
+ * account name is the provider's business and has changed without notice.
+ */
+export type ProviderRuntimeIdentity = "root" | "unprivileged";
+
 /** The static description of a sandbox provider, owned by the schema. */
 export interface ProviderMeta {
 	/** Stable identifier joined against the harness adapter map; one of {@link ProviderId}. */
@@ -131,6 +140,17 @@ export interface ProviderMeta {
 	specPinning: SpecPinning;
 	/** How the provider's exec transport behaves — the harness selects sync vs detached from this. */
 	transport: ProviderTransport;
+	/**
+	 * Identity the benchmark lane runs as in-sandbox. Omitted means `"root"`: setup, the baked PTS
+	 * state and every adapter target root, and the providers that DO inject an unprivileged user are
+	 * the exception worth declaring — e2b and novita each pin their exec back to root explicitly
+	 * (e2b-root.ts), so only a provider with no such lever is `"unprivileged"`.
+	 *
+	 * This exists so the job summary flags DRIFT rather than a supported configuration: a hardcoded
+	 * "expected root" marks every Runloop replicate anomalous on a perfectly healthy run, which trains
+	 * readers to ignore the warning that was added to catch a real identity change.
+	 */
+	runtimeIdentity?: ProviderRuntimeIdentity;
 }
 
 /**
@@ -512,6 +532,10 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			notes:
 				"Official ComputeSDK adapter with a released toolchain Blueprint plus custom CPU, memory, and disk sizing; opt-in until a committed benchmark run validates the integration.",
 		},
+		// Devboxes run commands as their own unprivileged Blueprint user, and the adapter exposes no
+		// root lever the way e2b/novita do — so the toolchain accommodates it (PTS_STATE_SELECT_SH in
+		// toolchain.ts) instead of the summary flagging every replicate.
+		runtimeIdentity: "unprivileged",
 		// CUSTOM_SIZE exposes independent CPU, memory, and disk fields and can express 4 / 8 / 40 exactly.
 		specPinning: "settable",
 		transport: {
@@ -707,6 +731,29 @@ export function getProvider(id: string): ProviderMeta | undefined {
 	// the entries are immutable, so returning the reference directly is safe.
 	const canonical = LEGACY_PROVIDER_ALIASES[id] ?? id;
 	return PROVIDERS.find((p) => p.id === canonical);
+}
+
+/**
+ * The identity a provider is EXPECTED to run its benchmark lane as. Unknown ids (a run document from
+ * a retired provider) fall back to `"root"`, the toolchain's default.
+ */
+export function expectedRuntimeIdentity(providerId: string): ProviderRuntimeIdentity {
+	return getProvider(providerId)?.runtimeIdentity ?? "root";
+}
+
+/**
+ * Does an OBSERVED in-sandbox user contradict what the provider declares?
+ *
+ * Compares privilege level, not account name: a provider declared `"unprivileged"` may run as `user`,
+ * `sandbox`, or anything else and that is not news. What IS news either way is a switch — an
+ * unprivileged identity where root was expected (setup and the baked PTS state assume root) or root
+ * where an unprivileged user was expected (a provider silently gained privileges).
+ *
+ * An absent observation is never drift: not every provider's probe reports a user.
+ */
+export function isUnexpectedRuntimeUser(providerId: string, user: string | undefined): boolean {
+	if (!user) return false;
+	return (user === "root" ? "root" : "unprivileged") !== expectedRuntimeIdentity(providerId);
 }
 
 /**

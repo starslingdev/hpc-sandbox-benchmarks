@@ -24,6 +24,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
+import { PTS_STATE_SELECT_SH } from "@sandbox-benchmarks/schema";
 import { GapError } from "./gap-cause.ts";
 
 export const MIN = 60_000;
@@ -318,11 +319,9 @@ const PREAMBLE_HEAD = [
 	// fine in a throwaway sandbox; the baked image sets the same.
 	"export PIP_BREAK_SYSTEM_PACKAGES=1",
 	// Keep the root-baked installed profiles shared, but never point an injected unprivileged user at
-	// root's mutable PTS state. PTS creates core.pt2so as 0600 and expands its default ResultsDirectory
-	// through $HOME for a non-daemon client; sharing /var/lib therefore emits permission errors AND makes
-	// result discovery look in a different tree from the one PTS actually writes. This runtime fallback
-	// also corrects already-published images whose Docker ENV still carries the old shared-state override.
-	'if [ -d /var/lib/phoronix-test-suite ]; then export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/; if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/; else mkdir -p "$HOME/.phoronix-test-suite"; export PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"; fi; fi',
+	// root's mutable PTS state. Canonical snippet — see PTS_STATE_SELECT_SH for the full rationale and
+	// for why this must also run at runtime rather than only in the image ENV.
+	PTS_STATE_SELECT_SH,
 ];
 
 /**
