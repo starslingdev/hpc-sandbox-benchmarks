@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { promotionScopeAfterValidation } from "./promote.ts";
+import { fullPromotionResult, promotionScopeAfterValidation } from "./promote.ts";
 
 describe("promotionScopeAfterValidation", () => {
 	test("does not publish an optional provider artifact after its candidate validation fails", () => {
@@ -38,5 +38,26 @@ describe("promotionScopeAfterValidation", () => {
 				reason: "candidate re-validation produced no result",
 			},
 		]);
+	});
+});
+
+describe("fullPromotionResult", () => {
+	test("keeps an optional validation failure visible without failing after the image commits", () => {
+		const result = fullPromotionResult([
+			{ provider: "runloop", status: "failed", reason: "candidate Blueprint did not boot" },
+			{ provider: "image", status: "ok" },
+		]);
+
+		expect(result.ok).toBe(true);
+		expect(result.reports[0]).toEqual({
+			provider: "runloop",
+			status: "failed",
+			reason: "candidate Blueprint did not boot",
+		});
+	});
+
+	test("fails when the immutable image commit fails or never happens", () => {
+		expect(fullPromotionResult([{ provider: "image", status: "failed" }]).ok).toBe(false);
+		expect(fullPromotionResult([{ provider: "runloop", status: "failed" }]).ok).toBe(false);
 	});
 });

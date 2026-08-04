@@ -727,8 +727,9 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
           # The serial transaction re-validates the candidate Blueprint, then builds the version-named
-          # Blueprint from the same pinned base. The key remains in the SDK control-plane client.
-          RUNLOOP_API_KEY: ${{ secrets.RUNLOOP_API_KEY }}
+          # Blueprint from the same pinned base. Keep the SDK control-plane key out of unrelated scoped
+          # promotes, matching the run.cloud credential posture below.
+          RUNLOOP_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && secrets.RUNLOOP_API_KEY || '' }}
           # A scoped promote imports every provider module in one process. Keep the run.cloud key out
           # of that process unless the resolved release plan will actually re-validate runcloud.
           RUN_CLOUD_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}

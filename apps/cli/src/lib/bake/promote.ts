@@ -6,7 +6,8 @@
 //   1. Refuse if the public version tag already exists — it is immutable; bump to republish (or pass
 //      `--force`, wired only to a manual force_republish dispatch, to deliberately regenerate in place).
 //   2. Re-validate the candidate (boot + smoke) right now, so the bytes we publish are verified again
-//      (the candidate tag is mutable and may have changed since `bake`). Abort on any failure.
+//      (the candidate tag is mutable and may have changed since `bake`). Abort on a required failure;
+//      a failed best-effort provider is reported and its version artifact is not built.
 //   3. Build each provider's version-named artifact FROM the candidate base (the just-revalidated
 //      bytes), so the public artifact provably derives from validated bytes — BEFORE touching the base.
 //   3b. Required-providers gate: if `--require`/`REQUIRE_PROVIDERS` names providers a skipped one
@@ -75,6 +76,24 @@ export interface PromoteOptions {
 	only?: readonly ProviderId[];
 }
 
+/** Promotion diagnostics plus the transaction outcome. Optional-provider failures remain visible in
+ * `reports`, while `ok` records whether the requested publish transaction itself committed. */
+export interface PromoteResult {
+	reports: BakeReport[];
+	ok: boolean;
+}
+
+/** Finalize a full promotion after the immutable image retag attempt. Provider diagnostics do not
+ * decide the transaction status; the image commit point does. */
+export function fullPromotionResult(reports: BakeReport[]): PromoteResult {
+	return {
+		reports,
+		ok:
+			reports.some((report) => report.provider === "image" && report.status === "ok") &&
+			!reports.some((report) => report.provider === "image" && report.status === "failed"),
+	};
+}
+
 /**
  * Select the providers whose version artifacts may be built after candidate re-validation. A
  * best-effort provider is allowed to fail without blocking the shared image publish, but that must
@@ -104,17 +123,17 @@ export function promotionScopeAfterValidation(
 	return { eligible, rejected };
 }
 
-export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<BakeReport[]> {
+export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<PromoteResult> {
 	const { force = false, only } = options;
 	const partial = isPartialScope(only);
 	const reports: BakeReport[] = [];
 	const scope = only ? only.join(", ") : "every provider";
 	/** Record a refusal/abort as a structured `image` failure and stop — the shape every early exit
 	 *  below returns, so the refusal contract is written once. */
-	const refuse = (reason: string, verb = "refused"): BakeReport[] => {
+	const refuse = (reason: string, verb = "refused"): PromoteResult => {
 		log(`<<< promote ${verb} — ${reason}`);
 		reports.push({ provider: "image", status: "failed", reason });
-		return reports;
+		return { reports, ok: false };
 	};
 	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
 	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
@@ -173,7 +192,8 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	}
 
 	// 2. Re-validate the candidate immediately before publishing, so the bytes we promote are verified
-	//    again (the candidate tag is mutable). Abort the whole promote if any provider fails to validate.
+	//    again (the candidate tag is mutable). Required failures abort the whole promote; a failed
+	//    best-effort provider is excluded from step 3 and remains visible in the final report.
 	//    A PARTIAL promote pins the PUBLISHED version instead: it is not cutting a new version, it is
 	//    attaching a provider to the one already live, so the base under test must be that one.
 	const baseTag = releaseBaseTag(partial);
@@ -241,7 +261,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 				...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
 			});
 		}
-		return reports;
+		return { reports, ok: false };
 	}
 	const requested = only ?? PROVIDERS.map((provider) => provider.id);
 	const promotionScope = promotionScopeAfterValidation(requested, validateRuns);
@@ -367,7 +387,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 					: "") +
 				rerunHint,
 		);
-		return reports;
+		return { reports, ok: false };
 	}
 
 	// Required-providers gate (D1), enforced HERE — before step 4 writes the immutable base — not
@@ -386,7 +406,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		// Push a structured failure (like the step-1 and step-4 aborts) so the emitted JSON is
 		// self-describing — a consumer sees the failed promote without re-deriving it from `--require`.
 		reports.push({ provider: "image", status: "failed", reason });
-		return reports;
+		return { reports, ok: false };
 	}
 
 	// 4. LAST: publish the candidate base as the immutable public version — the commit point. A partial
@@ -398,7 +418,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 			`>>> partial promote complete: ${scope} now published for ${config.toolchainImageVersion}; ` +
 				"the public base and every other provider's artifact are unchanged",
 		);
-		return reports;
+		return { reports, ok: true };
 	}
 	log(`>>> promoting image ${pinnedBaseImage} → ${config.toolchainImageVersion}…`);
 	const imageStart = performance.now();
@@ -416,5 +436,5 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		});
 	}
 
-	return reports;
+	return fullPromotionResult(reports);
 }

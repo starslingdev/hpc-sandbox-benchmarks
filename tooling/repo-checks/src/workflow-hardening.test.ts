@@ -40,6 +40,9 @@ const oneJob = (id: string, job: object, root: object = {}) => ({ ...root, jobs:
 const SCOPED_RUNCLOUD_KEY =
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}";
+const SCOPED_RUNLOOP_KEY =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && secrets.RUNLOOP_API_KEY || '' }}";
 const SELECTED_BASE_IMAGE =
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 	"${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}";
@@ -248,6 +251,14 @@ describe("run.cloud credential scoping", () => {
 		// rejects every unscoped spelling (including `secrets.RUN_CLOUD_API_KEY || ''`) rather than one
 		// fragile literal while ignoring a second assignment in another step or at job scope.
 		expect(valuesForKey(publish, "RUN_CLOUD_API_KEY")).toEqual([SCOPED_RUNCLOUD_KEY]);
+	});
+});
+
+describe("Runloop credential scoping", () => {
+	test("the promote step exposes the key only when the resolved plan contains runloop", () => {
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
+		expect(valuesForKey(publish, "RUNLOOP_API_KEY")).toEqual([SCOPED_RUNLOOP_KEY]);
 	});
 });
 

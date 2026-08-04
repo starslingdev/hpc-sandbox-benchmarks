@@ -189,20 +189,16 @@ if (import.meta.main) {
 					novitaTemplate: config.novitaTemplateVersion,
 					runloopBlueprint: config.runloopBlueprintVersion,
 				},
-				reports: promoted,
+				reports: promoted.reports,
 			});
 		} finally {
 			// Promotion can validate run.cloud before writing its report. Preserve teardown even if either
 			// operation throws instead of returning a structured failed report.
 			await drainRuncloudBackgroundWork();
 		}
-		// promoteAll is self-gating: the D1 required-providers gate (CI passes `--require e2b,daytona-vm,modal-gvisor`)
-		// runs INSIDE promoteAll before the immutable base is written, and every abort path (version already
-		// published, candidate re-validation failed, artifact failed, unmet requirements) pushes a structured
-		// `{ status: "failed" }` report. So a single `some(failed)` is the whole exit contract — re-deriving
-		// `unmet` here would mislabel an early abort (e.g. "version already exists") as a provider-credentials
-		// failure, since the early `reports` carry no provider "ok" entries.
-		process.exit(promoted.some((r) => r.status === "failed") ? 1 : 0);
+		// The transaction outcome is separate from its diagnostics: an optional provider can fail and stay
+		// visible in the report without turning a successfully published shared version red after commit.
+		process.exit(promoted.ok ? 0 : 1);
 	}
 
 	if (only) log(`>>> restricting bake+validate to: ${only.join(", ")}`);
