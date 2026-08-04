@@ -30,12 +30,36 @@ import {
 	TOOLCHAIN_WORKFLOW,
 	WORKFLOWS_DIR,
 } from "./lib/workflow-hardening.ts";
+import { asRecord, stepByName, stepEnv } from "./lib/workflow-yaml.ts";
 import { findRepoRoot } from "./lib/workspace.ts";
 
 /** A no-op step — the body for fixtures whose step content is irrelevant to what they assert. */
 const NOOP_STEP = { run: "true" };
 /** Build a single-job workflow doc: `{ ...root, jobs: { [id]: job } }`. */
 const oneJob = (id: string, job: object, root: object = {}) => ({ ...root, jobs: { [id]: job } });
+const SCOPED_RUNCLOUD_KEY =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}";
+const SELECTED_BASE_IMAGE =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+	"${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}";
+// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansion under test
+const BASE_IMAGE_ARG = '--base-image "${BASE_IMAGE_REF}"';
+
+function workflowJob(doc: unknown, jobId: string, label: string): Record<string, unknown> {
+	const root = asRecord(doc, `${label}: not a YAML mapping`);
+	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
+	return asRecord(jobs[jobId], `${label}: job "${jobId}" not found`);
+}
+
+/** Every value assigned to a named key below one parsed YAML node, including job- and step-level env. */
+function valuesForKey(value: unknown, key: string): unknown[] {
+	if (Array.isArray(value)) return value.flatMap((item) => valuesForKey(item, key));
+	if (value === null || typeof value !== "object") return [];
+	return Object.entries(value).flatMap(([name, child]) =>
+		name === key ? [child] : valuesForKey(child, key),
+	);
+}
 
 describe("checkoutSteps against the real workflows", () => {
 	test("every workflow's checkouts are extracted with a persist-credentials reading", () => {
@@ -213,6 +237,38 @@ describe("Namespace token authentication", () => {
 		);
 		expect(action).toContain("--expires_in 4h");
 		expect(action).not.toContain("--no_expiry");
+	});
+});
+
+describe("run.cloud credential scoping", () => {
+	test("the promote step exposes the key only when the resolved plan contains runcloud", () => {
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
+		// Exactly one assignment anywhere in the publish job, and its entire value is the plan gate. This
+		// rejects every unscoped spelling (including `secrets.RUN_CLOUD_API_KEY || ''`) rather than one
+		// fragile literal while ignoring a second assignment in another step or at job scope.
+		expect(valuesForKey(publish, "RUN_CLOUD_API_KEY")).toEqual([SCOPED_RUNCLOUD_KEY]);
+	});
+});
+
+describe("toolchain bake base-image selection", () => {
+	test("threads one immutable source through every bake cell and the Vercel mirror", () => {
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+		const env = stepEnv(doc, "bake", "Bake + verify candidate", TOOLCHAIN_WORKFLOW);
+		expect(env.BASE_IMAGE_REF).toBe(SELECTED_BASE_IMAGE);
+		const mirrorEnv = stepEnv(
+			doc,
+			"bake",
+			"Mirror the toolchain base into VCR",
+			TOOLCHAIN_WORKFLOW,
+		);
+		expect(mirrorEnv.SOURCE_REF).toBe(SELECTED_BASE_IMAGE);
+		const step = stepByName(
+			workflowJob(doc, "bake", TOOLCHAIN_WORKFLOW),
+			"Bake + verify candidate",
+			TOOLCHAIN_WORKFLOW,
+		);
+		expect(step?.run).toContain(BASE_IMAGE_ARG);
 	});
 });
 

@@ -14,6 +14,7 @@ import {
 	requiredProviders,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
+import { drainRuncloudBackgroundWork } from "@sandbox-benchmarks/providers";
 import type { LifecycleMetricSummary } from "../lib/lifecycle-summary.ts";
 import {
 	formatLifecycleLines,
@@ -85,7 +86,13 @@ if (import.meta.main) {
 				}
 			: {}),
 	}));
-	console.log(JSON.stringify({ summary }, null, 2));
+	try {
+		console.log(JSON.stringify({ summary }, null, 2));
+	} finally {
+		// A timed-out run.cloud create can return a handle during teardown. Output/reporting failures and
+		// the explicit exits below must not terminate cleanup while the sandbox is still being destroyed.
+		await drainRuncloudBackgroundWork();
+	}
 
 	// Skips (missing creds) never fail the run; only a provider that ran and broke does.
 	if (anyFailed(runs)) process.exit(1);

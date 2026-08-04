@@ -49,6 +49,7 @@ export function baseImageUse(id: ProviderId): BaseImageUse {
 		case "microsandbox-local":
 		case "microsandbox-cloud":
 		case "namespace":
+		case "runcloud":
 			return "boots";
 		case "blaxel":
 		case "vercel":
@@ -96,6 +97,9 @@ export function candidateCreateOptions(
 			return { blueprint_name: refs.runloopBlueprintCandidate };
 		case "namespace":
 			// No template/snapshot system — points create() at the candidate image directly, same as modal.
+			return { image: refs.toolchainImageCandidate };
+		case "runcloud":
+			// The native SDK boots an arbitrary OCI image directly; there is no template to bake.
 			return { image: refs.toolchainImageCandidate };
 		case "vercel":
 			return { templateId: refs.vercelImageCandidate };

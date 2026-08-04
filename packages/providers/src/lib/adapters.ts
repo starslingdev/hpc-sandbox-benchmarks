@@ -1,6 +1,6 @@
 // Each schema provider id maps to a ComputeSDK factory plus benchmark create-time policy. Prefer the
-// maintained @computesdk wrappers; Vercel is the deliberate exception because its published wrapper
-// still pins Sandbox v1 and cannot boot the shared VCR image supported by the latest native SDK.
+// maintained @computesdk wrappers. Vercel uses its native SDK because the published wrapper still
+// pins Sandbox v1; run.cloud also uses its native SDK because no @computesdk wrapper is published.
 
 import { blaxel } from "@computesdk/blaxel";
 import { daytona } from "@computesdk/daytona";
@@ -18,6 +18,7 @@ import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
+import { runcloudCompute } from "./runcloud.ts";
 import type { DirectProvider, ProviderAdapter } from "./types.ts";
 import { vercelCompute } from "./vercel.ts";
 
@@ -85,6 +86,7 @@ const modalVmCompute = () => modal({ appName: MODAL_APP_NAME });
 /** The longest suite has a 155-minute budget. Give Microsandbox enough lifetime for setup and
  * teardown as well, while keeping leaked benchmark sandboxes self-expiring. */
 const MICROSANDBOX_MAX_DURATION_SECS = 3 * 60 * 60;
+const RUNCLOUD_MAX_DURATION_SECS = 3 * 60 * 60;
 
 /**
  * Microsandbox's `create` does not return until the sandbox is RUNNING, so the toolchain image pull
@@ -275,5 +277,25 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// native SDK so the shared VCR image and v2 lifecycle/filesystem APIs remain available.
 		createCompute: () => vercelCompute({ image: config.vercelImage, vcpus: TARGET_SPEC.vcpus }),
 		createOptions: {},
+	},
+	runcloud: {
+		// run.cloud boots the OCI image directly and exposes independent CPU, memory, and writable-disk
+		// knobs. Keep both its lifetime and idle-pause window above the longest 155-minute suite so a
+		// detached benchmark is not paused while the harness is polling its done file. create() polls
+		// until the sandbox is running and owns failed-allocation cleanup. Disable the harness's
+		// non-cancellable outer race: abandoning create while it is cleaning up would let bench-suite's
+		// explicit process exit terminate that teardown and strand the billable sandbox. The adapter
+		// independently bounds each native control-plane call, so awaiting its ownership does not turn a
+		// wedged SDK request into an unbounded create.
+		createCompute: runcloudCompute,
+		createOptions: {
+			image: config.toolchainImage,
+			cpu: TARGET_SPEC.vcpus,
+			memory: TARGET_SPEC.memoryGb * 1024,
+			disk: TARGET_SPEC.diskGb,
+			idlePauseSeconds: RUNCLOUD_MAX_DURATION_SECS,
+			timeoutSeconds: RUNCLOUD_MAX_DURATION_SECS,
+		},
+		createTimeoutMs: null,
 	},
 };

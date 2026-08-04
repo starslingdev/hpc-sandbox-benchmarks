@@ -47,6 +47,18 @@ if (providers !== "") {
 	try {
 		const scope = selectProviders(providers);
 		core.info(`Scoped release: ${scope.join(", ")}`);
+		// A scoped release backfills artifacts onto an existing immutable base. Rebuilding the mutable
+		// candidate in the same dispatch would make bake validate different bytes from the published base
+		// that promote must use. Fail before registry login/build rather than waste the rebuild or silently
+		// ignore it.
+		if (isPartialScope(scope) && (buildMode === "" || buildMode === "full")) {
+			core.error(
+				"A scoped release is a backfill onto the published version and requires build=skip. " +
+					"Use an unscoped build=full release to rebuild the shared candidate.",
+				{ title: "Conflicting dispatch inputs" },
+			);
+			core.setFailed("build=full is not valid for a scoped release.");
+		}
 		// A PARTIAL release backfills providers onto an already-published version and never rewrites the
 		// base; force_republish regenerates the whole version in place, destructively for daytona (it
 		// deletes each snapshot before recreating it). Refusing the combination is not pedantry: either

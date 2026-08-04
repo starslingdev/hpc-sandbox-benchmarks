@@ -23,13 +23,14 @@ export type ProviderId =
 	| "novita"
 	| "runloop"
 	| "namespace"
-	| "vercel";
+	| "vercel"
+	| "runcloud";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
 
 /**
- * How a provider's command-exec transport behaves *through its `@computesdk/*` adapter* — the facts the
+ * How a provider's command-exec transport behaves *through its ComputeSDK adapter* — the facts the
  * harness needs to pick a per-step transport instead of hardcoding one provider's quirks (the original
  * sin this models away: the harness forced Daytona's detached+poll on every provider). Owned here
  * alongside the other declared capabilities ({@link SpecPinning}, isolation, maturity) because it is a
@@ -39,9 +40,9 @@ export type SpecPinning = "settable" | "fixed" | "unknown";
  * Three independent capabilities, each load-bearing for transport selection:
  *
  *   - `streaming` — does the adapter deliver stdout/stderr incrementally (computesdk's
- *     `onStdout`/`onStderr`)? All three shipped adapters drop those callbacks, so a long synchronous
- *     exec buffers silently. Modeled because a streaming path keeps a connection productive past an
- *     idle gateway cap; today it is uniformly `false`, so it does not yet tip the harness's choice.
+ *     `onStdout`/`onStderr`)? Most shipped adapters drop those callbacks, so a long synchronous exec
+ *     buffers silently; run.cloud's native SDK adapter passes them through. Modeled because a streaming
+ *     path keeps a connection productive past an idle gateway cap.
  *   - `syncCapMs` — the configured durability threshold for a single *synchronous* exec round-trip,
  *     or `null` when validated as uncapped. It may encode a vendor-enforced limit or a conservative
  *     repository policy where long-lived synchronous transport has not been validated. The harness
@@ -62,7 +63,7 @@ export type SpecPinning = "settable" | "fixed" | "unknown";
  *     later exec, it can detach.
  */
 export interface ProviderTransport {
-	/** Does the `@computesdk/*` adapter stream stdout/stderr chunks (`onStdout`/`onStderr`)? */
+	/** Does the ComputeSDK adapter stream stdout/stderr chunks (`onStdout`/`onStderr`)? */
 	streaming: boolean;
 	/** Conservative bound (ms) on a safe single synchronous exec round-trip; `null` when uncapped. */
 	syncCapMs: number | null;
@@ -604,6 +605,46 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			// No hard vendor cap is claimed: long synchronous transport is unvalidated, so the repository's
 			// conservative 60s durability policy routes longer work to current-session detach + exec polling.
 			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
+	runcloud: {
+		displayName: "run.cloud",
+		website: "https://run.cloud",
+		sdkPackage: "@run-cloud/sdk",
+		requiredEnvVars: ["RUN_CLOUD_API_KEY"],
+		isolation: {
+			technology: "Firecracker microVM",
+			notes:
+				"Dedicated microVM sandboxes booting an arbitrary OCI image; CPU, memory, and writable disk are independently requested at create time.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// Published rates are per physical core-second and per GiB-second
+			// (https://run.cloud/pricing). One physical core = two vCPUs, so the
+			// vCPU-hour rate is half the physical-core-hour rate:
+			//   CPU:  $0.00000492/core-s ÷ 2 × 3600 = $0.008856/vCPU-hr
+			//   mem:  $0.00000083175/GiB-s × 3600 = $0.0029943/GiB-hr
+			// The size is a reserved billing floor; CPU above it bills at the same
+			// rate (burst). Economics here price the reserved TARGET_SPEC floor only.
+			usdPerVcpuHour: 0.008856,
+			usdPerGibHour: 0.0029943,
+			notes:
+				"Published per-second rates (exact): $0.00000492/physical-core-s (1 physical core = 2 vCPUs → $0.00000246/vCPU-s), $0.00000083175/GiB-s. No published disk overage rate.",
+			sourceUrl: "https://run.cloud/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Direct adapter over @run-cloud/sdk with create, lifecycle, streaming exec, and public tunnel support; opt-in until a committed validation run exists.",
+		},
+		specPinning: "settable",
+		transport: {
+			// The native WebSocket exec delivers stdout/stderr chunks incrementally. Keep the repository's
+			// conservative 60s policy for unvalidated long-lived streams; longer work daemonizes and polls
+			// the harness-owned done file through short execs.
+			streaming: true,
 			syncCapMs: 60_000,
 			detachedPoll: true,
 		},

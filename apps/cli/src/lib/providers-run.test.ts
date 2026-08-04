@@ -44,6 +44,7 @@ describe("forEachProviderWithCreds `only`", () => {
 			"runloop",
 			"namespace",
 			"vercel",
+			"runcloud",
 		]);
 	});
 

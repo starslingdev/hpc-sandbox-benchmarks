@@ -252,7 +252,8 @@ const CREATE_RETRY_DELAY_MS = 2 * MIN;
  *  destroyed). Generous: a cold provider image can take minutes to provision. Adequate only for
  *  providers whose `create` returns once the control plane ACCEPTS the sandbox, with the image pull
  *  absorbed by a readiness probe afterwards; one that boots the image inline needs its own budget via
- *  {@link ProviderConfig.createTimeoutMs}. */
+ *  {@link ProviderConfig.createTimeoutMs}, or `null` when its adapter owns readiness + cleanup and its
+ *  create promise must never be abandoned. */
 const CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
 
 /**
@@ -274,9 +275,9 @@ export interface CreateSuiteSandboxContext {
 	createOptions?: SandboxCreateOptions;
 	/** Per-attempt create timeout, ms. Defaults to {@link CREATE_ATTEMPT_TIMEOUT_MS}; set per provider
 	 *  (see {@link ProviderConfig.createTimeoutMs}) for adapters whose `create` boots the image inline,
-	 *  and injectable so the timeout-leak path (a create that resolves after the race is lost) is
-	 *  exercisable in tests. */
-	createTimeoutMs?: number;
+	 *  or `null` when the adapter owns readiness + failed-allocation cleanup and abandoning its promise
+	 *  would terminate that cleanup. Injectable so both paths are exercisable in tests. */
+	createTimeoutMs?: number | null;
 }
 
 /**
@@ -299,7 +300,8 @@ export async function createSuiteSandbox(
 	ctx: CreateSuiteSandboxContext,
 ): Promise<SandboxHandle> {
 	const { suite, suiteName, providerName, resultsDir, createOptions } = ctx;
-	const createTimeoutMs = ctx.createTimeoutMs ?? CREATE_ATTEMPT_TIMEOUT_MS;
+	const createTimeoutMs =
+		ctx.createTimeoutMs === undefined ? CREATE_ATTEMPT_TIMEOUT_MS : ctx.createTimeoutMs;
 	const createDeadline = Date.now() + CREATE_RETRY_BUDGET_MS;
 	for (let attempt = 1; ; attempt++) {
 		// Undefined until `sandbox.create` is actually invoked: a factory throw leaves it unset (nothing
@@ -315,7 +317,9 @@ export async function createSuiteSandbox(
 					timeout: suite.timeoutMinutes * MIN,
 				}),
 			);
-			return await withTimeout(createPromise, createTimeoutMs, "Sandbox creation timed out");
+			return createTimeoutMs === null
+				? await createPromise
+				: await withTimeout(createPromise, createTimeoutMs, "Sandbox creation timed out");
 		} catch (err) {
 			// `withTimeout` only RACES the create — it cannot cancel it. A create that resolves after the
 			// timeout (or after a capacity error on a later attempt) leaves a live sandbox no one awaits, and

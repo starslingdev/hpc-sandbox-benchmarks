@@ -81,6 +81,8 @@ function providerArtifact(id: ProviderId): string {
 			// No template/snapshot system — pulls the candidate image straight into an instance at
 			// create time (same as modal), so there is no baked artifact to name.
 			return "boots the candidate image directly (no baked artifact)";
+		case "runcloud":
+			return "boots the candidate image directly (no baked artifact)";
 		case "vercel":
 			return config.vercelImageCandidate;
 	}
@@ -197,6 +199,17 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	// against the current version, which is exactly what you do BEFORE deciding to cut a new one — so
 	// letting "already published" skip it would silently turn the whole run into a no-op.
 	const promote = inputs.promote ?? true;
+	const build = inputs.build ?? "full";
+	// A scoped release is a BACKFILL onto bytes that are already immutable. Rebuilding the shared base
+	// would move the mutable candidate, while the partial promote correctly re-validates and derives
+	// artifacts from the published version; the bake phase would therefore validate unrelated bytes.
+	// Refuse that contradictory request instead of spending a build and silently ignoring its output.
+	if (partial && build === "full") {
+		throw new Error(
+			"a scoped release is a backfill onto the published version and requires `build: skip`; " +
+				"run an unscoped `build: full` release to rebuild the shared candidate",
+		);
+	}
 	const mode = partial ? "backfill" : inputs.forceRepublish ? "republish" : "build";
 	const skip = inputs.alreadyPublished && !inputs.forceRepublish && !partial && promote;
 
@@ -211,7 +224,7 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	return {
 		mode,
 		skip,
-		build: inputs.build ?? "full",
+		build,
 		promote,
 		partial,
 		sourceRef: inputs.sourceRef,

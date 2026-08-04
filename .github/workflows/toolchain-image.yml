@@ -29,10 +29,10 @@ name: Toolchain image
 #              already-published version and never rewrites the public base or anyone else's artifact.
 #              A scoped dispatch names what it wants, so every provider it names is REQUIRED.
 #   build      `full` rebuilds the base (the default; what a version bump needs). `skip` skips the
-#              build job outright and derives everything from what the registry already holds — which
-#              for a scoped backfill is the PUBLISHED base, so the new provider gets exactly the bytes
-#              the fleet already runs (the toolchain build is not reproducible, so a rebuild would
-#              quietly hand it a different `:vN`).
+#              build job outright and derives everything from what the registry already holds. A
+#              scoped release is a backfill and therefore REQUIRES `skip`: its source is the PUBLISHED
+#              base, so the new provider gets exactly the bytes the fleet already runs (the toolchain
+#              build is not reproducible, so a rebuild would quietly hand it a different `:vN`).
 #   promote    off ⇒ the publish job is skipped: bake + verify, look at the report, promote later.
 #
 # The canonical use is adding a provider to a version everyone else already runs — e.g. Runloop on v7:
@@ -59,7 +59,7 @@ on:
         type: string
         default: ""
       build:
-        description: "Build phase: full (rebuild the base) / skip (reuse what the registry holds)"
+        description: "Build: full (rebuild base) / skip (reuse registry; required when providers is scoped)"
         type: choice
         options: [full, skip]
         default: full
@@ -362,8 +362,9 @@ jobs:
           diagnostics: build-metadata-${{ github.run_id }}
 
   # BAKE + verify: one matrix cell per provider (from the plan). Each cell bakes its candidate artifact
-  # from the pushed candidate base and validates it by booting a sandbox and running the shared smoke
-  # spec. fail-fast: false so a flaky provider doesn't cancel the others' diagnostics — but ANY cell
+  # from the plan-selected base (the pushed candidate for a full release, published version for a
+  # backfill) and validates it by booting a sandbox and running the shared smoke spec. fail-fast: false
+  # so a flaky provider doesn't cancel the others' diagnostics — but ANY cell
   # that RAN and failed still fails this job (and, being a `needs`, blocks promote). Required cells
   # (plan `required`) additionally pass `--require`, so a missing/misnamed secret fails the cell instead
   # of silently skipping a provider the release must ship.
@@ -453,16 +454,16 @@ jobs:
       # the fleet runs — Vercel injects its own session agent at boot, so there is no provider delta to
       # bake in and no separate GHCR image to keep in step.
       #
-      # SOURCE_REF comes from the plan, not from `config` or the build job, and that is load-bearing: on
-      # a backfill it names the PUBLISHED version, while the mutable candidate tag may already have moved
-      # on toward the next one. Mirroring the candidate there would verify one image and ship another,
-      # and nothing downstream would catch it — promote's drift check exempts vercel precisely because
-      # its version artifact is a retag of whatever was mirrored here. See releaseBaseTag().
+      # SOURCE_REF follows the same resolved source as every bake cell. A full build uses that job's
+      # immutable output digest; a build-skipped backfill uses the plan's PUBLISHED version, while the
+      # mutable candidate may already have moved toward the next release. Mirroring any other ref would
+      # verify one image and ship another, and promote cannot catch it because Vercel's version artifact
+      # is a retag of whatever was mirrored here. See releaseBaseTag().
       - name: Mirror the toolchain base into VCR
         if: matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success'
         id: vercel-vcr
         env:
-          SOURCE_REF: ${{ needs.plan.outputs.image-source }}
+          SOURCE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           # `vercel vcr push` is a CLI call, so it needs CLI credentials of its own — the vercel-auth
           # composite's docker login covers the REGISTRY, not the CLI, and its `--token` lives in that
           # composite's step env, which does not carry across steps. Without this the push dies with
@@ -503,6 +504,10 @@ jobs:
         env:
           PROVIDER: ${{ matrix.provider }}
           REQUIRED: ${{ matrix.required }}
+          # Pin every cell to the one base selected by the release plan. A full build supplies its
+          # immutable output digest; a build-skipped scoped backfill supplies the published version,
+          # never the mutable candidate that may already contain the next release's bytes.
+          BASE_IMAGE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           # Both Daytona isolation variants share the account key and bake in their own region.
           DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
@@ -522,6 +527,8 @@ jobs:
           # Runloop builds and validates a candidate Blueprint. Best-effort in an unscoped release;
           # required (and therefore fail-closed on a missing key/build failure) when explicitly scoped.
           RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
+          # run.cloud boots the candidate OCI image directly; the key is needed only for its validate boot.
+          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
           # Namespace pulls the candidate image directly (no bake artifact) — its validate boot reads
           # this OIDC-federated token file (see the Namespace CLI steps above). Not a stored secret:
           # empty unless THIS is the namespace cell AND the mint succeeded, which the harness reads as
@@ -537,7 +544,7 @@ jobs:
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail
-          args=(--provider "${PROVIDER}")
+          args=(--provider "${PROVIDER}" --base-image "${BASE_IMAGE_REF}")
           # Required providers must not silently skip: --require fails the cell if this provider's
           # secret is missing/misnamed or it fails to validate.
           if [ "${REQUIRED}" = "true" ]; then args+=(--require "${PROVIDER}"); fi
@@ -580,12 +587,12 @@ jobs:
           scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
           # The build job may have been skipped (`build: skip`), leaving its outputs empty — fall back
-          # to the candidate tag the plan resolved, which is the ref this cell baked against anyway.
-          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
-          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
+          # to the plan's source (the published version for a scoped backfill, candidate otherwise).
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           provider-target: ${{ matrix.provider }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
-          verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }}${{ matrix.required && format(' --require {0}', matrix.provider) || '' }}
+          verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }} --base-image ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}${{ matrix.required && format(' --require {0}', matrix.provider) || '' }}
           diagnostics: bake-${{ matrix.provider }}-${{ github.run_id }}
 
   # PROMOTE: the serialized publication barrier and the ONLY job that mutates the public :v1. Runs only
@@ -722,6 +729,9 @@ jobs:
           # The serial transaction re-validates the candidate Blueprint, then builds the version-named
           # Blueprint from the same pinned base. The key remains in the SDK control-plane client.
           RUNLOOP_API_KEY: ${{ secrets.RUNLOOP_API_KEY }}
+          # A scoped promote imports every provider module in one process. Keep the run.cloud key out
+          # of that process unless the resolved release plan will actually re-validate runcloud.
+          RUN_CLOUD_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
           # Namespace's re-validation boot reads this OIDC-federated token file (see the Namespace CLI
           # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
           # skips namespace's re-validation without failing the promote (namespace is not in --require).
@@ -768,9 +778,10 @@ jobs:
           mode: ${{ needs.plan.outputs.mode }}
           scope: ${{ needs.plan.outputs.providers }}
           source-ref: ${{ github.sha }}
-          # Empty when the build job was skipped (`build: skip`) — fall back to the planned candidate tag.
-          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
-          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-candidate }}
+          # Empty when the build job was skipped (`build: skip`) — fall back to the same plan-selected
+          # source the partial promote re-validates (published version for a backfill, candidate otherwise).
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
           verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}
           published: ${{ needs.plan.outputs.publish-target }}

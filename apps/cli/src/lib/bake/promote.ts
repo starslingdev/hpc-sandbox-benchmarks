@@ -32,6 +32,7 @@ import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { isPartialScope } from "../matrix.ts";
+import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
@@ -72,6 +73,35 @@ export interface PromoteOptions {
 	 * here rather than passed alongside `only`, so the two can never describe different releases.
 	 */
 	only?: readonly ProviderId[];
+}
+
+/**
+ * Select the providers whose version artifacts may be built after candidate re-validation. A
+ * best-effort provider is allowed to fail without blocking the shared image publish, but that must
+ * never turn into permission to publish an unvalidated provider artifact. Failed/skipped validations
+ * are carried into the promote report so the missing artifact remains visible to CI and operators.
+ */
+export function promotionScopeAfterValidation(
+	requested: readonly ProviderId[],
+	runs: readonly Pick<ProviderRun<unknown>, "provider" | "status" | "reason" | "durationMs">[],
+): { eligible: ProviderId[]; rejected: BakeReport[] } {
+	const byProvider = new Map(runs.map((run) => [run.provider, run]));
+	const eligible: ProviderId[] = [];
+	const rejected: BakeReport[] = [];
+	for (const provider of requested) {
+		const run = byProvider.get(provider);
+		if (run?.status === "ok") {
+			eligible.push(provider);
+			continue;
+		}
+		rejected.push({
+			provider,
+			status: run?.status ?? "failed",
+			reason: run?.reason ?? "candidate re-validation produced no result",
+			...(run?.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
+		});
+	}
+	return { eligible, rejected };
 }
 
 export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<BakeReport[]> {
@@ -213,6 +243,9 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		}
 		return reports;
 	}
+	const requested = only ?? PROVIDERS.map((provider) => provider.id);
+	const promotionScope = promotionScopeAfterValidation(requested, validateRuns);
+	reports.push(...promotionScope.rejected);
 
 	// 3. Build each in-scope provider's version-named artifact FROM the base we just revalidated (the
 	//    candidate base, or the published version base on a partial promote). Built BEFORE the base
@@ -222,68 +255,78 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	//    deletes first (no snapshot overwrite in the SDK), so a failed daytona create removes the
 	//    published snapshot — `bakeDaytonaSnapshot` says so in its error, which lands in the report's
 	//    `reason`. The base is still never written, so the version tag itself stays consistent.
-	const runs = await forEachProviderWithCreds(
-		async (provider) => {
-			log(`>>> ${provider.name}: building version artifact from ${pinnedBaseImage}…`);
-			switch (provider.name) {
-				case "e2b":
-					await bakeE2bTemplate(config.e2bTemplateVersion, pinnedBaseImage, (m) => log(`    ${m}`));
-					break;
-				case "daytona-vm":
-					await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedBaseImage, (m) =>
-						log(`    ${m}`),
-					);
-					break;
-				case "daytona-container":
-					await bakeDaytonaContainerSnapshot(
-						config.daytonaContainerSnapshotDefault,
-						pinnedBaseImage,
-						(m) => log(`    ${m}`),
-					);
-					break;
-				case "modal-gvisor":
-				case "modal-vm":
-					log(`    ${provider.name} boots the published version image — nothing to build`);
-					break;
-				case "microsandbox-local":
-				case "microsandbox-cloud":
-					log(`    ${provider.name} boots the published version image — nothing to build`);
-					break;
-				case "blaxel":
-					log("    blaxel boots the stock base image — nothing to promote");
-					break;
-				case "novita":
-					await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedBaseImage, (m) =>
-						log(`    ${m}`),
-					);
-					break;
-				case "runloop":
-					await bakeRunloopBlueprint(config.runloopBlueprintVersion, pinnedBaseImage, (m) =>
-						log(`    ${m}`),
-					);
-					break;
-				case "namespace":
-					log("    namespace pulls the published version image — nothing to build");
-					break;
-				case "vercel":
-					await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
-					break;
-				default: {
-					// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
-					const unhandled: never = provider.name;
-					throw new Error(`unhandled provider: ${String(unhandled)}`);
-				}
-			}
-		},
-		{
-			log,
-			only,
-			onComplete: (run) => {
-				const time = run.durationMs !== undefined ? ` (${run.durationMs.toFixed(0)}ms)` : "";
-				log(`<<< ${run.provider}: ${run.status}${time}${run.reason ? ` — ${run.reason}` : ""}`);
-			},
-		},
-	);
+	const runs =
+		promotionScope.eligible.length === 0
+			? []
+			: await forEachProviderWithCreds(
+					async (provider) => {
+						log(`>>> ${provider.name}: building version artifact from ${pinnedBaseImage}…`);
+						switch (provider.name) {
+							case "e2b":
+								await bakeE2bTemplate(config.e2bTemplateVersion, pinnedBaseImage, (m) =>
+									log(`    ${m}`),
+								);
+								break;
+							case "daytona-vm":
+								await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedBaseImage, (m) =>
+									log(`    ${m}`),
+								);
+								break;
+							case "daytona-container":
+								await bakeDaytonaContainerSnapshot(
+									config.daytonaContainerSnapshotDefault,
+									pinnedBaseImage,
+									(m) => log(`    ${m}`),
+								);
+								break;
+							case "modal-gvisor":
+							case "modal-vm":
+								log(`    ${provider.name} boots the published version image — nothing to build`);
+								break;
+							case "microsandbox-local":
+							case "microsandbox-cloud":
+								log(`    ${provider.name} boots the published version image — nothing to build`);
+								break;
+							case "blaxel":
+								log("    blaxel boots the stock base image — nothing to promote");
+								break;
+							case "novita":
+								await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedBaseImage, (m) =>
+									log(`    ${m}`),
+								);
+								break;
+							case "runloop":
+								await bakeRunloopBlueprint(config.runloopBlueprintVersion, pinnedBaseImage, (m) =>
+									log(`    ${m}`),
+								);
+								break;
+							case "namespace":
+								log("    namespace pulls the published version image — nothing to build");
+								break;
+							case "runcloud":
+								log("    runcloud pulls the published version image — nothing to build");
+								break;
+							case "vercel":
+								await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
+								break;
+							default: {
+								// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
+								const unhandled: never = provider.name;
+								throw new Error(`unhandled provider: ${String(unhandled)}`);
+							}
+						}
+					},
+					{
+						log,
+						only: promotionScope.eligible,
+						onComplete: (run) => {
+							const time = run.durationMs !== undefined ? ` (${run.durationMs.toFixed(0)}ms)` : "";
+							log(
+								`<<< ${run.provider}: ${run.status}${time}${run.reason ? ` — ${run.reason}` : ""}`,
+							);
+						},
+					},
+				);
 
 	for (const run of runs) {
 		reports.push({

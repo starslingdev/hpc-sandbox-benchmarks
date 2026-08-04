@@ -33,8 +33,10 @@ export interface ProviderAdapter {
 	requiredEnvVars?: string[];
 	/** Overrides the harness's default per-attempt create timeout for providers whose `create` does not
 	 *  return until the sandbox is fully booted — the toolchain image pull then happens INSIDE the
-	 *  create call rather than behind a readiness probe. Omitted when the default is adequate. */
-	createTimeoutMs?: number;
+	 *  create call rather than behind a readiness probe. `null` disables the harness race when the
+	 *  adapter owns a bounded readiness wait and must finish its own failed-allocation cleanup before
+	 *  the caller can safely exit. Omitted when the default is adequate. */
+	createTimeoutMs?: number | null;
 }
 
 /** A provider as the harness consumes it: schema-owned identity joined with the harness adapter. */

@@ -21,6 +21,7 @@ import {
 	SuiteUsageError,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
+import { drainRuncloudBackgroundWork } from "@sandbox-benchmarks/providers";
 import { writeNormalizedRun } from "@sandbox-benchmarks/results";
 import type { Run, SuiteName } from "@sandbox-benchmarks/schema";
 import { SUITES } from "@sandbox-benchmarks/schema";
@@ -756,18 +757,24 @@ if (import.meta.main) {
 			...(singleReplicate !== undefined ? { replicateIndex: singleReplicate } : {}),
 			required,
 		});
-		await reportCell({
-			provider,
-			suite,
-			runId,
-			sha,
-			outFile: outcome.outFile,
-			...(outcome.run ? { run: outcome.run } : {}),
-			failed: outcome.failed,
-			durationMs: outcome.durationMs,
-			...(outcome.detail !== undefined ? { detail: outcome.detail } : {}),
-			...(taskPlan ? { taskPlan } : {}),
-		});
+		try {
+			await reportCell({
+				provider,
+				suite,
+				runId,
+				sha,
+				outFile: outcome.outFile,
+				...(outcome.run ? { run: outcome.run } : {}),
+				failed: outcome.failed,
+				durationMs: outcome.durationMs,
+				...(outcome.detail !== undefined ? { detail: outcome.detail } : {}),
+				...(taskPlan ? { taskPlan } : {}),
+			});
+		} finally {
+			// run.cloud may still be destroying an allocation whose create response lost a deadline race.
+			// A failed summary write must not bypass that work on its way out of the process.
+			await drainRuncloudBackgroundWork();
+		}
 		if (outcome.failed) fail(outcome.detail ?? `Cell ${cell} failed`, { annotate: false });
 		process.exit(0);
 	}
@@ -834,14 +841,19 @@ if (import.meta.main) {
 		}),
 	);
 
-	await reportFleet({
-		provider,
-		suite,
-		runId,
-		sha,
-		outcomes,
-		...(taskPlan ? { taskPlan } : {}),
-	});
+	try {
+		await reportFleet({
+			provider,
+			suite,
+			runId,
+			sha,
+			outcomes,
+			...(taskPlan ? { taskPlan } : {}),
+		});
+	} finally {
+		// See the single-sandbox path above. This is a no-op unless run.cloud retained a late response.
+		await drainRuncloudBackgroundWork();
+	}
 
 	const failures = outcomes.filter((o) => o.failed);
 	if (failures.length > 0) {

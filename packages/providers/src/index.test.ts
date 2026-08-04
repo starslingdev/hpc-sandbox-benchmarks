@@ -94,6 +94,21 @@ describe("@sandbox-benchmarks/providers", () => {
 		expect(JSON.stringify(adapter?.createOptions)).not.toContain("RUNLOOP_API_KEY");
 	});
 
+	it("pins run.cloud to the shared image and target spec", () => {
+		const adapter = providers.find((provider) => provider.name === "runcloud");
+		expect(adapter?.requiredEnvVars).toEqual(["RUN_CLOUD_API_KEY"]);
+		expect(adapter?.createOptions).toMatchObject({
+			image: config.toolchainImage,
+			cpu: TARGET_SPEC.vcpus,
+			memory: TARGET_SPEC.memoryGb * 1024,
+			disk: TARGET_SPEC.diskGb,
+		});
+		// The adapter waits for readiness and cleans up failed allocations itself. A harness timeout would
+		// abandon that non-cancellable promise and bench-suite's process exit could kill the cleanup.
+		expect(adapter?.createTimeoutMs).toBeNull();
+		expect(adapter?.createCompute().name).toBe("runcloud");
+	});
+
 	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
 		// Construction must accept an nvta_-prefixed key and still expose the universal manager surface
 		// the harness drives, with the mispointed snapshot/template managers removed (their every call

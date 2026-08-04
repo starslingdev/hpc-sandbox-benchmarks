@@ -219,6 +219,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BL_API_KEY` | bench matrix/smoke only |
    | `BL_WORKSPACE` | bench matrix/smoke only |
    | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
+   | `RUN_CLOUD_API_KEY` | optional for toolchain validation; bench matrix/smoke |
    | `VERCEL_TOKEN` | Bootstrap only: Vercel CLI pulls a short-lived project OIDC token |
    | `VERCEL_ORG_ID` | Links the Vercel CLI to the repository's organization (`team_*`) |
    | `VERCEL_PROJECT_ID` | Links the Vercel CLI to the repository's project (`prj_*`) |
@@ -318,6 +319,8 @@ released Blueprint by name. The credential is never copied into Blueprint parame
 options, or the guest. `RUNLOOP_BLUEPRINT` is an optional local runtime override; leave it unset to use
 the canonical version-scoped Blueprint. Runloop disk snapshots remain temporary lifecycle-benchmark
 measurements; they are not release artifacts and are never selected for ordinary benchmark startup.
+
+run.cloud needs `RUN_CLOUD_API_KEY`. Its SDK reads the key directly from the benchmark process; the adapter never adds it to sandbox metadata, create-time environment variables, or guest commands.
 
 The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
 credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.

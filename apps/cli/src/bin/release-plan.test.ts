@@ -9,6 +9,7 @@ import {
 } from "./release-plan.ts";
 
 const base = { sourceRef: "abc123", forceRepublish: false, alreadyPublished: false };
+const backfillBase = { ...base, build: "skip" as const };
 const ALL_PROVIDERS = PROVIDERS.map((p) => p.id);
 
 describe("buildReleasePlan mode + skip", () => {
@@ -34,7 +35,11 @@ describe("buildReleasePlan mode + skip", () => {
 	// The reason the scoped path exists: v7 was published for every provider except the one being added,
 	// so the early skip would otherwise kill the run before it could backfill anything.
 	test("a scoped release runs against an already-published version (mode backfill, skip false)", () => {
-		const plan = buildReleasePlan({ ...base, alreadyPublished: true, providers: "vercel" });
+		const plan = buildReleasePlan({
+			...backfillBase,
+			alreadyPublished: true,
+			providers: "vercel",
+		});
 		expect(plan.mode).toBe("backfill");
 		expect(plan.partial).toBe(true);
 		expect(plan.skip).toBe(false);
@@ -71,6 +76,7 @@ describe("buildReleasePlan matrix", () => {
 			"runloop",
 			"namespace",
 			"vercel",
+			"runcloud",
 		]);
 	});
 
@@ -82,7 +88,7 @@ describe("buildReleasePlan matrix", () => {
 	});
 
 	test("a scoped dispatch emits only its own cells", () => {
-		const plan = buildReleasePlan({ ...base, providers: "vercel" });
+		const plan = buildReleasePlan({ ...backfillBase, providers: "vercel" });
 		expect(plan.matrix.include).toEqual([{ provider: "vercel", required: true }]);
 		expect(plan.providers.map((p) => p.provider)).toEqual(["vercel"]);
 	});
@@ -90,7 +96,10 @@ describe("buildReleasePlan matrix", () => {
 	// A named provider that could still skip on a missing secret would report a green release that
 	// published nothing — the exact failure the scoped path is meant to make impossible.
 	test("every provider a partial dispatch names is required, even a normally best-effort one", () => {
-		const plan = buildReleasePlan({ ...base, providers: "daytona-container,novita" });
+		const plan = buildReleasePlan({
+			...backfillBase,
+			providers: "daytona-container,novita",
+		});
 		expect(plan.required).toEqual(["daytona-container", "novita"]);
 		expect(plan.matrix.include.every((c) => c.required)).toBe(true);
 	});
@@ -106,7 +115,7 @@ describe("buildReleasePlan matrix", () => {
 	});
 
 	test("accepts a scoped Runloop release and makes it required", () => {
-		const plan = buildReleasePlan({ ...base, providers: "runloop" });
+		const plan = buildReleasePlan({ ...backfillBase, providers: "runloop" });
 		expect(plan.matrix.include).toEqual([{ provider: "runloop", required: true }]);
 		expect(plan.required).toEqual(["runloop"]);
 		expect(plan.providers[0]?.artifact).toBe(config.runloopBlueprintCandidate);
@@ -150,6 +159,15 @@ describe("buildReleasePlan phases", () => {
 		expect(plan.build).toBe("skip");
 		expect(plan.promote).toBe(false);
 	});
+
+	test("refuses to rebuild an unrelated candidate during a scoped backfill", () => {
+		expect(() => buildReleasePlan({ ...base, providers: "runcloud" })).toThrow(
+			/scoped release.*requires `build: skip`/,
+		);
+		expect(() =>
+			buildReleasePlan({ ...base, providers: "runcloud", build: "full", promote: false }),
+		).toThrow(/scoped release.*requires `build: skip`/);
+	});
 });
 
 describe("buildReleasePlan packages", () => {
@@ -159,7 +177,7 @@ describe("buildReleasePlan packages", () => {
 	// no API to automate it, for bytes that are already published.
 	test("lists the shared base package, whatever the scope", () => {
 		expect(buildReleasePlan(base).packages).toEqual([buildReleasePlan(base).image.name]);
-		const scoped = buildReleasePlan({ ...base, providers: "vercel" });
+		const scoped = buildReleasePlan({ ...backfillBase, providers: "vercel" });
 		expect(scoped.packages).toEqual([scoped.image.name]);
 	});
 });
@@ -174,7 +192,7 @@ describe("buildReleasePlan image source", () => {
 	});
 
 	test("a scoped backfill mirrors the published version instead", () => {
-		const plan = buildReleasePlan({ ...base, providers: "vercel" });
+		const plan = buildReleasePlan({ ...backfillBase, providers: "vercel" });
 		expect(plan.partial).toBe(true);
 		expect(plan.image.source).toBe(plan.image.version);
 	});
@@ -197,7 +215,7 @@ describe("planOutputs", () => {
 		expect(matrixLine).toBeDefined();
 		// The matrix value must be valid, single-line JSON (the fromJSON contract).
 		const parsed = JSON.parse((matrixLine as string).slice("matrix=".length));
-		expect(parsed.include).toHaveLength(12);
+		expect(parsed.include).toHaveLength(PROVIDERS.length);
 		expect((matrixLine as string).includes("\n")).toBe(false);
 	});
 
@@ -216,9 +234,9 @@ describe("planOutputs", () => {
 		expect(planOutputs(buildReleasePlan(base)).split("\n")).toContain(
 			`providers=${ALL_PROVIDERS.join(",")}`,
 		);
-		expect(planOutputs(buildReleasePlan({ ...base, providers: "vercel" })).split("\n")).toContain(
-			"providers=vercel",
-		);
+		expect(
+			planOutputs(buildReleasePlan({ ...backfillBase, providers: "vercel" })).split("\n"),
+		).toContain("providers=vercel");
 	});
 
 	test("emits every package the visibility guard must check, comma-separated", () => {

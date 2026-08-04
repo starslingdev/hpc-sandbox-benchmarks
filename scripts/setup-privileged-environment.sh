@@ -58,6 +58,7 @@ echo "Secret checklist:"
 echo "  E2B_API_KEY, DAYTONA_API_KEY, DAYTONA_TARGET,"
 echo "  MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, NOVITA_API_KEY,"
 echo "  MSB_API_KEY (and optional MSB_API_URL),"
+echo "  RUN_CLOUD_API_KEY,"
 echo "  BL_API_KEY, BL_WORKSPACE"
 echo
 echo "Also required outside this Environment (see docs/ci-secrets.md):"

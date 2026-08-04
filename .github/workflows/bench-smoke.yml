@@ -66,6 +66,7 @@ on:
             namespace,
             microsandbox-local,
             microsandbox-cloud,
+            runcloud,
           ]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
