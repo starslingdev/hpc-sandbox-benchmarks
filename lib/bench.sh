@@ -254,14 +254,21 @@ bench_cmd() {
 
 # --- Phoronix Test Suite (PTS) helpers ---
 
-# The toolchain bakes profiles as root under /var/lib, but E2B-compatible providers inject an
-# unprivileged runtime user. PTS 10.8.4 has separate supported overrides for user state and installed
-# profile discovery; without the latter an unprivileged Runloop Devbox sees the profile payloads but
-# reports zero installed tests because the root bake's /etc config is not writable. Set both here as
-# a fallback in case an image importer strips the Docker ENV; the harness preamble does the same.
+# The toolchain bakes profiles as root under /var/lib. PTS 10.8.4 has separate supported overrides for
+# mutable user state and installed-profile discovery: keep the payload registry shared, but give an
+# injected unprivileged runtime user state under its own HOME. Root's core.pt2so is mode 0600, and PTS
+# expands its non-daemon ResultsDirectory through HOME regardless of a shared-state override; pointing
+# both users at /var/lib therefore warns on every invocation while the composite finder searches the
+# wrong result tree. Set this here as a fallback in case an image importer strips the Docker ENV; the
+# harness preamble makes the same choice before setup commands run.
 if [ -d /var/lib/phoronix-test-suite ]; then
-	export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/
 	export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/
+	if [ "$(id -u)" -eq 0 ]; then
+		export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/
+	else
+		mkdir -p "${HOME}/.phoronix-test-suite"
+		export PTS_USER_PATH_OVERRIDE="${HOME}/.phoronix-test-suite/"
+	fi
 fi
 
 # Locate PTS's effective data directory. Prefer its supported override, then probe legacy root/user
@@ -290,12 +297,12 @@ pts_user_dir() {
 
 # Resolve the config file PTS itself reads and writes, mirroring its own selection order
 # (pts_config::get_config_file_location + pts_config_nye_XmlReader::__construct, v10.8.4). PTS sets
-# PTS_IS_DAEMONIZED_SERVER_PROCESS whenever /var/lib AND /etc are both writable — i.e. whenever it
-# runs as root, which is every sandbox provider here — and in that mode it uses
+# PTS_IS_DAEMONIZED_SERVER_PROCESS whenever /var/lib AND /etc are both writable — normally when the
+# sandbox runs as root — and in that mode it uses
 # /etc/phoronix-test-suite.xml UNCONDITIONALLY, without so much as probing the user dir. So under
 # root, user-config.xml is the file PTS never touches, and /etc is the live config. An unprivileged
-# run falls through to ${PTS_USER_PATH}/user-config.xml (the baked override here) — and even then a
-# writable /etc/phoronix-test-suite.xml, if one exists, still wins.
+# run falls through to ${PTS_USER_PATH}/user-config.xml — and even then a writable
+# /etc/phoronix-test-suite.xml, if one exists, still wins.
 pts_config_file() {
 	if { [ -w /var/lib ] && [ -w /etc ]; } || [ -w /etc/phoronix-test-suite.xml ]; then
 		echo /etc/phoronix-test-suite.xml

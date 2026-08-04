@@ -73,11 +73,14 @@ describe("sandbox preamble", () => {
 		expect(PREAMBLE).toContain("MISE_TASK_RUN_AUTO_INSTALL=0");
 	});
 
-	it("reuses the baked PTS registry for an injected unprivileged runtime user", () => {
-		expect(PREAMBLE).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
+	it("separates an injected user's writable PTS state from the baked profile registry", () => {
 		expect(PREAMBLE).toContain(
 			"PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/",
 		);
+		expect(PREAMBLE).toContain('if [ "$(id -u)" -eq 0 ]');
+		expect(PREAMBLE).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
+		expect(PREAMBLE).toContain('mkdir -p "$HOME/.phoronix-test-suite"');
+		expect(PREAMBLE).toContain('PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"');
 	});
 
 	it("never disables the mise python — baked images have no distro python3 to fall back to", () => {

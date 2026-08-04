@@ -61,6 +61,19 @@ function plural(n: number, singular: string, pluralForm: string = `${singular}s`
 	return `${n} ${n === 1 ? singular : pluralForm}`;
 }
 
+/**
+ * Benchmark setup, baked PTS state, and provider adapters all target root. Keep this explicit in the
+ * Actions report: a provider silently injecting another identity changes HOME, permissions, and tool
+ * state even when every hardware-spec probe still matches.
+ */
+export const EXPECTED_SANDBOX_USER = "root";
+
+/** Job-summary rendering for the observed effective user, with a visible warning on contract drift. */
+export function runtimeUserSummary(user: string | undefined): string {
+	if (!user) return "—";
+	return user === EXPECTED_SANDBOX_USER ? user : `⚠ ${user} (expected ${EXPECTED_SANDBOX_USER})`;
+}
+
 function miseTaskSummary(plan: SuiteTaskPlan): string {
 	const commands = plan.tasks.filter((t) => t.role === "command").length;
 	const leaves = plan.tasks.filter((t) => t.role === "leaf").length;
@@ -252,6 +265,7 @@ async function reportCell(
 			["Metrics", provider ? String(provider.metrics.length) : "", "plain"],
 			["Suites covered", provider ? String(provider.suitesCovered.length) : "", "plain"],
 			["Gaps", provider ? String(provider.gaps.length) : "", "plain"],
+			["Runtime user", runtimeUserSummary(provider?.observedSpecs.user), "plain"],
 			["Observed CPU", provider?.observedSpecs.cpuModel ?? "", "code"],
 			[
 				"Spec matched",
@@ -320,6 +334,7 @@ export function replicateSummaryRows(
 		{ data: "Metrics", header: true },
 		{ data: "Suites", header: true },
 		{ data: "Gaps", header: true },
+		{ data: "Runtime user", header: true },
 		// Per-SANDBOX, not per-cell, and that is the point: R replicates exist to measure a provider's
 		// fleet variation, and a replicate that landed on different host hardware (or off the target
 		// spec) is the single most likely explanation for an outlier. reportCell surfaces these for a
@@ -341,6 +356,7 @@ export function replicateSummaryRows(
 			escapeHtml(run ? String(run.metrics.length) : "—"),
 			escapeHtml(run ? String(run.suitesCovered.length) : "—"),
 			escapeHtml(run ? String(run.gaps.length) : "—"),
+			escapeHtml(runtimeUserSummary(run?.observedSpecs.user)),
 			renderCell(run?.observedSpecs.cpuModel || "—", "code"),
 			escapeHtml(run?.observedSpecs.region || "—"),
 			escapeHtml(run?.specMatched === undefined ? "—" : String(run.specMatched)),
@@ -369,6 +385,11 @@ async function reportFleet(
 			o.run?.providers.find((p) => p.providerId === opts.provider)?.validationStatus ===
 			"validated",
 	).length;
+	const unexpectedRuntimeUsers = opts.outcomes.filter((outcome) => {
+		const user = outcome.run?.providers.find((provider) => provider.providerId === opts.provider)
+			?.observedSpecs.user;
+		return Boolean(user && user !== EXPECTED_SANDBOX_USER);
+	}).length;
 	await writeCellSummary({
 		// Identity rides through as-is; `outcomes` is spent on the counts and the table below.
 		...opts,
@@ -377,6 +398,13 @@ async function reportFleet(
 			["Replicates", String(opts.outcomes.length), "plain"],
 			["Validated replicates", `${validated}/${opts.outcomes.length}`, "plain"],
 			["Failed replicates", String(failures.length), "plain"],
+			[
+				"Unexpected runtime users",
+				unexpectedRuntimeUsers > 0
+					? `${unexpectedRuntimeUsers}/${opts.outcomes.length} sandbox(es) (expected ${EXPECTED_SANDBOX_USER})`
+					: "",
+				"plain",
+			],
 			// The cell's wall clock IS its slowest replicate, so that number — not the mean — is what
 			// to compare against the job budget, and the spread next to it says whether one sandbox
 			// dragged the cell or the whole fleet was slow.

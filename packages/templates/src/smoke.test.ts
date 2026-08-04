@@ -11,7 +11,9 @@ async function runPtsCheck(
 }> {
 	const check = ptsInstalledTestsSmokeCheck(installTests);
 	const output = installedProfiles.map((profile) => `'${profile}'`).join(" ");
-	const script = `phoronix-test-suite() { printf '%s\\n' ${output}; }; ${check.cmd}`;
+	// Keep the generated check on its root branch so this unit test never creates state under the
+	// developer's real HOME; unprivileged-path selection is pinned by the string assertions below.
+	const script = `id() { printf '0\\n'; }; phoronix-test-suite() { printf '%s\\n' ${output}; }; ${check.cmd}`;
 	const proc = Bun.spawn(["bash", "-c", script], { stdout: "pipe", stderr: "pipe" });
 	const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
 	return { exitCode, stdout };
@@ -38,7 +40,9 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		const pts = smokeChecks.find((check) => check.name === "pts-installed-tests");
 		expect(pts?.expect).toBe("pts-profile-count=10");
 		expect(pts?.cmd).toContain("phoronix-test-suite list-installed-tests");
-		expect(pts?.cmd).toContain("PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/");
+		expect(pts?.cmd).toContain('if [ "$(id -u)" -ne 0 ]');
+		expect(pts?.cmd).toContain('pts_state="$HOME/.phoronix-test-suite"');
+		expect(pts?.cmd).toContain('PTS_USER_PATH_OVERRIDE="$pts_state/"');
 		expect(pts?.cmd).toContain(
 			"PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/",
 		);

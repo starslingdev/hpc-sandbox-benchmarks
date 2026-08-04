@@ -317,9 +317,12 @@ const PREAMBLE_HEAD = [
 	// Distro pythons are PEP 668 externally-managed, but PTS profiles pip-install their harness —
 	// fine in a throwaway sandbox; the baked image sets the same.
 	"export PIP_BREAK_SYSTEM_PACKAGES=1",
-	// Some providers inject an unprivileged runtime user. Point both PTS state and installed-profile
-	// discovery at the root-baked registry even if an image importer strips the Docker ENV/config.
-	"if [ -d /var/lib/phoronix-test-suite ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/ PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/; fi",
+	// Keep the root-baked installed profiles shared, but never point an injected unprivileged user at
+	// root's mutable PTS state. PTS creates core.pt2so as 0600 and expands its default ResultsDirectory
+	// through $HOME for a non-daemon client; sharing /var/lib therefore emits permission errors AND makes
+	// result discovery look in a different tree from the one PTS actually writes. This runtime fallback
+	// also corrects already-published images whose Docker ENV still carries the old shared-state override.
+	'if [ -d /var/lib/phoronix-test-suite ]; then export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/; if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/; else mkdir -p "$HOME/.phoronix-test-suite"; export PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"; fi; fi',
 ];
 
 /**

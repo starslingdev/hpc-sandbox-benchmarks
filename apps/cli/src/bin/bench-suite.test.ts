@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
-import { formatDuration, HELP, parseReplicateFlag } from "./bench-suite.ts";
+import { formatDuration, HELP, parseReplicateFlag, runtimeUserSummary } from "./bench-suite.ts";
 
 /** The ids `runSuite` actually matches on: it compares against the schema-joined adapter names
  *  EXACTLY, so `LEGACY_PROVIDER_ALIASES` ("daytona", "modal") does not rescue a copied example.
@@ -93,5 +93,13 @@ describe("formatDuration", () => {
 	// 59.6s rounds to 60 seconds, which must not render as "0m60s".
 	it("carries a rounded-up 60th second into the minute", () => {
 		expect(formatDuration(59_600)).toBe("1m00s");
+	});
+});
+
+describe("runtimeUserSummary", () => {
+	it("keeps root quiet and marks any other observed identity as unexpected", () => {
+		expect(runtimeUserSummary("root")).toBe("root");
+		expect(runtimeUserSummary("user")).toBe("⚠ user (expected root)");
+		expect(runtimeUserSummary(undefined)).toBe("—");
 	});
 });
