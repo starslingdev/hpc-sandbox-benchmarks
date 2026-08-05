@@ -325,6 +325,23 @@ pts_install_root() {
 	echo "${root%/}"
 }
 
+# Take ownership of a baked profile's INSTALLED dir when this sandbox's identity is not the bake's.
+# Returns non-zero when it cannot, so the caller can fall back rather than die mid-repair.
+#
+# 25-pts-profiles.sh leaves the tree a+rwX, which is enough to create, truncate and delete files —
+# and NOT enough for the repair-in-place leaves, because chmod is gated on OWNERSHIP, not on the mode
+# bits. A vendored install.sh that rewrites a launcher and ends with `chmod +x` therefore succeeds at
+# every write and then dies EPERM on the file it just wrote (stream, fast-cli). Writable is not
+# ownable: the mode says who may change the file's CONTENT, the owner is who may change its METADATA.
+claim_baked_profile_dir() {
+	local dir="${1:-}"
+	{ [ -n "$dir" ] && [ -d "$dir" ]; } || return 0
+	[ "$(stat -c '%u' "$dir" 2>/dev/null || echo -1)" = "$(id -u)" ] && return 0
+	{ command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; } || return 1
+	sudo -n chown -R "$(id -u):$(id -g)" "$dir" || return 1
+	echo "Claimed baked profile dir: ${dir} (now $(id -un))"
+}
+
 # Make the BAKED postgres cluster usable by whatever identity this sandbox runs as. No-op under the
 # identity that baked it (every root provider), so this is purely the non-root repair.
 #
