@@ -25,13 +25,21 @@ const CLONE_URL = REPO_TOKEN
 export const DIR = '"$HOME/sandbox-benchmarks"';
 
 // Runtime versions for the stock-image fallback path (no-ops on the baked image, which already
-// ships them). Keep node/pnpm aligned with packages/templates/images/base/mise.toml. These stay as
-// local constants rather than a templates-package import so the harness remains decoupled.
-const MISE_VERSION = "v2026.5.16";
-const MISE_SHA256_X64 = "fb2d7bf1a3751398a5c336a3565cd3c60af9b41952abe6fd62e2f2f0d5f06b60";
-const MISE_SHA256_ARM64 = "a068f29d8821ab0707f1a006721b5ab0baa80acaafc5a7b71e04371287108b92";
-const NODE_VERSION = "22.22.3";
-const PNPM_VERSION = "10.34.3";
+// ships them). These MUST equal the pins the image was baked from (packages/templates/src/lib/pins.ts,
+// rendered into the image's mise.toml) — they stay local constants rather than a templates-package
+// import so the harness remains decoupled, which means nothing but this comment couples them.
+//
+// The equality is load-bearing, not cosmetic. Every version check below is EXACT, so a stale constant
+// makes the baked toolchain miss and takes the install fallback on every provider, every sandbox: it
+// re-downloads node and rewrites the image's own /etc/mise/config.toml, so the suite then measures a
+// runtime-fetched toolchain instead of the baked one. That failure is silent wherever the sandbox user
+// is root; where it is not (runloop), the write is denied and the step dies. Drifting these from
+// pins.ts is how #243's pin refresh reached the matrix as a Runloop-only outage two weeks later.
+const MISE_VERSION = "v2026.7.11";
+const MISE_SHA256_X64 = "d31578a16ae2708385249b439c95533068e04b9507a118e905aa6768905671fc";
+const MISE_SHA256_ARM64 = "e3cb3bf4795f494a0e9be3f69ee1464de9d12a991589f126035eebd973c17796";
+const NODE_VERSION = "22.23.1";
+const PNPM_VERSION = "10.34.5";
 const PTS_VERSION = "10.8.4";
 
 export interface SetupStep {
@@ -96,9 +104,17 @@ export function setupSteps(suite: Suite): SetupStep[] {
 			// matrix cells share one unauthenticated egress IP, so even the one pnpm API lookup can hit an
 			// exhausted 60-request quota. Later `mise run` commands inherit the global Node config while
 			// task auto-install stays off. The pinned baked image takes the fast path for both checks.
+			//
+			// $SUDO on the mise fallback, because that branch writes to the BAKED image's paths, not the
+			// user's: mise installs into MISE_DATA_DIR (/usr/local/share/mise) and `--global` resolves to
+			// MISE_CONFIG_DIR (/etc/mise/config.toml), both root-owned 0755. Unprivileged and unelevated,
+			// the step dies there. Redirecting both dirs under $HOME is NOT the alternative — measured on
+			// a Runloop devbox, mise still reaches back to rebuild `latest` symlinks in the root-owned
+			// tree and fails anyway. The pnpm branch stays unelevated: its --prefix is under $HOME by
+			// design, and elevating it would plant root-owned files in the sandbox user's own home.
 			script: [
 				`cd "$HOME"`,
-				`(node -e 'process.exit(process.versions.node === "${NODE_VERSION}" ? 0 : 1)' 2>/dev/null || mise use --global --yes node@${NODE_VERSION})`,
+				`(node -e 'process.exit(process.versions.node === "${NODE_VERSION}" ? 0 : 1)' 2>/dev/null || $SUDO mise use --global --yes node@${NODE_VERSION})`,
 				`if command -v pnpm >/dev/null 2>&1 && [ "$(pnpm -v)" = "${PNPM_VERSION}" ]; then :; else npm install --global --prefix "$HOME/.local" pnpm@${PNPM_VERSION}; fi`,
 				"node -v && pnpm -v",
 			].join(" && "),

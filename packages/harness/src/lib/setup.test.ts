@@ -59,16 +59,27 @@ describe("setupSteps", () => {
 		);
 		expect(nodeStep?.script).toContain('cd "$HOME"');
 		expect(nodeStep?.script).toContain("mise use --global");
-		expect(nodeStep?.script).toContain("node@22.22.3");
-		expect(nodeStep?.script).toContain('npm install --global --prefix "$HOME/.local" pnpm@10.34.3');
+		expect(nodeStep?.script).toContain("node@22.23.1");
+		expect(nodeStep?.script).toContain('npm install --global --prefix "$HOME/.local" pnpm@10.34.5');
 		expect(nodeStep?.script).not.toMatch(/mise use[^&]*pnpm/);
 		expect(nodeStep?.script).not.toContain(`cd "$HOME/sandbox-benchmarks" && mise use`);
+	});
+
+	// The mise fallback writes to the baked image's root-owned MISE_DATA_DIR/MISE_CONFIG_DIR, so an
+	// unprivileged sandbox (runloop) needs the preamble's $SUDO to survive it. The pnpm branch must
+	// NOT be elevated — it installs under $HOME, where root-owned files would be the new bug.
+	it("elevates only the mise fallback, which writes outside $HOME", () => {
+		const nodeStep = setupSteps(SUITES["cpu-node"]).find(
+			(step) => step.label === "setup node 22 + pnpm 10",
+		);
+		expect(nodeStep?.script).toContain("$SUDO mise use --global");
+		expect(nodeStep?.script).not.toContain("$SUDO npm install");
 	});
 
 	it("checksum-verifies the pinned mise fallback without executing a remote installer", () => {
 		const miseStep = setupSteps(SUITES["cpu-node"]).find((step) => step.label === "install mise");
 		expect(miseStep?.script).toContain("sha256sum -c -");
-		expect(miseStep?.script).toContain("mise-v2026.5.16-linux-$a");
+		expect(miseStep?.script).toContain("mise-v2026.7.11-linux-$a");
 		expect(miseStep?.script).not.toContain("mise.run");
 	});
 
