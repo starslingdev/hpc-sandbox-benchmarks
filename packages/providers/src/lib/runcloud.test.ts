@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ExecOptions, Sandbox, SandboxState } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
+import { isRetryableCreateError } from "./retryable-create.ts";
 import { runcloudCompute, sandboxMethods } from "./runcloud.ts";
 
 type ComputeOptions = NonNullable<Parameters<typeof runcloudCompute>[0]>;
@@ -287,6 +288,76 @@ describe("run.cloud ComputeSDK adapter", () => {
 		await expect(create).rejects.not.toThrow(/manual cleanup/);
 		expect(createCalls).toBe(1);
 		expect(listCalls).toBe(3);
+		// Established absence is what makes re-issuing the create safe, and a stall that allocated
+		// nothing is this control plane reporting saturation without saying "429". Mark it so the
+		// harness waits it out instead of failing the cell in seconds.
+		expect(isRetryableCreateError(await create.catch((e) => e))).toBe(true);
+	});
+
+	it("does not mark a generic create failure as retryable after confirming absence", async () => {
+		const clientError = new Error("client serialization failed");
+		const client = nativeClient({
+			create: async () => {
+				throw clientError;
+			},
+			list: async () => [],
+		});
+
+		const rejected = await runcloudCompute({
+			client,
+			reconcileAttempts: 1,
+			sleep: async () => {},
+		})
+			.sandbox.create()
+			.catch((error) => error);
+
+		expect(rejected).toBe(clientError);
+		expect(isRetryableCreateError(rejected)).toBe(false);
+	});
+
+	it("does not mark an unanswered reconciliation as retryable", async () => {
+		const client = nativeClient({
+			create: () => new Promise<Sandbox>(() => {}),
+			list: async () => {
+				throw new Error("control plane unavailable");
+			},
+		});
+
+		const create = runcloudCompute({
+			client,
+			controlPlaneTimeoutMs: 5,
+			reconcileAttempts: 2,
+			reconcileRetryMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		const error = await create.catch((e) => e);
+		expect(error).toBeInstanceOf(AggregateError);
+		expect((error as Error).message).toMatch(/every reconciliation lookup also failed/);
+		// Re-issuing a create that may already have allocated is how one stranded sandbox becomes a
+		// dozen. Absence was never established, so this must NOT be retried.
+		expect(isRetryableCreateError(error)).toBe(false);
+	});
+
+	it("does not mark a definitive rejection as retryable", async () => {
+		const client = nativeClient({
+			create: async () => {
+				throw new RunCloudError(422, "invalid image");
+			},
+			list: async () => [],
+		});
+
+		const create = runcloudCompute({
+			client,
+			reconcileRetryMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		// Nothing was allocated here either, but re-issuing a rejected request for an hour would only
+		// delay the real error. (429 still reaches the retry through the harness's message match.)
+		const rejected = await create.catch((e) => e);
+		expect(rejected).toBeInstanceOf(RunCloudError);
+		expect(isRetryableCreateError(rejected)).toBe(false);
 	});
 
 	it("keeps asking when a reconciliation lookup fails or the allocation is not yet visible", async () => {

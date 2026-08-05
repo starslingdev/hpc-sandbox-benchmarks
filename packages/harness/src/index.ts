@@ -2,7 +2,7 @@
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
-import { providers } from "@sandbox-benchmarks/providers";
+import { isRetryableCreateError, providers } from "@sandbox-benchmarks/providers";
 import type { ProviderTransport, RawRun, ResultGap, Suite } from "@sandbox-benchmarks/schema";
 import { HARNESS_METRIC_IDS, isPtsResultFile, SUITES } from "@sandbox-benchmarks/schema";
 import { collectResults, writeGapMarker } from "./lib/collect.ts";
@@ -278,6 +278,11 @@ export interface CreateSuiteSandboxContext {
 	 *  or `null` when the adapter owns readiness + failed-allocation cleanup and abandoning its promise
 	 *  would terminate that cleanup. Injectable so both paths are exercisable in tests. */
 	createTimeoutMs?: number | null;
+	/** Test seams for the capacity-retry loop. Production always uses the module constants; a test that
+	 *  had to spend the real 2-minute delay to reach the second attempt would not be written, and an
+	 *  unexercised retry path is what let a hard-failing create reach production in the first place. */
+	retryDelayMs?: number;
+	retryBudgetMs?: number;
 }
 
 /**
@@ -302,7 +307,8 @@ export async function createSuiteSandbox(
 	const { suite, suiteName, providerName, resultsDir, createOptions } = ctx;
 	const createTimeoutMs =
 		ctx.createTimeoutMs === undefined ? CREATE_ATTEMPT_TIMEOUT_MS : ctx.createTimeoutMs;
-	const createDeadline = Date.now() + CREATE_RETRY_BUDGET_MS;
+	const retryDelayMs = ctx.retryDelayMs ?? CREATE_RETRY_DELAY_MS;
+	const createDeadline = Date.now() + (ctx.retryBudgetMs ?? CREATE_RETRY_BUDGET_MS);
 	for (let attempt = 1; ; attempt++) {
 		// Undefined until `sandbox.create` is actually invoked: a factory throw leaves it unset (nothing
 		// was created, so there is nothing to clean up), while a create that outlives the timeout leaves it
@@ -333,8 +339,14 @@ export async function createSuiteSandbox(
 				);
 			}
 			const message = err instanceof Error ? err.message : String(err);
-			const capacity = /quota|rate.?limit|too many|capacity|429/i.test(message);
-			if (!capacity || Date.now() + CREATE_RETRY_DELAY_MS > createDeadline) {
+			// An adapter that KNOWS its create failure is transient and allocated nothing says so explicitly;
+			// the message match is the fallback for providers that only express capacity limits in prose. The
+			// explicit mark covers a control plane that expresses saturation by stalling, whose timeout message
+			// matches none of these words — the shape that hard-failed every runcloud cell of run
+			// 30960125032 in seconds instead of letting the cells queue.
+			const retryable =
+				isRetryableCreateError(err) || /quota|rate.?limit|too many|capacity|429/i.test(message);
+			if (!retryable || Date.now() + retryDelayMs > createDeadline) {
 				// Best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
 				// provider error — the creation failure is the fact worth propagating, the marker is its
 				// paper trail. Log the write failure and rethrow the original either way.
@@ -361,10 +373,10 @@ export async function createSuiteSandbox(
 				throw err;
 			}
 			console.log(
-				`Sandbox create attempt ${attempt} hit a capacity limit (${message.slice(0, 140)}); ` +
-					`retrying in ${CREATE_RETRY_DELAY_MS / 1000}s...`,
+				`Sandbox create attempt ${attempt} failed transiently (${message.slice(0, 140)}); ` +
+					`retrying in ${retryDelayMs / 1000}s...`,
 			);
-			await new Promise((r) => setTimeout(r, CREATE_RETRY_DELAY_MS));
+			await new Promise((r) => setTimeout(r, retryDelayMs));
 		}
 	}
 }

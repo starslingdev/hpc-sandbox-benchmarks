@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
+import { markRetryableCreate } from "@sandbox-benchmarks/providers";
 import type { Suite } from "@sandbox-benchmarks/schema";
 import { parseGapMarker, sandboxFailureMarkerFile } from "@sandbox-benchmarks/schema";
 import {
@@ -403,7 +404,14 @@ describe("runSuite (resolution + credential gate)", () => {
 describe("createSuiteSandbox (creation-failure marker)", () => {
 	// The daytona-container incident shape: creation itself throws, so no sandbox — and no result —
 	// ever exists for the cell. The marker is the shard's ONLY record of the failure.
-	const createCtx = (resultsDir: string, overrides: { createTimeoutMs?: number | null } = {}) => ({
+	const createCtx = (
+		resultsDir: string,
+		overrides: {
+			createTimeoutMs?: number | null;
+			retryDelayMs?: number;
+			retryBudgetMs?: number;
+		} = {},
+	) => ({
 		suite: suite({}),
 		suiteName: "cpu-node",
 		providerName: "daytona-container",
@@ -445,6 +453,93 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 				detail: "Snapshot toolchain-v3-container is not available",
 			},
 		});
+	});
+
+	it("retries a create the adapter marked retryable, then returns the sandbox", async () => {
+		const resultsDir = freshDir();
+		const handle = makeSandbox({ destroyed: { hit: false } });
+		let attempts = 0;
+		const compute = {
+			sandbox: {
+				create: async (): Promise<SandboxHandle> => {
+					attempts++;
+					// A stalled control plane: the message names no quota, rate limit or 429, so only the
+					// adapter's explicit mark can keep this cell alive.
+					if (attempts < 3) {
+						throw markRetryableCreate(new Error("run.cloud create did not settle within 30000ms"));
+					}
+					return handle;
+				},
+			},
+		};
+		await expect(
+			createSuiteSandbox(() => compute, createCtx(resultsDir, { retryDelayMs: 1 })),
+		).resolves.toBe(handle);
+		expect(attempts).toBe(3);
+		// The cell recovered, so nothing failed and no marker belongs in the shard.
+		expect(existsSync(join(resultsDir, MARKER))).toBe(false);
+	});
+
+	it("does not retry an unmarked create failure whose message names no capacity limit", async () => {
+		const resultsDir = freshDir();
+		let attempts = 0;
+		const compute = {
+			sandbox: {
+				create: async (): Promise<SandboxHandle> => {
+					attempts++;
+					// Same sentence, no mark: the adapter never established that nothing was allocated, so
+					// re-issuing could stack allocations it cannot see.
+					throw new Error("run.cloud create did not settle within 30000ms");
+				},
+			},
+		};
+		await expect(
+			createSuiteSandbox(() => compute, createCtx(resultsDir, { retryDelayMs: 1 })),
+		).rejects.toThrow("did not settle");
+		expect(attempts).toBe(1);
+		expect(existsSync(join(resultsDir, MARKER))).toBe(true);
+	});
+
+	it("still retries on the message match, for adapters that do not set the mark", async () => {
+		const resultsDir = freshDir();
+		const handle = makeSandbox({ destroyed: { hit: false } });
+		let attempts = 0;
+		const compute = {
+			sandbox: {
+				create: async (): Promise<SandboxHandle> => {
+					attempts++;
+					if (attempts < 2) throw new Error("429 Too Many Requests");
+					return handle;
+				},
+			},
+		};
+		await expect(
+			createSuiteSandbox(() => compute, createCtx(resultsDir, { retryDelayMs: 1 })),
+		).resolves.toBe(handle);
+		expect(attempts).toBe(2);
+	});
+
+	it("writes a FAILED marker once the retry budget is spent", async () => {
+		const resultsDir = freshDir();
+		let attempts = 0;
+		const compute = {
+			sandbox: {
+				create: async (): Promise<SandboxHandle> => {
+					attempts++;
+					throw markRetryableCreate(new Error("no slot right now"));
+				},
+			},
+		};
+		// A budget smaller than one delay leaves no room for another attempt, so the first failure is
+		// also the last: patience is bounded, and the cell still records why it produced nothing.
+		await expect(
+			createSuiteSandbox(
+				() => compute,
+				createCtx(resultsDir, { retryDelayMs: 50, retryBudgetMs: 0 }),
+			),
+		).rejects.toThrow("no slot right now");
+		expect(attempts).toBe(1);
+		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8")).outcome).toBe("failed");
 	});
 
 	it("writes a FAILED marker when adapter construction (the factory) throws before create", async () => {

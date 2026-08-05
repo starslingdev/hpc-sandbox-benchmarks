@@ -12,6 +12,7 @@ import type {
 import { defineProvider } from "@computesdk/provider";
 import type { Sandbox } from "@run-cloud/sdk";
 import { Client, RunCloudError } from "@run-cloud/sdk";
+import { markRetryableCreate } from "./retryable-create.ts";
 
 const PROVIDER = "runcloud";
 
@@ -421,7 +422,15 @@ export function sandboxMethods(
 				);
 				// Nothing carries this name, so nothing was allocated and there is nothing to leak. The
 				// original error is the whole truth — report it without a spurious cleanup warning.
-				if (reconciled.status === "absent") throw error;
+				//
+				// A timed-out create whose reconciliation establishes absence is both transient and safe to
+				// retry. Do not mark every ambiguous error here: a generic client bug or durable 5xx with an
+				// empty lookup must fail promptly rather than masquerade as capacity for an hour. A definitive
+				// rejection is also left unmarked — 429 already reaches the harness through its message match,
+				// while re-issuing a 422 would only delay the real error.
+				if (reconciled.status === "absent") {
+					throw error instanceof NativeCallTimeoutError ? markRetryableCreate(error) : error;
+				}
 				// The create was ambiguous AND the control plane never answered what it did with it, so
 				// absence was never established. Say so and name the recovery handle: the name is stamped
 				// before the request precisely so a sandbox that outlived this window is still findable.
