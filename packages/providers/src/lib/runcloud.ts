@@ -86,15 +86,21 @@ class NativeCallTimeoutError extends Error {
 	}
 }
 
-/** A non-timeout 4xx is a definitive rejection: no allocation was accepted. Reconciliation still runs
- * (a conflict response can sit on top of a real allocation) but settles for a single confirming pass
- * rather than the full polling window, so a 429 still reaches the harness's capacity retry promptly. */
+/** A non-timeout 4xx is a definitive rejection: the create endpoint itself said no allocation was
+ * accepted. Reconciliation still runs, but settles for a single confirming pass rather than the full
+ * polling window, so a 429 still reaches the harness's capacity retry promptly.
+ *
+ * 409 is excluded, because a conflict asserts the OPPOSITE of absence: something already exists under
+ * this request's identity. Treating it as a definitive rejection would let an unanswered lookup be
+ * written off as "nothing was allocated" on the one status code that says otherwise. It gets the full
+ * window and stays subject to the unanswered report. */
 function isDefinitiveCreateFailure(error: unknown): boolean {
 	return (
 		error instanceof RunCloudError &&
 		error.status >= 400 &&
 		error.status < 500 &&
-		error.status !== 408
+		error.status !== 408 &&
+		error.status !== 409
 	);
 }
 
@@ -404,7 +410,8 @@ export function sandboxMethods(
 			} catch (error) {
 				// Ask what the request actually did rather than assuming. A definitive 4xx says no
 				// allocation was accepted, so one confirming pass is enough — but it is not skipped
-				// outright, because a conflict response can still sit on top of a real allocation.
+				// outright, because even a rejection can sit on top of a real allocation. A 409 is not
+				// definitive at all (see isDefinitiveCreateFailure) and gets the full window.
 				const definitive = isDefinitiveCreateFailure(error);
 				const reconciled = await reconcileAmbiguousCreate(
 					sdk,
@@ -419,7 +426,8 @@ export function sandboxMethods(
 				// absence was never established. Say so and name the recovery handle: the name is stamped
 				// before the request precisely so a sandbox that outlived this window is still findable.
 				// A definitive 4xx is exempt — there the create endpoint itself supplied the rejection, so
-				// an unanswered confirming lookup does not put a rejected request back in doubt.
+				// an unanswered confirming lookup does not put a rejected request back in doubt. A 409 is
+				// deliberately not in that set: it is the one status that asserts something exists.
 				if (reconciled.status === "unanswered" && !definitive) {
 					throw new AggregateError(
 						[error, reconciled.lastError],

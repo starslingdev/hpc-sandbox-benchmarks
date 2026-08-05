@@ -405,6 +405,34 @@ describe("run.cloud ComputeSDK adapter", () => {
 		}
 	});
 
+	it("keeps the recovery name when a conflict's reconciliation never answers", async () => {
+		let requestedName: string | undefined;
+		let listCalls = 0;
+		const client = nativeClient({
+			create: async (input) => {
+				requestedName = input?.name;
+				throw new RunCloudError(409, "idempotency key already in use");
+			},
+			list: async () => {
+				listCalls++;
+				throw new Error("control plane unavailable");
+			},
+		});
+
+		const create = runcloudCompute({
+			client,
+			reconcileAttempts: 3,
+			reconcileRetryMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		// A conflict asserts that something already exists, so it is the last error whose unanswered
+		// lookup may be written off as "nothing was allocated" — it gets the full window, not one pass.
+		await expect(create).rejects.toThrow(/unknown whether a sandbox was allocated/);
+		await expect(create).rejects.toThrow(new RegExp(requestedName ?? "unset"));
+		expect(listCalls).toBe(3);
+	});
+
 	it("adopts an allocation that a conflict response was hiding", async () => {
 		let requestedName: string | undefined;
 		const client = nativeClient({
