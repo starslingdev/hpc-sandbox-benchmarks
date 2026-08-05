@@ -1,7 +1,7 @@
-import { describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import type { ExecOptions, Sandbox, SandboxState } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
-import { drainRuncloudBackgroundWork, runcloudCompute, sandboxMethods } from "./runcloud.ts";
+import { runcloudCompute, sandboxMethods } from "./runcloud.ts";
 
 type ComputeOptions = NonNullable<Parameters<typeof runcloudCompute>[0]>;
 type NativeClient = NonNullable<ComputeOptions["client"]>;
@@ -79,7 +79,9 @@ describe("run.cloud ComputeSDK adapter", () => {
 			idlePauseSeconds: 10_800,
 			timeoutSeconds: 10_800,
 			region: "us-west",
-			name: "benchmark",
+			// A caller-supplied name is kept as a readable prefix; the unique suffix is what makes it a
+			// recovery handle a later lookup can resolve to exactly one allocation.
+			name: expect.stringMatching(/^benchmark-[0-9a-f-]+$/),
 		});
 		expect(destroyCalls).toBe(0);
 	});
@@ -194,167 +196,235 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(getCalls).toBe(3);
 	});
 
-	it("recovers and destroys an allocation whose create response timed out", async () => {
-		const idempotencyKeys: Array<string | undefined> = [];
-		const destroyed: string[] = [];
+	it("adopts the allocation when the create response is lost", async () => {
 		let createCalls = 0;
+		let requestedName: string | undefined;
+		const listedNames: Array<string | undefined> = [];
+		const destroyed: string[] = [];
 		const client = nativeClient({
 			create: (input) => {
 				createCalls++;
-				idempotencyKeys.push(input?.idempotencyKey);
-				if (createCalls === 1) return new Promise<Sandbox>(() => {});
-				return Promise.resolve(nativeSandbox("building_image"));
+				requestedName = input?.name;
+				// The control plane allocated the sandbox; only the response never came back.
+				return new Promise<Sandbox>(() => {});
+			},
+			list: async (options) => {
+				listedNames.push(options?.name);
+				return [nativeSandbox("running", { name: requestedName })];
 			},
 			destroy: async (id) => {
 				destroyed.push(id);
 			},
 		});
 
-		await expect(
-			runcloudCompute({
-				client,
-				controlPlaneTimeoutMs: 5,
-				createRecoveryAttempts: 1,
-				cleanupAttempts: 1,
-			}).sandbox.create(),
-		).rejects.toThrow("run.cloud create did not settle within 5ms");
-		expect(createCalls).toBe(2);
-		expect(idempotencyKeys[0]).toBeDefined();
-		expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
-		expect(destroyed).toEqual(["sb-test"]);
+		const sandbox = await runcloudCompute({
+			client,
+			controlPlaneTimeoutMs: 5,
+			readyPollMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		expect(sandbox.sandboxId).toBe("sb-test");
+		// Recovery is a READ: replaying the create POST is what could allocate a second sandbox.
+		expect(createCalls).toBe(1);
+		expect(listedNames).toEqual([requestedName]);
+		// Adopted rather than torn down — the sandbox is healthy, so destroying it to honour a lost
+		// HTTP response would throw away the allocation and fail the cell for no reason.
+		expect(destroyed).toEqual([]);
 	});
 
-	it("recovers and destroys after an ambiguous create 5xx", async () => {
-		const initialError = new RunCloudError(503, "response lost after allocation");
-		const idempotencyKeys: Array<string | undefined> = [];
+	it("adopts the allocation after an ambiguous create 5xx", async () => {
+		let requestedName: string | undefined;
 		const destroyed: string[] = [];
-		let createCalls = 0;
 		const client = nativeClient({
 			create: async (input) => {
-				createCalls++;
-				idempotencyKeys.push(input?.idempotencyKey);
-				if (createCalls === 1) throw initialError;
-				return nativeSandbox("building_image");
+				requestedName = input?.name;
+				throw new RunCloudError(503, "response lost after allocation");
 			},
+			list: async () => [nativeSandbox("running", { name: requestedName })],
 			destroy: async (id) => {
 				destroyed.push(id);
+			},
+		});
+
+		const sandbox = await runcloudCompute({
+			client,
+			readyPollMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		expect(sandbox.sandboxId).toBe("sb-test");
+		expect(destroyed).toEqual([]);
+	});
+
+	it("rethrows the original error once reconciliation proves nothing was allocated", async () => {
+		let createCalls = 0;
+		let listCalls = 0;
+		const client = nativeClient({
+			create: () => {
+				createCalls++;
+				return new Promise<Sandbox>(() => {});
+			},
+			list: async () => {
+				listCalls++;
+				return [];
+			},
+		});
+
+		const create = runcloudCompute({
+			client,
+			controlPlaneTimeoutMs: 5,
+			reconcileAttempts: 3,
+			reconcileRetryMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		await expect(create).rejects.toThrow("run.cloud create did not settle within 5ms");
+		// Nothing carries the name, so nothing leaked — the caller gets the plain original error rather
+		// than a manual-cleanup warning it can do nothing about.
+		await expect(create).rejects.not.toThrow(/manual cleanup/);
+		expect(createCalls).toBe(1);
+		expect(listCalls).toBe(3);
+	});
+
+	it("keeps asking when a reconciliation lookup fails or the allocation is not yet visible", async () => {
+		let requestedName: string | undefined;
+		let listCalls = 0;
+		const client = nativeClient({
+			create: async (input) => {
+				requestedName = input?.name;
+				throw new RunCloudError(503, "response lost after allocation");
+			},
+			list: async () => {
+				listCalls++;
+				// A lookup that fails is not proof of absence, and an allocation can take a moment to
+				// become visible. Either one, taken as "nothing was allocated", strands a sandbox.
+				if (listCalls === 1) throw new Error("control plane unavailable");
+				if (listCalls === 2) return [];
+				return [nativeSandbox("running", { name: requestedName })];
+			},
+		});
+
+		const sandbox = await runcloudCompute({
+			client,
+			readyPollMs: 0,
+			reconcileAttempts: 4,
+			reconcileRetryMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		expect(sandbox.sandboxId).toBe("sb-test");
+		expect(listCalls).toBe(3);
+	});
+
+	it("confirms a definitive 4xx with one reconciliation pass, then rethrows", async () => {
+		const clientError = new RunCloudError(422, "invalid image");
+		let createCalls = 0;
+		let listCalls = 0;
+		const client = nativeClient({
+			create: async () => {
+				createCalls++;
+				throw clientError;
+			},
+			list: async () => {
+				listCalls++;
+				return [];
 			},
 		});
 
 		try {
 			await runcloudCompute({
 				client,
-				createRecoveryAttempts: 1,
-				cleanupAttempts: 1,
+				reconcileRetryMs: 0,
+				sleep: async () => {},
 			}).sandbox.create();
-			expect.unreachable();
-		} catch (error) {
-			expect(error).toBe(initialError);
-		}
-		expect(createCalls).toBe(2);
-		expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
-		expect(destroyed).toEqual(["sb-test"]);
-	});
-
-	it("rethrows definitive create 4xx responses without replaying", async () => {
-		const clientError = new RunCloudError(422, "invalid image");
-		let createCalls = 0;
-		const client = nativeClient({
-			create: async () => {
-				createCalls++;
-				throw clientError;
-			},
-		});
-
-		try {
-			await runcloudCompute({ client }).sandbox.create();
 			expect.unreachable();
 		} catch (error) {
 			expect(error).toBe(clientError);
 		}
 		expect(createCalls).toBe(1);
+		// A 4xx says no allocation was accepted, so this does not spend the full polling window — but it
+		// still asks once, because a conflict response can sit on top of a real allocation.
+		expect(listCalls).toBe(1);
 	});
 
-	it("fails within bounded recovery attempts when a timed-out create cannot be recovered", async () => {
-		const idempotencyKeys: Array<string | undefined> = [];
-		const rejectAttempts: Array<(error: Error) => void> = [];
+	it("adopts an allocation that a conflict response was hiding", async () => {
+		let requestedName: string | undefined;
 		const client = nativeClient({
-			create: (input) => {
-				idempotencyKeys.push(input?.idempotencyKey);
-				return new Promise<Sandbox>((_resolve, reject) => {
-					rejectAttempts.push(reject);
-				});
+			create: async (input) => {
+				requestedName = input?.name;
+				throw new RunCloudError(409, "idempotency key already in use");
+			},
+			list: async () => [nativeSandbox("running", { name: requestedName })],
+		});
+
+		const sandbox = await runcloudCompute({
+			client,
+			readyPollMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		expect(sandbox.sandboxId).toBe("sb-test");
+	});
+
+	it("ignores tombstones and other callers' sandboxes when reconciling", async () => {
+		let requestedName: string | undefined;
+		let listCalls = 0;
+		const client = nativeClient({
+			create: async (input) => {
+				requestedName = input?.name;
+				throw new RunCloudError(503, "response lost after allocation");
+			},
+			list: async () => {
+				listCalls++;
+				return [
+					nativeSandbox("destroyed", { id: "sb-tombstone", name: requestedName }),
+					nativeSandbox("destroying", { id: "sb-going", name: requestedName }),
+					// Guards against a server-side prefix/fuzzy name match.
+					nativeSandbox("running", { id: "sb-other", name: `${requestedName}-different` }),
+				];
 			},
 		});
 
 		await expect(
 			runcloudCompute({
 				client,
-				controlPlaneTimeoutMs: 5,
-				createRecoveryAttempts: 2,
-				cleanupAttempts: 1,
-				cleanupRetryMs: 0,
+				reconcileAttempts: 2,
+				reconcileRetryMs: 0,
 				sleep: async () => {},
 			}).sandbox.create(),
-		).rejects.toThrow(
-			/idempotent allocation could not be recovered; manual cleanup may be required/,
-		);
-		expect(idempotencyKeys).toHaveLength(3);
-		expect(new Set(idempotencyKeys).size).toBe(1);
-		const consoleError = spyOn(console, "error").mockImplementation(() => {});
-		try {
-			await drainRuncloudBackgroundWork();
-			expect(consoleError).toHaveBeenCalledWith(
-				expect.stringContaining("late-create cleanup task(s) unfinished"),
-			);
-		} finally {
-			consoleError.mockRestore();
-		}
-		// Let the retained Promise.any settle after proving the drain is bounded, so this deliberately
-		// hung fake cannot pollute later assertions. Real SDK fetches reject through the abort signal.
-		for (const reject of rejectAttempts) reject(new Error("test request cancelled"));
-		await drainRuncloudBackgroundWork();
+		).rejects.toThrow("response lost after allocation");
+		expect(listCalls).toBe(2);
 	});
 
-	it("drains cleanup for a create response that arrives after recovery exhaustion", async () => {
-		let resolveInitial: ((sandbox: Sandbox) => void) | undefined;
-		let createCalls = 0;
-		const destroyed: string[] = [];
+	it("adopts the oldest match so a duplicate allocation cannot orphan the original", async () => {
+		let requestedName: string | undefined;
 		const client = nativeClient({
-			create: () => {
-				createCalls++;
-				if (createCalls === 1) {
-					return new Promise<Sandbox>((resolve) => {
-						resolveInitial = resolve;
-					});
-				}
-				return new Promise<Sandbox>(() => {});
+			create: async (input) => {
+				requestedName = input?.name;
+				throw new RunCloudError(503, "response lost after allocation");
 			},
-			destroy: async (id) => {
-				destroyed.push(id);
-			},
+			list: async () => [
+				nativeSandbox("running", {
+					id: "sb-newer",
+					name: requestedName,
+					createdAt: "2026-08-03T00:00:05.000Z",
+				}),
+				nativeSandbox("running", {
+					id: "sb-older",
+					name: requestedName,
+					createdAt: "2026-08-03T00:00:00.000Z",
+				}),
+			],
 		});
 
-		await expect(
-			runcloudCompute({
-				client,
-				controlPlaneTimeoutMs: 5,
-				createRecoveryAttempts: 1,
-				cleanupAttempts: 1,
-			}).sandbox.create(),
-		).rejects.toThrow(/idempotent allocation could not be recovered/);
-		expect(destroyed).toEqual([]);
-		expect(resolveInitial).toBeDefined();
-		let drained = false;
-		const drain = drainRuncloudBackgroundWork().then(() => {
-			drained = true;
-		});
-		await new Promise((resolve) => setTimeout(resolve, 1));
-		expect(drained).toBe(false);
-		resolveInitial?.(nativeSandbox("building_image"));
-		await drain;
-		expect(destroyed).toEqual(["sb-test"]);
-		expect(drained).toBe(true);
+		const sandbox = await runcloudCompute({
+			client,
+			readyPollMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		expect(sandbox.sandboxId).toBe("sb-older");
 	});
 
 	it("retries a transient failed-create cleanup before preserving the readiness error", async () => {

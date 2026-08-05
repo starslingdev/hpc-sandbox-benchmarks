@@ -11,7 +11,7 @@
 import { writeFileSync } from "node:fs";
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
-import { config, drainRuncloudBackgroundWork } from "@sandbox-benchmarks/providers";
+import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "../lib/bake/daytona.ts";
@@ -172,30 +172,23 @@ if (import.meta.main) {
 			);
 			process.exit(2);
 		}
-		let promoted: Awaited<ReturnType<typeof promoteAll>>;
-		try {
-			promoted = await promoteAll(log, { force, only });
-			writeReport({
-				// The scope is recorded alongside the version names because those names are the FULL set the
-				// version owns — on a partial promote most of them were not touched, and the payload has to
-				// say which run this was rather than leave a reader to infer it from `reports`.
-				scope: only ?? PROVIDERS.map((p) => p.id),
-				partial: isPartialScope(only),
-				version: {
-					image: config.toolchainImageVersion,
-					e2bTemplate: config.e2bTemplateVersion,
-					daytonaSnapshot: config.daytonaSnapshotDefault,
-					daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
-					novitaTemplate: config.novitaTemplateVersion,
-					runloopBlueprint: config.runloopBlueprintVersion,
-				},
-				reports: promoted.reports,
-			});
-		} finally {
-			// Promotion can validate run.cloud before writing its report. Preserve teardown even if either
-			// operation throws instead of returning a structured failed report.
-			await drainRuncloudBackgroundWork();
-		}
+		const promoted = await promoteAll(log, { force, only });
+		writeReport({
+			// The scope is recorded alongside the version names because those names are the FULL set the
+			// version owns — on a partial promote most of them were not touched, and the payload has to
+			// say which run this was rather than leave a reader to infer it from `reports`.
+			scope: only ?? PROVIDERS.map((p) => p.id),
+			partial: isPartialScope(only),
+			version: {
+				image: config.toolchainImageVersion,
+				e2bTemplate: config.e2bTemplateVersion,
+				daytonaSnapshot: config.daytonaSnapshotDefault,
+				daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
+				novitaTemplate: config.novitaTemplateVersion,
+				runloopBlueprint: config.runloopBlueprintVersion,
+			},
+			reports: promoted.reports,
+		});
 		// The transaction outcome is separate from its diagnostics: an optional provider can fail and stay
 		// visible in the report without turning a successfully published shared version red after commit.
 		process.exit(promoted.ok ? 0 : 1);
@@ -291,23 +284,17 @@ if (import.meta.main) {
 		...(run.value && run.value.checks.length > 0 ? { checks: run.value.checks } : {}),
 	}));
 
-	try {
-		writeReport({
-			candidate: {
-				image: pinnedBaseImage,
-				e2bTemplate: config.e2bTemplateCandidate,
-				daytonaSnapshot: config.daytonaSnapshotCandidate,
-				daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
-				novitaTemplate: config.novitaTemplateCandidate,
-				runloopBlueprint: config.runloopBlueprintCandidate,
-			},
-			reports,
-		});
-	} finally {
-		// Candidate validation can exercise run.cloud. Its retained failed-create cleanup must finish even
-		// when report output throws, and before either explicit failure exit below terminates the process.
-		await drainRuncloudBackgroundWork();
-	}
+	writeReport({
+		candidate: {
+			image: pinnedBaseImage,
+			e2bTemplate: config.e2bTemplateCandidate,
+			daytonaSnapshot: config.daytonaSnapshotCandidate,
+			daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
+			novitaTemplate: config.novitaTemplateCandidate,
+			runloopBlueprint: config.runloopBlueprintCandidate,
+		},
+		reports,
+	});
 
 	if (anyFailed(runs)) process.exit(1);
 

@@ -11,7 +11,6 @@
 // captured output); the machine-readable summary is the JSON on stdout. bun auto-loads .env, so
 // local creds in a .env file are picked up.
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
-import { drainRuncloudBackgroundWork } from "@sandbox-benchmarks/providers";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
 
@@ -45,13 +44,7 @@ if (import.meta.main) {
 		...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
 		...(run.value && run.value.checks.length > 0 ? { checks: run.value.checks } : {}),
 	}));
-	try {
-		console.log(JSON.stringify({ summary }, null, 2));
-	} finally {
-		// A timed-out run.cloud create can return a handle during teardown. Output/reporting failures and
-		// the explicit exits below must not terminate cleanup while the sandbox is still being destroyed.
-		await drainRuncloudBackgroundWork();
-	}
+	console.log(JSON.stringify({ summary }, null, 2));
 
 	// Skips never fail the run; only a provider that ran and broke does.
 	if (anyFailed(runs)) process.exit(1);
