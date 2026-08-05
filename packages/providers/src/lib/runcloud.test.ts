@@ -71,7 +71,7 @@ describe("run.cloud ComputeSDK adapter", () => {
 
 		expect(sandbox.sandboxId).toBe("sb-test");
 		expect(createInput).toEqual({
-			idempotencyKey: expect.stringMatching(/^sandbox-benchmarks-[0-9a-f-]+$/),
+			idempotencyKey: expect.stringMatching(/^benchmark-[0-9a-f-]+$/),
 			image: "ghcr.io/starslingdev/toolchain:candidate",
 			cpu: 4,
 			memory: 8_192,
@@ -83,6 +83,8 @@ describe("run.cloud ComputeSDK adapter", () => {
 			// recovery handle a later lookup can resolve to exactly one allocation.
 			name: expect.stringMatching(/^benchmark-[0-9a-f-]+$/),
 		});
+		// One identifier for both, so control-plane logs correlate the request with the allocation.
+		expect(createInput?.idempotencyKey).toBe(createInput?.name);
 		expect(destroyCalls).toBe(0);
 	});
 
@@ -346,6 +348,61 @@ describe("run.cloud ComputeSDK adapter", () => {
 		// A 4xx says no allocation was accepted, so this does not spend the full polling window — but it
 		// still asks once, because a conflict response can sit on top of a real allocation.
 		expect(listCalls).toBe(1);
+	});
+
+	it("reports the recovery name when no reconciliation lookup ever answered", async () => {
+		let requestedName: string | undefined;
+		let listCalls = 0;
+		const client = nativeClient({
+			create: async (input) => {
+				requestedName = input?.name;
+				throw new RunCloudError(503, "response lost after allocation");
+			},
+			list: async () => {
+				listCalls++;
+				throw new Error("control plane unavailable");
+			},
+		});
+
+		const create = runcloudCompute({
+			client,
+			reconcileAttempts: 3,
+			reconcileRetryMs: 0,
+			sleep: async () => {},
+		}).sandbox.create();
+
+		// The overload that made the create ambiguous took `list` down with it, so absence was never
+		// established. Reporting this as "nothing was allocated" is the guess that strands a sandbox.
+		await expect(create).rejects.toThrow(/unknown whether a sandbox was allocated/);
+		await expect(create).rejects.toThrow(/manual cleanup/);
+		expect(listCalls).toBe(3);
+		// The name is the handle an operator (or an account-wide sweep) needs to find the allocation.
+		await expect(create).rejects.toThrow(new RegExp(requestedName ?? "unset"));
+	});
+
+	it("does not put a definitive 4xx back in doubt when its confirming lookup fails", async () => {
+		const clientError = new RunCloudError(422, "invalid image");
+		const client = nativeClient({
+			create: async () => {
+				throw clientError;
+			},
+			list: async () => {
+				throw new Error("control plane unavailable");
+			},
+		});
+
+		try {
+			await runcloudCompute({
+				client,
+				reconcileRetryMs: 0,
+				sleep: async () => {},
+			}).sandbox.create();
+			expect.unreachable();
+		} catch (error) {
+			// The create endpoint itself supplied the rejection, so an unanswered lookup adds no doubt —
+			// and the harness's capacity retry still sees the original error rather than an AggregateError.
+			expect(error).toBe(clientError);
+		}
 	});
 
 	it("adopts an allocation that a conflict response was hiding", async () => {

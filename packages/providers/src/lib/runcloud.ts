@@ -251,22 +251,32 @@ async function cleanupFailedCreate(
  * sandbox, it needs no cooperation from an overloaded create endpoint, and it answers the only question
  * that matters — does an allocation carrying this name exist?
  *
- * Returns the allocation, or null once the window closes having found none. A lookup that itself fails
- * is not proof of absence, so it costs an attempt rather than ending the search: concluding "nothing was
- * allocated" is what strands a billable sandbox, and that conclusion has to be earned.
+ * A lookup that itself fails is not proof of absence, so it costs an attempt rather than ending the
+ * search: concluding "nothing was allocated" is what strands a billable sandbox, and that conclusion
+ * has to be earned. It is earned only by a lookup that actually answered, which is why exhausting the
+ * window without a single answer reports `unanswered` rather than `absent`. The overload that makes a
+ * create ambiguous is the same overload that can take `list` down with it, so collapsing those two
+ * outcomes would silently reinstate the guess this whole design exists to remove.
  */
+type ReconcileOutcome =
+	| { status: "adopted"; sandbox: Sandbox }
+	| { status: "absent" }
+	| { status: "unanswered"; lastError: unknown };
+
 async function reconcileAmbiguousCreate(
 	native: RuncloudSandboxClient,
 	name: string,
 	options: RuncloudComputeOptions,
 	attemptOverride?: number,
-): Promise<Sandbox | null> {
+): Promise<ReconcileOutcome> {
 	const attempts = Math.max(
 		1,
 		Math.floor(attemptOverride ?? options.reconcileAttempts ?? CREATE_RECONCILE_ATTEMPTS),
 	);
 	const retryMs = Math.max(0, options.reconcileRetryMs ?? CREATE_RECONCILE_RETRY_MS);
 	const wait = options.sleep ?? sleep;
+	let answered = false;
+	let lastError: unknown;
 	for (let attempt = 1; attempt <= attempts; attempt++) {
 		try {
 			const matches = (
@@ -277,18 +287,22 @@ async function reconcileAmbiguousCreate(
 				(sandbox) =>
 					sandbox.name === name && sandbox.state !== "destroyed" && sandbox.state !== "destroying",
 			);
+			// The control plane answered, so a later empty window is a real "nothing was allocated"
+			// rather than an unanswered question wearing the same shape.
+			answered = true;
 			// One unique name per create call, so a second match would mean the server allocated twice.
 			// Prefer the oldest: adopting the later one would orphan the original.
 			const [oldest] = matches.sort(
 				(a, b) => createdAt(a.createdAt).getTime() - createdAt(b.createdAt).getTime(),
 			);
-			if (oldest) return oldest;
-		} catch {
+			if (oldest) return { status: "adopted", sandbox: oldest };
+		} catch (error) {
 			// Swallowed deliberately — see the doc comment. The next attempt re-asks.
+			lastError = error;
 		}
 		if (attempt < attempts) await wait(retryMs);
 	}
-	return null;
+	return answered ? { status: "absent" } : { status: "unanswered", lastError };
 }
 
 function errorMessage(error: unknown): string {
@@ -366,7 +380,9 @@ export function sandboxMethods(
 			// cannot turn one logical create into two allocations.
 			const recoveryName = `${createOptions?.name ?? RECOVERY_NAME_PREFIX}-${randomUUID()}`;
 			const createInput = {
-				idempotencyKey: `${RECOVERY_NAME_PREFIX}-${randomUUID()}`,
+				// Same string as the name, so one identifier locates both the request and the allocation
+				// in control-plane logs when an ambiguous create has to be investigated after the fact.
+				idempotencyKey: recoveryName,
 				name: recoveryName,
 				...(createOptions?.templateId || createOptions?.image
 					? { image: createOptions.templateId ?? createOptions.image }
@@ -389,19 +405,35 @@ export function sandboxMethods(
 				// Ask what the request actually did rather than assuming. A definitive 4xx says no
 				// allocation was accepted, so one confirming pass is enough — but it is not skipped
 				// outright, because a conflict response can still sit on top of a real allocation.
-				const recovered = await reconcileAmbiguousCreate(
+				const definitive = isDefinitiveCreateFailure(error);
+				const reconciled = await reconcileAmbiguousCreate(
 					sdk,
 					recoveryName,
 					adapterOptions,
-					isDefinitiveCreateFailure(error) ? 1 : undefined,
+					definitive ? 1 : undefined,
 				);
 				// Nothing carries this name, so nothing was allocated and there is nothing to leak. The
 				// original error is the whole truth — report it without a spurious cleanup warning.
-				if (!recovered) throw error;
+				if (reconciled.status === "absent") throw error;
+				// The create was ambiguous AND the control plane never answered what it did with it, so
+				// absence was never established. Say so and name the recovery handle: the name is stamped
+				// before the request precisely so a sandbox that outlived this window is still findable.
+				// A definitive 4xx is exempt — there the create endpoint itself supplied the rejection, so
+				// an unanswered confirming lookup does not put a rejected request back in doubt.
+				if (reconciled.status === "unanswered" && !definitive) {
+					throw new AggregateError(
+						[error, reconciled.lastError],
+						`run.cloud create failed ambiguously (${errorMessage(error)}) and every reconciliation ` +
+							`lookup also failed (${errorMessage(reconciled.lastError)}), so it is unknown whether a ` +
+							`sandbox was allocated; if one was it carries the name ${recoveryName} and manual ` +
+							`cleanup may be required`,
+					);
+				}
+				if (reconciled.status !== "adopted") throw error;
 				// An allocation exists. The create SUCCEEDED and only its response was lost, so adopt it:
 				// destroying a healthy sandbox to honour a lost HTTP response would throw away the work and
 				// fail the cell for no reason. Readiness below still gates whether it is usable.
-				created = recovered;
+				created = reconciled.sandbox;
 			}
 			// Do not return until the guest can accept commands — cold image pulls leave the sandbox in
 			// `building_image` for minutes, and exec during that window fails with API 4409.
