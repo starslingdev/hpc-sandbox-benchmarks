@@ -70,7 +70,7 @@ export CFLAGS_OVERRIDE="-O3 -march=${march} -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_S
 profile="stream-1.3.4"
 pts_init
 if _pts_is_installed "pts/${profile}"; then
-	installed_dir="$(pts_user_dir)/installed-tests/pts/${profile}"
+	installed_dir="$(pts_install_root)/pts/${profile}"
 	recompile_stamp="$(mktemp)"
 	(
 		cd "$installed_dir"

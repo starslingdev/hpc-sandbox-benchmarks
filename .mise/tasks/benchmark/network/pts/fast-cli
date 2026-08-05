@@ -16,7 +16,7 @@ fi
 profile="fast-cli-1.0.0"
 pts_init
 if _pts_is_installed "pts/${profile}"; then
-	installed_dir="$(pts_user_dir)/installed-tests/pts/${profile}"
+	installed_dir="$(pts_install_root)/pts/${profile}"
 	(
 		cd "$installed_dir"
 		sh "${REPO_ROOT}/packages/schema/src/pts-profiles/${profile}/install.sh"

@@ -325,6 +325,75 @@ pts_install_root() {
 	echo "${root%/}"
 }
 
+# Make the BAKED postgres cluster usable by whatever identity this sandbox runs as. No-op under the
+# identity that baked it (every root provider), so this is purely the non-root repair.
+#
+# The bake initdb's the cluster as root and 25-pts-profiles.sh must re-tighten pg_/data/db to 0700 —
+# postgres FATALs at startup on any group/other bit — which leaves an unprivileged runtime user with
+# two independent blockers, both identity mismatches with a baked artifact rather than sandbox faults:
+#
+#   1. it cannot read the data dir, so pg_ctl never starts the server at all; and
+#   2. the cluster's only role is the bake's initdb user, while the profile's generated run script
+#      passes no -U anywhere (createdb/pgbench/psql), so libpq defaults to the OS username and the
+#      server answers `FATAL: role "<user>" does not exist` — surfacing as pgbench's opaque
+#      "could not create connection for setup" with every trial empty.
+#
+# Claim the cluster rather than rebuilding it: a runtime re-initdb would be simpler but would silently
+# vary encoding/locale/page layout per provider, and pgbench numbers are only comparable across
+# providers when the cluster underneath them is the same one. Ownership is the only thing that changes.
+claim_baked_pg_cluster() {
+	local pgdata marker owner
+	pgdata="$(pts_install_root)/pts/pgbench-1.15.0/pg_/data/db"
+	# Beside the data dir, never inside it: the 0700 mode is postgres's requirement, and a stray file
+	# in there is one more thing checkDataDir can object to.
+	marker="$(dirname "$pgdata")/.bootstrap-role"
+	[ -d "$pgdata" ] || return 0
+
+	# A claim in an EARLIER leaf of this run (or an earlier run in a long-lived sandbox) already took
+	# ownership, which erases the evidence of who initdb'd it. The recorded role is still the cluster's
+	# only superuser, so replay it — without this, every leaf after the first reverts to libpq's OS
+	# username default and fails exactly the way an unclaimed cluster does.
+	if [ -r "$marker" ]; then
+		PGUSER="$(cat "$marker")"
+		export PGUSER
+		return 0
+	fi
+
+	# Readable means this identity baked the cluster (every root provider) — nothing to repair.
+	[ ! -r "$pgdata" ] || return 0
+
+	# The data dir's owner IS initdb's user, hence the cluster's bootstrap superuser. Read it BEFORE
+	# the chown rewrites it, and export it so libpq stops defaulting to an OS username with no role.
+	owner="$(stat -c '%U' "$pgdata" 2>/dev/null || true)"
+	if [ -z "$owner" ]; then
+		echo "WARNING: cannot stat ${pgdata}; leaving the baked cluster untouched" >&2
+		return 0
+	fi
+
+	if ! { command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; }; then
+		# Honest recorded gap over a confusing libpq error: without elevation the 0700 root-owned data
+		# dir cannot be claimed, and nothing later in this leaf can recover from that.
+		local reason="baked postgres data dir is ${owner}-owned 0700 and this sandbox is unprivileged without sudo"
+		skip_result "$reason" "pts_pgbench-read-only"
+		skip_result "$reason" "pts_pgbench-read-write"
+		exit 0
+	fi
+
+	# Under the leaf's `set -e` a bare chown would abort with NO marker written, turning a diagnosable
+	# permission problem into an unexplained dead job — the one outcome the skip path exists to avoid.
+	if ! sudo -n chown -R "$(id -u):$(id -g)" "$pgdata"; then
+		local failed="could not claim the ${owner}-owned baked postgres data dir (chown failed)"
+		skip_result "$failed" "pts_pgbench-read-only"
+		skip_result "$failed" "pts_pgbench-read-write"
+		exit 0
+	fi
+	export PGUSER="$owner"
+	# Record only after the chown succeeded: a marker written ahead of it would make a failed claim
+	# look complete to the next leaf, which would then skip the repair and fail on an unreadable dir.
+	echo "$owner" >"$marker" 2>/dev/null || true
+	echo "Claimed baked postgres cluster: ${pgdata} (now $(id -un), connecting as role ${PGUSER})"
+}
+
 # Resolve the config file PTS itself reads and writes, mirroring its own selection order
 # (pts_config::get_config_file_location + pts_config_nye_XmlReader::__construct, v10.8.4). PTS sets
 # PTS_IS_DAEMONIZED_SERVER_PROCESS whenever /var/lib AND /etc are both writable — normally when the
