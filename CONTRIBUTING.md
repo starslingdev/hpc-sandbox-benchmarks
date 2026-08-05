@@ -57,12 +57,20 @@ bun run check:catalog-drift                                    # fail if the com
 3. **Template** — add a template builder under [`packages/templates`](./packages/templates) so the
    provider can be baked with the toolchain image.
 4. **Exhaustive consumers** — update the CLI bake map, candidate create-options switch, release-plan
-   artifact switch, provider-id test oracles, the credential environment in
+   artifact switch, `hasVersionArtifact` in [`packages/schema/src/toolchain.ts`](./packages/schema/src/toolchain.ts)
+   (does a release publish a version-named artifact for it?), the promote version-artifact switch,
+   provider-id test oracles, the credential environment in
    [`bench-suite.yml`](./.github/workflows/bench-suite.yml) (the one benchmark cell both dispatch lanes
    call, so there is a single block to edit), and the `provider` dispatch options in
    [`bench-smoke.yml`](./.github/workflows/bench-smoke.yml). Provider matrix fan-out, normalization,
    leaderboard, and economics remain automatic.
-5. Bring it up live with a single-provider branch dispatch before adding it to the default matrix list.
+5. **Promote fan-out** — add the provider's re-validate step to `toolchain-image.yml`'s `publish` job
+   (and its version-artifact step, if `hasVersionArtifact` says it has one). These are hand-written
+   because GHA cannot import TypeScript, so the
+   [`promote-fanout`](./tooling/repo-checks/src/lib/promote-fanout.ts) drift gate re-derives them from
+   the registry and fails the build if you forget — including if the step carries another provider's
+   credential, or omits its own.
+6. Bring it up live with a single-provider branch dispatch before adding it to the default matrix list.
 
 ## Add a suite
 

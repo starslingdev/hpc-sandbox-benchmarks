@@ -55,6 +55,23 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
 3. **Environment approval.** `privileged` must require at least one reviewer and restrict
    deployments to `main` plus whatever branch pattern you want `allow_branch` to reach. Write access
    alone cannot finish a release.
+
+   > **Per-step credential scoping in the promote lane.** `toolchain-image.yml`'s `publish` job used to
+   > run the whole promote transaction as one step, which meant one process received *every* provider's
+   > API key at once — the reason `RUNLOOP_API_KEY` and `RUN_CLOUD_API_KEY` carried explicit
+   > `contains(matrix, '<id>') && secrets.X || ''` guards to keep them out of unrelated releases. The
+   > transaction is now split into per-provider steps that run concurrently inside `parallel:` blocks,
+   > and each provider's credentials live in **its own step's `env:`** — the same posture the `bake`
+   > matrix gets from one cell per provider. A compromised dependency in one provider's step no longer
+   > sees any other provider's key, and there is no blank-valued assignment to reason about, because the
+   > key is simply absent elsewhere. `MICROSANDBOX_LOCAL_BENCH` is scoped the same way.
+   >
+   > Two drift gates hold this in place, and both are load-bearing rather than stylistic:
+   > `tooling/repo-checks/src/lib/workflow-hardening.ts` flattens `parallel:` blocks before scanning, so
+   > a secret nested inside one cannot bypass this Environment gate; and
+   > `tooling/repo-checks/src/lib/promote-fanout.ts` re-derives the fan-out from the provider registry,
+   > so a step cannot carry another provider's credential, omit its own, or go missing when a provider
+   > is added.
 4. **Fork PRs.** Same-repo guard on self-hosted PR jobs; fork PR code never runs on
    `starsling-ubuntu-24.04-2`. Forks never receive Environment secrets on `pull_request`.
 5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a

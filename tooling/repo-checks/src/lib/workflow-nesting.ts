@@ -1,7 +1,14 @@
 // Invariant 6: GitHub-native suite→provider nesting wiring for the two dispatch lanes
 // (bench-matrix.yml, bench-smoke.yml) + the reusable bench-suite.yml they share. Kept out of
 // workflow-sync.ts so credential/timeout gates and nesting gates don't grow as one file.
-import { asRecord, RUN_STEP, SUITE_JOB, SUITE_WORKFLOW, stepByName } from "./workflow-yaml.ts";
+import {
+	asRecord,
+	flattenSteps,
+	RUN_STEP,
+	SUITE_JOB,
+	SUITE_WORKFLOW,
+	stepByName,
+} from "./workflow-yaml.ts";
 
 /** A suite-matrix job is one that `uses` this reusable workflow (matched by path suffix). */
 const SUITE_WORKFLOW_USES_SUFFIX = "/bench-suite.yml";
@@ -304,9 +311,9 @@ function jobEnvKeys(job: Record<string, unknown>, label: string): string[] {
 		keys.push(...Object.keys(asRecord(value, `${label}: env is not a mapping`)));
 	};
 	collect(job.env);
-	if (Array.isArray(job.steps)) {
-		for (const rawStep of job.steps) collect(asRecord(rawStep, `${label}: malformed step`).env);
-	}
+	// Flattened: a credential hung off a step inside a `parallel:` block is exactly the "no per-step
+	// scan would ever see it" case this function exists to close, one nesting level deeper.
+	for (const step of flattenSteps(job.steps, label)) collect(step.env);
 	return keys;
 }
 
@@ -347,9 +354,7 @@ export function checkLaneDelegates(
 		if (stepByName(job, RUN_STEP, label) !== undefined) {
 			errors.push(`${label}: job "${jobId}" declares a "${RUN_STEP}" step — ${cell}`);
 		}
-		const steps = Array.isArray(job.steps) ? job.steps : [];
-		for (const rawStep of steps) {
-			const step = asRecord(rawStep, `${label}: malformed step`);
+		for (const step of flattenSteps(job.steps, label)) {
 			if (typeof step.run === "string" && step.run.includes(CELL_DRIVER_BIN)) {
 				errors.push(
 					`${label}: job "${jobId}" has a step whose run: invokes ${CELL_DRIVER_BIN} — ${cell}`,

@@ -108,12 +108,49 @@ export function stepByName(
 	stepName: string,
 	label: string,
 ): Record<string, unknown> | undefined {
-	if (!Array.isArray(job.steps)) return undefined;
-	for (const value of job.steps) {
-		const step = asRecord(value, `${label}: malformed step`);
+	for (const step of flattenSteps(job.steps, label)) {
 		if (step.name === stepName) return step;
 	}
 	return undefined;
+}
+
+/**
+ * A steps list with every `parallel:` block expanded into the steps it contains, so a scanner sees one
+ * flat list regardless of nesting.
+ *
+ * GitHub Actions gained concurrent steps in June 2026: a step entry may be `- parallel: [ …steps ]`
+ * rather than a step of its own, and the steps inside are ordinary steps — they carry `run:`, `uses:`,
+ * `if:` and `env:`, and therefore `${{ secrets.* }}`. Every drift gate in this tree walks a job's
+ * steps as a flat array, so WITHOUT this expansion a nested step is invisible to all of them. That is
+ * not merely a coverage gap: a credential inside a `parallel:` block would bypass the
+ * privileged-environment gate, and an `actions/checkout` inside one would bypass the
+ * persist-credentials gate — a security invariant silently switched off by a YAML nesting level. The
+ * expansion therefore lives here, in the shared navigation module, and every step walker goes through
+ * it rather than each deciding for itself.
+ *
+ * Recursive, so a nested block is flattened too. The sibling keywords from the same feature
+ * (`background:`, `wait:`, `wait-all:`, `cancel:`) are ordinary keys ON a step rather than containers
+ * of steps, so they need no handling and simply travel with the step they belong to.
+ *
+ * LENIENT on a non-list `steps` (returns empty, matching {@link stepByName}'s contract), STRICT on a
+ * malformed step or a `parallel:` that is not a step list — those are broken YAML, not drift.
+ */
+export function flattenSteps(steps: unknown, label: string): Record<string, unknown>[] {
+	if (!Array.isArray(steps)) return [];
+	const flat: Record<string, unknown>[] = [];
+	for (const value of steps) {
+		const step = asRecord(value, `${label}: malformed step`);
+		const nested = step.parallel;
+		if (nested === undefined) {
+			flat.push(step);
+			continue;
+		}
+		if (!Array.isArray(nested)) {
+			throw new Error(`${label}: \`parallel:\` block is not a step list`);
+		}
+		flat.push(...flattenSteps(nested, label));
+	}
+	return flat;
 }
 
 /**

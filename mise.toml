@@ -14,5 +14,14 @@ typos = "1.47.2"
 # runner labels (via .github/actionlint.yaml) plus embedded shellcheck; zizmor security-audits the
 # workflows (template injection, excessive permissions, ...). aqua backend with checksum + attestation
 # verification — same posture as the tools above, so nothing runs a postinstall.
+#
+# PIN CONSTRAINT: toolchain-image.yml's publish job uses the `parallel:` step blocks GitHub Actions
+# shipped on 2026-06-25 (sibling keywords: background / wait / wait-all / cancel). actionlint 1.7.12 was
+# released 2026-03-30 and therefore predates that syntax — it will report the block as an unexpected
+# step key. Bump this pin to the first actionlint release that parses it, verify with the exact command
+# ci-lint.yml runs (`mise exec -- actionlint -no-color`), and only if no such release exists yet, add a
+# narrowly-scoped ignore for that one message rather than loosening anything else. Do NOT touch zizmor's
+# `--min-severity medium --min-confidence high` in ci-lint.yml — the workflow-hardening drift gate
+# asserts those literals, and loosening them to quiet a parse error would disable the security audit.
 "aqua:rhysd/actionlint" = "1.7.12"
 "aqua:zizmorcore/zizmor" = "1.26.1"

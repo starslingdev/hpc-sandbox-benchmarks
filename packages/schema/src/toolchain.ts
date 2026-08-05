@@ -3,6 +3,8 @@
 // (@sandbox-benchmarks/providers) both derive from the same constants and cannot drift. The version
 // tag is immutable: a change to the toolchain image means bumping TOOLCHAIN_VERSION.
 
+import type { ProviderId } from "./providers.ts";
+
 export const TOOLCHAIN_IMAGE_NAME = "sandbox-benchmarks-toolchain";
 /** Project-scoped VCR repository containing the thin Vercel variant. */
 export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
@@ -225,3 +227,40 @@ export const PTS_STATE_SELECT_SH =
 	`export PTS_TEST_INSTALL_ROOT_PATH=${PTS_BAKED_ROOT}/installed-tests/; ` +
 	`if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=${PTS_BAKED_ROOT}/; ` +
 	`else unset PTS_USER_PATH_OVERRIDE; fi; fi`;
+
+/**
+ * Whether a release publishes a VERSION-named artifact for this provider — a template, snapshot,
+ * Blueprint, or registry retag that has to be BUILT during promote — as opposed to a provider that
+ * simply boots the published base image by ref and needs nothing built for it.
+ *
+ * It lives in the registry rather than in the CLI because three independent consumers must agree on
+ * it and none of them can see the others: `promote`'s per-provider build switch, the toolchain
+ * workflow's version-artifact fan-out (one hand-written step per provider), and the drift gate in
+ * tooling/repo-checks that holds that fan-out to this answer. A provider added to PROVIDERS without a
+ * branch here is a compile error; a provider whose answer here disagrees with the workflow is a failed
+ * build. Neither can end as a release that quietly never published someone's artifact.
+ *
+ * Deliberately its own exhaustive switch rather than a predicate over the bake's `baseImageUse`:
+ * "does the base decide my bytes" and "do I have an artifact to publish" are different questions that
+ * agree today except at vercel — whose artifact is a retag of its own mirrored candidate rather than
+ * anything baked from the base — and a new provider must be made to answer both.
+ */
+export function hasVersionArtifact(id: ProviderId): boolean {
+	switch (id) {
+		case "e2b":
+		case "daytona-vm":
+		case "daytona-container":
+		case "novita":
+		case "runloop":
+		case "vercel":
+			return true;
+		case "modal-gvisor":
+		case "modal-vm":
+		case "microsandbox-local":
+		case "microsandbox-cloud":
+		case "namespace":
+		case "runcloud":
+		case "blaxel":
+			return false;
+	}
+}

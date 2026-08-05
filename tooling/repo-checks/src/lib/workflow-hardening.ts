@@ -18,10 +18,20 @@
 //   5. Toolchain PR ownership stays split — image inputs run the expensive docker smoke, while the
 //      three setup/reporting composites run a lightweight smoke on the standard 2-vCPU runner.
 //
+// Every scan below walks a job's steps through `flattenSteps` (workflow-yaml.ts), which expands the
+// `parallel:` blocks GitHub Actions gained in June 2026. That is load-bearing, not tidiness: a step
+// nested in such a block is a step in every respect that matters here — it can `uses: actions/checkout`
+// and it can read `${{ secrets.* }}` — so a scanner that only sees the top level would let invariants 1
+// and 3 be switched off by one level of YAML nesting. toolchain-image.yml's publish job uses those
+// blocks for its per-provider promote fan-out, so this is a live path, not a hypothetical one.
+//
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Glob } from "bun";
+// The step flattener lives in the shared YAML-navigation module so EVERY drift gate in this tree gets
+// it; see its own note for why a `parallel:` block that scanners cannot see is a security problem.
+import { flattenSteps } from "./workflow-yaml.ts";
 import { findRepoRoot } from "./workspace.ts";
 
 export const WORKFLOWS_DIR = ".github/workflows";
@@ -115,10 +125,8 @@ export function checkoutSteps(doc: unknown, file: string): CheckoutStep[] {
 	const found: CheckoutStep[] = [];
 	for (const [jobId, jobValue] of Object.entries(jobs)) {
 		const job = asRecord(jobValue, `${file}: job "${jobId}" is not a mapping`);
-		const steps = job.steps;
-		if (!Array.isArray(steps)) continue;
-		for (const stepValue of steps) {
-			const step = asRecord(stepValue, `${file}: job "${jobId}" has a malformed step`);
+		// Flattened: a checkout nested in a `parallel:` block must still be held to the opt-out.
+		for (const step of flattenSteps(job.steps, `${file}: job "${jobId}"`)) {
 			const uses = step.uses;
 			if (typeof uses !== "string" || !uses.startsWith("actions/checkout@")) continue;
 			// An empty `with:` block parses as null (not undefined); treat both as "no inputs" so a
@@ -297,9 +305,9 @@ function jobSecretStrings(job: Record<string, unknown>, file: string, jobId: str
 	// A caller can pass `${{ secrets.* }}` as an input there (instead of via the `secrets:` block), so
 	// scan it too — otherwise that path is a silent bypass of the privileged-environment gate.
 	strings.push(...withStrings(job.with, file));
-	const steps = Array.isArray(job.steps) ? job.steps : [];
-	for (const stepValue of steps) {
-		const step = asRecord(stepValue, `${file}: job "${jobId}" has a malformed step`);
+	// Flattened: a `${{ secrets.* }}` inside a `parallel:` block is a credential exposure like any
+	// other, and must reach the privileged-environment gate.
+	for (const step of flattenSteps(job.steps, `${file}: job "${jobId}"`)) {
 		if (typeof step.if === "string") strings.push(step.if);
 		strings.push(...envStrings(step.env));
 		// Inline secrets in `with:` (e.g. docker/login-action password) — only string values can carry one.
@@ -577,7 +585,9 @@ export function checkToolchainPrScope(
 	if (!Array.isArray(smoke.steps)) {
 		throw new Error(`${jobLabel}: steps must be a list`);
 	}
-	const steps = smoke.steps.map((step) => asRecord(step, `${jobLabel}: malformed step`));
+	// Flattened for the same reason as the scanners above: a required probe or composite moved inside a
+	// `parallel:` block must still count as present, and a missing one must still fail.
+	const steps = flattenSteps(smoke.steps, jobLabel);
 	const setup = steps.find((step) => step.uses === "./.github/actions/setup-toolchain");
 	if (setup === undefined) {
 		errors.push(`${jobLabel}: must execute ./.github/actions/setup-toolchain`);

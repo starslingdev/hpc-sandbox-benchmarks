@@ -21,6 +21,16 @@
 // the version to ALREADY exist, steps 2–3 work from the published version base rather than the mutable
 // candidate, and step 4 does not happen at all. See {@link PromoteOptions.partial}.
 //
+// Each step above is an exported function — `promotePreflight` (1, 2-pin, 2b), `revalidateProvider`
+// (2, one provider), `buildVersionArtifact` (3, one provider), `promoteCommit` (3b, 4) — and
+// `promoteAll` is those four composed. That split exists so the release lane can run the per-provider
+// halves of steps 2 and 3 as CONCURRENT GitHub Actions steps (toolchain-image.yml's `publish` job)
+// while the once-only phases stay sequential: preflight → ‖re-validate‖ → gate → ‖build artifacts‖ →
+// gate + commit. The ordering above is the contract either way; what changes is only whether the
+// per-provider work inside a phase runs serially in one process or concurrently in one job. Nothing
+// is duplicated for the split path — a gate that existed in only one of the two would be a gate that
+// does not hold.
+//
 // A rerun after a mid-promote failure is clean (the version tag was never written); once published it
 // is refused at step 1 — bump the version, or force_republish, to publish again. Under `--force` the
 // version's artifacts already exist, and step 3 regenerates them in place: the image retag and e2b
@@ -133,26 +143,68 @@ export function effectivePromotionRequirements(
 	return [...new Set([...configured, ...(isPartialScope(only) ? (only ?? []) : [])])];
 }
 
-export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<PromoteResult> {
+/**
+ * Whether a report blocks the transaction, given the effective requirement set. Only a REQUIRED
+ * provider gates the release (Option 1): a best-effort variant that shares a required variant's
+ * credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than skips, so
+ * its re-validation or artifact failure is recorded but must NOT abort a full publish.
+ *
+ * Curried over `required` because both the monolithic {@link promoteAll} and the per-step CI path
+ * (bin/promote-phase.ts) must apply the SAME predicate to the same reports; a second spelling of it in
+ * the split path would be a gate that disagrees with the transaction it is gating.
+ */
+export function blocksPromotion(
+	required: readonly string[],
+): (report: { provider: string; status: string }) => boolean {
+	return (report) =>
+		report.status === "failed" && (required.length === 0 || required.includes(report.provider));
+}
+
+/** What {@link promotePreflight} resolved: the pinned base every later phase works from, plus the
+ *  refusal contract when it declined to proceed. */
+export interface PreflightResult {
+	/** False when the transaction was refused/aborted before touching anything; `reports` says why. */
+	ok: boolean;
+	/** Derived from the scope (see {@link PromoteOptions.only}), never passed in — one owner. */
+	partial: boolean;
+	/** Immutable digest ref of the base under promotion. Empty string when `ok` is false. */
+	pinnedBaseImage: string;
+	/** The transaction's providers, in registry order. */
+	requested: ProviderId[];
+	/** Candidate artifact refs the re-validation boots override their create-options with. */
+	refs: CandidateRefs;
+	/** A structured `image` failure when `ok` is false; empty otherwise. */
+	reports: BakeReport[];
+}
+
+/**
+ * Transaction steps 1, 2 (base pin) and 2b — everything that must happen ONCE, before any provider is
+ * touched, and whose result every provider then shares. Split out so the CI fan-out can run it in a
+ * single sequential step and hand `pinnedBaseImage` to each parallel provider step; {@link promoteAll}
+ * calls the same function, so the local monolith and the split path can never diverge on the
+ * precondition probe, the base selection, or the backfill drift guard.
+ */
+export async function promotePreflight(
+	log: Log,
+	options: PromoteOptions = {},
+): Promise<PreflightResult> {
 	const { force = false, only } = options;
 	const partial = isPartialScope(only);
-	const reports: BakeReport[] = [];
+	const requested = only ? [...only] : PROVIDERS.map((provider) => provider.id);
 	const scope = only ? only.join(", ") : "every provider";
 	/** Record a refusal/abort as a structured `image` failure and stop — the shape every early exit
 	 *  below returns, so the refusal contract is written once. */
-	const refuse = (reason: string, verb = "refused"): PromoteResult => {
+	const refuse = (reason: string, verb = "refused"): PreflightResult => {
 		log(`<<< promote ${verb} — ${reason}`);
-		reports.push({ provider: "image", status: "failed", reason });
-		return { reports, ok: false };
+		return {
+			ok: false,
+			partial,
+			pinnedBaseImage: "",
+			requested,
+			refs: candidateRefsFor(config.toolchainImageCandidate),
+			reports: [{ provider: "image", status: "failed", reason }],
+		};
 	};
-	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
-	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
-	// skips, so its re-validation or artifact failure is recorded but must NOT abort a full publish.
-	// A scoped backfill is inherently strict: every provider explicitly named is required even if a
-	// direct local caller omitted the redundant `--require` flag.
-	const required = effectivePromotionRequirements(requiredProviders(), only);
-	const blocks = (r: { provider: string; status: string }): boolean =>
-		r.status === "failed" && (required.length === 0 || required.includes(r.provider));
 
 	// 1. Refuse to overwrite the immutable public version (D2b). Checked first, before any mutation, so
 	//    a refused promote leaves everything untouched. A registry error here (auth/network) is NOT
@@ -247,7 +299,53 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 			);
 		}
 	}
-	const candidateRefs: CandidateRefs = {
+	return {
+		ok: true,
+		partial,
+		pinnedBaseImage,
+		requested,
+		refs: candidateRefsFor(pinnedBaseImage),
+		reports: [],
+	};
+}
+
+/**
+ * The `promote-payload.json` document — the release's machine-readable diagnostic, uploaded as the
+ * `promote-payload-<run_id>` artifact and referenced by the release-summary composite. Built here so
+ * the monolithic `bake --promote` and the split CI lane emit a BYTE-IDENTICAL shape; an operator
+ * reading a payload should not be able to tell which path produced it.
+ *
+ * `scope` is recorded alongside the version names because those names are the FULL set the version
+ * owns — on a partial promote most of them were not touched, and the payload has to say which run
+ * this was rather than leave a reader to infer it from `reports`.
+ */
+export function promotePayload(
+	only: readonly ProviderId[] | undefined,
+	reports: readonly BakeReport[],
+): Record<string, unknown> {
+	return {
+		scope: only ?? PROVIDERS.map((provider) => provider.id),
+		partial: isPartialScope(only),
+		version: {
+			image: config.toolchainImageVersion,
+			e2bTemplate: config.e2bTemplateVersion,
+			daytonaSnapshot: config.daytonaSnapshotDefault,
+			daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
+			novitaTemplate: config.novitaTemplateVersion,
+			runloopBlueprint: config.runloopBlueprintVersion,
+		},
+		reports,
+	};
+}
+
+/**
+ * The candidate artifact refs a re-validation boot overrides its create-options with, for a given
+ * pinned base. Every field but the base is config-derived, so a per-provider CI step that only knows
+ * `--base-ref` can rebuild the exact refs the preflight produced — that is why this is a function of
+ * the base rather than a value the preflight has to serialize and pass along.
+ */
+export function candidateRefsFor(pinnedBaseImage: string): CandidateRefs {
+	return {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
@@ -258,115 +356,132 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		daytonaVmTarget: config.daytonaVm.target,
 		daytonaContainerTarget: config.daytonaContainer.target,
 	};
-	log(`>>> re-validating ${scope} against ${pinnedBaseImage} before promote…`);
-	const validateRuns = await validateCandidates(candidateRefs, log, only);
-	if (validateRuns.some(blocks)) {
-		log(
-			"<<< promote aborted — a required provider's candidate re-validation failed (nothing published)",
-		);
-		for (const run of validateRuns) {
-			reports.push({
-				provider: run.provider,
-				status: run.status,
-				...(run.reason ? { reason: run.reason } : {}),
-				...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
-			});
+}
+
+/**
+ * Transaction step 2 for ONE provider: boot its candidate artifact against the preflight-pinned base
+ * and run the smoke spec. The CI fan-out calls this once per parallel step; {@link promoteAll} drives
+ * the whole set through {@link validateCandidates} in registry order. Both go through
+ * `forEachProviderWithCreds`, so the skip-vs-fail contract is identical either way — including the
+ * missing-credentials SKIP that an out-of-scope or unconfigured provider takes.
+ *
+ * Never throws. A provider the loop did not visit cannot happen for a single-element `only`, but is
+ * reported as `failed` with the same reason {@link promotionScopeAfterValidation} uses rather than
+ * returning undefined — a promote step that produced no verdict must not read as a pass.
+ */
+export async function revalidateProvider(
+	provider: ProviderId,
+	refs: CandidateRefs,
+	log: Log,
+): Promise<BakeReport> {
+	const runs = await validateCandidates(refs, log, [provider]);
+	const run = runs.find((candidate) => candidate.provider === provider);
+	if (run === undefined) {
+		return {
+			provider,
+			status: "failed",
+			reason: "candidate re-validation produced no result",
+		};
+	}
+	return {
+		provider: run.provider,
+		status: run.status,
+		...(run.reason ? { reason: run.reason } : {}),
+		...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
+	};
+}
+
+/**
+ * Transaction step 3 for ONE provider: build its VERSION-named artifact from the already-revalidated
+ * base. Throws on failure — the caller (the shared `forEachProviderWithCreds` loop, or the CI step's
+ * own wrapper) turns that into a `failed` report, which is the same contract `bake` uses.
+ *
+ * Providers with no artifact of their own log and return; {@link hasVersionArtifact} is the predicate
+ * that says which those are, and the drift gate holds the workflow's fan-out to it.
+ */
+export async function buildVersionArtifact(
+	provider: ProviderId,
+	pinnedBaseImage: string,
+	log: Log,
+): Promise<void> {
+	log(`>>> ${provider}: building version artifact from ${pinnedBaseImage}…`);
+	switch (provider) {
+		case "e2b":
+			await bakeE2bTemplate(config.e2bTemplateVersion, pinnedBaseImage, (m) => log(`    ${m}`));
+			break;
+		case "daytona-vm":
+			await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedBaseImage, (m) =>
+				log(`    ${m}`),
+			);
+			break;
+		case "daytona-container":
+			await bakeDaytonaContainerSnapshot(
+				config.daytonaContainerSnapshotDefault,
+				pinnedBaseImage,
+				(m) => log(`    ${m}`),
+			);
+			break;
+		case "modal-gvisor":
+		case "modal-vm":
+			log(`    ${provider} boots the published version image — nothing to build`);
+			break;
+		case "microsandbox-local":
+		case "microsandbox-cloud":
+			log(`    ${provider} boots the published version image — nothing to build`);
+			break;
+		case "blaxel":
+			log("    blaxel boots the stock base image — nothing to promote");
+			break;
+		case "novita":
+			await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedBaseImage, (m) =>
+				log(`    ${m}`),
+			);
+			break;
+		case "runloop":
+			await bakeRunloopBlueprint(config.runloopBlueprintVersion, pinnedBaseImage, (m) =>
+				log(`    ${m}`),
+			);
+			break;
+		case "namespace":
+			log("    namespace pulls the published version image — nothing to build");
+			break;
+		case "runcloud":
+			log("    runcloud pulls the published version image — nothing to build");
+			break;
+		case "vercel":
+			await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
+			break;
+		default: {
+			// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
+			const unhandled: never = provider;
+			throw new Error(`unhandled provider: ${String(unhandled)}`);
 		}
-		return { reports, ok: false };
 	}
-	const requested = only ?? PROVIDERS.map((provider) => provider.id);
-	const promotionScope = promotionScopeAfterValidation(requested, validateRuns);
-	reports.push(...promotionScope.rejected);
+}
 
-	// 3. Build each in-scope provider's version-named artifact FROM the base we just revalidated (the
-	//    candidate base, or the published version base on a partial promote). Built BEFORE the base
-	//    retag, so a failure here leaves the version base unwritten and a rerun is clean. Shares the
-	//    skip-vs-fail loop with bake.
-	//    Under `--force` these names already exist and are live. e2b/image replace on success; daytona
-	//    deletes first (no snapshot overwrite in the SDK), so a failed daytona create removes the
-	//    published snapshot — `bakeDaytonaSnapshot` says so in its error, which lands in the report's
-	//    `reason`. The base is still never written, so the version tag itself stays consistent.
-	const runs =
-		promotionScope.eligible.length === 0
-			? []
-			: await forEachProviderWithCreds(
-					async (provider) => {
-						log(`>>> ${provider.name}: building version artifact from ${pinnedBaseImage}…`);
-						switch (provider.name) {
-							case "e2b":
-								await bakeE2bTemplate(config.e2bTemplateVersion, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "daytona-vm":
-								await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "daytona-container":
-								await bakeDaytonaContainerSnapshot(
-									config.daytonaContainerSnapshotDefault,
-									pinnedBaseImage,
-									(m) => log(`    ${m}`),
-								);
-								break;
-							case "modal-gvisor":
-							case "modal-vm":
-								log(`    ${provider.name} boots the published version image — nothing to build`);
-								break;
-							case "microsandbox-local":
-							case "microsandbox-cloud":
-								log(`    ${provider.name} boots the published version image — nothing to build`);
-								break;
-							case "blaxel":
-								log("    blaxel boots the stock base image — nothing to promote");
-								break;
-							case "novita":
-								await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "runloop":
-								await bakeRunloopBlueprint(config.runloopBlueprintVersion, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "namespace":
-								log("    namespace pulls the published version image — nothing to build");
-								break;
-							case "runcloud":
-								log("    runcloud pulls the published version image — nothing to build");
-								break;
-							case "vercel":
-								await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
-								break;
-							default: {
-								// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
-								const unhandled: never = provider.name;
-								throw new Error(`unhandled provider: ${String(unhandled)}`);
-							}
-						}
-					},
-					{
-						log,
-						only: promotionScope.eligible,
-						onComplete: (run) => {
-							const time = run.durationMs !== undefined ? ` (${run.durationMs.toFixed(0)}ms)` : "";
-							log(
-								`<<< ${run.provider}: ${run.status}${time}${run.reason ? ` — ${run.reason}` : ""}`,
-							);
-						},
-					},
-				);
+/** Everything {@link promoteCommit} needs that it cannot re-derive: the preflight's pinned base and
+ *  derived `partial`, plus every report the transaction accumulated so far. */
+export interface PromoteCommitOptions extends PromoteOptions {
+	pinnedBaseImage: string;
+	partial: boolean;
+	/** Every report from steps 2 and 3, in registry order. The gates below read them. */
+	reports: BakeReport[];
+}
 
-	for (const run of runs) {
-		reports.push({
-			provider: run.provider,
-			status: run.status,
-			...(run.reason ? { reason: run.reason } : {}),
-			...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
-		});
-	}
+/**
+ * Transaction steps 3b and 4: the required-providers gate, then the immutable base retag that IS the
+ * commit point. Kept as one function because the gate exists precisely to run BEFORE the retag — the
+ * whole reason it is not enforced post-hoc in bake.ts (see the module header) — so splitting them
+ * would invite a caller that does the retag first.
+ */
+export async function promoteCommit(
+	log: Log,
+	options: PromoteCommitOptions,
+): Promise<PromoteResult> {
+	const { force = false, only, partial, pinnedBaseImage, reports } = options;
+	const scope = only ? only.join(", ") : "every provider";
+	const required = effectivePromotionRequirements(requiredProviders(), only);
+	const blocks = blocksPromotion(required);
 
 	// After a forced republish aborts, the previous version's base image is still tagged, so step 1 would
 	// refuse a plain rerun — recovery has to re-force. A partial promote is already re-runnable as-is
@@ -448,4 +563,84 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	}
 
 	return fullPromotionResult(reports);
+}
+
+/**
+ * The whole transaction in one process: preflight → re-validate every in-scope provider → build every
+ * eligible provider's version artifact → gate → commit. This is what `bake --promote` runs, and it is
+ * COMPOSED from the same four exported phases the CI fan-out drives one step at a time — so the local
+ * monolith and the split release lane cannot disagree about any gate, refusal, or ordering.
+ *
+ * The one behaviour that lives here rather than in a phase is the step-2 abort: a required provider
+ * whose re-validation failed stops the transaction BEFORE any version artifact is built. In the split
+ * lane that abort is a separate sequential gate step between the two parallel blocks, which is why it
+ * is spelled with the shared {@link blocksPromotion} predicate rather than an inline comparison.
+ */
+export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<PromoteResult> {
+	const { force = false, only } = options;
+	const scope = only ? only.join(", ") : "every provider";
+	const required = effectivePromotionRequirements(requiredProviders(), only);
+	const blocks = blocksPromotion(required);
+
+	const preflight = await promotePreflight(log, options);
+	if (!preflight.ok) return { reports: preflight.reports, ok: false };
+	const { partial, pinnedBaseImage, refs, requested } = preflight;
+	const reports: BakeReport[] = [];
+
+	// 2. Re-validate the candidate immediately before publishing, so the bytes we promote are verified
+	//    again (the candidate tag is mutable). Required failures abort the whole promote; a failed
+	//    best-effort provider is excluded from step 3 and remains visible in the final report.
+	log(`>>> re-validating ${scope} against ${pinnedBaseImage} before promote…`);
+	const validateRuns = await validateCandidates(refs, log, only);
+	if (validateRuns.some(blocks)) {
+		log(
+			"<<< promote aborted — a required provider's candidate re-validation failed (nothing published)",
+		);
+		for (const run of validateRuns) {
+			reports.push({
+				provider: run.provider,
+				status: run.status,
+				...(run.reason ? { reason: run.reason } : {}),
+				...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
+			});
+		}
+		return { reports, ok: false };
+	}
+	const promotionScope = promotionScopeAfterValidation(requested, validateRuns);
+	reports.push(...promotionScope.rejected);
+
+	// 3. Build each in-scope provider's version-named artifact FROM the base we just revalidated (the
+	//    candidate base, or the published version base on a partial promote). Built BEFORE the base
+	//    retag, so a failure here leaves the version base unwritten and a rerun is clean. Shares the
+	//    skip-vs-fail loop with bake.
+	//    Under `--force` these names already exist and are live. e2b/image replace on success; daytona
+	//    deletes first (no snapshot overwrite in the SDK), so a failed daytona create removes the
+	//    published snapshot — `bakeDaytonaSnapshot` says so in its error, which lands in the report's
+	//    `reason`. The base is still never written, so the version tag itself stays consistent.
+	const runs =
+		promotionScope.eligible.length === 0
+			? []
+			: await forEachProviderWithCreds(
+					(provider) => buildVersionArtifact(provider.name, pinnedBaseImage, log),
+					{
+						log,
+						only: promotionScope.eligible,
+						onComplete: (run) => {
+							const time = run.durationMs !== undefined ? ` (${run.durationMs.toFixed(0)}ms)` : "";
+							log(
+								`<<< ${run.provider}: ${run.status}${time}${run.reason ? ` — ${run.reason}` : ""}`,
+							);
+						},
+					},
+				);
+	for (const run of runs) {
+		reports.push({
+			provider: run.provider,
+			status: run.status,
+			...(run.reason ? { reason: run.reason } : {}),
+			...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
+		});
+	}
+
+	return promoteCommit(log, { force, only, partial, pinnedBaseImage, reports });
 }

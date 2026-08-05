@@ -30,19 +30,41 @@ import {
 	TOOLCHAIN_WORKFLOW,
 	WORKFLOWS_DIR,
 } from "./lib/workflow-hardening.ts";
-import { asRecord, stepByName, stepEnv } from "./lib/workflow-yaml.ts";
+import { asRecord, flattenSteps, stepByName, stepEnv } from "./lib/workflow-yaml.ts";
 import { findRepoRoot } from "./lib/workspace.ts";
 
 /** A no-op step — the body for fixtures whose step content is irrelevant to what they assert. */
 const NOOP_STEP = { run: "true" };
 /** Build a single-job workflow doc: `{ ...root, jobs: { [id]: job } }`. */
 const oneJob = (id: string, job: object, root: object = {}) => ({ ...root, jobs: { [id]: job } });
-const SCOPED_RUNCLOUD_KEY =
-	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
-	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}";
-const SCOPED_RUNLOOP_KEY =
-	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
-	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && secrets.RUNLOOP_API_KEY || '' }}";
+/**
+ * The publish job's per-provider scope guard — the `if:` every promote fan-out step carries. Element
+ * EQUALITY against the plan's matrix, deliberately not `contains(<csv string>, '<id>')`, which would
+ * also match a future id that merely contains this one (the registry already splits providers into
+ * `-vm`/`-container`/`-local`/`-cloud` variants).
+ */
+const providerScopeGuard = (provider: string) =>
+	`contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, '${provider}')`;
+
+/**
+ * Every step in a job (with `parallel:` blocks flattened) whose `env:` assigns `key`, as its `if:`
+ * expression. This is how the promote lane's credential scoping is now asserted: rather than checking
+ * that a key's VALUE carries a scope guard, check that the only steps which receive the key at all are
+ * the ones gated on that provider. Per-step scoping is the stronger property — the key is absent from
+ * every other step's environment instead of present-but-blank.
+ */
+/** A provider credential reference, as it appears in real YAML — the thing a nested step must not hide. */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+const E2B_SECRET_EXPR = "${{ secrets.E2B_API_KEY }}";
+
+function stepGuardsAssigning(job: Record<string, unknown>, key: string): (string | undefined)[] {
+	return flattenSteps(job.steps, "publish")
+		.filter((step) => {
+			if (step.env === undefined || step.env === null) return false;
+			return key in asRecord(step.env, "publish: malformed step env");
+		})
+		.map((step) => (typeof step.if === "string" ? step.if : undefined));
+}
 const SELECTED_BASE_IMAGE =
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 	"${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}";
@@ -53,15 +75,6 @@ function workflowJob(doc: unknown, jobId: string, label: string): Record<string,
 	const root = asRecord(doc, `${label}: not a YAML mapping`);
 	const jobs = asRecord(root.jobs, `${label}: no jobs mapping`);
 	return asRecord(jobs[jobId], `${label}: job "${jobId}" not found`);
-}
-
-/** Every value assigned to a named key below one parsed YAML node, including job- and step-level env. */
-function valuesForKey(value: unknown, key: string): unknown[] {
-	if (Array.isArray(value)) return value.flatMap((item) => valuesForKey(item, key));
-	if (value === null || typeof value !== "object") return [];
-	return Object.entries(value).flatMap(([name, child]) =>
-		name === key ? [child] : valuesForKey(child, key),
-	);
 }
 
 describe("checkoutSteps against the real workflows", () => {
@@ -243,22 +256,50 @@ describe("Namespace token authentication", () => {
 	});
 });
 
-describe("run.cloud credential scoping", () => {
-	test("the promote step exposes the key only when the resolved plan contains runcloud", () => {
-		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
-		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
-		// Exactly one assignment anywhere in the publish job, and its entire value is the plan gate. This
-		// rejects every unscoped spelling (including `secrets.RUN_CLOUD_API_KEY || ''`) rather than one
-		// fragile literal while ignoring a second assignment in another step or at job scope.
-		expect(valuesForKey(publish, "RUN_CLOUD_API_KEY")).toEqual([SCOPED_RUNCLOUD_KEY]);
-	});
-});
+describe("promote credential scoping", () => {
+	// Every provider credential that reaches the promote lane, with the provider whose steps may hold
+	// it. The fan-out replaced the old expression guards (`contains(matrix, 'runloop') && secrets.X ||
+	// ''`) with something stronger: the key is not in any other step's environment at all, so there is
+	// no blank-valued assignment to reason about. These two were the keys that carried an explicit
+	// guard before, and they are the regression to watch — but the property now holds for all of them.
+	const scoped: ReadonlyArray<readonly [string, string]> = [
+		["RUN_CLOUD_API_KEY", "runcloud"],
+		["RUNLOOP_API_KEY", "runloop"],
+		["E2B_API_KEY", "e2b"],
+		["NOVITA_API_KEY", "novita"],
+		["MSB_API_KEY", "microsandbox-cloud"],
+	];
 
-describe("Runloop credential scoping", () => {
-	test("the promote step exposes the key only when the resolved plan contains runloop", () => {
+	for (const [key, provider] of scoped) {
+		test(`${key} reaches only steps gated on ${provider}`, () => {
+			const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+			const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
+			const guards = stepGuardsAssigning(publish, key);
+			// At least one step must actually use it — a key that reaches nothing would pass a
+			// "no unguarded assignment" check vacuously while silently un-wiring the provider.
+			expect(guards.length).toBeGreaterThan(0);
+			for (const guard of guards) expect(guard).toBe(providerScopeGuard(provider));
+		});
+	}
+
+	test("no provider credential is hung off the publish job's own env", () => {
 		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
 		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
-		expect(valuesForKey(publish, "RUNLOOP_API_KEY")).toEqual([SCOPED_RUNLOOP_KEY]);
+		// A job-level env is inherited by every step, so one credential there would undo the whole
+		// per-step scoping below it — the same reasoning workflow-nesting.ts applies to the bench lanes.
+		const jobEnv = publish.env === undefined ? {} : asRecord(publish.env, "publish: malformed env");
+		expect(
+			Object.keys(jobEnv).filter((k) => customSecretsIn(String(jobEnv[k])).length > 0),
+		).toEqual([]);
+	});
+
+	test("MICROSANDBOX_LOCAL_BENCH is scoped to its own step, not the whole job", () => {
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
+		// Unlike every credential around it this is a literal with no missing-value skip path, so a
+		// job-wide setting would spend a doomed libkrun boot in every other provider's step.
+		const guards = stepGuardsAssigning(publish, "MICROSANDBOX_LOCAL_BENCH");
+		expect(guards).toEqual([providerScopeGuard("microsandbox-local")]);
 	});
 });
 
@@ -312,6 +353,73 @@ describe("customSecretsIn", () => {
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
 			customSecretsIn("${{ secrets.A || secrets.B }}"),
 		).toEqual(["A", "B"]);
+	});
+});
+
+describe("nested `parallel:` steps are not a gate bypass", () => {
+	// GitHub Actions gained concurrent steps in June 2026, and toolchain-image.yml's publish job uses
+	// them for its per-provider promote fan-out. A step inside a `parallel:` block is a step in every
+	// respect the gates care about — it can read a secret and it can check out the repo — so a scanner
+	// that only walked the top level would let one YAML nesting level switch two security invariants
+	// off. These are the tests that would have caught that, and they are why flattenSteps exists.
+
+	test("a secret inside a parallel block still demands the privileged environment", () => {
+		const doc = oneJob("promote", {
+			steps: [
+				{ run: "true" },
+				{
+					parallel: [{ name: "e2b", run: "bake", env: { E2B_API_KEY: E2B_SECRET_EXPR } }],
+				},
+			],
+		});
+		const errors = checkPrivilegedEnvironment(doc, "synthetic.yml");
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain("E2B_API_KEY");
+		expect(errors[0]).toContain(`environment: ${PRIVILEGED_ENVIRONMENT}`);
+	});
+
+	test("the same secret nested two blocks deep is still seen", () => {
+		const doc = oneJob("promote", {
+			steps: [{ parallel: [{ parallel: [{ run: "bake", env: { K: E2B_SECRET_EXPR } }] }] }],
+		});
+		expect(checkPrivilegedEnvironment(doc, "synthetic.yml")[0]).toContain("E2B_API_KEY");
+	});
+
+	test("declaring the privileged environment clears it, as for a top-level step", () => {
+		const doc = oneJob("promote", {
+			environment: PRIVILEGED_ENVIRONMENT,
+			steps: [{ parallel: [{ run: "bake", env: { K: E2B_SECRET_EXPR } }] }],
+		});
+		expect(checkPrivilegedEnvironment(doc, "synthetic.yml")).toEqual([]);
+	});
+
+	test("a checkout inside a parallel block must still opt out of credential persistence", () => {
+		const doc = oneJob("promote", {
+			steps: [{ parallel: [{ uses: "actions/checkout@v7", with: { ref: "main" } }] }],
+		});
+		const steps = checkoutSteps(doc, "synthetic.yml");
+		expect(steps).toHaveLength(1);
+		expect(steps[0]?.persistCredentials).toBeUndefined();
+		expect(checkPersistCredentials(steps, {})[0]).toContain("persist-credentials: false");
+	});
+
+	test("a malformed parallel block is rejected rather than silently skipped", () => {
+		const doc = oneJob("promote", { steps: [{ parallel: "not-a-list" }] });
+		expect(() => checkoutSteps(doc, "synthetic.yml")).toThrow(/parallel/);
+	});
+
+	test("the real publish job's fan-out is what the gate now walks", () => {
+		// Guards against the flattening being quietly reverted once the fan-out exists: if the publish
+		// job stopped using parallel blocks, or the scan stopped descending into them, this drops to 0.
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
+		const nested = (Array.isArray(publish.steps) ? publish.steps : []).filter(
+			(step) => asRecord(step, "publish: malformed step").parallel !== undefined,
+		);
+		expect(nested.length).toBeGreaterThan(0);
+		expect(flattenSteps(publish.steps, "publish").length).toBeGreaterThan(
+			(publish.steps as unknown[]).length,
+		);
 	});
 });
 

@@ -12,14 +12,23 @@ name: Toolchain image
 # credentialed job runs behind Environment `privileged` (reviewer approval) so the public cannot
 # complete a release.
 #
-# Phase split (needs edges only where an artifact is required, so build/bake work runs in parallel and
-# the ONLY serialized section is the promote transaction):
+# Phase split (needs edges only where an artifact is required, so build/bake work runs in parallel):
 #
 #   plan ──> build ──> bake (matrix: provider × required) ──> publish
 #     │        │                                                  ▲
 #     └── emits release-plan.json; every downstream job consumes  │
 #         the plan (mode, refs, provider matrix, gates) rather    │
 #         than re-reading the raw workflow inputs. ───────────────┘
+#
+# `publish` is a transaction, so its ORDER is fixed — but its per-provider work is not serial. It runs
+# the phases as steps, fanning each per-provider phase out across a `parallel:` step block:
+#
+#   preflight ──> ‖ re-validate × provider ‖ ──> gate ──> ‖ version artifact × provider ‖ ──> commit
+#
+# Every ordering guarantee is unchanged (a required provider's failed re-validation still aborts before
+# any artifact is built; the base retag is still last and still the commit point) — only the two phases
+# that dominate wall time stop paying for a serial loop over thirteen providers. The per-provider steps
+# are hand-written and held to the provider registry by tooling/repo-checks (promote-fanout.ts).
 #
 # The plan also decides WHICH of those phases run, so a dispatch pays only for what it asked for. All
 # four dispatch inputs are optional and their defaults reproduce the full release exactly:
@@ -595,15 +604,39 @@ jobs:
           verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }} --base-image ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}${{ matrix.required && format(' --require {0}', matrix.provider) || '' }}
           diagnostics: bake-${{ matrix.provider }}-${{ github.run_id }}
 
-  # PROMOTE: the serialized publication barrier and the ONLY job that mutates the public :v1. Runs only
-  # after every bake cell converges (a failed required cell fails `bake` and blocks this via `needs`).
-  # promote re-validates the candidate (TOCTOU: the candidate tag is mutable), builds each provider's
-  # version-named artifact FROM the revalidated bytes, then retags the base → :v1 LAST as the commit
-  # point. `--require` (from the plan) fails the promote before publish if a required provider's version
-  # artifact was skipped/failed. `--force` (force_republish only) regenerates an existing version.
-  # `--provider` (from the plan) scopes the transaction; a SUBSET makes it a backfill that publishes only
-  # those providers' version artifacts onto the existing version and never writes the base at all.
+
+  # PROMOTE: the publication barrier and the ONLY job that mutates the public :v1. Runs only after every
+  # bake cell converges (a failed required cell fails `bake` and blocks this via `needs`).
+  #
+  # The transaction is ordered, but its per-provider work is not serial. `promote-phase` (apps/cli) splits
+  # promoteAll() into the phases the transaction actually requires, and this job sequences them:
+  #
+  #   preflight ──> ‖ re-validate × provider ‖ ──> gate ──> ‖ version artifact × provider ‖ ──> commit
+  #
+  # Each ‖…‖ is a `parallel:` step block: the steps inside run concurrently and the block joins before the
+  # next step starts. That is the whole point — the ordering guarantees are unchanged (a required
+  # provider's failed re-validation still aborts BEFORE any version artifact is built, and the base retag
+  # is still LAST and still the commit point), while the two phases that dominate wall time stop paying
+  # for a serial loop over thirteen providers. `bake --promote` still runs the identical transaction in
+  # one process for a local operator; both drive the same exported phase functions, so the lanes cannot
+  # disagree about a gate.
+  #
+  # Splitting the phases into steps also makes the credentials least-privilege, which the monolith could
+  # not be: each provider's key is scoped to ITS step's `env:` (exactly as the bake matrix scopes a cell's
+  # key), instead of every provider key entering one process at once. That is why the old
+  # `contains(matrix, 'runloop') && secrets.RUNLOOP_API_KEY || ''` guards are gone — the key simply is not
+  # in any other step's environment now.
+  #
+  # `--require` (from the plan) fails the promote before publish if a required provider's version artifact
+  # was skipped/failed. `--force` (force_republish only) regenerates an existing version. `--provider`
+  # (from the plan) scopes the transaction; a SUBSET makes it a backfill that publishes only those
+  # providers' version artifacts onto the existing version and never writes the base at all.
   # The release job (named `publish` — the drift gate requires this name for the GHCR release lane).
+  #
+  # The per-provider steps are hand-written, one per registered provider, so `tooling/repo-checks`
+  # re-derives both fan-outs from the schema registry and fails the build when they drift: every provider
+  # must have a re-validate step carrying its own requiredEnvVars, and exactly the providers with a
+  # version artifact (hasVersionArtifact) may have a build step.
   #
   # Dynamic job skipping #2: `promote: false` drops this job (`run-publish`), so a dispatch can stage and
   # verify a candidate, leave the public surface untouched, and promote from a later dispatch.
@@ -625,11 +658,15 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
       github.repository == 'starslingdev/hpc-sandbox-benchmarks'
+    # Unchanged, and load-bearing: `starsling-ubuntu-24.04-2` is the virtualization-capable label, which is
+    # what makes microsandbox-local's `MICROSANDBOX_LOCAL_BENCH` opt-in below meaningful rather than a
+    # doomed libkrun boot. Concurrency does not change the sizing: microsandbox-local is the only provider
+    # doing local compute here; the other twelve wait on provider APIs and registries.
     runs-on: starsling-ubuntu-24.04-2
     environment: privileged
-    # Re-validates and promotes every in-scope provider SERIALLY (it is a transaction, not a fan-out),
-    # so at full scope it is the longest-running credentialed job. Sized for that worst case; a scoped
-    # backfill finishes in a fraction of it.
+    # Sized for the old SERIAL worst case. Now that the two per-provider phases fan out, wall time is the
+    # slowest provider rather than the sum, so this is headroom — tighten it once a real release has
+    # reported a measured number, not before.
     timeout-minutes: 60
     # packages: write retags the base → public :v1. id-token: write is Namespace's OIDC federation for
     # the re-validation boot (no stored secret) — scoped here, not at the workflow level (zizmor).
@@ -637,6 +674,13 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    # The transaction's scope and requirement set, spelled once for the ~20 promote-phase steps below.
+    # Both are the PLAN's resolved values, never the raw dispatch input: for a full release the scope is
+    # simply every registered provider and `--provider` is a no-op, and for a scoped one it is what makes
+    # the promote a backfill. No secret lives here — every credential is scoped to the one step that needs it.
+    env:
+      RELEASE_PROVIDERS: ${{ needs.plan.outputs.providers }}
+      RELEASE_REQUIRED: ${{ needs.plan.outputs.required }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -651,38 +695,33 @@ jobs:
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Credential preflight ───────────────────────────────────────────────────────────────────────
+      # Namespace and Vercel need a session established before their provider steps run, and both produce
+      # step outputs the steps below read — so they stay sequential. They cost seconds; the phases worth
+      # parallelising are the two below them.
+      #
       # Namespace federates via GitHub's OIDC identity (id-token: write on this job), so promote's
-      # re-validation boot can reach the Compute API with no stored secret. Unlike the bake matrix there
-      # is no per-provider cell here (promote is a serial transaction over its providers), so the mint
-      # runs for the whole job — gated only on namespace actually being in scope, so a scoped release
-      # doesn't mint a token it will never use. continue-on-error keeps a not-yet-registered trust
-      # relationship (or any transient failure) from failing the release: namespace is best-effort (not
-      # in --require), so its re-validation simply skips when the token is absent, exactly like a
-      # missing optional secret — and a skipped step leaves `outcome` != 'success', the same path.
+      # re-validation boot can reach the Compute API with no stored secret. This now uses the same
+      # ./.github/actions/namespace-token composite bench-suite.yml calls, instead of an inlined copy of
+      # its two steps that had drifted (the inline version never passed `--expires_in 4h`).
+      # continue-on-error keeps a not-yet-registered trust relationship (or any transient failure) from
+      # failing the release: namespace is best-effort (not in --require), so its re-validation simply skips
+      # when the token file is absent, exactly like a missing optional secret.
       #
       # The scope test reads the plan's matrix rather than its `providers` CSV: `contains(array, item)`
       # is element EQUALITY, while `contains(string, substring)` would also match a future id that
       # merely contains this one (this registry already splits providers into `-vm`/`-container`/
       # `-local`/`-cloud` variants, so that is not hypothetical).
-      - name: Set up Namespace CLI
+      - name: Set up Namespace credentials
         if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'namespace')
         continue-on-error: true
-        id: nsc-setup
-        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
-      # Mint a scoped, revocable token file (grant: the minimal instance verbs the harness needs —
-      # create/list/get/destroy/exec; a wildcard action is rejected in revokable tokens). Named apart
-      # from the bake cell's token so both can coexist within one workflow run, and carrying
-      # run_attempt for the same reason it does there — run_id survives a re-run, so without it the
-      # retry's mint collides and continue-on-error degrades it to a silent skip.
-      - name: Mint a portable Namespace token
-        if: steps.nsc-setup.outcome == 'success'
-        continue-on-error: true
-        id: nsc-token
-        run: |
-          nsc token create \
-            --name "sandbox-benchmarks-toolchain-promote-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
-            --token_file "${{ runner.temp }}/nsc-token.json"
+        id: namespace
+        uses: ./.github/actions/namespace-token
+        with:
+          # run_attempt as well as run_id: run_id survives a re-run, so without it the retry's mint
+          # collides with the first attempt's token and continue-on-error degrades that into a silent skip.
+          token-name: sandbox-benchmarks-toolchain-promote-${{ github.run_id }}-${{ github.run_attempt }}
       # Same scope gate as the Namespace mint above: a release that isn't promoting vercel has no reason
       # to pull a project OIDC token or log docker into VCR.
       - name: Authenticate with Vercel and VCR
@@ -703,60 +742,254 @@ jobs:
           candidate="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
           digest="$(docker buildx imagetools inspect "$candidate" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${candidate%:*}@${digest}" >> "$GITHUB_OUTPUT"
-      - name: Promote candidate → version
-        id: promote
-        env:
-          REQUIRED: ${{ needs.plan.outputs.required }}
-          # The resolved scope, always passed (never the raw dispatch input): for a full release it is
-          # simply every registered provider and `--provider` is a no-op, and for a scoped one it is what
-          # makes the promote a backfill. bake.ts derives "partial" from the list length, so the
-          # subset-vs-everything decision has exactly one owner.
-          RELEASE_PROVIDERS: ${{ needs.plan.outputs.providers }}
-          FORCE_REPUBLISH: ${{ inputs.force_republish }}
-          # Route the promote payload JSON to a file via env (not a `> file` redirect): the provider
-          # CLIs inherit stdout, so a redirect would splice their chatter into the payload. bake.ts
-          # writes the file even when promote aborts (it records the structured reports before exiting).
-          BAKE_REPORT_FILE: promote-payload.json
-          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
-          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          # Both Daytona variants may be promoted in one payload, so thread each variant's region
-          # secret (daytona-vm ⇒ DAYTONA_TARGET, daytona-container ⇒ DAYTONA_CONTAINER_TARGET).
-          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
-          DAYTONA_CONTAINER_TARGET: ${{ secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2' }}
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-          # The serial transaction re-validates the candidate Blueprint, then builds the version-named
-          # Blueprint from the same pinned base. Keep the SDK control-plane key out of unrelated scoped
-          # promotes, matching the run.cloud credential posture below.
-          RUNLOOP_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && secrets.RUNLOOP_API_KEY || '' }}
-          # A scoped promote imports every provider module in one process. Keep the run.cloud key out
-          # of that process unless the resolved release plan will actually re-validate runcloud.
-          RUN_CLOUD_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
-          # Namespace's re-validation boot reads this OIDC-federated token file (see the Namespace CLI
-          # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
-          # skips namespace's re-validation without failing the promote (namespace is not in --require).
-          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
-          # The promote transaction re-validates every in-scope provider. Unlike every credential around it, this
-          # is a literal rather than a `secrets.*` reference, so it has no missing-value skip path — it
-          # is safe only because this job is PINNED to `starsling-ubuntu-24.04-2` (see runs-on above),
-          # the same virtualization-capable label the bake matrix uses. Moving promote to a runner
-          # without KVM must clear this at the same time, or every release spends a doomed libkrun boot
-          # whose failure is invisible in promote-payload.json (microsandbox-local is not in --require,
-          # so `blocks()` is false and promote never records it). Cloud uses its key + optional endpoint.
-          MICROSANDBOX_LOCAL_BENCH: "1"
-          MSB_API_URL: ${{ secrets.MSB_API_URL }}
-          MSB_API_KEY: ${{ secrets.MSB_API_KEY }}
-          VERCEL_OIDC_TOKEN: ${{ steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
-          VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
+
+      # ── Phase 1 (sequential): preflight ────────────────────────────────────────────────────────────
+      # Transaction steps 1, 2-pin and 2b: refuse to overwrite the immutable version (inverted for a
+      # backfill, which must find it already published), resolve the base to an immutable digest, and
+      # guard a backfill against a candidate that has drifted from the published version. Everything
+      # below pins the `base-ref` this emits, so all thirteen providers verify the same bytes.
+      # Exits non-zero on refusal, having written promote-payload.json — a refused release is exactly
+      # when the payload needs to be readable.
+      - name: Promote preflight
+        id: preflight
         run: |
           set -euo pipefail
-          args=(--promote --require "${REQUIRED}" --provider "${RELEASE_PROVIDERS}")
+          args=(preflight --provider "${RELEASE_PROVIDERS}")
           # --force (manual force_republish dispatch only) republishes over an existing immutable
-          # version; never set on the automated push path. bake.ts refuses --force on a scoped promote,
-          # and release-validate rejects the combination before the release spends anything.
+          # version; never set on the automated push path. promote-phase refuses --force on a scoped
+          # promote, and release-validate rejects the combination before the release spends anything.
           if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
-          bun apps/cli/src/bin/bake.ts "${args[@]}"
+          bun apps/cli/src/bin/promote-phase.ts "${args[@]}"
+        env:
+          FORCE_REPUBLISH: ${{ inputs.force_republish }}
+
+      # ── Phase 2 (parallel): re-validate every in-scope provider ────────────────────────────────────
+      # Transaction step 2, fanned out. Each step boots ITS provider's candidate artifact from the pinned
+      # base and runs the shared smoke spec, then records a structured verdict in promote-reports/. The
+      # steps never fail the job: the gate below owns pass/fail, so one doomed provider still leaves every
+      # sibling's diagnostics in the payload (the same posture as the bake matrix's `fail-fast: false`).
+      #
+      # A provider out of the release's scope is skipped by its `if:`; a provider in scope whose secret is
+      # missing takes the harness's standard missing-credentials SKIP, which only blocks the release if
+      # `--require` names it.
+      - parallel:
+          - name: Re-validate e2b
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider e2b --base-ref "$BASE_REF"
+
+          # Both Daytona isolation variants share the account key and validate in their own region,
+          # pinned by a variant-specific secret so operators can retarget without editing the workflow.
+          # Both default to us-west-2 so an unsynced secret can't leave the boot in the account's
+          # default region.
+          - name: Re-validate daytona-vm
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+              DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider daytona-vm --base-ref "$BASE_REF"
+
+          - name: Re-validate daytona-container
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+              DAYTONA_CONTAINER_TARGET: ${{ secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2' }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider daytona-container --base-ref "$BASE_REF"
+
+          # blaxel boots the vendor's stock base image, so it has no candidate of ours to re-validate and
+          # no artifact to promote. It still gets a step: the payload must record every in-scope provider,
+          # and without its credentials it takes the ordinary missing-credentials skip — exactly what the
+          # monolithic loop recorded for it.
+          - name: Re-validate blaxel
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              BL_API_KEY: ${{ secrets.BL_API_KEY }}
+              BL_WORKSPACE: ${{ secrets.BL_WORKSPACE }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider blaxel --base-ref "$BASE_REF"
+
+          # microsandbox-local boots the candidate image under libkrun ON THIS RUNNER, so unlike every
+          # credential around it this is a literal opt-in rather than a `secrets.*` reference and has no
+          # missing-value skip path. It is safe only because this job is PINNED to
+          # `starsling-ubuntu-24.04-2` (see runs-on above), the same virtualization-capable label the bake
+          # matrix uses. Moving promote to a runner without KVM must clear this at the same time, or every
+          # release spends a doomed libkrun boot whose failure is invisible (microsandbox-local is not in
+          # --require, so it never blocks). Scoping it to this one step is new: the monolith had to set it
+          # process-wide for all thirteen providers.
+          - name: Re-validate microsandbox-local
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'microsandbox-local')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              MICROSANDBOX_LOCAL_BENCH: "1"
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider microsandbox-local --base-ref "$BASE_REF"
+
+          # Cloud uses its key plus an optional deployment-endpoint override.
+          - name: Re-validate microsandbox-cloud
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'microsandbox-cloud')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              MSB_API_KEY: ${{ secrets.MSB_API_KEY }}
+              MSB_API_URL: ${{ secrets.MSB_API_URL }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider microsandbox-cloud --base-ref "$BASE_REF"
+
+          # Both Modal variants share the account tokens and boot the pushed image directly via
+          # Image.fromRegistry; validate still boots each to prove reachability.
+          - name: Re-validate modal-gvisor
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+              MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider modal-gvisor --base-ref "$BASE_REF"
+
+          - name: Re-validate modal-vm
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+              MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider modal-vm --base-ref "$BASE_REF"
+
+          # Optional: a missing NOVITA_API_KEY skips novita without failing the release.
+          - name: Re-validate novita
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'novita')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider novita --base-ref "$BASE_REF"
+
+          # Runloop re-validates its candidate Blueprint. Best-effort in an unscoped release; required
+          # (and therefore fail-closed on a missing key) when explicitly scoped.
+          - name: Re-validate runloop
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              RUNLOOP_API_KEY: ${{ secrets.RUNLOOP_API_KEY }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider runloop --base-ref "$BASE_REF"
+
+          # Namespace has no stored secret — it reads the OIDC-federated token file minted above. Empty
+          # when the mint was skipped or failed, which the harness reads as the standard
+          # missing-credentials skip (namespace is not in --require).
+          - name: Re-validate namespace
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'namespace')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider namespace --base-ref "$BASE_REF"
+
+          # Vercel boots its own VCR mirror rather than the GHCR base, so it takes the digest the pin step
+          # above resolved. Both values are empty unless their producing step succeeded, which reads as
+          # the standard missing-credentials skip.
+          - name: Re-validate vercel
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              VERCEL_OIDC_TOKEN: ${{ steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+              VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider vercel --base-ref "$BASE_REF"
+
+          # run.cloud boots the candidate OCI image directly; the key is needed only for its validate boot.
+          - name: Re-validate runcloud
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              RUN_CLOUD_API_KEY: ${{ secrets.RUN_CLOUD_API_KEY }}
+            run: bun apps/cli/src/bin/promote-phase.ts validate --provider runcloud --base-ref "$BASE_REF"
+
+      # ── Phase 3 (sequential): the step-2 abort ─────────────────────────────────────────────────────
+      # A REQUIRED provider whose re-validation FAILED stops the release here, before a single version
+      # artifact is built and long before the base moves — the same abort promoteAll() performs between
+      # steps 2 and 3. A best-effort provider's failure is recorded and excluded from the phase below.
+      # A pure SKIP does not abort here; it is caught by the required-providers gate inside `commit`.
+      - name: Gate — required providers re-validated
+        run: |
+          set -euo pipefail
+          bun apps/cli/src/bin/promote-phase.ts gate --phase validate \
+            --provider "${RELEASE_PROVIDERS}" --require "${RELEASE_REQUIRED}"
+
+      # ── Phase 4 (parallel): build each version-named artifact ──────────────────────────────────────
+      # Transaction step 3, fanned out. Built from the base the preflight pinned and phase 2 just
+      # re-validated, and BEFORE the base retag, so a failure here leaves the version base unwritten and a
+      # rerun is clean. Only the providers that actually have a version artifact appear — the other seven
+      # boot the published base by ref, so their step-3 branch is a log line; `commit` records their `ok`
+      # from the same registry-derived predicate the drift gate holds this list to.
+      #
+      # Each step re-reads its own phase-2 verdict and declines to publish an artifact for a provider that
+      # did not re-validate, which is the exclusion promotionScopeAfterValidation() performs in-process.
+      - parallel:
+          - name: Build e2b version artifact
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+            run: bun apps/cli/src/bin/promote-phase.ts artifact --provider e2b --base-ref "$BASE_REF"
+
+          # Daytona has no snapshot overwrite in the SDK: it DELETES then creates, so a failed create
+          # leaves the published snapshot absent rather than stale. That hazard is why force_republish is
+          # manual-dispatch-only; it is unchanged by the fan-out.
+          - name: Build daytona-vm version artifact
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+              DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
+            run: bun apps/cli/src/bin/promote-phase.ts artifact --provider daytona-vm --base-ref "$BASE_REF"
+
+          - name: Build daytona-container version artifact
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+              DAYTONA_CONTAINER_TARGET: ${{ secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2' }}
+            run: bun apps/cli/src/bin/promote-phase.ts artifact --provider daytona-container --base-ref "$BASE_REF"
+
+          - name: Build novita version artifact
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'novita')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+            run: bun apps/cli/src/bin/promote-phase.ts artifact --provider novita --base-ref "$BASE_REF"
+
+          - name: Build runloop version artifact
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+              RUNLOOP_API_KEY: ${{ secrets.RUNLOOP_API_KEY }}
+            run: bun apps/cli/src/bin/promote-phase.ts artifact --provider runloop --base-ref "$BASE_REF"
+
+          # Vercel's version artifact is a registry-side retag of the exact candidate phase 2 booted, so it
+          # needs the VCR docker session established in the credential preflight (still open — the logout
+          # runs after `commit`), not a provider SDK key.
+          - name: Build vercel version artifact
+            if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel')
+            env:
+              BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+            run: bun apps/cli/src/bin/promote-phase.ts artifact --provider vercel --base-ref "$BASE_REF"
+
+      # ── Phase 5 (sequential): gate, then commit ────────────────────────────────────────────────────
+      # Transaction steps 3b and 4. The required-providers gate runs FIRST and catches what the phase-3
+      # abort cannot: a required provider that merely SKIPPED (missing/misnamed secret) never failed, so
+      # only this gate sees the gap — and it sees it while the base is still unwritten, which is what keeps
+      # a fixed rerun from being refused at step 1. Then, LAST, the base retag: the commit point. A partial
+      # promote has none; its providers' version artifacts were the whole transaction.
+      #
+      # This step also merges every promote-reports/ fragment into promote-payload.json, in the same order
+      # the monolithic transaction reports them, so the uploaded diagnostic is shape-identical either way.
+      - name: Commit — retag base → version
+        id: promote
+        run: |
+          set -euo pipefail
+          args=(commit --provider "${RELEASE_PROVIDERS}" --require "${RELEASE_REQUIRED}" --base-ref "${BASE_REF}")
+          if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
+          bun apps/cli/src/bin/promote-phase.ts "${args[@]}"
+        env:
+          BASE_REF: ${{ steps.preflight.outputs.base-ref }}
+          FORCE_REPUBLISH: ${{ inputs.force_republish }}
+
       - name: Log out of VCR
         if: always()
         run: docker logout vcr.vercel.com || true
@@ -765,7 +998,11 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: promote-payload-${{ github.run_id }}
-          path: promote-payload.json
+          # The merged payload plus the per-provider fragments it was built from. The fragments are what
+          # make a fan-out debuggable: they survive even when the merge step never ran.
+          path: |
+            promote-payload.json
+            promote-reports/
           if-no-files-found: warn
           # See the plan upload: overwrite so a re-run (same run_id, new run_attempt) can't fail on a
           # duplicate artifact name.
@@ -784,6 +1021,7 @@ jobs:
           image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
+          # The single-process equivalent of everything above, for an operator reproducing it by hand.
           verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}
           published: ${{ needs.plan.outputs.publish-target }}
           diagnostics: promote-payload-${{ github.run_id }}

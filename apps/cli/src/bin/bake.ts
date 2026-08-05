@@ -19,7 +19,7 @@ import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { bakeModalImage } from "../lib/bake/modal.ts";
 import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
-import { promoteAll } from "../lib/bake/promote.ts";
+import { promoteAll, promotePayload } from "../lib/bake/promote.ts";
 import { bakeRunloopBlueprint } from "../lib/bake/runloop.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
 import { baseImageUse, candidateCreateOptions } from "../lib/bake/validate.ts";
@@ -175,22 +175,9 @@ if (import.meta.main) {
 		let promoted: Awaited<ReturnType<typeof promoteAll>>;
 		try {
 			promoted = await promoteAll(log, { force, only });
-			writeReport({
-				// The scope is recorded alongside the version names because those names are the FULL set the
-				// version owns — on a partial promote most of them were not touched, and the payload has to
-				// say which run this was rather than leave a reader to infer it from `reports`.
-				scope: only ?? PROVIDERS.map((p) => p.id),
-				partial: isPartialScope(only),
-				version: {
-					image: config.toolchainImageVersion,
-					e2bTemplate: config.e2bTemplateVersion,
-					daytonaSnapshot: config.daytonaSnapshotDefault,
-					daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
-					novitaTemplate: config.novitaTemplateVersion,
-					runloopBlueprint: config.runloopBlueprintVersion,
-				},
-				reports: promoted.reports,
-			});
+			// One payload builder, shared with the split CI lane (bin/promote-phase.ts), so the two paths
+			// cannot emit different shapes for the same release.
+			writeReport(promotePayload(only, promoted.reports));
 		} finally {
 			// Promotion can validate run.cloud before writing its report. Preserve teardown even if either
 			// operation throws instead of returning a structured failed report.
