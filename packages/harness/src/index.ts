@@ -325,8 +325,8 @@ export async function createSuiteSandbox(
 	// What one more attempt can cost, so the loop only starts an attempt the budget can still absorb.
 	// When the harness races the create, its own timeout IS that ceiling; when the adapter owns the
 	// bound (`createTimeoutMs: null`) it declares the ceiling instead, and the provider registry refuses
-	// an adapter that disables the race without one. Zero only for a hand-built context that disables
-	// the race and declares nothing — nothing can be reserved for an attempt of unknown cost.
+	// an adapter that disables the race without a POSITIVE one. Zero only for a hand-built context that
+	// disables the race and declares nothing — nothing can be reserved for an attempt of unknown cost.
 	const attemptCeilingMs = createTimeoutMs ?? ctx.createAttemptCeilingMs ?? 0;
 	const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	const createDeadline = Date.now() + (ctx.retryBudgetMs ?? CREATE_RETRY_BUDGET_MS);

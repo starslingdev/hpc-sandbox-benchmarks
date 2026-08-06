@@ -396,6 +396,19 @@ describe("assertCreateCeilingDeclared", () => {
 		).toThrow(/runcloud disabled the harness create timeout/);
 	});
 
+	it("throws on a ceiling that is present but cannot bound anything", () => {
+		// Zero, negative, and NaN (arithmetic over an unset constant) all reserve nothing, so they are
+		// the same overrun wearing a declared field — and a declared value reads as compliance, which
+		// makes it the more dangerous shape of the two.
+		for (const createAttemptCeilingMs of [0, -1, Number.NaN]) {
+			expect(() =>
+				assertCreateCeilingDeclared({
+					runcloud: { createTimeoutMs: null, createAttemptCeilingMs },
+				}),
+			).toThrow(/without declaring a positive createAttemptCeilingMs/);
+		}
+	});
+
 	it("holds for the real registry, so every race-disabling provider is budgetable", () => {
 		// run.cloud is the live instance of this shape; assert against the registry rather than naming
 		// it, so a future adapter that disables the race is covered by the same test.

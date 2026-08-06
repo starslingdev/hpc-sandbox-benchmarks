@@ -50,17 +50,21 @@ interface CreateBounds {
  * 20-minute readiness wait started at minute 59 of a one-hour budget). Checked at load, next to
  * {@link assertProviderJoin}, because the alternative is discovering it in a matrix job that blew its
  * timeout. Adapters are passed in as plain records so the guard stays a pure, unit-testable function.
+ *
+ * The ceiling must be POSITIVE, not merely present: zero (or a negative, or a NaN from arithmetic on
+ * an unset constant) reserves nothing, which is the same overrun wearing a declared field. A declared
+ * ceiling that cannot bound an attempt is worse than a missing one — it reads as compliance.
  */
 export function assertCreateCeilingDeclared(
 	adapters: Readonly<Record<string, CreateBounds>>,
 ): void {
 	const undeclared = Object.entries(adapters)
-		.filter(([, a]) => a.createTimeoutMs === null && a.createAttemptCeilingMs === undefined)
+		.filter(([, a]) => a.createTimeoutMs === null && !((a.createAttemptCeilingMs ?? 0) > 0))
 		.map(([id]) => id);
 	if (undeclared.length === 0) return;
 	throw new Error(
 		`Provider adapter misconfigured — ${undeclared.join(", ")} disabled the harness create timeout ` +
-			`(createTimeoutMs: null) without declaring createAttemptCeilingMs, so the create-retry budget ` +
-			`cannot bound an attempt`,
+			`(createTimeoutMs: null) without declaring a positive createAttemptCeilingMs, so the ` +
+			`create-retry budget cannot bound an attempt`,
 	);
 }

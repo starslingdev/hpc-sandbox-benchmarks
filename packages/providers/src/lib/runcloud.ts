@@ -54,6 +54,10 @@ const CREATE_RECONCILE_RETRY_MS = 2_000;
  * It is a CEILING, not an expectation — the observed create is seconds. Reserving it costs patience
  * (the harness stops starting new attempts this much earlier), which is the deliberate trade: a cell
  * that gives up slightly sooner beats one whose failure marker lands after the budget expired.
+ *
+ * Describes the DEFAULT bounds, which is what the registry gets ({@link runcloudCompute} is wired
+ * there with no options); a caller that shrinks or widens them through the test seams owns the
+ * arithmetic itself.
  */
 export const RUNCLOUD_CREATE_CEILING_MS =
 	// The create POST itself.
