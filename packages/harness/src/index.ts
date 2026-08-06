@@ -289,6 +289,10 @@ export interface CreateSuiteSandboxContext {
 	 *  unexercised retry path is what let a hard-failing create reach production in the first place. */
 	retryDelayMs?: number;
 	retryBudgetMs?: number;
+	/** Test seam for the backoff itself, so a timer that fires LATE (the case the post-sleep deadline
+	 *  recheck exists for) is reproducible instead of dependent on event-loop pressure. Production uses
+	 *  `setTimeout`. */
+	sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -324,7 +328,44 @@ export async function createSuiteSandbox(
 	// an adapter that disables the race without one. Zero only for a hand-built context that disables
 	// the race and declares nothing — nothing can be reserved for an attempt of unknown cost.
 	const attemptCeilingMs = createTimeoutMs ?? ctx.createAttemptCeilingMs ?? 0;
+	const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	const createDeadline = Date.now() + (ctx.retryBudgetMs ?? CREATE_RETRY_BUDGET_MS);
+	/** True while the budget can still absorb a whole attempt, starting `inMs` from now. The one place
+	 *  patience is decided, asked both before the backoff (is another round worth sleeping for?) and
+	 *  after it (did the sleep overrun what was reserved?). */
+	const fitsInBudget = (inMs: number): boolean =>
+		Date.now() + inMs + attemptCeilingMs <= createDeadline;
+	/**
+	 * Record the creation failure and rethrow the provider's own error — the single exit for every way
+	 * this function gives up, so the marker can never be skipped on one of them.
+	 *
+	 * The write is best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
+	 * provider error — the creation failure is the fact worth propagating, the marker is its paper
+	 * trail. Log the write failure and rethrow the original either way. The ORIGINAL error propagates
+	 * unwrapped: bench-suite matches on the provider's own message, and `createSuiteSandbox` is called
+	 * outside {@link runSuiteOnSandbox}, so this throw never reaches the suite-level marker writer that
+	 * reads a classification. The marker written here already carries the cause as a plain value, which
+	 * is the only place it is read.
+	 */
+	const giveUp = (err: unknown, message: string): never => {
+		try {
+			writeGapMarker(
+				resultsDir,
+				providerName,
+				suiteName,
+				"failed",
+				`${CREATE_FAILURE_PREFIX}${message}`,
+				{ kind: "sandbox-create-failed", detail: message },
+			);
+		} catch (markerErr) {
+			console.error(
+				`Could not write the creation-failure gap marker (${
+					markerErr instanceof Error ? markerErr.message : String(markerErr)
+				}); the sandbox-creation error below is unaffected`,
+			);
+		}
+		throw err;
+	};
 	for (let attempt = 1; ; attempt++) {
 		// Undefined until `sandbox.create` is actually invoked: a factory throw leaves it unset (nothing
 		// was created, so there is nothing to clean up), while a create that outlives the timeout leaves it
@@ -367,37 +408,17 @@ export async function createSuiteSandbox(
 			// whose attempts run long (run.cloud's adapter-owned readiness wait) begin one final attempt at
 			// the edge of the budget and land its failure marker — and the matrix cell — far outside the
 			// hour the budget promises.
-			if (!retryable || Date.now() + retryDelayMs + attemptCeilingMs > createDeadline) {
-				// Best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
-				// provider error — the creation failure is the fact worth propagating, the marker is its
-				// paper trail. Log the write failure and rethrow the original either way.
-				try {
-					writeGapMarker(
-						resultsDir,
-						providerName,
-						suiteName,
-						"failed",
-						`${CREATE_FAILURE_PREFIX}${message}`,
-						{ kind: "sandbox-create-failed", detail: message },
-					);
-				} catch (markerErr) {
-					console.error(
-						`Could not write the creation-failure gap marker (${
-							markerErr instanceof Error ? markerErr.message : String(markerErr)
-						}); the sandbox-creation error below is unaffected`,
-					);
-				}
-				// The ORIGINAL error propagates, unwrapped: bench-suite matches on the provider's own message
-				// and `createSuiteSandbox` is called outside `runSuiteOnSandbox`, so this throw never reaches
-				// the suite-level marker writer that reads a classification. The marker written just above
-				// already carries the cause as a plain value, which is the only place it is read.
-				throw err;
-			}
+			if (!retryable || !fitsInBudget(retryDelayMs)) giveUp(err, message);
 			console.log(
 				`Sandbox create attempt ${attempt} failed transiently (${message.slice(0, 140)}); ` +
 					`retrying in ${retryDelayMs / 1000}s...`,
 			);
-			await new Promise((r) => setTimeout(r, retryDelayMs));
+			await sleep(retryDelayMs);
+			// `setTimeout` guarantees a floor, not a ceiling: a loaded runner (or a suspended process) can
+			// return from that sleep well after `retryDelayMs`, and the reservation made before it was
+			// arithmetic on a time that has since passed. Re-ask against the clock now, so a late timer
+			// spends the budget rather than silently pushing the next attempt past it.
+			if (!fitsInBudget(0)) giveUp(err, message);
 		}
 	}
 }

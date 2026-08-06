@@ -411,6 +411,7 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			createAttemptCeilingMs?: number;
 			retryDelayMs?: number;
 			retryBudgetMs?: number;
+			sleep?: (ms: number) => Promise<void>;
 		} = {},
 	) => ({
 		suite: suite({}),
@@ -565,6 +566,36 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 					createAttemptCeilingMs: 5_000,
 					retryDelayMs: 10,
 					retryBudgetMs: 1_000,
+				}),
+			),
+		).rejects.toThrow("create did not settle");
+		expect(attempts).toBe(1);
+		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8")).outcome).toBe("failed");
+	});
+
+	it("re-checks the budget after a backoff timer that fires late", async () => {
+		const resultsDir = freshDir();
+		let attempts = 0;
+		const compute = {
+			sandbox: {
+				create: async (): Promise<SandboxHandle> => {
+					attempts++;
+					throw markRetryableCreate(new Error("create did not settle"));
+				},
+			},
+		};
+		// setTimeout promises a floor, not a ceiling: a loaded runner can return from the backoff long
+		// after it was asked to. The pre-sleep reservation was arithmetic on a clock reading that is now
+		// stale, so without the recheck this late sleep would start an attempt the budget cannot cover.
+		await expect(
+			createSuiteSandbox(
+				() => compute,
+				createCtx(resultsDir, {
+					createTimeoutMs: null,
+					createAttemptCeilingMs: 10,
+					retryDelayMs: 1,
+					retryBudgetMs: 40,
+					sleep: () => new Promise((r) => setTimeout(r, 60)),
 				}),
 			),
 		).rejects.toThrow("create did not settle");
