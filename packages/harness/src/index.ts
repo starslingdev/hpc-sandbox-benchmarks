@@ -221,6 +221,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		resultsDir,
 		createOptions: config.createOptions,
 		createTimeoutMs: config.createTimeoutMs,
+		createAttemptCeilingMs: config.createAttemptCeilingMs,
 	});
 
 	await runSuiteOnSandbox(sandbox, {
@@ -278,6 +279,11 @@ export interface CreateSuiteSandboxContext {
 	 *  or `null` when the adapter owns readiness + failed-allocation cleanup and abandoning its promise
 	 *  would terminate that cleanup. Injectable so both paths are exercisable in tests. */
 	createTimeoutMs?: number | null;
+	/** Worst case one attempt can cost when `createTimeoutMs` is `null` — the ceiling the ADAPTER
+	 *  enforces (see {@link ProviderConfig.createAttemptCeilingMs}), which the registry requires such an
+	 *  adapter to declare. Ignored when the harness bounds the attempt itself: `createTimeoutMs` is then
+	 *  the ceiling. */
+	createAttemptCeilingMs?: number;
 	/** Test seams for the capacity-retry loop. Production always uses the module constants; a test that
 	 *  had to spend the real 2-minute delay to reach the second attempt would not be written, and an
 	 *  unexercised retry path is what let a hard-failing create reach production in the first place. */
@@ -296,6 +302,10 @@ export interface CreateSuiteSandboxContext {
  * throw that finally spends the budget records the failure. Split from {@link runSuite} (the
  * runSuiteOnSandbox precedent) so this is testable against a fake compute.
  *
+ * The retry budget bounds the whole call, not just the sleeps between attempts: a new attempt starts
+ * only while the budget can still cover the backoff PLUS that attempt's worst case, so the failure
+ * marker lands inside the budget rather than one attempt past it.
+ *
  * `computeFactory` (not a pre-built compute) so adapter construction lives INSIDE the marker path — a
  * computesdk provider can throw before `sandbox.create`, and that throw must be recorded too. The
  * factory is cheap and idempotent, so re-invoking it per capacity retry is harmless.
@@ -308,6 +318,12 @@ export async function createSuiteSandbox(
 	const createTimeoutMs =
 		ctx.createTimeoutMs === undefined ? CREATE_ATTEMPT_TIMEOUT_MS : ctx.createTimeoutMs;
 	const retryDelayMs = ctx.retryDelayMs ?? CREATE_RETRY_DELAY_MS;
+	// What one more attempt can cost, so the loop only starts an attempt the budget can still absorb.
+	// When the harness races the create, its own timeout IS that ceiling; when the adapter owns the
+	// bound (`createTimeoutMs: null`) it declares the ceiling instead, and the provider registry refuses
+	// an adapter that disables the race without one. Zero only for a hand-built context that disables
+	// the race and declares nothing — nothing can be reserved for an attempt of unknown cost.
+	const attemptCeilingMs = createTimeoutMs ?? ctx.createAttemptCeilingMs ?? 0;
 	const createDeadline = Date.now() + (ctx.retryBudgetMs ?? CREATE_RETRY_BUDGET_MS);
 	for (let attempt = 1; ; attempt++) {
 		// Undefined until `sandbox.create` is actually invoked: a factory throw leaves it unset (nothing
@@ -346,7 +362,12 @@ export async function createSuiteSandbox(
 			// 30960125032 in seconds instead of letting the cells queue.
 			const retryable =
 				isRetryableCreateError(err) || /quota|rate.?limit|too many|capacity|429/i.test(message);
-			if (!retryable || Date.now() + retryDelayMs > createDeadline) {
+			// The budget bounds the CELL, not just the sleeps: an attempt is only started when the backoff
+			// AND the attempt's own worst case still fit inside it. Checking the delay alone let a provider
+			// whose attempts run long (run.cloud's adapter-owned readiness wait) begin one final attempt at
+			// the edge of the budget and land its failure marker — and the matrix cell — far outside the
+			// hour the budget promises.
+			if (!retryable || Date.now() + retryDelayMs + attemptCeilingMs > createDeadline) {
 				// Best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
 				// provider error — the creation failure is the fact worth propagating, the marker is its
 				// paper trail. Log the write failure and rethrow the original either way.

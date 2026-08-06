@@ -408,6 +408,7 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		resultsDir: string,
 		overrides: {
 			createTimeoutMs?: number | null;
+			createAttemptCeilingMs?: number;
 			retryDelayMs?: number;
 			retryBudgetMs?: number;
 		} = {},
@@ -540,6 +541,65 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		).rejects.toThrow("no slot right now");
 		expect(attempts).toBe(1);
 		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8")).outcome).toBe("failed");
+	});
+
+	it("stops when the budget can cover the backoff but not another adapter-bounded attempt", async () => {
+		const resultsDir = freshDir();
+		let attempts = 0;
+		const compute = {
+			sandbox: {
+				create: async (): Promise<SandboxHandle> => {
+					attempts++;
+					throw markRetryableCreate(new Error("create did not settle"));
+				},
+			},
+		};
+		// The run.cloud shape: the harness race is off, so an attempt is bounded only by the ceiling the
+		// adapter declares. Room for the 10ms backoff but not the 5s attempt behind it — starting one
+		// would put the failure marker (and the matrix cell) seconds past the budget it promised.
+		await expect(
+			createSuiteSandbox(
+				() => compute,
+				createCtx(resultsDir, {
+					createTimeoutMs: null,
+					createAttemptCeilingMs: 5_000,
+					retryDelayMs: 10,
+					retryBudgetMs: 1_000,
+				}),
+			),
+		).rejects.toThrow("create did not settle");
+		expect(attempts).toBe(1);
+		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8")).outcome).toBe("failed");
+	});
+
+	it("keeps retrying while the budget still covers the backoff and one whole attempt", async () => {
+		const resultsDir = freshDir();
+		const handle = makeSandbox({ destroyed: { hit: false } });
+		let attempts = 0;
+		const compute = {
+			sandbox: {
+				create: async (): Promise<SandboxHandle> => {
+					attempts++;
+					if (attempts < 2) throw markRetryableCreate(new Error("create did not settle"));
+					return handle;
+				},
+			},
+		};
+		// Same shape, ample budget: reserving one attempt's worth must not collapse the retry loop into
+		// a single try for the adapters that need it most.
+		await expect(
+			createSuiteSandbox(
+				() => compute,
+				createCtx(resultsDir, {
+					createTimeoutMs: null,
+					createAttemptCeilingMs: 5_000,
+					retryDelayMs: 1,
+					retryBudgetMs: 60_000,
+				}),
+			),
+		).resolves.toBe(handle);
+		expect(attempts).toBe(2);
+		expect(existsSync(join(resultsDir, MARKER))).toBe(false);
 	});
 
 	it("writes a FAILED marker when adapter construction (the factory) throws before create", async () => {

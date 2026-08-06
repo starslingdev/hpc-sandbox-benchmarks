@@ -37,6 +37,13 @@ export interface ProviderAdapter {
 	 *  adapter owns a bounded readiness wait and must finish its own failed-allocation cleanup before
 	 *  the caller can safely exit. Omitted when the default is adequate. */
 	createTimeoutMs?: number | null;
+	/** Worst-case wall time one `create` can spend before it settles, as bounded by the ADAPTER itself.
+	 *  Required whenever `createTimeoutMs` is `null` (enforced at registry load by
+	 *  {@link assertCreateCeilingDeclared}): with the harness race off, this is the only thing that
+	 *  tells the retry loop how much budget an attempt can consume, and without it the loop can start
+	 *  an attempt that outlives the retry budget it promised. Meaningless — and omitted — when the
+	 *  harness bounds the attempt itself, because there `createTimeoutMs` already IS the ceiling. */
+	createAttemptCeilingMs?: number;
 }
 
 /** A provider as the harness consumes it: schema-owned identity joined with the harness adapter. */

@@ -17,7 +17,7 @@ import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
 import { novitaCompute } from "./novita.ts";
-import { runcloudCompute } from "./runcloud.ts";
+import { RUNCLOUD_CREATE_CEILING_MS, runcloudCompute } from "./runcloud.ts";
 import { runloopCompute } from "./runloop.ts";
 import type { ProviderAdapter } from "./types.ts";
 import { vercelCompute } from "./vercel.ts";
@@ -265,5 +265,8 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 			timeoutSeconds: RUNCLOUD_MAX_DURATION_SECS,
 		},
 		createTimeoutMs: null,
+		// With the harness race off, the adapter's own bounds are the only ceiling on an attempt — hand
+		// them over so the create-retry loop can refuse a retry the budget cannot absorb.
+		createAttemptCeilingMs: RUNCLOUD_CREATE_CEILING_MS,
 	},
 };
