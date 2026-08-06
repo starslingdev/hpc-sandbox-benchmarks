@@ -7,7 +7,7 @@ status: proposed
 ## Context
 
 Adding one benchmarked provider currently touches 25–34 files. Measured over the last four
-additions (`4ee64f2` microsandbox, `6da0dce` vercel, `22f36c4` runcloud, `36a802a` runloop):
+additions:
 
 | Commit | Files changed |
 |---|---|
@@ -31,248 +31,309 @@ apps/cli/src/bin/bake.ts                    .github/workflows/toolchain-image.ym
 ```
 
 The genuinely novel work — the adapter (`runcloud.ts` is 576 lines, `microsandbox.ts` 630) and its
-bake module — is 2–4 files. Everything else is re-spelling the same fact in a new dialect.
+bake module — is 2–4 files. Everything else re-spells the same fact in a new dialect.
 
 ### What already works
 
-The **runtime** path is fully registry-driven and needs no edit per provider. `PROVIDERS` (derived
-from `REGISTRY` in `packages/schema/src/providers.ts`) already feeds the matrix fan-out
-(`apps/cli/src/lib/matrix.ts:57`), normalization (`packages/results/src/lib/normalize-tree.ts:52`),
-figures (`packages/results/src/lib/figures.ts:96`), economics
-(`packages/schema/src/economics.ts:107`), and the skip-vs-fail credential loop
-(`apps/cli/src/lib/providers-run.ts`). `packages/harness` contains no provider-keyed logic at all.
-That half of the design is right and this ADR does not touch it.
+The **runtime** path is fully registry-driven. `PROVIDERS` already feeds matrix fan-out
+(`apps/cli/src/lib/matrix.ts:57`), normalization (`results/src/lib/normalize-tree.ts:52`), figures
+(`results/src/lib/figures.ts:96`), economics (`schema/src/economics.ts:107`), and the skip-vs-fail
+credential loop (`apps/cli/src/lib/providers-run.ts`). `packages/harness` has no provider-keyed
+logic at all. This ADR does not touch that half.
 
 ### Where it hurts
 
-**1. The bake/release layer has no home for "what artifact does this provider boot?"**
-
-That single fact is currently spread across six exhaustive provider-keyed structures plus four
-hand-written literal bags, each encoding a different projection of it:
+**1. The bake/release layer has no home for "what artifact does this provider boot?"** That one
+fact is spread across six exhaustive provider-keyed structures plus four hand-written ref bags:
 
 | Site | Projection of the same fact |
 |---|---|
-| `providers/src/config.ts:113-148` | the candidate/version *names* (12 consts, 2 of them aliases) |
-| `cli/src/bin/bake.ts:32-66` | `bakers` — name → builder, at the **candidate** name |
-| `cli/src/lib/bake/promote.ts:295-348` | the same list again, at the **version** name |
-| `cli/src/lib/bake/validate.ts:39-58` | `baseImageUse` — `bakes` / `boots` / `none` |
+| `providers/src/config.ts:113-148` | candidate/version *names* (12 consts, 2 aliases) |
+| `cli/src/bin/bake.ts:32-66` | `bakers` — builder at the **candidate** name |
+| `cli/src/lib/bake/promote.ts:295-348` | the same list at the **version** name |
+| `cli/src/lib/bake/validate.ts:39-58` | `baseImageUse` — `bakes`/`boots`/`none` |
 | `cli/src/lib/bake/validate.ts:61-107` | `candidateCreateOptions` — which create key points at it |
-| `cli/src/bin/release-plan.ts:61-89` | `providerArtifact` — the name, for the plan display |
+| `cli/src/bin/release-plan.ts:61-89` | `providerArtifact` — the name, for plan display |
 | `cli/src/lib/bake/validate.ts:6-23` | `CandidateRefs` — one field per artifact |
 | `bake.ts:180-191`, `:232-242`, `:288-296`, `promote.ts:250-260` | four literal bags of the same names |
 
-`bake.ts` and `promote.ts` differ *only* in whether they pass the candidate or the version name.
-`candidateCreateOptions` is `adapters[id].createOptions` with the name swapped. `baseImageUse` is a
-three-way classification derivable from whether an artifact exists and whether it derives from the
-base. None of this is independent information.
+`bake.ts` and `promote.ts` differ *only* in candidate-vs-version name. `candidateCreateOptions` is
+`adapters[id].createOptions` with the name swapped. None of this is independent information. Worse,
+**seven of the thirteen `bakers` entries are no-ops** that exist only to satisfy
+`Record<ProviderId, …>` — the type is forcing us to write code for providers that bake nothing.
 
-**2. GitHub Actions can't import TypeScript, so the provider vocabulary is re-spelled by hand.**
+**2. Provider identity is stringly-typed at every process boundary.** Ids leave TypeScript as CSV in
+`$GITHUB_OUTPUT`, pass through `fromJSON()` in YAML, and return as `--provider e2b,daytona-vm`
+argv. Each crossing re-validates ad hoc, and `plan-axis.ts:24` erases the type outright
+(`select: (raw: string | undefined) => string[]`), then round-trips through
+`JSON.stringify`/`JSON.parse` *within a single process* (`plan-axis.ts:29,53`) to hand downstream
+code back a bare `string[]`.
 
-Three near-identical credential blocks exist — `bench-suite.yml:240-277` (15 keys),
-`toolchain-image.yml:511-544` (bake cell), `toolchain-image.yml:720-751` (promote, a third dialect
-using `contains(fromJSON(…))` instead of `matrix.provider ==`) — plus `bench-smoke.yml:55-70`'s
-choice list and `bench-matrix.yml:64`'s default CSV. All are mechanical functions of
-`requiredEnvVars`.
+**3. GitHub Actions can't import TypeScript, so the vocabulary is re-spelled by hand.** Three
+near-identical credential blocks — `bench-suite.yml:240-277`, `toolchain-image.yml:511-544`, and
+`toolchain-image.yml:720-751` (a third dialect using `contains(fromJSON(…))`) — plus
+`bench-smoke.yml`'s choice list and `bench-matrix.yml:64`'s CSV. All are mechanical functions of
+`requiredEnvVars`. `workflow-sync.ts:105` already computes `requiredCredentialKeys()` — **the
+generator exists inside the checker; it just compares instead of emitting.** The other ~20 CI/doc
+sites have no gate, and `setup-privileged-environment.sh:57-62` is already stale (omits
+`RUNLOOP_API_KEY` and all three `VERCEL_*`).
 
-The repo already *verifies* two of these: `tooling/repo-checks/src/lib/workflow-sync.ts:105`
-computes `requiredCredentialKeys()` — provider `requiredEnvVars` folded into a key → owners map —
-and asserts each key is present. **The generator already exists inside the checker; it just
-compares instead of emitting.** The other 20 CI/doc edit sites (`bench-matrix.yml`'s CSV, both
-`toolchain-image.yml` blocks, `docs/ci-secrets.md:208-227`,
-`scripts/setup-privileged-environment.sh:57-62`, `.env.example`) have no gate at all, and
-`setup-privileged-environment.sh` is already stale — it omits `RUNLOOP_API_KEY` and all three
-`VERCEL_*` entries.
+**4. The env gatekeeper hand-syncs a schema against a key array.** `providers/src/config.ts:23-44`
+declares `envSchema`; `:46-62` repeats every key in `ENV_KEYS`; `:73-76` loops over the array to
+build the input. A key added to one and not the other is **silently dropped** — no compile error, no
+test. This is a latent bug, not a style issue.
 
-**3. A layer of surfaces that fail *silently* rather than loudly.**
-
-The compile errors and drift gates are the easy half — they tell you what to fix. These don't:
+**5. Surfaces that fail silently rather than loudly.**
 
 | Site | Silent failure for a new provider |
 |---|---|
-| `figures/src/model.ts:105-111` `figureProviderName` | prefix map (`daytona*`→"Daytona", …); a new multi-variant vendor prints its full registry name in charts |
-| `figures/src/model.ts:114-137` `isolationFromRuntime` | substring map over VMM names; a novel VMM yields `undefined` and the chart chip goes **blank** |
-| `results/src/lib/leaderboard.ts:646-653` `isolationClass` | order-sensitive `gvisor`→`vm`→`container` sniffing of the declared isolation string |
-| `harness/src/index.ts:404-405` | capacity errors are classified by regex (`/quota\|rate.?limit\|too many\|capacity\|429/i`); a provider whose wording matches none of it **hard-fails instead of retrying** — the comment at `:402` records exactly this happening to runcloud |
-| `AGENTS.md:46` | hand-listed "E2B/Daytona/Modal/Blaxel/Novita" — already stale by five providers |
-| `.env.example` | has no Namespace stanza at all |
+| `figures/src/model.ts:105-111` `figureProviderName` | prefix map; a new multi-variant vendor prints its full registry name in charts |
+| `figures/src/model.ts:114-137` `isolationFromRuntime` | substring map; a novel VMM yields `undefined` and the chart chip goes **blank** |
+| `results/src/lib/leaderboard.ts:646-653` `isolationClass` | order-sensitive `gvisor`→`vm`→`container` sniffing |
+| `harness/src/index.ts:404-405` | capacity errors classified by regex; a provider whose wording differs **hard-fails instead of retrying** — `:402` records this happening to runcloud |
 
-The first three are the same mistake as the bake layer above: a fact the provider *knows about itself* (its vendor,
-its isolation vocabulary) is being re-derived by string-sniffing at the consumer.
-
-**4. Five independent hardcoded id-list oracles.**
-
-`providers.test.ts:24-39`, `providers-run.test.ts:33-48`, `release-plan.test.ts:66-79`,
-`validate.test.ts:104-123`, `templates/src/index.test.ts:25`. The "deliberately hardcoded
-independent oracle" property is worth keeping — it stops a registry typo from self-approving — but
-it is worth keeping *once*, not five times in two different sort orders (some alphabetical, some
-`REGISTRY` declaration order).
-
-CONTRIBUTING's own "Add a provider" checklist has a step named **"Exhaustive consumers"**
+**6. Five hardcoded id-list oracles** (`providers.test.ts:24-39`, `providers-run.test.ts:33-48`,
+`release-plan.test.ts:66-79`, `validate.test.ts:104-123`, `templates/src/index.test.ts:25`) in two
+different sort orders. CONTRIBUTING's own checklist has a step named **"Exhaustive consumers"**
 (`CONTRIBUTING.md:60`). That step is the bug.
 
 ## Decision
 
-Six moves, in dependency order. Each is independently shippable, and each removes edit sites the
-next one would otherwise have to generate — which is why the scaffold comes last, not first.
+### Where parsing lives: three tiers
 
-### 1. Give the boot artifact a declarative home
+ADR-0001 established parse-don't-validate at every external boundary. The question this ADR has to
+answer is *which* of the provider seams are boundaries, because the answer is measured, not
+aesthetic. Import costs on this machine (bun 1.3.11, arktype 2.2.0):
 
-Add one field to `ProviderMeta`. Data only — no builder functions, so it stays in `schema` without
-inverting the dependency DAG (ADR-0002):
+| Module | Cost |
+|---|---|
+| `node:path` (baseline) | 3.1 ms |
+| `@sandbox-benchmarks/schema/toolchain` | 4.3 ms |
+| **`@sandbox-benchmarks/schema/providers`** (no arktype today) | **6.6 ms** |
+| `arktype` (library import alone) | 265 ms |
+| `@sandbox-benchmarks/providers/config` (imports arktype) | 267 ms |
+| compiling a provider-registry schema + asserting 14 entries | +53 ms |
+
+`config.ts:5-7` already documents choosing leaf imports over the barrel for exactly this reason.
+Putting an arktype schema in `schema/providers` would turn a **6.6 ms leaf into ~320 ms** — a 48×
+regression on the module the config gatekeeper deliberately leaf-imports, paid by every CLI bin and
+every harness process. So:
+
+- **Tier 1 — committed source (the registry literal): plain TypeScript.** It is not a trust
+  boundary; it is type-checked source. `as const satisfies` plus discriminated unions give full
+  inference at zero runtime cost.
+- **Tier 2 — process boundaries (env, argv, `$GITHUB_OUTPUT`, JSON artifacts): arktype morphs.**
+  These are genuinely untrusted, crossed repeatedly, and currently guarded ad hoc. One parser per
+  boundary, narrowed literal types out the other side.
+- **Tier 3 — generator and gates (build time): arktype for invariants types can't express.** The
+  265 ms is free in a generator that runs on demand, so the descriptor schema and its `.narrow()`
+  rules live here, not in the hot import path.
+
+Everything below is verified against arktype 2.2.0, including the type-level assertions.
+
+### 1. Model the artifact as a discriminated union, and derive the partitions (Tier 1)
 
 ```ts
 export type ProviderArtifact =
-  /** Boots a vendor image we don't control (blaxel). */
-  | { kind: "none" }
-  /** Boots the shared toolchain image by ref; nothing to bake (modal, namespace, runcloud,
-   *  microsandbox). `optionKey` is how create() is told which image. */
-  | { kind: "image"; optionKey: "templateId" | "image" }
-  /** Bakes its own named artifact FROM the base (e2b, daytona-*, novita, runloop). */
-  | { kind: "baked"; optionKey: "snapshotId" | "blueprint_name" | "templateId";
-      /** Appended to the shared `<TOOLCHAIN_IMAGE_NAME>-<TOOLCHAIN_VERSION>` stem. */
-      nameSuffix?: string }
-  /** Mirrors the base into a vendor registry (vercel). */
-  | { kind: "mirror"; optionKey: "templateId"; repository: string };
+  | { kind: "none" }                                                    // blaxel: vendor stock image
+  | { kind: "image";  optionKey: "templateId" | "image" }               // modal, namespace, runcloud, microsandbox
+  | { kind: "baked";  optionKey: "snapshotId" | "blueprint_name" | "templateId";
+      nameSuffix?: string }                                             // e2b, daytona-*, novita, runloop
+  | { kind: "mirror"; optionKey: "templateId"; repository: string };    // vercel
 ```
 
-Everything in the table above becomes a derivation:
-
-- **Artifact names** — one formula in `config.ts` (`stem`, `+ nameSuffix`, `+ "-candidate"`)
-  replaces 12 consts. The e2b/novita/runloop aliasing (and the comment explaining why they must not
-  drift) disappears: they share a name because they declare no suffix.
-- **`baseImageUse`** — `kind === "baked" ? "bakes" : kind === "image" ? "boots" : "none"`. Delete
-  the switch *and* `validate.test.ts`'s three partition oracles, which then assert a tautology.
-- **`candidateCreateOptions`** — `{ [artifact.optionKey]: candidateName(id) }`. Delete
-  `CandidateRefs` and its four construction sites; callers pass a scope, not a bag.
-- **`providerArtifact`** — the name, or the standard note keyed off `kind`.
-- **`bakers` + promote's switch** — collapse to one `Record<ProviderId, BakeFn>` in `apps/cli`
-  holding entries only for `kind === "baked"`, called with the candidate or version name. The bake
-  modules already share the signature `(name, baseImage, log) => Promise<void>`, so this needs no
-  change to `e2b.ts` / `daytona.ts` / `novita.ts` / `runloop.ts`.
-- **`adapters[id].createOptions`** — the `snapshotId`/`templateId`/`image` line stops being
-  hand-spelled; the adapter keeps only what is genuinely per-provider (sizing, timeouts, keep-alive).
-
-Six structures and four literal bags → one field and one builder map.
-
-### 2. Declare what the consumers are currently sniffing
-
-Three small fields kill the string-matching in the table above:
+With `REGISTRY` declared `as const satisfies Record<ProviderId, ProviderMeta>`, the *type system*
+partitions the providers:
 
 ```ts
-/** Short chart label. Variants of one vendor share it — replaces figureProviderName's prefix map. */
-vendor: string;                        // "Daytona", "Modal", "E2B", …
-/** Chip vocabulary, declared rather than substring-matched out of isolation.technology. */
-isolation: { technology: string; class: "microVM" | "container" | "userspace"; ... };
-/** Extra error substrings that mean "capacity, retry me" for this vendor's control plane. */
-retryableCreatePatterns?: string[];
+type IdsWithArtifact<K extends ProviderArtifact["kind"]> = {
+  [P in ProviderId]: (typeof REGISTRY)[P]["artifact"]["kind"] extends K ? P : never;
+}[ProviderId];
+
+export type BakedProviderId = IdsWithArtifact<"baked">;
 ```
 
-`figureProviderName` and `isolationFromDeclaration` become field reads. `isolationFromRuntime`
-stays — it maps *observed* runtime strings from the guest probe, which is genuinely not something
-the registry can declare. The capacity-error field is the declarative half of the escape hatch
-`markRetryableCreate` already provides in `packages/providers/src/lib/retryable-create.ts`; a
-provider that needs richer logic keeps using the function.
+`bakers` then becomes `Record<BakedProviderId, BakeFn>`, which is the payoff:
 
-### 3. Widen `requiredEnvVars` into a credential descriptor
+- the **seven no-op bakers become unconstructable** — giving `blaxel` a baker is a compile error;
+- **omitting a real one is a compile error**, so the map stays exhaustive over exactly the right set;
+- `baseImageUse`, `candidateCreateOptions`, `providerArtifact` and `CandidateRefs` all collapse into
+  reads off `artifact`, narrowed by `kind` with no casts;
+- `bake` and `promote` call **one** map, differing only in the name they pass.
 
-`string[]` can't express what the CI blocks need. Widen it (keeping the bare-string shorthand, so
-most entries don't change):
+All three negative cases above were verified to fail `tsc --strict` as intended. This is the
+"behavior follows from the narrowed type" property, and it costs nothing at runtime — arktype here
+would buy strictly less than the compiler already gives.
+
+### 2. One provider-identity parser for every boundary crossing (Tier 2)
+
+This is where arktype earns the most, because it replaces five ad-hoc validators with one:
 
 ```ts
-type ProviderCredential =
-  | string                                    // scoped secret, this provider only
-  | { name: string; source?: "secret" | "literal" | "step-output";
-      /** Variants that share one account credential (daytona-*, modal-*). */
-      sharedWith?: ProviderId[];
-      /** Workflow-side fallback, e.g. DAYTONA_TARGET → "us-west-2". */
-      default?: string;
-      value?: string };                       // for MICROSANDBOX_LOCAL_BENCH: '1'
+export const providerId = type.enumerated(...PROVIDER_IDS);
+
+/** CSV → typed ids. The only thing `--provider`, BENCH_PROVIDERS and plan-axis should use. */
+export const providerSelection = type("string")
+  .pipe((raw) => raw.split(",").map((s) => s.trim()).filter(Boolean))
+  .to(providerId.array().atLeastLength(1));
 ```
 
-Plus two optional per-provider CI facts that are currently ternaries in YAML:
+Verified: the result infers as the literal union (a `readonly ("e2b")[]` annotation is correctly
+rejected), and a typo produces
+`value at [1] must be "daytona-vm", "e2b", … (was "typo-provider")` — strictly better than today's
+hand-rolled message. `selectProviders`/`selectRegistryIds` and `plan-axis.ts`'s `string[]` erasure
+and internal `JSON.stringify`/`JSON.parse` round-trip all go away; `AxisPlanConfig.select` becomes
+typed rather than `=> string[]`.
+
+### 3. Parse the cross-process JSON artifacts (Tier 2)
+
+The release plan, the bake report and the GHA matrix are written by one process and consumed by
+another through a workflow output. Use the built-in keyword rather than a bare morph:
 
 ```ts
-runner?: string;        // microsandbox-local → "starsling-ubuntu-24.04-2"
-preAuth?: string;       // "namespace-token" | "vercel-auth"
+export const releaseMatrix = type("string.json.parse").to({
+  include: type({ provider: providerId, required: "boolean" }).array(),
+});
 ```
 
-### 4. Generate the managed regions, gate them the way ADR-0003 gates the catalog
+`type("string.json.parse")` reports `must be a JSON string (SyntaxError: …)`, where
+`.pipe.try(JSON.parse)` degrades to `must be valid according to an anonymous predicate` — useless in
+a CI log. A bad id reports `include[0].provider must be …`, with the path.
 
-Not whole-workflow codegen — the workflows carry substantial hand-tuned logic and rationale that
-should stay hand-written. Instead, marker-delimited **managed regions**, exactly the
-`generate-catalog` → `check-catalog-drift` pattern already accepted in ADR-0003:
+### 4. Fix the env gatekeeper with a single morph (Tier 2)
+
+`envSchema.props.map((p) => p.key)` recovers the declared keys, so the parallel `ENV_KEYS` array and
+the imperative filter loop both disappear, and issue 4's silent-drop bug becomes unrepresentable:
+
+```ts
+const declared = envSchema.props.map((p) => p.key as string);
+
+/** process.env → validated config input. Empty ⇒ unset stays the rule (config.ts:64-71), but it is
+ *  now part of the declared parse rather than a loop that can drift from the schema. */
+export const benchEnv = type("Record<string, string | undefined>")
+  .pipe((raw) => Object.fromEntries(
+    declared.flatMap((k) => (raw[k] ? [[k, raw[k]]] : [])),
+  ))
+  .to(envSchema);
+```
+
+### 5. Declare what consumers currently sniff (Tier 1)
+
+```ts
+vendor: string;                                                   // "Daytona" — kills figureProviderName's prefix map
+isolation: { technology: string; class: "microVM" | "container" | "userspace" };
+retryableCreatePatterns?: string[];                               // the declarative half of markRetryableCreate
+```
+
+`isolationClass` and `isolationFromDeclaration` become field reads. `isolationFromRuntime` **stays a
+matcher** — it maps *observed* strings from the guest probe, which the registry cannot know in
+advance. That is the line between domain modeling and genuine parsing.
+
+### 6. Credential descriptors with a normalizing morph (Tiers 2 + 3)
+
+`requiredEnvVars: string[]` can't express what the CI blocks need. Widen it, keep the string
+shorthand, and normalize once so no consumer handles two shapes:
+
+```ts
+const credentialInput = type("string >= 1").or({
+  name: "string >= 1",
+  "source?": "'secret' | 'literal' | 'step-output'",
+  "sharedWith?": "(string >= 1)[]",     // daytona-*/modal-* share one account credential
+  "default?": "string >= 1",            // DAYTONA_TARGET → "us-west-2"
+});
+
+export const credential = credentialInput.pipe((c) =>
+  typeof c === "string"
+    ? { name: c, source: "secret" as const, sharedWith: [] }
+    : { ...c, source: c.source ?? ("secret" as const), sharedWith: c.sharedWith ?? [] },
+);
+```
+
+Verified: mixed shorthand/full input normalizes to one shape, and `""` is rejected at
+`value at [0] must be non-empty`. The YAML emitter then consumes a uniform record and re-checks
+nothing. Two further Tier-1 fields cover the remaining per-provider CI facts that are ternaries in
+YAML today: `runner?: string` and `preAuth?: "namespace-token" | "vercel-auth"`.
+
+### 7. Generate the managed regions, gate them the way ADR-0003 gates the catalog (Tier 3)
+
+Not whole-workflow codegen — the workflows carry hand-tuned logic worth keeping. Marker-delimited
+**managed regions**, exactly the `generate-catalog` → `check-catalog-drift` pattern:
 
 ```yaml
 # >>> generated: provider-credentials — bun run generate-provider-wiring
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          ...
 # <<< end generated
 ```
 
-Regions to manage, all derived from §3's descriptors:
+Regions: the three credential blocks, `bench-smoke.yml`'s choice options,
+`docs/ci-secrets.md:208-227`, `scripts/setup-privileged-environment.sh:57-62`, and `.env.example`.
+`bun run check:provider-wiring` re-runs the generator and `git diff --exit-code`s — byte-identical to
+`check-catalog-drift.ts:14-30`.
 
-| File | Region |
-|---|---|
-| `bench-suite.yml:240-277` | benchmark-cell credential env |
-| `toolchain-image.yml:511-544` | bake-cell credential env |
-| `toolchain-image.yml:720-751` | promote credential env (its own `contains(fromJSON(…))` dialect) |
-| `bench-smoke.yml:55-70` | `provider` choice options |
-| `docs/ci-secrets.md:208-227` | Environment secret table |
-| `scripts/setup-privileged-environment.sh:57-62` | operator checklist (already stale) |
-| `.env.example` | per-provider stanzas |
+The generator is also where the descriptor's **arktype schema** lives: the invariants currently
+asserted only in `providers.test.ts` (`requiredEnvVars` non-empty; `syncCapMs` finite ⇒
+`detachedPoll: true`; variants of one vendor share a pricing object) become `.narrow()` rules on a
+schema the generator runs, so they are enforced against the descriptor *before* it is allowed to emit
+CI wiring that grants secrets. Costing 265 ms in a build-time generator is free; costing it in
+`schema/providers` is not.
 
-`bun run check:provider-wiring` re-runs the generator and `git diff --exit-code`s — byte-identical
-to `check-catalog-drift.ts:14-30`. `bench-matrix.yml:64`'s default CSV stays hand-edited: a
-provider joining the *published* matrix is a deliberate promotion decision, not a mechanical
-consequence of registering it, and the 18-line rationale comment above it is real content.
+`bench-matrix.yml:64`'s default CSV stays hand-edited: joining the published matrix is a deliberate
+promotion decision, not a mechanical consequence of registering, and the 18-line rationale above it
+is real content. `workflow-sync.ts` invariants 1 and 3 are deleted as redundant — a generated region
+cannot drift from its generator. Invariants 2, 3b, 4–7 are unrelated to onboarding and stay.
+Pre-auth steps stay hand-written (Vercel's VCR mirror is ~50 bespoke lines) but gain a cheap gate: a
+provider declaring `preAuth` must have the step in both lanes.
 
-`workflow-sync.ts`'s invariants 1 and 3 become redundant and get deleted — a generated region can't
-drift from its generator. Invariants 2, 3b, 4–7 (suite vocabulary, lane delegation, timeout/budget
-equality, nesting) are unrelated to provider onboarding and stay. Pre-auth steps (§3's `preAuth`)
-also stay hand-written — Vercel's VCR mirror is ~50 lines of genuinely bespoke logic — but gain a
-cheap gate: a provider declaring `preAuth` must have the step present in both lanes.
+### 8. Close the loop: the generator emits `as const satisfies`
 
-### 5. One id oracle
+Generated TypeScript is re-checked by `tsc`, so arktype validates the generator's *input* and the
+compiler validates its *output*. Neither is trusted blindly, and a generator bug that emits a
+malformed registry fails typecheck rather than shipping.
 
-Keep the hardcoded list in `providers.test.ts:24-39` — that is the independent oracle and it earns
-its place. Convert the other four: `validate.test.ts`'s partitions become tautological after §1 and
-are deleted; `providers-run.test.ts`, `release-plan.test.ts` and `templates/index.test.ts` assert
-*properties* over `PROVIDERS` (every provider resolves, every baked provider has a builder) rather
-than re-listing membership.
+### 9. Then, and only then, scaffold
 
-### 6. Then, and only then, scaffold
-
-`bun run new-provider <id>` appends a `REGISTRY` entry from a prompt, stubs
-`packages/providers/src/lib/<id>.ts` (and `apps/cli/src/lib/bake/<id>.ts` when
-`artifact.kind === "baked"`), runs the generators, and prints what remains.
+`bun run new-provider <id>` takes a small descriptor file, parses it with the Tier-3 schema, appends
+the `REGISTRY` entry, stubs `packages/providers/src/lib/<id>.ts` (and `apps/cli/src/lib/bake/<id>.ts`
+only when `artifact.kind === "baked"`), and runs the generators.
 
 Scaffolding is deliberately last. Generating 22 edit sites is not an improvement over typing them —
-it just makes the duplication cheaper to create and no cheaper to maintain. The scaffold is only
-worth writing once §1–§4 have reduced its output to three files.
+it makes duplication cheaper to create and no cheaper to maintain. It is worth writing once §1–§7
+have cut its output to three files.
+
+### Oracles
+
+Keep the hardcoded list in `providers.test.ts:24-39` — that is the independent oracle and it earns
+its place. The rest dissolve: `validate.test.ts`'s three partition oracles become tautologies once
+§1 derives the partitions at the type level, and the remaining three assert properties over
+`PROVIDERS` instead of re-listing membership.
 
 ## Consequences
 
-**Adding a provider becomes:** one `REGISTRY` entry (identity, pricing, transport, artifact,
-credentials) → one adapter file → optionally one bake file → `bun run generate-provider-wiring` →
-review the generated diff. Three hand-edited files plus a generated diff, against 25–34 today. The
-`bench-matrix.yml` default CSV remains a separate, deliberate promotion step, as it should be.
+**Adding a provider becomes:** one `REGISTRY` entry → one adapter file → optionally one bake file →
+`bun run generate-provider-wiring` → review the generated diff. Three hand-edited files against
+25–34 today, with the `bench-matrix.yml` promotion still a separate, deliberate step.
 
 **We accept:**
 
-- **A wider `ProviderMeta`.** Identity, economics, artifact and CI wiring all live in one record.
-  That is a real cost — the schema now knows the string `"starsling-ubuntu-24.04-2"` — but the
-  alternative is what exists today: the same facts scattered across nine files with no gate. The
-  entry stays declarative data; no builder or workflow logic moves into `schema`.
-- **Generated YAML regions.** Reviewers must read a generated diff rather than authored lines, and
-  a bad generator ships bad wiring everywhere at once. ADR-0003 already accepted this trade for the
-  PTS catalog, and the drift gate is the same mechanism.
-- **A migration that touches every provider.** §1–§3 rewrite 14 registry entries and delete
-  six switches. This is a large mechanical diff with strong compile-time backstops
-  (`Record<ProviderId, …>`, exhaustive switches, `assertProviderJoin`), and it should land as its
-  own change with no new provider riding along.
+- **A wider `ProviderMeta`.** Identity, economics, artifact and CI wiring in one record — the schema
+  would know the string `"starsling-ubuntu-24.04-2"`. The alternative is today's status quo: the
+  same facts across nine files with no gate. It stays declarative data; no builder or workflow logic
+  moves into `schema`.
+- **Two representations of the descriptor contract** — a TypeScript type (Tier 1, for inference) and
+  an arktype schema (Tier 3, for the generator's narrows). They can drift. The mitigation is that
+  the generator asserts the committed registry against the schema, so drift fails the gate rather
+  than shipping. Collapsing them by inferring the type *from* the schema is the obvious
+  simplification and is explicitly rejected here: it would drag arktype into the 6.6 ms leaf.
+- **Generated YAML regions.** Reviewers read a generated diff, and a bad generator ships bad wiring
+  everywhere at once. ADR-0003 already accepted this trade; the drift gate is the same mechanism.
+- **A migration touching every provider.** §1, §5 and §6 rewrite 14 registry entries and delete six
+  switches. Large but mechanically backstopped (`Record<ProviderId, …>`, exhaustive switches,
+  `assertProviderJoin`); it should land alone, with no new provider riding along.
 - **`workflow-hardening.test.ts`'s provider-specific asserts stay hand-maintained.** The Vercel
   `toHaveLength(3)` count and the scoped `RUNLOOP_API_KEY`/`RUN_CLOUD_API_KEY` expression pins are
   security invariants about *specific* providers, not derivable facts. They are correctly special.
 
-**We do not change:** the adapter contract (`ProviderAdapter`), the harness, the results and
-figures layers, or the runtime registry join — all already provider-agnostic or registry-driven.
+**We explicitly do not:** put arktype in `schema/providers` (measured 48× import regression for
+guarantees `tsc` already provides on committed source); parse the registry at runtime in the harness
+or CLI; or replace `isolationFromRuntime`'s matcher, which handles genuinely open input. The adapter
+contract, harness, results and figures layers are unchanged.
