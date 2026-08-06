@@ -335,11 +335,14 @@ pts_install_root() {
 # ownable: the mode says who may change the file's CONTENT, the owner is who may change its METADATA.
 claim_baked_profile_dir() {
 	local dir="${1:-}"
-	{ [ -n "$dir" ] && [ -d "$dir" ]; } || return 0
-	[ "$(stat -c '%u' "$dir" 2>/dev/null || echo -1)" = "$(id -u)" ] && return 0
-	{ command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; } || return 1
-	sudo -n chown -R "$(id -u):$(id -g)" "$dir" || return 1
-	echo "Claimed baked profile dir: ${dir} (now $(id -un))"
+	[ -d "$dir" ] || return 0
+	# A failed stat yields the empty string, which never equals a uid — no sentinel needed.
+	[ "$(stat -c '%u' "$dir" 2>/dev/null)" = "$UID" ] && return 0
+	# `have` gates on sudo EXISTING (no exec); the chown's own status then covers the NOPASSWD case, so
+	# there is no separate `sudo -n true` probe to keep in sync with the command that actually matters.
+	have sudo || return 1
+	sudo -n chown -R "${UID}:$(id -g)" "$dir" || return 1
+	echo "Claimed baked tree: ${dir} (now $(id -un))"
 }
 
 # Make the BAKED postgres cluster usable by whatever identity this sandbox runs as. No-op under the
@@ -363,7 +366,7 @@ claim_baked_pg_cluster() {
 	pgdata="$(pts_install_root)/pts/pgbench-1.15.0/pg_/data/db"
 	# Beside the data dir, never inside it: the 0700 mode is postgres's requirement, and a stray file
 	# in there is one more thing checkDataDir can object to.
-	marker="$(dirname "$pgdata")/.bootstrap-role"
+	marker="${pgdata%/*}/.bootstrap-role"
 	[ -d "$pgdata" ] || return 0
 
 	# A claim in an EARLIER leaf of this run (or an earlier run in a long-lived sandbox) already took
@@ -387,21 +390,15 @@ claim_baked_pg_cluster() {
 		return 0
 	fi
 
-	if ! { command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; }; then
-		# Honest recorded gap over a confusing libpq error: without elevation the 0700 root-owned data
-		# dir cannot be claimed, and nothing later in this leaf can recover from that.
-		local reason="baked postgres data dir is ${owner}-owned 0700 and this sandbox is unprivileged without sudo"
-		skip_result "$reason" "pts_pgbench-read-only"
-		skip_result "$reason" "pts_pgbench-read-write"
-		exit 0
-	fi
-
-	# Under the leaf's `set -e` a bare chown would abort with NO marker written, turning a diagnosable
-	# permission problem into an unexplained dead job — the one outcome the skip path exists to avoid.
-	if ! sudo -n chown -R "$(id -u):$(id -g)" "$pgdata"; then
-		local failed="could not claim the ${owner}-owned baked postgres data dir (chown failed)"
-		skip_result "$failed" "pts_pgbench-read-only"
-		skip_result "$failed" "pts_pgbench-read-write"
+	# One elevation policy for both claims — see claim_baked_profile_dir. Under the leaf's `set -e` an
+	# unguarded failure would abort with NO marker written, turning a diagnosable permission problem
+	# into an unexplained dead job, so an unclaimable cluster becomes an honest recorded gap on both
+	# modes instead of the confusing libpq error it would otherwise reach.
+	if ! claim_baked_profile_dir "$pgdata"; then
+		local prefix
+		for prefix in pts_pgbench-read-only pts_pgbench-read-write; do
+			skip_result "could not claim the ${owner}-owned baked postgres data dir (needs sudo)" "$prefix"
+		done
 		exit 0
 	fi
 	export PGUSER="$owner"

@@ -69,13 +69,12 @@ export CFLAGS_OVERRIDE="-O3 -march=${march} -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_S
 # batch-installs with the same exported CFLAGS_OVERRIDE.
 profile="stream-1.3.4"
 pts_init
-# Claim before repairing in place: the vendored install.sh ends with `chmod +x stream`, which is
-# ownership-gated and so fails on the bake's root-owned launcher even though the tree is a+rwX. When
-# the claim is impossible (unprivileged AND no sudo), fall through to the stock-image branch, which
-# discards the baked install and lets PTS reinstall it under THIS identity — slower, but it reaches
-# the same repaired runner instead of dying halfway through rewriting one.
-if _pts_is_installed "pts/${profile}" && claim_baked_profile_dir "$(pts_install_root)/pts/${profile}"; then
-	installed_dir="$(pts_install_root)/pts/${profile}"
+installed_dir="$(pts_install_root)/pts/${profile}"
+# Claim before repairing in place (see claim_baked_profile_dir for why a+rwX is not enough). An
+# unclaimable tree falls through to the stock-image branch, which discards the baked install and lets
+# PTS reinstall under THIS identity — slower, but it reaches the same repaired runner instead of
+# dying halfway through rewriting one.
+if _pts_is_installed "pts/${profile}" && claim_baked_profile_dir "$installed_dir"; then
 	recompile_stamp="$(mktemp)"
 	(
 		cd "$installed_dir"

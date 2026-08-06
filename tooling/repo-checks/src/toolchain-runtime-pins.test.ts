@@ -81,6 +81,14 @@ describe("harness runtime pins match the baked toolchain", () => {
 		expect(harnessConstant("MISE_SHA256_ARM64")).toBe(bakePin("miseSha256Arm64"));
 	});
 
+	// PTS is the fourth constant setup.ts duplicates from pins.ts, and the original gate missed it.
+	// Its fallback is guarded by `command -v` rather than an exact version match, so drift here
+	// degrades quietly — a stock-image provider benchmarks a different PTS than the baked ones —
+	// instead of failing a step. Same duplication, same fix, only a less noisy symptom.
+	it("pins the same phoronix-test-suite release the image bakes", () => {
+		expect(harnessConstant("PTS_VERSION")).toBe(bakePin("ptsVersion"));
+	});
+
 	// The gate is only meaningful while the version check stays exact — a fuzzy check (node@22) would
 	// satisfy every assertion above while silently reintroducing "some node, whichever we find".
 	it("keeps the version check exact, which is what makes a stale pin fail loudly", () => {

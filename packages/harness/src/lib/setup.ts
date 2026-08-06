@@ -26,15 +26,13 @@ export const DIR = '"$HOME/sandbox-benchmarks"';
 
 // Runtime versions for the stock-image fallback path (no-ops on the baked image, which already
 // ships them). These MUST equal the pins the image was baked from (packages/templates/src/lib/pins.ts,
-// rendered into the image's mise.toml) — they stay local constants rather than a templates-package
-// import so the harness remains decoupled, which means nothing but this comment couples them.
+// rendered into the image's mise.toml); they stay local constants rather than a templates-package
+// import so the harness remains decoupled from the bake, so the equality is held by the drift gate in
+// tooling/repo-checks/src/toolchain-runtime-pins.test.ts rather than by the type system.
 //
-// The equality is load-bearing, not cosmetic. Every version check below is EXACT, so a stale constant
-// makes the baked toolchain miss and takes the install fallback on every provider, every sandbox: it
-// re-downloads node and rewrites the image's own /etc/mise/config.toml, so the suite then measures a
-// runtime-fetched toolchain instead of the baked one. That failure is silent wherever the sandbox user
-// is root; where it is not (runloop), the write is denied and the step dies. Drifting these from
-// pins.ts is how #243's pin refresh reached the matrix as a Runloop-only outage two weeks later.
+// It is load-bearing, not cosmetic: every version check below is EXACT, so one stale constant makes
+// the baked toolchain miss and takes the install fallback on every provider and every sandbox — see
+// that gate's header for what it costs. #243 drifted these and it went unnoticed for two weeks.
 const MISE_VERSION = "v2026.7.11";
 const MISE_SHA256_X64 = "d31578a16ae2708385249b439c95533068e04b9507a118e905aa6768905671fc";
 const MISE_SHA256_ARM64 = "e3cb3bf4795f494a0e9be3f69ee1464de9d12a991589f126035eebd973c17796";
