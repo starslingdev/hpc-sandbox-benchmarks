@@ -69,25 +69,60 @@ export CFLAGS_OVERRIDE="-O3 -march=${march} -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_S
 # batch-installs with the same exported CFLAGS_OVERRIDE.
 profile="stream-1.3.4"
 pts_init
+installed_dir="$(pts_install_root)/pts/${profile}"
 if _pts_is_installed "pts/${profile}"; then
-	installed_dir="$(pts_user_dir)/installed-tests/pts/${profile}"
-	recompile_stamp="$(mktemp)"
-	(
-		cd "$installed_dir"
-		bash "${REPO_ROOT}/packages/schema/src/pts-profiles/${profile}/install.sh"
-	)
-	# The vendored script mirrors upstream, which exits 0 even when BOTH cc attempts fail — and a
-	# stale baked binary that still RUNS (native ISA on a compatible host) would pass the count
-	# guard while measuring the WRONG working set (the bake host's array size, not the 150e6 pin).
-	# The stamp is older than any binary cc just wrote, so not-newer == not rebuilt: refuse to
-	# measure rather than publish numbers for a configuration we did not compile.
-	if [ ! "${installed_dir}/stream-bin" -nt "$recompile_stamp" ]; then
+	# Claim before repairing in place (see claim_baked_profile_dir for why a+rwX is not enough).
+	if claim_baked_profile_dir "$installed_dir"; then
+		recompile_stamp="$(mktemp)"
+		(
+			cd "$installed_dir"
+			bash "${REPO_ROOT}/packages/schema/src/pts-profiles/${profile}/install.sh"
+		)
+		# The vendored script mirrors upstream, which exits 0 even when BOTH cc attempts fail — and a
+		# stale baked binary that still RUNS (native ISA on a compatible host) would pass the count
+		# guard while measuring the WRONG working set (the bake host's array size, not the 150e6 pin).
+		# The stamp is older than any binary cc just wrote, so not-newer == not rebuilt: refuse to
+		# measure rather than publish numbers for a configuration we did not compile.
+		if [ ! "${installed_dir}/stream-bin" -nt "$recompile_stamp" ]; then
+			rm -f "$recompile_stamp"
+			echo "ERROR: stream in-place recompile left a stale binary (stream-bin not rebuilt)" >&2
+			fail_result "stream in-place recompile failed; the stale baked binary would measure the wrong array size/ISA" "pts_stream"
+			exit 1
+		fi
 		rm -f "$recompile_stamp"
-		echo "ERROR: stream in-place recompile left a stale binary (stream-bin not rebuilt)" >&2
-		fail_result "stream in-place recompile failed; the stale baked binary would measure the wrong array size/ISA" "pts_stream"
-		exit 1
+	else
+		# An unclaimable tree cannot be repaired in place, and simply declining to repair it is the
+		# worst of the three outcomes: the profile stays REGISTERED, so run_pts_benchmark takes its
+		# already-installed fast path and measures the bake's binary — the CI runner's -march=native
+		# (AVX-512, the modal-gvisor SIGILL) and its L3-derived array size, 134217728 rather than the
+		# 150e6 pinned above. The SIGILL at least fails loudly; the array size is the silent one, four
+		# plausible numbers for a working set no other provider measured, which is precisely the
+		# cross-provider skew this whole preamble exists to remove.
+		#
+		# Discarding the install is the lever an unprivileged identity still has: unlinking needs
+		# write+execute on the PARENT directory, which the bake's a+rwX grants, where chown needs an
+		# ownership it does not have. run_pts_benchmark then takes its not-installed branch and
+		# batch-installs upstream's profile under THIS identity with the same exported
+		# CFLAGS_OVERRIDE — the stock-image (blaxel) path, slower but compiling what we pinned. Note
+		# this is NOT install_vendored_pts_profile's shape (fast-cli's else-branch): that stages a
+		# vendored profile dir, and the vendored stream-1.3.4 carries no downloads.xml, so PTS would
+		# copy no tarball and install.sh would die at `tar -jxf`. Upstream's registered profile is the
+		# one that can still fetch its own source.
+		echo "Could not claim ${installed_dir}; discarding the baked install so PTS reinstalls it"
+		# `|| true` so the -e above does not abort on the very failure this branch exists to report:
+		# an unguarded rm exits the leaf with no marker at all, which is the unexplained dead job.
+		# The existence check below is the single arbiter either way.
+		rm -rf "$installed_dir" || true
+		# Assert the discard landed (install_vendored_pts_profile's precedent): a surviving tree keeps
+		# PTS reporting the profile installed, and the run would silently be the stale-binary case
+		# above. A reinstall that then fails is already an honest recorded gap — run_pts_benchmark
+		# skips on a failed batch-install — so this is the only outcome left that needs a marker.
+		if [ -e "$installed_dir" ]; then
+			echo "ERROR: could not claim or discard the baked stream install at ${installed_dir}" >&2
+			fail_result "could not claim or discard the baked stream install; the stale baked binary would measure the wrong array size/ISA" "pts_stream"
+			exit 1
+		fi
 	fi
-	rm -f "$recompile_stamp"
 fi
 
 # Version-pinned to the vendored catalog profile AND the toolchain bake (ptsInstallTests): a

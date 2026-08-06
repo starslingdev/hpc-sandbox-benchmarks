@@ -50,7 +50,7 @@ seed_pts_download_cache "iperf-3.14.tar.gz" \
 # conditional on the runner having produced a file at all, so a re-run where every trial fails
 # would leave the PREVIOUS execution's provenance sitting in the results tree, describing trials
 # this run never made — the exact misattribution these two lines exist to prevent.
-profile_dir="$(pts_user_dir)/installed-tests/local/iperf-wan-1.0.0"
+profile_dir="$(pts_install_root)/local/iperf-wan-1.0.0"
 rm -f "${profile_dir}/chosen-server" "${profile_dir}/server-choices.ndjson" \
 	"$(results_dir)/pts_iperf-wan--server-choices.ndjson"
 

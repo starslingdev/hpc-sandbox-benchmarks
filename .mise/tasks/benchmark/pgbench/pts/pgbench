@@ -16,6 +16,8 @@ set -euo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
+claim_baked_pg_cluster
+
 # Version-pinned to the vendored profile (and its recorded fixture) so an upstream pgbench release
 # can't silently unmap the catalogued descriptions. "100"/"50" pin by NAME (they exceed the menus'
 # entry counts, so the numeric-index trap in run_pinned_pts's contract doesn't bite).

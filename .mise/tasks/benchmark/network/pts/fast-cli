@@ -15,8 +15,10 @@ fi
 # on a stock image, stage the complete vendored profile so its install uses the same repair.
 profile="fast-cli-1.0.0"
 pts_init
-if _pts_is_installed "pts/${profile}"; then
-	installed_dir="$(pts_user_dir)/installed-tests/pts/${profile}"
+installed_dir="$(pts_install_root)/pts/${profile}"
+# Claim first — this vendored install.sh also ends in `chmod +x`, which needs ownership of the bake's
+# launcher, not merely the a+rwX the image grants. Unclaimable falls through to the vendored install.
+if _pts_is_installed "pts/${profile}" && claim_baked_profile_dir "$installed_dir"; then
 	(
 		cd "$installed_dir"
 		sh "${REPO_ROOT}/packages/schema/src/pts-profiles/${profile}/install.sh"

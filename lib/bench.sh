@@ -325,6 +325,110 @@ pts_install_root() {
 	echo "${root%/}"
 }
 
+# Take ownership of a baked profile's INSTALLED dir when this sandbox's identity is not the bake's.
+# Returns non-zero when it cannot, so the caller can fall back rather than die mid-repair.
+#
+# 25-pts-profiles.sh leaves the tree a+rwX, which is enough to create, truncate and delete files —
+# and NOT enough for the repair-in-place leaves, because chmod is gated on OWNERSHIP, not on the mode
+# bits. A vendored install.sh that rewrites a launcher and ends with `chmod +x` therefore succeeds at
+# every write and then dies EPERM on the file it just wrote (stream, fast-cli). Writable is not
+# ownable: the mode says who may change the file's CONTENT, the owner is who may change its METADATA.
+claim_baked_profile_dir() {
+	local dir="${1:-}"
+	[ -d "$dir" ] || return 0
+	# A failed stat yields the empty string, which never equals a uid — no sentinel needed.
+	[ "$(stat -c '%u' "$dir" 2>/dev/null)" = "$UID" ] && return 0
+	# `have` gates on sudo EXISTING (no exec); the chown's own status then covers the NOPASSWD case, so
+	# there is no separate `sudo -n true` probe to keep in sync with the command that actually matters.
+	have sudo || return 1
+	sudo -n chown -R "${UID}:$(id -g)" "$dir" || return 1
+	echo "Claimed baked tree: ${dir} (now $(id -un))"
+}
+
+# Make the BAKED postgres cluster usable by whatever identity this sandbox runs as. No-op under the
+# identity that baked it (every root provider), so this is purely the non-root repair.
+#
+# The bake initdb's the cluster as root and 25-pts-profiles.sh must re-tighten pg_/data/db to 0700 —
+# postgres FATALs at startup on any group/other bit — which leaves an unprivileged runtime user with
+# two independent blockers, both identity mismatches with a baked artifact rather than sandbox faults:
+#
+#   1. it cannot read the data dir, so pg_ctl never starts the server at all; and
+#   2. the cluster's only role is the bake's initdb user, while the profile's generated run script
+#      passes no -U anywhere (createdb/pgbench/psql), so libpq defaults to the OS username and the
+#      server answers `FATAL: role "<user>" does not exist` — surfacing as pgbench's opaque
+#      "could not create connection for setup" with every trial empty.
+#
+# Claim the cluster rather than rebuilding it: a runtime re-initdb would be simpler but would silently
+# vary encoding/locale/page layout per provider, and pgbench numbers are only comparable across
+# providers when the cluster underneath them is the same one. Ownership is the only thing that changes.
+#
+# Every abort below funnels through here: the two pgbench modes share one cluster, so a recovery this
+# function cannot FINISH leaves neither of them runnable, and under the leaf's `set -e` a bare failure
+# would exit with no marker on either prefix. Exit 0 because the skip markers ARE the outcome — an
+# honest recorded gap on both modes, not the opaque libpq error an unrepaired cluster reaches.
+_skip_pgbench_modes() {
+	local prefix
+	for prefix in pts_pgbench-read-only pts_pgbench-read-write; do
+		skip_result "$1" "$prefix"
+	done
+	exit 0
+}
+claim_baked_pg_cluster() {
+	local pgdata marker owner
+	pgdata="$(pts_install_root)/pts/pgbench-1.15.0/pg_/data/db"
+	# Beside the data dir, never inside it: the 0700 mode is postgres's requirement, and a stray file
+	# in there is one more thing checkDataDir can object to.
+	marker="${pgdata%/*}/.bootstrap-role"
+	[ -d "$pgdata" ] || return 0
+
+	# A claim in an EARLIER leaf of this run (or an earlier run in a long-lived sandbox) already took
+	# ownership, which erases the evidence of who initdb'd it. The recorded role is still the cluster's
+	# only superuser, so replay it — without this, every leaf after the first reverts to libpq's OS
+	# username default and fails exactly the way an unclaimed cluster does.
+	if [ -r "$marker" ]; then
+		PGUSER="$(cat "$marker")"
+		export PGUSER
+		return 0
+	fi
+
+	# Readable means this identity baked the cluster (every root provider) — nothing to repair.
+	[ ! -r "$pgdata" ] || return 0
+
+	# The data dir's owner IS initdb's user, hence the cluster's bootstrap superuser. Read it BEFORE
+	# the chown rewrites it, and export it so libpq stops defaulting to an OS username with no role.
+	# Losing the owner is not a survivable warning: it is the bootstrap role itself. Continuing would
+	# chown the dir (or not) and leave PGUSER unset, and the NEXT invocation then reads a pgdata this
+	# identity can suddenly read and returns at the check above — so the whole recovery is skipped for
+	# good and both modes die on libpq's OS-username default.
+	owner="$(stat -c '%U' "$pgdata" 2>/dev/null || true)"
+	if [ -z "$owner" ]; then
+		_skip_pgbench_modes "could not read the owner of ${pgdata} to recover the baked cluster's bootstrap role"
+	fi
+
+	# One elevation policy for both claims — see claim_baked_profile_dir. An unclaimable cluster is a
+	# diagnosable permission problem, so record it rather than letting it reach the confusing libpq
+	# error.
+	if ! claim_baked_profile_dir "$pgdata"; then
+		_skip_pgbench_modes "could not claim the ${owner}-owned baked postgres data dir (needs sudo)"
+	fi
+	export PGUSER="$owner"
+	# Record only after the chown succeeded: a marker written ahead of it would make a failed claim
+	# look complete to the next leaf, which would then skip the repair and fail on an unreadable dir.
+	#
+	# And treat a failed write as a failed recovery even though THIS process is already exported and
+	# would run fine: the chown has erased the only other evidence of who initdb'd the cluster, so
+	# without the marker the next invocation in a long-lived sandbox reads an owned, readable pgdata,
+	# returns early with no PGUSER, and fails opaquely. Skip loudly here instead of banking a run whose
+	# successor is already broken.
+	# No 2>/dev/null: a redirection that fails is reported by the SHELL, before the command it belongs
+	# to runs, so suppression there would be dead weight — and bash's own message names the errno the
+	# skip reason can't.
+	if ! echo "$owner" >"$marker"; then
+		_skip_pgbench_modes "claimed ${pgdata} but could not record its bootstrap role at ${marker}"
+	fi
+	echo "Claimed baked postgres cluster: ${pgdata} (now $(id -un), connecting as role ${PGUSER})"
+}
+
 # Resolve the config file PTS itself reads and writes, mirroring its own selection order
 # (pts_config::get_config_file_location + pts_config_nye_XmlReader::__construct, v10.8.4). PTS sets
 # PTS_IS_DAEMONIZED_SERVER_PROCESS whenever /var/lib AND /etc are both writable — normally when the
