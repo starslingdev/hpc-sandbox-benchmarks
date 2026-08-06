@@ -361,6 +361,18 @@ claim_baked_profile_dir() {
 # Claim the cluster rather than rebuilding it: a runtime re-initdb would be simpler but would silently
 # vary encoding/locale/page layout per provider, and pgbench numbers are only comparable across
 # providers when the cluster underneath them is the same one. Ownership is the only thing that changes.
+#
+# Every abort below funnels through here: the two pgbench modes share one cluster, so a recovery this
+# function cannot FINISH leaves neither of them runnable, and under the leaf's `set -e` a bare failure
+# would exit with no marker on either prefix. Exit 0 because the skip markers ARE the outcome — an
+# honest recorded gap on both modes, not the opaque libpq error an unrepaired cluster reaches.
+_skip_pgbench_modes() {
+	local prefix
+	for prefix in pts_pgbench-read-only pts_pgbench-read-write; do
+		skip_result "$1" "$prefix"
+	done
+	exit 0
+}
 claim_baked_pg_cluster() {
 	local pgdata marker owner
 	pgdata="$(pts_install_root)/pts/pgbench-1.15.0/pg_/data/db"
@@ -384,27 +396,36 @@ claim_baked_pg_cluster() {
 
 	# The data dir's owner IS initdb's user, hence the cluster's bootstrap superuser. Read it BEFORE
 	# the chown rewrites it, and export it so libpq stops defaulting to an OS username with no role.
+	# Losing the owner is not a survivable warning: it is the bootstrap role itself. Continuing would
+	# chown the dir (or not) and leave PGUSER unset, and the NEXT invocation then reads a pgdata this
+	# identity can suddenly read and returns at the check above — so the whole recovery is skipped for
+	# good and both modes die on libpq's OS-username default.
 	owner="$(stat -c '%U' "$pgdata" 2>/dev/null || true)"
 	if [ -z "$owner" ]; then
-		echo "WARNING: cannot stat ${pgdata}; leaving the baked cluster untouched" >&2
-		return 0
+		_skip_pgbench_modes "could not read the owner of ${pgdata} to recover the baked cluster's bootstrap role"
 	fi
 
-	# One elevation policy for both claims — see claim_baked_profile_dir. Under the leaf's `set -e` an
-	# unguarded failure would abort with NO marker written, turning a diagnosable permission problem
-	# into an unexplained dead job, so an unclaimable cluster becomes an honest recorded gap on both
-	# modes instead of the confusing libpq error it would otherwise reach.
+	# One elevation policy for both claims — see claim_baked_profile_dir. An unclaimable cluster is a
+	# diagnosable permission problem, so record it rather than letting it reach the confusing libpq
+	# error.
 	if ! claim_baked_profile_dir "$pgdata"; then
-		local prefix
-		for prefix in pts_pgbench-read-only pts_pgbench-read-write; do
-			skip_result "could not claim the ${owner}-owned baked postgres data dir (needs sudo)" "$prefix"
-		done
-		exit 0
+		_skip_pgbench_modes "could not claim the ${owner}-owned baked postgres data dir (needs sudo)"
 	fi
 	export PGUSER="$owner"
 	# Record only after the chown succeeded: a marker written ahead of it would make a failed claim
 	# look complete to the next leaf, which would then skip the repair and fail on an unreadable dir.
-	echo "$owner" >"$marker" 2>/dev/null || true
+	#
+	# And treat a failed write as a failed recovery even though THIS process is already exported and
+	# would run fine: the chown has erased the only other evidence of who initdb'd the cluster, so
+	# without the marker the next invocation in a long-lived sandbox reads an owned, readable pgdata,
+	# returns early with no PGUSER, and fails opaquely. Skip loudly here instead of banking a run whose
+	# successor is already broken.
+	# No 2>/dev/null: a redirection that fails is reported by the SHELL, before the command it belongs
+	# to runs, so suppression there would be dead weight — and bash's own message names the errno the
+	# skip reason can't.
+	if ! echo "$owner" >"$marker"; then
+		_skip_pgbench_modes "claimed ${pgdata} but could not record its bootstrap role at ${marker}"
+	fi
 	echo "Claimed baked postgres cluster: ${pgdata} (now $(id -un), connecting as role ${PGUSER})"
 }
 
