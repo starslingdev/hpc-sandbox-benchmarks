@@ -13,7 +13,7 @@ import {
 	providers,
 } from "./index.ts";
 import { runE2bCommandAsRoot } from "./lib/e2b-root.ts";
-import { assertProviderJoin } from "./lib/join.ts";
+import { assertCreateCeilingDeclared, assertProviderJoin } from "./lib/join.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
 	it("wires every schema provider through to a computesdk factory", () => {
@@ -370,5 +370,53 @@ describe("assertProviderJoin", () => {
 		})();
 		expect(err?.message).toContain("missing a harness adapter: ghost");
 		expect(err?.message).toContain("no schema PROVIDERS entry: modal");
+	});
+});
+
+describe("assertCreateCeilingDeclared", () => {
+	it("passes for adapters the harness bounds itself, whether or not they set a timeout", () => {
+		expect(() =>
+			assertCreateCeilingDeclared({ e2b: {}, modal: { createTimeoutMs: 10 * 60 * 1000 } }),
+		).not.toThrow();
+	});
+
+	it("passes when an adapter that disables the race declares its own ceiling", () => {
+		expect(() =>
+			assertCreateCeilingDeclared({
+				runcloud: { createTimeoutMs: null, createAttemptCeilingMs: 20 * 60 * 1000 },
+			}),
+		).not.toThrow();
+	});
+
+	it("throws naming an adapter that disabled the race without declaring a ceiling", () => {
+		// The pairing the create-retry budget depends on: with the harness race off and no ceiling, the
+		// loop has nothing to subtract and can start an attempt that outlives the budget.
+		expect(() =>
+			assertCreateCeilingDeclared({ e2b: {}, runcloud: { createTimeoutMs: null } }),
+		).toThrow(/runcloud disabled the harness create timeout/);
+	});
+
+	it("throws on a ceiling that is present but cannot bound anything", () => {
+		// Zero, negative, and NaN (arithmetic over an unset constant) all reserve nothing, so they are
+		// the same overrun wearing a declared field — and a declared value reads as compliance, which
+		// makes it the more dangerous shape of the two.
+		for (const createAttemptCeilingMs of [0, -1, Number.NaN]) {
+			expect(() =>
+				assertCreateCeilingDeclared({
+					runcloud: { createTimeoutMs: null, createAttemptCeilingMs },
+				}),
+			).toThrow(/without declaring a positive createAttemptCeilingMs/);
+		}
+	});
+
+	it("holds for the real registry, so every race-disabling provider is budgetable", () => {
+		// run.cloud is the live instance of this shape; assert against the registry rather than naming
+		// it, so a future adapter that disables the race is covered by the same test.
+		expect(() =>
+			assertCreateCeilingDeclared(Object.fromEntries(providers.map((p) => [p.name, p]))),
+		).not.toThrow();
+		const raceDisabled = providers.filter((p) => p.createTimeoutMs === null);
+		expect(raceDisabled.length).toBeGreaterThan(0);
+		for (const p of raceDisabled) expect(p.createAttemptCeilingMs).toBeGreaterThan(0);
 	});
 });

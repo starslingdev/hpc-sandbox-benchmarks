@@ -12,6 +12,7 @@ import type {
 import { defineProvider } from "@computesdk/provider";
 import type { Sandbox } from "@run-cloud/sdk";
 import { Client, RunCloudError } from "@run-cloud/sdk";
+import { markRetryableCreate } from "./retryable-create.ts";
 
 const PROVIDER = "runcloud";
 
@@ -38,6 +39,40 @@ const RECOVERY_NAME_PREFIX = "sandbox-benchmarks";
  * deliberately generous because guessing "nothing was allocated" too early is what leaks a sandbox. */
 const CREATE_RECONCILE_ATTEMPTS = 5;
 const CREATE_RECONCILE_RETRY_MS = 2_000;
+
+/**
+ * Worst-case wall time ONE `create` call can spend before it settles, summed over every bound the
+ * adapter enforces on its longest path: the create POST, reconciling an ambiguous response, the
+ * readiness wait, and destroying an allocation that failed readiness.
+ *
+ * Exported because this adapter turns the harness's own per-attempt race OFF
+ * (`createTimeoutMs: null`, so its cleanup is never abandoned mid-teardown) and the harness must
+ * still know what an attempt can cost: without a number it can start a retry that finishes long
+ * after the retry budget it promised the matrix job. Derived from the constants above rather than
+ * written as a literal, so tightening any one of them tightens this in the same edit.
+ *
+ * It is a CEILING, not an expectation — the observed create is seconds. Reserving it costs patience
+ * (the harness stops starting new attempts this much earlier), which is the deliberate trade: a cell
+ * that gives up slightly sooner beats one whose failure marker lands after the budget expired.
+ *
+ * Describes the DEFAULT bounds, which is what the registry gets ({@link runcloudCompute} is wired
+ * there with no options); a caller that shrinks or widens them through the test seams owns the
+ * arithmetic itself.
+ */
+export const RUNCLOUD_CREATE_CEILING_MS =
+	// The create POST itself.
+	CONTROL_PLANE_REQUEST_TIMEOUT_MS +
+	// Reconciling an ambiguous create: one bounded lookup per attempt, with a wait between attempts.
+	CREATE_RECONCILE_ATTEMPTS * CONTROL_PLANE_REQUEST_TIMEOUT_MS +
+	(CREATE_RECONCILE_ATTEMPTS - 1) * CREATE_RECONCILE_RETRY_MS +
+	// Readiness: the deadline is checked BEFORE each poll, so the last poll can start just under it and
+	// still spend one bounded get plus one inter-poll sleep on top of the window.
+	RUNCLOUD_READY_TIMEOUT_MS +
+	CONTROL_PLANE_REQUEST_TIMEOUT_MS +
+	CREATE_READY_POLL_MS +
+	// Cleanup of a failed allocation: each attempt is a bounded destroy plus a bounded confirming get.
+	CREATE_FAILURE_CLEANUP_ATTEMPTS * 2 * CONTROL_PLANE_REQUEST_TIMEOUT_MS +
+	(CREATE_FAILURE_CLEANUP_ATTEMPTS - 1) * CREATE_FAILURE_CLEANUP_RETRY_MS;
 
 type RuncloudSandboxClient = Pick<
 	Client["sandboxes"],
@@ -421,7 +456,15 @@ export function sandboxMethods(
 				);
 				// Nothing carries this name, so nothing was allocated and there is nothing to leak. The
 				// original error is the whole truth — report it without a spurious cleanup warning.
-				if (reconciled.status === "absent") throw error;
+				//
+				// A timed-out create whose reconciliation establishes absence is both transient and safe to
+				// retry. Do not mark every ambiguous error here: a generic client bug or durable 5xx with an
+				// empty lookup must fail promptly rather than masquerade as capacity for an hour. A definitive
+				// rejection is also left unmarked — 429 already reaches the harness through its message match,
+				// while re-issuing a 422 would only delay the real error.
+				if (reconciled.status === "absent") {
+					throw error instanceof NativeCallTimeoutError ? markRetryableCreate(error) : error;
+				}
 				// The create was ambiguous AND the control plane never answered what it did with it, so
 				// absence was never established. Say so and name the recovery handle: the name is stamped
 				// before the request precisely so a sandbox that outlived this window is still findable.

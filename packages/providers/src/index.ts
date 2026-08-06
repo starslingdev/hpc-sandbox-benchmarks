@@ -4,7 +4,7 @@
 // `providers` is the schema identity joined with those adapters.
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { adapters } from "./lib/adapters.ts";
-import { assertProviderJoin } from "./lib/join.ts";
+import { assertCreateCeilingDeclared, assertProviderJoin } from "./lib/join.ts";
 import type { ProviderConfig } from "./lib/types.ts";
 
 // The runtime configuration gatekeeper — the single validated config object consumers import.
@@ -20,6 +20,8 @@ export { microsandboxCloudCompute, microsandboxLocalCompute } from "./lib/micros
 // Novita's E2B-compat surface: the pinned regional domain + connection the bake pipeline reuses,
 // and the compat factory (exported for tests and for anyone driving Novita outside the harness join).
 export { NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection } from "./lib/novita.ts";
+// How an adapter reports a create failure the harness should wait out rather than fail on.
+export { isRetryableCreateError, markRetryableCreate } from "./lib/retryable-create.ts";
 export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/types.ts";
 
 /**
@@ -40,6 +42,10 @@ assertProviderJoin(
 	PROVIDERS.map((meta) => meta.id),
 	Object.keys(adapters),
 );
+
+// An adapter that owns its own create bound must say how large that bound is; the harness's retry
+// budget is only honest if it can subtract one attempt's worst case before starting another.
+assertCreateCeilingDeclared(adapters);
 
 export const providers: ProviderConfig[] = PROVIDERS.map((meta) => {
 	const adapter = adapters[meta.id];

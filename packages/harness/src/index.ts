@@ -2,7 +2,7 @@
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
-import { providers } from "@sandbox-benchmarks/providers";
+import { isRetryableCreateError, providers } from "@sandbox-benchmarks/providers";
 import type { ProviderTransport, RawRun, ResultGap, Suite } from "@sandbox-benchmarks/schema";
 import { HARNESS_METRIC_IDS, isPtsResultFile, SUITES } from "@sandbox-benchmarks/schema";
 import { collectResults, writeGapMarker } from "./lib/collect.ts";
@@ -221,6 +221,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		resultsDir,
 		createOptions: config.createOptions,
 		createTimeoutMs: config.createTimeoutMs,
+		createAttemptCeilingMs: config.createAttemptCeilingMs,
 	});
 
 	await runSuiteOnSandbox(sandbox, {
@@ -278,6 +279,20 @@ export interface CreateSuiteSandboxContext {
 	 *  or `null` when the adapter owns readiness + failed-allocation cleanup and abandoning its promise
 	 *  would terminate that cleanup. Injectable so both paths are exercisable in tests. */
 	createTimeoutMs?: number | null;
+	/** Worst case one attempt can cost when `createTimeoutMs` is `null` — the ceiling the ADAPTER
+	 *  enforces (see {@link ProviderConfig.createAttemptCeilingMs}), which the registry requires such an
+	 *  adapter to declare. Ignored when the harness bounds the attempt itself: `createTimeoutMs` is then
+	 *  the ceiling. */
+	createAttemptCeilingMs?: number;
+	/** Test seams for the capacity-retry loop. Production always uses the module constants; a test that
+	 *  had to spend the real 2-minute delay to reach the second attempt would not be written, and an
+	 *  unexercised retry path is what let a hard-failing create reach production in the first place. */
+	retryDelayMs?: number;
+	retryBudgetMs?: number;
+	/** Test seam for the backoff itself, so a timer that fires LATE (the case the post-sleep deadline
+	 *  recheck exists for) is reproducible instead of dependent on event-loop pressure. Production uses
+	 *  `setTimeout`. */
+	sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -291,6 +306,10 @@ export interface CreateSuiteSandboxContext {
  * throw that finally spends the budget records the failure. Split from {@link runSuite} (the
  * runSuiteOnSandbox precedent) so this is testable against a fake compute.
  *
+ * The retry budget bounds the whole call, not just the sleeps between attempts: a new attempt starts
+ * only while the budget can still cover the backoff PLUS that attempt's worst case, so the failure
+ * marker lands inside the budget rather than one attempt past it.
+ *
  * `computeFactory` (not a pre-built compute) so adapter construction lives INSIDE the marker path — a
  * computesdk provider can throw before `sandbox.create`, and that throw must be recorded too. The
  * factory is cheap and idempotent, so re-invoking it per capacity retry is harmless.
@@ -302,7 +321,51 @@ export async function createSuiteSandbox(
 	const { suite, suiteName, providerName, resultsDir, createOptions } = ctx;
 	const createTimeoutMs =
 		ctx.createTimeoutMs === undefined ? CREATE_ATTEMPT_TIMEOUT_MS : ctx.createTimeoutMs;
-	const createDeadline = Date.now() + CREATE_RETRY_BUDGET_MS;
+	const retryDelayMs = ctx.retryDelayMs ?? CREATE_RETRY_DELAY_MS;
+	// What one more attempt can cost, so the loop only starts an attempt the budget can still absorb.
+	// When the harness races the create, its own timeout IS that ceiling; when the adapter owns the
+	// bound (`createTimeoutMs: null`) it declares the ceiling instead, and the provider registry refuses
+	// an adapter that disables the race without a POSITIVE one. Zero only for a hand-built context that
+	// disables the race and declares nothing — nothing can be reserved for an attempt of unknown cost.
+	const attemptCeilingMs = createTimeoutMs ?? ctx.createAttemptCeilingMs ?? 0;
+	const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+	const createDeadline = Date.now() + (ctx.retryBudgetMs ?? CREATE_RETRY_BUDGET_MS);
+	/** True while the budget can still absorb a whole attempt, starting `inMs` from now. The one place
+	 *  patience is decided, asked both before the backoff (is another round worth sleeping for?) and
+	 *  after it (did the sleep overrun what was reserved?). */
+	const fitsInBudget = (inMs: number): boolean =>
+		Date.now() + inMs + attemptCeilingMs <= createDeadline;
+	/**
+	 * Record the creation failure and rethrow the provider's own error — the single exit for every way
+	 * this function gives up, so the marker can never be skipped on one of them.
+	 *
+	 * The write is best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
+	 * provider error — the creation failure is the fact worth propagating, the marker is its paper
+	 * trail. Log the write failure and rethrow the original either way. The ORIGINAL error propagates
+	 * unwrapped: bench-suite matches on the provider's own message, and `createSuiteSandbox` is called
+	 * outside {@link runSuiteOnSandbox}, so this throw never reaches the suite-level marker writer that
+	 * reads a classification. The marker written here already carries the cause as a plain value, which
+	 * is the only place it is read.
+	 */
+	const giveUp = (err: unknown, message: string): never => {
+		try {
+			writeGapMarker(
+				resultsDir,
+				providerName,
+				suiteName,
+				"failed",
+				`${CREATE_FAILURE_PREFIX}${message}`,
+				{ kind: "sandbox-create-failed", detail: message },
+			);
+		} catch (markerErr) {
+			console.error(
+				`Could not write the creation-failure gap marker (${
+					markerErr instanceof Error ? markerErr.message : String(markerErr)
+				}); the sandbox-creation error below is unaffected`,
+			);
+		}
+		throw err;
+	};
 	for (let attempt = 1; ; attempt++) {
 		// Undefined until `sandbox.create` is actually invoked: a factory throw leaves it unset (nothing
 		// was created, so there is nothing to clean up), while a create that outlives the timeout leaves it
@@ -333,38 +396,29 @@ export async function createSuiteSandbox(
 				);
 			}
 			const message = err instanceof Error ? err.message : String(err);
-			const capacity = /quota|rate.?limit|too many|capacity|429/i.test(message);
-			if (!capacity || Date.now() + CREATE_RETRY_DELAY_MS > createDeadline) {
-				// Best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
-				// provider error — the creation failure is the fact worth propagating, the marker is its
-				// paper trail. Log the write failure and rethrow the original either way.
-				try {
-					writeGapMarker(
-						resultsDir,
-						providerName,
-						suiteName,
-						"failed",
-						`${CREATE_FAILURE_PREFIX}${message}`,
-						{ kind: "sandbox-create-failed", detail: message },
-					);
-				} catch (markerErr) {
-					console.error(
-						`Could not write the creation-failure gap marker (${
-							markerErr instanceof Error ? markerErr.message : String(markerErr)
-						}); the sandbox-creation error below is unaffected`,
-					);
-				}
-				// The ORIGINAL error propagates, unwrapped: bench-suite matches on the provider's own message
-				// and `createSuiteSandbox` is called outside `runSuiteOnSandbox`, so this throw never reaches
-				// the suite-level marker writer that reads a classification. The marker written just above
-				// already carries the cause as a plain value, which is the only place it is read.
-				throw err;
-			}
+			// An adapter that KNOWS its create failure is transient and allocated nothing says so explicitly;
+			// the message match is the fallback for providers that only express capacity limits in prose. The
+			// explicit mark covers a control plane that expresses saturation by stalling, whose timeout message
+			// matches none of these words — the shape that hard-failed every runcloud cell of run
+			// 30960125032 in seconds instead of letting the cells queue.
+			const retryable =
+				isRetryableCreateError(err) || /quota|rate.?limit|too many|capacity|429/i.test(message);
+			// The budget bounds the CELL, not just the sleeps: an attempt is only started when the backoff
+			// AND the attempt's own worst case still fit inside it. Checking the delay alone let a provider
+			// whose attempts run long (run.cloud's adapter-owned readiness wait) begin one final attempt at
+			// the edge of the budget and land its failure marker — and the matrix cell — far outside the
+			// hour the budget promises.
+			if (!retryable || !fitsInBudget(retryDelayMs)) giveUp(err, message);
 			console.log(
-				`Sandbox create attempt ${attempt} hit a capacity limit (${message.slice(0, 140)}); ` +
-					`retrying in ${CREATE_RETRY_DELAY_MS / 1000}s...`,
+				`Sandbox create attempt ${attempt} failed transiently (${message.slice(0, 140)}); ` +
+					`retrying in ${retryDelayMs / 1000}s...`,
 			);
-			await new Promise((r) => setTimeout(r, CREATE_RETRY_DELAY_MS));
+			await sleep(retryDelayMs);
+			// `setTimeout` guarantees a floor, not a ceiling: a loaded runner (or a suspended process) can
+			// return from that sleep well after `retryDelayMs`, and the reservation made before it was
+			// arithmetic on a time that has since passed. Re-ask against the clock now, so a late timer
+			// spends the budget rather than silently pushing the next attempt past it.
+			if (!fitsInBudget(0)) giveUp(err, message);
 		}
 	}
 }
