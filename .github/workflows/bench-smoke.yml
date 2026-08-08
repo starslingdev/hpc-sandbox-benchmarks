@@ -1,4 +1,4 @@
-name: Bench smoke
+name: Provider smoke test
 
 # A real benchmark run, narrowed to one provider × suite and stopped before the dataset is committed.
 #
