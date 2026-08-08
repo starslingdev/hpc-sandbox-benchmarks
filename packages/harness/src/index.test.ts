@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +22,7 @@ import {
 import type { CommandResult, SandboxHandle } from "./lib/execute.ts";
 import type { LifecycleCompute } from "./lib/lifecycle.ts";
 import { READINESS_CMD } from "./lib/readiness.ts";
+import { cleanupOwnedSandboxes } from "./lib/sandbox-owner.ts";
 
 // A transport capability for the test fixtures — capped-with-detach, matching a single-round-trip
 // provider; none of these tests exercise real exec, so the exact values are inert here.
@@ -41,6 +42,7 @@ const config: ProviderConfig = {
 // A fake provider that records its lifecycle calls, so withSandbox can be exercised offline with no
 // real SDK. Only the methods withSandbox touches are implemented; the cast recovers the full type.
 function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): ProviderConfig {
+	let remainingDestroyFailures = opts.destroyFails ? 1 : 0;
 	const sandbox = {
 		sandboxId: "sb-1",
 		provider: "e2b",
@@ -50,7 +52,11 @@ function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): P
 		},
 		destroy: () => {
 			calls.push("destroy");
-			return opts.destroyFails ? Promise.reject(new Error("destroy failed")) : Promise.resolve();
+			if (remainingDestroyFailures > 0) {
+				remainingDestroyFailures--;
+				return Promise.reject(new Error("destroy failed"));
+			}
+			return Promise.resolve();
 		},
 	};
 	const compute = {
@@ -68,6 +74,10 @@ function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): P
 		createCompute: () => compute,
 	};
 }
+
+afterEach(async () => {
+	expect(await cleanupOwnedSandboxes()).toEqual([]);
+});
 
 describe("@sandbox-benchmarks/harness", () => {
 	it("times an operation and emits a raw run for the provider", async () => {

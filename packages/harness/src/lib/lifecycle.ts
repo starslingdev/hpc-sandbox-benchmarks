@@ -29,6 +29,7 @@ import { aggregate, HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import { gapCauseOf } from "./gap-cause.ts";
 import { now as defaultNow, time } from "./internal.ts";
 import { neverReadyReason, waitUntilReady } from "./readiness.ts";
+import { createOwnedSandbox } from "./sandbox-owner.ts";
 
 /**
  * Per-probe ceiling for THIS driver's readiness loop, deliberately far tighter than the suite path's.
@@ -213,7 +214,7 @@ export async function measureLifecycle(
 	// usable yet (the readiness loop below measures when it becomes so). A failure has no sandbox to tear
 	// down, so it rejects and the caller records the failed cold-start cycle.
 	const t0 = clock();
-	const sandbox = await compute.sandbox.create(options.createOptions);
+	const sandbox = await createOwnedSandbox(() => compute.sandbox.create(options.createOptions));
 	const createdAt = clock();
 	sample(HARNESS_METRIC_IDS.spawn, floor(createdAt - t0));
 

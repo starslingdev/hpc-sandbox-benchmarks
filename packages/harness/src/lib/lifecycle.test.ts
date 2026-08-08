@@ -1,9 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import type { GapCause, RawRun, ResultGap } from "@sandbox-benchmarks/schema";
 import { HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import { GapError } from "./gap-cause.ts";
 import type { LifecycleCompute, LifecycleSandbox } from "./lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lifecycle.ts";
+import { cleanupOwnedSandboxes } from "./sandbox-owner.ts";
 
 interface FakeCalls {
 	order: string[];
@@ -39,6 +40,7 @@ const noDelay = async (): Promise<void> => {};
 function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls: FakeCalls } {
 	const calls: FakeCalls = { order: [], deletedSnapshots: [] };
 	let readinessProbes = 0;
+	let remainingDestroyFailures = opts.failDestroy ? 1 : 0;
 	const sandbox: LifecycleSandbox = {
 		sandboxId: "sb-1",
 		async runCommand(command) {
@@ -66,7 +68,10 @@ function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls
 		},
 		async destroy() {
 			calls.order.push("destroy");
-			if (opts.failDestroy) throw new Error("destroy boom");
+			if (remainingDestroyFailures > 0) {
+				remainingDestroyFailures--;
+				throw new Error("destroy boom");
+			}
 			return undefined;
 		},
 	};
@@ -99,6 +104,10 @@ function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls
 	}
 	return { compute, calls };
 }
+
+afterEach(async () => {
+	expect(await cleanupOwnedSandboxes()).toEqual([]);
+});
 
 /** Map of Metric id → number of Samples that carry it. */
 function countByOp(samples: RawRun[]): Record<string, number> {

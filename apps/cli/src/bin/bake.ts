@@ -9,7 +9,11 @@
 // The provider loop + skip-vs-fail contract is shared with bench-smoke/promote (providers-run.ts);
 // the boot+smoke lifecycle (probe results captured before teardown) is shared too (smoke-run.ts).
 import { writeFileSync } from "node:fs";
-import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
+import {
+	exitAfterSandboxCleanup,
+	requiredProviders,
+	unmetRequirements,
+} from "@sandbox-benchmarks/harness";
 import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
@@ -147,13 +151,13 @@ if (import.meta.main) {
 	// provider); on the promote path it scopes the transaction to a backfill. Parsed before any build
 	// or registry call so a typo'd id fails fast (clean message, no stack) before anything is touched.
 	let only: ProviderId[] | undefined;
-	let baseImageRef: string;
+	let baseImageRef: string = config.toolchainImageCandidate;
 	try {
 		only = requestedProviders(process.argv);
 		baseImageRef = requestedBaseImage(process.argv) ?? config.toolchainImageCandidate;
 	} catch (err) {
 		log(`error: ${err instanceof Error ? err.message : String(err)}`);
-		process.exit(2);
+		await exitAfterSandboxCleanup(2);
 	}
 
 	// Promote is the release step: publish the already-validated candidate as the public version.
@@ -170,7 +174,7 @@ if (import.meta.main) {
 					"backfills providers onto an already-published version, while --force regenerates the " +
 					"whole version in place. Pick one.",
 			);
-			process.exit(2);
+			await exitAfterSandboxCleanup(2);
 		}
 		const promoted = await promoteAll(log, { force, only });
 		writeReport({
@@ -191,7 +195,7 @@ if (import.meta.main) {
 		});
 		// The transaction outcome is separate from its diagnostics: an optional provider can fail and stay
 		// visible in the report without turning a successfully published shared version red after commit.
-		process.exit(promoted.ok ? 0 : 1);
+		await exitAfterSandboxCleanup(promoted.ok ? 0 : 1);
 	}
 
 	if (only) log(`>>> restricting bake+validate to: ${only.join(", ")}`);
@@ -202,7 +206,7 @@ if (import.meta.main) {
 			await buildAndPushCandidate(log);
 		} catch (err) {
 			log(`<<< build/push failed — ${err instanceof Error ? err.message : String(err)}`);
-			process.exit(1);
+			await exitAfterSandboxCleanup(1);
 		}
 	}
 
@@ -224,7 +228,7 @@ if (import.meta.main) {
 			log(
 				`<<< could not resolve base image digest for ${baseImageRef} — ${err instanceof Error ? err.message : String(err)}`,
 			);
-			process.exit(1);
+			await exitAfterSandboxCleanup(1);
 		}
 	} else {
 		log(`>>> no provider in scope reads ${baseImageRef} — not resolving it`);
@@ -296,7 +300,7 @@ if (import.meta.main) {
 		reports,
 	});
 
-	if (anyFailed(runs)) process.exit(1);
+	if (anyFailed(runs)) await exitAfterSandboxCleanup(1);
 
 	// D1: at the publish boundary (CI passes `--require e2b,daytona-vm,modal-gvisor`) a required provider that was
 	// skipped for a missing/misnamed secret — or failed to validate — must fail the bake loudly, so a
@@ -307,6 +311,7 @@ if (import.meta.main) {
 		log(
 			`error: required providers did not pass: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`,
 		);
-		process.exit(1);
+		await exitAfterSandboxCleanup(1);
 	}
+	await exitAfterSandboxCleanup(0);
 }

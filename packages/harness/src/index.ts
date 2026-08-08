@@ -14,6 +14,7 @@ import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
 import type { WaitUntilReadyOptions } from "./lib/readiness.ts";
 import { neverReadyReason, waitUntilReady } from "./lib/readiness.ts";
+import { createOwnedSandbox } from "./lib/sandbox-owner.ts";
 import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
 
 // Re-export the lifecycle measurement surface so consumers import it from the package root, never
@@ -27,6 +28,7 @@ export type {
 	MeasureLifecycleOptions,
 } from "./lib/lifecycle.ts";
 export { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
+export { exitAfterSandboxCleanup, shutdownOwnedSandboxes } from "./lib/sandbox-owner.ts";
 
 /**
  * The universal sandbox a provider's `sandbox.create` returns (computesdk's `Sandbox`). Derived from
@@ -373,7 +375,7 @@ export async function createSuiteSandbox(
 		let createPromise: Promise<SandboxHandle> | undefined;
 		try {
 			const compute = computeFactory();
-			createPromise = Promise.resolve(
+			createPromise = createOwnedSandbox(() =>
 				compute.sandbox.create({
 					...createOptions,
 					// Ask for a sandbox lifetime covering setup + the suite, where supported.
@@ -600,7 +602,7 @@ export async function withSandbox<T>(
 	fn: (sandbox: Sandbox) => Promise<T>,
 ): Promise<T> {
 	const compute = config.createCompute();
-	const sandbox = await compute.sandbox.create(config.createOptions);
+	const sandbox = await createOwnedSandbox(() => compute.sandbox.create(config.createOptions));
 	let result: T;
 	try {
 		result = await fn(sandbox);
