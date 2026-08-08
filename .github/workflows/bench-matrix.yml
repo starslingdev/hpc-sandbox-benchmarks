@@ -1,4 +1,4 @@
-name: Bench matrix
+name: CPU benchmark
 
 # Fan the live benchmark out across the provider × suite matrix using GitHub's native reusable-workflow
 # nesting. `plan` emits all three axes; a single suite-matrix job calls the reusable bench-suite.yml
