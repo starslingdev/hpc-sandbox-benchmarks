@@ -20096,7 +20096,7 @@ const chunk5: MetricDef[] = [
 		headline: false,
 		label: "iPerf WAN - Direction: Download",
 		description:
-			"Measures sustained WAN TCP throughput with iperf3 against the closest reachable server from a curated public list (servers.json, committed with this profile). The runner probes TCP-connect RTT to every listed server at run time, picks the lowest-RTT reachable non-backup server, retries across its port range on single-client busy collisions, and records the chosen server per trial as provenance. Eight parallel streams so high bandwidth-delay-product paths are not understated by a single TCP congestion window; the reported figure is receiver-side goodput.",
+			"This test measures sustained WAN TCP throughput with iperf3 against an RTT-ranked reachable server from a curated public list, chosen per run by RTT probe. It uses eight parallel streams so that high bandwidth-delay-product paths are not understated, and reports receiver-side goodput.",
 		pts: { test: "local/iperf-wan", description: "Direction: Download" },
 		sourceUrl: "https://software.es.net/iperf/",
 	},
@@ -20108,7 +20108,7 @@ const chunk5: MetricDef[] = [
 		headline: false,
 		label: "iPerf WAN - Direction: Upload",
 		description:
-			"Measures sustained WAN TCP throughput with iperf3 against the closest reachable server from a curated public list (servers.json, committed with this profile). The runner probes TCP-connect RTT to every listed server at run time, picks the lowest-RTT reachable non-backup server, retries across its port range on single-client busy collisions, and records the chosen server per trial as provenance. Eight parallel streams so high bandwidth-delay-product paths are not understated by a single TCP congestion window; the reported figure is receiver-side goodput.",
+			"This test measures sustained WAN TCP throughput with iperf3 against an RTT-ranked reachable server from a curated public list, chosen per run by RTT probe. It uses eight parallel streams so that high bandwidth-delay-product paths are not understated, and reports receiver-side goodput.",
 		pts: { test: "local/iperf-wan", description: "Direction: Upload" },
 		sourceUrl: "https://software.es.net/iperf/",
 	},
