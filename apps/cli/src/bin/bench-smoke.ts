@@ -10,7 +10,11 @@
 // Observability: a per-provider/per-check log goes to stderr (with durations and, on failure, the
 // captured output); the machine-readable summary is the JSON on stdout. bun auto-loads .env, so
 // local creds in a .env file are picked up.
-import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
+import {
+	exitAfterSandboxCleanup,
+	requiredProviders,
+	unmetRequirements,
+} from "@sandbox-benchmarks/harness";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
 
@@ -47,7 +51,7 @@ if (import.meta.main) {
 	console.log(JSON.stringify({ summary }, null, 2));
 
 	// Skips never fail the run; only a provider that ran and broke does.
-	if (anyFailed(runs)) process.exit(1);
+	if (anyFailed(runs)) await exitAfterSandboxCleanup(1);
 
 	// D1: at the CI/publish boundary a *required* provider that didn't run-and-pass — skipped for a
 	// missing/misnamed secret, or failed — must fail the lane loudly, so a green run can't hide that
@@ -58,6 +62,7 @@ if (import.meta.main) {
 		log(
 			`error: required providers did not pass: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`,
 		);
-		process.exit(1);
+		await exitAfterSandboxCleanup(1);
 	}
+	await exitAfterSandboxCleanup(0);
 }

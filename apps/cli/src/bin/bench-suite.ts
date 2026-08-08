@@ -16,9 +16,11 @@ import { join } from "node:path";
 import * as core from "@actions/core";
 import {
 	CREATE_FAILURE_PREFIX,
+	exitAfterSandboxCleanup,
 	requiredProviders,
 	runSuite,
 	SuiteUsageError,
+	shutdownOwnedSandboxes,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
 import { writeNormalizedRun } from "@sandbox-benchmarks/results";
@@ -802,9 +804,13 @@ if (import.meta.main) {
 			...(outcome.detail !== undefined ? { detail: outcome.detail } : {}),
 			...(taskPlan ? { taskPlan } : {}),
 		});
-		if (outcome.failed) fail(outcome.detail ?? `Cell ${cell} failed`, { annotate: false });
-		process.exit(0);
+		if (outcome.failed) {
+			await shutdownOwnedSandboxes();
+			fail(outcome.detail ?? `Cell ${cell} failed`, { annotate: false });
+		}
+		await exitAfterSandboxCleanup(0);
 	}
+	if (replicateIndices === undefined) throw new Error("unreachable after sandbox cleanup exit");
 
 	// Fan-out path: R replicate sandboxes, all from this process. Foldable groups are turned off and
 	// every line is tagged with its replicate instead — Actions groups are a single ordered stream, so
@@ -880,14 +886,13 @@ if (import.meta.main) {
 	const failures = outcomes.filter((o) => o.failed);
 	if (failures.length > 0) {
 		// reportFleet already annotated with every failure's detail; exit non-zero without a second one.
+		await shutdownOwnedSandboxes();
 		fail(`${failures.length}/${outcomes.length} replicate(s) of ${cell} failed`, {
 			annotate: false,
 		});
 	}
 	logInfo(`Cell ${cell}: ${outcomes.length}/${outcomes.length} replicate(s) succeeded`);
-	// Exit explicitly, matching the single-sandbox path above. `createSuiteSandbox` deliberately leaves
-	// a floating `createPromise.then(destroySandbox)` behind for a create that resolved after its
-	// timeout was lost, and a provider SDK may hold a keep-alive socket; falling off the end would make
-	// the cell wait on those instead of finishing, turning an all-green fleet into a job-timeout red.
-	process.exit(0);
+	// Exit explicitly, matching the single-sandbox path above. The bounded ownership drain waits for a
+	// late create long enough to destroy it without letting a wedged provider keep the cell alive forever.
+	await exitAfterSandboxCleanup(0);
 }

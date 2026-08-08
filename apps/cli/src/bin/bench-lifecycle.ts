@@ -11,6 +11,7 @@
 // stdout. bun auto-loads .env, so local creds in a .env file are picked up.
 import {
 	benchmarkLifecycle,
+	exitAfterSandboxCleanup,
 	requiredProviders,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
@@ -88,7 +89,7 @@ if (import.meta.main) {
 	console.log(JSON.stringify({ summary }, null, 2));
 
 	// Skips (missing creds) never fail the run; only a provider that ran and broke does.
-	if (anyFailed(runs)) process.exit(1);
+	if (anyFailed(runs)) await exitAfterSandboxCleanup(1);
 
 	// At the CI/publish boundary a *required* provider that didn't run-and-pass must fail the lane loudly,
 	// so a green run can't hide that a provider was never actually measured.
@@ -98,6 +99,7 @@ if (import.meta.main) {
 		log(
 			`error: required providers did not pass: ${unmet.join(", ")} (--require / REQUIRE_PROVIDERS)`,
 		);
-		process.exit(1);
+		await exitAfterSandboxCleanup(1);
 	}
+	await exitAfterSandboxCleanup(0);
 }
