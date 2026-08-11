@@ -97,7 +97,11 @@ export const GPU_BENCHMARK = {
 		memoryLimitMiB: 8192,
 		minimumReplicates: 20,
 		relativeCiHalfWidth: 0.005,
-		maxReplicateDurationSeconds: 300,
+		// Whole-lifecycle ceiling: sandbox creation, image pull, model load, CUDA-graph capture, the
+		// timed client, and artifact collection. Measured across the first full 20-replicate fleet at
+		// 352-422s (median 358s), of which the client window was only ~59s — 300 was unreachable for
+		// every replicate, not just a slow tail.
+		maxReplicateDurationSeconds: 600,
 	},
 	modelPreparation: {
 		memoryMiB: 1024,
