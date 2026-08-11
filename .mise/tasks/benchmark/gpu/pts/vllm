@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#MISE description="PTS: Qwen3 Coder SPEED-Bench Coding with vLLM 0.26"
+# PTS owns scheduling/headline parsing; vLLM owns the online server/client and detailed JSON.
+set -euo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+# shellcheck source=/dev/null
+source "${REPO_ROOT}/lib/bench.sh"
+
+profile="vllm-speed-bench-1.0.0"
+prefix="pts_vllm"
+
+gpu_names=""
+if have nvidia-smi; then
+	gpu_names="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true)"
+fi
+if [ -z "$gpu_names" ]; then
+	skip_result "NVIDIA GPU not available" "$prefix"
+	exit 0
+fi
+if ! have phoronix-test-suite; then
+	skip_result "phoronix-test-suite not installed" "$prefix"
+	exit 0
+fi
+
+install_local_pts_profile "$profile"
+
+mode="${BENCH_VLLM_MODE:-qualification}"
+case "$mode" in
+	qualification)
+		run_mode="Qualification (1 prompt x 16 output tokens)"
+		;;
+	full)
+		run_mode="Full (80 prompts x 1024 output tokens)"
+		;;
+	*)
+		echo "ERROR: BENCH_VLLM_MODE must be qualification or full" >&2
+		fail_result "invalid BENCH_VLLM_MODE: ${mode}" "$prefix"
+		exit 1
+		;;
+esac
+
+echo "vLLM benchmark mode: ${mode} (${run_mode})"
+run_pinned_pts "local/${profile}" "$prefix" \
+	"vllm-speed-bench.workload=Qwen3 Coder 30B-A3B FP8 SPEED-Bench Coding;vllm-speed-bench.run-mode=${run_mode}"
+assert_pts_numeric_values "$prefix" 30
