@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<PhoronixTestSuite>
+  <ResultsParser>
+    <OutputTemplate>Request throughput (req/s): #_RESULT_#</OutputTemplate>
+    <ResultScale>requests/s</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>Output token throughput (tok/s): #_RESULT_#</OutputTemplate>
+    <ResultScale>output tokens/s</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>Total token throughput (tok/s): #_RESULT_#</OutputTemplate>
+    <ResultScale>total tokens/s</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>Median TTFT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>median TTFT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>Median TPOT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>median TPOT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>Median ITL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>median ITL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+</PhoronixTestSuite>

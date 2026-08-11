@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<!-- The model/dataset pair is fixed. A separate run-mode axis keeps qualification and full
+     measurements explicit and reproducible without runtime argument rewriting. -->
+<PhoronixTestSuite>
+  <TestInformation>
+    <Title>vLLM SPEED-Bench Coding</Title>
+    <AppVersion>0.26.0</AppVersion>
+    <Description>Online vLLM serving benchmark for the revision-pinned Qwen3-Coder-30B-A3B-Instruct-FP8 model using the qualitative coding category from NVIDIA SPEED-Bench. Model weights and the prepared dataset are supplied by a read-only Modal Volume.</Description>
+    <ResultScale>tokens/s</ResultScale>
+    <Proportion>HIB</Proportion>
+    <Executable>vllm</Executable>
+    <TimesToRun>1</TimesToRun>
+  </TestInformation>
+  <TestProfile>
+    <Version>1.0.0</Version>
+    <SupportedPlatforms>Linux</SupportedPlatforms>
+    <SoftwareType>Utility</SoftwareType>
+    <TestType>Graphics</TestType>
+    <License>Free</License>
+    <Status>Verified</Status>
+    <ExternalDependencies>python, cuda</ExternalDependencies>
+    <RequiresDisplay>FALSE</RequiresDisplay>
+    <RequiresInternet>FALSE</RequiresInternet>
+    <EnvironmentSize>1</EnvironmentSize>
+    <ProjectURL>https://www.vllm.ai/</ProjectURL>
+    <RepositoryURL>https://github.com/vllm-project/vllm</RepositoryURL>
+    <Maintainer>StarSling</Maintainer>
+  </TestProfile>
+  <TestSettings>
+    <Option>
+      <DisplayName>Workload</DisplayName>
+      <Identifier>workload</Identifier>
+      <ArgumentPrefix> </ArgumentPrefix>
+      <Menu>
+        <Entry>
+          <Name>Qwen3 Coder 30B-A3B FP8 SPEED-Bench Coding</Name>
+          <Value>speed-bench --model Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 --revision dcaee4d4dfc5ee71ad501f01f530e5652438fde0 --dataset-name speed_bench --speed-bench-dataset-subset qualitative --speed-bench-category coding --temperature 0.7 --top-p 0.8 --seed 0 --percentile-metrics ttft,tpot,itl --metric-percentiles 50,90,99 --trust-remote-code</Value>
+        </Entry>
+      </Menu>
+    </Option>
+    <Option>
+      <DisplayName>Run mode</DisplayName>
+      <Identifier>run-mode</Identifier>
+      <ArgumentPrefix> </ArgumentPrefix>
+      <Menu>
+        <Entry>
+          <Name>Qualification (1 prompt x 16 output tokens)</Name>
+          <Value>--speed-bench-output-len 16 --num-prompts 1 --no-oversample --num-warmups 0 --max-concurrency 1</Value>
+        </Entry>
+        <Entry>
+          <Name>Full (80 prompts x 1024 output tokens)</Name>
+          <Value>--speed-bench-output-len 1024 --num-prompts 80 --no-oversample --num-warmups 8 --max-concurrency 16</Value>
+        </Entry>
+      </Menu>
+    </Option>
+  </TestSettings>
+</PhoronixTestSuite>

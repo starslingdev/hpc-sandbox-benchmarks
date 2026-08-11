@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// `generate-catalog` — regenerate `src/pts-generated.ts` from every vendored profile under
+// `generate-catalog` — regenerate `src/pts-generated.ts` from catalog-eligible vendored profiles under
 // `src/pts-profiles/`. Reads the committed XML (never the network), maps each profile to draft
 // `MetricDef[]` (./catalog/generate.ts), serializes deterministically (./catalog/serialize.ts), and
 // pipes the result through Biome so the committed bytes match a fresh run — the invariant the catalog
@@ -15,6 +15,7 @@ import { serializeCatalog } from "./catalog/serialize.ts";
 
 const PROFILES_DIR = `${import.meta.dir}/../src/pts-profiles`;
 const OUT_FILE = `${import.meta.dir}/../src/pts-generated.ts`;
+const CATALOG_IGNORE_FILE = ".catalog-ignore";
 
 async function readXml(path: string): Promise<string> {
 	const file = Bun.file(path);
@@ -22,7 +23,10 @@ async function readXml(path: string): Promise<string> {
 }
 
 /**
- * Discover every vendored profile as a `{ repo, dir }` pair. A flat `pts-profiles/<name>-<ver>` (with a
+ * Discover each catalog-eligible vendored profile as a `{ repo, dir }` pair. A profile-local
+ * `.catalog-ignore` keeps specialized suites (for example GPU-only matrices) vendored and runnable
+ * without pretending their heterogeneous metrics belong in the CPU sandbox comparison catalog.
+ * A flat `pts-profiles/<name>-<ver>` (with a
  * test-definition.xml directly inside) is an upstream profile → repo `pts`. A `pts-profiles/<repo>/…`
  * directory (no test-definition.xml of its own, only child profile dirs) is a repo-local source → that
  * `<repo>` is the prefix (PTS reports e.g. `local/hardlink-1.0.0`). Sorted by repo then dir so the
@@ -34,14 +38,20 @@ async function discoverProfiles(): Promise<Array<{ repo: string; dir: string; ba
 		if (!entry.isDirectory()) continue;
 		const path = `${PROFILES_DIR}/${entry.name}`;
 		if (await Bun.file(`${path}/test-definition.xml`).exists()) {
-			out.push({ repo: "pts", dir: entry.name, base: path });
+			if (!(await Bun.file(`${path}/${CATALOG_IGNORE_FILE}`).exists())) {
+				out.push({ repo: "pts", dir: entry.name, base: path });
+			}
 			continue;
 		}
 		// Repo subdir (e.g. `local/`): one level of nested profile dirs.
 		for (const child of await readdir(path, { withFileTypes: true })) {
 			if (!child.isDirectory()) continue;
-			if (await Bun.file(`${path}/${child.name}/test-definition.xml`).exists()) {
-				out.push({ repo: entry.name, dir: child.name, base: `${path}/${child.name}` });
+			const childPath = `${path}/${child.name}`;
+			if (
+				(await Bun.file(`${childPath}/test-definition.xml`).exists()) &&
+				!(await Bun.file(`${childPath}/${CATALOG_IGNORE_FILE}`).exists())
+			) {
+				out.push({ repo: entry.name, dir: child.name, base: childPath });
 			}
 		}
 	}
