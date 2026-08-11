@@ -17,6 +17,7 @@
       "name": "@sandbox-benchmarks/cli",
       "version": "0.0.0",
       "bin": {
+        "bench-gpu": "./src/bin/bench-gpu.ts",
         "bench-lifecycle": "./src/bin/bench-lifecycle.ts",
         "bench-suite": "./src/bin/bench-suite.ts",
         "bench-smoke": "./src/bin/bench-smoke.ts",
