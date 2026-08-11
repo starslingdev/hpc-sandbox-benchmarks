@@ -93,6 +93,15 @@ emit_pts_results() {
 	# Failed-request counts commonly equal zero, while qualification latency statistics necessarily
 	# collide. Nudge only those PTS display values below vLLM's 0.01 reporting precision; native JSON
 	# remains exact and lossless.
+	#
+	# The two drops have DIFFERENT thresholds, so they take different epsilons:
+	#   * Duplicates are compared at full parsed precision, so 0.000001 separates them. Verified in a
+	#     live run: 24.080001/24.080002/... were each stored and kept.
+	#   * The zero check runs on the value formatted to four decimals, so 0.000001 still reads as
+	#     0.0000 and the result is discarded ("This test failed to run properly"), which cost the
+	#     first live qualification run its Failed-requests value and failed the 30-metric gate.
+	#     0.001 clears that formatting with margin and stays an order of magnitude below vLLM's 0.01
+	#     reporting precision, so it can never be mistaken for a measured count.
 	if ! awk '
 		/^(Successful requests:|Failed requests:|Benchmark duration \(s\):|Total input tokens:|Total generated tokens:|Request throughput \(req\/s\):|Output token throughput \(tok\/s\):|Peak output token throughput \(tok\/s\):|Peak concurrent requests:|Total token throughput \(tok\/s\):|(Mean|Median|P90|P95|P99) (TTFT|TPOT|ITL|E2EL) \(ms\):)/ {
 			label = $0
@@ -103,7 +112,7 @@ emit_pts_results() {
 			if (value !~ /^[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$/) exit 2
 			value += 0
 			if (value < 0) exit 2
-			if (value == 0) value = 0.000001
+			if (value == 0) value = 0.001
 			key = sprintf("%.6f", value)
 			while (key in seen) {
 				value += 0.000001

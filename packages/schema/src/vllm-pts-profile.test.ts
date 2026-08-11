@@ -78,8 +78,19 @@ describe("vLLM PTS profile", () => {
 			expect(ptsLines).toHaveLength(30);
 			expect(new Set(ptsLines.map((line) => line.split(" ").at(-1))).size).toBe(30);
 			expect(ptsLines.find((line) => line.startsWith("PTS Failed requests:"))).toBe(
-				"PTS Failed requests: 0.000001",
+				"PTS Failed requests: 0.001000",
 			);
+			// The value alone is not the contract: PTS applies its zero check to the value formatted to
+			// four decimals, so anything that renders as 0.0000 there is discarded as "failed to run
+			// properly" no matter how the runner printed it. A live qualification run lost its
+			// Failed-requests value to exactly that. Assert what PTS actually sees.
+			for (const line of ptsLines) {
+				const value = Number(line.split(" ").at(-1));
+				expect(Number(value.toFixed(4))).toBeGreaterThan(0);
+			}
+			// Duplicates are compared at full precision, so the 1e-6 separation is still what keeps the
+			// necessarily-colliding qualification percentiles apart.
+			expect(new Set(ptsLines.map((line) => Number(line.split(" ").at(-1)))).size).toBe(30);
 			const emittedLabels = new Set(ptsLines.map((line) => line.replace(/ [-+0-9.eE]+$/, "")));
 			const parsedLabels = new Set(
 				parseProfile("local", "vllm-speed-bench-1.0.0", testXml, resultsXml).parsers.map(
