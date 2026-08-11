@@ -56,6 +56,10 @@ export {
 	observedMixtureIds,
 	representativeSpecs,
 } from "./lib/observed-mixtures.ts";
+// Raw PTS access for specialized reports (for example GPU profiles that intentionally sit outside the
+// cross-provider Metric Catalog). Normal benchmark normalization should keep using normalizeResultsTree.
+export { parsePtsComposite, resultSamples } from "./lib/pts.ts";
+export type { PtsComposite, PtsResult } from "./lib/pts-schema.ts";
 export {
 	type CompareRunsOptions,
 	compareRuns,
