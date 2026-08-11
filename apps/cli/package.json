@@ -36,6 +36,7 @@
     "@daytona/api-client": "catalog:computesdk",
     "@daytona/sdk": "catalog:computesdk",
     "@runloop/api-client": "catalog:computesdk",
+    "modal": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk",
     "dotenv": "catalog:"
   },
