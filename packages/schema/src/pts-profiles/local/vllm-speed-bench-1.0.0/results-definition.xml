@@ -1,33 +1,153 @@
 <?xml version="1.0"?>
 <PhoronixTestSuite>
   <ResultsParser>
-    <OutputTemplate>Request throughput (req/s): #_RESULT_#</OutputTemplate>
-    <ResultScale>requests/s</ResultScale>
-    <ResultProportion>HIB</ResultProportion>
-  </ResultsParser>
-  <ResultsParser>
-    <OutputTemplate>Output token throughput (tok/s): #_RESULT_#</OutputTemplate>
+    <OutputTemplate>PTS Output token throughput (tok/s): #_RESULT_#</OutputTemplate>
     <ResultScale>output tokens/s</ResultScale>
     <ResultProportion>HIB</ResultProportion>
   </ResultsParser>
   <ResultsParser>
-    <OutputTemplate>Total token throughput (tok/s): #_RESULT_#</OutputTemplate>
+    <OutputTemplate>PTS Total token throughput (tok/s): #_RESULT_#</OutputTemplate>
     <ResultScale>total tokens/s</ResultScale>
     <ResultProportion>HIB</ResultProportion>
   </ResultsParser>
   <ResultsParser>
-    <OutputTemplate>Median TTFT (ms): #_RESULT_#</OutputTemplate>
+    <OutputTemplate>PTS Request throughput (req/s): #_RESULT_#</OutputTemplate>
+    <ResultScale>requests/s</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Peak output token throughput (tok/s): #_RESULT_#</OutputTemplate>
+    <ResultScale>peak output tokens/s</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Peak concurrent requests: #_RESULT_#</OutputTemplate>
+    <ResultScale>peak concurrent requests</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Benchmark duration (s): #_RESULT_#</OutputTemplate>
+    <ResultScale>benchmark seconds</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Successful requests: #_RESULT_#</OutputTemplate>
+    <ResultScale>successful requests</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Failed requests: #_RESULT_#</OutputTemplate>
+    <ResultScale>failed requests</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Total input tokens: #_RESULT_#</OutputTemplate>
+    <ResultScale>input tokens</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Total generated tokens: #_RESULT_#</OutputTemplate>
+    <ResultScale>generated tokens</ResultScale>
+    <ResultProportion>HIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Mean TTFT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>mean TTFT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Median TTFT (ms): #_RESULT_#</OutputTemplate>
     <ResultScale>median TTFT - ms</ResultScale>
     <ResultProportion>LIB</ResultProportion>
   </ResultsParser>
   <ResultsParser>
-    <OutputTemplate>Median TPOT (ms): #_RESULT_#</OutputTemplate>
+    <OutputTemplate>PTS P90 TTFT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p90 TTFT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P95 TTFT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p95 TTFT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P99 TTFT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p99 TTFT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Mean TPOT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>mean TPOT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Median TPOT (ms): #_RESULT_#</OutputTemplate>
     <ResultScale>median TPOT - ms</ResultScale>
     <ResultProportion>LIB</ResultProportion>
   </ResultsParser>
   <ResultsParser>
-    <OutputTemplate>Median ITL (ms): #_RESULT_#</OutputTemplate>
+    <OutputTemplate>PTS P90 TPOT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p90 TPOT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P95 TPOT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p95 TPOT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P99 TPOT (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p99 TPOT - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Mean ITL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>mean ITL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Median ITL (ms): #_RESULT_#</OutputTemplate>
     <ResultScale>median ITL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P90 ITL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p90 ITL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P95 ITL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p95 ITL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P99 ITL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p99 ITL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Mean E2EL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>mean E2EL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS Median E2EL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>median E2EL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P90 E2EL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p90 E2EL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P95 E2EL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p95 E2EL - ms</ResultScale>
+    <ResultProportion>LIB</ResultProportion>
+  </ResultsParser>
+  <ResultsParser>
+    <OutputTemplate>PTS P99 E2EL (ms): #_RESULT_#</OutputTemplate>
+    <ResultScale>p99 E2EL - ms</ResultScale>
     <ResultProportion>LIB</ResultProportion>
   </ResultsParser>
 </PhoronixTestSuite>

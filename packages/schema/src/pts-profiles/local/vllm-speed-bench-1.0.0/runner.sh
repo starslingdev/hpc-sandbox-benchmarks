@@ -86,6 +86,44 @@ write_argv() {
 	printf '%q ' "$@" >"$output"
 	printf '\n' >>"$output"
 }
+
+emit_pts_results() {
+	local summary="${log_file}.pts.$$"
+	# PTS 10.8.4 drops zero-valued results and later parser results with the same numeric value.
+	# Failed-request counts commonly equal zero, while qualification latency statistics necessarily
+	# collide. Nudge only those PTS display values below vLLM's 0.01 reporting precision; native JSON
+	# remains exact and lossless.
+	if ! awk '
+		/^(Successful requests:|Failed requests:|Benchmark duration \(s\):|Total input tokens:|Total generated tokens:|Request throughput \(req\/s\):|Output token throughput \(tok\/s\):|Peak output token throughput \(tok\/s\):|Peak concurrent requests:|Total token throughput \(tok\/s\):|(Mean|Median|P90|P95|P99) (TTFT|TPOT|ITL|E2EL) \(ms\):)/ {
+			label = $0
+			value = $0
+			sub(/^.*:[[:space:]]*/, "", value)
+			sub(/[[:space:]].*$/, "", value)
+			sub(/[[:space:]]+[-+0-9.eE]+[[:space:]]*$/, "", label)
+			if (value !~ /^[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$/) exit 2
+			value += 0
+			if (value < 0) exit 2
+			if (value == 0) value = 0.000001
+			key = sprintf("%.6f", value)
+			while (key in seen) {
+				value += 0.000001
+				key = sprintf("%.6f", value)
+			}
+			seen[key] = 1
+			printf "PTS %s %.6f\n", label, value
+			count++
+		}
+		END { if (count != 30) exit 1 }
+	' "$log_file" >"$summary"; then
+		rm -f "$summary"
+		return 1
+	fi
+	printf '\n' >>"$log_file"
+	cat "$summary" >>"$log_file"
+	local cat_status=$?
+	rm -f "$summary"
+	return "$cat_status"
+}
 trap stop_server EXIT
 trap 'on_signal 129' HUP
 trap 'on_signal 130' INT
@@ -376,6 +414,10 @@ else
 	status=$?
 fi
 snapshot_metrics after
+if [ "$status" -eq 0 ] && ! emit_pts_results; then
+	echo "ERROR: vLLM did not emit the complete 30-metric PTS summary" >>"$log_file"
+	status=1
+fi
 if [ "$status" -eq 124 ]; then
 	echo "ERROR: vLLM benchmark client exceeded ${client_timeout_seconds}s" >>"$log_file"
 fi
