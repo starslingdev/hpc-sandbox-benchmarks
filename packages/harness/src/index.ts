@@ -14,9 +14,11 @@ import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
 import type { WaitUntilReadyOptions } from "./lib/readiness.ts";
 import { neverReadyReason, waitUntilReady } from "./lib/readiness.ts";
-import { createOwnedSandbox } from "./lib/sandbox-owner.ts";
+import { createOwnedSandbox, withOwnedSandbox } from "./lib/sandbox-owner.ts";
 import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
 
+export { collectResults } from "./lib/collect.ts";
+export { StepRunner } from "./lib/execute.ts";
 // Re-export the lifecycle measurement surface so consumers import it from the package root, never
 // from `src/lib` (the package-boundary rule the other modules follow).
 export type {
@@ -28,7 +30,13 @@ export type {
 	MeasureLifecycleOptions,
 } from "./lib/lifecycle.ts";
 export { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
-export { exitAfterSandboxCleanup, shutdownOwnedSandboxes } from "./lib/sandbox-owner.ts";
+export {
+	createOwnedSandbox,
+	exitAfterSandboxCleanup,
+	shutdownOwnedSandboxes,
+	withCleanupPreservingPrimaryError,
+	withOwnedSandbox,
+} from "./lib/sandbox-owner.ts";
 
 /**
  * The universal sandbox a provider's `sandbox.create` returns (computesdk's `Sandbox`). Derived from
@@ -602,27 +610,11 @@ export async function withSandbox<T>(
 	fn: (sandbox: Sandbox) => Promise<T>,
 ): Promise<T> {
 	const compute = config.createCompute();
-	const sandbox = await createOwnedSandbox(() => compute.sandbox.create(config.createOptions));
-	let result: T;
-	try {
-		result = await fn(sandbox);
-	} catch (err) {
-		// fn failed: tear down once, but never let a destroy error mask the root cause (a
-		// `finally { await destroy() }` would swallow it). Log the secondary failure and rethrow fn's.
-		try {
-			await sandbox.destroy();
-		} catch (destroyErr) {
-			console.error(
-				`withSandbox: destroy failed after an error in fn (${config.name}):`,
-				destroyErr,
-			);
-		}
-		throw err;
-	}
-	// fn succeeded: tear down once. A teardown failure here is the only error, so let it surface
-	// (a leaked sandbox is worth failing on) — the result is already captured by the caller's fn.
-	await sandbox.destroy();
-	return result;
+	return withOwnedSandbox(
+		() => compute.sandbox.create(config.createOptions),
+		fn,
+		`withSandbox (${config.name})`,
+	);
 }
 
 /**

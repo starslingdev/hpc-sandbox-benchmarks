@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanupOwnedSandboxes, createOwnedSandbox } from "./sandbox-owner.ts";
+import { cleanupOwnedSandboxes, createOwnedSandbox, withOwnedSandbox } from "./sandbox-owner.ts";
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;
@@ -69,6 +69,45 @@ describe("sandbox process ownership", () => {
 		}));
 
 		await expect(sandbox.destroy()).rejects.toThrow("transient teardown failure");
+		expect(await cleanupOwnedSandboxes()).toEqual([]);
+		expect(destroys).toBe(2);
+	});
+
+	it("scopes a successful operation to one owned sandbox", async () => {
+		let destroys = 0;
+		const result = await withOwnedSandbox(
+			async () => ({
+				sandboxId: "sb-scoped",
+				value: 42,
+				async destroy() {
+					destroys++;
+				},
+			}),
+			async (sandbox) => sandbox.value,
+		);
+
+		expect(result).toBe(42);
+		expect(destroys).toBe(1);
+		expect(await cleanupOwnedSandboxes()).toEqual([]);
+	});
+
+	it("preserves the operation error and retains a failed teardown for the exit drain", async () => {
+		let destroys = 0;
+		await expect(
+			withOwnedSandbox(
+				async () => ({
+					sandboxId: "sb-scoped-retry",
+					async destroy() {
+						destroys++;
+						if (destroys === 1) throw new Error("teardown failed");
+					},
+				}),
+				async () => {
+					throw new Error("operation failed");
+				},
+				"test sandbox",
+			),
+		).rejects.toThrow("operation failed");
 		expect(await cleanupOwnedSandboxes()).toEqual([]);
 		expect(destroys).toBe(2);
 	});

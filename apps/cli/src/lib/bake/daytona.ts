@@ -26,8 +26,11 @@
 import type { RegistryPushAccessDto } from "@daytona/api-client";
 import { Configuration, DockerRegistryApi } from "@daytona/api-client";
 import { Daytona, SandboxClass } from "@daytona/sdk";
+import { withCleanupPreservingPrimaryError } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers/config";
 import type { Log } from "./types.ts";
+
+export { withCleanupPreservingPrimaryError };
 
 /** Whether a snapshot delete error is a genuine "no such snapshot" (so the idempotent path may
  *  swallow it — e.g. a snapshot deleted out from under us between the list and the delete) — as
@@ -242,30 +245,6 @@ async function dockerLogin(access: RegistryPushAccessDto, log: Log): Promise<str
 	const code = await proc.exited;
 	if (code !== 0) throw new Error(`docker login ${registry} exited ${code}`);
 	return registry;
-}
-
-/** Run cleanup after an operation without letting a cleanup failure hide the primary failure. */
-export async function withCleanupPreservingPrimaryError<T>(
-	operation: () => Promise<T>,
-	cleanup: () => Promise<void>,
-	onSuppressedCleanupError: (err: unknown) => void,
-): Promise<T> {
-	let outcome: { ok: true; value: T } | { ok: false; error: unknown };
-	try {
-		outcome = { ok: true, value: await operation() };
-	} catch (error) {
-		outcome = { ok: false, error };
-	}
-
-	try {
-		await cleanup();
-	} catch (cleanupError) {
-		if (outcome.ok) throw cleanupError;
-		onSuppressedCleanupError(cleanupError);
-	}
-
-	if (!outcome.ok) throw outcome.error;
-	return outcome.value;
 }
 
 /** Remove the short-lived registry credential and fail if Docker did not remove it. */

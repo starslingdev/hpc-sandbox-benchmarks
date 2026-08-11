@@ -257,3 +257,45 @@ export function createOwnedSandbox<T extends DestroyableSandbox>(
 
 	return entry.promise;
 }
+
+/** Run cleanup without letting its failure hide an earlier operation failure. */
+export async function withCleanupPreservingPrimaryError<T>(
+	operation: () => Promise<T>,
+	cleanup: () => Promise<unknown>,
+	onSuppressedCleanupError: (error: unknown) => void,
+): Promise<T> {
+	let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+	try {
+		outcome = { ok: true, value: await operation() };
+	} catch (error) {
+		outcome = { ok: false, error };
+	}
+
+	try {
+		await cleanup();
+	} catch (error) {
+		if (outcome.ok) throw error;
+		onSuppressedCleanupError(error);
+	}
+
+	if (!outcome.ok) throw outcome.error;
+	return outcome.value;
+}
+
+/**
+ * Create one process-owned sandbox, run a callback, and always tear the sandbox down. If the callback
+ * fails, preserve that primary error while the process registry retains any sandbox whose teardown
+ * also failed for the bounded exit drain to retry.
+ */
+export async function withOwnedSandbox<T extends DestroyableSandbox, R>(
+	create: () => Promise<T>,
+	fn: (sandbox: T) => Promise<R>,
+	label = "sandbox",
+): Promise<R> {
+	const sandbox = await createOwnedSandbox(create);
+	return withCleanupPreservingPrimaryError(
+		() => fn(sandbox),
+		() => sandbox.destroy(),
+		(error) => console.error(`${label}: teardown failed after the operation failed:`, error),
+	);
+}
