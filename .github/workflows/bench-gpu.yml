@@ -1,0 +1,169 @@
+name: Benchmark GPU sandbox
+
+# Standalone GPU lane. GPU workloads are intentionally not added to the ordinary provider × suite
+# matrix: only Modal is wired here today, the resource/cost envelope is different, and vLLM metrics do
+# not belong in the CPU sandbox leaderboard. PTS schedules a vLLM 0.26 online-serving workload using
+# Qwen3 Coder 30B-A3B FP8 and SPEED-Bench Coding. Native vLLM JSON, the resolved environment, raw
+# PTS results, and a technical report are retained. CPU-only model preparation and an immutable
+# GPU-generated kernel snapshot keep network transfer, compilation, and cache copies out of the run.
+# A full run launches twenty independent sandboxes concurrently from one runner, matching the ordinary
+# benchmark lane's in-process replicate pattern while keeping GPU results statistically separate.
+# Qualification is a wiring check: one sandbox, one request, and none of the confirmatory gates.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Full runs 80 × 1,024 tokens; qualification is a one-request wiring check
+        required: true
+        type: choice
+        default: full
+        options:
+          - qualification
+          - full
+
+permissions:
+  contents: read
+
+# The model cache and kernel-snapshot registry are shared across refs, so serialize workflow runs that
+# can update them. The benchmark job still launches its declared replicate fleet concurrently.
+concurrency:
+  group: gpu-benchmark-${{ github.repository }}-shared-model-cache
+  cancel-in-progress: false
+
+jobs:
+  prepare-assets:
+    name: Prepare revision-pinned benchmark assets (CPU only)
+    environment: privileged
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Incrementally prepare the shared Modal Volume
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: >-
+          bun apps/cli/src/bin/bench-gpu.ts
+          --prepare models
+          --cpu 8
+          --cpu-limit 8
+          --timeout-minutes 240
+
+  prepare-kernels:
+    name: Seed revision-pinned SM120 kernel snapshot
+    needs: prepare-assets
+    environment: privileged
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Seed immutable CUDA kernel snapshot when stale
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: >-
+          bun apps/cli/src/bin/bench-gpu.ts
+          --prepare kernels
+          --gpu RTX-PRO-6000
+          --cpu 8
+          --cpu-limit 64
+          --memory-mib 98304
+          --memory-limit-mib 262144
+          --cuda-build-jobs 8
+          --nvcc-threads 4
+          --timeout-minutes 90
+          --output-dir benchmark-results/modal-vllm-kernel-seed
+
+      - name: Upload kernel seed diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: modal-vllm-kernel-seed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: benchmark-results/modal-vllm-kernel-seed/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  benchmark:
+    name: >-
+      Modal RTX PRO 6000 / Qwen3 Coder SPEED-Bench / ${{ inputs.mode }} /
+      ${{ inputs.mode == 'full' && '20 replicates' || '1 replicate' }}
+    needs: prepare-kernels
+    environment: privileged
+    runs-on: ubuntu-24.04
+    # The job deadline is a final safety net; each measured warm-cache replicate must finish in five minutes.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Run vLLM GPU benchmark
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          BENCHMARK_MODE: ${{ inputs.mode }}
+        run: |
+          # The confirmatory gates belong to the measured lane only. Qualification is a one-request
+          # wiring check: --require-precision would expand it to the full twenty-sandbox fleet and
+          # then judge a single 16-token request against a 0.5% confidence interval it cannot meet.
+          # Without the gate the CLI runs one replicate, which is the whole point of the mode.
+          gates=()
+          if [ "$BENCHMARK_MODE" = full ]; then
+            gates=(
+              --require-precision
+              --relative-ci-half-width 0.005
+              --require-duration
+              --max-replicate-duration-seconds 300
+            )
+          fi
+          bun apps/cli/src/bin/bench-gpu.ts \
+            --gpu RTX-PRO-6000 \
+            --mode "$BENCHMARK_MODE" \
+            --cpu 8 \
+            --cpu-limit 8 \
+            --memory-mib 98304 \
+            --memory-limit-mib 98304 \
+            --timeout-minutes 15 \
+            --client-timeout-minutes 5 \
+            --flashinfer-autotune disabled \
+            --output-dir benchmark-results/modal-vllm \
+            "${gates[@]}"
+
+      - name: Publish report in job summary
+        if: always()
+        run: |
+          report=benchmark-results/modal-vllm/report.md
+          if [ -f "$report" ]; then
+            # Artifact-relative SVG links do not resolve in a GitHub job summary. Keep the complete
+            # illustrated report in the artifact and publish its tables/narrative inline here.
+            sed '/^!\[/d' "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## GPU benchmark report unavailable' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload raw results and technical report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: modal-vllm-${{ github.run_id }}-${{ github.run_attempt }}
+          path: benchmark-results/modal-vllm/
+          if-no-files-found: error
+          retention-days: 30
