@@ -4,6 +4,17 @@ How the repository itself is put together: the workspace, its enforced boundarie
 contract, and the gates that hold them. For how a *measurement* is produced, see
 [methodology](./methodology.md).
 
+## Provider cost evidence (Run v5)
+
+The provider adapter owns billing API interaction. After the harness attempts and awaits sandbox
+teardown, its optional hook returns one validated sandbox-scoped observed/missing record. The harness
+persists it under the existing raw `data/` tree as `provider-cost-evidence.json`; normalization and
+aggregation carry it through using only `@sandbox-benchmarks/schema`, with no provider SDK dependency.
+Historical v2-v4 documents remain unchanged and cannot carry evidence.
+The sandbox collection archive cannot supply that reserved filename: collection rejects it before
+copying any entry, and only the post-teardown host writer may create it. Schema validation establishes a
+bounded, structurally valid provider-observed record; it does not authenticate the provider response.
+
 ## The repository
 
 This repo is a **Bun workspace monorepo** with a strict, enforced dependency DAG and a uniform

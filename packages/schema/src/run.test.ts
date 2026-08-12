@@ -9,7 +9,7 @@ const validRun = {
 	targetSpec: { vcpus: 2, memoryGb: 8, diskGb: 20 },
 	providers: [
 		{
-			providerId: "daytona",
+			providerId: "daytona-vm",
 			validationStatus: "validated",
 			observedSpecs: { vcpus: 2, memoryGb: 8 },
 			metrics: [
@@ -42,10 +42,39 @@ describe("Run schema", () => {
 		expect(run.providers[0]?.validationStatus).toBe("validated");
 	});
 
-	it("accepts every published schemaVersion from v2 through v4", () => {
+	it("accepts every published schemaVersion from v2 through v5", () => {
 		for (const schemaVersion of ["2", "3", "4"] as const) {
 			expect(parseRun({ ...validRun, schemaVersion }).schemaVersion).toBe(schemaVersion);
 		}
+		const v5 = structuredClone(validRun);
+		v5.schemaVersion = "5";
+		for (const provider of v5.providers) {
+			(provider as Record<string, unknown>).costEvidence = [];
+		}
+		expect(parseRun(v5).schemaVersion).toBe("5");
+	});
+
+	it("gates cost evidence at v5 and checks its parent cell identity", () => {
+		const evidence = {
+			kind: "missing",
+			cell: { runId: "run-1", providerId: "daytona-vm", suite: "cpu-node" },
+			subject: { kind: "sandbox", sandboxId: "sb-1" },
+			capturedAt: "2026-08-08T00:00:00.000Z",
+			sdk: { packageName: "sdk", version: "1.0.0" },
+			reason: "unsupported_public_api",
+			detail: "No public endpoint.",
+		};
+		const preV5 = structuredClone(validRun);
+		(preV5.providers[0] as Record<string, unknown>).costEvidence = [];
+		expect(() => parseRun(preV5)).toThrow(/v5 Run/);
+		expect(() => parseRun({ ...validRun, schemaVersion: "5" })).toThrow(/costEvidence array/);
+
+		const v5 = structuredClone(validRun);
+		v5.schemaVersion = "5";
+		(v5.providers[0] as Record<string, unknown>).costEvidence = [evidence];
+		expect(parseRun(v5).providers[0]?.costEvidence).toHaveLength(1);
+		evidence.cell.runId = "other-run";
+		expect(() => parseRun(v5)).toThrow(/match its parent Run/);
 	});
 
 	it("rejects a v2 Run that carries a v3-only replicate field", () => {
@@ -561,6 +590,29 @@ describe("Run schema", () => {
 		});
 		expect(index.runs).toHaveLength(1);
 		expect(index.runs[0]?.runId).toBe("run-1");
+	});
+
+	it("accepts aggregate Run ids and rejects path syntax in Run identities", () => {
+		const aggregateId = structuredClone(validRun);
+		aggregateId.runId = "29937467891+29967667026";
+		expect(parseRun(aggregateId).runId).toBe("29937467891+29967667026");
+
+		for (const runId of ["../outside", "nested/run", "nested\\run"]) {
+			const bad = structuredClone(validRun);
+			bad.runId = runId;
+			expect(() => parseRun(bad)).toThrow(/invalid Run/);
+		}
+	});
+
+	it("requires a RunIndex path to be the canonical path derived from its Run id", () => {
+		for (const path of ["runs/../runs/run-1.json", "runs/other.json", "../run-1.json"]) {
+			expect(() =>
+				parseRunIndex({
+					schemaVersion: "1",
+					runs: [{ runId: "run-1", generatedAt: "2026-06-20T00:00:00.000Z", path }],
+				}),
+			).toThrow(/invalid RunIndex/);
+		}
 	});
 
 	it("rejects a RunIndex that isn't newest-first", () => {

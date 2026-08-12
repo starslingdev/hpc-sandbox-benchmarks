@@ -3,8 +3,8 @@
 Run [`31066359914`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/31066359914) · commit [`cf002382d6be307125e3f9c10e28597dddeb273c`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/cf002382d6be307125e3f9c10e28597dddeb273c) ·
 dataset [`data/dataset/runs/31066359914.json`](data/dataset/runs/31066359914.json) · generated 2026-08-06T03:32:15.839Z
 
-Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **498 metric records**
-backed by **5175 retained trial observations**, across **46 metrics** and
+Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **495 metric records**
+backed by **5172 retained trial observations**, across **46 metrics** and
 **11 providers**; every emitted, catalogued metric has a ranked table below
 (median across sandboxes), grouped by dimension with its headline first — some behind a disclosure triangle, none omitted.
 Generated from the published Run dataset — do not edit by hand. Methodology:
@@ -1002,17 +1002,14 @@ _Daytona (VM) leads · Blaxel is ~1.2× higher (lower is better)._
 
 USD/hr · lower is better
 
-_run.cloud is cheapest · Novita is ~3.9× higher (lower is better)._
+_Novita is cheapest · Daytona (VM) is ~1.4× higher (lower is better)._
 
 | Rank | Provider | Hourly cost (USD/hr) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
-| 1 | run.cloud | 0.05938 | — | 1 | 1 | — |
-| 2 | Novita | 0.2333 | — | 1 | 1 | — |
-| 3 | Daytona (VM) | 0.2502 | — | 1 | 1 | — |
-| 4 | E2B | 0.3312 | — | 1 | 1 | — |
-| 5 | Runloop | 0.6336 | — | 1 | 1 | — |
-| 6 | Modal (gVisor) | 0.7612 | — | 1 | 1 | — |
-| 6 | Modal (VM) | 0.7612 | — | 1 | 1 | equal values |
+| 1 | Novita | 0.2333 | — | 1 | 1 | — |
+| 2 | Daytona (VM) | 0.3312 | — | 1 | 1 | — |
+| 2 | E2B | 0.3312 | — | 1 | 1 | equal values |
+| 4 | Runloop | 0.6336 | — | 1 | 1 | — |
 
 ## Coverage gaps
 
@@ -1623,13 +1620,10 @@ correction is applied across providers or metrics.
 | system | SQLite Speedtest | E2B | 0.70 (too few sandboxes) | 0.077 |
 | system | SQLite Speedtest | Runloop | 0.10 (too few sandboxes) | 0.0013 |
 | system | SQLite Speedtest | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
-| economics | Hourly cost | run.cloud | — | — |
 | economics | Hourly cost | Novita | — | — |
 | economics | Hourly cost | Daytona (VM) | — | — |
-| economics | Hourly cost | E2B | — | — |
+| economics | Hourly cost | E2B | — (equal values) | — |
 | economics | Hourly cost | Runloop | — | — |
-| economics | Hourly cost | Modal (gVisor) | — | — |
-| economics | Hourly cost | Modal (VM) | — (equal values) | — |
 
 </details>
 

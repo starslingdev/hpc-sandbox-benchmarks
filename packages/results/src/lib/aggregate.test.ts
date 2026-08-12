@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import type { GapCause, MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
+import type {
+	GapCause,
+	MetricResult,
+	MissingProviderCostEvidence,
+	ProviderRun,
+	Run,
+	SuiteName,
+} from "@sandbox-benchmarks/schema";
 import {
 	aggregate,
 	ECONOMICS_METRIC_IDS,
@@ -43,7 +50,58 @@ function shard(
 	};
 }
 
+const evidence = (
+	suite: SuiteName,
+	replicateIndex: number,
+	sandboxId: string,
+): MissingProviderCostEvidence => ({
+	kind: "missing" as const,
+	cell: {
+		runId: "run-1",
+		providerId: "modal-gvisor",
+		suite,
+		replicateIndex,
+	},
+	subject: { kind: "sandbox" as const, sandboxId },
+	capturedAt: "2026-08-08T00:00:00.000Z",
+	sdk: { packageName: "modal", version: "0.7.6" },
+	reason: "unsupported_public_api" as const,
+	detail: "No public sandbox usage endpoint.",
+});
+
 describe("aggregateRuns", () => {
+	it("retains deterministic per-sandbox cost evidence and deduplicates identical copies", () => {
+		const r1Provider = provider("modal-gvisor", []);
+		r1Provider.costEvidence = [evidence("cpu-node", 1, "sb-1")];
+		const r0Provider = provider("modal-gvisor", []);
+		r0Provider.costEvidence = [evidence("cpu-node", 0, "sb-0")];
+		const duplicate = provider("modal-gvisor", []);
+		duplicate.costEvidence = [structuredClone(evidence("cpu-node", 0, "sb-0"))];
+		const merged = aggregateRuns([
+			shard([r1Provider], undefined, 1),
+			shard([r0Provider], undefined, 0),
+			shard([duplicate], undefined, 0),
+		]);
+		expect(merged.providers[0]?.costEvidence?.map((record) => record.subject.sandboxId)).toEqual([
+			"sb-0",
+			"sb-1",
+		]);
+	});
+
+	it("rejects conflicting cell evidence and a sandbox reused across cells", () => {
+		const one = provider("modal-gvisor", []);
+		one.costEvidence = [evidence("cpu-node", 0, "sb-0")];
+		const conflict = provider("modal-gvisor", []);
+		conflict.costEvidence = [{ ...evidence("cpu-node", 0, "sb-0"), detail: "Different evidence." }];
+		expect(() =>
+			aggregateRuns([shard([one], undefined, 0), shard([conflict], undefined, 0)]),
+		).toThrow(/conflicting provider cost evidence/);
+		const reused = provider("modal-gvisor", []);
+		reused.costEvidence = [evidence("memory", 1, "sb-0")];
+		expect(() =>
+			aggregateRuns([shard([one], undefined, 0), shard([reused], undefined, 1)]),
+		).toThrow(/reused across cells/);
+	});
 	it("unions a provider's measured metrics across per-suite shards", () => {
 		const cpuShard = shard([
 			provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10, 11])]),
@@ -81,8 +139,8 @@ describe("aggregateRuns", () => {
 		]);
 		expect(node?.samples).toEqual([10, 11, 20, 21]);
 		expect(node?.aggregates.n).toBe(4);
-		// The merged Run is v4 (replicate-aware, mixture-aware, attributed, self-describing).
-		expect(merged.schemaVersion).toBe("4");
+		// The merged Run is v5 (including the provider cost-evidence transport).
+		expect(merged.schemaVersion).toBe("5");
 	});
 
 	it("keeps a single-replicate metric verbatim — no replicates field at R = 1", () => {
@@ -137,7 +195,8 @@ describe("aggregateRuns", () => {
 	});
 
 	it("RE-derives economics from the merged measured set (stale shard economics dropped)", () => {
-		const hourly = hourlyCostAtTargetSpec(getProvider("daytona-vm")) ?? Number.NaN;
+		const targetSpec = { vcpus: 2, memoryGb: 8, diskGb: 20 };
+		const hourly = hourlyCostAtTargetSpec(getProvider("daytona-vm"), targetSpec) ?? Number.NaN;
 		// Shard carries a deliberately-wrong usd_per_hour; aggregate must recompute it from pricing.
 		const lifecycleShard = shard([
 			provider("daytona-vm", [
@@ -157,6 +216,40 @@ describe("aggregateRuns", () => {
 		expect(usdPerHour?.samples).toEqual([hourly]);
 		// Lifecycle cost derived from the merged spawn timing.
 		expect(usdPerLifecycle?.samples[0]).toBeCloseTo(hourly * (1000 / 3_600_000), 12);
+	});
+
+	it("re-derives economics against a historical 2-vCPU shard target", () => {
+		const merged = aggregateRuns([
+			shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])]),
+		]);
+		const hourly = merged.providers
+			.find((entry) => entry.providerId === "daytona-vm")
+			?.metrics.find((entry) => entry.metricId === ECONOMICS_METRIC_IDS.usdPerHour);
+		expect(merged.targetSpec).toEqual({ vcpus: 2, memoryGb: 8, diskGb: 20 });
+		expect(hourly?.samples).toEqual([0.2304]);
+	});
+
+	it("drops stale dynamic and Modal economics and re-derives only exact providers", () => {
+		const modal = provider("modal-gvisor", [
+			metric("node_web_tooling_runs_per_s", [9]),
+			metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.47592]),
+		]);
+		modal.costEvidence = [evidence("cpu-node", 0, "modal-sb")];
+		const merged = aggregateRuns([
+			shard([
+				provider("runcloud", [
+					metric("node_web_tooling_runs_per_s", [10]),
+					metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.0593784]),
+				]),
+				modal,
+			]),
+		]);
+		const runcloud = merged.providers.find((entry) => entry.providerId === "runcloud");
+		const mergedModal = merged.providers.find((entry) => entry.providerId === "modal-gvisor");
+		expect(runcloud?.validationStatus).toBe("validated");
+		expect(runcloud?.metrics.some((entry) => entry.metricId.startsWith("usd_"))).toBe(false);
+		expect(mergedModal?.metrics.some((entry) => entry.metricId.startsWith("usd_"))).toBe(false);
+		expect(mergedModal?.costEvidence).toHaveLength(1);
 	});
 
 	it("takes the latest generatedAt across shards", () => {
@@ -565,10 +658,12 @@ describe("aggregateRuns", () => {
 		expect(isolation?.fields).toEqual(record.fields);
 	});
 
-	it("throws on a shard-identity mismatch and on empty input", () => {
+	it("throws on shard identity/target mismatches and on empty input", () => {
 		const a = shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])]);
 		const b: Run = { ...a, sha: "different" };
 		expect(() => aggregateRuns([a, b])).toThrow(/identity mismatch/);
+		const differentTarget: Run = { ...a, targetSpec: { vcpus: 4, memoryGb: 8, diskGb: 20 } };
+		expect(() => aggregateRuns([a, differentTarget])).toThrow(/target spec mismatch/);
 		expect(() => aggregateRuns([])).toThrow(/at least one/);
 	});
 

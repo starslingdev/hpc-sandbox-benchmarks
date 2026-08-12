@@ -1,27 +1,69 @@
 import { describe, expect, it } from "bun:test";
-import type { ProviderMeta } from "./index.ts";
-import { getProvider, hourlyCostAtTargetSpec, PROVIDERS, TARGET_SPEC } from "./index.ts";
+import type { ProviderMeta, ProviderPricing } from "./index.ts";
+import {
+	getProvider,
+	hourlyCostAtTargetSpec,
+	isoDateSchema,
+	PROVIDERS,
+	pricingQuantityAtTargetSpec,
+	pricingQuantityRuleSchema,
+	providerPricingSchema,
+	TARGET_SPEC,
+} from "./index.ts";
 
-// A fixture meta so the registry helpers are tested independently of which providers have shipped.
-// The id only has to be a valid ProviderId — these helpers never look it up in PROVIDERS.
+const published = (id: string) => {
+	const pricing = getProvider(id)?.pricing;
+	expect(pricing?.model).toBe("published");
+	return pricing as Extract<ProviderPricing, { model: "published" }>;
+};
+
+const component = (id: string, componentId: string) => {
+	const value = published(id).components.find((entry) => entry.id === componentId);
+	expect(value).toBeDefined();
+	return value as NonNullable<typeof value>;
+};
+
+const referenceQuantity = (id: string, componentId: string) =>
+	pricingQuantityAtTargetSpec(component(id, componentId), TARGET_SPEC);
+
+const at = <T>(values: readonly T[], index: number): T => {
+	const value = values[index];
+	if (value === undefined) throw new Error(`fixture is missing item ${index}`);
+	return value;
+};
+
 const fixture: ProviderMeta = {
-	id: "e2b",
+	...getProvider("e2b"),
 	displayName: "Fixture",
-	website: "https://example.com",
-	sdkPackage: "fixture-sdk",
-	requiredEnvVars: ["FIXTURE_API_KEY"],
-	isolation: { technology: "microVM" },
-	pricing: { model: "per_vcpu_hour", usdPerVcpuHour: 0.05, usdPerGibHour: 0.01, notes: "fixture" },
-	maturity: { status: "ga" },
-	specPinning: "settable",
-	transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },
+	pricing: {
+		model: "published",
+		components: [
+			{
+				id: "cpu",
+				resource: "cpu",
+				billingBasis: "provisioned",
+				vendorUnit: "unit",
+				usdPerUnitHour: 0.05,
+				quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+			},
+			{
+				id: "memory",
+				resource: "memory",
+				billingBasis: "provisioned",
+				vendorUnit: "unit",
+				usdPerUnitHour: 0.01,
+				quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+			},
+		],
+		targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
+		notes: "fixture",
+		sources: [{ label: "fixture", url: "https://example.com", checkedAt: "2026-08-08" }],
+	},
 };
 
 describe("@sandbox-benchmarks/schema providers", () => {
-	it("pins the registered provider id set (the independent oracle downstream joins derive from)", () => {
-		// Deliberately hardcoded: downstream tests (e.g. results' normalizeResultsTree) assert their
-		// output against PROVIDERS, so this pin is what makes an accidental registry removal loud.
-		expect(PROVIDERS.map((p) => p.id).sort()).toEqual([
+	it("pins the registered provider id set", () => {
+		expect(PROVIDERS.map((provider) => provider.id).sort()).toEqual([
 			"blaxel",
 			"daytona-container",
 			"daytona-vm",
@@ -38,129 +80,255 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		]);
 	});
 
-	it("keeps the registry well-formed (unique ids, non-empty required env vars)", () => {
-		const ids = PROVIDERS.map((p) => p.id);
+	it("keeps identity and transport records well formed", () => {
+		const ids = PROVIDERS.map((provider) => provider.id);
 		expect(new Set(ids).size).toBe(ids.length);
-		for (const p of PROVIDERS) {
-			expect(p.requiredEnvVars.length).toBeGreaterThan(0);
-		}
-	});
-
-	it("declares a well-formed exec transport for every provider", () => {
-		for (const p of PROVIDERS) {
-			const t = p.transport;
-			expect(typeof t.streaming).toBe("boolean");
-			expect(typeof t.detachedPoll).toBe("boolean");
-			// A cap is either "uncapped" (null) or a strictly-positive, *finite* duration — a 0/negative
-			// cap would force every step past it (always detached) and is never a real bound, and a
-			// non-finite cap (`Infinity`) is "uncapped" smuggled in as a number instead of `null`.
-			// Split into explicit branches so a failure says which rule broke, not "expected false".
-			if (t.syncCapMs === null) {
-				expect(t.syncCapMs).toBeNull();
-			} else {
-				expect(typeof t.syncCapMs).toBe("number");
-				expect(Number.isFinite(t.syncCapMs)).toBe(true);
-				expect(t.syncCapMs).toBeGreaterThan(0);
-				// A bounded cap is only honourable if there's a detached path to fall back to: the harness
-				// routes steps past the cap to detached+poll. A finite cap with `detachedPoll: false` would
-				// silently strand capped steps in synchronous best-effort mode — the exact failure this
-				// schema exists to prevent — so assert the invariant the type alone can't.
-				expect(t.detachedPoll).toBe(true);
+		for (const provider of PROVIDERS) {
+			expect(provider.requiredEnvVars.length).toBeGreaterThan(0);
+			expect(getProvider(provider.id)?.id).toBe(provider.id);
+			expect(typeof provider.transport.streaming).toBe("boolean");
+			if (provider.transport.syncCapMs !== null) {
+				expect(Number.isFinite(provider.transport.syncCapMs)).toBe(true);
+				expect(provider.transport.syncCapMs).toBeGreaterThan(0);
+				expect(provider.transport.detachedPoll).toBe(true);
 			}
 		}
 	});
 
-	it("derives PROVIDERS from the keyed registry without id drift", () => {
-		// Each entry's id must equal the key it resolves under — the whole point of keying by id.
-		for (const p of PROVIDERS) {
-			expect(getProvider(p.id)?.id).toBe(p.id);
-		}
-	});
-
-	it("freezes the registry against runtime mutation", () => {
+	it("deep-freezes the registry and resolves legacy aliases", () => {
 		expect(Object.isFrozen(PROVIDERS)).toBe(true);
-		const [first] = PROVIDERS;
-		expect(first && Object.isFrozen(first.pricing)).toBe(true);
-	});
-
-	it("looks providers up by id and returns undefined for unknown ids", () => {
-		expect(getProvider("definitely-not-a-provider")).toBeUndefined();
-		for (const p of PROVIDERS) {
-			expect(getProvider(p.id)?.id).toBe(p.id);
-		}
-	});
-
-	it("computes hourly cost at the target spec from a per-vCPU-hour rate", () => {
-		const expected = 0.05 * TARGET_SPEC.vcpus + 0.01 * TARGET_SPEC.memoryGb;
-		expect(hourlyCostAtTargetSpec(fixture)).toBeCloseTo(expected);
-	});
-
-	it("bills only memory beyond a provider's included allowance", () => {
-		const allInclusive: ProviderMeta = {
-			...fixture,
-			pricing: {
-				model: "per_vcpu_hour",
-				usdPerVcpuHour: 0.05,
-				usdPerGibHour: 0.01,
-				includedMemoryGb: TARGET_SPEC.memoryGb + 4, // allowance exceeds the spec
-				notes: "all memory free",
-			},
-		};
-		// Billable memory clamps at 0, so only the vCPU cost remains.
-		expect(hourlyCostAtTargetSpec(allInclusive)).toBeCloseTo(0.05 * TARGET_SPEC.vcpus);
-	});
-
-	it("prices shipped providers from their vetted per-second rates", () => {
-		// Guards the economics constants against accidental regressions (PR #15 review). Daytona's
-		// first 5 GiB of memory are free; e2b bills all memory at the same vCPU/GiB rates.
-		const expected: Record<string, number> = {
-			// Modal's two variants bill identically; likewise Daytona's — assert one of each here, and
-			// the shared-pricing invariant across a vendor's variants is checked separately below.
-			"modal-gvisor": 0.141912 * TARGET_SPEC.vcpus + 0.024192 * TARGET_SPEC.memoryGb,
-			e2b: 0.0504 * TARGET_SPEC.vcpus + 0.0162 * TARGET_SPEC.memoryGb,
-			"daytona-vm": 0.0504 * TARGET_SPEC.vcpus + 0.0162 * Math.max(0, TARGET_SPEC.memoryGb - 5),
-			novita: 0.03528 * TARGET_SPEC.vcpus + 0.01152 * TARGET_SPEC.memoryGb,
-			runloop: 0.108 * TARGET_SPEC.vcpus + 0.0252 * TARGET_SPEC.memoryGb,
-			// $0.00000492/physical-core-s ÷ 2 × 3600 = $0.008856/vCPU-hr;
-			// $0.00000083175/GiB-s × 3600 = $0.0029943/GiB-hr.
-			runcloud: 0.008856 * TARGET_SPEC.vcpus + 0.0029943 * TARGET_SPEC.memoryGb,
-		};
-		for (const [id, cost] of Object.entries(expected)) {
-			const meta = getProvider(id);
-			expect(meta).toBeDefined();
-			expect(meta && hourlyCostAtTargetSpec(meta)).toBeCloseTo(cost);
-		}
-	});
-
-	it("records disk rates where published and omits them where not", () => {
-		// Disk is captured for display but kept out of hourlyCostAtTargetSpec (PR #15 review).
-		const diskRate = (id: string) => {
-			const pricing = getProvider(id)?.pricing;
-			return pricing?.model === "per_vcpu_hour" ? pricing.usdPerGibDiskHour : undefined;
-		};
-		expect(diskRate("daytona-vm")).toBeCloseTo(0.000108); // $0.00000003/GiB-s × 3600
-		expect(diskRate("modal-gvisor")).toBe(0); // volumes free under the 1 TiB/mo tier
-		expect(diskRate("e2b")).toBeUndefined(); // no published overage rate
-		expect(diskRate("novita")).toBe(0); // 20 GB target spec inside the 60 GB free tier
-		expect(diskRate("runloop")).toBeCloseTo(0.00034236);
-	});
-
-	it("resolves retired provider ids through the legacy aliases", () => {
-		// Pre-split committed runs carry `modal`/`daytona`; getProvider must still resolve them to the
-		// variant that subsumed each so a historical leaderboard keeps its display names + economics.
+		expect(Object.isFrozen(PROVIDERS[0]?.pricing)).toBe(true);
 		expect(getProvider("modal")?.id).toBe("modal-gvisor");
 		expect(getProvider("daytona")?.id).toBe("daytona-vm");
+		expect(getProvider("not-a-provider")).toBeUndefined();
 	});
 
-	it("keeps a vendor's isolation variants on identical pricing", () => {
-		// The two Modal variants (and the two Daytona variants) differ only in isolation, never billing —
-		// a drift here would misrank one against the other, so pin that they share a pricing object.
-		expect(getProvider("modal-vm")?.pricing).toEqual(getProvider("modal-gvisor")?.pricing);
-		expect(getProvider("daytona-container")?.pricing).toEqual(getProvider("daytona-vm")?.pricing);
+	it("directly prices multiple supplied target specs from component quantity rules", () => {
+		expect(hourlyCostAtTargetSpec(fixture)).toBeCloseTo(0.05 * 4 + 0.01 * 8);
+		expect(hourlyCostAtTargetSpec(fixture, { vcpus: 2, memoryGb: 8 })).toBeCloseTo(
+			0.05 * 2 + 0.01 * 8,
+		);
+		expect(hourlyCostAtTargetSpec(fixture, { vcpus: 7, memoryGb: 3, diskGb: 99 })).toBeCloseTo(
+			0.05 * 7 + 0.01 * 3,
+		);
 	});
 
-	it("returns null when a provider has no vetted rate", () => {
-		const unpriced: ProviderMeta = { ...fixture, pricing: { model: "unknown", notes: "n/a" } };
-		expect(hourlyCostAtTargetSpec(unpriced)).toBeNull();
+	it("models linear and max quantity rules and rejects invalid conversion factors", () => {
+		expect(
+			pricingQuantityRuleSchema.allows({
+				kind: "linear",
+				dimension: "memoryGb",
+				unitsPerTargetUnit: 1,
+			}),
+		).toBe(true);
+		expect(
+			pricingQuantityRuleSchema.allows({
+				kind: "max",
+				terms: [
+					{ dimension: "vcpus", unitsPerTargetUnit: 1 },
+					{ dimension: "memoryGb", unitsPerTargetUnit: 0.5 },
+				],
+			}),
+		).toBe(true);
+		expect(
+			pricingQuantityRuleSchema.allows({
+				kind: "linear",
+				dimension: "vcpus",
+				unitsPerTargetUnit: 1,
+				hiddenScale: 4,
+			}),
+		).toBe(false);
+		expect(
+			pricingQuantityRuleSchema.allows({
+				kind: "max",
+				terms: [
+					{ dimension: "vcpus", unitsPerTargetUnit: 1 },
+					{ dimension: "memoryGb", unitsPerTargetUnit: 0.5 },
+				],
+				hiddenScale: 4,
+			}),
+		).toBe(false);
+		for (const unitsPerTargetUnit of [0, -1, Number.POSITIVE_INFINITY]) {
+			expect(
+				pricingQuantityRuleSchema.allows({
+					kind: "linear",
+					dimension: "vcpus",
+					unitsPerTargetUnit,
+				}),
+			).toBe(false);
+		}
+		expect(
+			pricingQuantityRuleSchema.allows({
+				kind: "max",
+				terms: [{ dimension: "vcpus", unitsPerTargetUnit: 1 }],
+			}),
+		).toBe(false);
+	});
+
+	it("accepts ISO source dates without pinning the field type to one research day", () => {
+		for (const value of ["2026-08-08", "2024-02-29"])
+			expect(isoDateSchema.allows(value)).toBe(true);
+		for (const value of ["2026-8-08", "2026-02-30", "not-a-date"]) {
+			expect(isoDateSchema.allows(value)).toBe(false);
+		}
+		for (const provider of PROVIDERS) {
+			if (provider.pricing.model !== "published") continue;
+			for (const source of provider.pricing.sources) {
+				expect(source.checkedAt).toBe("2026-08-08");
+			}
+		}
+	});
+
+	it("enforces pricing shape and cross-field invariants at the schema boundary", () => {
+		const valid = structuredClone(fixture.pricing);
+		expect(providerPricingSchema.allows(valid)).toBe(true);
+		if (valid.model !== "published") throw new Error("fixture must use published pricing");
+
+		const duplicate = structuredClone(valid);
+		at(duplicate.components, 1).id = at(duplicate.components, 0).id;
+		expect(providerPricingSchema.allows(duplicate)).toBe(false);
+
+		const unknownReference = structuredClone(valid);
+		unknownReference.targetHourlyCost = { kind: "exact", componentIds: ["missing"] };
+		expect(providerPricingSchema.allows(unknownReference)).toBe(false);
+
+		const duplicateReference = structuredClone(valid);
+		duplicateReference.targetHourlyCost = { kind: "exact", componentIds: ["cpu", "cpu"] };
+		expect(providerPricingSchema.allows(duplicateReference)).toBe(false);
+
+		const emptyExact = structuredClone(valid);
+		emptyExact.targetHourlyCost = { kind: "exact", componentIds: [] };
+		expect(providerPricingSchema.allows(emptyExact)).toBe(false);
+
+		const impossibleDate = structuredClone(valid);
+		at(impossibleDate.sources, 0).checkedAt = "2026-02-30";
+		expect(providerPricingSchema.allows(impossibleDate)).toBe(false);
+
+		const nonHttpSource = structuredClone(valid);
+		at(nonHttpSource.sources, 0).url = "ftp://example.com/pricing";
+		expect(providerPricingSchema.allows(nonHttpSource)).toBe(false);
+
+		const infiniteRate = structuredClone(valid);
+		at(infiniteRate.components, 0).usdPerUnitHour = Number.POSITIVE_INFINITY;
+		expect(providerPricingSchema.allows(infiniteRate)).toBe(false);
+
+		const zeroConversion = structuredClone(valid);
+		const zeroRule = at(zeroConversion.components, 0).quantityRule;
+		if (zeroRule.kind !== "linear") throw new Error("fixture must use a linear quantity rule");
+		zeroRule.unitsPerTargetUnit = 0;
+		expect(providerPricingSchema.allows(zeroConversion)).toBe(false);
+
+		const legacyTargetQuantity = structuredClone(valid) as typeof valid & {
+			components: Array<(typeof valid.components)[number] & { targetQuantity?: number }>;
+		};
+		at(legacyTargetQuantity.components, 0).targetQuantity = 4;
+		expect(providerPricingSchema.allows(legacyTargetQuantity)).toBe(false);
+
+		const emptyUnit = structuredClone(valid);
+		at(emptyUnit.components, 0).vendorUnit = "";
+		expect(providerPricingSchema.allows(emptyUnit)).toBe(false);
+
+		const emptyReason = {
+			...valid,
+			targetHourlyCost: { kind: "usage_dependent", reason: "" },
+		};
+		expect(providerPricingSchema.allows(emptyReason)).toBe(false);
+	});
+
+	it("pins exact target costs and shared isolation-variant pricing", () => {
+		const expected: Record<string, number> = {
+			e2b: 0.3312,
+			"daytona-vm": 0.3312,
+			"daytona-container": 0.3312,
+			novita: 0.23328,
+			runloop: 0.6336,
+		};
+		for (const [id, cost] of Object.entries(expected)) {
+			expect(hourlyCostAtTargetSpec(getProvider(id) as ProviderMeta)).toBeCloseTo(cost, 12);
+		}
+		expect(getProvider("modal-vm")?.pricing).toBe(getProvider("modal-gvisor")?.pricing);
+		expect(hourlyCostAtTargetSpec(getProvider("modal-gvisor"))).toBeNull();
+		expect(hourlyCostAtTargetSpec(getProvider("modal-vm"))).toBeNull();
+		expect(getProvider("daytona-container")?.pricing).toBe(getProvider("daytona-vm")?.pricing);
+	});
+
+	it("records Daytona storage—not memory—allowance and excludes disk from exact cost", () => {
+		const pricing = published("daytona-vm");
+		expect(pricing.adjustments).toContainEqual(
+			expect.objectContaining({ resource: "disk", quantity: 5, scope: "per_sandbox" }),
+		);
+		expect(pricing.adjustments?.some((entry) => entry.resource === "memory")).toBe(false);
+		expect(pricing.targetHourlyCost).toEqual({ kind: "exact", componentIds: ["cpu", "memory"] });
+		expect(component("daytona-vm", "disk").usdPerUnitHour).toBeCloseTo(0.00000003 * 3600);
+	});
+
+	it("maps Modal's requested capped CPU and memory one-to-one", () => {
+		const cpu = component("modal-gvisor", "cpu");
+		const memory = component("modal-gvisor", "memory");
+		expect(cpu.vendorUnit).toContain("physical-core rate");
+		expect(cpu.billingBasis).toBe("max_request_or_usage");
+		expect(cpu.quantityRule).toEqual({
+			kind: "linear",
+			dimension: "vcpus",
+			unitsPerTargetUnit: 1,
+		});
+		expect(cpu.usdPerUnitHour).toBeCloseTo(0.00003942 * 3600);
+		expect(cpu.notes).toContain("provider-observed usage");
+		expect(memory.usdPerUnitHour).toBeCloseTo(0.00000667 * 3600);
+		expect(pricingQuantityAtTargetSpec(memory, { vcpus: 3, memoryGb: 11 })).toBe(11);
+	});
+
+	it("derives Namespace compute units from the dominant CPU or memory term", () => {
+		const prepaid = component("namespace", "prepaid");
+		expect(prepaid.quantityRule).toBe(component("namespace", "overage").quantityRule);
+		expect(pricingQuantityAtTargetSpec(prepaid, { vcpus: 7, memoryGb: 4 })).toBe(7);
+		expect(pricingQuantityAtTargetSpec(prepaid, { vcpus: 2, memoryGb: 14 })).toBe(7);
+		expect(pricingQuantityAtTargetSpec(prepaid, { vcpus: 3, memoryGb: 10 })).toBe(5);
+	});
+
+	it("retains published dynamic and plan rates without emitting a scalar", () => {
+		for (const id of ["blaxel", "microsandbox-cloud", "namespace", "vercel", "runcloud"]) {
+			expect(published(id).components.length).toBeGreaterThan(0);
+			expect(hourlyCostAtTargetSpec(getProvider(id) as ProviderMeta)).toBeNull();
+		}
+		expect(getProvider("microsandbox-local")?.pricing).toMatchObject({
+			model: "unavailable",
+			reason: "self_hosted",
+		});
+		expect(hourlyCostAtTargetSpec(getProvider("microsandbox-local") as ProviderMeta)).toBeNull();
+	});
+
+	it("pins cited unranked reference values and allowance scopes", () => {
+		expect(
+			component("blaxel", "active-compute").usdPerUnitHour *
+				referenceQuantity("blaxel", "active-compute"),
+		).toBeCloseTo(0.3312);
+		expect(
+			component("microsandbox-cloud", "cpu-overage").usdPerUnitHour *
+				referenceQuantity("microsandbox-cloud", "cpu-overage") +
+				component("microsandbox-cloud", "memory-overage").usdPerUnitHour *
+					referenceQuantity("microsandbox-cloud", "memory-overage"),
+		).toBeCloseTo(0.3296);
+		expect(
+			component("namespace", "prepaid").usdPerUnitHour * referenceQuantity("namespace", "prepaid"),
+		).toBeCloseTo(0.24);
+		expect(
+			component("namespace", "overage").usdPerUnitHour * referenceQuantity("namespace", "overage"),
+		).toBeCloseTo(0.36);
+		expect(
+			component("vercel", "active-cpu").usdPerUnitHour * referenceQuantity("vercel", "active-cpu") +
+				component("vercel", "memory").usdPerUnitHour * referenceQuantity("vercel", "memory"),
+		).toBeCloseTo(0.6816);
+		expect(
+			component("runcloud", "cpu-floor").usdPerUnitHour *
+				referenceQuantity("runcloud", "cpu-floor") +
+				component("runcloud", "memory").usdPerUnitHour * referenceQuantity("runcloud", "memory"),
+		).toBeCloseTo(0.0593784);
+		expect(
+			published("microsandbox-cloud").adjustments?.every((entry) => entry.scope === "monthly"),
+		).toBe(true);
+		expect(published("vercel").adjustments).toContainEqual(
+			expect.objectContaining({ scope: "monthly" }),
+		);
 	});
 });

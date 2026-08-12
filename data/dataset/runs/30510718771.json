@@ -8499,14 +8499,14 @@
         },
         {
           "metricId": "usd_per_hour",
-          "samples": [0.2502],
+          "samples": [0.3312],
           "aggregates": {
-            "p50": 0.2502,
-            "p95": 0.2502,
-            "mean": 0.2502,
+            "p50": 0.3312,
+            "p95": 0.3312,
+            "mean": 0.3312,
             "stdev": 0,
-            "min": 0.2502,
-            "max": 0.2502,
+            "min": 0.3312,
+            "max": 0.3312,
             "n": 1
           },
           "derived": true
@@ -16692,20 +16692,6 @@
               "hostHardwareId": "0fded5a819e9acc9"
             }
           ]
-        },
-        {
-          "metricId": "usd_per_hour",
-          "samples": [0.7611840000000001],
-          "aggregates": {
-            "p50": 0.7611840000000001,
-            "p95": 0.7611840000000001,
-            "mean": 0.7611840000000001,
-            "stdev": 0,
-            "min": 0.7611840000000001,
-            "max": 0.7611840000000001,
-            "n": 1
-          },
-          "derived": true
         }
       ],
       "suitesCovered": [
@@ -24560,20 +24546,6 @@
               "hostHardwareId": "611990dbe25f7007"
             }
           ]
-        },
-        {
-          "metricId": "usd_per_hour",
-          "samples": [0.7611840000000001],
-          "aggregates": {
-            "p50": 0.7611840000000001,
-            "p95": 0.7611840000000001,
-            "mean": 0.7611840000000001,
-            "stdev": 0,
-            "min": 0.7611840000000001,
-            "max": 0.7611840000000001,
-            "n": 1
-          },
-          "derived": true
         }
       ],
       "suitesCovered": [

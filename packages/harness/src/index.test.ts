@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import { markRetryableCreate } from "@sandbox-benchmarks/providers";
-import type { Suite } from "@sandbox-benchmarks/schema";
+import type { ProviderCostEvidence, Suite } from "@sandbox-benchmarks/schema";
 import { parseGapMarker, sandboxFailureMarkerFile } from "@sandbox-benchmarks/schema";
+import type { SuiteRunContext } from "./index.ts";
 import {
 	benchmarkLifecycle,
 	createSuiteSandbox,
@@ -337,6 +338,7 @@ function makeSandbox(opts: {
 	const tagOf = (command: string, ext: string): string | undefined =>
 		command.match(new RegExp(`/tmp/(bench-[0-9a-f-]+)\\.${ext}`))?.[1];
 	return {
+		sandboxId: "sb-test-1",
 		async runCommand(command) {
 			// Readiness probe: issued raw (not through StepRunner), so it arrives unwrapped by the preamble.
 			if (command === READINESS_CMD) return { exitCode: opts.neverReady ? 1 : 0 };
@@ -380,7 +382,8 @@ const suite = (overrides: Partial<Suite>): Suite => ({
 	...overrides,
 });
 
-const ctx = (s: Suite, resultsDir: string) => ({
+const ctx = (s: Suite, resultsDir: string): SuiteRunContext => ({
+	runId: "run-test-1",
 	suite: s,
 	suiteName: "cpu-node",
 	providerName: "daytona-vm",
@@ -393,20 +396,36 @@ const ctx = (s: Suite, resultsDir: string) => ({
 describe("runSuite (resolution + credential gate)", () => {
 	it("rejects an unknown suite as a usage error", async () => {
 		await expect(
-			runSuite({ providerName: "daytona-vm", suiteName: "nope", resultsDir: freshDir() }),
+			runSuite({
+				runId: "test",
+				providerName: "daytona-vm",
+				suiteName: "nope",
+				resultsDir: freshDir(),
+			}),
 		).rejects.toBeInstanceOf(SuiteUsageError);
 	});
 
 	it("rejects an unknown provider as a usage error", async () => {
 		await expect(
-			runSuite({ providerName: "nope", suiteName: "cpu-node", resultsDir: freshDir() }),
+			runSuite({
+				runId: "test",
+				providerName: "nope",
+				suiteName: "cpu-node",
+				resultsDir: freshDir(),
+			}),
 		).rejects.toBeInstanceOf(SuiteUsageError);
 	});
 
 	it("records a skip marker (not a failure) when credentials are missing", async () => {
 		const resultsDir = freshDir();
 		// Empty env → daytona's required key is absent, so the suite skips before any sandbox is created.
-		await runSuite({ providerName: "daytona-vm", suiteName: "cpu-node", resultsDir, env: {} });
+		await runSuite({
+			runId: "test",
+			providerName: "daytona-vm",
+			suiteName: "cpu-node",
+			resultsDir,
+			env: {},
+		});
 		expect(existsSync(join(resultsDir, "sandbox-daytona-vm-cpu-node--skipped.json"))).toBe(true);
 	});
 });
@@ -729,6 +748,215 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 });
 
 describe("runSuiteOnSandbox (orchestration + teardown)", () => {
+	it("captures and persists provider evidence strictly after confirmed teardown", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const calls: string[] = [];
+		const sandbox = makeSandbox({ destroyed, freeKb: "1" });
+		const originalDestroy = sandbox.destroy.bind(sandbox);
+		sandbox.destroy = async () => {
+			calls.push("destroy");
+			return originalDestroy();
+		};
+		await runSuiteOnSandbox(sandbox, {
+			...ctx(suite({ minDiskGb: 50 }), resultsDir),
+			providerName: "modal-gvisor",
+			costEvidence: {
+				sdk: { packageName: "modal", version: "0.7.6" },
+				captureAfterTeardown: async (input) => {
+					calls.push("capture");
+					expect(input.teardown.completed).toBe(true);
+					return {
+						kind: "missing",
+						cell: input.cell,
+						subject: { kind: "sandbox", sandboxId: input.sandboxId },
+						capturedAt: "2026-08-08T00:00:00.000Z",
+						sdk: { packageName: "modal", version: "0.7.6" },
+						reason: "unsupported_public_api",
+						detail: "No public sandbox usage endpoint.",
+					};
+				},
+			},
+		});
+		expect(calls).toEqual(["destroy", "capture"]);
+		expect(
+			JSON.parse(readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8")),
+		).toMatchObject({
+			cell: { runId: "run-test-1", providerId: "modal-gvisor", suite: "cpu-node" },
+			subject: { sandboxId: "sb-test-1" },
+		});
+	});
+
+	for (const mismatch of ["cell", "sandbox", "sdk"] as const) {
+		it(`replaces a provider response with ${mismatch} mismatch by fixed invalid evidence`, async () => {
+			const resultsDir = freshDir();
+			const sandbox = makeSandbox({ destroyed: { hit: false }, freeKb: "1" });
+			await runSuiteOnSandbox(sandbox, {
+				...ctx(suite({ minDiskGb: 50 }), resultsDir),
+				providerName: "modal-gvisor",
+				costEvidence: {
+					sdk: { packageName: "modal", version: "0.7.6" },
+					captureAfterTeardown: async (input) => ({
+						kind: "missing",
+						cell: mismatch === "cell" ? { ...input.cell, runId: "forged-run" } : input.cell,
+						subject: {
+							kind: "sandbox",
+							sandboxId: mismatch === "sandbox" ? "forged-sandbox" : input.sandboxId,
+						},
+						capturedAt: "2026-08-08T00:00:00.000Z",
+						sdk:
+							mismatch === "sdk"
+								? { packageName: "modal", version: "forged-version" }
+								: { packageName: "modal", version: "0.7.6" },
+						reason: "unsupported_public_api",
+						detail: "Untrusted provider detail.",
+					}),
+				},
+			});
+			const persisted = JSON.parse(
+				readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8"),
+			) as Record<string, unknown>;
+			expect(persisted).toMatchObject({
+				kind: "missing",
+				reason: "invalid_provider_response",
+				cell: { runId: "run-test-1", providerId: "modal-gvisor", suite: "cpu-node" },
+				subject: { sandboxId: "sb-test-1" },
+				sdk: { packageName: "modal", version: "0.7.6" },
+				detail: "Provider response failed structural or requested-cell binding validation.",
+			});
+		});
+	}
+
+	it("persists no provider error credential canary when capture throws", async () => {
+		const resultsDir = freshDir();
+		const canary = "prefix.SECRET_SUFFIX_CANARY";
+		await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
+			...ctx(suite({ minDiskGb: 50 }), resultsDir),
+			providerName: "modal-gvisor",
+			costEvidence: {
+				sdk: { packageName: "modal", version: "0.7.6" },
+				captureAfterTeardown: async () => {
+					throw new Error(`headers={"Authorization":"Bearer ${canary}"}`);
+				},
+			},
+		});
+		const artifact = readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8");
+		expect(artifact).not.toContain(canary);
+		expect(artifact).not.toContain("SECRET_SUFFIX_CANARY");
+		expect(JSON.parse(artifact)).toMatchObject({ kind: "missing", reason: "provider_api_error" });
+	});
+
+	it("sanitizes a successful hook responseJson before host persistence", async () => {
+		const resultsDir = freshDir();
+		const bearer = "bearer.SECRET_SUFFIX_CANARY";
+		const basic = "basic.SECRET_SUFFIX_CANARY";
+		const assignment = "assignment.SECRET_SUFFIX_CANARY";
+		const tuple = "tuple.SECRET_SUFFIX_CANARY";
+		const userinfo = "userinfo.SECRET_SUFFIX_CANARY";
+		await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
+			...ctx(suite({ minDiskGb: 50 }), resultsDir),
+			providerName: "modal-gvisor",
+			costEvidence: {
+				sdk: { packageName: "modal", version: "0.7.6" },
+				captureAfterTeardown: async (input) => ({
+					kind: "observed",
+					cell: input.cell,
+					subject: { kind: "sandbox", sandboxId: input.sandboxId },
+					capturedAt: "2026-08-08T00:00:00.000Z",
+					sdk: { packageName: "modal", version: "0.7.6" },
+					apiOperation: "sandbox.cost",
+					usage: [{ resource: "cpu", quantity: 1, unit: "second" }],
+					amount: 1,
+					currency: "USD",
+					source: "provider_reported",
+					responseJson: JSON.stringify({
+						authorization: `Bearer ${bearer}`,
+						logA: `api_key=${assignment}&access_token=${assignment} token=${assignment} secret=${assignment} password=${assignment}`,
+						logB: `cookie=${assignment}; session=${assignment}`,
+						headerText: `Authorization: Basic ${basic}`,
+						logC: `X-Api-Key: ${assignment}`,
+						bare: `Bearer ${bearer} Basic ${basic}`,
+						tuples: [
+							["Authorization", `Bearer ${tuple}`],
+							["X-Api-Key", tuple],
+						],
+						url: `https://user:${userinfo}@vendor.invalid/path`,
+					}),
+				}),
+			},
+		});
+		const artifact = readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8");
+		expect(artifact).not.toContain(bearer);
+		expect(artifact).not.toContain(basic);
+		expect(artifact).not.toContain(assignment);
+		expect(artifact).not.toContain(tuple);
+		expect(artifact).not.toContain(userinfo);
+		const persisted = JSON.parse(artifact) as { responseJson: string };
+		const response = JSON.parse(persisted.responseJson) as Record<string, unknown>;
+		expect(response).toMatchObject({
+			authorization: "[REDACTED]",
+			bare: "Bearer [REDACTED] Basic [REDACTED]",
+			headerText: "Authorization: Basic [REDACTED]",
+			logA: "api_key=[REDACTED]&access_token=[REDACTED] token=[REDACTED] secret=[REDACTED] password=[REDACTED]",
+			logB: "cookie=[REDACTED]; session=[REDACTED]",
+			logC: "X-Api-Key: [REDACTED]",
+			url: "https://[REDACTED]@vendor.invalid/path",
+		});
+		expect(response.tuples).toEqual([
+			["Authorization", "[REDACTED]"],
+			["X-Api-Key", "[REDACTED]"],
+		]);
+	});
+
+	it("rejects accessors, deep objects, and proxies before ArkType traversal", async () => {
+		for (const shape of ["accessor", "deep", "root-proxy", "nested-proxy"] as const) {
+			const resultsDir = freshDir();
+			let getterCalls = 0;
+			await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
+				...ctx(suite({ minDiskGb: 50 }), resultsDir),
+				providerName: "modal-gvisor",
+				costEvidence: {
+					sdk: { packageName: "modal", version: "0.7.6" },
+					captureAfterTeardown: async (input) => {
+						const returned: Record<string, unknown> = {
+							kind: "missing",
+							cell: input.cell,
+							subject: { kind: "sandbox", sandboxId: input.sandboxId },
+							capturedAt: "2026-08-08T00:00:00.000Z",
+							sdk: { packageName: "modal", version: "0.7.6" },
+							reason: "unsupported_public_api",
+							detail: "fixed",
+						};
+						if (shape === "accessor") {
+							Object.defineProperty(returned, "extra", {
+								enumerable: true,
+								get: () => {
+									getterCalls++;
+									return "secret";
+								},
+							});
+						} else if (shape === "deep") {
+							let nested: Record<string, unknown> = {};
+							returned.extra = nested;
+							for (let index = 0; index < 20; index++) nested = nested.next = {};
+						} else if (shape === "nested-proxy") {
+							returned.extra = new Proxy({ safe: true }, {});
+						}
+						return (
+							shape === "root-proxy" ? new Proxy(returned, {}) : returned
+						) as ProviderCostEvidence;
+					},
+				},
+			});
+			expect(getterCalls).toBe(0);
+			expect(
+				JSON.parse(readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8")),
+			).toMatchObject({
+				kind: "missing",
+				reason: "invalid_provider_response",
+			});
+		}
+	});
 	it("runs the suite, collects results, and tears the sandbox down", async () => {
 		const resultsDir = freshDir();
 		const destroyed = { hit: false };

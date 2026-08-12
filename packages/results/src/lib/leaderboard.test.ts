@@ -10,6 +10,7 @@ import {
 	REPO_URL,
 	renderLeaderboardMarkdown,
 } from "./leaderboard.ts";
+import { rederiveRunEconomics } from "./reprice.ts";
 
 /**
  * Render with NO figures, which is what almost every case below is about — the tables, the header,
@@ -157,6 +158,29 @@ describe("buildLeaderboard", () => {
 		// LIB: cheapest first.
 		expect(econ?.rows.map((r) => r.providerId)).toEqual(["e2b", "modal-gvisor"]);
 		expect(econ?.rows[0]?.displayName).toBe("E2B"); // resolved from the provider registry
+	});
+
+	it("ranks only exact repriced economics while retaining dynamic providers elsewhere", () => {
+		const repriced = rederiveRunEconomics(
+			run([
+				provider("e2b", [metric("node_web_tooling_runs_per_s", [12])]),
+				provider("runcloud", [
+					metric("node_web_tooling_runs_per_s", [10]),
+					metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.0593784]),
+				]),
+			]),
+		);
+		const board = buildLeaderboard(repriced);
+		expect(
+			board.dimensions
+				.find((dimension) => dimension.dimension === "economics")
+				?.rows.map((row) => row.providerId),
+		).toEqual(["e2b"]);
+		expect(
+			board.dimensions
+				.find((dimension) => dimension.dimension === "cpu")
+				?.rows.map((row) => row.providerId),
+		).toEqual(["e2b", "runcloud"]);
 	});
 
 	it("omits dimensions with no emitted value and renders Markdown tables", () => {

@@ -1,5 +1,11 @@
 # @sandbox-benchmarks/providers
 
+Provider adapters may own a post-teardown cost-evidence hook. Billing API calls belong here, never in
+the SDK-free results package, and observed evidence must identify the benchmark sandbox itself;
+organization/account/workspace/shared-app totals are context only. The current Modal hook does not
+invoke its private resource RPC and returns `unsupported_public_api`. The run.cloud hook does not call
+or delta its organization-wide usage API and returns `not_sandbox_scoped`.
+
 **Role:** provider wiring — binds each schema provider to a computesdk runtime.
 
 **Public surface (`.`):** `ProviderAdapter`, `ProviderConfig`, `DirectProvider` (types), the

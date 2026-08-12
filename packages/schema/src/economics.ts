@@ -11,8 +11,8 @@ import { aggregate } from "./analysis.ts";
 import { harnessMetrics } from "./harness-metrics.ts";
 import type { MetricDef } from "./metrics.ts";
 import type { ProviderMeta } from "./providers.ts";
-import { hourlyCostAtTargetSpec } from "./providers.ts";
-import type { MetricResult } from "./run.ts";
+import { hourlyCostAtTargetSpec, TARGET_SPEC } from "./providers.ts";
+import type { MetricResult, TargetSpec } from "./run.ts";
 
 // The lifecycle-Dimension Metric ids, sourced from the harness slice (the sole owner of lifecycle
 // Metrics). Built here rather than via getMetric() so this module never imports catalog.ts — catalog.ts
@@ -55,7 +55,7 @@ export const economicsMetrics: MetricDef[] = [
 		headline: true,
 		label: "Hourly cost",
 		description:
-			"USD per hour to run a sandbox at the pinned target spec (4 vCPU / 8 GiB), from the provider's published per-vCPU/per-GiB rates. The price/performance denominator; null-rated providers emit nothing.",
+			"Complete deterministic USD per hour for the pinned target allocation (4 vCPU / 8 GiB). Usage- and plan-dependent totals emit nothing even when their cited component rates are known.",
 		derived: true,
 	},
 	{
@@ -66,7 +66,7 @@ export const economicsMetrics: MetricDef[] = [
 		headline: false,
 		label: "Cost per lifecycle",
 		description:
-			"USD to run one measured sandbox lifecycle (sum of the measured lifecycle timings — spawn, exec, snapshot, teardown) at the target hourly cost. Emitted only when the Run carries lifecycle timings.",
+			"USD to run one measured sandbox lifecycle at a complete deterministic target hourly cost. Omitted when pricing depends on utilization or plan consumption.",
 		derived: true,
 	},
 	{
@@ -77,7 +77,7 @@ export const economicsMetrics: MetricDef[] = [
 		headline: false,
 		label: "Cost per compute run",
 		description:
-			"USD to run one end-to-end compute/realworld pipeline at the target hourly cost (hourly × the pipeline's wall-clock runtime). Burst-priced: you pay only for the seconds the sandbox is alive. Emitted only when a total-runtime input is supplied; OURS has no realworld suite yet, so today's Runs omit it.",
+			"USD for one end-to-end compute/realworld pipeline, prorated from a complete deterministic target hourly cost and a supplied wall-clock runtime. Omitted for dynamic totals or absent runtime.",
 		derived: true,
 	},
 ];
@@ -93,22 +93,25 @@ export interface MeasuredMetric {
  * Returns ready-to-embed {@link MetricResult}s (single-Sample distributions) for the normalizer to
  * append to the ProviderRun.
  *
- * - `usd_per_hour` — {@link hourlyCostAtTargetSpec}; emitted whenever the provider has a vetted rate.
+ * - `usd_per_hour` — {@link hourlyCostAtTargetSpec}; emitted only for a complete exact target charge.
  * - `usd_per_lifecycle` — the hourly cost prorated over the summed measured lifecycle timings;
  *   emitted only when `measured` carries ≥1 lifecycle-Dimension Metric.
  * - `usd_per_compute_run` — the hourly cost prorated over a whole compute/realworld pipeline's
  *   wall-clock runtime, supplied via `runtimeMs`. OURS has no realworld suite yet, so this is
  *   omitted unless a caller passes a positive runtime — we never fabricate a pipeline duration.
  *
- * Returns `[]` for an unknown/unpriced provider so a null rate can never read as free. Pure — `meta`,
- * `measured`, and `runtimeMs` are the only inputs, so this is unit-testable without a Run.
+ * Returns `[]` for unavailable, usage-dependent, or plan-dependent pricing so null can never read as
+ * free. Pure — `meta`,
+ * `measured`, `runtimeMs`, and `targetSpec` are the only inputs, so this is unit-testable without a
+ * Run. `targetSpec` is fourth to preserve the existing unambiguous positional runtime argument.
  */
 export function deriveEconomics(
 	meta: ProviderMeta,
 	measured: readonly MeasuredMetric[],
 	runtimeMs?: number,
+	targetSpec: TargetSpec = TARGET_SPEC,
 ): MetricResult[] {
-	const hourly = hourlyCostAtTargetSpec(meta);
+	const hourly = hourlyCostAtTargetSpec(meta, targetSpec);
 	if (hourly === null) return [];
 
 	const results: MetricResult[] = [economicsResult(ECONOMICS_METRIC_IDS.usdPerHour, hourly)];

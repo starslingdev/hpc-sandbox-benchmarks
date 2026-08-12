@@ -13,6 +13,7 @@ import type { CreateSandboxOptions } from "computesdk";
 import type { DaytonaConfig } from "../config.ts";
 import { config } from "../config.ts";
 import { blaxelWithVolumeAndKeepAlive } from "./blaxel-volume.ts";
+import { MODAL_APP_NAME, modalCostEvidence, runcloudCostEvidence } from "./cost-evidence.ts";
 import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
@@ -23,8 +24,6 @@ import type { ProviderAdapter } from "./types.ts";
 import { vercelCompute } from "./vercel.ts";
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
-const MODAL_APP_NAME = "sandbox-benchmarks";
-
 /**
  * The Daytona VM and container variants share one adapter shape — the same account API key and the
  * same create-time policy — and differ only in the account config the config gatekeeper resolved:
@@ -193,10 +192,12 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	"modal-gvisor": {
 		createCompute: modalGvisorCompute,
 		createOptions: modalCreateOptions(),
+		costEvidence: modalCostEvidence,
 	},
 	"modal-vm": {
 		createCompute: modalVmCompute,
 		createOptions: modalCreateOptions({ vm_runtime: true }),
+		costEvidence: modalCostEvidence,
 	},
 	novita: {
 		// The e2b wrapper re-pointed at Novita's E2B-compatible control plane (sandbox.novita.ai) —
@@ -268,5 +269,6 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// With the harness race off, the adapter's own bounds are the only ceiling on an attempt — hand
 		// them over so the create-retry loop can refuse a retry the budget cannot absorb.
 		createAttemptCeilingMs: RUNCLOUD_CREATE_CEILING_MS,
+		costEvidence: runcloudCostEvidence,
 	},
 };

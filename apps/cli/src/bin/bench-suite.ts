@@ -270,6 +270,7 @@ async function reportCell(
 			["Metrics", provider ? String(provider.metrics.length) : "", "plain"],
 			["Suites covered", provider ? String(provider.suitesCovered.length) : "", "plain"],
 			["Gaps", provider ? String(provider.gaps.length) : "", "plain"],
+			["Cost evidence", provider ? String(provider.costEvidence?.length ?? 0) : "", "plain"],
 			["Runtime user", runtimeUserSummary(opts.provider, provider?.observedSpecs.user), "plain"],
 			["Observed CPU", provider?.observedSpecs.cpuModel ?? "", "code"],
 			[
@@ -339,6 +340,7 @@ export function replicateSummaryRows(
 		{ data: "Metrics", header: true },
 		{ data: "Suites", header: true },
 		{ data: "Gaps", header: true },
+		{ data: "Cost evidence", header: true },
 		{ data: "Runtime user", header: true },
 		// Per-SANDBOX, not per-cell, and that is the point: R replicates exist to measure a provider's
 		// fleet variation, and a replicate that landed on different host hardware (or off the target
@@ -361,6 +363,7 @@ export function replicateSummaryRows(
 			escapeHtml(run ? String(run.metrics.length) : "—"),
 			escapeHtml(run ? String(run.suitesCovered.length) : "—"),
 			escapeHtml(run ? String(run.gaps.length) : "—"),
+			escapeHtml(run ? String(run.costEvidence?.length ?? 0) : "—"),
 			escapeHtml(runtimeUserSummary(provider, run?.observedSpecs.user)),
 			renderCell(run?.observedSpecs.cpuModel || "—", "code"),
 			escapeHtml(run?.observedSpecs.region || "—"),
@@ -482,6 +485,8 @@ export async function runReplicate(ctx: ReplicateContext): Promise<ReplicateOutc
 	await withGroup(`Run suite ${suite} on ${provider}`, async () => {
 		try {
 			await runSuite({
+				runId,
+				replicateIndex,
 				providerName: provider,
 				suiteName: suite,
 				// Tag the raw tree by suite: `<rawRoot>/<provider>/<suite>/`. The normalizer reads each suite

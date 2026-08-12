@@ -137,14 +137,14 @@
         },
         {
           "metricId": "usd_per_hour",
-          "samples": [0.1494],
+          "samples": [0.2304],
           "aggregates": {
-            "p50": 0.1494,
-            "p95": 0.1494,
-            "mean": 0.1494,
+            "p50": 0.2304,
+            "p95": 0.2304,
+            "mean": 0.2304,
             "stdev": 0,
-            "min": 0.1494,
-            "max": 0.1494,
+            "min": 0.2304,
+            "max": 0.2304,
             "n": 1
           }
         }
@@ -250,19 +250,6 @@
             "n": 14
           },
           "sourceFile": "cpu-node/pts_node-web-tooling.xml"
-        },
-        {
-          "metricId": "usd_per_hour",
-          "samples": [0.335448],
-          "aggregates": {
-            "p50": 0.335448,
-            "p95": 0.335448,
-            "mean": 0.335448,
-            "stdev": 0,
-            "min": 0.335448,
-            "max": 0.335448,
-            "n": 1
-          }
         }
       ],
       "uncatalogued": [],

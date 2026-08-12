@@ -59,6 +59,8 @@ describe("@sandbox-benchmarks/providers", () => {
 		// modal-gvisor (the default) carries none.
 		expect(vm?.createOptions?.experimentalOptions).toEqual({ vm_runtime: true });
 		expect(gvisor?.createOptions?.experimentalOptions).toBeUndefined();
+		expect(gvisor?.costEvidence).toBeDefined();
+		expect(vm?.costEvidence).toBe(gvisor?.costEvidence);
 	});
 
 	it("configures Vercel through its custom provider factory", () => {
@@ -108,6 +110,7 @@ describe("@sandbox-benchmarks/providers", () => {
 		// abandon that non-cancellable promise and bench-suite's process exit could kill the cleanup.
 		expect(adapter?.createTimeoutMs).toBeNull();
 		expect(adapter?.createCompute().name).toBe("runcloud");
+		expect(adapter?.costEvidence).toBeDefined();
 	});
 
 	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {

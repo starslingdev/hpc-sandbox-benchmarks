@@ -1,10 +1,19 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import { harnessGapMarkerJson } from "@sandbox-benchmarks/schema";
-import { collectResults, writeGapMarker } from "./collect.ts";
+import { collectResults, writeGapMarker, writeProviderCostEvidence } from "./collect.ts";
 import type { SandboxHandle } from "./execute.ts";
 import { MIN, StepRunner } from "./execute.ts";
 
@@ -40,6 +49,36 @@ function collectPayload(files: Record<string, string>): string {
 	return `noise\n__BENCH_RESULTS_TGZ_BEGIN__\n${b64}\n__BENCH_RESULTS_TGZ_END__\ntrailing\n`;
 }
 
+function collectPayloadWithSymlinkCycle(): string {
+	const src = mkdtempSync(join(tmpdir(), "harness-symlink-src-"));
+	const root = join(src, "benchmark-results");
+	mkdirSync(join(root, "loop"), { recursive: true });
+	writeFileSync(join(root, "pts_node-web-tooling.xml"), "<xml/>");
+	symlinkSync("../loop", join(root, "loop", "back"), "dir");
+	const tar = Bun.spawnSync(["bash", "-c", "tar -czf - benchmark-results | base64 | tr -d '\\n'"], {
+		cwd: src,
+	});
+	if (tar.exitCode !== 0) throw new Error(`fixture tar failed (${tar.exitCode})`);
+	const payload = `__BENCH_RESULTS_TGZ_BEGIN__\n${tar.stdout.toString()}\n__BENCH_RESULTS_TGZ_END__\n`;
+	rmSync(src, { recursive: true, force: true });
+	return payload;
+}
+
+function collectPayloadWithPtsSymlinkEscape(): string {
+	const src = mkdtempSync(join(tmpdir(), "harness-symlink-src-"));
+	const root = join(src, "benchmark-results");
+	mkdirSync(root, { recursive: true });
+	writeFileSync(join(src, "outside.xml"), "<forged/>");
+	symlinkSync("../outside.xml", join(root, "pts_node-web-tooling.xml"), "file");
+	const tar = Bun.spawnSync(["bash", "-c", "tar -czf - benchmark-results | base64 | tr -d '\\n'"], {
+		cwd: src,
+	});
+	if (tar.exitCode !== 0) throw new Error(`fixture tar failed (${tar.exitCode})`);
+	const payload = `__BENCH_RESULTS_TGZ_BEGIN__\n${tar.stdout.toString()}\n__BENCH_RESULTS_TGZ_END__\n`;
+	rmSync(src, { recursive: true, force: true });
+	return payload;
+}
+
 function payloadSandbox(files: Record<string, string>): SandboxHandle {
 	return {
 		runCommand: async () => ({ exitCode: 0, stdout: collectPayload(files) }),
@@ -55,6 +94,43 @@ describe("collectResults", () => {
 		await collectResults(new StepRunner(sandbox, UNCAPPED), resultsDir);
 		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(true);
 		expect(readFileSync(join(resultsDir, "pts_node-web-tooling.xml"), "utf8")).toBe("<xml/>");
+	});
+
+	it("rejects forged sandbox cost evidence before it can reach the host raw tree", async () => {
+		const resultsDir = join(work, "forged-cost-evidence");
+		const forged = payloadSandbox({
+			"pts_node-web-tooling.xml": "<xml/>",
+			"provider-cost-evidence.json": '{"kind":"observed","amount":0}',
+		});
+		await expect(collectResults(new StepRunner(forged, UNCAPPED), resultsDir)).rejects.toThrow(
+			/reserved host-owned file provider-cost-evidence\.json/,
+		);
+		expect(existsSync(join(resultsDir, "provider-cost-evidence.json"))).toBe(false);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(false);
+	});
+
+	it("rejects a directory symlink cycle rather than following or preserving it", async () => {
+		const resultsDir = join(work, "symlink-cycle");
+		const cyclic: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: collectPayloadWithSymlinkCycle() }),
+			destroy: async () => undefined,
+		};
+		await expect(collectResults(new StepRunner(cyclic, UNCAPPED), resultsDir)).rejects.toThrow(
+			/forbidden symbolic link/,
+		);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(false);
+	});
+
+	it("rejects a recognized PTS result symlink that escapes the collected tree", async () => {
+		const resultsDir = join(work, "pts-symlink-escape");
+		const escaped: SandboxHandle = {
+			runCommand: async () => ({ exitCode: 0, stdout: collectPayloadWithPtsSymlinkEscape() }),
+			destroy: async () => undefined,
+		};
+		await expect(collectResults(new StepRunner(escaped, UNCAPPED), resultsDir)).rejects.toThrow(
+			/forbidden symbolic link pts_node-web-tooling\.xml/,
+		);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(false);
 	});
 
 	it("accepts a results tree whose only signal is a skip marker", async () => {
@@ -202,6 +278,22 @@ describe("collectResults", () => {
 });
 
 describe("writeGapMarker", () => {
+	it("atomically writes validated provider cost evidence bytes", () => {
+		const dir = join(work, "cost-evidence");
+		writeProviderCostEvidence(dir, {
+			kind: "missing",
+			cell: { runId: "run-1", providerId: "modal-gvisor", suite: "cpu-node" },
+			subject: { kind: "sandbox", sandboxId: "sb-1" },
+			capturedAt: "2026-08-08T00:00:00.000Z",
+			sdk: { packageName: "modal", version: "0.7.6" },
+			reason: "unsupported_public_api",
+			detail: "No public sandbox usage endpoint.",
+		});
+		const path = join(dir, "provider-cost-evidence.json");
+		expect(readFileSync(path, "utf8").endsWith("\n")).toBe(true);
+		expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ kind: "missing" });
+		expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+	});
 	it("writes the harness skip marker the normalizer reads", () => {
 		const dir = join(work, "skip");
 		writeGapMarker(dir, "daytona", "cpu-node", "skipped", "Missing credentials");

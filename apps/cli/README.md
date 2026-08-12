@@ -16,6 +16,10 @@
 - `aggregate` — merge shard Runs into one candidate.
 - `promote` — promote normalized results to the published dataset. Used by the `commit-dataset` workflow.
 - `leaderboard` — render a Run as Markdown (`LEADERBOARD.md`); used by the `update-leaderboard` workflow.
+- `reprice-dataset <dataset-directory>` — maintenance-only rewrite of derived economics in every
+  canonical Run referenced by an existing dataset index. It validates and reprices all Runs before
+  writes begin, then atomically replaces each Run file individually. It preserves schema
+  versions/timestamps and does not rewrite the index; the overall operation is not dataset-atomic.
 - `bake` / `bench-smoke` / `stability` — toolchain bake, single-cell smoke, cross-run stability gate.
 
 **Depends on:** all five packages (`workspace:*`) + `dotenv` (`catalog:`).

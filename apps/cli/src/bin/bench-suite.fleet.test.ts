@@ -44,7 +44,7 @@ describe("replicateSummaryRows at wide fan-outs", () => {
 			const rows = replicateSummaryRows(PROVIDER, fleet(count));
 			expect(rows).toHaveLength(count + 1);
 			// Every row carries the full column set, so no cell silently shifts under a wide fan-out.
-			expect(new Set(rows.map((row) => row.length))).toEqual(new Set([12]));
+			expect(new Set(rows.map((row) => row.length))).toEqual(new Set([13]));
 		}
 	});
 
@@ -53,7 +53,7 @@ describe("replicateSummaryRows at wide fan-outs", () => {
 		expect(rows[0]?.[0]).toBe("<code>r0</code>");
 		expect(rows[48]?.[0]).toBe("<code>r48</code>");
 		// Distinct shard paths are what prove R replicates did not collide on one file.
-		expect(new Set(rows.map((row) => row[11])).size).toBe(49);
+		expect(new Set(rows.map((row) => row[12])).size).toBe(49);
 	});
 
 	// The per-sandbox spec columns are the point of the fan-out: a replicate that landed on different
@@ -69,8 +69,8 @@ describe("replicateSummaryRows at wide fan-outs", () => {
 				durationMs: 1_000,
 			},
 		]).slice(1);
-		expect(rows[0]?.slice(8, 11)).toEqual(["<code>AMD EPYC</code>", "—", "true"]);
-		expect(rows[1]?.slice(8, 11)).toEqual(["<code>Intel Xeon</code>", "—", "false"]);
+		expect(rows[0]?.slice(9, 12)).toEqual(["<code>AMD EPYC</code>", "—", "true"]);
+		expect(rows[1]?.slice(9, 12)).toEqual(["<code>Intel Xeon</code>", "—", "false"]);
 	});
 
 	it("flags an unexpected runtime user in the per-sandbox summary row", () => {
@@ -83,7 +83,7 @@ describe("replicateSummaryRows at wide fan-outs", () => {
 				durationMs: 1_000,
 			},
 		]).slice(1);
-		expect(rows[0]?.[7]).toBe("⚠ user (expected root)");
+		expect(rows[0]?.[8]).toBe("⚠ user (expected root)");
 	});
 
 	it("shows an em-dash rather than an empty cell when a spec probe returned nothing", () => {
@@ -96,7 +96,7 @@ describe("replicateSummaryRows at wide fan-outs", () => {
 				durationMs: 1_000,
 			},
 		]).slice(1);
-		expect(rows[0]?.slice(7, 11)).toEqual(["—", "<code>—</code>", "—", "—"]);
+		expect(rows[0]?.slice(8, 12)).toEqual(["—", "<code>—</code>", "—", "—"]);
 	});
 
 	// The straggler is the whole reason this column exists: R replicates share one job duration now,
@@ -136,11 +136,44 @@ describe("replicateSummaryRows at wide fan-outs", () => {
 			"—",
 			"—",
 			"—",
+			"—",
 			"<code>—</code>",
 			"—",
 			"—",
 			"<code>data/runs/ci-1-r0.json</code>",
 		]);
+	});
+
+	it("reports each replicate's independent provider cost-evidence count", () => {
+		const rows = replicateSummaryRows(PROVIDER, [
+			{
+				index: 0,
+				outFile: "a.json",
+				run: runFor({ costEvidence: [] }),
+				failed: false,
+				durationMs: 1_000,
+			},
+			{
+				index: 1,
+				outFile: "b.json",
+				run: runFor({
+					costEvidence: [
+						{
+							kind: "missing",
+							cell: { runId: "ci-1", providerId: PROVIDER, suite: "system", replicateIndex: 1 },
+							subject: { kind: "sandbox", sandboxId: "sb-1" },
+							capturedAt: "2026-08-08T00:00:00.000Z",
+							sdk: { packageName: "sdk", version: "1.0.0" },
+							reason: "unsupported_public_api",
+							detail: "No public endpoint.",
+						},
+					],
+				}),
+				failed: false,
+				durationMs: 1_000,
+			},
+		]).slice(1);
+		expect(rows.map((row) => row[7])).toEqual(["0", "1"]);
 	});
 
 	it("distinguishes a healthy replicate from a validated-but-empty one", () => {

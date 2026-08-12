@@ -7,7 +7,10 @@ import {
 	isPtsResultFile,
 	isSkipMarkerFile,
 	parseGapMarker,
+	parseProviderCostEvidence,
 	parseResultsArtifactName,
+	providerCostEvidenceFile,
+	providerCostEvidenceJson,
 	providerReportedNothing,
 	ptsForensicsFile,
 	resultsArtifactName,
@@ -15,6 +18,29 @@ import {
 } from "./index.ts";
 
 describe("raw-file naming", () => {
+	it("round-trips strict provider cost evidence with deterministic bytes", () => {
+		const record = {
+			kind: "missing" as const,
+			cell: { runId: "run-1", providerId: "modal-gvisor", suite: "cpu-node" },
+			subject: { kind: "sandbox" as const, sandboxId: "sb-1" },
+			capturedAt: "2026-08-08T00:00:00.000Z",
+			sdk: { packageName: "modal", version: "0.7.6" },
+			reason: "unsupported_public_api" as const,
+			detail: "No public sandbox usage endpoint.",
+		} as const;
+		expect(providerCostEvidenceFile()).toBe("provider-cost-evidence.json");
+		const bytes = providerCostEvidenceJson(record);
+		expect(bytes.endsWith("\n")).toBe(true);
+		expect(parseProviderCostEvidence(bytes)).toEqual(record);
+		expect(() => parseProviderCostEvidence({ ...record, reason: "unknown" })).toThrow(
+			/invalid provider cost evidence/,
+		);
+	});
+	it("rejects an oversized evidence file before parsing JSON", () => {
+		expect(() => parseProviderCostEvidence(`{"padding":"${"x".repeat(97 * 1024)}"}`)).toThrow(
+			/exceeds 96 KiB/,
+		);
+	});
 	it("recognises PTS result XML by prefix and extension", () => {
 		expect(isPtsResultFile("pts_node-web-tooling.xml")).toBe(true);
 		expect(isPtsResultFile("pts_node-web-tooling.log")).toBe(false);

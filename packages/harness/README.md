@@ -1,5 +1,14 @@
 # @sandbox-benchmarks/harness
 
+For providers with a cost capability, suite orchestration snapshots the ComputeSDK sandbox id,
+awaits teardown, invokes the hook with a 30-second bound, and atomically writes validated
+`provider-cost-evidence.json` into the suite results directory. Capture/write failures never mask an
+existing suite error; persistence failure does fail an otherwise successful cell.
+The filename is reserved at the collection boundary: sandbox-produced `benchmark-results/` archives
+containing it are rejected before any archive entry is copied to the host. Only the bounded host writer
+after teardown may create or replace the file. Returned records are rebound to the requested cell,
+actual sandbox id, and capability SDK provenance before persistence; provider error text is not stored.
+
 **Role:** the benchmark harness — drives a provider adapter through operations and emits raw,
 un-normalized timing runs.
 

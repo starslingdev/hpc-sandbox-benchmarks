@@ -18,7 +18,8 @@
     "aggregate": "./src/bin/aggregate.ts",
     "promote": "./src/bin/promote.ts",
     "stability": "./src/bin/stability.ts",
-    "leaderboard": "./src/bin/leaderboard.ts"
+    "leaderboard": "./src/bin/leaderboard.ts",
+    "reprice-dataset": "./src/bin/reprice-dataset.ts"
   },
   "scripts": {
     "test": "bun test",

@@ -6,25 +6,19 @@
 // Validation status is deliberately NOT declared here: a provider is "validated" exactly when a
 // committed run carries real metrics for it (computed downstream), "pending" otherwise.
 
+import { type } from "arktype";
+import type { ProviderId } from "./identifiers.ts";
+
+export type { ProviderId } from "./identifiers.ts";
+
+import type { TargetSpec } from "./run.ts";
+import { targetSpecSchema } from "./run.ts";
+
 /**
  * Canonical provider ids — the single vocabulary every registry joins on. Adding an id forces a
  * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
  * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
  */
-export type ProviderId =
-	| "e2b"
-	| "daytona-vm"
-	| "daytona-container"
-	| "modal-gvisor"
-	| "modal-vm"
-	| "blaxel"
-	| "microsandbox-local"
-	| "microsandbox-cloud"
-	| "novita"
-	| "runloop"
-	| "namespace"
-	| "vercel"
-	| "runcloud";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -72,35 +66,149 @@ export interface ProviderTransport {
 	detachedPoll: boolean;
 }
 
-/**
- * How a provider bills. A discriminated union so a vetted `per_vcpu_hour` rate cannot be declared
- * without its `usdPerVcpuHour` — the missing-rate case is a compile error, not a silent `null`.
- */
-export type ProviderPricing =
-	| {
-			model: "per_vcpu_hour";
-			/** USD per vCPU-hour at the pinned target spec. */
-			usdPerVcpuHour: number;
-			/** USD per GiB of memory per hour, when memory is billed separately. */
-			usdPerGibHour?: number;
-			/** Memory (GiB) billed at $0 before {@link usdPerGibHour} applies, e.g. Daytona's first 5 GiB. */
-			includedMemoryGb?: number;
-			/**
-			 * USD per GiB of disk per hour at the pinned target spec. `0` means free at that spec
-			 * (e.g. within a free tier); omitted entirely when the provider publishes no overage rate.
-			 * Recorded for display only — deliberately excluded from {@link hourlyCostAtTargetSpec} so
-			 * an unpublished disk rate can't bias the ranking.
-			 */
-			usdPerGibDiskHour?: number;
-			notes: string;
-			sourceUrl?: string;
-	  }
-	| {
-			/** No vetted rate in repo config; {@link hourlyCostAtTargetSpec} returns `null`. */
-			model: "unknown";
-			notes: string;
-			sourceUrl?: string;
-	  };
+const nonemptyStringSchema = type("string >= 1");
+const finiteNonnegativeNumberSchema = type("number >= 0").narrow(Number.isFinite);
+const finitePositiveNumberSchema = type("number > 0").narrow(Number.isFinite);
+
+/** A strict Gregorian calendar date, not merely an ISO-shaped string. */
+export const isoDateSchema = type("string")
+	.matching("^\\d{4}-\\d{2}-\\d{2}$")
+	.narrow((value) => {
+		const [year = 0, month = 0, day = 0] = value.split("-").map(Number);
+		const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+		const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+		return month >= 1 && month <= 12 && day >= 1 && day <= (daysInMonth[month - 1] ?? 0);
+	});
+export type IsoDate = typeof isoDateSchema.infer;
+
+/** An absolute public evidence URL using the only protocols accepted by the registry. */
+export const pricingUrlSchema = type("string.url").narrow((value) => {
+	const protocol = new URL(value).protocol;
+	return protocol === "http:" || protocol === "https:";
+});
+
+export const pricingResourceSchema = type("'cpu' | 'memory' | 'cpu_memory' | 'disk'");
+export type PricingResource = typeof pricingResourceSchema.infer;
+
+export const pricingQuantityDimensionSchema = targetSpecSchema.keyof();
+export type PricingQuantityDimension = typeof pricingQuantityDimensionSchema.infer;
+
+/** One conversion from a Run target dimension to vendor billing units. */
+export const pricingQuantityTermSchema = type({
+	dimension: pricingQuantityDimensionSchema,
+	unitsPerTargetUnit: finitePositiveNumberSchema,
+}).onUndeclaredKey("reject");
+export type PricingQuantityTerm = typeof pricingQuantityTermSchema.infer;
+
+/** How a component's vendor-unit quantity is derived from the Run's requested target shape. */
+const linearPricingQuantityRuleSchema = type({
+	kind: "'linear'",
+	dimension: pricingQuantityDimensionSchema,
+	unitsPerTargetUnit: finitePositiveNumberSchema,
+}).onUndeclaredKey("reject");
+const maxPricingQuantityRuleSchema = type({
+	kind: "'max'",
+	terms: pricingQuantityTermSchema.array().atLeastLength(2),
+}).onUndeclaredKey("reject");
+export const pricingQuantityRuleSchema = linearPricingQuantityRuleSchema.or(
+	maxPricingQuantityRuleSchema,
+);
+export type PricingQuantityRule = typeof pricingQuantityRuleSchema.infer;
+
+/** A published rate normalized to one vendor unit-hour, without erasing its original unit. */
+export const pricingComponentSchema = type({
+	id: nonemptyStringSchema,
+	resource: pricingResourceSchema,
+	billingBasis: "'provisioned' | 'active' | 'max_request_or_usage' | 'provisioned_plus_burst'",
+	vendorUnit: nonemptyStringSchema,
+	usdPerUnitHour: finiteNonnegativeNumberSchema,
+	quantityRule: pricingQuantityRuleSchema,
+	"tier?": nonemptyStringSchema,
+	"notes?": nonemptyStringSchema,
+}).onUndeclaredKey("reject");
+export type PricingComponent = typeof pricingComponentSchema.infer;
+
+/** A plan charge or included quantity. These are cited metadata and never discount the headline. */
+export const pricingAdjustmentSchema = type({
+	kind: "'allowance' | 'fee'",
+	plan: nonemptyStringSchema,
+	resource: pricingResourceSchema.or("'plan'"),
+	quantity: finiteNonnegativeNumberSchema,
+	unit: nonemptyStringSchema,
+	scope: "'per_sandbox' | 'monthly'",
+	"notes?": nonemptyStringSchema,
+});
+export type PricingAdjustment = typeof pricingAdjustmentSchema.infer;
+
+/** Official evidence for a rate or billing rule, checked on the issue's research date. */
+export const pricingSourceSchema = type({
+	label: nonemptyStringSchema,
+	url: pricingUrlSchema,
+	checkedAt: isoDateSchema,
+});
+export type PricingSource = typeof pricingSourceSchema.infer;
+
+export const exactTargetHourlyCostSchema = type({
+	kind: "'exact'",
+	componentIds: nonemptyStringSchema.array().atLeastLength(1),
+});
+export const usageDependentTargetHourlyCostSchema = type({
+	kind: "'usage_dependent'",
+	reason: nonemptyStringSchema,
+});
+export const planDependentTargetHourlyCostSchema = type({
+	kind: "'plan_dependent'",
+	reason: nonemptyStringSchema,
+});
+export const targetHourlyCostSchema = exactTargetHourlyCostSchema
+	.or(usageDependentTargetHourlyCostSchema)
+	.or(planDependentTargetHourlyCostSchema);
+export type TargetHourlyCost = typeof targetHourlyCostSchema.infer;
+
+/** Published pricing with component identity and exact-cost references enforced together. */
+export const publishedProviderPricingSchema = type({
+	model: "'published'",
+	components: pricingComponentSchema.array().atLeastLength(1),
+	"adjustments?": pricingAdjustmentSchema.array(),
+	targetHourlyCost: targetHourlyCostSchema,
+	notes: nonemptyStringSchema,
+	sources: pricingSourceSchema.array().atLeastLength(1),
+}).narrow((pricing, ctx) => {
+	const componentIds = new Set<string>();
+	for (const component of pricing.components) {
+		if (componentIds.has(component.id)) {
+			return ctx.mustBe("published pricing whose component ids are unique");
+		}
+		componentIds.add(component.id);
+	}
+	if (pricing.targetHourlyCost.kind === "exact") {
+		const exactIds = new Set<string>();
+		for (const id of pricing.targetHourlyCost.componentIds) {
+			if (exactIds.has(id)) {
+				return ctx.mustBe("published pricing whose exact component ids are unique");
+			}
+			exactIds.add(id);
+			if (!componentIds.has(id)) {
+				return ctx.mustBe(
+					`published pricing whose exact cost references a component (unknown: ${id})`,
+				);
+			}
+		}
+	}
+	return true;
+});
+
+export const unavailableProviderPricingSchema = type({
+	model: "'unavailable'",
+	reason: "'self_hosted' | 'unpublished'",
+	notes: nonemptyStringSchema,
+	"sources?": pricingSourceSchema.array(),
+});
+
+export const providerPricingSchema = publishedProviderPricingSchema.or(
+	unavailableProviderPricingSchema,
+);
+export type ProviderPricing = typeof providerPricingSchema.infer;
 
 /** Isolation technology a provider runs sandboxes under. */
 export interface ProviderIsolation {
@@ -178,7 +286,7 @@ export interface ProviderMeta {
  * they run with actuals recorded and the heavy suites skip there, surfaced as an explicit coverage gap
  * in the leaderboard, never silently dropped.
  */
-export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const;
+export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const satisfies TargetSpec;
 
 // Per-vendor pricing/transport, hoisted to one const per vendor ahead of the isolation-variant
 // fan-out later in this stack (Daytona → VM + container; Modal → gVisor + VM). A vendor bills one
@@ -188,17 +296,50 @@ export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const;
 
 /** Daytona's published billing, shared by its isolation variants. */
 const daytonaPricing: ProviderPricing = {
-	model: "per_vcpu_hour",
-	// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
-	usdPerVcpuHour: 0.0504,
-	usdPerGibHour: 0.0162,
-	// First 5 GiB of memory ship free, so only the remainder is billed at the target spec.
-	includedMemoryGb: 5,
-	// $0.00000003/GiB-s × 3600 = $0.000108/GiB-hr (first 5 GiB free).
-	usdPerGibDiskHour: 0.000108,
+	model: "published",
+	components: [
+		{
+			id: "cpu",
+			resource: "cpu",
+			billingBasis: "provisioned",
+			vendorUnit: "vCPU",
+			usdPerUnitHour: 0.0504,
+			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+		},
+		{
+			id: "memory",
+			resource: "memory",
+			billingBasis: "provisioned",
+			vendorUnit: "GiB",
+			usdPerUnitHour: 0.0162,
+			quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+		},
+		{
+			id: "disk",
+			resource: "disk",
+			billingBasis: "provisioned",
+			vendorUnit: "GiB",
+			usdPerUnitHour: 0.000108,
+			quantityRule: { kind: "linear", dimension: "diskGb", unitsPerTargetUnit: 1 },
+		},
+	],
+	adjustments: [
+		{
+			kind: "allowance",
+			plan: "all",
+			resource: "disk",
+			quantity: 5,
+			unit: "GiB",
+			scope: "per_sandbox",
+			notes: "The first 5 GiB applies to storage, not memory.",
+		},
+	],
+	targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 	notes:
-		"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s (first 5 GiB memory free). Disk $0.00000003/GiB-s (first 5 GiB free).",
-	sourceUrl: "https://www.daytona.io/pricing",
+		"Per-second provisioned CPU, memory, and disk pricing; disk is excluded from benchmark economics.",
+	sources: [
+		{ label: "Daytona pricing", url: "https://www.daytona.io/pricing", checkedAt: "2026-08-08" },
+	],
 };
 
 /** Daytona's exec transport, shared by its isolation variants. */
@@ -217,19 +358,46 @@ const daytonaTransport: ProviderTransport = {
 
 /** Modal's published billing, shared by its isolation variants. */
 const modalPricing: ProviderPricing = {
-	model: "per_vcpu_hour",
-	// Sandbox non-preemptible rates. CPU: $0.00003942/requested-cpu-s × 3600 = $0.141912/vCPU-hr —
-	// a requested `cpu` unit delivers one schedulable vCPU (measured; see the harness adapter), so
-	// the docs' "physical core" rate is billed per vCPU-equivalent and gets no ÷2 normalization.
-	// Memory: $0.00000672/GiB-s × 3600 = $0.024192/GiB-hr.
-	usdPerVcpuHour: 0.141912,
-	usdPerGibHour: 0.024192,
-	// Volumes: 1 TiB/mo free, then $0.09/GiB/mo. The 40 GB target spec sits inside the free
-	// tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
-	usdPerGibDiskHour: 0,
+	model: "published",
+	components: [
+		{
+			id: "cpu",
+			resource: "cpu",
+			billingBasis: "max_request_or_usage",
+			vendorUnit: "requested CPU unit (vendor physical-core rate)",
+			usdPerUnitHour: 0.141912,
+			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+			notes:
+				"Requested CPU maps one-to-one to vendor CPU units, but the billed max(request, usage) quantity must come from provider-observed usage.",
+		},
+		{
+			id: "memory",
+			resource: "memory",
+			billingBasis: "max_request_or_usage",
+			vendorUnit: "GiB",
+			usdPerUnitHour: 0.024012,
+			quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+			notes: "$0.00000667/GiB-s; a request-equals-limit configuration does not prove billed usage.",
+		},
+	],
+	adjustments: [
+		{
+			kind: "allowance",
+			plan: "all",
+			resource: "disk",
+			quantity: 1024,
+			unit: "GiB-month",
+			scope: "monthly",
+		},
+	],
+	targetHourlyCost: {
+		kind: "usage_dependent",
+		reason:
+			"Modal bills max(request, usage); request-equals-limit does not substitute for provider-observed billed quantities.",
+	},
 	notes:
-		"Sandbox non-preemptible rates (exact): CPU $0.00003942/s per requested cpu unit (observed to deliver 1 schedulable vCPU each, despite the docs calling it a physical core), memory $0.00000672/GiB-s. Regional multipliers (1.25×–2.5×) compound. Volumes: 1 TiB/mo free, then $0.09/GiB/mo.",
-	sourceUrl: "https://modal.com/pricing",
+		"Published CPU and memory rates are retained as catalog metadata, but no exact benchmark cost is inferred without sandbox-scoped billed usage.",
+	sources: [{ label: "Modal pricing", url: "https://modal.com/pricing", checkedAt: "2026-08-08" }],
 };
 
 /** Modal's exec transport, shared by its isolation variants. */
@@ -246,6 +414,15 @@ const modalTransport: ProviderTransport = {
 	detachedPoll: true,
 };
 
+/** Namespace bills whichever requested dimension consumes more compute units. */
+const namespaceComputeUnitQuantityRule: PricingQuantityRule = {
+	kind: "max",
+	terms: [
+		{ dimension: "vcpus", unitsPerTargetUnit: 1 },
+		{ dimension: "memoryGb", unitsPerTargetUnit: 0.5 },
+	],
+};
+
 /**
  * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
  * keys the *behavioural* half of a provider the same way. A keyed Record (rather than an array of
@@ -253,12 +430,10 @@ const modalTransport: ProviderTransport = {
  * `Record<ProviderId, …>` type forces exactly one entry per id, and the `id` is attached from the
  * key when the array form is built so it can never drift from its key.
  *
- * Pricing is normalized to USD per vCPU-hour and per GiB-hour from each provider's published
- * per-second rates (see each entry's sourceUrl), cross-checked against the computesdk benchmark
- * pricing table: https://github.com/computesdk/benchmarks/blob/master/pricing.json
- * Disk is recorded per entry (`usdPerGibDiskHour`) but excluded from {@link hourlyCostAtTargetSpec},
- * since overage rates are not uniformly published (E2B publishes none; Modal is free under its
- * 1 TiB/mo tier) and a missing rate would otherwise read as free. Egress is omitted entirely.
+ * Published rates retain their vendor units and billing basis while normalizing the arithmetic to
+ * USD/unit-hour. The explicit target-cost classification decides whether those components form a
+ * complete deterministic headline. Disk is retained as metadata but excluded from exact component
+ * lists; allowances and plan fees likewise never turn one account's consumption into a universal rate.
  */
 const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 	e2b: {
@@ -268,13 +443,39 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		requiredEnvVars: ["E2B_API_KEY"],
 		isolation: { technology: "Firecracker microVM" },
 		pricing: {
-			model: "per_vcpu_hour",
-			// $0.000014/vCPU-s × 3600 = $0.0504/vCPU-hr; $0.0000045/GiB-s × 3600 = $0.0162/GiB-hr.
-			usdPerVcpuHour: 0.0504,
-			usdPerGibHour: 0.0162,
+			model: "published",
+			components: [
+				{
+					id: "cpu",
+					resource: "cpu",
+					billingBasis: "provisioned",
+					vendorUnit: "vCPU",
+					usdPerUnitHour: 0.0504,
+					quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+				},
+				{
+					id: "memory",
+					resource: "memory",
+					billingBasis: "provisioned",
+					vendorUnit: "GiB",
+					usdPerUnitHour: 0.0162,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+				},
+			],
+			adjustments: [
+				{
+					kind: "allowance",
+					plan: "base",
+					resource: "disk",
+					quantity: 10,
+					unit: "GiB",
+					scope: "per_sandbox",
+				},
+			],
+			targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 			notes:
-				"Published per-second rates (exact): $0.000014/vCPU-s, $0.0000045/GiB-s. Storage 10 GiB included (20 on Pro); no published overage rate.",
-			sourceUrl: "https://e2b.dev/pricing",
+				"Provisioned CPU and memory rates; storage allowances do not discount compute economics.",
+			sources: [{ label: "E2B pricing", url: "https://e2b.dev/pricing", checkedAt: "2026-08-08" }],
 		},
 		maturity: { status: "ga", notes: "Custom images via e2b template build." },
 		specPinning: "fixed",
@@ -336,9 +537,33 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Blaxel sandboxes (sub-25ms boot claim). CPU is COUPLED to RAM (measured: cores = memory MB / 2048) with no cgroup cpu.max, and the sandbox root is a RAM-overlay tmpfs with no independent disk knob (storageMb/diskPercent are accepted but silently ignored on this plan). The adapter pins memory=8192 -> 8 GiB RAM and 4 vCPU (specMatched=true covers that effective vCPU/memory pair only), and mounts a 40 GiB volume at the PTS data dir so the separate disk gate clears (see blaxel-volume.ts). The target's vCPU is 4 precisely so Blaxel's coupled point lands on-spec — the dimensions stay coupled, so a different target shape would put Blaxel off-spec again.",
 		},
 		pricing: {
-			model: "unknown",
-			notes: "Not yet vetted against a published per-second rate.",
-			sourceUrl: "https://blaxel.ai/pricing",
+			model: "published",
+			components: [
+				{
+					id: "active-compute",
+					resource: "cpu_memory",
+					billingBasis: "active",
+					vendorUnit: "GB RAM",
+					usdPerUnitHour: 0.0414,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+					notes:
+						"$0.0000115/GB-RAM-s; CPU is bundled with memory and suspended sandboxes stop accruing compute.",
+				},
+			],
+			targetHourlyCost: {
+				kind: "usage_dependent",
+				reason:
+					"The complete charge depends on active time; the target rate alone only gives a 100%-active estimate.",
+			},
+			notes: "Memory-sized bundled CPU is billed only while active.",
+			sources: [
+				{ label: "Blaxel pricing", url: "https://blaxel.ai/pricing", checkedAt: "2026-08-08" },
+				{
+					label: "Sandbox billing behavior",
+					url: "https://docs.blaxel.ai/Sandboxes/Overview",
+					checkedAt: "2026-08-08",
+				},
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -373,10 +598,13 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Runs on the benchmark harness machine itself with no control-plane or network hop. Results measure that host's hardware and are identified separately from Microsandbox Cloud.",
 		},
 		pricing: {
-			model: "unknown",
+			model: "unavailable",
+			reason: "self_hosted",
 			notes:
 				"Self-hosted execution has no vendor compute rate; infrastructure cost depends on the machine running the harness.",
-			sourceUrl: "https://microsandbox.dev",
+			sources: [
+				{ label: "Microsandbox project", url: "https://microsandbox.dev", checkedAt: "2026-08-08" },
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -410,10 +638,84 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"The Microsandbox SDK talks to msb-cloud; Nomad schedules the same libkrun microVM runtime on remote hosts. Kept distinct from local runs so datasets never mix host-local and cloud measurements.",
 		},
 		pricing: {
-			model: "unknown",
+			model: "published",
+			components: [
+				{
+					id: "cpu-overage",
+					resource: "cpu",
+					billingBasis: "provisioned",
+					vendorUnit: "vCPU",
+					usdPerUnitHour: 0.05,
+					quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+					tier: "Builder overage",
+				},
+				{
+					id: "memory-overage",
+					resource: "memory",
+					billingBasis: "provisioned",
+					vendorUnit: "GiB",
+					usdPerUnitHour: 0.0162,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+					tier: "Builder overage",
+				},
+				{
+					id: "disk-overage",
+					resource: "disk",
+					billingBasis: "provisioned",
+					vendorUnit: "GiB",
+					usdPerUnitHour: 0.0001,
+					quantityRule: { kind: "linear", dimension: "diskGb", unitsPerTargetUnit: 1 },
+					tier: "Builder overage",
+				},
+			],
+			adjustments: [
+				{
+					kind: "fee",
+					plan: "Builder",
+					resource: "plan",
+					quantity: 49,
+					unit: "USD",
+					scope: "monthly",
+				},
+				{
+					kind: "allowance",
+					plan: "Builder",
+					resource: "cpu",
+					quantity: 500,
+					unit: "vCPU-hour",
+					scope: "monthly",
+				},
+				{
+					kind: "allowance",
+					plan: "Builder",
+					resource: "memory",
+					quantity: 2000,
+					unit: "GiB-hour",
+					scope: "monthly",
+				},
+				{
+					kind: "allowance",
+					plan: "Builder",
+					resource: "disk",
+					quantity: 2000,
+					unit: "GiB-hour",
+					scope: "monthly",
+				},
+			],
+			targetHourlyCost: {
+				kind: "plan_dependent",
+				reason:
+					"The charge depends on plan fees, remaining monthly pools, and overage consumption.",
+			},
 			notes:
-				"Cloud pricing is not public yet; no economics are emitted until a stable product rate is published.",
-			sourceUrl: "https://microsandbox.dev",
+				"Published Builder plan pools and overage rates are retained without converting them into one account-independent hourly total.",
+			sources: [
+				{
+					label: "Microsandbox pricing",
+					url: "https://microsandbox.dev/pricing",
+					checkedAt: "2026-08-08",
+				},
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -477,16 +779,55 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Dedicated microVM per sandbox; E2B-protocol-compatible control plane (us-phx-1.sandbox.novita.ai) driven through @computesdk/e2b with novita-sandbox-backed connection methods.",
 		},
 		pricing: {
-			model: "per_vcpu_hour",
-			// $0.0000098/vCPU-s × 3600 = $0.03528/vCPU-hr; $0.0000032/GiB-s × 3600 = $0.01152/GiB-hr.
-			usdPerVcpuHour: 0.03528,
-			usdPerGibHour: 0.01152,
-			// Storage $0.00009/GB-hr with the first 60 GB free — the 40 GB target spec sits inside the
-			// free tier, so the marginal disk rate at TARGET_SPEC is 0 (known, not unknown).
-			usdPerGibDiskHour: 0,
+			model: "published",
+			components: [
+				{
+					id: "cpu",
+					resource: "cpu",
+					billingBasis: "provisioned",
+					vendorUnit: "vCPU",
+					usdPerUnitHour: 0.03528,
+					quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+				},
+				{
+					id: "memory",
+					resource: "memory",
+					billingBasis: "provisioned",
+					vendorUnit: "GiB",
+					usdPerUnitHour: 0.01152,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+				},
+				{
+					id: "disk",
+					resource: "disk",
+					billingBasis: "provisioned",
+					vendorUnit: "GB",
+					usdPerUnitHour: 0.00009,
+					quantityRule: { kind: "linear", dimension: "diskGb", unitsPerTargetUnit: 1 },
+				},
+			],
+			adjustments: [
+				{
+					kind: "allowance",
+					plan: "all",
+					resource: "disk",
+					quantity: 60,
+					unit: "GB",
+					scope: "monthly",
+					notes:
+						"Account-wide persistent-storage allowance for paused sandboxes; running sandboxes instead include 20 GB of ephemeral storage.",
+				},
+			],
+			targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 			notes:
-				"Published per-second rates (exact): $0.0000098/vCPU-s, $0.0000032/GiB-s. Storage $0.00009/GB-hr (first 60 GB free).",
-			sourceUrl: "https://novita.ai/sandbox",
+				"Provisioned CPU and memory pricing; running ephemeral and paused persistent storage remain outside benchmark economics.",
+			sources: [
+				{
+					label: "Novita Sandbox pricing",
+					url: "https://novita.ai/docs/guides/sandbox-pricing",
+					checkedAt: "2026-08-08",
+				},
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -517,15 +858,39 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Runloop Devboxes are isolated, ephemeral virtual machines. This adapter boots a version-scoped Blueprint built from the shared toolchain image and retains per-run custom sizing.",
 		},
 		pricing: {
-			model: "per_vcpu_hour",
-			// $0.00003/CPU-s × 3600 = $0.108/CPU-hr; $0.000007/GB-s × 3600 = $0.0252/GB-hr.
-			usdPerVcpuHour: 0.108,
-			usdPerGibHour: 0.0252,
-			// $0.0000000951/GB-s × 3600 = $0.00034236/GB-hr.
-			usdPerGibDiskHour: 0.00034236,
+			model: "published",
+			components: [
+				{
+					id: "cpu",
+					resource: "cpu",
+					billingBasis: "provisioned",
+					vendorUnit: "CPU",
+					usdPerUnitHour: 0.108,
+					quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+				},
+				{
+					id: "memory",
+					resource: "memory",
+					billingBasis: "provisioned",
+					vendorUnit: "GB",
+					usdPerUnitHour: 0.0252,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+				},
+				{
+					id: "disk",
+					resource: "disk",
+					billingBasis: "provisioned",
+					vendorUnit: "GB",
+					usdPerUnitHour: 0.00034236,
+					quantityRule: { kind: "linear", dimension: "diskGb", unitsPerTargetUnit: 1 },
+				},
+			],
+			targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 			notes:
-				"Published per-second rates (exact): CPU $0.00003/s, memory $0.000007/GB-s, and active Devbox storage $0.0000000951/GB-s.",
-			sourceUrl: "https://runloop.ai/pricing",
+				"Provisioned Devbox CPU and memory rates; active storage is excluded from benchmark economics.",
+			sources: [
+				{ label: "Runloop pricing", url: "https://runloop.ai/pricing", checkedAt: "2026-08-08" },
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -565,10 +930,65 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Namespace runs each instance on its own hardware/network (namespace.so/docs/architecture/compute). The @computesdk/namespace wrapper deploys one container workload per instance via the Compute API's `containers` shape, and defines no template/snapshot managers (unexposed, same clean skip as novita) — and, unlike every other provider here, no filesystem manager either.",
 		},
 		pricing: {
-			model: "unknown",
-			notes:
-				"Not yet vetted against a published per-second/hour rate for the Compute API this wrapper drives; namespace.so/pricing documents CI-runner minutes, a distinct product.",
-			sourceUrl: "https://namespace.so/pricing",
+			model: "published",
+			components: [
+				{
+					id: "prepaid",
+					resource: "cpu_memory",
+					billingBasis: "provisioned",
+					vendorUnit: "compute-unit minute",
+					usdPerUnitHour: 0.06,
+					quantityRule: namespaceComputeUnitQuantityRule,
+					tier: "prepaid",
+					notes: "$0.001 per compute-unit minute × 60.",
+				},
+				{
+					id: "overage",
+					resource: "cpu_memory",
+					billingBasis: "provisioned",
+					vendorUnit: "compute-unit minute",
+					usdPerUnitHour: 0.09,
+					quantityRule: namespaceComputeUnitQuantityRule,
+					tier: "overage",
+					notes: "$0.0015 per compute-unit minute × 60.",
+				},
+			],
+			adjustments: [
+				{
+					kind: "fee",
+					plan: "Team",
+					resource: "plan",
+					quantity: 100,
+					unit: "USD",
+					scope: "monthly",
+				},
+				{
+					kind: "allowance",
+					plan: "Team",
+					resource: "cpu_memory",
+					quantity: 100_000,
+					unit: "compute-unit minute",
+					scope: "monthly",
+				},
+			],
+			targetHourlyCost: {
+				kind: "plan_dependent",
+				reason:
+					"The applicable prepaid or overage tier and remaining included pool depend on the workspace plan.",
+			},
+			notes: "Published prepaid and overage compute-unit rates with plan-dependent applicability.",
+			sources: [
+				{
+					label: "Namespace pricing",
+					url: "https://namespace.so/pricing",
+					checkedAt: "2026-08-08",
+				},
+				{
+					label: "Billing and limits",
+					url: "https://namespace.so/docs/workspaces/billing-and-limits",
+					checkedAt: "2026-08-08",
+				},
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -612,10 +1032,48 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Runs on Vercel's Hive build infrastructure and boots the shared Debian toolchain image mirrored into Vercel Container Registry.",
 		},
 		pricing: {
-			model: "unknown",
-			notes:
-				"Vercel bills active CPU separately from provisioned memory. The registry cannot model utilization-dependent active-CPU cost honestly, so economics remain unknown.",
-			sourceUrl: "https://vercel.com/docs/sandbox/pricing",
+			model: "published",
+			components: [
+				{
+					id: "active-cpu",
+					resource: "cpu",
+					billingBasis: "active",
+					vendorUnit: "vCPU",
+					usdPerUnitHour: 0.128,
+					quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+				},
+				{
+					id: "memory",
+					resource: "memory",
+					billingBasis: "provisioned",
+					vendorUnit: "GB",
+					usdPerUnitHour: 0.0212,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+				},
+			],
+			adjustments: [
+				{
+					kind: "allowance",
+					plan: "Hobby",
+					resource: "cpu",
+					quantity: 5,
+					unit: "active vCPU-hour",
+					scope: "monthly",
+				},
+			],
+			targetHourlyCost: {
+				kind: "usage_dependent",
+				reason:
+					"CPU is billed only while active, and Runs do not retain billable active-CPU utilization.",
+			},
+			notes: "Provisioned memory plus active CPU; $0.6816/hr is only a 100%-active reference.",
+			sources: [
+				{
+					label: "Vercel Sandbox pricing",
+					url: "https://vercel.com/docs/sandbox/pricing",
+					checkedAt: "2026-08-08",
+				},
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -644,19 +1102,36 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Dedicated microVM sandboxes booting an arbitrary OCI image; CPU, memory, and writable disk are independently requested at create time.",
 		},
 		pricing: {
-			model: "per_vcpu_hour",
-			// Published rates are per physical core-second and per GiB-second
-			// (https://run.cloud/pricing). One physical core = two vCPUs, so the
-			// vCPU-hour rate is half the physical-core-hour rate:
-			//   CPU:  $0.00000492/core-s ÷ 2 × 3600 = $0.008856/vCPU-hr
-			//   mem:  $0.00000083175/GiB-s × 3600 = $0.0029943/GiB-hr
-			// The size is a reserved billing floor; CPU above it bills at the same
-			// rate (burst). Economics here price the reserved TARGET_SPEC floor only.
-			usdPerVcpuHour: 0.008856,
-			usdPerGibHour: 0.0029943,
-			notes:
-				"Published per-second rates (exact): $0.00000492/physical-core-s (1 physical core = 2 vCPUs → $0.00000246/vCPU-s), $0.00000083175/GiB-s. No published disk overage rate.",
-			sourceUrl: "https://run.cloud/pricing",
+			model: "published",
+			components: [
+				{
+					id: "cpu-floor",
+					resource: "cpu",
+					billingBasis: "provisioned_plus_burst",
+					vendorUnit: "vCPU",
+					usdPerUnitHour: 0.008856,
+					quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+					notes:
+						"Reserved floor; CPU consumed above the requested size is metered separately at the same physical-core rate.",
+				},
+				{
+					id: "memory",
+					resource: "memory",
+					billingBasis: "provisioned",
+					vendorUnit: "GiB",
+					usdPerUnitHour: 0.0029943,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+				},
+			],
+			targetHourlyCost: {
+				kind: "usage_dependent",
+				reason:
+					"The reserved floor excludes uncapped CPU burst above the requested size, and Runs do not retain that billable usage.",
+			},
+			notes: "$0.0593784/hr is the target reservation floor, not a complete target-hour total.",
+			sources: [
+				{ label: "run.cloud pricing", url: "https://run.cloud/pricing", checkedAt: "2026-08-08" },
+			],
 		},
 		maturity: {
 			status: "beta",
@@ -674,6 +1149,18 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 	},
 };
+
+// Validate the authored registry exactly once. Consumers thereafter receive trusted inferred pricing
+// values; hourly-cost calculation does not repeat boundary validation in its hot path.
+for (const [providerId, meta] of Object.entries(REGISTRY) as [
+	ProviderId,
+	Omit<ProviderMeta, "id">,
+][]) {
+	const result = providerPricingSchema(meta.pricing);
+	if (result instanceof type.errors) {
+		throw new Error(`${providerId}: invalid provider pricing: ${result.summary}`);
+	}
+}
 
 /** Recursively freeze a value so the shared registry can't be mutated by a downstream consumer. */
 function deepFreeze<T>(value: T): T {
@@ -756,19 +1243,37 @@ export function isUnexpectedRuntimeUser(providerId: string, user: string | undef
 	return (user === "root" ? "root" : "unprivileged") !== expectedRuntimeIdentity(providerId);
 }
 
+/** Derive one pricing component's vendor billing-unit quantity from a supplied Run target shape. */
+export function pricingQuantityAtTargetSpec(
+	component: PricingComponent,
+	targetSpec: TargetSpec,
+): number {
+	const quantityFor = ({ dimension, unitsPerTargetUnit }: PricingQuantityTerm): number => {
+		const targetUnits = targetSpec[dimension];
+		if (targetUnits === undefined) {
+			throw new Error(`cannot derive ${component.id} quantity without targetSpec.${dimension}`);
+		}
+		return targetUnits * unitsPerTargetUnit;
+	};
+
+	const rule = component.quantityRule;
+	return rule.kind === "linear" ? quantityFor(rule) : Math.max(...rule.terms.map(quantityFor));
+}
+
 /**
- * Hourly vCPU + memory cost of a provider at the pinned target spec, or `null` when no vetted rate
- * exists. A provider's included-memory allowance is billed at $0 first; disk (`usdPerGibDiskHour`)
- * is intentionally excluded — see {@link REGISTRY} for why.
+ * Complete deterministic CPU + memory cost at a target spec. Published rates remain
+ * inspectable when this returns `null`: usage- and plan-dependent totals are not headline scalars.
  */
-export function hourlyCostAtTargetSpec(meta: ProviderMeta): number | null {
-	// The union guarantees `usdPerVcpuHour` is present on the `per_vcpu_hour` arm, so narrowing on
-	// `model` is enough — no defensive undefined check needed.
-	if (meta.pricing.model !== "per_vcpu_hour") {
-		return null;
-	}
-	const cpuCost = meta.pricing.usdPerVcpuHour * TARGET_SPEC.vcpus;
-	const billableMemoryGb = Math.max(0, TARGET_SPEC.memoryGb - (meta.pricing.includedMemoryGb ?? 0));
-	const memCost = (meta.pricing.usdPerGibHour ?? 0) * billableMemoryGb;
-	return cpuCost + memCost;
+export function hourlyCostAtTargetSpec(
+	meta: ProviderMeta,
+	targetSpec: TargetSpec = TARGET_SPEC,
+): number | null {
+	const pricing = meta.pricing;
+	if (pricing.model !== "published" || pricing.targetHourlyCost.kind !== "exact") return null;
+	const components = new Map(pricing.components.map((component) => [component.id, component]));
+	return pricing.targetHourlyCost.componentIds.reduce((total, id) => {
+		// Registry initialization has already established referential integrity.
+		const component = components.get(id) as PricingComponent;
+		return total + component.usdPerUnitHour * pricingQuantityAtTargetSpec(component, targetSpec);
+	}, 0);
 }

@@ -1,11 +1,39 @@
 // Public surface of @sandbox-benchmarks/harness — drives a provider to produce raw benchmark output.
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
-import { isRetryableCreateError, providers } from "@sandbox-benchmarks/providers";
-import type { ProviderTransport, RawRun, ResultGap, Suite } from "@sandbox-benchmarks/schema";
-import { HARNESS_METRIC_IDS, isPtsResultFile, SUITES } from "@sandbox-benchmarks/schema";
-import { collectResults, writeGapMarker } from "./lib/collect.ts";
+import type {
+	DirectProvider,
+	ProviderConfig,
+	ProviderCostEvidenceCapability,
+	SandboxTeardownResult,
+} from "@sandbox-benchmarks/providers";
+import {
+	isRetryableCreateError,
+	providers,
+	sanitizeEvidenceDetail,
+	sanitizeProviderResponse,
+} from "@sandbox-benchmarks/providers";
+import type {
+	ProviderCostCell,
+	ProviderCostEvidence,
+	ProviderTransport,
+	RawRun,
+	ResultGap,
+	RunId,
+	Suite,
+	SuiteName,
+} from "@sandbox-benchmarks/schema";
+import {
+	canonicalJsonEqual,
+	canonicalJsonString,
+	HARNESS_METRIC_IDS,
+	isPtsResultFile,
+	PROVIDER_EVIDENCE_JSON_LIMITS,
+	parseProviderCostEvidence,
+	SUITE_NAMES,
+	SUITES,
+} from "@sandbox-benchmarks/schema";
+import { collectResults, writeGapMarker, writeProviderCostEvidence } from "./lib/collect.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 import { MIN, resolvePtsPassPolicy, StepRunner, withTimeout } from "./lib/execute.ts";
 import { gapCauseOf } from "./lib/gap-cause.ts";
@@ -162,6 +190,10 @@ export async function benchmarkLifecycle(
 export class SuiteUsageError extends Error {}
 
 export interface RunSuiteOptions {
+	/** Run identity carried into sandbox-scoped provider cost evidence. */
+	runId: RunId;
+	/** Replicate sandbox identity; omitted for a single unindexed run. */
+	replicateIndex?: number;
 	/** Provider to create the sandbox on — must be in the provider registry. */
 	providerName: string;
 	/** Suite to run — must be a key of SUITES. */
@@ -174,12 +206,15 @@ export interface RunSuiteOptions {
 	env?: Record<string, string | undefined>;
 }
 
-async function destroySandbox(sandbox: SandboxHandle | undefined): Promise<void> {
-	if (!sandbox) return;
+async function destroySandbox(sandbox: SandboxHandle | undefined): Promise<SandboxTeardownResult> {
+	const attemptedAt = new Date().toISOString();
+	if (!sandbox) return { completed: false, attemptedAt };
 	try {
 		await withTimeout(Promise.resolve(sandbox.destroy()), 15_000, "Destroy timeout");
+		return { completed: true, attemptedAt, completedAt: new Date().toISOString() };
 	} catch (err) {
 		console.warn(`[cleanup] destroy failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { completed: false, attemptedAt };
 	}
 }
 
@@ -193,12 +228,13 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 	const { providerName, suiteName, env = process.env } = options;
 	const resultsDir = resolve(options.resultsDir);
 
-	const suite: Suite | undefined = (SUITES as Record<string, Suite>)[suiteName];
-	if (!suite) {
+	const knownSuiteName = SUITE_NAMES.find((name) => name === suiteName);
+	if (!knownSuiteName) {
 		throw new SuiteUsageError(
 			`Unknown suite "${suiteName}". Known suites: ${Object.keys(SUITES).join(", ")}`,
 		);
 	}
+	const suite = SUITES[knownSuiteName];
 
 	const config = providers.find((p) => p.name === providerName);
 	if (!config) {
@@ -226,8 +262,8 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 	// provider config) slips through the one seam creation-failure handling would otherwise leave open.
 	const sandbox = await createSuiteSandbox(() => config.createCompute(), {
 		suite,
-		suiteName,
-		providerName,
+		suiteName: knownSuiteName,
+		providerName: config.name,
 		resultsDir,
 		createOptions: config.createOptions,
 		createTimeoutMs: config.createTimeoutMs,
@@ -235,11 +271,14 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 	});
 
 	await runSuiteOnSandbox(sandbox, {
+		runId: options.runId,
+		replicateIndex: options.replicateIndex,
 		suite,
-		suiteName,
-		providerName,
+		suiteName: knownSuiteName,
+		providerName: config.name,
 		resultsDir,
 		transport: config.transport,
+		costEvidence: config.costEvidence,
 	});
 }
 
@@ -449,15 +488,23 @@ const SUITE_READINESS = {
 
 /** The already-resolved context {@link runSuiteOnSandbox} runs against. */
 export interface SuiteRunContext {
+	runId: RunId;
+	replicateIndex?: number;
 	suite: Suite;
-	suiteName: string;
-	providerName: string;
+	suiteName: SuiteName;
+	providerName: ProviderConfig["name"];
 	resultsDir: string;
 	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
 	transport: ProviderTransport;
+	costEvidence?: ProviderCostEvidenceCapability;
 	/** Readiness budget override. Defaults to {@link SUITE_READINESS}; tests inject a fast one so a
 	 *  never-ready case doesn't really sleep out the live budget. */
 	readiness?: WaitUntilReadyOptions;
+}
+
+function sanitizeHookResponseJson(value: unknown): string {
+	if (typeof value !== "string") throw new Error("provider responseJson must be a JSON string");
+	return sanitizeProviderResponse(JSON.parse(value));
 }
 
 /**
@@ -474,7 +521,10 @@ export async function runSuiteOnSandbox(
 	ctx: SuiteRunContext,
 ): Promise<void> {
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
+	const sandboxId = sandbox.sandboxId;
 	let suiteError: unknown;
+	let evidencePersistenceError: unknown;
+	let suiteSkipped = false;
 	try {
 		// Resolve the PTS pass policy from the suite's own default (converge on cpu-node + memory; a fixed
 		// count on every other suite) and the BENCH_PTS_PASSES override. Constructed inside the
@@ -515,61 +565,65 @@ export async function runSuiteOnSandbox(
 					freeGb,
 					requiredGb: suite.minDiskGb,
 				});
-				return;
+				suiteSkipped = true;
 			}
 		}
 
-		for (const step of setupSteps(suite)) {
-			const attempts = (step.retries ?? 0) + 1;
-			for (let attempt = 1; ; attempt++) {
-				try {
-					// A multi-minute install (mise/PTS/apt) would 408 a synchronous exec on a capped
-					// provider — step() detaches it there and runs it directly on an uncapped one.
-					await runner.step(step.label, step.script, step.timeoutMs);
-					break;
-				} catch (err) {
-					if (attempt >= attempts) throw err;
-					console.log(`Step "${step.label}" failed, retrying (${attempt + 1}/${attempts})...`);
+		if (!suiteSkipped) {
+			for (const step of setupSteps(suite)) {
+				const attempts = (step.retries ?? 0) + 1;
+				for (let attempt = 1; ; attempt++) {
+					try {
+						// A multi-minute install (mise/PTS/apt) would 408 a synchronous exec on a capped
+						// provider — step() detaches it there and runs it directly on an uncapped one.
+						await runner.step(step.label, step.script, step.timeoutMs);
+						break;
+					} catch (err) {
+						if (attempt >= attempts) throw err;
+						console.log(`Step "${step.label}" failed, retrying (${attempt + 1}/${attempts})...`);
+					}
 				}
 			}
-		}
 
-		// Observed specs are best-effort: a spec probe must never fail a Run (hence allowFailure below).
-		await runner.run("capture observed specs", OBSERVED_SPECS_SCRIPT, MIN, { allowFailure: true });
+			// Observed specs are best-effort: a spec probe must never fail a Run (hence allowFailure below).
+			await runner.run("capture observed specs", OBSERVED_SPECS_SCRIPT, MIN, {
+				allowFailure: true,
+			});
 
-		try {
-			runner.phase = "benchmark";
-			for (const command of suite.commands) {
-				// The cpu-node command budgets 110 min — far past a capped provider's synchronous-exec
-				// limit (Daytona's 408), so step() detaches there; an uncapped provider runs it directly.
-				await runner.step(command, `cd ${DIR} && ${command}`, suite.commandTimeoutMinutes * MIN);
+			try {
+				runner.phase = "benchmark";
+				for (const command of suite.commands) {
+					// The cpu-node command budgets 110 min — far past a capped provider's synchronous-exec
+					// limit (Daytona's 408), so step() detaches there; an uncapped provider runs it directly.
+					await runner.step(command, `cd ${DIR} && ${command}`, suite.commandTimeoutMinutes * MIN);
+				}
+			} catch (err) {
+				// Still pull whatever results were produced before failing the job.
+				suiteError = err;
 			}
-		} catch (err) {
-			// Still pull whatever results were produced before failing the job.
-			suiteError = err;
-		}
 
-		try {
-			await collectResults(runner, resultsDir);
-		} catch (collectErr) {
-			// A failed result-pull must not mask an in-flight benchmark error. Recorded rather than
-			// rethrown here so both error paths converge on the single exit below — which is what writes
-			// the failure marker.
-			if (suiteError) {
-				console.warn(
-					`[collect] failed after benchmark error: ${collectErr instanceof Error ? collectErr.message : String(collectErr)}`,
+			try {
+				await collectResults(runner, resultsDir);
+			} catch (collectErr) {
+				// A failed result-pull must not mask an in-flight benchmark error. Recorded rather than
+				// rethrown here so both error paths converge on the single exit below — which is what writes
+				// the failure marker.
+				if (suiteError) {
+					console.warn(
+						`[collect] failed after benchmark error: ${collectErr instanceof Error ? collectErr.message : String(collectErr)}`,
+					);
+				} else {
+					suiteError = collectErr;
+				}
+			}
+
+			// PTS exits 0 even when a profile fails to install, so a broken environment yields a green job
+			// with an empty artifact — treat "no pts_*.xml from a PTS suite" as a failure.
+			if (!suiteError && suite.setupPts && !readdirSync(resultsDir).some(isPtsResultFile)) {
+				suiteError = new Error(
+					`Suite "${suiteName}" on ${providerName} produced no pts_*.xml — PTS likely failed silently`,
 				);
-			} else {
-				suiteError = collectErr;
 			}
-		}
-
-		// PTS exits 0 even when a profile fails to install, so a broken environment yields a green job
-		// with an empty artifact — treat "no pts_*.xml from a PTS suite" as a failure.
-		if (!suiteError && suite.setupPts && !readdirSync(resultsDir).some(isPtsResultFile)) {
-			suiteError = new Error(
-				`Suite "${suiteName}" on ${providerName} produced no pts_*.xml — PTS likely failed silently`,
-			);
 		}
 	} catch (err) {
 		// Everything before the benchmark — the readiness gate, the disk probe, every setup step — used to
@@ -577,11 +631,110 @@ export async function runSuiteOnSandbox(
 		// recorded into `suiteError`. A cell that died in setup therefore left NO trace in the raw tree:
 		// the published Run could not tell "this provider broke during setup" from "never scheduled", and
 		// the job log was the only evidence. Route those throws through the same single exit; the disk
-		// gate's deliberate `return` (a skip, already marked) is untouched.
+		// gate's deliberate skip (already marked) is untouched.
 		suiteError = err;
 	} finally {
-		await destroySandbox(sandbox);
+		const teardown = await destroySandbox(sandbox);
+		if (ctx.costEvidence) {
+			const capability = ctx.costEvidence;
+			const cell: ProviderCostCell = {
+				runId: ctx.runId,
+				providerId: providerName,
+				suite: suiteName,
+				...(ctx.replicateIndex !== undefined ? { replicateIndex: ctx.replicateIndex } : {}),
+			};
+			const missingEvidence = (
+				reason: "provider_api_error" | "invalid_provider_response",
+				detail: string,
+			): ProviderCostEvidence => ({
+				kind: "missing",
+				cell,
+				subject: {
+					kind: "sandbox",
+					...(sandboxId !== undefined ? { sandboxId } : {}),
+				},
+				capturedAt: new Date().toISOString(),
+				sdk: capability.sdk,
+				reason,
+				detail,
+			});
+			let evidence: ProviderCostEvidence;
+			try {
+				if (sandboxId === undefined) {
+					evidence = missingEvidence("provider_api_error", "ComputeSDK sandboxId is unavailable.");
+				} else {
+					const returned = await withTimeout(
+						capability.captureAfterTeardown({
+							cell,
+							providerId: providerName,
+							sandboxId,
+							teardown,
+						}),
+						30_000,
+						"Provider cost evidence capture timeout",
+					);
+					try {
+						// Canonicalize the unknown hook object through bounded, descriptor-only traversal before
+						// ArkType sees it. The JSON round-trip yields inert plain data: no accessors/proxies and no
+						// structure beyond the evidence envelope limits can reach schema traversal.
+						const inert: unknown = JSON.parse(
+							canonicalJsonString(returned, PROVIDER_EVIDENCE_JSON_LIMITS),
+						);
+						// The schema deliberately requires canonical responseJson, but the provider hook is an
+						// untrusted boundary and may return valid, non-canonical JSON. Sanitize that string on the
+						// inert copy before ArkType validates it so raw successful-response credentials never need
+						// to pass through (or be accepted by) the durable evidence contract.
+						if (inert !== null && typeof inert === "object" && !Array.isArray(inert)) {
+							const response = Object.getOwnPropertyDescriptor(inert, "responseJson");
+							if (response !== undefined) {
+								Object.defineProperty(inert, "responseJson", {
+									...response,
+									value: sanitizeHookResponseJson("value" in response ? response.value : undefined),
+								});
+							}
+						}
+						const parsed = parseProviderCostEvidence(inert);
+						const bindingMismatch =
+							!canonicalJsonEqual(parsed.cell, cell) ||
+							parsed.subject.sandboxId !== sandboxId ||
+							!canonicalJsonEqual(parsed.sdk, capability.sdk);
+						const sanitized =
+							"responseJson" in parsed && parsed.responseJson !== undefined
+								? {
+										...parsed,
+										responseJson: sanitizeProviderResponse(JSON.parse(parsed.responseJson)),
+									}
+								: parsed;
+						evidence = bindingMismatch
+							? missingEvidence(
+									"invalid_provider_response",
+									"Provider response failed structural or requested-cell binding validation.",
+								)
+							: sanitized;
+					} catch {
+						evidence = missingEvidence(
+							"invalid_provider_response",
+							"Provider response failed structural or requested-cell binding validation.",
+						);
+					}
+				}
+			} catch (err) {
+				evidence = missingEvidence("provider_api_error", sanitizeEvidenceDetail(err));
+			}
+			try {
+				writeProviderCostEvidence(resultsDir, evidence);
+			} catch (err) {
+				if (suiteError !== undefined) {
+					console.warn(
+						`[cost-evidence] persistence failed after primary suite error: ${sanitizeEvidenceDetail(err)}`,
+					);
+				} else {
+					evidencePersistenceError = err;
+				}
+			}
+		}
 	}
+	if (evidencePersistenceError !== undefined) throw evidencePersistenceError;
 
 	if (suiteError) {
 		// Record the failure INTO the results tree before the job goes red. Without this the suite leaves

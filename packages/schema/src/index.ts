@@ -5,13 +5,19 @@ import { rawRunSchema } from "./lib/internal.ts";
 
 // Pure analysis over retained Samples: the Aggregates distribution and how it's computed.
 export * from "./analysis.ts";
+// Bounded canonical JSON shared by evidence producers and deterministic consumers.
+export * from "./canonical-json.ts";
 // The Metric Catalog — the registry of rankable Metrics, plus lookup helpers.
 export * from "./catalog.ts";
+// Sandbox-attributed provider cost evidence and complete-total semantics.
+export * from "./cost-evidence.ts";
 // The derived economics Dimension ($/run): its MetricDefs, the pricing-driven derivation, and the
 // pure cost models (burst vs fixed-infra amortization) they build on.
 export * from "./economics.ts";
 // The non-PTS, harness-measured Metric slice (lifecycle + control-plane) and its operation→id contract.
 export * from "./harness-metrics.ts";
+// Canonical persisted identifiers shared by Run and evidence schemas.
+export * from "./identifiers.ts";
 // Metric vocabulary: Dimension, Direction and the MetricDef shape every Metric declares.
 export * from "./metrics.ts";
 // Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).

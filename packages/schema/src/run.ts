@@ -9,6 +9,8 @@
  */
 import { type } from "arktype";
 import { aggregatesSchema } from "./analysis.ts";
+import { providerCostEvidenceSchema } from "./cost-evidence.ts";
+import { runIdSchema } from "./identifiers.ts";
 import { directionSchema } from "./metrics.ts";
 
 /** Whether a ProviderRun carries at least one catalogued Metric (validated) or none yet (pending). */
@@ -426,6 +428,17 @@ export const targetSpecSchema = type({
 });
 export type TargetSpec = typeof targetSpecSchema.infer;
 
+/** A RunIndex entry whose path is derived solely from, and cannot disagree with, its Run id. */
+export const runIndexEntrySchema = type({
+	runId: runIdSchema,
+	generatedAt: "string.date.iso",
+	path: "string >= 1",
+}).narrow((entry, ctx) => {
+	const expected = `runs/${entry.runId}.json`;
+	return entry.path === expected || ctx.mustBe(`a RunIndex entry whose path is ${expected}`);
+});
+export type RunIndexEntry = typeof runIndexEntrySchema.infer;
+
 /**
  * What a benchmark that produced no result was: a whole suite, or one harness lifecycle operation.
  * The two are not interchangeable — a missing suite is a workload the provider never ran, a missing
@@ -594,6 +607,8 @@ export type ResultGap = typeof resultGapSchema.infer;
  */
 export const providerRunSchema = type({
 	providerId: "string",
+	/** Sandbox-scoped provider cost evidence (required by the Run v5 gate below). */
+	"costEvidence?": providerCostEvidenceSchema.array(),
 	validationStatus: validationStatusSchema,
 	// Whether observed specs honored the pinned target spec; absent when probes saw too little to judge.
 	"specMatched?": "boolean",
@@ -723,7 +738,8 @@ export function providerReportedNothing(p: ProviderRun): boolean {
 		p.gaps.length === 0 &&
 		p.uncatalogued.length === 0 &&
 		Object.keys(p.observedSpecs).length === 0 &&
-		(p.hostMetadata?.length ?? 0) === 0
+		(p.hostMetadata?.length ?? 0) === 0 &&
+		(p.costEvidence?.length ?? 0) === 0
 	);
 }
 
@@ -740,7 +756,7 @@ export function providerStatusText(p: ProviderRun): string {
 /**
  * A full benchmark Run: every provider measured against one pinned target spec at one SHA.
  *
- * `schemaVersion` accepts `"2"` through `"4"`. v1's `skips: { suite, reason }[]` could not say
+ * `schemaVersion` accepts `"2"` through `"5"`. v1's `skips: { suite, reason }[]` could not say
  * whether a benchmark was deliberately not run or had crashed, and carried no positive record of what
  * DID run — so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the
  * document. v2 replaced it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. v3 adds
@@ -761,12 +777,16 @@ export function providerStatusText(p: ProviderRun): string {
  *  - Host records are folded and attributed to their machine.
  *  - Each host-hardware mixture carries its own spec verdict.
  *
+ * v5 adds the sandbox-scoped provider cost-evidence transport. Every provider row carries an array;
+ * historical versions cannot carry one, so absence in an older Run remains absence rather than a
+ * fabricated zero or backfill.
+ *
  * Every version validates here — already-published Runs are read unchanged, and the parser never
  * migrates them in place.
  */
 export const runSchema = type({
-	schemaVersion: "'2' | '3' | '4'",
-	runId: "string",
+	schemaVersion: "'2' | '3' | '4' | '5'",
+	runId: runIdSchema,
 	sha: "string",
 	// ISO-8601 timestamp the Run was generated at — validated so the RunIndex sort key can't be a
 	// free-form string ("tomorrow") that silently breaks newest-first ordering.
@@ -831,6 +851,22 @@ export const runSchema = type({
 			}
 		}
 	}
+	for (const provider of run.providers) {
+		if (version < 5 && provider.costEvidence !== undefined) {
+			return ctx.mustBe("a v5 Run when a ProviderRun carries costEvidence");
+		}
+		if (version >= 5 && provider.costEvidence === undefined) {
+			return ctx.mustBe("a v5 ProviderRun with a costEvidence array");
+		}
+		for (const evidence of provider.costEvidence ?? []) {
+			if (evidence.cell.runId !== run.runId || evidence.cell.providerId !== provider.providerId) {
+				return ctx.mustBe("cost evidence whose runId and providerId match its parent Run");
+			}
+			if (run.replicateIndex !== undefined && evidence.cell.replicateIndex !== run.replicateIndex) {
+				return ctx.mustBe("shard cost evidence whose replicateIndex matches the Run");
+			}
+		}
+	}
 	// `replicateIndex` marks a per-replicate SHARD (one sandbox, not yet folded); `MetricResult.replicates`
 	// marks the AGGREGATE (the fold across shards, which drops `replicateIndex`). A Run carrying both is
 	// neither — reject it here rather than leave a consumer to guess which level it is looking at.
@@ -853,13 +889,7 @@ export type Run = typeof runSchema.infer;
  */
 export const runIndexSchema = type({
 	schemaVersion: "'1'",
-	runs: type({
-		runId: "string",
-		// ISO-8601 — the sort key for the newest-first time series, validated like runSchema's.
-		generatedAt: "string.date.iso",
-		// Path to the Run document, relative to the index file.
-		path: "string",
-	}).array(),
+	runs: runIndexEntrySchema.array(),
 }).narrow((index, ctx) => {
 	for (let i = 1; i < index.runs.length; i++) {
 		const prev = index.runs[i - 1];

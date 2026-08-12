@@ -5,15 +5,17 @@
  * raw inputs the normalizer consumes — the committed raw tool output is the dataset's source of truth.
  */
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { GapCause, GapOutcome } from "@sandbox-benchmarks/schema";
+import type { GapCause, GapOutcome, ProviderCostEvidence } from "@sandbox-benchmarks/schema";
 import {
 	harnessGapMarkerJson,
 	isGapMarkerFile,
 	isPtsResultFile,
+	providerCostEvidenceFile,
+	providerCostEvidenceJson,
 	sandboxGapMarkerFile,
 } from "@sandbox-benchmarks/schema";
 import type { StepRunner } from "./execute.ts";
@@ -27,6 +29,19 @@ const RESULTS_END = "__BENCH_RESULTS_TGZ_END__";
  *  and the tar|base64 emit is idempotent while the sandbox is destroyed only after collection — so
  *  re-running the whole step is safe and beats throwing finished results away. */
 const COLLECT_MAX_ATTEMPTS = 3;
+
+/** Validate and atomically persist the one provider cost record owned by this suite sandbox. */
+export function writeProviderCostEvidence(resultsDir: string, record: ProviderCostEvidence): void {
+	mkdirSync(resultsDir, { recursive: true });
+	const target = join(resultsDir, providerCostEvidenceFile());
+	const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+	try {
+		writeFileSync(temporary, providerCostEvidenceJson(record));
+		renameSync(temporary, target);
+	} finally {
+		rmSync(temporary, { force: true });
+	}
+}
 
 /** The in-sandbox collect command: emit a marker-bounded, newline-stripped base64 tar of
  *  benchmark-results/ on stdout. No temp file in the sandbox, so it works even when the sandbox disk
@@ -42,6 +57,7 @@ const COLLECT_SCRIPT =
  * that cannot change the outcome. Distinguished from the RETRYABLE decode/extract failures.
  */
 class CollectedResultsEmptyError extends Error {}
+class ReservedCollectedFileError extends Error {}
 
 /** Pull the sandbox's benchmark-results/ into `resultsDir` on the host. */
 export async function collectResults(runner: StepRunner, resultsDir: string): Promise<void> {
@@ -90,7 +106,13 @@ export async function collectResults(runner: StepRunner, resultsDir: string): Pr
 				console.log(`Results extracted to ${resultsDir} (${archiveKiB.toFixed(1)} KiB archive)`);
 				return;
 			} catch (err) {
-				if (err instanceof CollectedResultsEmptyError || attempt >= COLLECT_MAX_ATTEMPTS) throw err;
+				if (
+					err instanceof CollectedResultsEmptyError ||
+					err instanceof ReservedCollectedFileError ||
+					attempt >= COLLECT_MAX_ATTEMPTS
+				) {
+					throw err;
+				}
 				const reason = err instanceof Error ? err.message : String(err);
 				console.log(
 					`[collect benchmark-results] attempt ${attempt}/${COLLECT_MAX_ATTEMPTS} decoded a payload ` +
@@ -179,13 +201,38 @@ async function decodeAndExtract(base64: string, resultsDir: string): Promise<num
 		await mkdir(stage, { recursive: true });
 		try {
 			await extractArchive(archive, stage);
-			await cp(join(stage, "benchmark-results"), target, { recursive: true });
+			const collectedRoot = join(stage, "benchmark-results");
+			assertNoReservedEvidenceFile(collectedRoot);
+			await cp(collectedRoot, target, { recursive: true });
 		} finally {
 			await rm(stage, { recursive: true, force: true });
 		}
 		return Bun.file(archive).size / 1024;
 	} finally {
 		await rm(archive, { force: true });
+	}
+}
+
+/** Evidence is host-owned provenance. A sandbox may not forge it into its collected archive. */
+function assertNoReservedEvidenceFile(directory: string): void {
+	for (const entry of readdirSync(directory, { withFileTypes: true })) {
+		if (entry.name === providerCostEvidenceFile()) {
+			throw new ReservedCollectedFileError(
+				`Collected sandbox results contain reserved host-owned file ${providerCostEvidenceFile()}`,
+			);
+		}
+		if (entry.isSymbolicLink()) {
+			throw new ReservedCollectedFileError(
+				`Collected sandbox results contain forbidden symbolic link ${entry.name}`,
+			);
+		}
+		if (entry.isDirectory()) {
+			assertNoReservedEvidenceFile(join(directory, entry.name));
+		} else if (!entry.isFile()) {
+			throw new ReservedCollectedFileError(
+				`Collected sandbox results contain forbidden non-regular entry ${entry.name}`,
+			);
+		}
 	}
 }
 

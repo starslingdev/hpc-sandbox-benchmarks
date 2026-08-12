@@ -58,6 +58,18 @@ describe("deriveEconomics", () => {
 		for (const r of econ) expect(metricResultSchema(r)).not.toBeInstanceOf(type.errors);
 	});
 
+	it("derives against an explicit historical target spec while defaulting to TARGET_SPEC", () => {
+		const meta = getProvider("daytona-vm");
+		const measured = [{ metricId: "node_web_tooling_runs_per_s", mean: 10.5 }];
+		const historical = deriveEconomics(meta, measured, undefined, {
+			vcpus: 2,
+			memoryGb: 8,
+			diskGb: 20,
+		});
+		expect(historical[0]?.samples).toEqual([0.2304]);
+		expect(deriveEconomics(meta, measured)[0]?.samples).toEqual([0.3312]);
+	});
+
 	it("adds usd_per_lifecycle = hourly × summed lifecycle ms when lifecycle Metrics are present", () => {
 		const meta = getProvider("daytona-vm");
 		const hourly = hourlyCostAtTargetSpec(meta) ?? Number.NaN;
@@ -75,12 +87,11 @@ describe("deriveEconomics", () => {
 		expect(econ.map((m) => m.metricId)).toContain(ECONOMICS_METRIC_IDS.usdPerHour);
 	});
 
-	it("omits usd_per_lifecycle when no lifecycle Metric was measured", () => {
+	it("emits no Modal economics without provider-observed billed usage", () => {
 		const econ = deriveEconomics(getProvider("modal-gvisor"), [
 			{ metricId: HARNESS_METRIC_IDS.controlPlaneInfo, mean: 42 },
 		]);
-		// control-plane timings are not lifecycle runtime, so no per-lifecycle cost.
-		expect(econ.map((m) => m.metricId)).toEqual([ECONOMICS_METRIC_IDS.usdPerHour]);
+		expect(econ).toEqual([]);
 	});
 
 	it("adds usd_per_compute_run = hourly × runtime when a positive runtimeMs is supplied", () => {
@@ -112,14 +123,28 @@ describe("deriveEconomics", () => {
 		}
 	});
 
-	it("returns nothing for a provider with no vetted rate (a null rate must never read as free)", () => {
+	it("returns nothing whenever the complete target total is unavailable or dynamic", () => {
 		const unpriced: ProviderMeta = {
 			...getProvider("e2b"),
-			pricing: { model: "unknown", notes: "no vetted rate" },
+			pricing: { model: "unavailable", reason: "unpublished", notes: "no vetted rate" },
 		};
-		expect(deriveEconomics(unpriced, [{ metricId: HARNESS_METRIC_IDS.spawn, mean: 1000 }])).toEqual(
-			[],
-		);
+		for (const meta of [
+			unpriced,
+			getProvider("blaxel"),
+			getProvider("runcloud"),
+			getProvider("microsandbox-cloud"),
+		]) {
+			expect(
+				deriveEconomics(meta, [{ metricId: HARNESS_METRIC_IDS.spawn, mean: 1000 }], 5000),
+			).toEqual([]);
+		}
+	});
+
+	it("never infers Modal economics because requests equal hard limits", () => {
+		const economics = deriveEconomics(getProvider("modal-gvisor"), [
+			{ metricId: HARNESS_METRIC_IDS.spawn, mean: 1000 },
+		]);
+		expect(economics).toEqual([]);
 	});
 
 	it("keeps every lifecycle harness Metric in the lifecycle sum", () => {

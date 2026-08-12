@@ -25,11 +25,56 @@
  * lifecycle timing files (`<name>_ms.txt`, `<name>-exit-code.txt`) land with the lifecycle path.
  */
 import { type } from "arktype";
+import type { ProviderCostEvidence } from "./cost-evidence.ts";
+import { providerCostEvidenceSchema } from "./cost-evidence.ts";
 import type { GapCause, GapOutcome, ResultGap } from "./run.ts";
 import { gapCauseSchema, gapOutcomeOfCause, gapOutcomeSchema } from "./run.ts";
 
 const SKIP_SUFFIX = "--skipped.json";
 const FAILURE_SUFFIX = "--failed.json";
+const PROVIDER_COST_EVIDENCE_FILE = "provider-cost-evidence.json";
+/** Pretty-printed envelope ceiling; responseJson itself is capped at 64 KiB. */
+export const MAX_PROVIDER_COST_EVIDENCE_FILE_BYTES = 96 * 1024;
+
+/** Fixed raw filename for one suite sandbox's provider cost evidence. */
+export function providerCostEvidenceFile(): string {
+	return PROVIDER_COST_EVIDENCE_FILE;
+}
+
+export function isProviderCostEvidenceFile(filename: string): boolean {
+	return filename === PROVIDER_COST_EVIDENCE_FILE;
+}
+
+/** Deterministic bytes written by the harness. */
+export function providerCostEvidenceJson(record: ProviderCostEvidence): string {
+	const parsed = providerCostEvidenceSchema(record);
+	if (parsed instanceof type.errors)
+		throw new Error(`invalid provider cost evidence: ${parsed.summary}`);
+	const json = `${JSON.stringify(parsed, null, 2)}\n`;
+	if (new TextEncoder().encode(json).byteLength > MAX_PROVIDER_COST_EVIDENCE_FILE_BYTES) {
+		throw new Error("provider cost evidence file exceeds 96 KiB");
+	}
+	return json;
+}
+
+/** Strict parser: a recognized malformed evidence body is a normalization error, never absence. */
+export function parseProviderCostEvidence(data: unknown): ProviderCostEvidence {
+	let value = data;
+	if (typeof data === "string") {
+		if (new TextEncoder().encode(data).byteLength > MAX_PROVIDER_COST_EVIDENCE_FILE_BYTES) {
+			throw new Error("provider cost evidence file exceeds 96 KiB");
+		}
+		try {
+			value = JSON.parse(data);
+		} catch {
+			throw new Error("invalid provider cost evidence JSON");
+		}
+	}
+	const parsed = providerCostEvidenceSchema(value);
+	if (parsed instanceof type.errors)
+		throw new Error(`invalid provider cost evidence: ${parsed.summary}`);
+	return parsed;
+}
 
 // Filename predicates: regex-narrowed string Types. Wrapped (not point-free `T.allows`) so the bound
 // receiver is never lost.

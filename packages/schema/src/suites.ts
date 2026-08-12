@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { Dimension } from "./metrics.ts";
 
 /**
@@ -322,6 +323,9 @@ export type SuiteName = keyof typeof SUITES;
 
 /** The known suite names. */
 export const SUITE_NAMES = Object.keys(SUITES) as SuiteName[];
+
+/** Runtime form of the canonical suite-name vocabulary. */
+export const suiteNameSchema = type.enumerated(...SUITE_NAMES);
 
 /**
  * Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime — what a

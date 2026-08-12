@@ -4,7 +4,16 @@
  * validated against the shared schema before it leaves this module — validation happens at the
  * producer boundary, so no malformed Run can reach a consumer. SDK-free — filesystem + schema only.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import {
+	closeSync,
+	constants,
+	fstatSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	readSync,
+	statSync,
+} from "node:fs";
 import { join } from "node:path";
 import type {
 	GapCause,
@@ -12,6 +21,7 @@ import type {
 	MetricResult,
 	ObservedSpecs,
 	OffDimensionEmission,
+	ProviderCostEvidence,
 	ProviderRun,
 	ResultGap,
 	Run,
@@ -22,10 +32,13 @@ import {
 	deriveEconomics,
 	describeOffDimensionEmission,
 	getProvider,
+	MAX_PROVIDER_COST_EVIDENCE_FILE_BYTES,
 	METRIC_CATALOG,
 	offDimensionEmissions,
 	PROVIDERS,
+	parseProviderCostEvidence,
 	parseRun,
+	providerCostEvidenceFile,
 	SUITE_NAMES,
 	SUITES,
 	TARGET_SPEC,
@@ -34,6 +47,32 @@ import type { AttemptedEmptyResult, SampleContribution } from "./extract.ts";
 import { extractProviderDir } from "./extract.ts";
 import { readHostMetadata } from "./host-metadata.ts";
 import { computeSpecMatched, readObservedSpecs } from "./specs.ts";
+
+/** Read max+1 bytes from one descriptor, avoiding both unbounded allocation and stat/read races. */
+function readProviderCostEvidenceFile(path: string): string {
+	const descriptor = openSync(
+		path,
+		constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		if (!fstatSync(descriptor).isFile()) {
+			throw new Error("provider cost evidence path is not a regular file");
+		}
+		const buffer = new Uint8Array(MAX_PROVIDER_COST_EVIDENCE_FILE_BYTES + 1);
+		let length = 0;
+		while (length < buffer.byteLength) {
+			const count = readSync(descriptor, buffer, length, buffer.byteLength - length, null);
+			if (count === 0) break;
+			length += count;
+		}
+		if (length > MAX_PROVIDER_COST_EVIDENCE_FILE_BYTES) {
+			throw new Error("provider cost evidence file exceeds 96 KiB");
+		}
+		return new TextDecoder().decode(buffer.subarray(0, length));
+	} finally {
+		closeSync(descriptor);
+	}
+}
 
 export interface NormalizeInput {
 	rawRoot: string;
@@ -54,11 +93,12 @@ export function normalizeResultsTree(input: NormalizeInput): Run {
 		.map((meta) => normalizeProviderDir(input.rawRoot, meta.id));
 
 	const candidate = {
-		// Pinned at 4 because this function stamps a structured `cause` on suite gaps
-		// (`shortfallCause`/`twinDropCause`), which `runSchema` gates at v4-or-later — lowering this while
+		// Run v5 carries the provider cost-evidence array on every provider row. This function also stamps
+		// structured suite-gap causes (`shortfallCause`/`twinDropCause`), which `runSchema` gates at
+		// v4-or-later — lowering this while
 		// still emitting causes fails `parseRun`. A shard may also carry a replicateIndex (v3+) the
 		// aggregate folds into MetricResult.replicates.
-		schemaVersion: "4" as const,
+		schemaVersion: "5" as const,
 		runId: input.runId,
 		sha: input.sha,
 		generatedAt: input.generatedAt,
@@ -236,6 +276,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		// slice; `buildLeaderboard` derives the missing-suite gaps across providers.
 		return {
 			providerId,
+			costEvidence: [],
 			validationStatus: "pending",
 			observedSpecs: {},
 			metrics: [],
@@ -277,6 +318,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	const suitesCovered = new Set<string>();
 	const offDimension: OffDimensionEmission[] = [];
 	const hostMetadata: HostMetadataRecord[] = [];
+	const costEvidence: ProviderCostEvidence[] = [];
 	// Host fingerprint from a composite's <System>, first non-empty across the read order (all suites of
 	// one provider ran on the same machine). Merged UNDER the spec probe below so the probe always wins.
 	let systemHost: ObservedSpecs | undefined;
@@ -295,6 +337,22 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	const suiteTwinDrops = new Map<string, DroppedTwinResult[]>();
 
 	for (const suite of suiteDirs) {
+		const evidencePath = join(dir, suite, providerCostEvidenceFile());
+		try {
+			const evidence = parseProviderCostEvidence(readProviderCostEvidenceFile(evidencePath));
+			if (evidence.cell.providerId !== providerId || evidence.cell.suite !== suite) {
+				throw new Error(
+					`cost evidence identity mismatch: expected ${providerId}/${suite}, got ${evidence.cell.providerId}/${evidence.cell.suite}`,
+				);
+			}
+			costEvidence.push(evidence);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+				throw new Error(
+					`invalid ${providerId}/${suite}/${providerCostEvidenceFile()}: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+		}
 		const ext = extractProviderDir(join(dir, suite), providerId);
 		for (const record of readHostMetadata(join(dir, suite))) {
 			hostMetadata.push({ ...record, sourceFile: `${suite}/${record.sourceFile}` });
@@ -592,6 +650,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 
 	return {
 		providerId,
+		costEvidence,
 		// A provider is validated exactly when it produced ≥1 catalogued Metric.
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
 		...(specMatched !== undefined ? { specMatched } : {}),

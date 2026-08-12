@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,7 +9,7 @@ import {
 	harnessGapMarkerJson,
 	hourlyCostAtTargetSpec,
 } from "@sandbox-benchmarks/schema";
-import { normalizeProviderDir } from "./normalize-tree.ts";
+import { normalizeProviderDir, normalizeResultsTree } from "./normalize-tree.ts";
 
 // A composite carrying a catalogued node-web-tooling result plus an uncatalogued synthetic result.
 // `samples` lets a second file diverge so we can prove the contamination-vs-benign distinction.
@@ -106,6 +107,74 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		expect(run.observedSpecs.vcpus).toBe(4);
 	});
 
+	it("strictly ingests suite-scoped provider cost evidence into a v5 Run", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		const evidence = {
+			kind: "missing",
+			cell: { runId: "run-cost", providerId: "daytona-vm", suite: "cpu-node" },
+			subject: { kind: "sandbox", sandboxId: "sb-1" },
+			capturedAt: "2026-08-08T00:00:00.000Z",
+			sdk: { packageName: "sdk", version: "1.0.0" },
+			reason: "not_sandbox_scoped",
+			detail: "Organization totals cannot be attributed to one sandbox.",
+		} as const;
+		writeFileSync(join(suiteDir, "provider-cost-evidence.json"), JSON.stringify(evidence));
+		const run = normalizeResultsTree({
+			rawRoot: root,
+			runId: "run-cost",
+			sha: "abc",
+			generatedAt: "2026-08-08T00:00:00.000Z",
+		});
+		expect(run.schemaVersion).toBe("5");
+		expect(
+			run.providers.find((provider) => provider.providerId === "daytona-vm")?.costEvidence,
+		).toEqual([evidence]);
+		expect(run.providers.every((provider) => Array.isArray(provider.costEvidence))).toBe(true);
+	});
+
+	it("fails normalization on malformed recognized evidence", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "provider-cost-evidence.json"), '{"kind":"observed"}');
+		expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(/invalid daytona-vm\/cpu-node/);
+	});
+
+	it("rejects an oversized recognized evidence file before JSON parsing", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(
+			join(suiteDir, "provider-cost-evidence.json"),
+			`{"padding":"${"x".repeat(97 * 1024)}"}`,
+		);
+		expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(/exceeds 96 KiB/);
+	});
+
+	it("opens recognized evidence with no-follow semantics and rejects a symlink", () => {
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		const outside = join(root, "outside-evidence.json");
+		writeFileSync(outside, "{}\n");
+		symlinkSync(outside, join(suiteDir, "provider-cost-evidence.json"), "file");
+		expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(
+			/invalid daytona-vm\/cpu-node\/provider-cost-evidence\.json/,
+		);
+	});
+
+	it.skipIf(process.platform === "win32")(
+		"opens recognized evidence nonblocking and rejects a FIFO",
+		() => {
+			const suiteDir = join(providerDir, "cpu-node");
+			mkdirSync(suiteDir);
+			const evidencePath = join(suiteDir, "provider-cost-evidence.json");
+			const created = spawnSync("mkfifo", [evidencePath]);
+			if (created.status !== 0) return;
+			expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(
+				/provider cost evidence path is not a regular file/,
+			);
+		},
+	);
+
 	it("retains suite-tagged mise and PTS host records in the normalized provider", () => {
 		const suiteDir = join(providerDir, "system");
 		mkdirSync(suiteDir);
@@ -191,6 +260,19 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		expect(run.metrics.some((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerLifecycle)).toBe(
 			false,
 		);
+	});
+
+	it("keeps a measured dynamic-price provider validated while omitting economics", () => {
+		const dynamicDir = join(root, "runcloud", "cpu-node");
+		mkdirSync(dynamicDir, { recursive: true });
+		writeFileSync(join(dynamicDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
+
+		const run = normalizeProviderDir(root, "runcloud");
+		expect(run.validationStatus).toBe("validated");
+		expect(run.metrics.some((metric) => metric.metricId === "node_web_tooling_runs_per_s")).toBe(
+			true,
+		);
+		expect(run.metrics.some((metric) => metric.metricId.startsWith("usd_"))).toBe(false);
 	});
 
 	it("maps the composite <System> to host specs while the probe owns the effective specs", () => {

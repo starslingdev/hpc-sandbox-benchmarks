@@ -968,14 +968,14 @@
         },
         {
           "metricId": "usd_per_hour",
-          "samples": [0.1494],
+          "samples": [0.2304],
           "aggregates": {
-            "p50": 0.1494,
-            "p95": 0.1494,
-            "mean": 0.1494,
+            "p50": 0.2304,
+            "p95": 0.2304,
+            "mean": 0.2304,
             "stdev": 0,
-            "min": 0.1494,
-            "max": 0.1494,
+            "min": 0.2304,
+            "max": 0.2304,
             "n": 1
           }
         }
@@ -1893,19 +1893,6 @@
           "sourceFile": "memory/pts_stream.xml",
           "appVersion": "2013-01-17",
           "arguments": "Triad"
-        },
-        {
-          "metricId": "usd_per_hour",
-          "samples": [0.47736],
-          "aggregates": {
-            "p50": 0.47736,
-            "p95": 0.47736,
-            "mean": 0.47736,
-            "stdev": 0,
-            "min": 0.47736,
-            "max": 0.47736,
-            "n": 1
-          }
         }
       ],
       "suitesCovered": ["cpu-node", "disk", "memory", "network", "realworld-better-auth", "system"],

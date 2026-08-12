@@ -1,7 +1,13 @@
 // The harness-facing adapter contract. Identity (`name`, `requiredEnvVars`) is owned by the schema's
 // ProviderMeta; this module owns only how to construct a provider and the benchmark's create-time
 // policy. `index.ts` joins the two registries by id (PROVIDERS × adapters, both keyed by ProviderId).
-import type { ProviderId, ProviderTransport } from "@sandbox-benchmarks/schema";
+import type {
+	ProviderCostCell,
+	ProviderCostEvidence,
+	ProviderId,
+	ProviderTransport,
+	SdkProvenance,
+} from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions, ExplicitComputeConfig } from "computesdk";
 
 /**
@@ -12,6 +18,24 @@ import type { CreateSandboxOptions, ExplicitComputeConfig } from "computesdk";
  * structurally instead of falling back to `any`.
  */
 export type DirectProvider = NonNullable<ExplicitComputeConfig["provider"]>;
+
+export interface SandboxTeardownResult {
+	completed: boolean;
+	attemptedAt: string;
+	completedAt?: string;
+}
+
+export interface CostEvidenceCaptureInput {
+	cell: ProviderCostCell;
+	providerId: ProviderId;
+	sandboxId: string;
+	teardown: SandboxTeardownResult;
+}
+
+export interface ProviderCostEvidenceCapability {
+	sdk: SdkProvenance;
+	captureAfterTeardown(input: CostEvidenceCaptureInput): Promise<ProviderCostEvidence>;
+}
 
 /**
  * What the harness needs to drive a provider that the framework can't infer:
@@ -44,6 +68,8 @@ export interface ProviderAdapter {
 	 *  an attempt that outlives the retry budget it promised. Meaningless — and omitted — when the
 	 *  harness bounds the attempt itself, because there `createTimeoutMs` already IS the ceiling. */
 	createAttemptCeilingMs?: number;
+	/** Optional provider-owned billing hook, invoked only after the harness has attempted teardown. */
+	costEvidence?: ProviderCostEvidenceCapability;
 }
 
 /** A provider as the harness consumes it: schema-owned identity joined with the harness adapter. */

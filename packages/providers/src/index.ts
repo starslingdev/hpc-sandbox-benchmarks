@@ -9,6 +9,15 @@ import type { ProviderConfig } from "./lib/types.ts";
 
 // The runtime configuration gatekeeper — the single validated config object consumers import.
 export { config } from "./config.ts";
+export {
+	MODAL_APP_NAME,
+	MODAL_SDK_PROVENANCE,
+	modalCostEvidence,
+	RUNCLOUD_SDK_PROVENANCE,
+	runcloudCostEvidence,
+	sanitizeEvidenceDetail,
+	sanitizeProviderResponse,
+} from "./lib/cost-evidence.ts";
 export type {
 	MicrosandboxCloudConfig,
 	MicrosandboxConfig,
@@ -22,7 +31,14 @@ export { microsandboxCloudCompute, microsandboxLocalCompute } from "./lib/micros
 export { NOVITA_E2B_DOMAIN, novitaCompute, novitaConnection } from "./lib/novita.ts";
 // How an adapter reports a create failure the harness should wait out rather than fail on.
 export { isRetryableCreateError, markRetryableCreate } from "./lib/retryable-create.ts";
-export type { DirectProvider, ProviderAdapter, ProviderConfig } from "./lib/types.ts";
+export type {
+	CostEvidenceCaptureInput,
+	DirectProvider,
+	ProviderAdapter,
+	ProviderConfig,
+	ProviderCostEvidenceCapability,
+	SandboxTeardownResult,
+} from "./lib/types.ts";
 
 /**
  * All provider benchmark configurations: each schema provider's identity joined with its harness

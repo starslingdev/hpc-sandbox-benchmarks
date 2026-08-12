@@ -119,16 +119,43 @@ Metrics come from three sources:
 
 ## Economics ($/run)
 
-The `economics` dimension is the price/performance axis. It's `derived` — computed at normalization
-from each provider's published, vetted pricing
-([`hourlyCostAtTargetSpec`](../packages/schema/src/providers.ts)) plus the runtime already on the Run:
+The `economics` dimension is exact-only. The cited registry in
+[`providers.ts`](../packages/schema/src/providers.ts) retains each official component rate, original
+vendor unit, billing basis, intrinsic quantity rule, allowances/fees, source URL, and verification
+date. A component does not store a quantity for the current benchmark shape: its vendor billing-unit
+quantity is derived from each Run's `TargetSpec` when pricing is applied. `usd_per_hour` is emitted
+only when those components form a **complete deterministic CPU-plus-memory charge** for that Run's
+requested allocation. Runtime-prorated `usd_per_lifecycle` and `usd_per_compute_run` require that same
+exact hourly denominator; a null hourly total emits none of the three metrics and never reads as zero.
 
-- `usd_per_hour` (headline) — hourly cost at the target spec; the comparison denominator.
-- `usd_per_lifecycle` — hourly cost × the summed measured lifecycle timings; emitted only when a Run
-  carries lifecycle metrics.
+This distinction keeps published-but-dynamic providers visible and auditable without ranking an
+assumption:
 
-A provider with no vetted rate emits no economics (a null rate must never read as free). Economics
-enriches a provider that already produced ≥1 measured metric — it never promotes a `pending` provider.
+- **Modal is usage-dependent.** Modal bills `max(request, usage)`. Request-equals-limit does not prove
+  the quantities Modal ultimately billed, so catalog rates remain metadata but produce no exact
+  economics rows without sandbox-scoped provider-observed usage.
+- **Blaxel and Vercel are unranked** because CPU is active-use billed. Their cited 100%-active values
+  (`$0.3312/hr` and `$0.6816/hr`) are useful references, not observed totals for I/O-heavy Runs.
+- **run.cloud is unranked** because `$0.0593784/hr` is only its reserved CPU floor plus provisioned
+  memory; CPU burst above that floor is separately metered and the historical Runs do not retain it.
+- **Microsandbox Cloud and Namespace are unranked** because the applicable total depends on plan fees,
+  included monthly pools, and prepaid/overage consumption.
+
+Provider-observed `costEvidence` is separate from catalog-derived economics. Run v5 retains one
+record per benchmark sandbox cell. `observed` means the provider hook returned a structurally valid,
+sandbox-attributed public API result after confirmed teardown; schema validation does not independently
+authenticate that external response. `missing` records why a usable result is unavailable and never
+means zero. `providerCostTotal(records, expectedCells)` produces an exact total only relative to the
+authoritative expected cells supplied by its caller: the record cells must equal that set exactly and
+all records must be observed, cell-unique, sandbox-unique, and use one currency. Modal currently records `unsupported_public_api`: its generated
+resource-usage RPC is private and is not called. run.cloud records `not_sandbox_scoped`: its public
+usage API is organization-wide cumulative usage and is not called or delta-attributed to one sandbox.
+
+Allowances remain metadata, never headline discounts: Daytona's first 5 GiB is a **per-sandbox disk
+allowance**, not free memory, and monthly pools cannot establish the intrinsic cost of one sandbox
+hour. Disk rates and allowances are retained where published but excluded from economics because disk
+is not a benchmark comparison axis and rates are not uniformly available. Economics enriches a
+provider only after it produced at least one measured metric, so it never promotes a pending row.
 
 ## Host vs. effective specs (the host-fingerprint caveat)
 
