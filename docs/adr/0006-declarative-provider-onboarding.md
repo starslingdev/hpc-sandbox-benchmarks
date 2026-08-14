@@ -263,7 +263,9 @@ export const credential = credentialInput.pipe((c) =>
 
 Verified: mixed shorthand/full input normalizes to one shape, and `""` is rejected at
 `value at [0] must be non-empty`. The YAML emitter then consumes a uniform record and re-checks
-nothing. Two further Tier-1 fields cover the remaining per-provider CI facts that are ternaries in
+nothing. ADR-0007 §3 adds two more derived consumers of the same declarations — each driver's
+compile-time env slice (`EnvOf`) and its runtime env parser (`envSchemaFor`) — so the credential
+descriptor becomes the single declaration behind CI wiring, type checking, and runtime validation. Two further Tier-1 fields cover the remaining per-provider CI facts that are ternaries in
 YAML today: `runner?: string` and `preAuth?: "namespace-token" | "vercel-auth"`.
 
 ### 7. Generate the managed regions, gate them the way ADR-0003 gates the catalog (Tier 3)

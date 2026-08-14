@@ -16,4 +16,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0004](./0004-consumption-layer-aggregation.md) | Raw-first history, consumption-layer candidate→promote |
 | [0005](./0005-host-vs-effective-spec-split.md) | Host-vs-effective spec split |
 | [0006](./0006-declarative-provider-onboarding.md) | Declarative provider onboarding (proposed) |
-| [0007](./0007-sandbox-driver-port.md) | Sandbox driver port; ComputeSDK as one driver (proposed) |
+| [0007](./0007-sandbox-driver-port.md) | Sandbox driver kit: one port, one file per provider; ComputeSDK as one driver (proposed) |
