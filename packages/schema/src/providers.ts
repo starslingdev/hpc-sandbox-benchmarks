@@ -1148,6 +1148,53 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
+	tama: {
+		displayName: "tama",
+		website: "https://tama.computer",
+		// No SDK is published for any language; the CLI is the only programmatic surface, so the adapter
+		// drives `tama` as a subprocess and parses its `--json` output.
+		sdkPackage: "tama CLI",
+		requiredEnvVars: ["TAMA_TOKEN"],
+		isolation: {
+			// Declared from an in-guest probe, because the vendor publishes no isolation claim. Every
+			// signal points at a shared-kernel container rather than the "machine" the CLI's vocabulary
+			// implies: systemd-detect-virt reports `container-other`, there is no `hypervisor` CPU flag,
+			// /dev/kvm is absent, `/` is an overlay, PID 1 is a vendor `goproc` supervisor, and the DMI
+			// product/vendor is the bare-metal host (COMPAL SR220-2) rather than a synthetic VM board.
+			technology: "container (shared kernel)",
+			notes:
+				"Probed, not vendor-declared. CPU and memory are enforced through cgroup v2 (cpu.max, memory.max), but /proc/meminfo reports the HOST's memory (1.5 TiB observed on an 8 GiB request), which is the shared-kernel signature and the reason memory-sized workloads need the effective-spec split.",
+		},
+		pricing: {
+			// `tama offers` publishes a $/hr rate per GPU type and nothing for CPU-only machines, which is
+			// the shape this benchmark's target (4 vCPU / 8 GiB / 40 GB, no GPU) bills under. Deriving a
+			// CPU rate from the GPU box shares would be a guess, and an invented rate is worse than a
+			// disclosed gap, so this stays unavailable until the vendor publishes one.
+			model: "unavailable",
+			reason: "unpublished",
+			notes:
+				"No CPU-only rate is published: `tama offers` lists $/hr per GPU type plus a default box share (e.g. RTX4090 $0.66/hr, 7cpu/42Gi), and the console exposes no rate for a GPU-less machine. Nothing in the CLI or the public site prices the benchmark's 4 vCPU / 8 GiB target.",
+			sources: [{ label: "tama", url: "https://tama.computer", checkedAt: "2026-08-13" }],
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"CLI-backed adapter covering create, lifecycle, streaming exec, and teardown; opt-in until a committed validation run exists.",
+		},
+		// `tama new` takes --cpu and --memory. Disk is NOT settable and is not reported per machine: the
+		// observed root filesystem is a large shared overlay (878 GB), so the 40 GB target is cleared by
+		// capacity rather than by a pinned request.
+		specPinning: "settable",
+		transport: {
+			// The adapter spawns the CLI and forwards its stdout/stderr pipes as chunks, so a long exec
+			// stays observable instead of buffering. A 10-minute synchronous exec was validated end to end
+			// (see the adapter), but keep the repository's conservative 60s policy for sustained
+			// synchronous transport: longer work daemonizes and polls the harness-owned done file.
+			streaming: true,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
 };
 
 // Validate the authored registry exactly once. Consumers thereafter receive trusted inferred pricing

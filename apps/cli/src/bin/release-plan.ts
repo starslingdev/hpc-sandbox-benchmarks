@@ -83,6 +83,8 @@ function providerArtifact(id: ProviderId): string {
 			return "boots the candidate image directly (no baked artifact)";
 		case "runcloud":
 			return "boots the candidate image directly (no baked artifact)";
+		case "tama":
+			return "boots the candidate image directly (no baked artifact)";
 		case "vercel":
 			return config.vercelImageCandidate;
 	}
