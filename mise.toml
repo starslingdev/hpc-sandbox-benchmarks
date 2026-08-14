@@ -7,14 +7,23 @@
 # Never auto-install the tools below just because someone ran a mise TASK. The tasks in this repo are
 # the benchmark producer (`.mise/tasks/benchmark/**`) and the local runner (`.mise/tasks/bench-local`);
 # none of them uses a single one of these linters, and resolving them costs a GitHub API round trip
-# per tool before any benchmark starts. That is the same policy the in-sandbox preamble already sets
-# via MISE_TASK_RUN_AUTO_INSTALL=0 (packages/harness/src/lib/execute.ts) — stated here so it also
-# holds for a developer running `mise run bench-local` on their own machine, where no preamble runs.
+# per tool before any benchmark starts.
 #
-# Load-bearing rather than cosmetic: with auto-install on, `mise run bench-local` FAILS outright on a
-# host that cannot reach the GitHub API, and so does the `#USAGE mount` command mise invokes while
-# resolving shell completions. `mise install` still installs everything explicitly, which is what the
-# setup instructions and CI both do.
+# The in-sandbox preamble already exports MISE_TASK_RUN_AUTO_INSTALL=0
+# (packages/harness/src/lib/execute.ts), which covers every INNER `mise run benchmark:*`. What it
+# cannot cover is the OUTER wrapper — `mise run bench-local` on a developer's own machine, where no
+# preamble has run yet — and that is the gap this closes.
+#
+# Load-bearing rather than cosmetic: with auto-install on, `mise run bench-local` fails outright on a
+# host that cannot reach the GitHub API. `mise install` still installs everything explicitly, which is
+# what the setup instructions and CI both do.
+#
+# DEPRECATED KEY, KNOWINGLY (checked 2026-08-14, mise 2026.8.5). mise warns "use task.run_auto_install
+# instead; removed in mise 2027.2.0" — but `[task] run_auto_install` is an UNKNOWN FIELD on 2026.8.5
+# ("unknown field in mise.toml: task") and silently disables the guard, which brings the failure above
+# straight back. So the deprecated spelling is the only one that works today. Before mise 2027.2, swap
+# to `[task] run_auto_install = false` and verify with `mise run bench-local --help` on a host with no
+# GitHub API access; the pinned mise version to test against is in packages/harness/src/lib/setup.ts.
 task_run_auto_install = false
 
 [tools]

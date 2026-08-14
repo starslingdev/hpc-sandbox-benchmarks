@@ -86,8 +86,12 @@ describe("handleDiscovery", () => {
 
 	it("accepts a bin's declared value flag in both the space and equals spellings", () => {
 		// bench-suite declares `--require`; it must fall through to the bin's own parsing, not error.
-		expect(handleDiscovery(["e2b", "memory", "--require", "e2b"], HELP, ["--require"])).toBeNull();
-		expect(handleDiscovery(["e2b", "memory", "--require=e2b"], HELP, ["--require"])).toBeNull();
+		expect(
+			handleDiscovery(["e2b", "memory", "--require", "e2b"], HELP, { valueFlags: ["--require"] }),
+		).toBeNull();
+		expect(
+			handleDiscovery(["e2b", "memory", "--require=e2b"], HELP, { valueFlags: ["--require"] }),
+		).toBeNull();
 	});
 
 	it("keeps the flag set closed for bins that don't declare the value flag", () => {
@@ -98,7 +102,7 @@ describe("handleDiscovery", () => {
 	});
 
 	it("still rejects an undeclared flag alongside a declared value flag", () => {
-		const res = handleDiscovery(["--require=e2b", "--bogus"], HELP, ["--require"]);
+		const res = handleDiscovery(["--require=e2b", "--bogus"], HELP, { valueFlags: ["--require"] });
 		expect(res?.ok).toBe(false);
 		expect(res?.text).toContain("Unknown flag: --bogus");
 	});

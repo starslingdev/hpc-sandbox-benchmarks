@@ -606,7 +606,7 @@ if (import.meta.main) {
 	// Flags that consume a separate operand — one source of truth so the discovery filter and the
 	// positional-skip loop below can never enumerate different sets.
 	const VALUE_FLAGS = ["--require", "--replicate", "--replicates", "--max-concurrency"];
-	const discovery = handleDiscovery(argv, HELP, VALUE_FLAGS);
+	const discovery = handleDiscovery(argv, HELP, { valueFlags: VALUE_FLAGS });
 	if (discovery !== null) {
 		if (discovery.ok) {
 			process.stdout.write(`${discovery.text}\n`);

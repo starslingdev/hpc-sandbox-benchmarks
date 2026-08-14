@@ -106,29 +106,13 @@ export interface DiscoveryVocabulary {
 	valueFlags?: readonly string[];
 	/** Flags taking no operand, e.g. `--promote`. Recognised, never dispatched. */
 	booleanFlags?: readonly string[];
-	/**
-	 * Extra discovery ACTIONS, as flag → the text it prints. Dispatched here, with the shared flags,
-	 * so the closed set stays closed and the ordering against `--help` is the same for every bin. The
-	 * value is a thunk so a bin can render something expensive (bench-local's usage spec) without
-	 * paying for it on every other invocation.
-	 */
-	extras?: Readonly<Record<string, () => string>>;
 }
 
 export function handleDiscovery(
 	argv: readonly string[],
 	help: string,
-	// An array keeps the original spelling for the five bins that only have value flags; the object
-	// form is for a bin that also owns boolean flags or a discovery action.
-	vocabulary: readonly string[] | DiscoveryVocabulary = [],
+	{ valueFlags = [], booleanFlags = [] }: DiscoveryVocabulary = {},
 ): DiscoveryResult | null {
-	const {
-		valueFlags = [],
-		booleanFlags = [],
-		extras = {},
-	} = Array.isArray(vocabulary)
-		? { valueFlags: vocabulary as readonly string[] }
-		: (vocabulary as DiscoveryVocabulary);
 	// `--help` is the escape hatch: it wins even alongside other flags, so `--help --anything` prints
 	// usage rather than an error.
 	if (hasFlag(argv, "--help", "-h")) return { text: help, ok: true };
@@ -139,7 +123,6 @@ export function handleDiscovery(
 		(a) =>
 			a.startsWith("-") &&
 			!RECOGNISED_FLAGS.has(a) &&
-			!(a in extras) &&
 			!booleanFlags.includes(a) &&
 			!valueFlags.some((f) => a === f || a.startsWith(`${f}=`)),
 	);
@@ -147,8 +130,5 @@ export function handleDiscovery(
 	const json = hasFlag(argv, "--json");
 	if (hasFlag(argv, "--list-providers")) return { text: renderProviders(json), ok: true };
 	if (hasFlag(argv, "--list-suites")) return { text: renderSuites(json), ok: true };
-	for (const [flag, render] of Object.entries(extras)) {
-		if (hasFlag(argv, flag)) return { text: render(), ok: true };
-	}
 	return null;
 }

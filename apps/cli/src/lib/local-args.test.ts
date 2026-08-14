@@ -17,7 +17,6 @@ describe("parseLocalArgs defaults", () => {
 		expect(request.repoRoot).toBe("/repo");
 		expect(request.sha).toBe("abc1234");
 		expect(request.keepGoing).toBe(false);
-		expect(request.promote).toBe(false);
 		expect(request.datasetDir).toBeUndefined();
 		expect(request.outFile).toBeUndefined();
 	});

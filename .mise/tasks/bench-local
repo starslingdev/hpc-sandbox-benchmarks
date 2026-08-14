@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #MISE description="Run one or more benchmark suites on THIS machine; prints the Run JSON on stdout"
 #MISE alias="bl"
-#USAGE flag "--suites <suites>" help="Suites to run, in order, or \"all\"" default="cpu-node"
+#USAGE flag "--suites <suites>" help="Suites to run, in order, or \"all\"" default="cpu-node" {
+#USAGE   choices "all" "cpu-node" "system" "pgbench" "memory" "disk" "network" "realworld-mastra" "realworld-better-auth" "realworld-openclaw"
+#USAGE }
 #USAGE flag "--replicates <indices>" help="Repeat the whole selection once per index, one shard each" default="0"
 #USAGE flag "--as <label>" help="providerId written into the Run" default="local"
 #USAGE flag "--run-id <id>" help="Run identifier (default: local-<epoch-ms>)"
@@ -9,10 +11,9 @@
 #USAGE flag "--promote" help="Publish into the local dataset (gate: >=1 validated provider)"
 #USAGE flag "--dataset <dir>" help="Local dataset root for --promote" default="data/local"
 #USAGE flag "--keep-going" help="Record an unmet precondition or failed suite as a gap and continue"
-#USAGE flag "--usage-spec" help="Print this command's usage spec as KDL"
 #
 # The `#USAGE` block above is GENERATED from apps/cli/src/lib/usage-spec.ts, which is the one owner of
-# this command's interface (it also renders `--help` and `--usage-spec`). Do not edit it by hand:
+# this command's interface (it also renders the bin's `--help`). Do not edit it by hand:
 # `benchLocalMiseHeaders()` produces it, and a drift gate in apps/cli/src/lib/usage-spec.test.ts fails
 # if this file disagrees, printing the block to paste back.
 #

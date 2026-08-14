@@ -3,7 +3,7 @@
 // table per dimension on its headline metric). Writes to <outFile> when given, else prints to stdout.
 // Uses @actions/core for step logs, annotations, and a job summary when writing a file in CI.
 
-import { dirname } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import * as core from "@actions/core";
 import { buildLeaderboard, renderLeaderboardMarkdown } from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
@@ -97,7 +97,16 @@ if (import.meta.main) {
 		return result;
 	});
 
-	const markdown = renderLeaderboardMarkdown(board, figures);
+	// Link the header at the tree this Run was actually READ from, not at a fixed one. The Run's own
+	// location is its provenance: a board rendered from `data/local/runs/` (what `bench-local
+	// --promote` writes, and what data/local/README.md tells the reader to render) must not advertise
+	// a `data/dataset/` path that holds no such file — a provenance link that 404s asserts a primary
+	// source that does not exist. Repo-relative only: an absolute or escaping path would produce a
+	// link nobody viewing the file could follow, so those fall back to the committed default.
+	const runsDir = relative(process.cwd(), dirname(resolve(runFile)));
+	const markdown = renderLeaderboardMarkdown(board, figures, {
+		...(runsDir && !runsDir.startsWith("..") ? { datasetRunsDir: runsDir } : {}),
+	});
 
 	if (outFile) {
 		// Bun.write creates the destination's directory by default.

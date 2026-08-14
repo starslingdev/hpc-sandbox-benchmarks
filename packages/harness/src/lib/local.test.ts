@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MIN, selectTransport } from "./execute.ts";
-import { createLocalSandbox, LOCAL_TRANSPORT, localSuitePlan, shellQuoteValue } from "./local.ts";
+import { MIN, selectTransport, shellQuote } from "./execute.ts";
+import { createLocalSandbox, LOCAL_TRANSPORT, localSuitePlan } from "./local.ts";
 
 const dirs: string[] = [];
 function freshDir(): string {
@@ -49,16 +49,10 @@ describe("createLocalSandbox", () => {
 		expect(result.exitCode).toBeGreaterThanOrEqual(128);
 	});
 
-	it("runs in the given cwd and layers the given env over the process env", async () => {
+	it("runs in the given cwd", async () => {
 		const dir = freshDir();
-		const sandbox = createLocalSandbox({ cwd: dir, env: { BENCH_LOCAL_PROBE: "set" } });
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: bash expansion, not a JS template
-		const HOME_PRESENT = 'echo "${HOME:+home}"';
-		const result = await sandbox.runCommand(`pwd; echo "$BENCH_LOCAL_PROBE"; ${HOME_PRESENT}`);
-		expect(result.stdout).toContain(dir);
-		expect(result.stdout).toContain("set");
-		// The layer is additive: the inherited environment still reaches the producer, which needs PATH.
-		expect(result.stdout).toContain("home");
+		const sandbox = createLocalSandbox({ cwd: dir });
+		expect((await sandbox.runCommand("pwd")).stdout).toContain(dir);
 	});
 
 	// Pipes hold ~64 KiB. Draining stdout to completion before touching stderr blocks the child on a
@@ -97,6 +91,15 @@ describe("createLocalSandbox", () => {
 	it("exposes no sandboxId, so cost evidence has no billable subject", () => {
 		expect(createLocalSandbox({ cwd: freshDir() }).sandboxId).toBeUndefined();
 	});
+
+	// Unreachable under LOCAL_TRANSPORT, so refusing beats implementing: a silent `{ exitCode: 0 }`
+	// for a process nobody observes is the worse failure if a future plan wires a detached transport.
+	it("refuses a background command rather than faking one", async () => {
+		const sandbox = createLocalSandbox({ cwd: freshDir() });
+		await expect(sandbox.runCommand("true", { background: true })).rejects.toThrow(
+			/no detached transport/,
+		);
+	});
 });
 
 describe("localSuitePlan", () => {
@@ -134,22 +137,22 @@ describe("localSuitePlan", () => {
 		expect(script).toContain("cd '/repo'");
 	});
 
-	it("collect only ensures the directory exists — the producer already wrote there", async () => {
+	// `runSuiteOnSandbox` creates the results directory in its prologue, before any plan hook runs, so
+	// nothing here needs to — and the command must not re-create it either.
+	it("collects nothing: the producer already wrote in place", async () => {
 		const dir = join(freshDir(), "nested", "results");
-		await plan.collect(undefined as never, dir);
-		expect(() => readFileSync(join(dir, "missing"), "utf8")).toThrow(/ENOENT/);
+		await expect(plan.collect(undefined as never, dir)).resolves.toBeUndefined();
+		expect(plan.command("x", "/raw/local/memory")).not.toContain("mkdir");
 	});
 });
 
-describe("shellQuoteValue", () => {
-	it("neutralizes an embedded single quote so a path cannot break out of its argument", () => {
-		expect(shellQuoteValue("/re'po")).toBe(`'/re'\\''po'`);
-	});
-
-	it("round-trips a hostile path through a real shell", async () => {
+describe("shell quoting through a real shell", () => {
+	// execute.test.ts already pins `shellQuote`'s output; this pins the property the local lane needs
+	// from it — that a hostile repo path cannot break out of the command the plan builds around it.
+	it("round-trips a hostile path", async () => {
 		const sandbox = createLocalSandbox({ cwd: freshDir() });
 		const hostile = `/tmp/a'; echo pwned; '`;
-		const result = await sandbox.runCommand(`printf '%s' ${shellQuoteValue(hostile)}`);
+		const result = await sandbox.runCommand(`printf '%s' ${shellQuote(hostile)}`);
 		expect(result.stdout).toBe(hostile);
 		expect(result.stdout).not.toContain("pwned\n");
 	});

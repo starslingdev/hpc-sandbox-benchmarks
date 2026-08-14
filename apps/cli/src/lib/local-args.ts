@@ -12,16 +12,12 @@ import { spawnSync } from "node:child_process";
 import { LOCAL_DATASET_DIR } from "@sandbox-benchmarks/results";
 import type { LocalRunRequest } from "@sandbox-benchmarks/schema";
 import { DEFAULT_LOCAL_LABEL, parseLocalRunRequest, SUITE_NAMES } from "@sandbox-benchmarks/schema";
+import { hasFlag } from "./discovery.ts";
 import { lastFlagValue, parseReplicatesFlag } from "./replicates.ts";
 import { ALL_SUITES_TOKEN, DEFAULT_SUITE } from "./usage-spec.ts";
 
 /** A usage error the bin reports without a stack — the operator mistyped something. */
 export class LocalArgsError extends Error {}
-
-/** True when the flag is present in `argv` (boolean flags take no operand). */
-function hasFlag(argv: readonly string[], flag: string): boolean {
-	return argv.includes(flag);
-}
 
 /**
  * Expand `--suites`. `all` means every registered suite, in registry order; otherwise a comma list in
@@ -78,7 +74,7 @@ export interface LocalArgsEnvironment {
 export function parseLocalArgs(
 	argv: readonly string[],
 	environment: LocalArgsEnvironment = {},
-): LocalRunRequest & { promote: boolean } {
+): LocalRunRequest {
 	const repoRoot = environment.repoRoot ?? process.cwd();
 	// `--replicates` reuses the CI fan-out's own parser, so "0,1,2" and "[0,1,2]" mean the same thing
 	// in both lanes and a malformed axis fails identically. Absent is the single shard `[0]`.
@@ -91,24 +87,24 @@ export function parseLocalArgs(
 
 	const promote = hasFlag(argv, "--promote");
 	const datasetDir = lastFlagValue(argv, "dataset");
+	const outFile = lastFlagValue(argv, "out");
 	if (datasetDir !== undefined && !promote) {
 		// Silently ignoring it would leave the operator believing they had published.
 		throw new LocalArgsError("--dataset only applies with --promote");
 	}
 
-	const request = parseLocalRunRequest({
+	return parseLocalRunRequest({
 		runId: lastFlagValue(argv, "run-id") ?? `local-${environment.now ?? Date.now()}`,
 		label: lastFlagValue(argv, "as") ?? DEFAULT_LOCAL_LABEL,
 		suites: parseSuites(lastFlagValue(argv, "suites")),
 		replicates,
 		repoRoot,
 		sha: environment.sha ?? resolveSha(repoRoot),
-		...(lastFlagValue(argv, "out") !== undefined ? { outFile: lastFlagValue(argv, "out") } : {}),
+		...(outFile !== undefined ? { outFile } : {}),
 		// `LOCAL_DATASET_DIR` from the results package, which owns where a published Run lives — the same
 		// module that owns `DATASET_RUNS_DIR` for the CI lane. A literal here would be a second answer to
 		// "where does promote write", and the two would drift the first time either moved.
 		...(promote ? { datasetDir: datasetDir ?? LOCAL_DATASET_DIR } : {}),
 		keepGoing: hasFlag(argv, "--keep-going"),
 	});
-	return { ...request, promote };
 }

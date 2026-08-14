@@ -7,6 +7,7 @@ import {
 	DATASET_RUNS_DIR,
 	FIGURE_DIMENSION,
 	LEADERBOARD_DIMENSION_ORDER,
+	LOCAL_DATASET_RUNS_DIR,
 	REPO_URL,
 	renderLeaderboardMarkdown,
 } from "./leaderboard.ts";
@@ -1466,9 +1467,9 @@ describe("a Run from the bare-metal lane", () => {
 		const board = buildLeaderboard(local());
 		expect(render(board)).toContain(`${DATASET_RUNS_DIR}/run-1.json`);
 		const localRender = renderLeaderboardMarkdown(board, [], {
-			datasetRunsDir: "data/local/runs",
+			datasetRunsDir: LOCAL_DATASET_RUNS_DIR,
 		});
-		expect(localRender).toContain("data/local/runs/run-1.json");
+		expect(localRender).toContain(`${LOCAL_DATASET_RUNS_DIR}/run-1.json`);
 		expect(localRender).not.toContain(`${DATASET_RUNS_DIR}/run-1.json`);
 	});
 });

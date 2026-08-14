@@ -1,7 +1,7 @@
 /**
- * `bench-local`'s interface, declared ONCE and rendered three ways: the `--help` body a human reads,
- * the [usage](https://usage.jdx.dev) spec `--usage-spec` prints, and the `#USAGE` header block the
- * mise task carries so `mise run bench-local --suites …` parses and completes.
+ * `bench-local`'s interface, declared ONCE and rendered two ways: the `--help` body a human reads,
+ * and the `#USAGE` header block the mise task carries so `mise run bench-local --suites …` parses
+ * and completes.
  *
  * mise's two documented options for a file task are declaring each flag inline with `#USAGE flag …`
  * headers, or MOUNTING a spec the wrapped CLI generates (`#USAGE mount "<command>"`). Mounting is the
@@ -15,13 +15,10 @@
  * the repo's standard answer to a generated artifact (see the PTS catalog drift gate, ADR-0003) and
  * it keeps the single-source-of-truth property that mounting was supposed to buy.
  *
- * The `--suites` choices come from `SUITE_NAMES`, so registering a tenth suite cannot leave shell
- * completion offering nine.
+ * The `--suites` choices come from `SUITE_NAMES` and are emitted into those headers, so registering a
+ * tenth suite cannot leave shell completion offering nine.
  */
 import { DEFAULT_LOCAL_LABEL, SUITE_NAMES } from "@sandbox-benchmarks/schema";
-
-/** The flag that prints the usage spec — an action, dispatched rather than merely recognised. */
-export const USAGE_SPEC_FLAG = "--usage-spec";
 
 /** The token `--suites` accepts for "every registered suite". */
 export const ALL_SUITES_TOKEN = "all";
@@ -89,7 +86,6 @@ export const BENCH_LOCAL_FLAGS: readonly FlagSpec[] = [
 		flag: "--keep-going",
 		help: "Record an unmet precondition or failed suite as a gap and continue",
 	},
-	{ flag: USAGE_SPEC_FLAG, help: "Print this command's usage spec as KDL" },
 ];
 
 /**
@@ -100,42 +96,13 @@ export const BENCH_LOCAL_VALUE_FLAGS: readonly string[] = BENCH_LOCAL_FLAGS.filt
 	(spec) => spec.value !== undefined,
 ).map((spec) => spec.flag);
 
-/** Boolean flags, minus `--usage-spec`, which the bin registers as a discovery ACTION instead. */
 export const BENCH_LOCAL_BOOLEAN_FLAGS: readonly string[] = BENCH_LOCAL_FLAGS.filter(
-	(spec) => spec.value === undefined && spec.flag !== USAGE_SPEC_FLAG,
+	(spec) => spec.value === undefined,
 ).map((spec) => spec.flag);
 
 /** Escape a value for a KDL double-quoted string. */
 function kdl(value: string): string {
 	return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-/**
- * The usage spec as standalone KDL, printed by `--usage-spec`.
- *
- * Not consumed by the mise task (see the module header: mounting drops flag nodes on 2026.8.5); kept
- * because it is the machine-readable form of this interface for anything else that wants it, and
- * because it is what the header block below is checked against.
- */
-export function benchLocalUsageSpec(): string {
-	const lines = [
-		'name "bench-local"',
-		'bin "bench-local"',
-		`about ${kdl("Run one or more benchmark suites on this machine and emit the dataset Run JSON")}`,
-	];
-	for (const spec of BENCH_LOCAL_FLAGS) {
-		const name = spec.value ? `${spec.flag} <${spec.value}>` : spec.flag;
-		const parts = [`flag ${kdl(name)}`, `help=${kdl(spec.help)}`];
-		if (spec.default !== undefined) parts.push(`default=${kdl(spec.default)}`);
-		if (spec.choices) {
-			lines.push(`${parts.join(" ")} {`);
-			lines.push(`    choices ${spec.choices.map(kdl).join(" ")}`);
-			lines.push("}");
-		} else {
-			lines.push(parts.join(" "));
-		}
-	}
-	return `${lines.join("\n")}\n`;
 }
 
 /**
@@ -146,17 +113,22 @@ export function benchLocalUsageSpec(): string {
  * it just stops offering the new flag — so ./usage-spec.test.ts asserts the committed task file
  * matches this exactly, and prints this block when it does not.
  *
- * `choices` is deliberately omitted from the headers: mise's inline grammar takes it as a child
- * block, and a multi-line child inside `#USAGE` comments is fragile to reproduce byte-for-byte. The
- * suite vocabulary is still enforced where it matters — `localRunRequestSchema` rejects an
- * unregistered name — so this costs completion candidates, never correctness.
+ * `choices` is emitted as mise's child-block form, each line carrying its own `#USAGE` prefix. That
+ * is what makes the module's headline claim true rather than aspirational: `--suites` completes to
+ * the REAL suite names, so registering a tenth suite changes this block, fails the drift gate, and
+ * cannot leave completion offering nine.
  */
 export function benchLocalMiseHeaders(): string {
-	return BENCH_LOCAL_FLAGS.map((spec) => {
+	return BENCH_LOCAL_FLAGS.flatMap((spec) => {
 		const name = spec.value ? `${spec.flag} <${spec.value}>` : spec.flag;
 		const parts = [`#USAGE flag ${kdl(name)}`, `help=${kdl(spec.help)}`];
 		if (spec.default !== undefined) parts.push(`default=${kdl(spec.default)}`);
-		return parts.join(" ");
+		if (!spec.choices) return [parts.join(" ")];
+		return [
+			`${parts.join(" ")} {`,
+			`#USAGE   choices ${spec.choices.map(kdl).join(" ")}`,
+			"#USAGE }",
+		];
 	}).join("\n");
 }
 

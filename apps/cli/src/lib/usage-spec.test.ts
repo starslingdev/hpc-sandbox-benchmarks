@@ -10,70 +10,21 @@ import {
 	BENCH_LOCAL_VALUE_FLAGS,
 	benchLocalFlagHelp,
 	benchLocalMiseHeaders,
-	benchLocalUsageSpec,
-	USAGE_SPEC_FLAG,
 } from "./usage-spec.ts";
 
 /** The repo root, from this file's own location (apps/cli/src/lib → four levels up). */
 const ROOT = join(import.meta.dir, "..", "..", "..", "..");
 
-describe("benchLocalUsageSpec", () => {
-	const spec = benchLocalUsageSpec();
-
-	it("names the command mise mounts it for", () => {
-		expect(spec).toContain('name "bench-local"');
-		expect(spec).toContain('bin "bench-local"');
-	});
-
-	// THE drift gate that makes mounting safe. The alternative — declaring the flags inline in the mise
-	// task with `#USAGE flag` headers — would be a second copy in bash that still PARSES when stale; it
-	// would just quietly stop offering the new suite. Deriving the choices from SUITE_NAMES means
-	// registering a tenth suite cannot leave completion offering nine.
-	it("offers exactly `all` plus every registered suite as --suites choices", () => {
-		const choices = /choices (.*)/.exec(spec)?.[1] ?? "";
-		const offered = [...choices.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-		expect(offered).toEqual([ALL_SUITES_TOKEN, ...SUITE_NAMES]);
-	});
-
-	it("declares every flag the bin accepts", () => {
-		for (const { flag } of BENCH_LOCAL_FLAGS) {
-			expect(spec).toContain(`flag "${flag}`);
-		}
-	});
-
-	it("emits each flag's default so mise reports the same one as --help", () => {
-		for (const { flag, default: value } of BENCH_LOCAL_FLAGS) {
-			if (value === undefined) continue;
-			expect(spec).toContain(`default="${value}"`);
-			expect(benchLocalFlagHelp()).toContain(`${flag}`);
-		}
-	});
-
-	it("escapes quotes so the spec stays parseable KDL", () => {
-		// The --suites help text contains a quoted "all"; an unescaped quote would end the string early.
-		expect(spec).toContain('\\"all\\"');
-		expect(spec.split("\n").filter((line) => line.startsWith("flag ")).length).toBeGreaterThan(0);
-	});
-
-	// mise runs the mount command outside the task's own process, including while a shell is asking
-	// for completions, so it must be cheap and side-effect-free.
-	it("is pure and repeatable", () => {
-		expect(benchLocalUsageSpec()).toBe(spec);
-	});
-});
-
 describe("bench-local discovery vocabulary", () => {
 	const vocabulary = {
 		valueFlags: BENCH_LOCAL_VALUE_FLAGS,
 		booleanFlags: BENCH_LOCAL_BOOLEAN_FLAGS,
-		extras: { [USAGE_SPEC_FLAG]: benchLocalUsageSpec },
 	};
 
-	it("splits the table by arity, and keeps --usage-spec out of the boolean set", () => {
+	it("splits the table by arity", () => {
 		expect(BENCH_LOCAL_VALUE_FLAGS).toContain("--suites");
 		expect(BENCH_LOCAL_BOOLEAN_FLAGS).toContain("--promote");
 		expect(BENCH_LOCAL_BOOLEAN_FLAGS).toContain("--keep-going");
-		expect(BENCH_LOCAL_BOOLEAN_FLAGS).not.toContain(USAGE_SPEC_FLAG);
 	});
 
 	// Every flag in the table must be recognised: a boolean flag left undeclared reads as "Unknown
@@ -81,23 +32,22 @@ describe("bench-local discovery vocabulary", () => {
 	it("recognises every flag the bin documents", () => {
 		for (const { flag, value } of BENCH_LOCAL_FLAGS) {
 			const argv = value ? [flag, "x"] : [flag];
-			const result = handleDiscovery(argv, "help", vocabulary);
-			expect(result?.ok, `${flag} was rejected`).not.toBe(false);
+			expect(handleDiscovery(argv, "help", vocabulary)?.ok, `${flag} was rejected`).not.toBe(false);
 		}
-	});
-
-	it("dispatches --usage-spec as an action rather than falling through to a run", () => {
-		const result = handleDiscovery([USAGE_SPEC_FLAG], "help", vocabulary);
-		expect(result?.ok).toBe(true);
-		expect(result?.text).toContain('name "bench-local"');
 	});
 
 	it("still rejects a flag outside the vocabulary", () => {
 		expect(handleDiscovery(["--bogus"], "help", vocabulary)?.ok).toBe(false);
 	});
+});
 
-	it("keeps --help winning over the spec action", () => {
-		expect(handleDiscovery(["--help", USAGE_SPEC_FLAG], "help", vocabulary)?.text).toBe("help");
+describe("benchLocalFlagHelp", () => {
+	it("documents every flag, with its default", () => {
+		const help = benchLocalFlagHelp();
+		for (const { flag, default: value } of BENCH_LOCAL_FLAGS) {
+			expect(help).toContain(flag);
+			if (value !== undefined) expect(help).toContain(`(default: ${value})`);
+		}
 	});
 });
 
@@ -124,6 +74,16 @@ describe("the mise task's #USAGE block", () => {
 		for (const { flag } of BENCH_LOCAL_FLAGS) {
 			expect(source).toContain(`#USAGE flag "${flag}`);
 		}
+	});
+
+	// The completion half of the drift gate: the choices come from SUITE_NAMES, so registering a tenth
+	// suite changes this block and fails the gate above — it cannot leave completion offering nine.
+	it("offers exactly `all` plus every registered suite as --suites choices", () => {
+		const choices = /#USAGE {3}choices (.*)/.exec(source)?.[1] ?? "";
+		expect([...choices.matchAll(/"([^"]+)"/g)].map((match) => match[1])).toEqual([
+			ALL_SUITES_TOKEN,
+			...SUITE_NAMES,
+		]);
 	});
 
 	// The task must forward raw argv so the bin's own parser (and its arktype request schema) stays

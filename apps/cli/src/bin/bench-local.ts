@@ -11,8 +11,8 @@
 // `bench-local | jq` work. Every human-facing line goes to stderr, including the harness's own
 // progress logs, which `withStdoutQuarantined` redirects for the duration of the run.
 
-import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { CommandResult } from "@sandbox-benchmarks/harness";
 import {
 	createLocalSandbox,
 	LOCAL_TRANSPORT,
@@ -22,7 +22,7 @@ import {
 	shutdownOwnedSandboxes,
 	writeGapMarker,
 } from "@sandbox-benchmarks/harness";
-import { aggregateRuns, writeNormalizedRun } from "@sandbox-benchmarks/results";
+import { aggregateRuns, summarizeRun, writeNormalizedRun } from "@sandbox-benchmarks/results";
 import type { LocalRunRequest, Run, SuiteName } from "@sandbox-benchmarks/schema";
 import { SUITES } from "@sandbox-benchmarks/schema";
 import { fail } from "../lib/actions-log.ts";
@@ -35,15 +35,13 @@ import {
 	BENCH_LOCAL_BOOLEAN_FLAGS,
 	BENCH_LOCAL_VALUE_FLAGS,
 	benchLocalFlagHelp,
-	benchLocalUsageSpec,
-	USAGE_SPEC_FLAG,
 } from "../lib/usage-spec.ts";
 
 export const HELP = `bench-local — run one or more benchmark suites on THIS machine and emit the dataset Run JSON.
 
-usage: bench-local [--suites <a,b,c>] [--replicates <indices>] [--as <label>] [--run-id <id>]
+usage: bench-local [--suites <suites>] [--replicates <indices>] [--as <label>] [--run-id <id>]
                    [--out <file>] [--promote] [--dataset <dir>] [--keep-going]
-       bench-local [--help] [--list-suites] [--json] [--usage-spec]
+       bench-local [--help] [--list-suites] [--json]
 
 ${benchLocalFlagHelp()}
 
@@ -77,66 +75,56 @@ function note(message: string): void {
  */
 async function verifyPreconditions(
 	request: LocalRunRequest,
-): Promise<{ ok: boolean; unmet: Map<SuiteName, Unmet> }> {
+): Promise<Map<SuiteName, { tools: string[]; reasons: string[] }>> {
 	const sandbox = createLocalSandbox({ cwd: request.repoRoot });
-	const unmet = new Map<SuiteName, Unmet>();
+	// Memoized by script, so a check every suite shares — `check mise` is in all nine — runs and
+	// reports its remedy exactly once, however many suites were selected.
+	const ran = new Map<string, CommandResult>();
+	const unmet = new Map<SuiteName, { tools: string[]; reasons: string[] }>();
 	try {
-		// Deduplicated by script: `check mise` is shared by every suite, so a run that selected `all`
-		// would otherwise probe it nine times and print the same remedy nine times.
-		const checks = new Map<string, { tool?: string; suites: SuiteName[] }>();
 		for (const suiteName of request.suites) {
 			for (const step of localSetupSteps(SUITES[suiteName])) {
-				const entry = checks.get(step.script) ?? {
-					...(step.tool ? { tool: step.tool } : {}),
-					suites: [],
-				};
-				entry.suites.push(suiteName);
-				checks.set(step.script, entry);
-			}
-		}
-		for (const [script, { tool, suites }] of checks) {
-			const result = await sandbox.runCommand(script);
-			if (result.exitCode === 0) {
-				// A pin-mismatch note is written to stderr by the check itself; surface it verbatim.
-				if (result.stderr?.trim()) note(result.stderr.trim());
-				continue;
-			}
-			const reason = result.stderr?.trim() || `precondition failed (exit ${result.exitCode})`;
-			for (const suiteName of suites) {
+				let result = ran.get(step.script);
+				if (!result) {
+					result = await sandbox.runCommand(step.script);
+					ran.set(step.script, result);
+					// A pin-mismatch note is written to stderr by a check that still passes; surface it once.
+					if (result.exitCode === 0 && result.stderr?.trim()) note(result.stderr.trim());
+				}
+				if (result.exitCode === 0) continue;
 				const entry = unmet.get(suiteName) ?? { tools: [], reasons: [] };
-				if (tool) entry.tools.push(tool);
-				entry.reasons.push(reason);
+				if (step.tool) entry.tools.push(step.tool);
+				entry.reasons.push(
+					result.stderr?.trim() || `precondition failed (exit ${result.exitCode})`,
+				);
 				unmet.set(suiteName, entry);
 			}
 		}
 	} finally {
 		await sandbox.destroy();
 	}
-	return { ok: unmet.size === 0, unmet };
+	return unmet;
 }
 
-/** What one suite is missing: the tools (for the gap cause) and the remedies (for the operator). */
-interface Unmet {
-	tools: string[];
-	reasons: string[];
-}
+/** Opt back in to sudo for the producer's own install paths; empty by default (see localSuitePlan). */
+const SUDO = process.env.BENCH_LOCAL_SUDO?.trim() ?? "";
 
 /** Run every selected suite once, into `<rawRoot>/<label>/<suite>/`. Returns true if any failed. */
 async function runSuites(
 	request: LocalRunRequest,
 	rawRoot: string,
 	replicateIndex: number,
-	unmet: Map<SuiteName, Unmet>,
+	unmet: Map<SuiteName, { tools: string[]; reasons: string[] }>,
 ): Promise<boolean> {
 	let failed = false;
-	const plan = localSuitePlan({ repoRoot: request.repoRoot, ...(SUDO ? { sudo: SUDO } : {}) });
+	const plan = localSuitePlan({ repoRoot: request.repoRoot, sudo: SUDO });
 	for (const suiteName of request.suites) {
 		const resultsDir = resolve(join(rawRoot, request.label, suiteName));
 		const missing = unmet.get(suiteName);
 		if (missing) {
 			// --keep-going reached here: record WHY this suite did not run, so the Run discloses the hole
 			// rather than simply lacking the suite — the same contract the sandbox lane's skip markers have.
-			mkdirSync(resultsDir, { recursive: true });
+			// `writeGapMarker` creates the directory itself, as every other caller relies on.
 			writeGapMarker(
 				resultsDir,
 				request.label,
@@ -177,18 +165,13 @@ async function runSuites(
 	return failed;
 }
 
-/** Opt back in to sudo for the producer's own install paths; empty by default (see localSuitePlan). */
-const SUDO = process.env.BENCH_LOCAL_SUDO?.trim() ?? "";
-
 if (import.meta.main) {
 	const argv = process.argv.slice(2);
-	// Discovery resolves BEFORE the quarantine, because `--help` and the listings legitimately print to
-	// stdout — and because `--usage-spec` is run by mise outside this task's own process (while a shell
-	// asks for completions), so it must be fast and touch nothing.
+	// Discovery resolves BEFORE the quarantine: `--help` and the listings legitimately own stdout, and
+	// they must not be swallowed by the redirect that protects the Run document.
 	const discovery = handleDiscovery(argv, HELP, {
 		valueFlags: BENCH_LOCAL_VALUE_FLAGS,
 		booleanFlags: BENCH_LOCAL_BOOLEAN_FLAGS,
-		extras: { [USAGE_SPEC_FLAG]: benchLocalUsageSpec },
 	});
 	if (discovery !== null) {
 		if (discovery.ok) {
@@ -198,7 +181,7 @@ if (import.meta.main) {
 		fail(discovery.text, { properties: { title: "bench-local discovery" }, exitCode: 2 });
 	}
 
-	let request: LocalRunRequest & { promote: boolean };
+	let request: LocalRunRequest;
 	try {
 		request = parseLocalArgs(argv);
 	} catch (err) {
@@ -218,8 +201,8 @@ if (import.meta.main) {
 		note("NOTE: the working tree has uncommitted changes; the Run's sha names HEAD, not what ran");
 	}
 
-	const { unmet, ok } = await verifyPreconditions(request);
-	if (!ok && !request.keepGoing) {
+	const unmet = await verifyPreconditions(request);
+	if (unmet.size > 0 && !request.keepGoing) {
 		const lines = [...unmet].map(([suite, m]) => `  ${suite}: ${m.reasons.join("; ")}`);
 		fail(
 			`unmet preconditions on this machine:\n${lines.join("\n")}\n\n` +
@@ -258,12 +241,11 @@ if (import.meta.main) {
 		return aggregateRuns(shards);
 	});
 
-	const provider = run.providers.find((p) => p.providerId === request.label);
-	note(
-		`\n${request.label}: ${provider?.validationStatus ?? "absent"} ` +
-			`metrics=${provider?.metrics.length ?? 0} suites=${provider?.suitesCovered.length ?? 0} ` +
-			`gaps=${provider?.gaps.length ?? 0}`,
-	);
+	// The shared formatter, not a local one: it splits skipped from failed gaps (a run whose gaps are
+	// all deliberate skips and one whose gaps are all crashes are wildly different results) and routes
+	// the status through `providerStatusText`, the schema's one status vocabulary.
+	note("");
+	for (const line of summarizeRun(run)) note(line);
 
 	if (request.datasetDir) {
 		try {

@@ -8,9 +8,10 @@
  *   BENCH_REPO_REF    Ref to check out (default: main; CI passes the commit SHA).
  *   BENCH_REPO_TOKEN  Token for cloning a private repo; stripped from the remote right after clone.
  */
+import { dirname } from "node:path";
 import type { Suite } from "@sandbox-benchmarks/schema";
 import { PTS_APT_DEPS, PTS_BAKED_ROOT } from "@sandbox-benchmarks/schema";
-import { MIN } from "./execute.ts";
+import { MIN, shellQuote } from "./execute.ts";
 
 export const REPO_URL =
 	process.env.BENCH_REPO_URL || "https://github.com/starslingdev/sandbox-benchmarks";
@@ -172,10 +173,11 @@ export function setupSteps(suite: Suite): SetupStep[] {
  * PTS behind their back is not ours to do, and `$SUDO apt-get` would block on a password prompt
  * mid-run — so a missing tool is a precondition we refuse on, with the remedy printed.
  *
- * Emitted as {@link SetupStep}s rather than as a parallel "requirement" vocabulary so a failure flows
- * through machinery that already exists: a non-zero step becomes a `step-failed` GapError and then a
- * recorded gap, exactly like every other setup failure. The caller runs this list once up front
- * (across every selected suite) so a three-suite run cannot die forty minutes in on a missing tool.
+ * Emitted as {@link SetupStep}s for the SHAPE — a labelled script with a budget — not because they
+ * flow through the harness's setup loop; they deliberately do not. `localSuitePlan.setup` returns
+ * `[]`, and the caller (`bench-local`'s `verifyPreconditions`) runs this list itself, once up front
+ * across every selected suite, so a three-suite run cannot die forty minutes in on a missing tool and
+ * so an unmet probe becomes a `missing-tool` skip rather than a mid-run `step-failed`.
  *
  * Lives here, beside the pins, so the version probes read `NODE_VERSION`/`PNPM_VERSION` directly.
  * Exporting those constants instead would break `toolchain-runtime-pins.test.ts`, which matches them
@@ -239,11 +241,6 @@ function toolCheck(tool: string, why: string, remedy: readonly string[]): SetupS
 	};
 }
 
-/** Single-quote a value for safe embedding in the generated shell. */
-function shellQuote(value: string): string {
-	return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
 export interface ObservedSpecsScriptOptions {
 	/** Already-quoted directory to run in. Defaults to the sandbox checkout ({@link DIR}). */
 	dir?: string;
@@ -263,19 +260,15 @@ export interface ObservedSpecsScriptOptions {
  * `lib/bench.sh`'s `results_dir()` does not place — the harness writes it directly — so without this
  * seam a local run would leave its specs in the checkout and normalize without them.
  */
-export function observedSpecsScript(options: ObservedSpecsScriptOptions = {}): string {
-	const dir = options.dir ?? DIR;
-	const outFile = options.outFile ?? "benchmark-results/observed-specs.json";
-	return observedSpecsLines(dir, outFile).join("\n");
-}
-
-/** Today's exact bytes: the sandbox checkout, writing into the collected `benchmark-results/`. */
-export const OBSERVED_SPECS_SCRIPT = observedSpecsScript();
-
-function observedSpecsLines(dir: string, outFile: string): string[] {
+export function observedSpecsScript({
+	dir = DIR,
+	outFile = "benchmark-results/observed-specs.json",
+}: ObservedSpecsScriptOptions = {}): string {
 	// The probe's own directory, not the results dir: `outFile` may be absolute (the local lane points
-	// it at data/raw/…), and `mkdir -p` on its parent is what makes both spellings work.
-	const outDir = `"$(dirname ${shellQuote(outFile)})"`;
+	// it at data/raw/…), and creating its parent is what makes both spellings work. Computed here
+	// rather than emitted as a `$(dirname …)` subshell — the path is known when this string is built,
+	// so a subshell would only buy a nested-quoting puzzle.
+	const outDir = shellQuote(dirname(outFile));
 	return [
 		`cd ${dir} && mkdir -p ${outDir}`,
 		"host_vcpus=$(nproc)",
@@ -327,5 +320,8 @@ function observedSpecsLines(dir: string, outFile: string): string[] {
 		String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$detected")" "$(esc "$user")"`,
 		`} > ${shellQuote(outFile)}`,
 		`cat ${shellQuote(outFile)}`,
-	];
+	].join("\n");
 }
+
+/** Today's exact bytes: the sandbox checkout, writing into the collected `benchmark-results/`. */
+export const OBSERVED_SPECS_SCRIPT = observedSpecsScript();

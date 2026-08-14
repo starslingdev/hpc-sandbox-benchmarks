@@ -11,9 +11,10 @@
  * already here), nothing is installed (the toolchain is the developer's — see `localSetupSteps`), and
  * nothing is collected (the producer writes straight into the host raw tree).
  */
-import { mkdirSync } from "node:fs";
+import { constants } from "node:os";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import type { CommandResult, RunCommandOptions, SandboxHandle } from "./execute.ts";
+import { shellQuote } from "./execute.ts";
 import type { SuiteExecutionPlan } from "./plan.ts";
 import { observedSpecsScript } from "./setup.ts";
 
@@ -32,13 +33,6 @@ export const LOCAL_TRANSPORT: ProviderTransport = Object.freeze({
 export interface LocalSandboxOptions {
 	/** Working directory for every command — the checkout being benchmarked. */
 	readonly cwd: string;
-	/** Extra environment layered over `process.env`. */
-	readonly env?: Readonly<Record<string, string | undefined>>;
-}
-
-/** Single-quote a value for safe embedding in a generated shell command. */
-export function shellQuoteValue(value: string): string {
-	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -56,14 +50,12 @@ class LocalShellSandbox implements SandboxHandle {
 	// No `filesystem`: LOCAL_TRANSPORT never selects the detached transport, which is its only reader.
 
 	private readonly cwd: string;
-	private readonly env: Record<string, string | undefined>;
 	private readonly live = new Set<Bun.Subprocess>();
 	/** Set by {@link destroy}; a command started afterwards would outlive the run that owns it. */
 	private destroyed = false;
 
 	constructor(options: LocalSandboxOptions) {
 		this.cwd = options.cwd;
-		this.env = { ...process.env, ...options.env };
 	}
 
 	async runCommand(command: string, options?: RunCommandOptions): Promise<CommandResult> {
@@ -74,24 +66,14 @@ class LocalShellSandbox implements SandboxHandle {
 		// the probe rather than a hard requirement.
 		const argv = HAS_SETSID ? ["setsid", "bash", "-c", command] : ["bash", "-c", command];
 
-		if (options?.background) {
-			// Unreachable under LOCAL_TRANSPORT (`selectTransport` never returns "detached"), but the
-			// interface permits it and running a command in the foreground that the caller believes is
-			// detached would deadlock a step against its own timeout. Honour it literally instead.
-			const detached = Bun.spawn(argv, {
-				cwd: this.cwd,
-				env: this.env,
-				stdin: "ignore",
-				stdout: "ignore",
-				stderr: "ignore",
-			});
-			detached.unref();
-			return { exitCode: 0 };
-		}
+		// Unreachable under LOCAL_TRANSPORT — `selectTransport` never returns "detached" at any budget
+		// (pinned in ./local.test.ts) — so refuse rather than implement a mode nothing can exercise.
+		// A silent `{ exitCode: 0 }` for a process nobody observes would be the worse failure if a
+		// future plan ever wired a detached transport into this lane.
+		if (options?.background) throw new Error("local sandbox has no detached transport");
 
 		const proc = Bun.spawn(argv, {
 			cwd: this.cwd,
-			env: this.env,
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",
@@ -143,19 +125,9 @@ const HAS_SETSID = Bun.which("setsid") !== null;
  */
 function normalizeExitCode(exitCode: number | null, signalCode: NodeJS.Signals | null): number {
 	if (typeof exitCode === "number") return exitCode;
-	const signalNumber = signalCode ? (SIGNAL_NUMBERS[signalCode] ?? 0) : 0;
+	const signalNumber = signalCode ? (constants.signals[signalCode] ?? 0) : 0;
 	return 128 + signalNumber;
 }
-
-/** The signals a benchmark child realistically dies on; anything else still yields a non-zero 128. */
-const SIGNAL_NUMBERS: Partial<Record<string, number>> = {
-	SIGHUP: 1,
-	SIGINT: 2,
-	SIGQUIT: 3,
-	SIGKILL: 9,
-	SIGTERM: 15,
-	SIGXCPU: 24,
-};
 
 /** Build a {@link SandboxHandle} that runs commands on this machine. */
 export function createLocalSandbox(options: LocalSandboxOptions): SandboxHandle {
@@ -177,14 +149,14 @@ export interface LocalSuitePlanOptions {
  * raw tree. No clone, no toolchain install, no tarball.
  */
 export function localSuitePlan(options: LocalSuitePlanOptions): SuiteExecutionPlan {
-	const repoRoot = shellQuoteValue(options.repoRoot);
+	const repoRoot = shellQuote(options.repoRoot);
 	// Empty by DEFAULT, and that default is load-bearing rather than cautious. `buildPreamble` sets
 	// SUDO="sudo -E" whenever the user is not root, so `ensure_pts` in lib/bench.sh would reach
 	// `sudo apt-get` and block on an interactive password prompt in the middle of a benchmark — with
 	// stdout quarantined for the JSON contract, the operator would see a command that simply hangs.
 	// Pinning it empty makes that install branch fail fast and return 1, which every orchestrator task
 	// already absorbs (`ensure_pts || true`), so a missing PTS surfaces as the precondition it is.
-	const sudo = shellQuoteValue(options.sudo ?? "");
+	const sudo = shellQuote(options.sudo ?? "");
 	return {
 		// Nothing to install: the toolchain is the developer's. `localSetupSteps` verifies it instead,
 		// and the driver runs those checks up front across every selected suite.
@@ -196,12 +168,9 @@ export function localSuitePlan(options: LocalSuitePlanOptions): SuiteExecutionPl
 		// default followed by a copy: that directory is where manual leaf runs accumulate, so copying it
 		// would sweep a stale pts_*.xml from last week into today's Run as a real measurement.
 		command: (command, resultsDir) =>
-			`cd ${repoRoot} && mkdir -p ${shellQuoteValue(resultsDir)} && ` +
-			`BENCHMARK_RESULTS_DIR=${shellQuoteValue(resultsDir)} SUDO=${sudo} ${command}`,
-		// Already written in place; only guarantee the directory exists so the caller's readdir of an
-		// empty result set reports "nothing produced" rather than ENOENT.
-		collect: async (_runner, resultsDir) => {
-			mkdirSync(resultsDir, { recursive: true });
-		},
+			`cd ${repoRoot} && BENCHMARK_RESULTS_DIR=${shellQuote(resultsDir)} SUDO=${sudo} ${command}`,
+		// Nothing to collect: the producer wrote into `resultsDir` directly. `runSuiteOnSandbox` creates
+		// that directory in its prologue, before any plan hook runs, so this does not need to either.
+		collect: async () => {},
 	};
 }

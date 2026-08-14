@@ -53,7 +53,7 @@ import { createOwnedSandbox, withOwnedSandbox } from "./lib/sandbox-owner.ts";
 import { REPO_REF, REPO_URL } from "./lib/setup.ts";
 
 export { collectResults, writeGapMarker } from "./lib/collect.ts";
-export type { SandboxHandle } from "./lib/execute.ts";
+export type { CommandResult, SandboxHandle } from "./lib/execute.ts";
 export { StepRunner } from "./lib/execute.ts";
 // Re-export the lifecycle measurement surface so consumers import it from the package root, never
 // from `src/lib` (the package-boundary rule the other modules follow).
