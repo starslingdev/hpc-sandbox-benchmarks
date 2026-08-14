@@ -503,6 +503,12 @@ export const gapCauseSchema = type({
 	.or({ kind: "'duplicate-value-dedup'", metricIds: "string[] >= 1" })
 	// A lifecycle operation the provider's SDK does not expose (`scope: "operation"` skips).
 	.or({ kind: "'unsupported-operation'", "detail?": "string" })
+	// A tool the suite needs was absent from the host, so nothing was attempted. The bare-metal
+	// analogue of `missing-credentials`: on the sandbox path the harness INSTALLS the toolchain, so a
+	// missing tool is a failure; on a developer's machine the toolchain is theirs and its absence is a
+	// precondition we refuse on, not an outage. Named separately because the remedy differs — a
+	// credential is exported, a tool is installed — and a reader who cannot tell them apart cannot act.
+	.or({ kind: "'missing-tool'", tools: "string[] >= 1" })
 	// The run was configured not to measure this — a choice we made, never a provider limitation. Kept
 	// distinct from `unsupported-operation` precisely because collapsing them would let a config toggle
 	// read as a capability the provider lacks.
@@ -535,6 +541,7 @@ export type GapCause = typeof gapCauseSchema.infer;
 const SKIP_CAUSE_KINDS: ReadonlySet<GapCause["kind"]> = new Set<GapCause["kind"]>([
 	"disk-shortfall",
 	"missing-credentials",
+	"missing-tool",
 	"unsupported-operation",
 	"measurement-disabled",
 ]);

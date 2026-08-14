@@ -238,6 +238,44 @@ so 20–80-minute suites such as Mastra launch detached and remain observable th
 5. **Stability gate** — `stability <prev> <cur>` flags any provider metric that shifted beyond the noise
    threshold across Runs, comparing only provenance-matched (same `appVersion` + `arguments`) metrics.
 
+## Local runs
+
+`mise run bench-local --suites <a,b,c>` runs the same suites, through the same mise tasks, on the
+machine the command is typed on — no CI, no provider, no credentials — and emits a Run document in
+exactly this dataset's format, so `leaderboard`, `stability` and `figures` read it unchanged. It
+exists because the pipeline above can only answer "how do these providers compare"; a developer
+profiling their own hardware, or checking a new suite before spending a matrix cell, had no way in.
+
+What it shares with the CI lane is deliberate and total: the same `SUITES` registry, the same
+`.mise/tasks/benchmark/**` producer, the same PTS pass policy, the same raw-file and gap-marker
+contracts, the same normalizer and aggregate. What differs is only the execution environment —
+nothing is cloned (the checkout is already there), nothing is installed (the toolchain is the
+developer's, and is *verified* rather than provisioned), and nothing is collected over a control
+plane (the producer writes straight into the raw tree via `BENCHMARK_RESULTS_DIR`).
+
+**Four things a local Run does not claim**, each visible in the document rather than only stated here:
+
+- **It is not a provider comparison.** Its `providerId` is a local label (`local`, or `local-<name>`),
+  which is deliberately outside the registry — so it carries no isolation roster entry, and no
+  economics at all. A machine has no vendor rate, and `deriveEconomics` refusing to invent one is the
+  point: a `$/hr` beside a laptop's timings would be a number about nothing.
+- **It is usually not spec-matched.** `specMatched` is computed against the same pinned `TARGET_SPEC`
+  (4 vCPU / 8 GiB / 40 GB) as every provider, so a machine of any other size reports `false` and the
+  leaderboard renders its Comparability warning. That is the honest reading, not a defect.
+- **`--replicates` measures repetition, not fleet variation.** On one machine the indices are repeats
+  over TIME. They fold into `MetricResult.replicates` identically to the CI lane's replicate
+  sandboxes, and the leaderboard's cluster bootstrap will read them as between-machine — so an
+  interval from a local Run is tighter than the same interval from CI means. `observedMixtures` says
+  so directly: one host-hardware entry however many replicates ran.
+- **It is not the published dataset.** `--promote` publishes to [`data/local/`](../data/local/), never
+  to `data/dataset/`, which only the matrix writes. The two indexes are separate so the leaderboard's
+  "newest run" can never resolve to somebody's laptop.
+
+Preconditions are verified up front across every selected suite — so a three-suite run cannot die
+forty minutes in on a missing `pnpm` — and an unmet one exits 2 with the remedy, or records a
+`missing-tool` gap under `--keep-going`. `$SUDO` is pinned empty for the producer, so a run can never
+block on an interactive password prompt; `BENCH_LOCAL_SUDO=sudo` opts back in.
+
 Every Run is validated against the schema at the producer boundary, so no malformed Run reaches a
 consumer. The whole pipeline is reproducible: a committed `bun.lock`, vendored PTS profiles, and a
 byte-stable catalog held by the drift gate.

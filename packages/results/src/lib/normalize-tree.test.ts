@@ -8,6 +8,8 @@ import {
 	getProvider,
 	harnessGapMarkerJson,
 	hourlyCostAtTargetSpec,
+	PROVIDERS,
+	parseRun,
 } from "@sandbox-benchmarks/schema";
 import { normalizeProviderDir, normalizeResultsTree } from "./normalize-tree.ts";
 
@@ -970,5 +972,60 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		expect(first.gaps[0]?.reason).toBe(
 			"PTS ran but every trial failed for 2 of 4 declared metrics: stream_type_add (memory/pts_stream.xml), stream_type_triad (memory/pts_stream.xml) — attempted, no value recorded",
 		);
+	});
+});
+
+describe("normalizeResultsTree providerIds (the bare-metal lane)", () => {
+	let root: string;
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "norm-local-"));
+		const suiteDir = join(root, "local", "cpu-node");
+		mkdirSync(suiteDir, { recursive: true });
+		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), composite("10.5"));
+	});
+	afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+	const normalize = (providerIds?: readonly string[]) =>
+		normalizeResultsTree({
+			rawRoot: root,
+			runId: "local-1",
+			sha: "local",
+			generatedAt: "2026-08-14T00:00:00.000Z",
+			...(providerIds ? { providerIds } : {}),
+		});
+
+	// A local Run describes ONE machine. Carrying the thirteen registry placeholders would assert
+	// twelve holes in an experiment that never had a provider axis to begin with.
+	it("emits exactly one provider row for an unregistered label", () => {
+		const run = normalize(["local"]);
+		expect(run.providers).toHaveLength(1);
+		expect(run.providers[0]?.providerId).toBe("local");
+		expect(run.providers[0]?.validationStatus).toBe("validated");
+		expect(run.providers[0]?.suitesCovered).toEqual(["cpu-node"]);
+		expect(run.providers[0]?.metrics.map((m) => m.metricId)).toContain(
+			"node_web_tooling_runs_per_s",
+		);
+	});
+
+	// A machine with no vendor rate must never be given one: deriveEconomics is gated on a registry
+	// hit, and this is what proves an unregistered label misses it rather than falling back to a rate.
+	it("derives no economics for a label the provider registry does not know", () => {
+		const derived = normalize(["local"]).providers[0]?.metrics.filter((m) => m.derived);
+		expect(derived).toEqual([]);
+	});
+
+	it("still validates as a v5 dataset Run", () => {
+		const run = normalize(["local"]);
+		expect(() => parseRun(run)).not.toThrow();
+		expect(run.schemaVersion).toBe("5");
+		expect(run.providers[0]?.costEvidence).toEqual([]);
+	});
+
+	// The default must stay the CI shape: a provider the matrix never dispatched is visibly `pending`,
+	// not silently absent, and nothing about the local lane may quietly change that.
+	it("keeps the whole registry when providerIds is absent", () => {
+		const run = normalize();
+		expect(run.providers.length).toBe(PROVIDERS.length);
+		expect(run.providers.map((p) => p.providerId)).not.toContain("local");
 	});
 });

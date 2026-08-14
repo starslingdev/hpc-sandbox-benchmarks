@@ -18,6 +18,8 @@ export * from "./economics.ts";
 export * from "./harness-metrics.ts";
 // Canonical persisted identifiers shared by Run and evidence schemas.
 export * from "./identifiers.ts";
+// The bare-metal lane: who a local Run is attributed to, and the parsed shape of a local invocation.
+export * from "./local-run.ts";
 // Metric vocabulary: Dimension, Direction and the MetricDef shape every Metric declares.
 export * from "./metrics.ts";
 // Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).

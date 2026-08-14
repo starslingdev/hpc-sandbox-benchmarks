@@ -63,6 +63,18 @@ export const REPO_URL = "https://github.com/starslingdev/hpc-sandbox-benchmarks"
 export const DATASET_RUNS_DIR = "data/dataset/runs";
 
 /**
+ * The LOCAL dataset root — where `bench-local --promote` publishes.
+ *
+ * Deliberately a separate tree from `data/dataset/`, not a subdirectory of it. The committed dataset
+ * is the cross-provider comparison every published number is drawn from, produced only by the CI
+ * matrix; a local Run measures one developer's machine against no provider at all. Mixing them would
+ * put a laptop in the same index the leaderboard reads `runs[0]` from, and the two answer different
+ * questions. Separate roots keep both first-class and neither confusable for the other.
+ */
+export const LOCAL_DATASET_DIR = "data/local";
+export const LOCAL_DATASET_RUNS_DIR = `${LOCAL_DATASET_DIR}/runs`;
+
+/**
  * The SYNTHETIC Dimensions: microbenchmarks that load one hardware axis in isolation (PTS profiles for
  * `cpu`/`disk`/`memory`/`network`/`system`). They answer "what can this machine do", which is a real
  * question but not the one this benchmark is FOR — so their sections render collapsed and the
@@ -841,8 +853,8 @@ function commitSourceLink(sha: string): string {
  * `+` is percent-encoded for a composite id: it is legal in a URL path segment, but it is the one
  * character a renderer may still decode as a space, and the link would then point at no file at all.
  */
-function datasetSourceLink(runId: string): string {
-	const path = `${DATASET_RUNS_DIR}/${runId}.json`;
+function datasetSourceLink(runId: string, runsDir: string): string {
+	const path = `${runsDir}/${runId}.json`;
 	return `[\`${path}\`](${path.replace(/\+/g, "%2B")})`;
 }
 
@@ -1081,10 +1093,22 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
  * The mechanism is the same `<details>` the synthetic dimensions already use, so the document has
  * one collapse idiom rather than two.
  */
+export interface RenderLeaderboardOptions {
+	/**
+	 * The dataset tree the header's Run link points into. Defaults to {@link DATASET_RUNS_DIR}, the
+	 * committed CI dataset — so `LEADERBOARD.md` and its byte-identical re-render are unaffected. A
+	 * board built from a local Run passes {@link LOCAL_DATASET_RUNS_DIR}, because a provenance link
+	 * that 404s is worse than no link: it asserts a primary source that does not exist.
+	 */
+	datasetRunsDir?: string;
+}
+
 export function renderLeaderboardMarkdown(
 	board: Leaderboard,
 	figures: readonly LeaderboardFigure[],
+	options: RenderLeaderboardOptions = {},
 ): string {
+	const datasetRunsDir = options.datasetRunsDir ?? DATASET_RUNS_DIR;
 	// Render the board's OWN target, not the global constant, so the header can never claim the pinned
 	// spec while the comparability warnings below report another one.
 	const spec = formatSpec(board.targetSpec);
@@ -1116,7 +1140,7 @@ export function renderLeaderboardMarkdown(
 		"# Sandbox provider leaderboard",
 		"",
 		`Run ${runSourceLinks(board.runId)} · commit ${commitSourceLink(board.sha)} ·`,
-		`dataset ${datasetSourceLink(board.runId)} · generated ${board.generatedAt}`,
+		`dataset ${datasetSourceLink(board.runId, datasetRunsDir)} · generated ${board.generatedAt}`,
 		"",
 		`Requested target for every provider: **${spec}**. This run contains **${rows.length} metric records**`,
 		`backed by **${observationCount} retained trial observations**, across **${metricCount} ${metricNoun}** and`,

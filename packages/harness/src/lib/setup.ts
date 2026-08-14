@@ -9,7 +9,7 @@
  *   BENCH_REPO_TOKEN  Token for cloning a private repo; stripped from the remote right after clone.
  */
 import type { Suite } from "@sandbox-benchmarks/schema";
-import { PTS_APT_DEPS } from "@sandbox-benchmarks/schema";
+import { PTS_APT_DEPS, PTS_BAKED_ROOT } from "@sandbox-benchmarks/schema";
 import { MIN } from "./execute.ts";
 
 export const REPO_URL =
@@ -46,6 +46,14 @@ export interface SetupStep {
 	timeoutMs: number;
 	/** Extra attempts for steps prone to transient network failures. */
 	retries?: number;
+	/**
+	 * The executable this step checks for, when it is a presence probe ({@link localSetupSteps}).
+	 *
+	 * Carried as data rather than parsed back out of `label`, because a caller records it into a
+	 * `missing-tool` gap cause — and a cause that says which SUITE was skipped instead of which TOOL
+	 * was absent tells the reader the one thing they already knew.
+	 */
+	tool?: string;
 }
 
 export function setupSteps(suite: Suite): SetupStep[] {
@@ -155,60 +163,169 @@ export function setupSteps(suite: Suite): SetupStep[] {
 }
 
 /**
- * Captures the sandbox's actual specs into benchmark-results/observed-specs.json before the suite
- * runs, so the normalizer reads it with the other results. nproc / /proc/meminfo see the HOST on
- * cgroup-limited containers (Daytona: a 4-vCPU quota on a 48-thread host), so prefer the cgroup quota
- * as the effective Sandbox size and keep the host reading as hostVcpus/hostMemoryGb disclosure.
+ * The tools a suite needs ALREADY PRESENT on a host that installs nothing — the bare-metal
+ * counterpart to {@link setupSteps}.
+ *
+ * The two are deliberately different in kind, not just in content. In a sandbox the toolchain is
+ * ours: the harness clones the repo and installs mise/Node/pnpm/PTS, so a missing tool is a step to
+ * run. On a developer's machine the toolchain is theirs — installing Node globally or apt-installing
+ * PTS behind their back is not ours to do, and `$SUDO apt-get` would block on a password prompt
+ * mid-run — so a missing tool is a precondition we refuse on, with the remedy printed.
+ *
+ * Emitted as {@link SetupStep}s rather than as a parallel "requirement" vocabulary so a failure flows
+ * through machinery that already exists: a non-zero step becomes a `step-failed` GapError and then a
+ * recorded gap, exactly like every other setup failure. The caller runs this list once up front
+ * (across every selected suite) so a three-suite run cannot die forty minutes in on a missing tool.
+ *
+ * Lives here, beside the pins, so the version probes read `NODE_VERSION`/`PNPM_VERSION` directly.
+ * Exporting those constants instead would break `toolchain-runtime-pins.test.ts`, which matches them
+ * as TEXT (`^const NODE_VERSION = "…";$`) to hold them equal to the bake pins.
  */
-export const OBSERVED_SPECS_SCRIPT = [
-	`cd ${DIR} && mkdir -p benchmark-results`,
-	"host_vcpus=$(nproc)",
-	`host_memory_gb=$(awk '/^MemTotal:/ { printf "%.2f", $2 / 1048576 }' /proc/meminfo)`,
-	'vcpus=$host_vcpus; memory_gb=$host_memory_gb; limited=""',
-	"if [ -f /sys/fs/cgroup/cpu.max ]; then",
-	`  q=$(awk '$1 != "max" { printf "%.2f", $1 / $2 }' /sys/fs/cgroup/cpu.max)`,
-	'  [ -n "$q" ] && vcpus=$q && limited=1',
-	"fi",
-	"if [ -f /sys/fs/cgroup/memory.max ] && grep -qv max /sys/fs/cgroup/memory.max; then",
-	`  memory_gb=$(awk '{ printf "%.2f", $1 / 1073741824 }' /sys/fs/cgroup/memory.max) && limited=1`,
-	"fi",
-	// Report the disk the benchmark actually writes to, not the sandbox root: the PTS data dir when it
-	// exists (on Blaxel that's the mounted 40 GiB volume; on baked-image providers it's on the root fs,
-	// so identical to `/`), else `/` (a stock gVisor root pre-PTS — Modal). Keep this dir in sync with
-	// the harness disk gate and the blaxel volume mount path.
-	`disk_src=/var/lib/phoronix-test-suite; [ -d "$disk_src" ] || disk_src=/`,
-	// gVisor (Modal) reports the root as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
-	// when df's answer is plausible for a sandbox (positive, < 100 TB); a sentinel, a failed df, or
-	// a non-numeric column all leave it unset as unknown.
-	`disk_gb=$(df -Pk "$disk_src" | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
-	`cpu_model=$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1 || true)`,
-	"kernel=$(uname -r)",
-	`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,
-	"virt=$(systemd-detect-virt 2>/dev/null || echo unknown)",
-	// Best-effort isolation classification — a cross-check on the declared per-provider isolation, never
-	// authoritative (see run.ts observedSpecs.detectedIsolation: the probe cannot separate every type).
-	// gVisor announces itself in /proc/version; a cgroup quota well below the disclosed host means we're
-	// seeing THROUGH a container to a bigger host; `systemd-detect-virt --vm` confirms a real hypervisor.
-	// (`--vm` restricts detection to VM technologies — bare `systemd-detect-virt` also reports container
-	// types like docker/lxc/podman, which must NOT read as a VM here; `--quiet` gives just an exit status.)
-	"detected=unknown",
-	"if grep -qi gvisor /proc/version 2>/dev/null; then",
-	"  detected=gvisor",
-	// `vcpus` only drops below `host_vcpus` in the cpu.max branch, which is also the only place that
-	// sets `limited` — so `host_vcpus > vcpus` already implies a limit; no separate `[ -n "$limited" ]`.
-	`elif awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
-	"  detected=container",
-	"elif systemd-detect-virt --vm --quiet 2>/dev/null; then",
-	"  detected=vm",
-	"fi",
-	"user=$(id -un)",
-	String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
-	"{",
-	`  printf '{"vcpus":%s,"memoryGb":%s' "$vcpus" "$memory_gb"`,
-	`  if [ -n "$disk_gb" ]; then printf ',"diskGb":%s' "$disk_gb"; fi`,
-	`  if [ -n "$limited" ]; then printf ',"hostVcpus":%s,"hostMemoryGb":%s' "$host_vcpus" "$host_memory_gb"; fi`,
-	`  if [ -n "$cpu_model" ]; then printf ',"cpuModel":"%s"' "$(esc "$cpu_model")"; fi`,
-	String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$detected")" "$(esc "$user")"`,
-	"} > benchmark-results/observed-specs.json",
-	"cat benchmark-results/observed-specs.json",
-].join("\n");
+export function localSetupSteps(suite: Suite): SetupStep[] {
+	const steps: SetupStep[] = [
+		toolCheck("mise", "mise is not on PATH — every suite command is `mise run …`", [
+			"install it from https://mise.jdx.dev, then run `mise trust` in this checkout",
+		]),
+	];
+
+	if (suite.setupPts) {
+		steps.push(
+			toolCheck("phoronix-test-suite", "this suite is PTS-backed", [
+				"install it with: SUDO=sudo bash -c 'source lib/bench.sh && ensure_pts'",
+				`(the CI toolchain pins ${PTS_VERSION})`,
+			]),
+		);
+	}
+
+	if (suite.setupNode) {
+		steps.push(
+			toolCheck("node", "this suite builds real repositories", [
+				`install Node ${NODE_VERSION}, e.g. \`mise use --global node@${NODE_VERSION}\``,
+			]),
+			toolCheck("pnpm", "this suite installs workspaces with pnpm", [
+				`install pnpm ${PNPM_VERSION}, e.g. \`npm install --global pnpm@${PNPM_VERSION}\``,
+			]),
+			// A version MISMATCH warns and passes. The pins exist so a sandbox reproduces CI exactly; a
+			// developer profiling their own machine should not be blocked by a patch release, and the
+			// reading is still disclosed — the Run records what actually ran, and this line is how the
+			// operator learns their numbers are not pin-for-pin comparable with the published dataset.
+			{
+				label: "check local Node/pnpm against the CI pins",
+				script: [
+					`have=$(node -v 2>/dev/null | sed 's/^v//')`,
+					`[ "$have" = "${NODE_VERSION}" ] || echo "NOTE: node $have (CI pins ${NODE_VERSION})" >&2`,
+					`have=$(pnpm -v 2>/dev/null || true)`,
+					`[ "$have" = "${PNPM_VERSION}" ] || echo "NOTE: pnpm $have (CI pins ${PNPM_VERSION})" >&2`,
+					"true",
+				].join("; "),
+				timeoutMs: MIN,
+			},
+		);
+	}
+
+	return steps;
+}
+
+/** One "is this tool here?" probe, with its remedy on stderr so a failure is actionable in place. */
+function toolCheck(tool: string, why: string, remedy: readonly string[]): SetupStep {
+	const lines = [`${tool} is required: ${why}`, ...remedy]
+		.map((line) => `echo ${shellQuote(line)} >&2`)
+		.join("; ");
+	return {
+		label: `check ${tool}`,
+		script: `command -v ${tool} >/dev/null 2>&1 || { ${lines}; exit 1; }`,
+		timeoutMs: MIN,
+		tool,
+	};
+}
+
+/** Single-quote a value for safe embedding in the generated shell. */
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export interface ObservedSpecsScriptOptions {
+	/** Already-quoted directory to run in. Defaults to the sandbox checkout ({@link DIR}). */
+	dir?: string;
+	/** Where the probe writes, relative to `dir` unless absolute. Defaults to the collected tree. */
+	outFile?: string;
+}
+
+/**
+ * Captures the machine's actual specs into observed-specs.json before the suite runs, so the
+ * normalizer reads it with the other results. nproc / /proc/meminfo see the HOST on cgroup-limited
+ * containers (Daytona: a 4-vCPU quota on a 48-thread host), so prefer the cgroup quota as the
+ * effective Sandbox size and keep the host reading as hostVcpus/hostMemoryGb disclosure.
+ *
+ * Parameterised over its directory and output path for the bare-metal lane, whose producer writes
+ * straight into the host raw tree (`BENCHMARK_RESULTS_DIR`) instead of into a sandbox-local
+ * `benchmark-results/` that a collect step later tars back. The probe is the ONE artifact
+ * `lib/bench.sh`'s `results_dir()` does not place — the harness writes it directly — so without this
+ * seam a local run would leave its specs in the checkout and normalize without them.
+ */
+export function observedSpecsScript(options: ObservedSpecsScriptOptions = {}): string {
+	const dir = options.dir ?? DIR;
+	const outFile = options.outFile ?? "benchmark-results/observed-specs.json";
+	return observedSpecsLines(dir, outFile).join("\n");
+}
+
+/** Today's exact bytes: the sandbox checkout, writing into the collected `benchmark-results/`. */
+export const OBSERVED_SPECS_SCRIPT = observedSpecsScript();
+
+function observedSpecsLines(dir: string, outFile: string): string[] {
+	// The probe's own directory, not the results dir: `outFile` may be absolute (the local lane points
+	// it at data/raw/…), and `mkdir -p` on its parent is what makes both spellings work.
+	const outDir = `"$(dirname ${shellQuote(outFile)})"`;
+	return [
+		`cd ${dir} && mkdir -p ${outDir}`,
+		"host_vcpus=$(nproc)",
+		`host_memory_gb=$(awk '/^MemTotal:/ { printf "%.2f", $2 / 1048576 }' /proc/meminfo)`,
+		'vcpus=$host_vcpus; memory_gb=$host_memory_gb; limited=""',
+		"if [ -f /sys/fs/cgroup/cpu.max ]; then",
+		`  q=$(awk '$1 != "max" { printf "%.2f", $1 / $2 }' /sys/fs/cgroup/cpu.max)`,
+		'  [ -n "$q" ] && vcpus=$q && limited=1',
+		"fi",
+		"if [ -f /sys/fs/cgroup/memory.max ] && grep -qv max /sys/fs/cgroup/memory.max; then",
+		`  memory_gb=$(awk '{ printf "%.2f", $1 / 1073741824 }' /sys/fs/cgroup/memory.max) && limited=1`,
+		"fi",
+		// Report the disk the benchmark actually writes to, not the sandbox root: the PTS data dir when it
+		// exists (on Blaxel that's the mounted 40 GiB volume; on baked-image providers it's on the root fs,
+		// so identical to `/`), else `/` (a stock gVisor root pre-PTS — Modal). Keep this dir in sync with
+		// the harness disk gate and the blaxel volume mount path.
+		`disk_src=${PTS_BAKED_ROOT}; [ -d "$disk_src" ] || disk_src=/`,
+		// gVisor (Modal) reports the root as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
+		// when df's answer is plausible for a sandbox (positive, < 100 TB); a sentinel, a failed df, or
+		// a non-numeric column all leave it unset as unknown.
+		`disk_gb=$(df -Pk "$disk_src" | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
+		`cpu_model=$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1 || true)`,
+		"kernel=$(uname -r)",
+		`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,
+		"virt=$(systemd-detect-virt 2>/dev/null || echo unknown)",
+		// Best-effort isolation classification — a cross-check on the declared per-provider isolation, never
+		// authoritative (see run.ts observedSpecs.detectedIsolation: the probe cannot separate every type).
+		// gVisor announces itself in /proc/version; a cgroup quota well below the disclosed host means we're
+		// seeing THROUGH a container to a bigger host; `systemd-detect-virt --vm` confirms a real hypervisor.
+		// (`--vm` restricts detection to VM technologies — bare `systemd-detect-virt` also reports container
+		// types like docker/lxc/podman, which must NOT read as a VM here; `--quiet` gives just an exit status.)
+		"detected=unknown",
+		"if grep -qi gvisor /proc/version 2>/dev/null; then",
+		"  detected=gvisor",
+		// `vcpus` only drops below `host_vcpus` in the cpu.max branch, which is also the only place that
+		// sets `limited` — so `host_vcpus > vcpus` already implies a limit; no separate `[ -n "$limited" ]`.
+		`elif awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
+		"  detected=container",
+		"elif systemd-detect-virt --vm --quiet 2>/dev/null; then",
+		"  detected=vm",
+		"fi",
+		"user=$(id -un)",
+		String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
+		"{",
+		`  printf '{"vcpus":%s,"memoryGb":%s' "$vcpus" "$memory_gb"`,
+		`  if [ -n "$disk_gb" ]; then printf ',"diskGb":%s' "$disk_gb"; fi`,
+		`  if [ -n "$limited" ]; then printf ',"hostVcpus":%s,"hostMemoryGb":%s' "$host_vcpus" "$host_memory_gb"; fi`,
+		`  if [ -n "$cpu_model" ]; then printf ',"cpuModel":"%s"' "$(esc "$cpu_model")"; fi`,
+		String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$detected")" "$(esc "$user")"`,
+		`} > ${shellQuote(outFile)}`,
+		`cat ${shellQuote(outFile)}`,
+	];
+}

@@ -3,6 +3,20 @@
 # to the official `aqua:crate-ci/typos` release, not an npm republisher, so nothing here runs a
 # postinstall or needs Bun `trustedDependencies`. Run `mise trust` once after cloning.
 
+[settings]
+# Never auto-install the tools below just because someone ran a mise TASK. The tasks in this repo are
+# the benchmark producer (`.mise/tasks/benchmark/**`) and the local runner (`.mise/tasks/bench-local`);
+# none of them uses a single one of these linters, and resolving them costs a GitHub API round trip
+# per tool before any benchmark starts. That is the same policy the in-sandbox preamble already sets
+# via MISE_TASK_RUN_AUTO_INSTALL=0 (packages/harness/src/lib/execute.ts) — stated here so it also
+# holds for a developer running `mise run bench-local` on their own machine, where no preamble runs.
+#
+# Load-bearing rather than cosmetic: with auto-install on, `mise run bench-local` FAILS outright on a
+# host that cannot reach the GitHub API, and so does the `#USAGE mount` command mise invokes while
+# resolving shell completions. `mise install` still installs everything explicitly, which is what the
+# setup instructions and CI both do.
+task_run_auto_install = false
+
 [tools]
 typos = "1.47.2"
 # Static-analysis for the toolchain images (packages/templates/images): shellcheck lints the install

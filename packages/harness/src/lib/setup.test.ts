@@ -1,6 +1,23 @@
 import { describe, expect, it } from "bun:test";
-import { SUITES } from "@sandbox-benchmarks/schema";
-import { REPO_URL, setupSteps } from "./setup.ts";
+import type { Suite } from "@sandbox-benchmarks/schema";
+import { PTS_BAKED_ROOT, SUITES } from "@sandbox-benchmarks/schema";
+import {
+	localSetupSteps,
+	OBSERVED_SPECS_SCRIPT,
+	observedSpecsScript,
+	REPO_URL,
+	setupSteps,
+} from "./setup.ts";
+
+/** A suite with no toolchain requirements; each case turns on the one flag it is about. */
+const bareSuite = (overrides: Partial<Suite> = {}): Suite => ({
+	commandTimeoutMinutes: 1,
+	timeoutMinutes: 1,
+	dimensions: [],
+	metrics: [],
+	commands: [],
+	...overrides,
+});
 
 describe("setupSteps", () => {
 	const labels = setupSteps(SUITES["cpu-node"]).map((step) => step.label);
@@ -95,14 +112,81 @@ describe("setupSteps", () => {
 	});
 
 	it("omits node/PTS setup for a bare suite", () => {
-		const bare = setupSteps({
-			commandTimeoutMinutes: 1,
-			timeoutMinutes: 1,
-			dimensions: [],
-			metrics: [],
-			commands: [],
-		}).map((step) => step.label);
+		const bare = setupSteps(bareSuite()).map((step) => step.label);
 		expect(bare).not.toContain("setup node 22 + pnpm 10");
 		expect(bare).not.toContain("setup phoronix-test-suite");
+	});
+});
+
+describe("observedSpecsScript", () => {
+	it("defaults to the sandbox checkout and the collected results tree", () => {
+		expect(observedSpecsScript()).toBe(OBSERVED_SPECS_SCRIPT);
+		expect(OBSERVED_SPECS_SCRIPT).toContain('cd "$HOME/sandbox-benchmarks"');
+		expect(OBSERVED_SPECS_SCRIPT).toContain("benchmark-results/observed-specs.json");
+	});
+
+	// The probe is the ONE artifact lib/bench.sh's results_dir() does not place — the harness writes it
+	// — so a producer writing straight into the raw tree must still be told where that tree is.
+	it("redirects both the working directory and the output for the bare-metal lane", () => {
+		const script = observedSpecsScript({
+			dir: "'/repo'",
+			outFile: "/raw/local/memory/observed-specs.json",
+		});
+		expect(script).toContain("cd '/repo'");
+		expect(script).toContain("> '/raw/local/memory/observed-specs.json'");
+		expect(script).not.toContain("sandbox-benchmarks");
+	});
+
+	it("measures the disk the benchmark actually writes to, from the schema's own constant", () => {
+		expect(OBSERVED_SPECS_SCRIPT).toContain(`disk_src=${PTS_BAKED_ROOT}`);
+	});
+});
+
+describe("localSetupSteps", () => {
+	it("verifies mise for every suite — every suite command is `mise run …`", () => {
+		expect(localSetupSteps(bareSuite()).map((step) => step.label)).toEqual(["check mise"]);
+	});
+
+	it("adds a PTS check for a PTS-backed suite, with the install recipe as the remedy", () => {
+		const steps = localSetupSteps(bareSuite({ setupPts: true }));
+		expect(steps.map((step) => step.label)).toEqual(["check mise", "check phoronix-test-suite"]);
+		expect(steps[1]?.script).toContain("ensure_pts");
+	});
+
+	it("adds node + pnpm checks and a pin comparison for a Node-backed suite", () => {
+		const labels = localSetupSteps(bareSuite({ setupNode: true })).map((step) => step.label);
+		expect(labels).toEqual([
+			"check mise",
+			"check node",
+			"check pnpm",
+			"check local Node/pnpm against the CI pins",
+		]);
+	});
+
+	// Installing the developer's toolchain behind their back is not ours to do, and `$SUDO apt-get`
+	// would block on a password prompt mid-run. These steps only ever look.
+	it("never installs anything", () => {
+		for (const suite of Object.values(SUITES)) {
+			for (const step of localSetupSteps(suite)) {
+				expect(step.script).not.toContain("apt-get");
+				expect(step.script).not.toContain("$SUDO");
+				expect(step.script).not.toContain("curl");
+				expect(step.script).not.toContain("git clone");
+			}
+		}
+	});
+
+	// A version mismatch is disclosed, not blocking: a developer profiling their own machine should
+	// not be stopped by a patch release, and the Run records whatever actually ran.
+	it("warns on a pin mismatch rather than failing", () => {
+		const pinCheck = localSetupSteps(bareSuite({ setupNode: true })).at(-1);
+		expect(pinCheck?.script).toContain("NOTE:");
+		expect(pinCheck?.script).toMatch(/true$/);
+	});
+
+	it("covers every registered suite without throwing", () => {
+		for (const suite of Object.values(SUITES)) {
+			expect(localSetupSteps(suite).length).toBeGreaterThan(0);
+		}
 	});
 });

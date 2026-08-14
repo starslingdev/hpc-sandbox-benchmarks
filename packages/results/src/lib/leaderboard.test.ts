@@ -1426,3 +1426,49 @@ describe("the figure dimension: charts above, receipts below", () => {
 		expect(md).not.toContain("<img");
 	});
 });
+
+describe("a Run from the bare-metal lane", () => {
+	const HEADLINE = "node_web_tooling_runs_per_s";
+	const local = () => run([provider("local", [metric(HEADLINE, [10, 11])], [], ["cpu-node"])]);
+
+	// The whole reason the local lane can use an unregistered providerId is that every consumer falls
+	// back to the id when `getProvider` misses. Pinning it here stops a future tightening (a non-null
+	// assertion, a registry lookup that throws) from silently breaking local Runs — which have no CI
+	// job to notice, because they are produced on developers' machines.
+	it("names an unregistered provider by its id rather than dropping or crashing on it", () => {
+		const board = buildLeaderboard(local());
+		const row = board.dimensions.flatMap((d) => d.metrics.flatMap((m) => m.rows))[0];
+		expect(row?.providerId).toBe("local");
+		expect(row?.displayName).toBe("local");
+	});
+
+	it("puts it in the roster with no declared isolation to claim", () => {
+		const board = buildLeaderboard(local());
+		expect(board.roster.map((entry) => entry.displayName)).toEqual(["local"]);
+		expect(board.roster[0]?.mismatch).toBe(false);
+	});
+
+	// A one-machine Run has no absent providers: nothing else was ever dispatched, so listing the
+	// registry as "did not report" would invent twelve holes in an experiment with no provider axis.
+	it("reports no absent providers", () => {
+		expect(buildLeaderboard(local()).absentProviders).toEqual([]);
+	});
+
+	it("renders, and reads as the only ranked provider", () => {
+		const markdown = render(buildLeaderboard(local()));
+		expect(markdown).toContain("local");
+		expect(markdown).toContain("only ranked provider");
+	});
+
+	// A provenance link that 404s asserts a primary source that does not exist. The default keeps
+	// pointing at the committed dataset, so LEADERBOARD.md's byte-identical re-render is untouched.
+	it("links the Run into whichever dataset root it was published to", () => {
+		const board = buildLeaderboard(local());
+		expect(render(board)).toContain(`${DATASET_RUNS_DIR}/run-1.json`);
+		const localRender = renderLeaderboardMarkdown(board, [], {
+			datasetRunsDir: "data/local/runs",
+		});
+		expect(localRender).toContain("data/local/runs/run-1.json");
+		expect(localRender).not.toContain(`${DATASET_RUNS_DIR}/run-1.json`);
+	});
+});

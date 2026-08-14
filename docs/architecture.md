@@ -34,7 +34,8 @@ packages/   importable libraries   — scope @sandbox-benchmarks/*
   schema/       shared types + arktype schemas, vendored PTS profiles + generated metric catalog (bottom of the DAG)
   providers/    provider adapters → schema + computesdk
   templates/    per-provider template builders + toolchain Docker images (images/)
-  harness/      benchmark timing → providers + schema
+  harness/      benchmark timing → providers + schema; owns both execution modes (a provider sandbox
+                and a local child process) behind one `SuiteExecutionPlan`
   results/      normalization + the comparison surface → schema, figures
   figures/      realworld charts: Run → figure model → HTML → WebP (headless Chrome) → schema
 apps/
@@ -45,6 +46,8 @@ tooling/        dev-only            — scope @repo/*
   repo-checks/  boundary + package-meta invariant tests
 lib/        in-sandbox benchmark runner (bench.sh), realworld PTS runner overlay, isolation probe
 data/       committed benchmark dataset (published run results)
+  dataset/      the cross-provider comparison, produced only by the bench-matrix workflow
+  local/        bare-metal Runs from `bench-local --promote`; deliberately a separate root (see its README)
 scripts/    maintainer scripts (dataset backfill, leaderboard update)
 docs/       methodology, ADRs, CI & secrets
 ```
@@ -94,6 +97,7 @@ the Run model or builds a document never spawns a browser.
 | `bun run lint:shell` | `shellcheck` on the repo's shell scripts (toolchain images, `lib/`, mise tasks) and the `run:` blocks embedded in `.github/actions/` composite actions. |
 | `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
 | `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
+| `mise run bench-local --suites <a,b,c>` | Run suites on THIS machine — no CI, no provider credentials, no sandbox. stdout is one Run document in the dataset format; everything human goes to stderr. See [methodology § Local runs](./methodology.md#local-runs). |
 | `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.

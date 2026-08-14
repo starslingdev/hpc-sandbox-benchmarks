@@ -8,6 +8,13 @@
   `--iterations N` (cold-start cycles/provider), `--control-plane-samples N`, `--no-snapshot`. Providers
   with absent creds skip; per-Metric distributions go to stdout JSON, a timing log to stderr.
 - `bench-suite` — run the full suite across the matrix.
+- `bench-local` — run one or more suites on THIS machine (no CI, no provider credentials, no sandbox)
+  and emit a Run document in the published dataset's format. **stdout carries only that document** —
+  every human-facing line, including the harness's own progress logs, is quarantined onto stderr — so
+  `bench-local --suites memory > run.json` and `| jq` both work. `--promote` publishes into
+  `data/local/`, never `data/dataset/`. Its interface is owned by `src/lib/usage-spec.ts`, which also
+  generates the `#USAGE` headers in `.mise/tasks/bench-local` (drift-gated). Usually invoked as
+  `mise run bench-local`.
 - `plan-providers` — print the **selected provider ids** as **single-line compact JSON** (honors `BENCH_PROVIDERS`); in Actions writes `providers=` via `emitStepOutputs` and logs through `@actions/core`.
 - `plan-suites` — print the **selected suite names** as **single-line compact JSON** (blank `BENCH_SUITES` = every suite — the targeted/pre-merge knob); in Actions writes `suites=` the same way.
 - `plan-matrix` — print the full **provider × suite** benchmark matrix as **single-line compact JSON** (cell listing for local inspection / discovery; CI fans out via `plan-providers` + `plan-suites`).

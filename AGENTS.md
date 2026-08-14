@@ -28,7 +28,13 @@ on this host VM install it on demand (the update script does not).
  then puts PTS in batch mode. It returns 1 (never aborts) if PTS can't be made available — leaves
  then skip rather than fail.
 - Verify: `phoronix-test-suite version` (expect `Phoronix Test Suite v10.8.4`).
-- Cheap end-to-end mise leaf on the host (no provider keys):  
+- **Whole suites on this host, no provider keys:** `mise run bench-local --suites memory` runs the
+  same suites the matrix does and prints one dataset-format Run document on stdout (progress goes to
+  stderr, so `> run.json` is safe). `--suites all`, `--replicates 0,1`, `--keep-going` and
+  `--promote` (publishes to `data/local/`, never `data/dataset/`) are the other knobs; `--help` lists
+  them. Preconditions are checked up front and exit 2 with the remedy, so a missing tool is never
+  discovered mid-run. See [methodology § Local runs](docs/methodology.md#local-runs).
+- Cheap end-to-end mise leaf on the host, when you want ONE probe rather than a suite:  
   `mise run benchmark:disk:pts:hardlink` — needs `stress-ng` (`apt-get install -y stress-ng`).
   Writes under `benchmark-results/` (local output; do not commit).
 - Full OpenBenchmarking profiles (c-ray, fio, zstd, …) download/build on first use and are heavy;

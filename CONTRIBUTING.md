@@ -85,6 +85,13 @@ bun run check:catalog-drift                                    # fail if the com
    workflow-registry-sync drift gate keeps that nesting wiring honest. `bench-smoke.yml` runs the same
    plan → `bench-suite.yml` pipeline, so it needs no edit either — except adding the name to its `suite`
    dispatch `options`, which is what makes the suite selectable for a single-cell smoke.
+4. **Try it on your own machine first** — `mise run bench-local --suites <new>` runs the suite through
+   the same producer, normalizer and aggregate the matrix uses, and prints the resulting Run document.
+   It needs no credentials and no CI, so it is by far the cheapest way to find out that a task file
+   writes the wrong artifact name or emits an off-dimension metric — the two failures that otherwise
+   surface only after a matrix cell has spent its budget. `bench-local` picks up a newly registered
+   suite automatically (its `--suites` vocabulary is `SUITE_NAMES`, and a drift gate keeps the mise
+   task's completion list in step).
 
 ## Add a metric
 

@@ -6,9 +6,7 @@
 // Uses @actions/core for groups, annotations, and a job summary in CI.
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import * as core from "@actions/core";
-import { writeRunDocument } from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
 import {
 	fail,
@@ -19,6 +17,7 @@ import {
 	withGroup,
 	writeJobSummary,
 } from "../lib/actions-log.ts";
+import { promoteRun, validatedProviderCount } from "../lib/promote-run.ts";
 
 if (import.meta.main) {
 	const [runFile, datasetDir] = process.argv.slice(2);
@@ -40,10 +39,11 @@ if (import.meta.main) {
 		return parsed;
 	});
 
-	const validated = run.providers.filter((p) => p.validationStatus === "validated").length;
+	// The gate itself lives in ../lib/promote-run.ts, shared with `bench-local --promote`; this bin
+	// owns only the Actions-facing report around it. Counted here too so the failure summary below can
+	// state it before `promoteRun` is ever reached.
+	const validated = validatedProviderCount(run);
 
-	// Gate FIRST: a Run with nothing validated (e.g. a partial collection with no PTS XML) must never
-	// reach the published dataset.
 	if (validated === 0) {
 		await writeJobSummary({
 			heading: `Promote ${run.runId}`,
@@ -70,10 +70,8 @@ if (import.meta.main) {
 	let outFile = "";
 	// Publish into the committed dataset (data/dataset/runs/<id>.json + index.json), newest-first index.
 	if (datasetDir) {
-		outFile = join(datasetDir, "runs", `${run.runId}.json`);
-		const indexFile = join(datasetDir, "index.json");
-		await withGroup(`Publish ${outFile}`, async () => {
-			writeRunDocument(run, outFile, indexFile);
+		await withGroup(`Publish ${run.runId}`, async () => {
+			outFile = promoteRun(run, datasetDir).outFile;
 			logInfo(`Published ${run.runId} → ${outFile}`);
 		});
 	} else {

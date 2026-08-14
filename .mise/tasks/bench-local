@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#MISE description="Run one or more benchmark suites on THIS machine; prints the Run JSON on stdout"
+#MISE alias="bl"
+#USAGE flag "--suites <suites>" help="Suites to run, in order, or \"all\"" default="cpu-node"
+#USAGE flag "--replicates <indices>" help="Repeat the whole selection once per index, one shard each" default="0"
+#USAGE flag "--as <label>" help="providerId written into the Run" default="local"
+#USAGE flag "--run-id <id>" help="Run identifier (default: local-<epoch-ms>)"
+#USAGE flag "--out <file>" help="Write the Run JSON here instead of stdout"
+#USAGE flag "--promote" help="Publish into the local dataset (gate: >=1 validated provider)"
+#USAGE flag "--dataset <dir>" help="Local dataset root for --promote" default="data/local"
+#USAGE flag "--keep-going" help="Record an unmet precondition or failed suite as a gap and continue"
+#USAGE flag "--usage-spec" help="Print this command's usage spec as KDL"
+#
+# The `#USAGE` block above is GENERATED from apps/cli/src/lib/usage-spec.ts, which is the one owner of
+# this command's interface (it also renders `--help` and `--usage-spec`). Do not edit it by hand:
+# `benchLocalMiseHeaders()` produces it, and a drift gate in apps/cli/src/lib/usage-spec.test.ts fails
+# if this file disagrees, printing the block to paste back.
+#
+# Inline rather than `#USAGE mount "…"`, which would have avoided the generation step entirely: on
+# mise 2026.8.5 a mounted spec contributes only `name` and `bin` and drops every `flag` node, so
+# `mise run bench-local --help` reports "This task does not accept any arguments" and nothing
+# completes. Re-test mount on a future mise; if it starts merging flags, this block can go away.
+#
+# Deliberately at the top level, NOT under .mise/tasks/benchmark/. Everything there is the in-sandbox
+# producer, and `task_result_name()` (lib/bench.sh) derives artifact filenames by stripping exactly
+# `${REPO_ROOT}/.mise/tasks/benchmark/` — a host-side orchestrator does not belong in that namespace.
+set -euo pipefail
+
+# MISE_PROJECT_ROOT is set for every mise task; the git fallback keeps the script working when it is
+# executed directly rather than through `mise run`.
+REPO_ROOT="${MISE_PROJECT_ROOT:-$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)}"
+
+# "$@" rather than the usage_* environment variables mise also exports: the bin owns its own argv
+# parsing (and its arktype request schema), so forwarding the raw arguments keeps ONE parser instead
+# of reconstructing a command line from per-flag variables here.
+exec bun "${REPO_ROOT}/apps/cli/src/bin/bench-local.ts" "$@"

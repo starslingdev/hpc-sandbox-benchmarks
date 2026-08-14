@@ -83,14 +83,29 @@ export interface NormalizeInput {
 	/** The replicate sandbox index this shard was run under (the `--replicate` argument), stamped onto
 	 *  the shard Run so the aggregate can key its replicate breakdown. Absent for a non-replicate run. */
 	replicateIndex?: number;
+	/**
+	 * The provider ids to normalize, REPLACING the registry default rather than extending it.
+	 *
+	 * Absent is the CI shape: every registered provider gets a row, so a provider the matrix never
+	 * dispatched is visibly `pending` instead of silently absent. The bare-metal lane passes its single
+	 * label (`["local"]`) instead, because there a Run describes ONE machine — carrying thirteen pending
+	 * provider rows would assert twelve holes in an experiment that never had a provider axis.
+	 *
+	 * An id outside {@link PROVIDERS} is first-class here: `ProviderRun.providerId` is a plain string
+	 * (see `providerRunSchema`), and every consumer falls back to the id when the registry misses — no
+	 * display name, no isolation roster entry, and crucially no derived economics, since a machine with
+	 * no vendor rate must never be given one.
+	 */
+	providerIds?: readonly string[];
 }
 
 /** Normalize a whole raw tree into one validated Run — every known provider appears in every Run. */
 export function normalizeResultsTree(input: NormalizeInput): Run {
 	// Providers without results stay `pending`, which is itself a first-class fact the tool surfaces.
-	const providers = [...PROVIDERS]
-		.sort((a, b) => a.id.localeCompare(b.id))
-		.map((meta) => normalizeProviderDir(input.rawRoot, meta.id));
+	const providerIds = input.providerIds ?? PROVIDERS.map((meta) => meta.id);
+	const providers = [...providerIds]
+		.sort((a, b) => a.localeCompare(b))
+		.map((id) => normalizeProviderDir(input.rawRoot, id));
 
 	const candidate = {
 		// Run v5 carries the provider cost-evidence array on every provider row. This function also stamps

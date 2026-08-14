@@ -30,6 +30,8 @@ export interface WriteNormalizedRunInput {
 	updateIndexFile?: string;
 	/** The replicate sandbox index for this shard (the `--replicate` argument), threaded onto the Run. */
 	replicateIndex?: number;
+	/** Provider ids to normalize, replacing the registry default — see {@link NormalizeInput.providerIds}. */
+	providerIds?: readonly string[];
 }
 
 /** Insert a Run into the index (newest first, de-duplicated by runId) and rewrite the index file. */
@@ -82,6 +84,7 @@ export function writeNormalizedRun(input: WriteNormalizedRunInput): Run {
 		generatedAt: input.generatedAt ?? new Date().toISOString(),
 		...(input.sourceRunUrl !== undefined ? { sourceRunUrl: input.sourceRunUrl } : {}),
 		...(input.replicateIndex !== undefined ? { replicateIndex: input.replicateIndex } : {}),
+		...(input.providerIds !== undefined ? { providerIds: input.providerIds } : {}),
 	});
 
 	const outPath = resolve(input.outFile);

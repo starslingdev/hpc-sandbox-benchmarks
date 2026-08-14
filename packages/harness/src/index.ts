@@ -1,5 +1,5 @@
 // Public surface of @sandbox-benchmarks/harness — drives a provider to produce raw benchmark output.
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
 	DirectProvider,
@@ -14,8 +14,10 @@ import {
 	sanitizeProviderResponse,
 } from "@sandbox-benchmarks/providers";
 import type {
+	BenchmarkLabel,
 	ProviderCostCell,
 	ProviderCostEvidence,
+	ProviderId,
 	ProviderTransport,
 	RawRun,
 	ResultGap,
@@ -29,23 +31,29 @@ import {
 	HARNESS_METRIC_IDS,
 	isPtsResultFile,
 	PROVIDER_EVIDENCE_JSON_LIMITS,
+	PTS_BAKED_ROOT,
 	parseProviderCostEvidence,
 	SUITE_NAMES,
 	SUITES,
 } from "@sandbox-benchmarks/schema";
-import { collectResults, writeGapMarker, writeProviderCostEvidence } from "./lib/collect.ts";
+// `collectResults` is no longer called here — the execution plan owns collection — but stays
+// re-exported below for callers, and is the sandbox plan's own `collect`.
+import { writeGapMarker, writeProviderCostEvidence } from "./lib/collect.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 import { MIN, resolvePtsPassPolicy, StepRunner, withTimeout } from "./lib/execute.ts";
 import { gapCauseOf } from "./lib/gap-cause.ts";
 import { time } from "./lib/internal.ts";
 import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
+import type { SuiteExecutionPlan } from "./lib/plan.ts";
+import { SANDBOX_SUITE_PLAN } from "./lib/plan.ts";
 import type { WaitUntilReadyOptions } from "./lib/readiness.ts";
 import { neverReadyReason, waitUntilReady } from "./lib/readiness.ts";
 import { createOwnedSandbox, withOwnedSandbox } from "./lib/sandbox-owner.ts";
-import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
+import { REPO_REF, REPO_URL } from "./lib/setup.ts";
 
-export { collectResults } from "./lib/collect.ts";
+export { collectResults, writeGapMarker } from "./lib/collect.ts";
+export type { SandboxHandle } from "./lib/execute.ts";
 export { StepRunner } from "./lib/execute.ts";
 // Re-export the lifecycle measurement surface so consumers import it from the package root, never
 // from `src/lib` (the package-boundary rule the other modules follow).
@@ -58,6 +66,12 @@ export type {
 	MeasureLifecycleOptions,
 } from "./lib/lifecycle.ts";
 export { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
+// The bare-metal lane: a SandboxHandle over local child processes, and the plan that runs a suite in
+// the developer's own checkout instead of a cloned one.
+export { createLocalSandbox, LOCAL_TRANSPORT, localSuitePlan } from "./lib/local.ts";
+// The execution seam itself, so a caller can name a mode (or build one) rather than passing four
+// unrelated overrides.
+export { SANDBOX_SUITE_PLAN, type SuiteExecutionPlan } from "./lib/plan.ts";
 export {
 	createOwnedSandbox,
 	exitAfterSandboxCleanup,
@@ -65,6 +79,7 @@ export {
 	withCleanupPreservingPrimaryError,
 	withOwnedSandbox,
 } from "./lib/sandbox-owner.ts";
+export { localSetupSteps, type SetupStep } from "./lib/setup.ts";
 
 /**
  * The universal sandbox a provider's `sandbox.create` returns (computesdk's `Sandbox`). Derived from
@@ -278,7 +293,11 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		providerName: config.name,
 		resultsDir,
 		transport: config.transport,
-		costEvidence: config.costEvidence,
+		// The adapter's capability and the cell's ProviderId are the same provider by construction here;
+		// pairing them at this one call site is what lets the context type keep them together.
+		...(config.costEvidence
+			? { costEvidence: { providerId: config.name, capability: config.costEvidence } }
+			: {}),
 	});
 }
 
@@ -492,14 +511,32 @@ export interface SuiteRunContext {
 	replicateIndex?: number;
 	suite: Suite;
 	suiteName: SuiteName;
-	providerName: ProviderConfig["name"];
+	/**
+	 * Who this run is attributed to — the raw-tree directory and the gap-marker filename. A
+	 * {@link ProviderId} on the sandbox path, a local label on the bare-metal one, typed by the
+	 * schema's one attribution vocabulary rather than widened to `string`: the value reaches
+	 * `sandboxGapMarkerFile`, so an unchecked string here would be a path-traversal seam and a way to
+	 * write another provider's marker.
+	 */
+	providerName: BenchmarkLabel;
 	resultsDir: string;
 	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
 	transport: ProviderTransport;
-	costEvidence?: ProviderCostEvidenceCapability;
+	/**
+	 * Post-teardown billing capture. The closed {@link ProviderId} the cost CELL requires travels HERE
+	 * rather than being read off `providerName`, which is what makes a local label unable to reach
+	 * `providerCostCellSchema` at all: a lane with no billable subject simply omits this field, and the
+	 * type system — not a runtime check — is what keeps `local` out of a billing record.
+	 */
+	costEvidence?: {
+		readonly providerId: ProviderId;
+		readonly capability: ProviderCostEvidenceCapability;
+	};
 	/** Readiness budget override. Defaults to {@link SUITE_READINESS}; tests inject a fast one so a
 	 *  never-ready case doesn't really sleep out the live budget. */
 	readiness?: WaitUntilReadyOptions;
+	/** Where and how the suite runs. Defaults to {@link SANDBOX_SUITE_PLAN} — the provider path. */
+	plan?: SuiteExecutionPlan;
 }
 
 function sanitizeHookResponseJson(value: unknown): string {
@@ -521,7 +558,14 @@ export async function runSuiteOnSandbox(
 	ctx: SuiteRunContext,
 ): Promise<void> {
 	const { suite, suiteName, providerName, resultsDir, transport } = ctx;
+	const plan = ctx.plan ?? SANDBOX_SUITE_PLAN;
 	const sandboxId = sandbox.sandboxId;
+	// Create the results directory ONCE, before anything can write to or read from it. The sandbox path
+	// used to get this as a side effect of the collect step's `cp`, which left every other reader
+	// depending on collection having succeeded: the "produced no pts_*.xml" guard below `readdirSync`s
+	// this path unconditionally, so a plan whose collect writes nothing (the bare-metal lane, whose
+	// producer already wrote in place) turned a meaningful "PTS failed silently" into an opaque ENOENT.
+	mkdirSync(resolve(resultsDir), { recursive: true });
 	let suiteError: unknown;
 	let evidencePersistenceError: unknown;
 	let suiteSkipped = false;
@@ -551,7 +595,7 @@ export async function runSuiteOnSandbox(
 			// fallback preserves today's behavior.
 			const df = await runner.run(
 				"check free disk",
-				'd=/var/lib/phoronix-test-suite; [ -d "$d" ] || d=/; df -Pk "$d" | awk \'NR==2 {print $4}\'',
+				`d=${PTS_BAKED_ROOT}; [ -d "$d" ] || d=/; df -Pk "$d" | awk 'NR==2 {print $4}'`,
 				MIN,
 			);
 			// Treat non-numeric df output as 0 free (skip) — a NaN comparison would silently pass the check.
@@ -570,7 +614,7 @@ export async function runSuiteOnSandbox(
 		}
 
 		if (!suiteSkipped) {
-			for (const step of setupSteps(suite)) {
+			for (const step of plan.setup(suite)) {
 				const attempts = (step.retries ?? 0) + 1;
 				for (let attempt = 1; ; attempt++) {
 					try {
@@ -586,7 +630,7 @@ export async function runSuiteOnSandbox(
 			}
 
 			// Observed specs are best-effort: a spec probe must never fail a Run (hence allowFailure below).
-			await runner.run("capture observed specs", OBSERVED_SPECS_SCRIPT, MIN, {
+			await runner.run("capture observed specs", plan.observedSpecs(resultsDir), MIN, {
 				allowFailure: true,
 			});
 
@@ -595,7 +639,11 @@ export async function runSuiteOnSandbox(
 				for (const command of suite.commands) {
 					// The cpu-node command budgets 110 min — far past a capped provider's synchronous-exec
 					// limit (Daytona's 408), so step() detaches there; an uncapped provider runs it directly.
-					await runner.step(command, `cd ${DIR} && ${command}`, suite.commandTimeoutMinutes * MIN);
+					await runner.step(
+						command,
+						plan.command(command, resultsDir),
+						suite.commandTimeoutMinutes * MIN,
+					);
 				}
 			} catch (err) {
 				// Still pull whatever results were produced before failing the job.
@@ -603,7 +651,7 @@ export async function runSuiteOnSandbox(
 			}
 
 			try {
-				await collectResults(runner, resultsDir);
+				await plan.collect(runner, resultsDir);
 			} catch (collectErr) {
 				// A failed result-pull must not mask an in-flight benchmark error. Recorded rather than
 				// rethrown here so both error paths converge on the single exit below — which is what writes
@@ -636,10 +684,12 @@ export async function runSuiteOnSandbox(
 	} finally {
 		const teardown = await destroySandbox(sandbox);
 		if (ctx.costEvidence) {
-			const capability = ctx.costEvidence;
+			const { providerId, capability } = ctx.costEvidence;
 			const cell: ProviderCostCell = {
 				runId: ctx.runId,
-				providerId: providerName,
+				// From the capability, NOT from `providerName`: the cell's id is the closed ProviderId a
+				// billing record is keyed by, and a lane whose label is not one simply carries no capability.
+				providerId,
 				suite: suiteName,
 				...(ctx.replicateIndex !== undefined ? { replicateIndex: ctx.replicateIndex } : {}),
 			};
@@ -666,7 +716,9 @@ export async function runSuiteOnSandbox(
 					const returned = await withTimeout(
 						capability.captureAfterTeardown({
 							cell,
-							providerId: providerName,
+							// The capability's own ProviderId, for the same reason the cell uses it: this is the
+							// provider whose billing API is called, which only the closed vocabulary can name.
+							providerId,
 							sandboxId,
 							teardown,
 						}),

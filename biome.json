@@ -71,7 +71,7 @@
       }
     },
     {
-      "includes": ["data/dataset/runs/*.json"],
+      "includes": ["data/dataset/runs/*.json", "data/local/runs/*.json"],
       "files": {
         "maxSize": 16777216
       }

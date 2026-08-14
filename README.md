@@ -59,6 +59,26 @@ Provider benchmarks, dataset publication, and toolchain releases require protect
 run only from maintainer-controlled workflows; pull requests never receive provider secrets. See
 [CI & secrets](./docs/ci-secrets.md).
 
+## Benchmark your own machine
+
+The same suites run on a single computer, with no CI and no provider credentials. Install the
+Phoronix Test Suite once, then one command per benchmark:
+
+```bash
+SUDO=sudo bash -c 'source lib/bench.sh && ensure_pts'   # once, installs PTS + its build deps
+mise run bench-local --suites memory > run.json          # measure this machine
+bun apps/cli/src/bin/leaderboard.ts run.json report.md   # render it
+```
+
+`run.json` is a Run document in exactly the published dataset's format, so every analysis and
+visualization tool in this repo reads it unchanged. stdout carries only that document — all progress
+goes to stderr — so it pipes straight into `jq`. Use `--suites all` for every registered suite,
+`--replicates 0,1,2` to repeat, and `--promote` to publish into [`data/local/`](./data/local/).
+
+Local Runs deliberately claim less than provider Runs do — no economics, usually not spec-matched,
+and repeats that measure one machine over time rather than a fleet. See
+[methodology § Local runs](./docs/methodology.md#local-runs).
+
 ## Contributing
 
 Contributions must preserve three invariants:

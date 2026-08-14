@@ -393,6 +393,19 @@ const ctx = (s: Suite, resultsDir: string): SuiteRunContext => ({
 	transport: fixtureTransport,
 });
 
+/**
+ * Pair a cost-evidence capability with the ProviderId its cell is keyed by — the shape
+ * `SuiteRunContext.costEvidence` takes. The id lives beside the capability rather than being read off
+ * `providerName` so that a lane whose label is NOT a registered provider (the bare-metal one) cannot
+ * express cost evidence at all. Every fixture below is Modal-shaped.
+ */
+const evidenceFor = (
+	capability: NonNullable<SuiteRunContext["costEvidence"]>["capability"],
+): NonNullable<SuiteRunContext["costEvidence"]> => ({
+	providerId: "modal-gvisor",
+	capability,
+});
+
 describe("runSuite (resolution + credential gate)", () => {
 	it("rejects an unknown suite as a usage error", async () => {
 		await expect(
@@ -747,6 +760,64 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 	});
 });
 
+describe("runSuiteOnSandbox (execution plan)", () => {
+	// The seam that lets one driver serve both the provider sandboxes and bare metal. Asserted through
+	// the real orchestration rather than by inspecting the plan object: what matters is that all four
+	// hooks are actually CONSULTED at their point in the sequence, and that none of the sandbox
+	// defaults (clone into $HOME, the base64-tar collect) leaks in when a plan is supplied.
+	it("routes setup, the spec probe, every command and collection through an injected plan", async () => {
+		const resultsDir = freshDir();
+		const seen: string[] = [];
+		const sandbox = makeSandbox({ destroyed: { hit: false } });
+		await runSuiteOnSandbox(sandbox, {
+			...ctx(suite({ commands: ["benchmark-cmd-one", "benchmark-cmd-two"] }), resultsDir),
+			plan: {
+				setup: () => {
+					seen.push("setup");
+					return [{ label: "verify toolchain", script: "true", timeoutMs: 1000 }];
+				},
+				observedSpecs: (dir) => {
+					seen.push(`observedSpecs:${dir}`);
+					return "true";
+				},
+				command: (command, dir) => {
+					seen.push(`command:${command}:${dir}`);
+					return "true";
+				},
+				collect: async (_runner, dir) => {
+					seen.push(`collect:${dir}`);
+					writeFileSync(join(dir, "pts_node-web-tooling.xml"), "<xml/>");
+				},
+			},
+		});
+		expect(seen).toEqual([
+			"setup",
+			`observedSpecs:${resultsDir}`,
+			`command:benchmark-cmd-one:${resultsDir}`,
+			`command:benchmark-cmd-two:${resultsDir}`,
+			`collect:${resultsDir}`,
+		]);
+	});
+
+	// The guard that catches a silently-broken PTS install must not be bypassed by a plan whose collect
+	// is a no-op: on the bare-metal lane it is the ONLY check that the producer actually produced.
+	it("still fails a PTS suite whose plan produced no pts_*.xml", async () => {
+		const resultsDir = freshDir();
+		const sandbox = makeSandbox({ destroyed: { hit: false } });
+		await expect(
+			runSuiteOnSandbox(sandbox, {
+				...ctx(suite({ setupPts: true }), resultsDir),
+				plan: {
+					setup: () => [],
+					observedSpecs: () => "true",
+					command: () => "true",
+					collect: async () => {},
+				},
+			}),
+		).rejects.toThrow(/produced no pts_\*\.xml/);
+	});
+});
+
 describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 	it("captures and persists provider evidence strictly after confirmed teardown", async () => {
 		const resultsDir = freshDir();
@@ -761,7 +832,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await runSuiteOnSandbox(sandbox, {
 			...ctx(suite({ minDiskGb: 50 }), resultsDir),
 			providerName: "modal-gvisor",
-			costEvidence: {
+			costEvidence: evidenceFor({
 				sdk: { packageName: "modal", version: "0.7.6" },
 				captureAfterTeardown: async (input) => {
 					calls.push("capture");
@@ -776,7 +847,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 						detail: "No public sandbox usage endpoint.",
 					};
 				},
-			},
+			}),
 		});
 		expect(calls).toEqual(["destroy", "capture"]);
 		expect(
@@ -794,7 +865,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			await runSuiteOnSandbox(sandbox, {
 				...ctx(suite({ minDiskGb: 50 }), resultsDir),
 				providerName: "modal-gvisor",
-				costEvidence: {
+				costEvidence: evidenceFor({
 					sdk: { packageName: "modal", version: "0.7.6" },
 					captureAfterTeardown: async (input) => ({
 						kind: "missing",
@@ -811,7 +882,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 						reason: "unsupported_public_api",
 						detail: "Untrusted provider detail.",
 					}),
-				},
+				}),
 			});
 			const persisted = JSON.parse(
 				readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8"),
@@ -833,12 +904,12 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
 			...ctx(suite({ minDiskGb: 50 }), resultsDir),
 			providerName: "modal-gvisor",
-			costEvidence: {
+			costEvidence: evidenceFor({
 				sdk: { packageName: "modal", version: "0.7.6" },
 				captureAfterTeardown: async () => {
 					throw new Error(`headers={"Authorization":"Bearer ${canary}"}`);
 				},
-			},
+			}),
 		});
 		const artifact = readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8");
 		expect(artifact).not.toContain(canary);
@@ -856,7 +927,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
 			...ctx(suite({ minDiskGb: 50 }), resultsDir),
 			providerName: "modal-gvisor",
-			costEvidence: {
+			costEvidence: evidenceFor({
 				sdk: { packageName: "modal", version: "0.7.6" },
 				captureAfterTeardown: async (input) => ({
 					kind: "observed",
@@ -883,7 +954,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 						url: `https://user:${userinfo}@vendor.invalid/path`,
 					}),
 				}),
-			},
+			}),
 		});
 		const artifact = readFileSync(join(resultsDir, "provider-cost-evidence.json"), "utf8");
 		expect(artifact).not.toContain(bearer);
@@ -915,7 +986,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
 				...ctx(suite({ minDiskGb: 50 }), resultsDir),
 				providerName: "modal-gvisor",
-				costEvidence: {
+				costEvidence: evidenceFor({
 					sdk: { packageName: "modal", version: "0.7.6" },
 					captureAfterTeardown: async (input) => {
 						const returned: Record<string, unknown> = {
@@ -946,7 +1017,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 							shape === "root-proxy" ? new Proxy(returned, {}) : returned
 						) as ProviderCostEvidence;
 					},
-				},
+				}),
 			});
 			expect(getterCalls).toBe(0);
 			expect(

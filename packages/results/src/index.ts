@@ -42,8 +42,13 @@ export {
 	type LeaderboardFigure,
 	type LeaderboardMetric,
 	type LeaderboardRow,
+	// The bare-metal lane's own dataset root, kept separate from the committed CI dataset so a
+	// developer's machine never lands in the index the published comparison reads from.
+	LOCAL_DATASET_DIR,
+	LOCAL_DATASET_RUNS_DIR,
 	type ProviderRosterEntry,
 	REPO_URL,
+	type RenderLeaderboardOptions,
 	renderLeaderboardMarkdown,
 	SYNTHETIC_DIMENSIONS,
 } from "./lib/leaderboard.ts";

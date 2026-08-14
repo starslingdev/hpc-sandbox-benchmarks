@@ -138,6 +138,8 @@ dist
 # dataset lives under data/dataset/ and is committed by the promote step, so it is NOT ignored.
 data/raw/
 data/runs/
+# The local lane's intermediate candidate tree; data/local/{index.json,runs/} ARE tracked.
+data/local/candidate/
 # Where the in-sandbox producer writes (results_dir in lib/bench.sh): running any
 # `mise run benchmark:**` leaf on a dev machine leaves artifacts here. They belong to the sandbox
 # that produced them — the harness collects them out of the sandbox and the promote step publishes
