@@ -17,3 +17,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0005](./0005-host-vs-effective-spec-split.md) | Host-vs-effective spec split |
 | [0006](./0006-declarative-provider-onboarding.md) | Declarative provider onboarding (proposed) |
 | [0007](./0007-sandbox-driver-port.md) | Sandbox driver kit: one port, one file per provider; ComputeSDK as one driver (proposed) |
+| [0008](./0008-driver-conformance-gate.md) | Driver conformance: the behavioral drift gate (proposed) |

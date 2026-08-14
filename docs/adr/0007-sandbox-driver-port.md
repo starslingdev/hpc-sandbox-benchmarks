@@ -109,6 +109,33 @@ The anatomy confirms the shape of the problem: the *long* adapters are the least
 (tama and runcloud are ~75% real vendor logic), while the *short* ones are almost pure tax —
 `vercel.ts` is ~68% adapter boilerplate over an SDK that already does the work.
 
+### What a steelman of ComputeSDK corrects
+
+A deliberate defense of the incumbent, run against its shipped code, corrects four things this
+Context would otherwise overclaim — and each correction sharpened the Decision:
+
+- **The duplication is partly a failure to consume, not only a surface the SDK forced.**
+  `@computesdk/cmd` — a dependency of `computesdk`, in `node_modules` the whole time — ships
+  `shellEscape` **byte-identical** to all three repo copies, and `shell(cmd, { background: true })`
+  emits the same `nohup … >/dev/null 2>&1 &` wrapper the adapters hand-wrote; zero repo files import
+  it. The boilerplate indictment stands (the *mandatory surface* still forced the fabrications), but
+  §2's "own the shell mechanics once" is a consolidation ComputeSDK also attempted — one package
+  deeper than anyone looked.
+- **"Didn't tell us" has prior art inside ComputeSDK itself.** `daemond`'s result envelope is
+  `{ exitCode: number | null; signal?: string | null; … }` — the `Exit` union's semantics, shipped
+  in their newest layer while the older `CommandResult` still forces `exitCode: number`.
+- **`getUrl` and the wide surface fund features, not nothing.** `getUrl` is the bootstrap for their
+  streaming-exec channel (an in-sandbox daemon reached over SSE), and `getById`/`list` power a
+  multi-provider facade with failover and affinity routing. Dead *for this harness* — which is the
+  actual argument — not dead by design. ComputeSDK even shipped its own narrow-contract precedent,
+  `defineInfraProvider` (create/getById/list/destroy, no fabricated members), and its dominant
+  convention is already capability-by-presence; the throwing `UnsupportedFileSystem` stub is the one
+  deviation, forced by a consumer-side non-optional field.
+- **The inspectable `.methods` table is why patching was possible at all.** Six providers could be
+  behavior-patched precisely because `defineProvider` keeps methods in a cloneable table rather than
+  sealing them in closures. Any replacement port must preserve that property — which §2's
+  method-table layer does by construction, instead of rediscovering it through `assertPatchable`.
+
 ## Decision
 
 Own the port, and ship it as a **kit**: a contract package a driver author reads top to bottom in
@@ -173,7 +200,10 @@ fleet-side drift check is a file-existence and default-export-shape check, not a
 thirteen-vendor-module evaluation on every PR. This directionality is load-bearing; §8 shows what
 breaks without it.
 
-### 2. The port: three members
+### 2. The port: three members, two layers
+
+The port has a consumer face and an author face, and they are different shapes on purpose. The
+**harness** consumes sessions — the ergonomic object it already implies:
 
 ```ts
 export interface SandboxDriver {
@@ -186,6 +216,8 @@ export interface SandboxSession {
   readonly sandboxId: SandboxId;
   exec(command: string, options?: ExecOptions): Promise<ExecResult>;
   destroy(): Promise<void>;
+  /** The vendor's native handle — the JDBC `unwrap()` idea, typed. */
+  readonly native: unknown;
   /** Optional fast path. `undefined` when the vendor has none — never a throwing stub. */
   readonly files?: FileReads;
   /** Optional. `undefined` ⇒ the harness wraps `exec` in its own nohup double-fork. */
@@ -193,8 +225,35 @@ export interface SandboxSession {
 }
 ```
 
-Create, exec, destroy. `getById`, `getUrl`, `writeFile`, `mkdir`, `readdir`, `remove`, `runCode`,
-`getInstance` and the mandatory `getInfo` are gone, because nothing calls them.
+A driver **author**, however, writes a *stateless method table* — flat, pure functions over a typed
+native handle, capability-by-presence — and the kit assembles sessions from it:
+
+```ts
+export interface MethodTable<Handle, Ctx> {
+  create(ctx: Ctx, request: CreateRequest): Promise<{ handle: Handle; sandboxId: SandboxId }>;
+  exec(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<ExecResult>;
+  destroy(ctx: Ctx, handle: Handle): Promise<void>;
+  readonly files?: { readFile(ctx: Ctx, handle: Handle, path: string): Promise<string>; … };
+  launch?(ctx: Ctx, handle: Handle, command: string): Promise<void>;
+}
+export function driverFromTable<Handle, Ctx>(table: MethodTable<Handle, Ctx>, ctx: Ctx): SandboxDriver;
+```
+
+This is ComputeSDK's genuinely good bone structure (`SandboxMethods<TSandbox, TConfig>`) with its
+two pathologies removed: only three members are required, and absence is expressed by omitting a
+key, never by a stub. Measured in the side-by-side anatomy (§Prior art), the table shape wins three
+things closure sessions cannot offer: **one-statement unit tests** (`table.destroy(ctx, missing)`
+is a pure call — the closure equivalent needed a five-statement setup *plus a full create/readiness
+round-trip* to even reach the not-found path); **extraction safety** (a table is naturally a named
+`satisfies MethodTable<…>` const, where extracting a closure spec severs contextual typing); and
+**inspectable, patchable behavior** — composing over a table member is exactly what six providers
+did to computesdk's `.methods`, now a supported shape instead of a reach into private state.
+Per-driver memoized state (tama's once-per-process auth check) lives in `Ctx`, declared rather than
+hidden in a closure.
+
+Create, exec, destroy. `getById`, `getUrl`, `writeFile`, `mkdir`, `readdir`, `remove`, `runCode`
+and the mandatory `getInfo` are gone, because nothing calls them; `getInstance` survives as the
+typed `native` handle.
 
 The rules that make consumers infallible:
 
@@ -392,6 +451,12 @@ argv templates and parsers, ~15 declarative lines against tama's 636 hand-writte
 vendor's CLI needs logic a table can't express, the escape hatch is the port itself — `cliDriver` is
 a convenience over `SandboxDriver`, not a second contract.
 
+`cliDriver` compiles its declarative spec down to a §2 method table whose handle is the **parsed
+readiness row** (`ready.select` returns the row, not a bare id string) — so every generated member
+is unit-testable as a pure function, and `session.native` is the vendor's own typed record rather
+than an opaque string. The side-by-side anatomy confirmed the spec stays ~29 author lines while the
+three per-vendor quirks each remain one field: `secretFlags`, `ready`, `notFound`.
+
 ### 6. ComputeSDK becomes a driver
 
 It keeps all its real value — seven maintained vendor translations — and stops being mandatory:
@@ -458,17 +523,28 @@ got wrong was *which* declaration moves: behavior colocates; identity does not.
 
 ### Prior art, credited
 
-The shapes here are deliberately stolen from the ecosystem's best current practice: computesdk's own
-package model (narrow provider modules over a small common core — kept as subpaths over a contract
-package); convex's registration builders (one generic signature instead of overloads, for error
-quality; a generated registry that preserves go-to-definition) and its validate-args-then-infer
-handler pipeline; elysia's `NoInfer` discipline and schema-as-single-source route contracts;
-better-auth's plugin object with optional capability keys and subpath-per-plugin exports; eve's
-filesystem-as-authoring-interface and `define*` default-export modules; arkenv's
-env-schema-with-injected-source; better-fetch's errors-as-values. The `Prettify` hover flattener is
-the ecosystem-standard `{ [K in keyof T]: T[K] } & {}`. Where a pattern didn't fit (elysia-style
-method chaining; arkenv's coercion; sibling-field inference per §8), it was left out — the kit has
-no builder API because nothing in it accumulates type state.
+The shapes here are deliberately stolen from the ecosystem's best current practice — including from
+the incumbent this ADR demotes. From **ComputeSDK**: the package model (narrow provider modules over
+a small common core — kept as subpaths over a contract package), the stateless
+`SandboxMethods<TSandbox, TConfig>` table §2's author layer is modeled on, capability-by-presence
+feature detection, `@computesdk/cmd`'s shell mechanics, and `daemond`'s nullable-exit-code
+envelope. From the **mature driver ecosystems** that have run "N vendors, one contract" for
+decades: JDBC's `unwrap()` (the typed `native` handle), Kubernetes CSI's capability-honesty and
+idempotency spec language and Testcontainers' wait-strategy decomposition (both taken further in
+ADR-0008), and the TCK discipline that a contract ships with the suite that verifies it. From the
+modern TS wave: convex's registration builders (one generic signature instead of overloads, for
+error quality; a generated registry that preserves go-to-definition) and its
+validate-args-then-infer handler pipeline; elysia's `NoInfer` discipline and
+schema-as-single-source route contracts; better-auth's plugin object with optional capability keys
+and subpath-per-plugin exports; eve's filesystem-as-authoring-interface and `define*`
+default-export modules; arkenv's env-schema-with-injected-source; better-fetch's errors-as-values.
+The `Prettify` hover flattener is the ecosystem-standard `{ [K in keyof T]: T[K] } & {}`. Where a
+pattern didn't fit (elysia-style method chaining; arkenv's coercion; sibling-field inference per
+§8), it was left out — the kit has no builder API because nothing in it accumulates type state. The
+side-by-side anatomy that settled §2's two-layer shape — the same tama-style provider written
+against real `@computesdk/provider`, as a closure spec, and as a stateless table, all
+typechecked — found 134 author lines and 5 fabricated values for the incumbent, 29 lines and 0
+fabrications for the declarative spec, and the table layer decisive for testability.
 
 ## Consequences
 
@@ -496,10 +572,12 @@ demands exactly those); the `bench-matrix.yml` promotion stays a deliberate, sep
 - **We own the port.** Today computesdk absorbs upstream vendor churn behind a stable interface.
   Nine providers keep that shelter via the bridge; the five hand-written ones already had no
   shelter, and this ADR only stops them pretending otherwise.
-- **The inline-spec rule.** The `defineDriver` spec literal must stay inline (or flow through a
-  `DriverSpec<…>`-typed factory); an untyped extracted const loses the contextual types. This is a
-  property of TypeScript's contextual typing, shared by convex and elysia, and documented in the
-  kit's JSDoc rather than discoverable by failure.
+- **The inline-spec rule, narrowed by the table layer.** The `defineDriver` spec literal must stay
+  inline (or flow through a `DriverSpec<…>`-typed factory); an untyped extracted const loses the
+  contextual types — verified as eight implicit-`any` errors. This is a property of TypeScript's
+  contextual typing, shared by convex and elysia. §2's method tables are the pressure valve: a
+  table is naturally a named `satisfies MethodTable<…>` const, so the code an author most wants to
+  extract and unit-test is exactly the shape that extracts safely.
 - **`createOptions` stays an open passthrough on the bridge.** The `snapshotId`/`templateId`
   conventions are real computesdk knowledge the bake path depends on — though the typed
   `[artifact.optionKey]` projection now covers the common cases.
