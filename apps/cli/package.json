@@ -40,7 +40,8 @@
     "@runloop/api-client": "catalog:computesdk",
     "modal": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk",
-    "dotenv": "catalog:"
+    "dotenv": "catalog:",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

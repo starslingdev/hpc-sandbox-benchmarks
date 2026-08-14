@@ -15,11 +15,33 @@ import { relative, resolve, sep } from "node:path";
 import type { SuiteName } from "@sandbox-benchmarks/schema";
 import { getMetric, SUITES } from "@sandbox-benchmarks/schema";
 
-/** One PTS/local pin mined from a leaf task script. */
-export interface PtsPin {
-	ptsProfile: string;
-	resultsPrefix: string;
-}
+import { type } from "arktype";
+
+/** One PTS/local pin mined from a leaf task script — arktype is the SoT; TypeScript follows. */
+export const ptsPinSchema = type({
+	ptsProfile: "string",
+	resultsPrefix: "string",
+}).onUndeclaredKey("reject");
+export type PtsPin = typeof ptsPinSchema.infer;
+
+/**
+ * Host-warm staging hints mined from a leaf script (install_local / install_vendored /
+ * seed_pts_download_cache / STREAM_ARRAY_SIZE). Arktype validates at the mine edge.
+ */
+export const downloadSeedSchema = type({
+	filename: "string >= 1",
+	sha256: "/^[0-9a-f]{64}$/",
+	urls: "string.url[] >= 1",
+}).onUndeclaredKey("reject");
+export type DownloadSeed = typeof downloadSeedSchema.infer;
+
+export const leafWarmHintsSchema = type({
+	localProfiles: "string[]",
+	vendoredProfiles: "string[]",
+	seeds: downloadSeedSchema.array(),
+	"streamArraySize?": "number.integer > 0",
+}).onUndeclaredKey("reject");
+export type LeafWarmHints = typeof leafWarmHintsSchema.infer;
 
 /** One mise task the suite plans to run (root command or expanded leaf). */
 export interface SuiteTask {
@@ -59,6 +81,16 @@ const RUN_TASK_RE = /^\s*run_task\s+(\S+)/gm;
 const PTS_BENCHMARK_RE = /^\s*run_(?:pts_benchmark|pinned_pts)\s+"([^"]+)"\s+"([^"]+)"/gm;
 const FIO_PTS_RE = /^\s*run_fio_pts\s+"[^"]+"\s+"[^"]+"\s+"([^"]+)"/gm;
 const REALWORLD_PTS_RE = /^\s*run_realworld_pts\s+(\S+)/gm;
+const INSTALL_LOCAL_RE = /^\s*install_local_pts_profile\s+"([^"$]+)"/gm;
+const INSTALL_VENDORED_RE = /^\s*install_vendored_pts_profile\s+"([^"$]+)"/gm;
+const INSTALL_LOCAL_PROFILE_VAR_RE = /^\s*install_local_pts_profile\s+"\$profile"/m;
+const INSTALL_VENDORED_PROFILE_VAR_RE = /^\s*install_vendored_pts_profile\s+"\$profile"/m;
+const PROFILE_ASSIGN_RE = /^\s*profile="([^"]+)"\s*$/m;
+// seed_pts_download_cache <file> <sha256> <url> [mirror...] — quoted args only (leaf convention).
+// Callers must join bash `\` continuations first (see {@link joinBashLineContinuations}).
+const SEED_CACHE_RE =
+	/^\s*seed_pts_download_cache\s+"([^"]+)"\s+"([0-9a-f]{64})"((?:\s+"[^"]+")+)/gm;
+const STREAM_ARRAY_SIZE_RE = /^STREAM_ARRAY_SIZE=(\d+)\s*$/m;
 
 /** Extract the mise task name from a suite command like `mise run benchmark:disk:all`. */
 export function miseTaskFromCommand(command: string): string | undefined {
@@ -114,6 +146,61 @@ export function ptsPinsFromScript(
 		});
 	}
 	return pins;
+}
+
+/** Collapse bash `\` line continuations so multiline helper calls match as one logical line. */
+export function joinBashLineContinuations(script: string): string {
+	return script.replace(/\\\r?\n/g, " ");
+}
+
+/**
+ * Mine host-warm staging hints from a leaf script: local/vendored profile installs, download-cache
+ * seeds, and STREAM_ARRAY_SIZE when the leaf pins one. Validates through {@link leafWarmHintsSchema}
+ * so a garbled mine fails at the edge instead of installing the wrong tree.
+ *
+ * Understands both literal `"name"` args and the `profile="name"` + `install_* "$profile"` shape
+ * used by fast-cli / stream-style leaves.
+ */
+export function warmHintsFromScript(script: string): LeafWarmHints {
+	const active = joinBashLineContinuations(stripBashComments(script));
+	const localProfiles = [...active.matchAll(INSTALL_LOCAL_RE)]
+		.map((m) => m[1] ?? "")
+		.filter(Boolean);
+	const vendoredProfiles = [...active.matchAll(INSTALL_VENDORED_RE)]
+		.map((m) => m[1] ?? "")
+		.filter(Boolean);
+	const profileAssign = active.match(PROFILE_ASSIGN_RE)?.[1];
+	if (profileAssign) {
+		if (INSTALL_LOCAL_PROFILE_VAR_RE.test(active)) localProfiles.push(profileAssign);
+		if (INSTALL_VENDORED_PROFILE_VAR_RE.test(active)) vendoredProfiles.push(profileAssign);
+	}
+	const seeds: DownloadSeed[] = [];
+	for (const match of active.matchAll(SEED_CACHE_RE)) {
+		const filename = match[1] ?? "";
+		const sha256 = match[2] ?? "";
+		const urlBlob = match[3] ?? "";
+		const urls = [...urlBlob.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "").filter(Boolean);
+		const parsed = downloadSeedSchema({ filename, sha256, urls });
+		if (parsed instanceof type.errors) {
+			throw new Error(`invalid seed_pts_download_cache in leaf script: ${parsed.summary}`);
+		}
+		seeds.push(parsed);
+	}
+	const arrayMatch = active.match(STREAM_ARRAY_SIZE_RE);
+	const streamArraySize = arrayMatch ? Number(arrayMatch[1]) : undefined;
+	const raw = {
+		localProfiles: [...new Set(localProfiles)],
+		vendoredProfiles: [...new Set(vendoredProfiles)],
+		seeds,
+		...(streamArraySize !== undefined && Number.isFinite(streamArraySize)
+			? { streamArraySize }
+			: {}),
+	};
+	const out = leafWarmHintsSchema(raw);
+	if (out instanceof type.errors) {
+		throw new Error(`invalid leaf warm hints: ${out.summary}`);
+	}
+	return out;
 }
 
 /**

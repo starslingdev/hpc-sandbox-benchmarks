@@ -37,19 +37,23 @@ present, run the Bun-native warmer:
 ```sh
 SUDO=sudo bun run warm:synthetic-pts
 # equivalent: SUDO=sudo bun scripts/warm-synthetic-pts.ts
+# inspect the inferred plan only: bun scripts/warm-synthetic-pts.ts --dry-plan
 ```
 
-That pre-installs every profile the synthetic suites use (including local `hardlink` /
-`iperf-wan` and vendored `iperf` / `network-loopback` / `fast-cli` overrides), seeds the fio
-tarball from Ubuntu's pool (OpenBenchmarking's `brick.kernel.dk` host is often down), and writes
-`~/.cache/sandbox-benchmarks/synthetic-pts-warm.stamp`. Subsequent `mise run benchmark:…` calls
-then skip download/compile and go straight to measurement. Re-run the warm script only if the
-stamp is missing or a suite leaf starts writing `--skipped.json` / reinstalling profiles.
+The warmer **plans** targets from `SUITES` synthetic host suites (`cpu-node`, `system`,
+`memory`, `disk`, `network`) via leaf mining — no hard-coded profile list. It stages
+local/vendored profiles and `seed_pts_download_cache` hints through `lib/bench.sh`, loads
+`host-seed.json` beside profiles when leaves lack a seed (fio's Ubuntu-mirror tarball —
+OpenBenchmarking's `brick.kernel.dk` is often down), and writes
+`~/.cache/sandbox-benchmarks/synthetic-pts-warm.stamp`. Subsequent `mise run benchmark:…`
+calls then skip download/compile and go straight to measurement. Re-run only if the stamp is
+missing or a suite leaf starts writing `--skipped.json` / reinstalling profiles. Legacy
+`benchmark:network:all` leaves (fast-cli, network-loopback) are **not** in the warm set;
+they install on first manual run.
 
 - Verify PTS: `phoronix-test-suite version` (expect `Phoronix Test Suite v10.8.4`).
-- Verify warm: `phoronix-test-suite list-installed-tests` should list the synthetic profiles
-  (iperf, fio, stream, pybench, sqlite-speedtest, git, node-web-tooling, fast-cli,
-  network-loopback, local/hardlink, local/iperf-wan).
+- Verify warm: `phoronix-test-suite list-installed-tests` should list the planned synthetic
+  profiles (see `--dry-plan`), including local `hardlink` / `iperf-wan` and vendored `iperf`.
 - Cheap single-leaf smoke (no warm required beyond PTS + stress-ng):
   `mise run benchmark:disk:pts:hardlink`.
 - Full OpenBenchmarking profiles outside the warm set still download/build on first use.

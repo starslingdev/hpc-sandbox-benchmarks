@@ -12,7 +12,9 @@ import {
 	ptsPinsFromScript,
 	realworldVersionFromBenchSh,
 	runTaskChildren,
+	warmHintsFromScript,
 } from "./suite-tasks.ts";
+import { isSyntheticHostSuite, planSyntheticPtsWarm } from "./synthetic-pts-warm.ts";
 
 // apps/cli/src/lib → repo root
 const root = join(import.meta.dir, "../../../..");
@@ -204,5 +206,68 @@ describe("summary rows", () => {
 		const metricRows = suiteMetricSummaryRows(plan);
 		expect(metricRows[0]?.[0]).toEqual({ data: "Metric", header: true });
 		expect(metricRows.length).toBe(1 + plan.metrics.length);
+	});
+});
+
+describe("warmHintsFromScript", () => {
+	it("mines multiline seed_pts_download_cache + vendored install from iperf-localhost", () => {
+		const script = readFileSync(
+			join(root, ".mise/tasks/benchmark/network/pts/iperf-localhost"),
+			"utf8",
+		);
+		const hints = warmHintsFromScript(script);
+		expect(hints.vendoredProfiles).toEqual(["iperf-1.2.0"]);
+		expect(hints.localProfiles).toEqual([]);
+		expect(hints.seeds).toEqual([
+			{
+				filename: "iperf-3.14.tar.gz",
+				sha256: "723fcc430a027bc6952628fa2a3ac77584a1d0bd328275e573fc9b206c155004",
+				urls: [
+					"https://downloads.es.net/pub/iperf/iperf-3.14.tar.gz",
+					"https://sources.buildroot.net/iperf3/iperf-3.14.tar.gz",
+				],
+			},
+		]);
+	});
+
+	it("mines STREAM_ARRAY_SIZE and profile=$profile vendored installs", () => {
+		const stream = readFileSync(join(root, ".mise/tasks/benchmark/memory/pts/stream"), "utf8");
+		expect(warmHintsFromScript(stream).streamArraySize).toBe(150_000_000);
+
+		const fastCli = readFileSync(join(root, ".mise/tasks/benchmark/network/pts/fast-cli"), "utf8");
+		expect(warmHintsFromScript(fastCli).vendoredProfiles).toEqual(["fast-cli-1.0.0"]);
+	});
+
+	it("mines local hardlink install", () => {
+		const script = readFileSync(join(root, ".mise/tasks/benchmark/disk/pts/hardlink"), "utf8");
+		expect(warmHintsFromScript(script).localProfiles).toEqual(["hardlink-1.0.0"]);
+	});
+});
+
+describe("planSyntheticPtsWarm", () => {
+	it("classifies synthetic host suites", () => {
+		expect(isSyntheticHostSuite("disk")).toBe(true);
+		expect(isSyntheticHostSuite("network")).toBe(true);
+		expect(isSyntheticHostSuite("pgbench")).toBe(false);
+		expect(isSyntheticHostSuite("realworld-mastra")).toBe(false);
+	});
+
+	it("plans targets/seeds from the suite registry without hard-coded profile lists", async () => {
+		const plan = await planSyntheticPtsWarm(root);
+		expect(plan.suites).toEqual(["cpu-node", "system", "memory", "disk", "network"]);
+		expect(plan.targets).toContain("pts/fio-2.1.0");
+		expect(plan.targets).toContain("pts/iperf-1.2.0");
+		expect(plan.targets).toContain("local/hardlink-1.0.0");
+		expect(plan.targets).toContain("local/iperf-wan-1.0.0");
+		expect(plan.targets).toContain("pts/stream-1.3.4");
+		expect(plan.targets).not.toContain("pts/fast-cli-1.0.0");
+		expect(plan.targets).not.toContain("pts/pgbench-1.15.0");
+		expect(plan.localProfiles).toEqual(["hardlink-1.0.0", "iperf-wan-1.0.0"]);
+		expect(plan.vendoredProfiles).toEqual(["iperf-1.2.0"]);
+		expect(plan.streamArraySize).toBe(150_000_000);
+		const fio = plan.seeds.find((s) => s.filename === "fio-3.36.tar.gz");
+		expect(fio?.sha256).toBe("0a07354876ca4d23518f8aa88682f23866455bbd2ff2d0f055d6e4b72f156553");
+		const iperf = plan.seeds.find((s) => s.filename === "iperf-3.14.tar.gz");
+		expect(iperf?.urls.length).toBeGreaterThanOrEqual(2);
 	});
 });
