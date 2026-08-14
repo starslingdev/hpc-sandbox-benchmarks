@@ -60,6 +60,7 @@
     "spell": "mise exec -- typos",
     "spell:fix": "mise exec -- typos --write-changes",
     "check:catalog-drift": "bun --filter '@sandbox-benchmarks/schema' check:catalog-drift",
+    "warm:synthetic-pts": "bun scripts/warm-synthetic-pts.ts",
     "prepare": "lefthook install"
   },
   "devDependencies": {
