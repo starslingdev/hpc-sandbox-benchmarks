@@ -208,6 +208,8 @@ The port has a consumer face and an author face, and they are different shapes o
 ```ts
 export interface SandboxDriver {
   create(request: CreateRequest): Promise<SandboxSession>;
+  /** Optional: destroy by bare id, no session needed — reaper/cleanup lanes. Idempotent. */
+  destroyById?(id: SandboxId): Promise<void>;
   readonly probes?: ControlPlaneProbes;    // optional: latency measurement only
   readonly snapshots?: SnapshotCapability; // optional: lifecycle measurement only
 }
@@ -218,12 +220,28 @@ export interface SandboxSession {
   destroy(): Promise<void>;
   /** The vendor's native handle — the JDBC `unwrap()` idea, typed. */
   readonly native: unknown;
-  /** Optional fast path. `undefined` when the vendor has none — never a throwing stub. */
-  readonly files?: FileReads;
+  /** Optional. A WORKING filesystem API — reads and writes — or absent; never a throwing stub. */
+  readonly files?: SandboxFiles;
   /** Optional. `undefined` ⇒ the harness wraps `exec` in its own nohup double-fork. */
   launch?(command: string, options?: ExecOptions): Promise<void>;
 }
+
+export interface SandboxFiles {
+  readFile(path: string): Promise<string>;
+  exists(path: string): Promise<boolean>;
+  writeText(path: string, text: string): Promise<void>;
+}
 ```
+
+`CreateRequest` carries the benchmark's **full** target axis, GPUs included:
+`spec`, `image`/`artifactRef`, `deadlineMs`, and `gpu?: { model: string; count: number }` — the
+driver maps it to vendor syntax (Modal: `"H100!"`, `"A100:2"`). A GPU provider is therefore a
+driver like any other, not a separate lane; a driver that cannot honor a requested `gpu` fails
+create loudly rather than silently benchmarking CPU. `files` is all-or-nothing — every vendor
+with a working filesystem API (modal, e2b, daytona) does both directions, and staging *writes*
+are a real harness need (`gpu/modal.ts:158-165`) — while sessions without it get harness-owned
+fallbacks for both directions in `shell.ts`: `cat` for reads, base64-over-exec for writes, so
+consumers stay infallible either way.
 
 A driver **author**, however, writes a *stateless method table* — flat, pure functions over a typed
 native handle, capability-by-presence — and the kit assembles sessions from it:
@@ -257,7 +275,7 @@ typed `native` handle.
 
 The rules that make consumers infallible:
 
-- **Absent capabilities are `undefined`, not stubs.** `files?: FileReads` is either a working
+- **Absent capabilities are `undefined`, not stubs.** `files?: SandboxFiles` is either a working
   filesystem or absent; the driver — the place that knows — decides, and the stub never escapes it.
   This deletes the string-matching at `execute.ts:139-152` and the entire class of bug that took out
   the namespace step: `StepRunner`'s `pollFs` field, its permanent-abandonment logic and its
@@ -477,6 +495,12 @@ The nine wrapper-based providers keep working through the bridge, including the
 `snapshotId`/`templateId` create-option conventions the bake path relies on. The five hand-written
 adapters stop paying the `defineProvider` tax, and `assertPatchable` disappears: patching a driver
 is ordinary function composition, not a reach into a generated class's private table.
+
+One typing rule, learned from the GPU prototype: the bridge's `session.native` is typed as **the
+wrapper's `getInstance()` type — never the repo's own vendor SDK types**. Wrappers vendor their own
+SDK copies (`@computesdk/modal/node_modules/modal`), so the wrapper's `Sandbox` and the repo's are
+*different nominal classes*; a cast across them needs `as unknown as` and is wrong the day the
+versions diverge. Code that needs the repo's SDK types is code that should be a native driver.
 
 ### 7. Where this meets ADR-0006
 

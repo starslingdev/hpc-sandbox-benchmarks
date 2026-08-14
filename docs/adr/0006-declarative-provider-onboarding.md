@@ -151,8 +151,16 @@ export type ProviderArtifact =
   | { kind: "image";  optionKey: "templateId" | "image" }               // modal, namespace, runcloud, microsandbox
   | { kind: "baked";  optionKey: "snapshotId" | "blueprint_name" | "templateId";
       nameSuffix?: string }                                             // e2b, daytona-*, novita, runloop
-  | { kind: "mirror"; optionKey: "templateId"; repository: string };    // vercel
+  | { kind: "mirror"; optionKey: "templateId"; repository: string }     // vercel
+  | { kind: "built";  recipe: string };                                 // modal-gpu: image built at run time
 ```
+
+`built` covers artifacts that cannot be a committed ref because they are constructed in-process —
+the GPU lane's dockerfileCommands image resolved through a content-keyed kernel-snapshot cache.
+The registry names only the **recipe**; the driver's context factory produces the concrete
+`artifactRef` at run time (ADR-0007 §3). This is what lets `modal-gpu` join the registry instead
+of routing around it — and therefore puts its transport claims under ADR-0008's conformance gate,
+where today they are a hand-carried const (`gpu/modal.ts:14-18`).
 
 With `REGISTRY` declared `as const satisfies Record<ProviderId, ProviderMeta>`, the *type system*
 partitions the providers:

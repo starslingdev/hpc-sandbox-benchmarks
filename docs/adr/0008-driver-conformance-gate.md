@@ -54,15 +54,23 @@ the contract's JSDoc:
 
 - `destroy` MUST be idempotent; destroying a sandbox that does not exist MUST succeed. (Today this
   is a convention each adapter re-implements as a `notFound` regex; it becomes a required property
-  the suite exercises.)
+  the suite exercises.) The same clauses bind the optional `destroyById`.
+- `destroy` MUST be **convergent**: it MUST NOT resolve while the vendor control plane still
+  reports the sandbox as running. Where the driver declares a `probes.list`/`describe` capability,
+  the suite verifies the sandbox is absent-or-terminal *after* `destroy` resolves. This promotes
+  the strongest teardown in the repo — the GPU lane's terminate-then-verify-unlisted loop
+  (`gpu/modal.ts:55-75`) — from folklore in one adapter to a clause every driver answers.
 - `exec` MUST report the guest's real exit status: `sh -c 'exit 7'` yields
   `{ kind: "exited", code: 7 }`; a vendor that withholds the code MUST yield `kind: "unknown"` —
   never a forged number. stdout and stderr MUST NOT be merged.
 - `launch` (or the harness fallback over `exec`) MUST produce *observable completion*: a detached
   command's done-file is readable afterwards. This clause is precisely the `detachedPoll` claim.
-- A declared `files` capability MUST read back a file the suite just wrote via `exec`; a driver
-  with no working filesystem MUST omit the key (never a stub — ADR-0007 rule 2, now enforced
-  rather than trusted).
+- A declared `files` capability MUST round-trip both directions: `writeText` then `readFile`
+  returns the same bytes, and a file written via `exec` is readable via `readFile`. A driver with
+  no working filesystem MUST omit the key (never a stub — ADR-0007 rule 2, now enforced rather
+  than trusted); the suite then exercises the harness's exec-based read *and write* fallbacks.
+- A `create` request carrying `gpu` MUST either provision it (verified: `nvidia-smi` succeeds and
+  reports the requested model count) or fail create — never silently benchmark CPU.
 - `create` failures MUST be classifiable: an error matching the registry's
   `retryableCreatePatterns` is a capacity signal the harness may retry; anything else is terminal.
   (The CSI pattern: error semantics defined by what the caller is entitled to do next.)

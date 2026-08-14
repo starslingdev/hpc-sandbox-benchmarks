@@ -5,71 +5,59 @@ image / model volume) → create (GPU, caps, volume mount) → tag → stage fil
 observe → verified teardown — compared against what `main` does today in
 `apps/cli/src/lib/gpu/modal.ts`. Both prototypes typecheck against the real packages
 (`@computesdk/modal`, `modal`) under the repo's strict flags; the command is in each file's
-header. Markers in the sources: ⛔ inexpressible, ⚠ expressible but degraded, ✓ genuinely good.
+header.
 
 | File | Style |
 |---|---|
-| [`computesdk-modal.ts`](./computesdk-modal.ts) | **A** — through `@computesdk/modal` (`defineProvider` wrapper) |
-| [`kit-modal.ts`](./kit-modal.ts) | **B** — ADR-0007 driver kit over the native Modal SDK |
-| `apps/cli/src/lib/gpu/modal.ts` | **main** — hand-rolled native adapter (the ADR-0007 "the port already exists" evidence) |
+| [`computesdk-modal.ts`](./computesdk-modal.ts) | **A** — through `@computesdk/modal` (`defineProvider` wrapper). Markers ⛔/⚠/✓ per step. |
+| [`kit-modal.ts`](./kit-modal.ts) | **B′** — the **gap-closed** driver kit (ADR-0006/0007/0008 as amended) over the native Modal SDK. Markers ✓ G1–G6, one per closed gap. |
+| `apps/cli/src/lib/gpu/modal.ts` | **main** — hand-rolled native adapter (ADR-0007's "the port already exists" evidence) |
+
+An earlier revision of `kit-modal.ts` carried its own ⛔/⚠ markers (B1–B3). Those became the gap
+ledger below, the ledger became ADR amendments, and this prototype was rebuilt against the
+amended contracts — the file now demonstrates each closure in place.
 
 ## Verdict at a glance
 
-| Dimension | A: computesdk | B: kit | main |
+| Dimension | A: computesdk | B′: gap-closed kit | main |
 |---|---|---|---|
-| Author code lines (seven steps) | ~83 | ~123 (+ ~61 kit, written once) | ~95 driver-shaped (of 234 in the file) |
-| GPU / caps / volume params **typed** | ⚠ no — `[key: string]: any` passthrough; `gup: "H100!"` compiles (proof in file) | ✓ native `SandboxCreateParams`; typo is a compile error (proof in file) | ✓ native |
-| Built image (dockerfileCommands + kernel-snapshot cache) | ⛔ no channel for an `Image` object; id-round-trip through `snapshotId`, cache abandoned | ✓ typed `Ctx` member | ✓ closure state |
-| Pre-create plumbing (app/volumes) | ⛔ wrapper's client is private → a **second native client** | ✓ explicit typed `Ctx`, built once by the CLI | ⚠ works, but implicit in closures |
-| `setTags` attribution | ⛔ unwrap is **nominally broken** — wrapper vendors its own `modal` copy; `as unknown as` double-cast, two SDKs in-process | ✓ `session.native` is the real typed `Sandbox`, one hop | ✓ direct (`sandbox.sdk`) |
-| Stage files (writes) | ✓ `filesystem.writeFile` — the wrapper's best moment | ⚠ needs the `files.writeText` extension (gap B2) | ✓ `sdk.filesystem.writeText` |
-| Exit fidelity | ⚠ `exitCode: number` fine here; transport choices (stream draining, shell wrapping) fixed by wrapper | ✓ `Exit` union; drain/wrapping owned by the driver | ✓ hand-rolled |
-| Verified teardown (terminate + not-listed poll) | ⚠ only via wrapper `list()` (heavyweight rows, different client than terminated) | ✓ pure `destroy` in the table — directly unit-testable | ✓ but untestable without a live sandbox |
-| Bare-id destroy (no session needed) | ✓ genuinely convenient | ⚠ needs a session or a probes-level op | ⚠ same |
-| Conformance-testable (ADR-0008) | ⚠ behind the wrapper's fixed choices | ✓ the table is the suite's direct target | ⛔ inline adapter, no named contract |
-| Registry / typed join | n/a (outside both) | ⚠ needs a `modal-gpu` entry; artifact model gap B3 | ⛔ routes around the registry entirely |
+| Author code lines (seven steps) | ~83 | ~145 (+ ~190 kit, written once) | ~95 driver-shaped (of 234 in the file) |
+| GPU / caps / volume params **typed** | ⚠ no — `[key: string]: any` passthrough; `gup: "H100!"` compiles (proof in file) | ✓ typed `gpu: { model, count }` on `CreateRequest` end-to-end; typo is a compile error (proof) — **G1** | ⚠ native-typed, but the GPU axis is bespoke to this lane |
+| Built image (dockerfileCommands + kernel-snapshot cache) | ⛔ no channel for an `Image` object; id-round-trip abandons the cache | ✓ registry artifact `{ kind: "built", recipe }`; the driver's lazy `Ctx` factory resolves it — **G3** | ⚠ closure state, outside the registry |
+| Registry membership / transport gate | n/a | ✓ `modal-gpu` is a registry row; `transportOf("modal-gpu")` replaces the hand-carried const, claims fall under ADR-0008 — **G3** | ⛔ routes around the registry; `MODAL_TRANSPORT` hand-carried |
+| `setTags` attribution | ⛔ unwrap nominally broken (wrapper vendors its own `modal` copy; double-cast, two SDKs in-process) | ✓ `session.native` is the real typed `Sandbox` — and the bridge rule (**G4**) says wrapper drivers expose *wrapper* types, never cast across | ✓ direct |
+| Stage files (writes) | ✓ `filesystem.writeFile` | ✓ `files.writeText` is port surface; absent ⇒ harness base64-over-exec fallback; conformance round-trips both directions — **G2** | ✓ native call |
+| Exit fidelity | ⚠ `exitCode: number`; transport choices fixed by wrapper | ✓ `Exit` union; drain/wrapping owned by the driver | ✓ hand-rolled |
+| Verified teardown | ⚠ only via wrapper `list()`, different client than terminated | ✓ **convergent destroy is an ADR-0008 clause**; `terminateConverged` implements it once for `destroy` and `destroyById` — **G5** | ✓ but folklore: exists only here, untestable without a live sandbox |
+| Bare-id destroy (reaper lanes) | ✓ genuinely convenient | ✓ optional `destroyById`, same idempotency clauses — **G6** | ⚠ not available |
+| Conformance-testable (ADR-0008) | ⚠ behind the wrapper's fixed choices | ✓ the table is the suite's direct target; gpu-honesty clause: provision or fail, never silent CPU | ⛔ inline adapter, no named contract |
 
-**Bottom line.** ComputeSDK's wrapper is the wrong altitude for this workload: the four things the
-GPU benchmark exists to control — which GPU, the resource caps, the built image, the volume
-mount — are exactly the things that go untyped (A3), unreachable (A1/A2), or nominally broken
-(A4) through it. The kit costs more lines than the wrapper *in this one driver* because the
-genuine Modal complexity (stream draining, verified teardown) has to live somewhere — on main it's
-the same code, minus the contract. What the kit buys over main for the same logic: the GPU path
-stops being a bespoke lane (named port → registry join → lazy loader → ADR-0008 conformance), its
-teardown/exec become pure, unit-testable table members, and `StepRunner`'s transport facts come
-from the registry instead of a hand-carried const.
+**Bottom line.** With the gaps closed, the kit expresses everything main does — same native SDK,
+same verified teardown, same staging — plus what main lacks: registry membership (so the GPU
+lane's transport claims are finally gate-able), a typed vendor-neutral GPU axis, a named contract
+a conformance suite can drive, pure unit-testable teardown, and bare-id reaping. ComputeSDK's
+position is unchanged: its genuine conveniences (writeFile, bare-id destroy) are now port
+surface, while its structural limits for this workload (private client, untyped passthrough,
+vendored-SDK unwrap) are not fixable from our side.
 
-## Remaining DX gaps the prototypes exposed (the actual payload)
+## The gap ledger — closed
 
-1. **B1 — `CreateRequest` is CPU-shaped.** No GPU axis. Options: an optional `gpu?: string` on
-   the port request (Modal-only today, but tama/runcloud GPU tiers exist) or a per-driver create
-   extension typed in the driver spec. Decide in ADR-0007 before migration.
-2. **B2 — `files` is read-only, but staging writes.** Producer staging (`writeText`) is a real
-   harness-side need the port can't express; main uses the native API, prototype B extends the
-   table. Modal, e2b and daytona all support writes — promote `files.write` to an optional port
-   capability, verified by ADR-0008's read-what-you-wrote check.
-3. **B3 — the registry artifact model assumes a resolvable ref.** The GPU image is *built
-   in-process* (dockerfileCommands + kernel-snapshot cache keyed by content). ADR-0006's
-   `artifact` needs a `built` kind (resolver runs at create time, in the driver's `Ctx` factory)
-   or the GPU lane stays registry-external — currently it is, and that's why it has no transport
-   gate (the `MODAL_TRANSPORT` const is hand-carried at `gpu/modal.ts:14-18`).
-4. **A4-class risk applies to the bridge too.** The wrapper vendoring its own `modal` copy means
-   `computeSdkDriver`'s `native` handle for wrapper-based providers is typed against a *different*
-   SDK instance than any native code in the repo. The kit's bridge should surface the wrapper's
-   vendored types, not the repo's, and say so.
-5. **Verified teardown should be spec, not folklore.** Main's terminate-then-verify-unlisted loop
-   is the strongest destroy semantics in the repo and exists nowhere else. Candidate ADR-0008
-   clause: *destroy MUST NOT return while the control plane still lists the sandbox* — Modal's
-   driver already implements it; conformance would force the question for the other thirteen.
-6. **Bare-id destroy is a real ComputeSDK convenience the port lacks.** Reaper/cleanup flows want
-   `destroy(id)` without a live session. Candidate: an optional `probes`-adjacent
-   `destroyById(id)` capability, instead of resurrecting `getById`.
+| Gap (from the first prototype) | Closure | Where |
+|---|---|---|
+| B1 — `CreateRequest` had no GPU axis | `gpu?: { model, count }` on the request; driver maps to vendor syntax; conformance: provision-or-fail | ADR-0007 §2, ADR-0008 §1 |
+| B2 — `files` was read-only; staging writes | `SandboxFiles` = read + exists + write, all-or-nothing; harness fallbacks for both directions; round-trip conformance | ADR-0007 §2, ADR-0008 §1 |
+| B3 — artifact model assumed a resolvable ref | `{ kind: "built", recipe }` artifact kind; driver `Ctx` factory resolves at run time; GPU lane joins the registry | ADR-0006 §1 |
+| A4-class — bridge natives cross vendored SDKs | Rule: bridge `native` keeps the **wrapper's** types; needing repo SDK types means write a native driver | ADR-0007 §6 |
+| Verified teardown was folklore | Convergent-destroy clause: MUST NOT resolve while still listed; probes-gated verification in the suite | ADR-0008 §1 |
+| No bare-id destroy | Optional `destroyById` on the port, bound by the same idempotency clauses | ADR-0007 §2, ADR-0008 §1 |
 
 ## Line-count honesty
 
-Prototype B's author section (~123 lines) is *larger* than A's (~83) — the wrapper really does
-absorb stream-draining and file plumbing. The comparison that matters is against **main** (~95
-lines of driver-shaped code for the same steps, plus the untyped/unverifiable properties above)
-and against what A *cannot do at all*: A's 83 lines only reach parity by running a second native
-client for plumbing, double-casting across two vendored SDK copies for tags, and giving up
-compile-checking on the four parameters the benchmark publishes.
+B′'s author section grew from ~123 to ~145 lines — closing gaps added surface (`destroyById`,
+`files.exists`, the gpu mapping) rather than removing it. The wrapper (A, ~83) is still shortest
+and still can't do the job: its lines exclude the second native client it forces for plumbing,
+and no line count fixes the untyped passthrough or the vendored-SDK unwrap. Against **main**
+(~95 driver-shaped lines), B′ carries ~50 more, which buy: registry membership, the typed join,
+`Exit`, convergent-destroy-as-spec, `destroyById`, and a contract ADR-0008 can verify — main's
+version has none of these and its strongest behavior (verified teardown) exists nowhere else in
+the fleet.
