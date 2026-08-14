@@ -58,10 +58,15 @@ install_local_pts_profile "hardlink-1.0.0"
 install_local_pts_profile "iperf-wan-1.0.0"
 
 # Vendored overrides that leaves stage before install/run (same pts/<name> identifiers).
-# Staging discards any baked/upstream install so the next batch-install uses our copy.
-install_vendored_pts_profile "iperf-1.2.0"
-install_vendored_pts_profile "network-loopback-1.0.3"
-install_vendored_pts_profile "fast-cli-1.0.0"
+# Only restage when not already installed — install_vendored_pts_profile always discards the
+# installed tree, which would force a rebuild on every warm re-run.
+for vendored in iperf-1.2.0 network-loopback-1.0.3 fast-cli-1.0.0; do
+	if _pts_is_installed "pts/${vendored}"; then
+		echo "already installed: pts/${vendored} (skip vendored restage)"
+	else
+		install_vendored_pts_profile "$vendored"
+	fi
+done
 
 # STREAM: pin the same working set the memory leaf measures (see benchmark:memory:pts:stream).
 # Export before batch-install so a cold install compiles the pinned binary.
