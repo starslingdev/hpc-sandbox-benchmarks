@@ -84,10 +84,17 @@ export async function seedPtsDownloadCache(
 	}
 }
 
-export async function installLocalPtsProfile(root: string, name: string): Promise<void> {
-	const { code, stderr } = await runBenchHelper(root, "install_local_pts_profile", [name], {
-		inherit: true,
-	});
+export async function installLocalPtsProfile(
+	root: string,
+	name: string,
+	overlays: readonly string[] = [],
+): Promise<void> {
+	const { code, stderr } = await runBenchHelper(
+		root,
+		"install_local_pts_profile",
+		[name, ...overlays],
+		{ inherit: true },
+	);
 	if (code !== 0) {
 		throw new Error(`install_local_pts_profile ${name} failed: ${stderr.trim() || `exit ${code}`}`);
 	}

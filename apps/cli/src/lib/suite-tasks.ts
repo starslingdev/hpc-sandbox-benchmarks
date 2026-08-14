@@ -259,6 +259,23 @@ export function realworldVersionFromBenchSh(benchSh: string): string | undefined
 	return match?.[1];
 }
 
+/**
+ * Repo-relative overlay paths that `run_realworld_pts` passes to `install_local_pts_profile`
+ * (shared install.sh + runner). Warm must stage the same overlays or batch-install lacks the runner.
+ */
+export function realworldOverlaysFromBenchSh(benchSh: string): string[] {
+	const body = bashFunctionBody(benchSh, "run_realworld_pts");
+	if (!body) return [];
+	const active = joinBashLineContinuations(stripBashComments(body));
+	const match = active.match(
+		/install_local_pts_profile\s+"\$profile"((?:\s+"\$\{REPO_ROOT\}\/[^"]+")+)/,
+	);
+	if (!match?.[1]) return [];
+	return [...match[1].matchAll(/"\$\{REPO_ROOT\}\/([^"]+)"/g)]
+		.map((m) => m[1] ?? "")
+		.filter(Boolean);
+}
+
 interface MiseTaskInfo {
 	name: string;
 	description: string;

@@ -30,30 +30,35 @@ Run these **on the cloud VM host** (no provider API keys). They write under `ben
 | Memory | `mise run benchmark:memory:all` |
 | System | `mise run benchmark:system:all` |
 
-**Snapshot warm (once, when building/refreshing the cloud VM snapshot):** cold PTS profile
-installs are slow (git ~450 MB download, fio/iperf/stream compiles). After mise/bun/PTS are
-present, run the Bun-native warmer:
+**Snapshot / on-demand PTS warm:** cold profile installs are slow (git ~450 MB, fio/iperf/stream/
+pgbench/realworld compiles). After mise/bun/PTS are present, run the Bun-native warmer with a
+suite selection (presets or concrete names):
 
 ```sh
-SUDO=sudo bun run warm:synthetic-pts
-# equivalent: SUDO=sudo bun scripts/warm-synthetic-pts.ts
-# inspect the inferred plan only: bun scripts/warm-synthetic-pts.ts --dry-plan
+bun run warm:pts -- --list-suites
+SUDO=sudo bun run warm:pts -- --suite synthetic          # default preset (incl. pgbench)
+SUDO=sudo bun run warm:pts -- --suite all                # synthetic + realworld
+SUDO=sudo bun run warm:pts -- --suite realworld
+SUDO=sudo bun run warm:pts -- --suite network            # one suite
+SUDO=sudo bun run warm:pts -- -s disk -s memory
+bun run warm:pts -- --dry-plan --suite network           # inspect plan only
+# alias: bun run warm:synthetic-pts  →  warm-pts --suite synthetic
 ```
 
-The warmer **plans** targets from `SUITES` synthetic host suites (`cpu-node`, `system`,
-`memory`, `disk`, `network`) via leaf mining — no hard-coded profile list. It stages
+The warmer **plans** targets from `SUITES` + leaf mining — no hard-coded profile list. It stages
 local/vendored profiles and `seed_pts_download_cache` hints through `lib/bench.sh`, loads
 `host-seed.json` beside profiles when leaves lack a seed (fio's Ubuntu-mirror tarball —
 OpenBenchmarking's `brick.kernel.dk` is often down), and writes
-`~/.cache/sandbox-benchmarks/synthetic-pts-warm.stamp`. Subsequent `mise run benchmark:…`
-calls then skip download/compile and go straight to measurement. Re-run only if the stamp is
-missing or a suite leaf starts writing `--skipped.json` / reinstalling profiles. Legacy
-`benchmark:network:all` leaves (fast-cli, network-loopback) are **not** in the warm set;
-they install on first manual run.
+`~/.cache/sandbox-benchmarks/pts-warm-<selection>.stamp`. Subsequent `mise run benchmark:…`
+calls then skip download/compile for warmed profiles. Re-run only if the stamp is missing or a
+suite leaf starts writing `--skipped.json` / reinstalling profiles. Legacy
+`benchmark:network:all` leaves (fast-cli, network-loopback) are **not** in the `network` suite
+plan; they install on first manual run. `synthetic` includes **pgbench** (heavy); omit it with
+an explicit suite list when snapshot time matters.
 
 - Verify PTS: `phoronix-test-suite version` (expect `Phoronix Test Suite v10.8.4`).
-- Verify warm: `phoronix-test-suite list-installed-tests` should list the planned synthetic
-  profiles (see `--dry-plan`), including local `hardlink` / `iperf-wan` and vendored `iperf`.
+- Verify warm: `phoronix-test-suite list-installed-tests` should list the planned profiles
+  (see `--dry-plan`).
 - Cheap single-leaf smoke (no warm required beyond PTS + stress-ng):
   `mise run benchmark:disk:pts:hardlink`.
 - Full OpenBenchmarking profiles outside the warm set still download/build on first use.
