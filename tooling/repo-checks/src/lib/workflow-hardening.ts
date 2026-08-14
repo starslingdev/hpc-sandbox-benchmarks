@@ -36,8 +36,9 @@ export const TOOLCHAIN_IMAGE_PR_PATHS = [
 	".github/workflows/toolchain-image.yml",
 ] as const;
 
-/** Local composites executed by the toolchain PR lane, plus the lightweight smoke itself. */
+/** Local setup composites executed by the lightweight smoke, plus the smoke itself. */
 export const TOOLCHAIN_ACTION_SMOKE_PR_PATHS = [
+	".github/actions/setup-tama/**",
 	".github/actions/setup-toolchain/**",
 	".github/actions/setup-workspace/**",
 	".github/actions/release-summary/**",
@@ -535,7 +536,7 @@ function exactSetError(
 }
 
 /**
- * Invariant 5: image inputs own the expensive toolchain PR smoke; the setup/reporting composites
+ * Invariant 5: image inputs own the expensive toolchain PR smoke; the CLI/setup/reporting composites
  * own a bounded smoke on the standard runner. This prevents a broad action glob from turning every
  * later push in an action-touching PR into another PTS-heavy image build.
  */
@@ -587,6 +588,9 @@ export function checkToolchainPrScope(
 			errors.push(`${jobLabel}: setup-toolchain must pass \`buildx: "true"\``);
 		}
 	}
+	if (!steps.some((step) => step.uses === "./.github/actions/setup-tama")) {
+		errors.push(`${jobLabel}: must execute ./.github/actions/setup-tama`);
+	}
 	const summary = steps.find((step) => step.uses === "./.github/actions/release-summary");
 	if (summary === undefined) {
 		errors.push(`${jobLabel}: must execute ./.github/actions/release-summary`);
@@ -601,6 +605,8 @@ export function checkToolchainPrScope(
 	for (const probe of [
 		"bun --version",
 		"1.3.14",
+		"tama --version",
+		"0.1.17",
 		"bun packages/templates/src/pins.ts",
 		"docker buildx inspect --bootstrap",
 	] as const) {
