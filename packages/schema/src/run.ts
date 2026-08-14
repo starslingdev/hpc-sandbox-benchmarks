@@ -429,10 +429,11 @@ export const targetSpecSchema = type({
 export type TargetSpec = typeof targetSpecSchema.infer;
 
 /**
- * Where a Run document lives relative to the ROOT of the tree that holds it — the one derivation both
- * the RunIndex invariant below and the index writer read, so the two cannot drift into the
- * disagreement that made a whole lane unwritable (a writer computing the path from the filesystem
- * while the schema demanded a derivation).
+ * Where a Run document of this identity is written, relative to the ROOT of the tree that holds it —
+ * the CANONICAL name. It and {@link runDocumentPaths} are the one derivation both the RunIndex
+ * invariant below and the index writer read, so the two cannot drift into the disagreement that made
+ * a whole lane unwritable (a writer computing the path from the filesystem while the schema demanded
+ * a derivation).
  *
  * "Relative to the root", not to the index file: an index sits at the root of a tree whose Runs are
  * under `runs/` (`data/index.json` + `data/runs/…`, `data/dataset/index.json` +
@@ -446,8 +447,34 @@ export function runDocumentPath(runId: string, replicateIndex?: number): string 
 	return `runs/${runId}${replicateIndex === undefined ? "" : `-r${replicateIndex}`}.json`;
 }
 
-/** A RunIndex entry whose path is derived solely from, and cannot disagree with, its Run's identity
- *  (its id, plus the replicate index when the entry describes one shard of a fan-out). */
+/**
+ * Every name a Run document of this identity may legally carry, canonical first.
+ *
+ * A replicate-stamped Run has TWO legal names, because the harness has two lanes and they disagree
+ * on the filename by design:
+ *
+ *  - `runs/<runId>-r<idx>.json` — the fan-out lane (`bench-suite --replicates`), where R shards share
+ *    one runId inside one cell and only the suffix tells the sandboxes apart.
+ *  - `runs/<runId>.json` — the single-sandbox lane (`bench-suite --replicate <idx>`), which stamps
+ *    the index onto the Run but deliberately keeps the UN-suffixed name. That name is a downstream
+ *    contract, not an oversight: commit-dataset.yml reads it as the legacy shard shape when
+ *    re-aggregating a run whose artifacts predate the fan-out.
+ *
+ * So the filename is not a function of the identity alone, and a derivation that pretends otherwise
+ * rejects one of the two lanes outright — which is exactly how the single lane started failing after
+ * its benchmark had already succeeded. Membership in this set is the check; the ENTRY still records
+ * the name the file actually has, so an index never points at a document that isn't there.
+ *
+ * An entry with no `replicateIndex` (every promoted dataset entry) keeps exactly one legal name, so
+ * the dataset invariant — and the path guard update-leaderboard.yml re-applies to it — is unchanged.
+ */
+export function runDocumentPaths(runId: string, replicateIndex?: number): readonly string[] {
+	const canonical = runDocumentPath(runId, replicateIndex);
+	return replicateIndex === undefined ? [canonical] : [canonical, runDocumentPath(runId)];
+}
+
+/** A RunIndex entry whose path is one of the names its Run's identity allows (its id, plus the
+ *  replicate index when the entry describes one shard of a fan-out) — never a free-form path. */
 export const runIndexEntrySchema = type({
 	runId: runIdSchema,
 	generatedAt: "string.date.iso",
@@ -456,8 +483,11 @@ export const runIndexEntrySchema = type({
 	// Run spans every replicate and carries none, so dataset index entries are unchanged by this field.
 	"replicateIndex?": "number.integer >= 0",
 }).narrow((entry, ctx) => {
-	const expected = runDocumentPath(entry.runId, entry.replicateIndex);
-	return entry.path === expected || ctx.mustBe(`a RunIndex entry whose path is ${expected}`);
+	// Derived, never free-form: `runIdSchema` already rejects path syntax in an id and the replicate
+	// index is a non-negative integer, so no accepted name can escape `runs/` or traverse upward.
+	const allowed = runDocumentPaths(entry.runId, entry.replicateIndex);
+	if (allowed.includes(entry.path)) return true;
+	return ctx.mustBe(`a RunIndex entry whose path is ${allowed.map((p) => `"${p}"`).join(" or ")}`);
 });
 export type RunIndexEntry = typeof runIndexEntrySchema.infer;
 

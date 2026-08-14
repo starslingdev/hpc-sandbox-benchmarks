@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import type { Run, RunIndex } from "@sandbox-benchmarks/schema";
-import { parseRunIndex, providerStatusText, runDocumentPath } from "@sandbox-benchmarks/schema";
+import { parseRunIndex, providerStatusText, runDocumentPaths } from "@sandbox-benchmarks/schema";
 import { normalizeResultsTree } from "./normalize-tree.ts";
 
 /**
@@ -32,7 +32,7 @@ export interface WriteNormalizedRunInput {
 	replicateIndex?: number;
 }
 
-/** Insert a Run into the index (newest first, de-duplicated by runId) and rewrite the index file. */
+/** Insert a Run into the index (newest first, one entry per replicate sandbox) and rewrite the file. */
 export function updateRunIndex(indexPath: string, run: Run, runFilePath: string): RunIndex {
 	// Read-and-parse directly rather than existsSync-then-read: a TOCTOU gap there could throw ENOENT
 	// after the Run JSON was already written, orphaning it from the index. A missing index is the
@@ -45,34 +45,49 @@ export function updateRunIndex(indexPath: string, run: Run, runFilePath: string)
 		existing = { schemaVersion: "1", runs: [] };
 	}
 
-	// DERIVED from the Run, never measured off the filesystem: the index entry states where a Run of
-	// this identity belongs, and `runDocumentPath` is the same derivation the schema checks it against.
-	// Computing it with relative() instead is what silently produced entries no RunIndex could accept
-	// once the index was written anywhere but the root of its tree.
-	const path = runDocumentPath(run.runId, run.replicateIndex);
+	// The entry records where the Run document ACTUALLY is — an index whose path is derived rather than
+	// measured can name a file that was never written — but it is admitted only if that location is one
+	// the Run's identity allows (`runDocumentPaths`, the same rule the schema re-checks it against).
+	// Measuring without checking is how entries no RunIndex accepts reached the schema in the first
+	// place; checking against a single derived name is how the un-suffixed single-sandbox shard, whose
+	// filename is a downstream contract, stopped being writable. Forward slashes so the comparison (and
+	// the entry) stay portable: relative() yields backslashes on Windows.
+	const path = relative(dirname(indexPath), runFilePath).replaceAll("\\", "/");
+	const allowed = runDocumentPaths(run.runId, run.replicateIndex);
+	if (!allowed.includes(path)) {
+		const identity =
+			run.replicateIndex === undefined
+				? `Run ${run.runId}`
+				: `Run ${run.runId} replicate ${run.replicateIndex}`;
+		// Two different mistakes, named apart: an index parked somewhere other than the root of its tree
+		// (every Run then resolves outside `runs/`, and NOTHING it could write would validate), versus a
+		// correctly placed index handed a Run document under an unexpected name. Reported here, at the
+		// call that can still say which two paths disagree, rather than as an arktype summary surfacing
+		// from deep inside a write that has already put the Run on disk.
+		throw new Error(
+			path.startsWith("runs/")
+				? `RunIndex ${indexPath} cannot describe ${runFilePath}: ${identity} must be written as ` +
+						`${allowed.map((p) => `"${p}"`).join(" or ")} relative to its index, but this one ` +
+						`resolves to "${path}"`
+				: `RunIndex ${indexPath} cannot describe ${runFilePath}: a Run index must sit at the ROOT ` +
+						`of the tree holding its Runs (which live under "runs/"), but this Run resolves to ` +
+						`"${path}" relative to the index`,
+		);
+	}
 	const entry = {
 		runId: run.runId,
 		generatedAt: run.generatedAt,
 		path,
 		...(run.replicateIndex !== undefined ? { replicateIndex: run.replicateIndex } : {}),
 	};
-	// The derivation is only true of a tree whose index sits at its root, so hold the caller to that
-	// here — with the two paths named — rather than letting a misplaced index emit an entry that
-	// resolves nowhere and fails deep inside an arktype summary. Forward slashes so the comparison
-	// (and the entry) stay portable: relative() yields backslashes on Windows.
-	const actual = relative(dirname(indexPath), runFilePath).replaceAll("\\", "/");
-	if (actual !== path) {
-		throw new Error(
-			`RunIndex ${indexPath} cannot describe ${runFilePath}: a Run index must sit at the ROOT of ` +
-				`the tree holding its Runs, so this Run belongs at "${path}" relative to the index but ` +
-				`resolves to "${actual}"`,
-		);
-	}
-	// Keyed by (runId, replicateIndex): every shard of a fan-out carries the SAME runId, so keying on
-	// the id alone would let the last replicate to normalize evict its peers and leave the index
-	// claiming a one-sandbox cell.
+	// Superseded by IDENTITY or by LOCATION, and it has to be both. Identity, because every shard of a
+	// fan-out carries the same runId — keying on the id alone would let the last replicate to normalize
+	// evict its peers and leave the index claiming a one-sandbox cell. Location, because the two lanes
+	// can write the same sandbox under different names (and successive `--replicate <idx>` runs write
+	// DIFFERENT indices to the same un-suffixed file): without it the index would keep a stale entry
+	// pointing at a document that has since been overwritten by another replicate's results.
 	const supersedes = (r: RunIndex["runs"][number]): boolean =>
-		r.runId === run.runId && r.replicateIndex === run.replicateIndex;
+		(r.runId === run.runId && r.replicateIndex === run.replicateIndex) || r.path === path;
 	// Fixed "en" locale: ISO-8601 strings sort lexicographically === chronologically, regardless of
 	// the runtime's default collation.
 	const runs = [entry, ...existing.runs.filter((r) => !supersedes(r))].sort((a, b) =>
