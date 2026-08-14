@@ -1154,6 +1154,14 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		// No SDK is published for any language; the CLI is the only programmatic surface, so the adapter
 		// drives `tama` as a subprocess and parses its `--json` output.
 		sdkPackage: "tama CLI",
+		// Required, DESPITE the adapter being able to authenticate from an existing `tama login` profile.
+		// requiredEnvVars is the credential gate, and the gate is what turns an unwired provider into a
+		// recorded SKIP instead of a failed cell: a CLI profile is invisible to it, so treating "no token"
+		// as "maybe the profile works" would mean a matrix cell with no credential at all discovers that
+		// by failing to create a sandbox. The profile preference governs whether `tama login --token`
+		// RUNS (it replaces the stored credential, so a developer must not be signed out by a benchmark),
+		// not whether the provider is credentialed. Local devs export a token from `tama tokens create`
+		// — see .env.example.
 		requiredEnvVars: ["TAMA_TOKEN"],
 		isolation: {
 			// Declared from an in-guest probe, because the vendor publishes no isolation claim. Every
@@ -1166,15 +1174,36 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Probed, not vendor-declared. CPU and memory are enforced through cgroup v2 (cpu.max, memory.max), but /proc/meminfo reports the HOST's memory (1.5 TiB observed on an 8 GiB request), which is the shared-kernel signature and the reason memory-sized workloads need the effective-spec split.",
 		},
 		pricing: {
-			// `tama offers` publishes a $/hr rate per GPU type and nothing for CPU-only machines, which is
-			// the shape this benchmark's target (4 vCPU / 8 GiB / 40 GB, no GPU) bills under. Deriving a
-			// CPU rate from the GPU box shares would be a guess, and an invented rate is worse than a
-			// disclosed gap, so this stays unavailable until the vendor publishes one.
-			model: "unavailable",
-			reason: "unpublished",
+			// The CPU-only rate the benchmark's target bills under is published on the site's pricing
+			// section — separately from `tama offers`, which lists $/hr per GPU type plus a default box
+			// share (e.g. RTX4090 $0.66/hr, 7cpu/42Gi) and says nothing about a GPU-less machine.
+			model: "published",
+			components: [
+				{
+					id: "cpu",
+					resource: "cpu",
+					// Billed for the seconds the machine is RUNNING, against what it was allocated — a stopped
+					// machine bills nothing, but nothing about the benchmark's own load changes the rate.
+					billingBasis: "provisioned",
+					vendorUnit: "vCPU",
+					usdPerUnitHour: 0.0095,
+					quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+				},
+				{
+					id: "memory",
+					resource: "memory",
+					billingBasis: "provisioned",
+					vendorUnit: "GiB",
+					usdPerUnitHour: 0.0045,
+					quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+				},
+			],
+			// No disk component: tama exposes no disk knob and prices none, so the target's 40 GB is met
+			// by the shared overlay's capacity rather than by a billable allocation (see specPinning).
+			targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 			notes:
-				"No CPU-only rate is published: `tama offers` lists $/hr per GPU type plus a default box share (e.g. RTX4090 $0.66/hr, 7cpu/42Gi), and the console exposes no rate for a GPU-less machine. Nothing in the CLI or the public site prices the benchmark's 4 vCPU / 8 GiB target.",
-			sources: [{ label: "tama", url: "https://tama.computer", checkedAt: "2026-08-13" }],
+				"Per-second billing for the seconds a machine is running; snapshots and stopped machines are free. The rate is charged on the ALLOCATED size, so the benchmark's 4 vCPU / 8 GiB target costs 4 x $0.0095 + 8 x $0.0045 = $0.074/hr. GPU machines bill a per-card rate instead (`tama offers`), which this CPU-only target never enters.",
+			sources: [{ label: "tama pricing", url: "https://tama.computer", checkedAt: "2026-08-13" }],
 		},
 		maturity: {
 			status: "beta",

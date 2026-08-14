@@ -192,6 +192,19 @@ jobs:
         with:
           token-name: sandbox-benchmarks-${{ inputs.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # tama publishes no SDK, so its adapter spawns the `tama` binary for every control-plane call and
+      # a runner without it fails at ENOENT on the first authentication probe — before a sandbox
+      # exists, and reported as a create failure rather than as the missing tool it is. Every other
+      # provider's client arrives with `bun install`; this one has to be put on the runner.
+      #
+      # NOT continue-on-error, unlike the two credential steps above: those degrade into the harness's
+      # missing-credentials skip, which is a real, legible outcome. A missing binary has no such
+      # outcome — the cell would run on to create sandboxes it cannot talk to. The install is
+      # checksum-pinned, so it fails loudly when tama cuts a release (see the action).
+      - name: Set up the tama CLI
+        if: matrix.provider == 'tama'
+        uses: ./.github/actions/setup-tama
+
       - name: Authenticate with Vercel
         if: matrix.provider == 'vercel'
         continue-on-error: true

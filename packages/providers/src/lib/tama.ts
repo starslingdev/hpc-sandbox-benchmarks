@@ -54,11 +54,18 @@ const RECOVERY_NAME_PREFIX = "sandbox-benchmarks";
  */
 export const TAMA_CREATE_CEILING_MS =
 	TAMA_CREATE_TIMEOUT_MS +
+	// Reconciling an ambiguous create: one bounded `list` per attempt, plus the waits between them.
 	CREATE_RECONCILE_ATTEMPTS * CONTROL_PLANE_TIMEOUT_MS +
 	(CREATE_RECONCILE_ATTEMPTS - 1) * CREATE_RECONCILE_RETRY_MS +
 	READY_TIMEOUT_MS +
 	READY_POLL_MS +
-	CREATE_FAILURE_CLEANUP_ATTEMPTS * CONTROL_PLANE_TIMEOUT_MS +
+	// The readiness DEADLINE is checked before each poll, not during one, so the final lookup can start
+	// a millisecond inside the window and still run to its own timeout. Without this term the ceiling
+	// is one control-plane call short of what the loop can actually spend.
+	CONTROL_PLANE_TIMEOUT_MS +
+	// Each cleanup attempt spends up to TWO bounded calls, not one: `rm`, then the `list` that confirms
+	// absence when `rm` failed ambiguously.
+	CREATE_FAILURE_CLEANUP_ATTEMPTS * 2 * CONTROL_PLANE_TIMEOUT_MS +
 	(CREATE_FAILURE_CLEANUP_ATTEMPTS - 1) * CREATE_FAILURE_CLEANUP_RETRY_MS;
 
 /** One machine as `tama --json` reports it. Only the fields this adapter relies on are named; the CLI
@@ -107,12 +114,31 @@ export interface CliInvokeOptions {
 	onStderr?: (chunk: string) => void;
 }
 
+/** Flags whose VALUE is a credential and must never reach a message. Only `login --token` today; a
+ *  list because the next secret-bearing flag has to be added here, not remembered at the call site. */
+const SECRET_FLAGS = new Set(["--token"]);
+const REDACTED = "<redacted>";
+
+/**
+ * Render an argument vector for a diagnostic with credential values masked.
+ *
+ * Every error this adapter raises quotes the args it ran, and those messages travel further than a
+ * console: into gap markers, run annotations, the job summary and the retained Run document. `tama
+ * login --token <TAMA_TOKEN>` therefore has to be redacted at the point the message is BUILT — a
+ * caller that remembers to sanitize is one forgotten path away from persisting the credential.
+ */
+export function redactArgs(args: string[]): string {
+	return args
+		.map((arg, i) => (i > 0 && SECRET_FLAGS.has(args[i - 1] ?? "") ? REDACTED : arg))
+		.join(" ");
+}
+
 class CliTimeoutError extends Error {
 	constructor(
 		readonly args: string[],
 		readonly timeoutMs: number,
 	) {
-		super(`tama ${args.join(" ")} did not settle within ${timeoutMs}ms`);
+		super(`tama ${redactArgs(args)} did not settle within ${timeoutMs}ms`);
 		this.name = "CliTimeoutError";
 	}
 }
@@ -123,7 +149,7 @@ class CliError extends Error {
 		readonly result: CliResult,
 	) {
 		super(
-			`tama ${args.join(" ")} exited ${result.exitCode}: ${
+			`tama ${redactArgs(args)} exited ${result.exitCode}: ${
 				result.stderr.trim() || result.stdout.trim() || "(no output)"
 			}`,
 		);
@@ -410,16 +436,28 @@ export function newArgs(name: string, createOptions?: CreateSandboxOptions): str
 
 /**
  * Compose the in-guest command line. `tama exec` has no `--env` flag, so environment variables are
- * applied with `env` inside the guest shell; there is no detach flag either, so a background step is
- * daemonized explicitly and the harness observes the real job through its own done file, exactly as it
- * does for providers whose SDK also lacks one.
+ * exported inside the guest shell; there is no detach flag either, so a background step is daemonized
+ * explicitly and the harness observes the real job through its own done file, exactly as it does for
+ * providers whose SDK also lacks one.
+ *
+ * `export …;` rather than an `env K=V <command>` PREFIX, because the command is a shell line and not
+ * an argv: the suites send pipelines, `&&` chains and `cd`. `env K=V cd /repo && make` would hand
+ * `cd` to execve (a builtin no binary implements, so it fails) and leave `make` — a separate command
+ * to the shell — running without the variables that were the point. An export statement applies to
+ * the whole line, builtins included, which is the semantics every other adapter's `env` option has.
  */
 export function execCommandLine(command: string, options?: RunCommandOptions): string {
 	const env = options?.env ?? {};
-	const assignments = Object.entries(env).map(
-		([key, value]) => `${key}=${shellQuote(String(value))}`,
-	);
-	const prefixed = assignments.length > 0 ? `env ${assignments.join(" ")} ${command}` : command;
+	const assignments = Object.entries(env).map(([key, value]) => {
+		// Values are quoted, but a NAME is syntax: an unchecked key composes straight into the shell
+		// line. Nothing in the harness produces one, which is exactly why an odd key should fail here
+		// rather than execute.
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+			throw new Error(`tama exec: "${key}" is not a valid environment variable name`);
+		}
+		return `${key}=${shellQuote(String(value))}`;
+	});
+	const prefixed = assignments.length > 0 ? `export ${assignments.join(" ")}; ${command}` : command;
 	return options?.background
 		? `nohup /bin/sh -lc ${shellQuote(prefixed)} </dev/null >/dev/null 2>&1 &`
 		: prefixed;
@@ -469,8 +507,30 @@ export function sandboxMethods(
 				// throwing away a completed image pull; readiness below still gates whether it is usable.
 				machine = reconciled.machine;
 			}
+			// A zero exit means `new` ran to completion, so an unusable record ({}, [], a shape without
+			// id/name, or a future output change) is a REPORTING failure, not evidence that nothing was
+			// created — and `new` only exits 0 once the machine is ready, which makes it a billable one.
+			// Take the same reconcile-then-clean path an ambiguous create takes rather than throwing with
+			// no handle: adopt the machine if the name finds it, and if it doesn't, still say what name to
+			// look for. Only an ANSWERED absence is allowed to conclude that nothing leaked.
 			if (!machine) {
-				throw new Error(`tama ${args.join(" ")} returned no machine record`);
+				const reconciled = await client.reconcile(name);
+				if (reconciled.status === "adopted") {
+					machine = reconciled.machine;
+				} else if (reconciled.status === "absent") {
+					throw new Error(
+						`tama ${redactArgs(args)} exited 0 but returned no machine record, and no machine ` +
+							`carries the name ${name}, so none was created`,
+					);
+				} else {
+					throw new AggregateError(
+						[reconciled.lastError],
+						`tama ${redactArgs(args)} exited 0 but returned no machine record, and every ` +
+							`reconciliation lookup also failed (${errorMessage(reconciled.lastError)}), so it is ` +
+							`unknown whether a machine was created; if one was it carries the name ${name} and ` +
+							`manual cleanup may be required`,
+					);
+				}
 			}
 			// `new` blocks until ready, so this is normally one confirming lookup — it exists for the
 			// adopted-after-ambiguous-create path, where the record came from `list` instead.

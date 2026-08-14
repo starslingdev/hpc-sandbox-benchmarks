@@ -77,6 +77,7 @@ describe("buildReleasePlan matrix", () => {
 			"namespace",
 			"vercel",
 			"runcloud",
+			"tama",
 		]);
 	});
 
