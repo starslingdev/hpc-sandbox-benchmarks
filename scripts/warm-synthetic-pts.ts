@@ -88,6 +88,7 @@ async function discardInstallTree(root: string, target: string): Promise<void> {
 	}
 	const script = [
 		`cd ${JSON.stringify(root)}`,
+		`export REPO_ROOT=${JSON.stringify(root)}`,
 		"source lib/bench.sh",
 		"pts_init",
 		`rm -rf "$(pts_install_root)/${ns}/${name}"`,

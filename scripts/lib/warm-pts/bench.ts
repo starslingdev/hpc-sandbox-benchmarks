@@ -43,8 +43,10 @@ export async function runBenchHelper(
 	const sudo = process.env.SUDO ?? "";
 	const assigns = helper === "ensure_pts" && sudo ? `SUDO=${shellQuote(sudo)} ` : "";
 	const argv = args.map(shellQuote).join(" ");
+	// Callers of lib/bench.sh must set REPO_ROOT before sourcing (see lib/bench.sh header).
 	const script = [
 		`cd ${shellQuote(root)}`,
+		`export REPO_ROOT=${shellQuote(root)}`,
 		"source lib/bench.sh",
 		`${assigns}${helper}${argv ? ` ${argv}` : ""}`,
 	].join(" && ");
