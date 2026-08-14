@@ -55,6 +55,9 @@ export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, s
 	blaxel:
 		"it boots the vendor's stock image rather than the toolchain, so the release lane carries no " +
 		"BL_API_KEY/BL_WORKSPACE and has no artifact to publish for it",
+	"cursor-cloud-agent":
+		"it is host-ingest only (Firecracker Cloud Agent VM results staged into the dataset) — no " +
+		"remote sandbox API, bake artifact, or release credential wiring",
 };
 
 /** Per-provider baked artifact name (what a cell produces), or a note for the providers that bake none. */
@@ -85,6 +88,8 @@ function providerArtifact(id: ProviderId): string {
 			return "boots the candidate image directly (no baked artifact)";
 		case "vercel":
 			return config.vercelImageCandidate;
+		case "cursor-cloud-agent":
+			return "host-ingest only (no baked artifact)";
 	}
 }
 

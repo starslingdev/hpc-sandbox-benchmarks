@@ -340,6 +340,9 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 							case "vercel":
 								await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
 								break;
+							case "cursor-cloud-agent":
+								log("    cursor-cloud-agent is host-ingest only — nothing to promote");
+								break;
 							default: {
 								// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
 								const unhandled: never = provider.name;
