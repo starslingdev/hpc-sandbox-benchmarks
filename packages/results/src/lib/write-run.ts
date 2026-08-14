@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import type { Run, RunIndex } from "@sandbox-benchmarks/schema";
-import { parseRunIndex, providerStatusText } from "@sandbox-benchmarks/schema";
+import { parseRunIndex, providerStatusText, runDocumentPath } from "@sandbox-benchmarks/schema";
 import { normalizeResultsTree } from "./normalize-tree.ts";
 
 /**
@@ -45,15 +45,37 @@ export function updateRunIndex(indexPath: string, run: Run, runFilePath: string)
 		existing = { schemaVersion: "1", runs: [] };
 	}
 
+	// DERIVED from the Run, never measured off the filesystem: the index entry states where a Run of
+	// this identity belongs, and `runDocumentPath` is the same derivation the schema checks it against.
+	// Computing it with relative() instead is what silently produced entries no RunIndex could accept
+	// once the index was written anywhere but the root of its tree.
+	const path = runDocumentPath(run.runId, run.replicateIndex);
 	const entry = {
 		runId: run.runId,
 		generatedAt: run.generatedAt,
-		// Forward slashes so the index stays portable (relative() yields backslashes on Windows).
-		path: relative(dirname(indexPath), runFilePath).replaceAll("\\", "/"),
+		path,
+		...(run.replicateIndex !== undefined ? { replicateIndex: run.replicateIndex } : {}),
 	};
+	// The derivation is only true of a tree whose index sits at its root, so hold the caller to that
+	// here — with the two paths named — rather than letting a misplaced index emit an entry that
+	// resolves nowhere and fails deep inside an arktype summary. Forward slashes so the comparison
+	// (and the entry) stay portable: relative() yields backslashes on Windows.
+	const actual = relative(dirname(indexPath), runFilePath).replaceAll("\\", "/");
+	if (actual !== path) {
+		throw new Error(
+			`RunIndex ${indexPath} cannot describe ${runFilePath}: a Run index must sit at the ROOT of ` +
+				`the tree holding its Runs, so this Run belongs at "${path}" relative to the index but ` +
+				`resolves to "${actual}"`,
+		);
+	}
+	// Keyed by (runId, replicateIndex): every shard of a fan-out carries the SAME runId, so keying on
+	// the id alone would let the last replicate to normalize evict its peers and leave the index
+	// claiming a one-sandbox cell.
+	const supersedes = (r: RunIndex["runs"][number]): boolean =>
+		r.runId === run.runId && r.replicateIndex === run.replicateIndex;
 	// Fixed "en" locale: ISO-8601 strings sort lexicographically === chronologically, regardless of
 	// the runtime's default collation.
-	const runs = [entry, ...existing.runs.filter((r) => r.runId !== run.runId)].sort((a, b) =>
+	const runs = [entry, ...existing.runs.filter((r) => !supersedes(r))].sort((a, b) =>
 		b.generatedAt.localeCompare(a.generatedAt, "en"),
 	);
 	const index = parseRunIndex({ schemaVersion: "1", runs });

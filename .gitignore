@@ -138,6 +138,10 @@ dist
 # dataset lives under data/dataset/ and is committed by the promote step, so it is NOT ignored.
 data/raw/
 data/runs/
+# The local run index that bench-suite maintains beside them. It sits at the root of the data/ tree
+# (a Run index always does — see packages/schema runDocumentPath), so it needs its own entry rather
+# than riding the data/runs/ line above.
+data/index.json
 # Where the in-sandbox producer writes (results_dir in lib/bench.sh): running any
 # `mise run benchmark:**` leaf on a dev machine leaves artifacts here. They belong to the sandbox
 # that produced them — the harness collects them out of the sandbox and the promote step publishes

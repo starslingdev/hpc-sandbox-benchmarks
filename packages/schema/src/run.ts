@@ -428,13 +428,35 @@ export const targetSpecSchema = type({
 });
 export type TargetSpec = typeof targetSpecSchema.infer;
 
-/** A RunIndex entry whose path is derived solely from, and cannot disagree with, its Run id. */
+/**
+ * Where a Run document lives relative to the ROOT of the tree that holds it — the one derivation both
+ * the RunIndex invariant below and the index writer read, so the two cannot drift into the
+ * disagreement that made a whole lane unwritable (a writer computing the path from the filesystem
+ * while the schema demanded a derivation).
+ *
+ * "Relative to the root", not to the index file: an index sits at the root of a tree whose Runs are
+ * under `runs/` (`data/index.json` + `data/runs/…`, `data/dataset/index.json` +
+ * `data/dataset/runs/…`), which is what makes one rule describe every index this repo writes.
+ *
+ * A per-replicate SHARD is named by the same identity its Run carries — shards of one cell share a
+ * runId and are told apart by `replicateIndex`, so the index can list all R of them instead of
+ * letting the last one to normalize overwrite its peers' entry.
+ */
+export function runDocumentPath(runId: string, replicateIndex?: number): string {
+	return `runs/${runId}${replicateIndex === undefined ? "" : `-r${replicateIndex}`}.json`;
+}
+
+/** A RunIndex entry whose path is derived solely from, and cannot disagree with, its Run's identity
+ *  (its id, plus the replicate index when the entry describes one shard of a fan-out). */
 export const runIndexEntrySchema = type({
 	runId: runIdSchema,
 	generatedAt: "string.date.iso",
 	path: "string >= 1",
+	// Present only for a per-replicate shard entry, mirroring `Run.replicateIndex`. A promoted dataset
+	// Run spans every replicate and carries none, so dataset index entries are unchanged by this field.
+	"replicateIndex?": "number.integer >= 0",
 }).narrow((entry, ctx) => {
-	const expected = `runs/${entry.runId}.json`;
+	const expected = runDocumentPath(entry.runId, entry.replicateIndex);
 	return entry.path === expected || ctx.mustBe(`a RunIndex entry whose path is ${expected}`);
 });
 export type RunIndexEntry = typeof runIndexEntrySchema.infer;

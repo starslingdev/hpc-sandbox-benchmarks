@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseRun, parseRunIndex } from "./index.ts";
+import { parseRun, parseRunIndex, runDocumentPath } from "./index.ts";
 
 const validRun = {
 	schemaVersion: "2",
@@ -610,6 +610,39 @@ describe("Run schema", () => {
 				parseRunIndex({
 					schemaVersion: "1",
 					runs: [{ runId: "run-1", generatedAt: "2026-06-20T00:00:00.000Z", path }],
+				}),
+			).toThrow(/invalid RunIndex/);
+		}
+	});
+
+	it("derives a replicate shard's path from its runId AND its replicate index", () => {
+		expect(runDocumentPath("run-1")).toBe("runs/run-1.json");
+		expect(runDocumentPath("run-1", 0)).toBe("runs/run-1-r0.json");
+
+		const index = parseRunIndex({
+			schemaVersion: "1",
+			runs: [
+				{
+					runId: "run-1",
+					generatedAt: "2026-06-20T00:00:00.000Z",
+					path: "runs/run-1-r2.json",
+					replicateIndex: 2,
+				},
+			],
+		});
+		expect(index.runs[0]?.replicateIndex).toBe(2);
+
+		// The suffix is not free-floating: it has to be the entry's OWN replicate index, and an entry
+		// that declares none is still held to the un-suffixed name.
+		for (const entry of [
+			{ path: "runs/run-1-r2.json", replicateIndex: 3 },
+			{ path: "runs/run-1-r2.json" },
+			{ path: "runs/run-1.json", replicateIndex: 2 },
+		]) {
+			expect(() =>
+				parseRunIndex({
+					schemaVersion: "1",
+					runs: [{ runId: "run-1", generatedAt: "2026-06-20T00:00:00.000Z", ...entry }],
 				}),
 			).toThrow(/invalid RunIndex/);
 		}
