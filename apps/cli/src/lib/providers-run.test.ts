@@ -45,6 +45,7 @@ describe("forEachProviderWithCreds `only`", () => {
 			"namespace",
 			"vercel",
 			"runcloud",
+			"tama",
 		]);
 	});
 
