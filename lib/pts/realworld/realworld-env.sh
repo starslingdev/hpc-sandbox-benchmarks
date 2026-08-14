@@ -26,6 +26,12 @@ if [ -z "${REALWORLD_HOME}" ] || [ ! -d "${REALWORLD_HOME}" ]; then
 	REALWORLD_HOME="/home/$(id -un)"
 fi
 REALWORLD_HOME="${REALWORLD_HOME%/}"
+# Rootless/distroless images often have no passwd entry and no /home/<user>. Without a warning the
+# mise directory guards below all skip silently and PATH keeps ambient nvm Node — the exact failure
+# this helper exists to prevent. Prefer /mise when present; still surface the missing home.
+if [ ! -d "${REALWORLD_HOME}" ]; then
+	echo "WARNING: realworld-env: REALWORLD_HOME=${REALWORLD_HOME} does not exist (no passwd home for $(id -un)); mise under that path will be skipped" >&2
+fi
 
 # Point mise at the real user's data/config (PTS strips MISE_*), or the container image's /mise if
 # present, and put its shims first on PATH.
