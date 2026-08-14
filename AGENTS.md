@@ -56,3 +56,14 @@ directly:
 - Mise PTS leaves that lack `phoronix-test-suite` (or a leaf-specific tool like `stress-ng` /
   `nc`) call `skip_result` and exit 0 — a green task exit does **not** prove the benchmark ran.
   Check for `benchmark-results/<prefix>.xml` (success) vs `benchmark-results/<prefix>--skipped.json`.
+
+
+### Cursor Cloud Agent host ingest
+- Provider id `cursor-cloud-agent` is host-ingest only (Firecracker Cloud Agent VM). Opt in with
+  `CURSOR_CLOUD_AGENT_BENCH=1`; the harness adapter refuses remote `create`.
+- After running host suites (`mise run benchmark:system:all`, `benchmark:disk:all`,
+  `benchmark:network:suite`, `benchmark:cpu:node`), stage + splice into the dataset with
+  `bun scripts/ingest-cursor-cloud-agent.ts` (sets `observedSpecs.cpuModel` to
+  `Intel(R) Xeon(R) Platinum 8559C` when PTS CPUID is Family 6 Model 207).
+- Then refresh `LEADERBOARD.md` from the newest index run via
+  `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md`.
