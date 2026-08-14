@@ -50,6 +50,7 @@ export function baseImageUse(id: ProviderId): BaseImageUse {
 		case "microsandbox-cloud":
 		case "namespace":
 		case "runcloud":
+		case "tama":
 			return "boots";
 		case "blaxel":
 		case "vercel":
@@ -100,6 +101,10 @@ export function candidateCreateOptions(
 			return { image: refs.toolchainImageCandidate };
 		case "runcloud":
 			// The native SDK boots an arbitrary OCI image directly; there is no template to bake.
+			return { image: refs.toolchainImageCandidate };
+		case "tama":
+			// `tama new --image` pulls an arbitrary OCI ref at create time, so the candidate boots the same
+			// way the published version does; there is no provider-side artifact.
 			return { image: refs.toolchainImageCandidate };
 		case "vercel":
 			return { templateId: refs.vercelImageCandidate };

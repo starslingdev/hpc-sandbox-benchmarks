@@ -67,6 +67,11 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	runcloud: async (_image, log) => {
 		log("runcloud boots the candidate image directly — no candidate artifact to bake");
 	},
+	tama: async (_image, log) => {
+		log(
+			"tama boots the candidate image directly via `tama new --image` — no candidate artifact to bake",
+		);
+	},
 };
 
 /**

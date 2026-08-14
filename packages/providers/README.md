@@ -20,7 +20,10 @@ adapters over raw vendor SDKs only where required.
 packages adapt their vendor SDK directly; Microsandbox uses a local `defineProvider` implementation.
 Vercel's local provider starts from ComputeSDK's upstream adapter but uses pinned `@vercel/sandbox`
 v2, because the published wrapper still pins a pre-VCR SDK. run.cloud also uses a local
-`defineProvider` adapter over `@run-cloud/sdk`, for which no `@computesdk/*` wrapper is published. The package also
+`defineProvider` adapter over `@run-cloud/sdk`, for which no `@computesdk/*` wrapper is published. tama
+goes one step further: it publishes no SDK in ANY language, so its `defineProvider` adapter drives the
+`tama` CLI as a subprocess and parses `--json`, bounding every call itself (a CLI has no request
+timeout to configure) and redacting credential-bearing arguments out of every diagnostic. The package also
 owns benchmark create-time policy — the pinned `TARGET_SPEC` and toolchain image. The assembled
 `providers` registry joins the schema `PROVIDERS` metadata with the adapter
 map by id; both are keyed by `ProviderId`, so a one-sided provider is a compile error rather than a

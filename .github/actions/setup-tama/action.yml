@@ -1,0 +1,23 @@
+name: Set up the tama CLI
+description: Install the checksum-pinned tama CLI onto the runner, because the adapter drives it as a subprocess.
+
+inputs:
+  version:
+    description: Immutable tama release selected in the download URL and asserted after install.
+    default: 0.1.17
+  sha256:
+    description: sha256 of tama-x86_64-unknown-linux-gnu.tar.gz, verified against our own copy.
+    default: d38f8147d3fa2df0b768c4551b34039179a577db6809adda268e8ea6af8b3fbc
+
+runs:
+  using: composite
+  steps:
+    - name: Install tama
+      shell: bash
+      env:
+        TAMA_VERSION: ${{ inputs.version }}
+        TAMA_SHA256: ${{ inputs.sha256 }}
+        TAMA_INSTALL_DIR: ${{ runner.temp }}/tama/bin
+      run: |
+        bash "${GITHUB_ACTION_PATH}/install.sh"
+        echo "${TAMA_INSTALL_DIR}" >> "$GITHUB_PATH"

@@ -20,6 +20,7 @@ import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandb
 import { novitaCompute } from "./novita.ts";
 import { RUNCLOUD_CREATE_CEILING_MS, runcloudCompute } from "./runcloud.ts";
 import { runloopCompute } from "./runloop.ts";
+import { TAMA_CREATE_CEILING_MS, tamaCompute } from "./tama.ts";
 import type { ProviderAdapter } from "./types.ts";
 import { vercelCompute } from "./vercel.ts";
 
@@ -270,5 +271,22 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// them over so the create-retry loop can refuse a retry the budget cannot absorb.
 		createAttemptCeilingMs: RUNCLOUD_CREATE_CEILING_MS,
 		costEvidence: runcloudCostEvidence,
+	},
+	tama: {
+		// tama publishes no SDK, so the adapter drives the `tama` CLI as a subprocess (tama.ts). The
+		// toolchain image is booted by ref — `tama new --image` pulls an arbitrary OCI image, so there is
+		// no provider-side artifact to bake. Disk is deliberately absent: tama exposes no disk knob, and
+		// the observed root filesystem is a large shared overlay that clears the 40 GB workload gate.
+		createCompute: () => tamaCompute(),
+		createOptions: {
+			image: config.toolchainImage,
+			cpu: TARGET_SPEC.vcpus,
+			memory: TARGET_SPEC.memoryGb * 1024,
+		},
+		// `tama new` does not return until the machine is ready, so the ~1.5 GiB cold image pull happens
+		// inside create (2m10s observed). Disable the harness race: the adapter owns a bounded readiness
+		// wait plus failed-create cleanup, and abandoning it mid-teardown would strand a billable machine.
+		createTimeoutMs: null,
+		createAttemptCeilingMs: TAMA_CREATE_CEILING_MS,
 	},
 };
