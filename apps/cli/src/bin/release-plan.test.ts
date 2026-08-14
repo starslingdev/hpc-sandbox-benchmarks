@@ -69,6 +69,7 @@ describe("buildReleasePlan matrix", () => {
 			"daytona-container",
 			"blaxel",
 			"microsandbox-local",
+			"cursor-cloud-agent",
 			"microsandbox-cloud",
 			"modal-gvisor",
 			"modal-vm",
@@ -129,7 +130,10 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("runloop");
 		expect(plan.required).not.toContain("blaxel");
 		expect(plan.required).not.toContain("runloop");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel"]);
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS).sort()).toEqual([
+			"blaxel",
+			"cursor-cloud-agent",
+		]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the

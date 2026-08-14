@@ -67,6 +67,9 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	runcloud: async (_image, log) => {
 		log("runcloud boots the candidate image directly — no candidate artifact to bake");
 	},
+	"cursor-cloud-agent": async (_image, log) => {
+		log("cursor-cloud-agent is host-ingest only — no candidate artifact to bake");
+	},
 };
 
 /**

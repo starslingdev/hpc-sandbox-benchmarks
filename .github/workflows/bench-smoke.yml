@@ -67,6 +67,7 @@ on:
             microsandbox-local,
             microsandbox-cloud,
             runcloud,
+            cursor-cloud-agent,
           ]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the

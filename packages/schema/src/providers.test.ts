@@ -65,6 +65,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 	it("pins the registered provider id set", () => {
 		expect(PROVIDERS.map((provider) => provider.id).sort()).toEqual([
 			"blaxel",
+			"cursor-cloud-agent",
 			"daytona-container",
 			"daytona-vm",
 			"e2b",

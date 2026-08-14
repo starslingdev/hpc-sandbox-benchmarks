@@ -625,6 +625,40 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
+	"cursor-cloud-agent": {
+		displayName: "Cursor Cloud Agent",
+		website: "https://cursor.com",
+		sdkPackage: "none",
+		// Host-ingest opt-in: suites run on the Cloud Agent VM itself (Firecracker microVM + OCI), then
+		// raw `benchmark-results/` are staged into `data/raw/<runId>/cursor-cloud-agent/<suite>/` and
+		// normalized. No remote sandbox API — keep it out of the default matrix.
+		requiredEnvVars: ["CURSOR_CLOUD_AGENT_BENCH"],
+		isolation: {
+			technology: "Firecracker microVM + OCI container",
+			notes:
+				"Cursor Cloud Agent VMs are Firecracker guests (ACPI OEM FIRECK) running an OCI/docker workload. Results measure that host fleet, not a provider SDK sandbox.",
+		},
+		pricing: {
+			model: "unavailable",
+			reason: "self_hosted",
+			notes:
+				"Cloud Agent compute is part of the Cursor product; there is no published per-vCPU sandbox rate comparable to the other providers.",
+			sources: [
+				{ label: "Cursor", url: "https://cursor.com", checkedAt: "2026-08-14" },
+			],
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Host-ingest path only. The harness adapter refuses remote create; use mise suite tasks on the agent and normalize staged results.",
+		},
+		specPinning: "fixed",
+		transport: {
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
 	"microsandbox-cloud": {
 		displayName: "Microsandbox Cloud",
 		website: "https://microsandbox.dev",

@@ -271,4 +271,22 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createAttemptCeilingMs: RUNCLOUD_CREATE_CEILING_MS,
 		costEvidence: runcloudCostEvidence,
 	},
+	// Host-ingest only: suites run on the Cloud Agent VM, then results are staged + normalized. The
+	// DirectProvider stub exists so the PROVIDERS × adapters join typechecks; create always refuses.
+	"cursor-cloud-agent": {
+		createCompute: () => ({
+			name: "cursor-cloud-agent",
+			sandbox: {
+				create: async () => {
+					throw new Error(
+						"cursor-cloud-agent is host-ingest only — run mise suite tasks on the agent and normalize staged benchmark-results/",
+					);
+				},
+				getById: async () => null,
+				list: async () => [],
+				destroy: async () => {},
+			},
+		}),
+		createOptions: {},
+	},
 };

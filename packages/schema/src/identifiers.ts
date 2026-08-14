@@ -6,6 +6,6 @@ export type RunId = typeof runIdSchema.infer;
 
 /** Canonical provider ids shared by registries, Runs, and cost cells. */
 export const providerIdSchema = type(
-	"'e2b' | 'daytona-vm' | 'daytona-container' | 'modal-gvisor' | 'modal-vm' | 'blaxel' | 'microsandbox-local' | 'microsandbox-cloud' | 'novita' | 'runloop' | 'namespace' | 'vercel' | 'runcloud'",
+	"'e2b' | 'daytona-vm' | 'daytona-container' | 'modal-gvisor' | 'modal-vm' | 'blaxel' | 'microsandbox-local' | 'microsandbox-cloud' | 'novita' | 'runloop' | 'namespace' | 'vercel' | 'runcloud' | 'cursor-cloud-agent'",
 );
 export type ProviderId = typeof providerIdSchema.infer;
