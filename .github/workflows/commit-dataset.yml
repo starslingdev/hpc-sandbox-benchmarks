@@ -92,10 +92,11 @@ jobs:
       # The globs name the Run documents EXACTLY and must not gain a `data/` segment: the bench cell
       # uploads `path: data/`, and upload-artifact roots the artifact at the least common ancestor of the
       # matched files — so a shard unpacks as `shards/<artifact>/runs/<runId>...json`, with no `data/`
-      # prefix. Two decoys sit next to them that a `runs/*.json` wildcard would sweep in: the sibling
-      # `runs/index.json` (an index, not a Run), and `dataset/runs/<oldRunId>.json` (the committed
-      # dataset, which rides along because it lives under data/, and which the `runs/` segment excludes).
-      # Both would poison the aggregate.
+      # prefix. Two decoys ride along in the artifact that a looser wildcard would sweep in: the local
+      # run index (`index.json`, at the artifact root since it sits at the root of data/ — an index, not
+      # a Run), and `dataset/runs/<oldRunId>.json` (the committed dataset, which rides along because it
+      # lives under data/, and which the `runs/` segment excludes). Both would poison the aggregate;
+      # anchoring every glob on "$RUN_ID" is what keeps them out.
       #
       # TWO shard shapes exist, and they are selected with a PREFERENCE, never unioned:
       #   * `<runId>-r<idx>.json` — the current per-replicate shards (one runner drives all R replicates

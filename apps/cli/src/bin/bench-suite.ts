@@ -124,7 +124,7 @@ usage: bench-suite [provider] [suite] [runId]
   --help, -h              Show this help.
 
 Missing provider credentials are recorded as a skip (the provider stays "pending"), so this is
-runnable without secrets. Writes the shard Run(s) under data/runs/ and updates data/runs/index.json.
+runnable without secrets. Writes the shard Run(s) under data/runs/ and updates data/index.json.
 
 examples:
   bench-suite daytona-vm cpu-node                 # one suite locally, auto runId
@@ -700,13 +700,20 @@ if (import.meta.main) {
 		}
 	}
 
-	// The local newest-first Run index, shared by every replicate of this cell. It is keyed by runId and
-	// all R shards carry the SAME runId, so the last replicate to normalize wins the entry — a local
+	// The local newest-first Run index, shared by every replicate of this cell — one entry per SHARD,
+	// keyed by (runId, replicateIndex) and by the file each entry names, so a fan-out lists all R
+	// sandboxes instead of the last one to normalize evicting its peers, while the single-sandbox lane
+	// (which rewrites ONE un-suffixed file whatever index it was given) keeps exactly one. A local
 	// convenience only (`leaderboard data/runs/<id>.json` discovery). Nothing downstream reads it: the
-	// aggregate is handed explicit shard paths, and commit-dataset.yml globs the shard files directly.
+	// aggregate is handed explicit shard paths, and commit-dataset.yml globs the shard files by run id.
 	// Writes are synchronous (writeNormalizedRun), so concurrent replicates cannot interleave a
 	// read-modify-write and corrupt it.
-	const indexFile = join("data", "runs", "index.json");
+	//
+	// `data/index.json`, NOT `data/runs/index.json`: a Run index sits at the ROOT of the tree holding
+	// its Runs (the same shape `aggregate` and `promote` write, and the shape RunIndex entry paths are
+	// derived for). Nested inside `runs/` it could only ever emit entries the schema rejects, which
+	// failed every local run at the final write — after the benchmark had already succeeded.
+	const indexFile = join("data", "index.json");
 	// The single-sandbox tree/shard, hoisted so the debug payload below can name them. They are the
 	// diagnostic an artifact-path failure is read with — which tree the results were pulled into,
 	// which file they normalized to — and on this path nothing else reports rawRoot at all.

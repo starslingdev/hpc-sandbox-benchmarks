@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseRun, parseRunIndex } from "./index.ts";
+import { parseRun, parseRunIndex, runDocumentPath, runDocumentPaths } from "./index.ts";
 
 const validRun = {
 	schemaVersion: "2",
@@ -606,6 +606,77 @@ describe("Run schema", () => {
 
 	it("requires a RunIndex path to be the canonical path derived from its Run id", () => {
 		for (const path of ["runs/../runs/run-1.json", "runs/other.json", "../run-1.json"]) {
+			expect(() =>
+				parseRunIndex({
+					schemaVersion: "1",
+					runs: [{ runId: "run-1", generatedAt: "2026-06-20T00:00:00.000Z", path }],
+				}),
+			).toThrow(/invalid RunIndex/);
+		}
+	});
+
+	it("derives a replicate shard's path from its runId AND its replicate index", () => {
+		expect(runDocumentPath("run-1")).toBe("runs/run-1.json");
+		expect(runDocumentPath("run-1", 0)).toBe("runs/run-1-r0.json");
+
+		const index = parseRunIndex({
+			schemaVersion: "1",
+			runs: [
+				{
+					runId: "run-1",
+					generatedAt: "2026-06-20T00:00:00.000Z",
+					path: "runs/run-1-r2.json",
+					replicateIndex: 2,
+				},
+			],
+		});
+		expect(index.runs[0]?.replicateIndex).toBe(2);
+
+		// The suffix is not free-floating: it has to be the entry's OWN replicate index, and an entry
+		// that declares none is still held to the un-suffixed name.
+		for (const entry of [
+			{ path: "runs/run-1-r2.json", replicateIndex: 3 },
+			{ path: "runs/run-1-r2.json" },
+			{ path: "runs/run-2.json" },
+			{ path: "run-1.json" },
+		]) {
+			expect(() =>
+				parseRunIndex({
+					schemaVersion: "1",
+					runs: [{ runId: "run-1", generatedAt: "2026-06-20T00:00:00.000Z", ...entry }],
+				}),
+			).toThrow(/invalid RunIndex/);
+		}
+	});
+
+	// The single-sandbox lane (`bench-suite --replicate <idx>`) stamps a replicate index onto the Run
+	// but keeps the UN-suffixed filename, which commit-dataset.yml reads as the legacy shard shape. A
+	// one-name-per-identity rule outlaws that pairing, and the lane then dies at its final write —
+	// after the whole benchmark has run. Both names are legal for a replicate-stamped Run; a Run with
+	// no replicate index still has exactly one, which is what keeps the dataset invariant intact.
+	it("accepts either the suffixed or the un-suffixed name for a replicate-stamped Run", () => {
+		expect(runDocumentPaths("run-1")).toEqual(["runs/run-1.json"]);
+		expect(runDocumentPaths("run-1", 3)).toEqual(["runs/run-1-r3.json", "runs/run-1.json"]);
+
+		const index = parseRunIndex({
+			schemaVersion: "1",
+			runs: [
+				{
+					runId: "run-1",
+					generatedAt: "2026-06-20T00:00:00.000Z",
+					path: "runs/run-1.json",
+					replicateIndex: 3,
+				},
+			],
+		});
+		expect(index.runs[0]?.path).toBe("runs/run-1.json");
+	});
+
+	// The dataset index is the published artifact update-leaderboard.yml resolves a run through, and
+	// its entries never carry a replicate index (a promoted Run spans every replicate). Nothing about
+	// the shard names above may loosen what IT accepts.
+	it("still admits exactly one path for an entry that declares no replicate index", () => {
+		for (const path of ["runs/run-1-r0.json", "runs/run-1-r.json", "runs/run-1-rx.json"]) {
 			expect(() =>
 				parseRunIndex({
 					schemaVersion: "1",
