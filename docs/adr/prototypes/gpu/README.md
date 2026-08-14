@@ -51,6 +51,25 @@ vendored-SDK unwrap) are not fixable from our side.
 | Verified teardown was folklore | Convergent-destroy clause: MUST NOT resolve while still listed; probes-gated verification in the suite | ADR-0008 §1 |
 | No bare-id destroy | Optional `destroyById` on the port, bound by the same idempotency clauses | ADR-0007 §2, ADR-0008 §1 |
 
+## The polish round (adversarially reviewed)
+
+A 24-item refinement list was adversarially reviewed with compiled evidence
+(scratch prototypes; verdicts in `kit-modal.ts`'s header as ✓ P1–P8). Accepted/adapted:
+parse-once `CreateRequest` boundary with **deep** undeclared-key rejection (`"+": "reject"` was
+proven *shallow* — nested `spec.memroyGb` sails through it; `.onDeepUndeclaredKey` is required),
+units reconciled with the repo's `targetSpecSchema` (the prototype had been minting a third,
+unit-clashing spec shape), optional `diskGb` with loud failure when present-and-unmappable,
+driver-*reported* `artifactRef` with mismatch-fails-create, `SuppressedError` teardown
+preservation, memo-clear on ctx failure (bricking was reproduced), streaming `TextDecoder`
+(split-UTF-8 corruption was reproduced), per-call opt-in output caps, and `destroyById` catching
+only Modal's typed `NotFoundError`. Rejected, with evidence: arktype `.brand()` for `SandboxId`
+(zero new checks for a 288 ms import in every driver file), branded `BenchPath`s (the staged list
+is a 7-entry committed constant written into a disposable vendor-isolated sandbox — the *real*
+path seam is host-side tar extraction in `collect.ts`, now an ADR-0008 conformance item), and any
+kit-default stdout bound (it would truncate the multi-MB base64-tar results transport into a
+retry loop that can never succeed). `verify.ts` proves P1/P4/P5/P6/P7 at runtime with no
+credentials: `bun run verify.ts`.
+
 ## Line-count honesty
 
 B′'s author section grew from ~123 to ~145 lines — closing gaps added surface (`destroyById`,

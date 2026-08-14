@@ -1,21 +1,83 @@
 /**
- * Prototype B′ — the GPU benchmark on the GAP-CLOSED driver kit (ADR-0006/0007/0008 as amended).
+ * Prototype B″ — the GPU benchmark on the polished driver kit, after adversarial review of a
+ * 24-item refinement list. Markers: ✓ G1–G6 (gap closures, prior round) and ✓ P1–P8 (this
+ * round's accepted/adapted polish items — each notes what the review REJECTED and why):
  *
- * Same seven steps as computesdk-modal.ts. The first prototype's ⛔/⚠ markers are now ✓ G1–G6,
- * one per closed gap:
- *   G1 CreateRequest carries a typed `gpu` axis            (ADR-0007 §2)
- *   G2 `files` reads AND writes, or is absent              (ADR-0007 §2, conformance round-trip)
- *   G3 artifact kind "built" joins the GPU lane to the registry (ADR-0006 §1)
- *   G4 bridge natives keep wrapper types (rule; native drivers like this one are unaffected)
- *   G5 destroy is convergent — a spec clause, not folklore (ADR-0008 §1)
- *   G6 destroyById: bare-id reaping without a session      (ADR-0007 §2)
+ *   P1 CreateRequest parsed ONCE at the plan→request seam by an arktype schema that would live
+ *      in packages/schema — deep undeclared-key rejection ("+": "reject" proven SHALLOW; nested
+ *      misspellings need .onDeepUndeclaredKey), positive-value narrows, drift-pinned to the
+ *      kit's plain readonly interfaces (mutual-extends Assert). The kit itself stays
+ *      arktype-free: per ADR-0006's own finding, dragging a 288 ms import into the module every
+ *      driver file loads is the exact regression the repo already fought once.
+ *      [REJECTED from the list: arktype .brand() for SandboxId — works, but buys zero checks
+ *      over the 3-line constructor at that import cost; branded BenchPaths — the staged list is
+ *      a committed Tier-1 constant inside a disposable vendor-isolated sandbox.]
+ *   P2 Units reconciled with the repo's targetSpecSchema (vcpus / memoryGb / diskGb?) — the
+ *      review caught this prototype minting a THIRD spec shape with clashing units; the MiB
+ *      conversion now lives in exactly one audited place (the modal driver).
+ *   P3 diskGb is optional; present-and-unmappable fails create loudly (Modal exposes no disk
+ *      knob) — matching the fleet's existing skip-and-disclose doctrine rather than blanket
+ *      rejection.
+ *   P4 create returns the artifactRef the driver actually booted (ctx.kernelImage.imageId);
+ *      request-vs-reported mismatch fails loudly; the session records the reported ref.
+ *   P5 Teardown preserves the primary error (SuppressedError — native in Bun, lib esnext);
+ *      staged writes settle before teardown and aggregate their failures.
+ *   P6 The lazy Ctx memo clears on failure — a transient plumbing error no longer bricks the
+ *      driver for the process lifetime (bricking was reproduced in review).
+ *   P7 One streaming TextDecoder per drain (split-UTF-8 corruption reproduced in review), and
+ *      output capping is a PER-CALL opt-in (maxOutputBytes) — a kit-wide cap would truncate the
+ *      repo's multi-MB base64-tar-over-stdout results transport (collect.ts) into a retry loop
+ *      that can never succeed.
+ *   P8 destroyById treats only Modal's typed NotFoundError as convergence — already-gone ids
+ *      succeed; every other failure still surfaces.
  *
- * Typecheck: see computesdk-modal.ts header.
+ * Typecheck (from this directory; lib esnext is required for SuppressedError):
+ *
+ *   ln -sfn ../../../../node_modules node_modules
+ *   ./node_modules/.bin/tsc --ignoreConfig --strict --exactOptionalPropertyTypes --noEmit \
+ *     --skipLibCheck --module esnext --moduleResolution bundler --target es2022 --lib esnext \
+ *     --allowImportingTsExtensions computesdk-modal.ts kit-modal.ts verify.ts
+ *
+ * Runtime proofs: `bun run verify.ts` exercises P1, P5, P6, P7 without any Modal credentials.
  */
+import { type } from "arktype";
 import type { App, Image, ModalClient, ModalReadStream, Sandbox, Volume } from "modal";
+import { NotFoundError } from "modal";
 
 /* =============================================================================================
- * KIT (written once — the ADR-0007 port as amended, excerpted)
+ * SCHEMA (would live in packages/schema — the Tier-2 seam where a plan becomes a request)
+ * =========================================================================================== */
+
+/** ✓ P1+P2: one schema, aligned with the repo's targetSpecSchema units (vcpus/memoryGb/diskGb?),
+ *  deep undeclared-key rejection, positive-value narrows. Parsed ONCE, where CLI/config input
+ *  is assembled into a request — never re-validated inside the driver. */
+export const createRequestSchema = type({
+	spec: { vcpus: "number > 0", memoryGb: "number > 0", "diskGb?": "number > 0" },
+	artifactRef: "string >= 1",
+	deadlineMs: "number.integer > 0",
+	"gpu?": { model: "string >= 1", count: "number.integer > 0" },
+	"env?": "Record<string, string>",
+}).onDeepUndeclaredKey("reject"); // "+": "reject" is SHALLOW — proven: spec.memroyGb passes it
+
+export function parseCreateRequest(input: unknown): CreateRequest {
+	const parsed = createRequestSchema(input);
+	if (parsed instanceof type.errors) {
+		throw new Error(`invalid CreateRequest: ${parsed.summary}`);
+	}
+	return parsed; // mutable → readonly widening; no cast
+}
+
+/* Drift pins: the schema and the kit's interfaces cannot diverge without a compile error. */
+type Assert<T extends true> = T;
+export type _requestPinOut = Assert<
+	typeof createRequestSchema.infer extends CreateRequest ? true : false
+>;
+export type _requestPinIn = Assert<
+	CreateRequest extends typeof createRequestSchema.infer ? true : false
+>;
+
+/* =============================================================================================
+ * KIT (written once — plain readonly TypeScript; deliberately arktype-free)
  * =========================================================================================== */
 
 export type SandboxId = string & { readonly brand: unique symbol };
@@ -34,31 +96,35 @@ export interface ExecResult {
 	readonly stdout: string;
 	readonly stderr: string;
 	readonly durationMs: number;
+	/** True when a per-call maxOutputBytes cap cut a stream (✓ P7: opt-in only, never default). */
+	readonly truncated: boolean;
+}
+
+export interface ExecOptions {
+	/** Opt-in output cap for probes/queries. NEVER a kit default: results collection is a
+	 *  multi-MB base64 tar over stdout, and a blanket cap turns it into a permanent retry loop. */
+	readonly maxOutputBytes?: number;
 }
 
 export interface TargetSpec {
 	readonly vcpus: number;
-	readonly memoryMib: number;
-	readonly diskGib: number;
+	readonly memoryGb: number;
+	readonly diskGb?: number; // ✓ P3: optional — a spec axis a vendor may not expose
 }
 
-/** ✓ G1: the GPU axis is part of the port's request — typed, vendor-neutral. */
 export interface GpuSpec {
-	readonly model: string; // "H100", "A100-80GB" — vendor syntax mapping is the driver's job
+	readonly model: string;
 	readonly count: number;
 }
 
 export interface CreateRequest {
 	readonly spec: TargetSpec;
-	/** For registry artifacts this is the resolved ref; for kind "built" (G3), the id the
-	 *  driver's Ctx factory produced — recorded in the run document either way. */
 	readonly artifactRef: string;
 	readonly deadlineMs: number;
 	readonly gpu?: GpuSpec;
 	readonly env?: Readonly<Record<string, string>>;
 }
 
-/** ✓ G2: a working filesystem API does both directions, or the key is absent. */
 export interface SandboxFiles {
 	readFile(path: string): Promise<string>;
 	exists(path: string): Promise<boolean>;
@@ -67,22 +133,25 @@ export interface SandboxFiles {
 
 export interface SandboxSession<Handle = unknown> {
 	readonly sandboxId: SandboxId;
+	/** ✓ P4: the ref the driver reports it actually booted (falls back to the request's). */
+	readonly artifactRef: string;
 	readonly native: Handle;
-	exec(command: string): Promise<ExecResult>;
+	exec(command: string, options?: ExecOptions): Promise<ExecResult>;
 	destroy(): Promise<void>;
 	readonly files?: SandboxFiles;
 }
 
 export interface SandboxDriver<Handle = unknown> {
 	create(request: CreateRequest): Promise<SandboxSession<Handle>>;
-	/** ✓ G6: bare-id destroy for reaper lanes — no session required. Bound by the same
-	 *  idempotency clauses as destroy (ADR-0008). */
 	destroyById?(id: SandboxId): Promise<void>;
 }
 
 export interface MethodTable<Handle, Ctx> {
-	create(ctx: Ctx, request: CreateRequest): Promise<{ handle: Handle; sandboxId: SandboxId }>;
-	exec(ctx: Ctx, handle: Handle, command: string): Promise<ExecResult>;
+	create(
+		ctx: Ctx,
+		request: CreateRequest,
+	): Promise<{ handle: Handle; sandboxId: SandboxId; artifactRef?: string }>;
+	exec(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<ExecResult>;
 	destroy(ctx: Ctx, handle: Handle): Promise<void>;
 	destroyById?(ctx: Ctx, id: SandboxId): Promise<void>;
 	readonly files?: {
@@ -92,22 +161,40 @@ export interface MethodTable<Handle, Ctx> {
 	};
 }
 
-/** Ctx arrives lazily: vendor plumbing (G3's build recipe) is async and runs once, on demand. */
 export function driverFromTable<Handle, Ctx>(
 	table: MethodTable<Handle, Ctx>,
 	loadCtx: () => Promise<Ctx>,
 ): SandboxDriver<Handle> {
 	let memo: Promise<Ctx> | undefined;
-	const ctx = () => (memo ??= loadCtx());
+	// ✓ P6: a failed load clears the memo, so the next create retries instead of replaying the
+	// memoized rejection forever. Concurrent callers still share one in-flight attempt.
+	const ctx = () =>
+		(memo ??= loadCtx().then(
+			(value) => value,
+			(error: unknown) => {
+				memo = undefined;
+				throw error;
+			},
+		));
 	const files = table.files;
 	return {
 		async create(request) {
 			const resolved = await ctx();
-			const { handle, sandboxId: id } = await table.create(resolved, request);
+			const created = await table.create(resolved, request);
+			// ✓ P4: reconcile recorded vs booted. The driver's report wins; a contradiction is a
+			// wiring bug that must fail before a single measurement is attributed to the wrong ref.
+			if (created.artifactRef !== undefined && created.artifactRef !== request.artifactRef) {
+				await table.destroy(resolved, created.handle);
+				throw new Error(
+					`artifact mismatch: request says ${request.artifactRef}, driver booted ${created.artifactRef}`,
+				);
+			}
+			const { handle, sandboxId: id } = created;
 			return {
 				sandboxId: id,
+				artifactRef: created.artifactRef ?? request.artifactRef,
 				native: handle,
-				exec: (command) => table.exec(resolved, handle, command),
+				exec: (command, options) => table.exec(resolved, handle, command, options),
 				destroy: () => table.destroy(resolved, handle),
 				...(files
 					? {
@@ -126,21 +213,38 @@ export function driverFromTable<Handle, Ctx>(
 	};
 }
 
+/** ✓ P5: run work against a session and tear down without losing either error. */
+export async function withSessionTeardown<Handle, T>(
+	session: SandboxSession<Handle>,
+	work: (session: SandboxSession<Handle>) => Promise<T>,
+): Promise<T> {
+	let primary: unknown;
+	let failed = false;
+	try {
+		return await work(session);
+	} catch (error) {
+		primary = error;
+		failed = true;
+		throw error;
+	} finally {
+		try {
+			await session.destroy();
+		} catch (teardown) {
+			// Same shape `using` produces: the teardown error carries the primary as `suppressed`.
+			if (failed) throw new SuppressedError(teardown, primary, "teardown failed after primary error");
+			throw teardown;
+		}
+	}
+}
+
 /* --------------------- Registry excerpt (Tier 1, schema) + typed join --------------------- */
 
 type CredentialDecl = { readonly name: string; readonly optional?: true };
 type ArtifactDecl =
 	| { readonly kind: "image"; readonly optionKey: "templateId" | "image" }
 	| { readonly kind: "built"; readonly recipe: string };
-type TransportDecl = {
-	readonly streaming: boolean;
-	readonly syncCapMs: number | null;
-	readonly detachedPoll: boolean;
-};
 
 const REGISTRY = {
-	// ✓ G3: the GPU lane is a registry row like any other — its transport claims now live where
-	// ADR-0008's conformance gate can reach them, instead of a hand-carried const.
 	"modal-gpu": {
 		credentials: [{ name: "MODAL_TOKEN_ID" }, { name: "MODAL_TOKEN_SECRET" }],
 		artifact: { kind: "built", recipe: "gpu-vllm-kernels" },
@@ -156,7 +260,11 @@ const REGISTRY = {
 	{
 		readonly credentials: readonly CredentialDecl[];
 		readonly artifact: ArtifactDecl;
-		readonly transport: TransportDecl;
+		readonly transport: {
+			readonly streaming: boolean;
+			readonly syncCapMs: number | null;
+			readonly detachedPoll: boolean;
+		};
 	}
 >;
 export type ProviderId = keyof typeof REGISTRY;
@@ -184,21 +292,16 @@ export function defineDriver<P extends ProviderId, Handle = unknown>(
 	return { ...spec, id };
 }
 
-/** StepRunner reads transport from the registry through the same join — no local const. */
 export const transportOf = <P extends ProviderId>(id: P): (typeof REGISTRY)[P]["transport"] =>
 	REGISTRY[id].transport;
 
 /* =============================================================================================
- * AUTHOR (the modal-gpu driver — everything below is what the driver file contains)
+ * AUTHOR (the modal-gpu driver)
  * =========================================================================================== */
 
-const GPU_APP_NAME = "sandbox-benchmarks-gpu";
 const MODEL_MOUNT = "/vol/models";
 const REMOTE_ROOT = "/bench";
 
-/** The typed home for vendor plumbing (was ⚠ B3): one client, the app, the RECIPE-built kernel
- *  image, the model volume. Built once by the lazy Ctx factory below — this IS G3's "resolver
- *  runs at create time, in the driver's Ctx factory". */
 export interface ModalGpuCtx {
 	readonly client: ModalClient;
 	readonly app: App;
@@ -206,15 +309,32 @@ export interface ModalGpuCtx {
 	readonly modelVolume: Volume;
 }
 
-async function drain(stream: ModalReadStream<string>): Promise<string> {
+/** ✓ P7: one streaming decoder per stream (split UTF-8 stays intact), opt-in byte cap. */
+export async function drain(
+	stream: ModalReadStream<string>,
+	maxOutputBytes?: number,
+): Promise<{ text: string; truncated: boolean }> {
 	const reader = stream.getReader();
+	const decoder = new TextDecoder();
 	const chunks: string[] = [];
+	let bytes = 0;
+	let truncated = false;
 	try {
 		for (;;) {
 			const { done, value } = await reader.read();
-			if (done) return chunks.join("");
-			chunks.push(typeof value === "string" ? value : new TextDecoder().decode(value));
+			if (done) break;
+			const text = typeof value === "string" ? value : decoder.decode(value, { stream: true });
+			bytes += text.length;
+			if (maxOutputBytes !== undefined && bytes > maxOutputBytes) {
+				chunks.push(text.slice(0, Math.max(0, text.length - (bytes - maxOutputBytes))));
+				truncated = true;
+				break;
+			}
+			chunks.push(text);
 		}
+		const tail = decoder.decode();
+		if (tail && !truncated) chunks.push(tail);
+		return { text: chunks.join(""), truncated };
 	} finally {
 		reader.releaseLock();
 	}
@@ -227,8 +347,6 @@ async function stillListed(client: ModalClient, id: string): Promise<boolean> {
 	return false;
 }
 
-/** ✓ G5: convergent teardown, shared by destroy and destroyById — the ADR-0008 clause
- *  ("MUST NOT resolve while still listed"), implemented once, unit-testable directly. */
 async function terminateConverged(
 	client: ModalClient,
 	id: string,
@@ -255,28 +373,44 @@ async function terminateConverged(
 	throw new Error(`Modal sandbox ${id} is still listed after termination${reason}`);
 }
 
-/** ✓ G1: {model, count} → Modal's syntax; the request stays vendor-neutral. */
 const modalGpuSyntax = (gpu: GpuSpec): string =>
 	gpu.count === 1 ? gpu.model : `${gpu.model}:${gpu.count}`;
 
 export const modalGpuTable = {
 	async create(ctx: ModalGpuCtx, request: CreateRequest) {
-		if (!request.gpu) throw new Error("modal-gpu benchmarks require a gpu axis (ADR-0008: no silent CPU runs)");
+		if (!request.gpu) {
+			throw new Error("modal-gpu requires a gpu axis (ADR-0008: no silent CPU runs)");
+		}
+		// ✓ P3: Modal exposes no disk knob (SandboxCreateParams has none); a present diskGb is a
+		// requirement this driver cannot honor — fail create, matching the fleet's disclose doctrine.
+		if (request.spec.diskGb !== undefined) {
+			throw new Error(
+				`modal-gpu cannot honor spec.diskGb=${request.spec.diskGb}: Modal exposes no disk knob — omit it (rootfs is Modal-managed)`,
+			);
+		}
+		// ✓ P2: the Gb→MiB conversion lives here, once, next to the vendor that wants MiB.
+		const memoryMiB = Math.round(request.spec.memoryGb * 1024);
 		const handle = await ctx.client.sandboxes.create(ctx.app, ctx.kernelImage, {
-			gpu: modalGpuSyntax(request.gpu), // fully typed end to end — no passthrough
+			gpu: modalGpuSyntax(request.gpu),
 			cpu: request.spec.vcpus,
 			cpuLimit: request.spec.vcpus,
-			memoryMiB: request.spec.memoryMib,
-			memoryLimitMiB: request.spec.memoryMib,
+			memoryMiB,
+			memoryLimitMiB: memoryMiB,
 			timeoutMs: request.deadlineMs,
 			blockNetwork: true,
 			env: { ...request.env },
 			volumes: { [MODEL_MOUNT]: ctx.modelVolume.withMountOptions({ readOnly: true }) },
 		});
-		return { handle, sandboxId: sandboxId(handle.sandboxId) };
+		// ✓ P4: report what was actually booted — the recorder must never guess.
+		return { handle, sandboxId: sandboxId(handle.sandboxId), artifactRef: ctx.kernelImage.imageId };
 	},
 
-	async exec(_ctx: ModalGpuCtx, handle: Sandbox, command: string): Promise<ExecResult> {
+	async exec(
+		_ctx: ModalGpuCtx,
+		handle: Sandbox,
+		command: string,
+		options?: ExecOptions,
+	): Promise<ExecResult> {
 		const started = Date.now();
 		const process = await handle.exec(["bash", "-lc", command], {
 			mode: "text",
@@ -284,24 +418,34 @@ export const modalGpuTable = {
 			stderr: "pipe",
 		});
 		const [stdout, stderr, code] = await Promise.all([
-			drain(process.stdout),
-			drain(process.stderr),
+			drain(process.stdout, options?.maxOutputBytes),
+			drain(process.stderr, options?.maxOutputBytes),
 			process.wait(),
 		]);
-		return { exit: { kind: "exited", code }, stdout, stderr, durationMs: Date.now() - started };
+		return {
+			exit: { kind: "exited", code },
+			stdout: stdout.text,
+			stderr: stderr.text,
+			durationMs: Date.now() - started,
+			truncated: stdout.truncated || stderr.truncated,
+		};
 	},
 
 	destroy: (ctx: ModalGpuCtx, handle: Sandbox) =>
 		terminateConverged(ctx.client, handle.sandboxId, () => handle.terminate({ wait: true })),
 
-	/* ✓ G6: reap by bare id — fromId then the same convergence loop; missing id converges
-	 * immediately (already unlisted), satisfying destroy-of-missing MUST succeed. */
+	/** ✓ P8: only Modal's typed NotFoundError means "already converged"; anything else surfaces. */
 	destroyById: async (ctx: ModalGpuCtx, id: SandboxId) => {
-		const handle = await ctx.client.sandboxes.fromId(id);
+		let handle: Sandbox;
+		try {
+			handle = await ctx.client.sandboxes.fromId(id);
+		} catch (error) {
+			if (error instanceof NotFoundError) return; // destroy-of-missing MUST succeed (ADR-0008)
+			throw error;
+		}
 		await terminateConverged(ctx.client, id, () => handle.terminate({ wait: true }));
 	},
 
-	/* ✓ G2: both directions, natively. */
 	files: {
 		readFile: (_ctx: ModalGpuCtx, handle: Sandbox, path: string) =>
 			handle.filesystem.readText(path),
@@ -320,15 +464,13 @@ declare function buildGpuPlumbing(env: EnvOf<"modal-gpu">, recipe: string): Prom
 
 export default defineDriver("modal-gpu", {
 	driver: ({ env, artifact }) => {
-		// ✓ G3: the registry narrows artifact to { kind: "built"; recipe: "gpu-vllm-kernels" } —
-		// the recipe drives the Ctx factory; no hand-carried refs, no registry bypass.
 		const kind: "built" = artifact.kind;
 		void kind;
 		return driverFromTable(modalGpuTable, () => buildGpuPlumbing(env, artifact.recipe));
 	},
 });
 
-/* --------------------------------- The seven steps, gap-closed --------------------------------- */
+/* --------------------------------- The seven steps, polished --------------------------------- */
 
 export async function runReplicate(
 	driver: SandboxDriver<Sandbox>,
@@ -337,27 +479,32 @@ export async function runReplicate(
 	index: number,
 ) {
 	const session = await driver.create(request);
-	try {
-		await session.native.setTags({ "gpu-benchmark-replicate": String(index) }); // typed, one hop
+	return withSessionTeardown(session, async () => {
+		await session.native.setTags({ "gpu-benchmark-replicate": String(index) });
 		if (!session.files) throw new Error("modal-gpu declares files; conformance verifies it");
-		await Promise.all(
+		// Establish the staging root before any write — the prior revision never created it.
+		await session.exec(`mkdir -p ${REMOTE_ROOT}`);
+		// ✓ P5: every write settles before anything else happens; failures aggregate.
+		const writes = await Promise.allSettled(
 			files.map((file) => session.files!.writeText(`${REMOTE_ROOT}/${file.path}`, file.text)),
 		);
+		const writeFailures = writes.flatMap((w) => (w.status === "rejected" ? [w.reason] : []));
+		if (writeFailures.length > 0) {
+			throw new AggregateError(writeFailures, `${writeFailures.length}/${files.length} staged writes failed`);
+		}
 		await session.exec(`git init -q ${REMOTE_ROOT}`);
 		const benchmark = await session.exec(`cd ${REMOTE_ROOT} && bash gpu/task.sh`);
 		const smi = await session.exec(
 			"nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap --format=csv,noheader,nounits",
+			{ maxOutputBytes: 64 * 1024 }, // ✓ P7: probes opt in to caps; benchmark output never capped
 		);
-		return { benchmark, gpu: smi.stdout.trim() };
-	} finally {
-		await session.destroy(); // convergent by spec (G5)
-	}
+		return { artifactRef: session.artifactRef, benchmark, gpu: smi.stdout.trim() };
+	});
 }
 
 /* --------------------------------------- Type proofs --------------------------------------- */
 
 export async function proofs(ctx: ModalGpuCtx) {
-	// GPU typo still fails compile against the native SDK:
 	// @ts-expect-error — 'gup' does not exist in SandboxCreateParams
 	void ctx.client.sandboxes.create(ctx.app, ctx.kernelImage, { gup: "H100!" });
 }

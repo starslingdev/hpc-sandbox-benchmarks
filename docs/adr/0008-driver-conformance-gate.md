@@ -101,7 +101,16 @@ Two tiers, matching the repo's existing gate altitudes:
 
 - **Kit tier (every PR, no credentials):** the suite runs against the kit's own machinery —
   `cliDriver` over a fake CLI, `computeSdkDriver` over a mock compute — so the *generic* drivers
-  are conformant by construction, and a kit regression fails in-editor-fast CI.
+  are conformant by construction, and a kit regression fails in-editor-fast CI. This tier also
+  owns the kit's robustness invariants, each of which was reproduced as a real failure before
+  being specified: a request whose reported boot artifact contradicts its requested one fails
+  create (and tears down the orphan); a request carrying a spec axis the driver cannot map
+  (`diskGb` on Modal) fails loudly rather than silently dropping it; a teardown failure after a
+  primary failure surfaces **both** errors; partial staged-write failures aggregate; a failed
+  lazy-context load is retried, not memoized forever; opt-in output caps truncate visibly
+  (`truncated: true`) and are never applied by default — the results tar rides uncapped stdout;
+  and host-side extraction of the sandbox-produced results archive rejects `..`/absolute members
+  (the one genuinely hostile path seam, `collect.ts`'s `tar -xzf`).
 - **Smoke tier (live, per provider):** the existing smoke lane runs the suite against the real
   vendor before the benchmark steps. One sandbox, a few extra minutes, on a lane that already
   boots one.
