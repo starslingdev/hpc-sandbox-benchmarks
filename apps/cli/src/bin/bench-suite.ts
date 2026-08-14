@@ -124,7 +124,8 @@ usage: bench-suite [provider] [suite] [runId]
   --help, -h              Show this help.
 
 Missing provider credentials are recorded as a skip (the provider stays "pending"), so this is
-runnable without secrets. Writes the shard Run(s) under data/runs/ and updates data/runs/index.json.
+runnable without secrets. Writes the shard Run(s) under data/runs/; the dataset index is written
+later, by \`aggregate\`/\`promote\`.
 
 examples:
   bench-suite daytona-vm cpu-node                 # one suite locally, auto runId
@@ -443,7 +444,6 @@ interface ReplicateContext {
 	sha: string;
 	rawRoot: string;
 	outFile: string;
-	indexFile: string;
 	replicateIndex?: number;
 	/** Providers that must reach "validated" for this replicate to count as a success. */
 	required: readonly string[];
@@ -456,7 +456,7 @@ interface ReplicateContext {
  * their shard writes (the per-replicate matrix cells had `fail-fast: false` for the same reason).
  */
 export async function runReplicate(ctx: ReplicateContext): Promise<ReplicateOutcome> {
-	const { provider, suite, runId, sha, rawRoot, outFile, indexFile, replicateIndex } = ctx;
+	const { provider, suite, runId, sha, rawRoot, outFile, replicateIndex } = ctx;
 	// Annotations are emitted as `::warning::` workflow commands, which bypass the `[rN]` line tagging
 	// by necessity (a tagged command stops being an annotation). So the replicate has to ride in the
 	// TITLE instead — otherwise a 12-way fan-out puts up to 12 byte-identical warnings in the panel
@@ -522,7 +522,6 @@ export async function runReplicate(ctx: ReplicateContext): Promise<ReplicateOutc
 				runId,
 				sha,
 				outFile,
-				updateIndexFile: indexFile,
 				...(replicateIndex !== undefined ? { replicateIndex } : {}),
 			});
 			logInfo(`Normalized Run ${runId} → ${outFile}`);
@@ -700,13 +699,15 @@ if (import.meta.main) {
 		}
 	}
 
-	// The local newest-first Run index, shared by every replicate of this cell. It is keyed by runId and
-	// all R shards carry the SAME runId, so the last replicate to normalize wins the entry — a local
-	// convenience only (`leaderboard data/runs/<id>.json` discovery). Nothing downstream reads it: the
-	// aggregate is handed explicit shard paths, and commit-dataset.yml globs the shard files directly.
-	// Writes are synchronous (writeNormalizedRun), so concurrent replicates cannot interleave a
-	// read-modify-write and corrupt it.
-	const indexFile = join("data", "runs", "index.json");
+	// No local Run index is written next to the shards, deliberately. A RunIndex entry's path is
+	// derived from its runId (`runs/<runId>.json`) — an invariant the published dataset relies on, and
+	// one a shard tree CANNOT satisfy: every replicate of a cell shares the run id and is told apart by
+	// a `-r<idx>` filename suffix, so R shards would all claim the same canonical path. Maintaining it
+	// anyway made every normalize throw `invalid RunIndex`, failing cells whose benchmark had already
+	// succeeded. Nothing read it either: the aggregate is handed explicit shard paths and
+	// commit-dataset.yml globs the shard files directly (excluding this file as a decoy). The dataset
+	// index is written where it is meaningful — by `aggregate`/`promote`, over `<dir>/runs/<id>.json`.
+	//
 	// The single-sandbox tree/shard, hoisted so the debug payload below can name them. They are the
 	// diagnostic an artifact-path failure is read with — which tree the results were pulled into,
 	// which file they normalized to — and on this path nothing else reports rawRoot at all.
@@ -793,7 +794,6 @@ if (import.meta.main) {
 			sha,
 			rawRoot: singleRawRoot,
 			outFile: singleOutFile,
-			indexFile,
 			...(singleReplicate !== undefined ? { replicateIndex: singleReplicate } : {}),
 			required,
 		});
@@ -856,7 +856,6 @@ if (import.meta.main) {
 					sha,
 					rawRoot: paths.rawRoot,
 					outFile: paths.outFile,
-					indexFile,
 					replicateIndex,
 					required,
 				}),

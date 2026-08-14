@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Run } from "@sandbox-benchmarks/schema";
@@ -34,6 +34,43 @@ describe("writeNormalizedRun", () => {
 		expect(index.runs).toEqual([
 			{ runId: "run-1", generatedAt: "2026-06-20T00:00:00.000Z", path: "runs/run-1.json" },
 		]);
+	});
+});
+
+describe("writeNormalizedRun (replicate shard)", () => {
+	// A shard is named `<runId>-r<idx>.json` and every replicate of a cell shares the run id, so no
+	// shard can carry the canonical `runs/<runId>.json` path a RunIndex entry is required to have —
+	// indexing one throws and loses a cell whose benchmark already succeeded. bench-suite therefore
+	// writes shards WITHOUT an index; the index is built later, over `<dir>/runs/<id>.json`, by
+	// aggregate/promote. Pinned here because the failure only ever surfaced in CI.
+	const outFile = join(outDir, "shards", "run-2-r0.json");
+	const indexFile = join(outDir, "shards", "index.json");
+
+	it("writes the suffixed shard and maintains no index beside it", () => {
+		const run = writeNormalizedRun({
+			rawRoot,
+			runId: "run-2",
+			sha: "abc123",
+			generatedAt: "2026-06-20T00:00:00.000Z",
+			outFile,
+			replicateIndex: 0,
+		});
+		expect(parseRun(JSON.parse(readFileSync(outFile, "utf8")))).toEqual(run);
+		expect(existsSync(indexFile)).toBe(false);
+	});
+
+	it("cannot be indexed beside its shard — the canonical path is derived from the run id", () => {
+		expect(() =>
+			writeNormalizedRun({
+				rawRoot,
+				runId: "run-2",
+				sha: "abc123",
+				generatedAt: "2026-06-20T00:00:00.000Z",
+				outFile,
+				updateIndexFile: indexFile,
+				replicateIndex: 0,
+			}),
+		).toThrow(/invalid RunIndex/);
 	});
 });
 
