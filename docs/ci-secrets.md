@@ -220,6 +220,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BL_WORKSPACE` | bench matrix/smoke only |
    | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
    | `RUN_CLOUD_API_KEY` | optional for toolchain validation; bench matrix/smoke |
+   | `TAMA_TOKEN` | bench matrix/smoke only |
    | `VERCEL_TOKEN` | Bootstrap only: Vercel CLI pulls a short-lived project OIDC token |
    | `VERCEL_ORG_ID` | Links the Vercel CLI to the repository's organization (`team_*`) |
    | `VERCEL_PROJECT_ID` | Links the Vercel CLI to the repository's project (`prj_*`) |
@@ -321,6 +322,14 @@ the canonical version-scoped Blueprint. Runloop disk snapshots remain temporary 
 measurements; they are not release artifacts and are never selected for ordinary benchmark startup.
 
 run.cloud needs `RUN_CLOUD_API_KEY`. Its SDK reads the key directly from the benchmark process; the adapter never adds it to sandbox metadata, create-time environment variables, or guest commands.
+
+tama needs `TAMA_TOKEN`, minted with `tama tokens create`. It publishes no SDK, so the bench cell
+installs the checksum-pinned CLI (`.github/actions/setup-tama`) and the adapter drives that binary as a
+subprocess. The token is adopted into the CLI's own profile on the first control-plane call and never
+reaches sandbox metadata, create-time environment variables, or guest commands; every diagnostic that
+quotes an argument vector redacts it. A fresh runner has no profile, so the secret is what authenticates
+it — locally the adapter probes an existing `tama login` profile first and only falls back to the token,
+because `tama login --token` REPLACES the stored credential.
 
 The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
 credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.

@@ -76,6 +76,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"novita",
 			"runcloud",
 			"runloop",
+			"tama",
 			"vercel",
 		]);
 	});
@@ -171,10 +172,13 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		for (const value of ["2026-8-08", "2026-02-30", "not-a-date"]) {
 			expect(isoDateSchema.allows(value)).toBe(false);
 		}
+		// Every citation carries a REAL date, not one hardcoded research day: rates are re-checked per
+		// provider (a provider added later is cited on the day its rate was actually read), so pinning
+		// the data to a single literal would force a new entry to backdate its evidence.
 		for (const provider of PROVIDERS) {
 			if (provider.pricing.model !== "published") continue;
 			for (const source of provider.pricing.sources) {
-				expect(source.checkedAt).toBe("2026-08-08");
+				expect(isoDateSchema.allows(source.checkedAt)).toBe(true);
 			}
 		}
 	});

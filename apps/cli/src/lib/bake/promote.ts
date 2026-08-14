@@ -337,6 +337,9 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 							case "runcloud":
 								log("    runcloud pulls the published version image — nothing to build");
 								break;
+							case "tama":
+								log("    tama pulls the published version image — nothing to build");
+								break;
 							case "vercel":
 								await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
 								break;

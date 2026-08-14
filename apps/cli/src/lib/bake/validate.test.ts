@@ -114,6 +114,7 @@ describe("baseImageUse", () => {
 			"modal-vm",
 			"namespace",
 			"runcloud",
+			"tama",
 		]);
 	});
 
