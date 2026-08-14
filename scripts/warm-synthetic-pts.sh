@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Pre-install Phoronix Test Suite profiles used by the synthetic host suites so
+# `mise run benchmark:{cpu:node,disk:all,network:suite,memory:all,system:all}` spend wall time on
+# measurement, not download/compile.
+#
+# Idempotent: already-installed profiles are skipped. Needs sudo for the first-time PTS apt path
+# (via ensure_pts). Safe to re-run after a snapshot restore.
+#
+# Intentionally NOT part of the Cursor Cloud startup update script — a cold warm can take many
+# minutes (git ~450 MB, fio/iperf/stream compiles). Run once when building the cloud VM snapshot:
+#   SUDO=sudo ./scripts/warm-synthetic-pts.sh
+set -euo pipefail
+
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")/.." rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+# shellcheck disable=SC1091 # sourced helpers live next to the repo root; not a shellcheck input.
+source "${REPO_ROOT}/lib/bench.sh"
+
+echo "========================================"
+echo "  Warm synthetic PTS profiles (host VM)"
+echo "========================================"
+
+if ! ensure_pts; then
+	echo "ERROR: ensure_pts could not make phoronix-test-suite available" >&2
+	exit 1
+fi
+
+# Leaf-specific tools the skip guards check before measurement.
+missing=()
+for bin in stress-ng nc jq php; do
+	have "$bin" || missing+=("$bin")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+	echo "ERROR: missing required tools: ${missing[*]}" >&2
+	echo "ensure_pts should have installed these; re-run with SUDO=sudo" >&2
+	exit 1
+fi
+
+# Seed the shared iperf source into PTS's download cache (localhost + WAN leaves share it).
+# Never fatal: seed_pts_download_cache returns 0 even when every URL fails.
+seed_pts_download_cache "iperf-3.14.tar.gz" \
+	"723fcc430a027bc6952628fa2a3ac77584a1d0bd328275e573fc9b206c155004" \
+	"https://downloads.es.net/pub/iperf/iperf-3.14.tar.gz" \
+	"https://sources.buildroot.net/iperf3/iperf-3.14.tar.gz"
+
+# Repo-local profiles (PTS will not fetch these).
+install_local_pts_profile "hardlink-1.0.0"
+install_local_pts_profile "iperf-wan-1.0.0"
+
+# Vendored overrides that leaves stage before install/run (same pts/<name> identifiers).
+# Staging discards any baked/upstream install so the next batch-install uses our copy.
+install_vendored_pts_profile "iperf-1.2.0"
+install_vendored_pts_profile "network-loopback-1.0.3"
+install_vendored_pts_profile "fast-cli-1.0.0"
+
+# STREAM: pin the same working set the memory leaf measures (see benchmark:memory:pts:stream).
+# Export before batch-install so a cold install compiles the pinned binary.
+STREAM_ARRAY_SIZE=150000000
+march=native
+if grep -qi gvisor /proc/version 2>/dev/null; then
+	march=x86-64-v3
+fi
+export CFLAGS_OVERRIDE="-O3 -march=${march} -DSTREAM_ARRAY_SIZE=${STREAM_ARRAY_SIZE}"
+
+# Upstream OpenBenchmarking profiles the synthetic suites batch-run (version-pinned to leaves).
+# Skip anything already registered so re-runs stay cheap.
+pts_targets=(
+	pts/pybench-1.1.3
+	pts/sqlite-speedtest-1.0.1
+	pts/fio-2.1.0
+	pts/network-loopback-1.0.3
+	pts/iperf-1.2.0
+	pts/stream-1.3.4
+	pts/node-web-tooling-1.0.1
+	pts/fast-cli-1.0.0
+	pts/git-1.1.0
+	local/hardlink-1.0.0
+	local/iperf-wan-1.0.0
+)
+
+to_install=()
+for t in "${pts_targets[@]}"; do
+	if _pts_is_installed "$t"; then
+		echo "already installed: ${t}"
+	else
+		to_install+=("$t")
+	fi
+done
+
+if [ "${#to_install[@]}" -eq 0 ]; then
+	echo "All synthetic PTS profiles already installed."
+else
+	echo "batch-install: ${to_install[*]}"
+	# PTS can exit 0 after a partial failure; verify each target below.
+	phoronix-test-suite batch-install "${to_install[@]}" || true
+fi
+
+failed=()
+for t in "${pts_targets[@]}"; do
+	if _pts_is_installed "$t"; then
+		echo "OK  ${t}"
+	else
+		echo "MISSING  ${t}" >&2
+		failed+=("$t")
+	fi
+done
+
+if [ "${#failed[@]}" -gt 0 ]; then
+	echo "ERROR: warm incomplete — missing: ${failed[*]}" >&2
+	exit 1
+fi
+
+mkdir -p "${HOME}/.cache/sandbox-benchmarks"
+date -u +%Y-%m-%dT%H:%M:%SZ >"${HOME}/.cache/sandbox-benchmarks/synthetic-pts-warm.stamp"
+
+echo
+echo "Warm complete. Synthetic suite entrypoints:"
+echo "  mise run benchmark:cpu:node"
+echo "  mise run benchmark:disk:all"
+echo "  mise run benchmark:network:suite"
+echo "  mise run benchmark:memory:all"
+echo "  mise run benchmark:system:all"
+echo
+phoronix-test-suite list-installed-tests

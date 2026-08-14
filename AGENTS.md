@@ -8,32 +8,52 @@ benchmarks. There is no server or web UI — everything is exercised through Bun
 
 ### Toolchain (provisioned by the startup update script)
 - The startup update script is self-healing: it installs `mise` (2026.7.11) and `bun` (1.3.14) if
- they are missing, symlinks `mise`, `bun`, and **`bunx`** into `/usr/local/bin` (so they resolve on a
- bare `PATH`), then runs `mise install` (pinned non-Bun tools) + `bun install --ignore-scripts`. The
- `bunx` symlink is load-bearing: `bun run check:catalog-drift` spawns `bunx biome`, so a missing
- `bunx` on `PATH` fails that gate with `Executable not found in $PATH: "bunx"`.
+  they are missing, symlinks `mise`, `bun`, and **`bunx`** into `/usr/local/bin` (so they resolve on a
+  bare `PATH`), then runs `mise install` (pinned non-Bun tools) + `bun install --ignore-scripts`.
+  It then runs `ensure_pts` (via `lib/bench.sh`) so **Phoronix Test Suite 10.8.4** and its apt deps
+  (`stress-ng`, `nc`, `jq`, php, build toolchain, …) are present — idempotent and fast when already
+  installed. The `bunx` symlink is load-bearing: `bun run check:catalog-drift` spawns `bunx biome`,
+  so a missing `bunx` on `PATH` fails that gate with `Executable not found in $PATH: "bunx"`.
 - Non-Bun tools (`typos`, `shellcheck`, `hadolint`, `actionlint`, `zizmor`) are pinned in
- `mise.toml` and invoked via `mise exec` — never install them ad hoc.
-- **Phoronix Test Suite (PTS) is NOT installed by the update script** (it is heavy and network-bound,
- and every benchmark leaf skips gracefully without it — see below). Install it on demand.
+  `mise.toml` and invoked via `mise exec` — never install them ad hoc.
 
-### Phoronix Test Suite (PTS)
-The `.mise/tasks/benchmark/**` leaves call `phoronix-test-suite` (via `lib/bench.sh`). In provider
-sandboxes PTS is baked into the toolchain image (`packages/templates/images/base/scripts/20-pts.sh`);
-on this host VM install it on demand (the update script does not).
+### Synthetic host suites (CPU / disk / network / memory / system)
+Run these **on the cloud VM host** (no provider API keys). They write under `benchmark-results/`
+(local output; do not commit).
 
-- Install + configure on the host (idempotent, needs sudo):
- `cd /workspace && SUDO=sudo bash -c 'source lib/bench.sh && ensure_pts'`. `ensure_pts` apt-installs
- PTS (pin 10.8.4, matching `packages/templates/src/lib/pins.ts`) plus its build deps and `stress-ng`,
- then puts PTS in batch mode. It returns 1 (never aborts) if PTS can't be made available — leaves
- then skip rather than fail.
-- Verify: `phoronix-test-suite version` (expect `Phoronix Test Suite v10.8.4`).
-- Cheap end-to-end mise leaf on the host (no provider keys):  
-  `mise run benchmark:disk:pts:hardlink` — needs `stress-ng` (`apt-get install -y stress-ng`).
-  Writes under `benchmark-results/` (local output; do not commit).
-- Full OpenBenchmarking profiles (c-ray, fio, zstd, …) download/build on first use and are heavy;
-  prefer the hardlink leaf or the Docker `benchmark:realworld:selftest` when validating PTS wiring.
+| Suite | Entrypoint |
+| --- | --- |
+| CPU | `mise run benchmark:cpu:node` |
+| Disk | `mise run benchmark:disk:all` |
+| Network (iperf composition) | `mise run benchmark:network:suite` |
+| Network (legacy fast-cli + loopback) | `mise run benchmark:network:all` |
+| Memory | `mise run benchmark:memory:all` |
+| System | `mise run benchmark:system:all` |
+
+**Snapshot warm (once, when building/refreshing the cloud VM snapshot):** cold PTS profile
+installs are slow (git ~450 MB download, fio/iperf/stream source builds). After `ensure_pts` is
+green, run:
+
+```sh
+SUDO=sudo ./scripts/warm-synthetic-pts.sh
+```
+
+That pre-installs every profile the synthetic suites use (including local `hardlink` /
+`iperf-wan` and vendored `iperf` / `network-loopback` / `fast-cli` overrides) and writes
+`~/.cache/sandbox-benchmarks/synthetic-pts-warm.stamp`. Subsequent `mise run benchmark:…` calls
+then skip download/compile and go straight to measurement. Re-run the warm script only if the
+stamp is missing or a suite leaf starts writing `--skipped.json` / reinstalling profiles.
+
+- Verify PTS: `phoronix-test-suite version` (expect `Phoronix Test Suite v10.8.4`).
+- Verify warm: `phoronix-test-suite list-installed-tests` should list the synthetic profiles
+  (iperf, fio, stream, pybench, sqlite-speedtest, git, node-web-tooling, fast-cli,
+  network-loopback, local/hardlink, local/iperf-wan).
+- Cheap single-leaf smoke (no warm required beyond PTS + stress-ng):
+  `mise run benchmark:disk:pts:hardlink`.
+- Full OpenBenchmarking profiles outside the warm set still download/build on first use.
 - `benchmark:realworld:selftest` requires Docker (not installed in this Cloud VM by default).
+- Live provider benches need per-provider API keys from `.env` (see `.env.example`); without keys a
+  provider is a **skip, not a failure**.
 
 ### Running checks / the app
 The command contract lives in the root `package.json` and `docs/architecture.md`; run those scripts
@@ -49,10 +69,8 @@ directly:
   in Cursor because `core.hooksPath` is set to a custom agent-hooks directory. `--ignore-scripts`
   skips it (this is exactly what CI does) and dependencies still resolve fully. Git pre-commit hooks
   are therefore not wired here — run the gate scripts manually before committing.
-- Live provider benches (E2B/Daytona/Modal/Blaxel/Novita) need per-provider API keys from `.env`
-  (see `.env.example`). Without keys a provider is recorded as a **skip, not a failure**, so lint /
-  typecheck / test / spell and the offline CLI bins (`plan-matrix`, `leaderboard` over the committed
-  `data/dataset` runs) all work with no credentials.
 - Mise PTS leaves that lack `phoronix-test-suite` (or a leaf-specific tool like `stress-ng` /
   `nc`) call `skip_result` and exit 0 — a green task exit does **not** prove the benchmark ran.
   Check for `benchmark-results/<prefix>.xml` (success) vs `benchmark-results/<prefix>--skipped.json`.
+- The network suite's wall time is dominated by real 10s iperf trials (localhost ×3 + WAN ×2), not
+  setup, once profiles are warmed.
