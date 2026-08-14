@@ -36,12 +36,22 @@ if [ "${#missing[@]}" -gt 0 ]; then
 	exit 1
 fi
 
-# Seed the shared iperf source into PTS's download cache (localhost + WAN leaves share it).
-# Never fatal: seed_pts_download_cache returns 0 even when every URL fails.
+# Seed sources PTS's own downloader is single-shot for. Never fatal: seed_pts_download_cache
+# returns 0 even when every URL fails (batch-install then gets its own chance).
+#
+# iperf: localhost + WAN leaves share the same tarball.
 seed_pts_download_cache "iperf-3.14.tar.gz" \
 	"723fcc430a027bc6952628fa2a3ac77584a1d0bd328275e573fc9b206c155004" \
 	"https://downloads.es.net/pub/iperf/iperf-3.14.tar.gz" \
 	"https://sources.buildroot.net/iperf3/iperf-3.14.tar.gz"
+# fio: OpenBenchmarking pins http://brick.kernel.dk/snaps/fio-3.36.tar.gz, which is frequently
+# unreachable (PTS issue #865). Ubuntu's fio_3.36.orig.tar.gz is the same bytes (matching SHA256);
+# seed under the filename PTS looks for so batch-install copies from cache.
+seed_pts_download_cache "fio-3.36.tar.gz" \
+	"0a07354876ca4d23518f8aa88682f23866455bbd2ff2d0f055d6e4b72f156553" \
+	"http://archive.ubuntu.com/ubuntu/pool/universe/f/fio/fio_3.36.orig.tar.gz" \
+	"https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/fio/3.36-1/fio_3.36.orig.tar.gz" \
+	"https://web.archive.org/web/2020/http://brick.kernel.dk/snaps/fio-3.36.tar.gz"
 
 # Repo-local profiles (PTS will not fetch these).
 install_local_pts_profile "hardlink-1.0.0"
@@ -83,6 +93,12 @@ for t in "${pts_targets[@]}"; do
 	if _pts_is_installed "$t"; then
 		echo "already installed: ${t}"
 	else
+		# A prior INSTALL_FAILED leaves a pts-install.json tombstone that can confuse a retry;
+		# discard incomplete installs before batch-install (same idea as install_vendored_pts_profile).
+		case "$t" in
+		pts/*) rm -rf "$(pts_install_root)/pts/${t#pts/}" ;;
+		local/*) rm -rf "$(pts_install_root)/local/${t#local/}" ;;
+		esac
 		to_install+=("$t")
 	fi
 done

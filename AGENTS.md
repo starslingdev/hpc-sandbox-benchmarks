@@ -39,7 +39,8 @@ SUDO=sudo ./scripts/warm-synthetic-pts.sh
 ```
 
 That pre-installs every profile the synthetic suites use (including local `hardlink` /
-`iperf-wan` and vendored `iperf` / `network-loopback` / `fast-cli` overrides) and writes
+`iperf-wan` and vendored `iperf` / `network-loopback` / `fast-cli` overrides), seeds the fio
+tarball from Ubuntu's pool (OpenBenchmarking's `brick.kernel.dk` host is often down), and writes
 `~/.cache/sandbox-benchmarks/synthetic-pts-warm.stamp`. Subsequent `mise run benchmark:…` calls
 then skip download/compile and go straight to measurement. Re-run the warm script only if the
 stamp is missing or a suite leaf starts writing `--skipped.json` / reinstalling profiles.
