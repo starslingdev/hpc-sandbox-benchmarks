@@ -595,13 +595,16 @@ describe("checkToolchainPrScope", () => {
 		buildx = "true",
 		summaryIf = "always()",
 		run = `test "$(bun --version)" = "1.3.14"
+test "$(tama --version | awk '{print $2}')" = "0.1.17"
 bun packages/templates/src/pins.ts >/dev/null
 docker buildx inspect --bootstrap`,
+		tama = true,
 	}: {
 		paths?: readonly string[];
 		buildx?: string;
 		summaryIf?: string;
 		run?: string;
+		tama?: boolean;
 	} = {}) => ({
 		on: { pull_request: { paths: [...paths] } },
 		jobs: {
@@ -611,6 +614,7 @@ docker buildx inspect --bootstrap`,
 				"timeout-minutes": 5,
 				steps: [
 					{ uses: "./.github/actions/setup-toolchain", with: { buildx } },
+					...(tama ? [{ uses: "./.github/actions/setup-tama" }] : []),
 					{ run },
 					{ uses: "./.github/actions/release-summary", if: summaryIf },
 				],
@@ -642,11 +646,19 @@ docker buildx inspect --bootstrap`,
 		);
 		const errors = checkToolchainPrScope(
 			imageDoc(),
-			actionSmokeDoc({ paths, buildx: "false", summaryIf: "success()", run: "bun --version" }),
+			actionSmokeDoc({
+				paths,
+				buildx: "false",
+				summaryIf: "success()",
+				run: "bun --version",
+				tama: false,
+			}),
 		);
 		expect(errors.some((error) => error.includes("setup-workspace/**"))).toBe(true);
 		expect(errors.some((error) => error.includes('buildx: "true"'))).toBe(true);
 		expect(errors.some((error) => error.includes("if: always()"))).toBe(true);
+		expect(errors.some((error) => error.includes("setup-tama"))).toBe(true);
+		expect(errors.some((error) => error.includes("tama --version"))).toBe(true);
 		expect(errors.some((error) => error.includes("packages/templates/src/pins.ts"))).toBe(true);
 		expect(errors.some((error) => error.includes("docker buildx inspect --bootstrap"))).toBe(true);
 	});
