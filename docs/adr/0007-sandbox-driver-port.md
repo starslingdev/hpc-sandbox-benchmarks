@@ -112,20 +112,25 @@ The anatomy confirms the shape of the problem: the *long* adapters are the least
 ## Decision
 
 Own the port, and ship it as a **kit**: a contract package a driver author reads top to bottom in
-five minutes, and a fleet package where one file *is* one provider. Four rules govern every choice
-below; each is the repo's existing discipline (ADR-0001/0002/0003) applied to the provider seam:
+five minutes, and a fleet package where one file *is* one provider's behavior. Four rules govern
+every choice below; each is the repo's existing discipline (ADR-0001/0002/0003) applied to the
+provider seam:
 
-1. **One declaration per fact.** The registry entry (ADR-0006) declares identity, credentials and
-   artifact once; the driver's env types, its runtime env parser, the loader table, the exports map
-   and the CI wiring are all *derived* — by inference, by construction, or by drift-gated codegen.
+1. **One declaration per fact, joined by types.** The registry entry (ADR-0006) declares identity,
+   credentials and artifact once; the driver binds to it through a single typed id parameter, and
+   the env types, artifact narrowing, loader table, exports map and CI wiring are all *derived* —
+   by inference, by construction, or by drift-gated codegen that reads **only the registry**.
 2. **A capability is present and working, or absent.** `undefined`, never a stub that lies.
 3. **Errors are values, and they all speak one grammar.** The `Exit` union for command outcomes;
-   arktype's `<path> must be <expected> (was <actual>)` for every boundary parse.
+   arktype's `<path> must be <expected> (was <actual>)` for every boundary parse; and at authoring
+   time, compiler errors that land on the field the author got wrong.
 4. **The filesystem is the authoring interface.** A driver's filename is its `ProviderId`; adding a
    provider is adding a file, not threading a record through a barrel.
 
 Everything below typechecks under `--strict --exactOptionalPropertyTypes`, including the negative
-(`@ts-expect-error`) cases; quoted error messages are verbatim runtime output.
+(`@ts-expect-error`) cases; quoted error messages are verbatim compiler or runtime output. The
+design also survived a structured adversarial review — the strongest alternative it beat is
+documented in §8, with the evidence.
 
 ### 1. Two packages: the contract and the fleet
 
@@ -134,14 +139,15 @@ packages/
   driver/          @sandbox-benchmarks/driver — the port and the kit. Deps: schema, arktype.
     src/
       port.ts        SandboxDriver, SandboxSession, Exit, ExecResult, CreateRequest  (types only)
-      define.ts      defineDriver, DriverContext, EnvOf
+      define.ts      defineDriver, DriverContext, EnvOf, ArtifactOf
       env.ts         envSchemaFor — the runtime dual of EnvOf
       shell.ts       shellQuote, launchDetached, readFile — harness-owned mechanics, once
       cli.ts         cliDriver — the generic driver for CLI-only vendors
       computesdk.ts  computeSdkDriver — the bridge (subpath ./computesdk)
   drivers/         @sandbox-benchmarks/drivers — the fleet. Deps: driver + the vendor SDKs.
     src/
-      e2b.ts  daytona.ts  modal.ts  tama.ts  runcloud.ts  …   filename = ProviderId
+      e2b.ts  daytona-vm.ts  daytona-container.ts  tama.ts  …   filename = ProviderId
+      _daytona.ts    shared variant-pair factories (underscore = not a provider, generator skips)
       index.ts       the generated loader table (drift-gated)
 ```
 
@@ -159,6 +165,13 @@ on the providers barrel (`harness/package.json` → `@sandbox-benchmarks/provide
 on **`driver` alone**. The harness's five overlapping structural interfaces collapse into the one
 named port; vendor SDKs leave its transitive graph entirely, and ADR-0002's DAG check enforces that
 they stay out. `apps/cli` is the only place the fleet and the harness meet.
+
+**Generation flows registry → outward, never fleet → inward.** Every generated projection (loader,
+exports map, CI regions) needs only the id list and credential names, which the registry already
+owns — so the generator never imports a driver module and never evaluates a vendor SDK. The
+fleet-side drift check is a file-existence and default-export-shape check, not a
+thirteen-vendor-module evaluation on every PR. This directionality is load-bearing; §8 shows what
+breaks without it.
 
 ### 2. The port: three members
 
@@ -216,14 +229,36 @@ The rules that make consumers infallible:
   }
   ```
 
-### 3. `defineDriver`: the registry types the driver
+### 3. `defineDriver`: one typed id joins everything
 
-A driver module is a plain object with one required capability and declarative keys for the rest —
-the shape better-auth uses for plugins, eve for tools. It is the file's default export so the
-generated loader needs no name mapping:
+The seam between "what a provider *is*" (the registry, ADR-0006) and "what it *does*" (the driver)
+used to be a bare string convention. It becomes one typed parameter, and everything a driver author
+touches derives from it:
 
 ```ts
-// packages/drivers/src/tama.ts — the whole provider. The filename is the ProviderId.
+export function defineDriver<P extends ProviderId>(
+  id: P,                          // autocompleted; a typo or unregistered id is a compile error
+  spec: DriverSpec<NoInfer<P>>,   // NoInfer: the spec can never bend P — only the id names the join
+): DriverModule<P>;
+
+export interface DriverContext<P extends ProviderId> {
+  /** Exactly the credentials the registry entry declares — required → string, optional → string? */
+  readonly env: EnvOf<P>;
+  /** The registry's artifact descriptor, narrowed to ITS literal — not the four-way union. */
+  readonly artifact: ArtifactOf<P>;
+  /** The resolved boot reference for that artifact (candidate or version name, per lane). */
+  readonly artifactRef: string;
+}
+```
+
+One generic call signature, deliberately not overloads — convex's registration builder documents
+the reason and it held up in our error-message tests: overloads prefix every mistake with a
+signature dump, while a single signature lands the error on the field the author got wrong.
+
+The whole provider file, in the shape an author actually writes:
+
+```ts
+// packages/drivers/src/tama.ts — the provider's behavior. The filename is the id.
 import { defineDriver } from "@sandbox-benchmarks/driver";
 import { cliDriver } from "@sandbox-benchmarks/driver/cli";
 import { type } from "arktype";
@@ -232,17 +267,16 @@ const Machines = type("string.json.parse").to(
   type({ id: "string", name: "string", status: "string" }).array(),
 );
 
-export default defineDriver({
-  id: "tama",
+export default defineDriver("tama", {
   // `tama new` blocks until ready (~2m10s cold pull) and owns failed-create cleanup, so the
   // driver owns the create budget — abandoning it mid-teardown would strand a billable machine.
   createBudget: { owner: "driver", attemptCeilingMs: TAMA_CREATE_CEILING_MS },
-  driver: ({ env }) =>
+  driver: ({ env, artifact, artifactRef }) =>
     cliDriver({
       binary: env.TAMA_CLI ?? "tama",
       secretFlags: ["--token"],
-      create: (r, name) => ["new", name, "--ttl", "0", "--json", "--image", r.image,
-        "--cpu", String(r.spec.vcpus), "--memory", String(r.spec.memoryMib)],
+      create: (r, name) => ["new", name, "--ttl", "0", "--json", `--${artifact.optionKey}`,
+        artifactRef, "--cpu", String(r.spec.vcpus), "--memory", String(r.spec.memoryMib)],
       ready: { poll: ["list", "--json"], parse: Machines,
         select: (rows, name) => rows.find((m) => m.name === name && m.status === "ready")?.id ?? null },
       exec: (id, command) => ["exec", id, "--", "bash", "-lc", command],
@@ -252,43 +286,52 @@ export default defineDriver({
 });
 ```
 
-Three properties make this the load-bearing DX improvement rather than a cosmetic one:
+What the typed join buys, each verified:
 
-**The env slice is derived from the registry, at the type level.** ADR-0006 §6's credential
-declarations already say which variables each provider may see. A mapped type turns that literal
-into the driver's context — required credentials are `string`, optional ones `string | undefined`:
+**The env slice is exact, and hovers flat.** `EnvOf<P>` maps the registry entry's credential tuple —
+required credentials are `string`, optional ones `string | undefined` via absence (the
+`exactOptionalPropertyTypes` distinction), wrapped in a `Prettify` flattener so the hover reads
+`{ readonly TAMA_CLI?: string; readonly TAMA_TOKEN: string }`, not an alias soup. Reading a
+credential the registry doesn't declare:
 
-```ts
-type Creds<P extends ProviderId> = (typeof REGISTRY)[P]["credentials"][number];
-
-export type EnvOf<P extends ProviderId> = {
-  readonly [C in Extract<Creds<P>, { optional: true }> as C["name"]]?: string;
-} & {
-  readonly [C in Exclude<Creds<P>, { optional: true }> as C["name"]]: string;
-};
+```
+error TS2339: Property 'E2B_API_KEY' does not exist on type '{ readonly TAMA_CLI?: string; readonly TAMA_TOKEN: string; }'.
 ```
 
-Inside `driver: ({ env }) => …` for `id: "tama"`, `env.TAMA_TOKEN` is a `string` and
-`env.E2B_API_KEY` **does not exist** — verified as a `tsc` error. `adapters.ts`'s "Never read
-`process.env` here" comment stops being a comment: a driver can only see the slice its registry
-entry declares, because that is the only shape its context has. Reading an undeclared credential, or
-registering an id the registry doesn't know, fails compile.
+and near-misses get the compiler's spelling help:
+`Property 'BAZ_API_KEY' does not exist … Did you mean 'BAZ_APIKEY'?`. `adapters.ts`'s "Never read
+`process.env` here" comment stops being a comment; the ambient environment is simply not in scope.
 
-**The runtime parser is derived from the same declaration.** The dual of `EnvOf` is built by
-construction, so the type and the validator cannot drift (arkenv's design, minus its coercion —
-credentials are strings already):
+**The artifact arrives narrowed, so behavior follows from the type.** For `"tama"`,
+`ctx.artifact.kind` *is* the literal `"image"` and `optionKey` is `"image"` — not the four-way
+`ProviderArtifact` union — so `{ [artifact.optionKey]: artifactRef }` types as `{ image: string }`
+with zero casts and zero runtime checks, and asserting the wrong kind is a compile error. The
+`createOptions` bags that today re-spell the registry's artifact knowledge by hand become
+projections of it.
+
+**The runtime parser is derived from the same declaration.** `envSchemaFor(id)` builds the arktype
+validator from the identical registry tuple `EnvOf` maps, so type and validator cannot drift. A
+missing credential reports `BL_WORKSPACE must be a string (was missing)` — the same grammar as every
+other boundary in the repo. The CLI parses `process.env` once (ADR-0006 §4's `benchEnv`) and hands
+each driver its typed slice.
+
+**Variant pairs — the fleet's hardest real shape — are safe by construction.** daytona, modal and
+microsandbox each register two ids over one implementation (`adapters.ts:41`). A shared factory is
+typed by the union it serves, with no `as const` anywhere:
 
 ```ts
-export function envSchemaFor<P extends ProviderId>(id: P): Type<EnvOf<P>> { /* built from REGISTRY[id].credentials */ }
+// packages/drivers/src/_daytona.ts
+export function daytonaDriver(): DriverSpec<"daytona-vm" | "daytona-container"> { … }
 ```
 
-A missing credential reports `BL_WORKSPACE must be a string (was missing)` — same grammar as every
-other boundary in the repo. The CLI parses `process.env` once (ADR-0006 §4's `benchEnv`), then hands
-each driver its typed slice; drivers never touch the ambient environment, in tests or production.
+Inside it, `env.DAYTONA_API_KEY` is typed (the union's common slice) and `artifact.optionKey` is
+still the narrowed `"snapshotId"`. Both variant files attach it; attaching it to any id outside its
+union is rejected by ordinary function-parameter contravariance — verified, along with the
+unregistered-id and wrong-kind negatives, under the repo's compiler settings.
 
 **Policy is declared next to the code it governs, without sentinels.** Today's
 `createTimeoutMs: null` means "disable the harness's create race" — a sentinel a reader must know.
-It becomes a self-describing union on the module:
+It becomes a self-describing union on the module, and `costEvidence` moves in beside it:
 
 ```ts
 createBudget?:
@@ -296,14 +339,18 @@ createBudget?:
   | { owner: "driver"; attemptCeilingMs: number };        // driver owns bounds and cleanup
 ```
 
-`costEvidence` and computesdk's `createOptions` remain driver-level concerns; they move into the
-driver file next to the vendor knowledge they encode, and the rich rationale comments in
-`adapters.ts:129-291` move with them — each provider's story finally lives in one place.
+The rich rationale comments in `adapters.ts:129-291` move into the driver files they describe —
+each provider's story finally lives in one place.
 
-### 4. The fleet loads lazily, and its wiring is generated
+One honest constraint, inherited from how contextual typing works everywhere (convex documents the
+same rule): the spec literal lives **inline** in the `defineDriver(...)` call. Extracting it to an
+untyped `const` first severs the contextual type and the callback's parameters fall back to
+`any`-shaped inference errors. Extracting *typed* pieces — a `DriverSpec<…>`-annotated factory like
+`daytonaDriver()` above — keeps every guarantee; that is the supported sharing shape.
 
-The loader table is a correlated record — each id maps to a dynamic import of exactly its module,
-typed so a mismatched id/module pairing fails compile:
+### 4. The fleet loads lazily, and existence is compile-checked in both directions
+
+The loader table is a correlated record — each id maps to a dynamic import of exactly its module:
 
 ```ts
 export const DRIVERS: { readonly [P in ProviderId]: () => Promise<DriverModule<P>> } = {
@@ -313,14 +360,18 @@ export const DRIVERS: { readonly [P in ProviderId]: () => Promise<DriverModule<P
 };
 ```
 
-`index.ts` (this table) and the package's `exports` map are emitted by ADR-0006's generator in the
-same pass that emits the CI credential regions, and gated by the same `git diff --exit-code` check —
-a registered provider with no driver file, or a stray driver file with no registry entry, fails the
-gate with a message naming the missing half.
+Because the table is typed by `ProviderId` and each module's default export carries its literal id,
+**both drift directions are compiler errors, not gate findings**: a driver file for an id the
+registry doesn't know fails inside the file (`defineDriver("nopé", …)` rejects), and a registry id
+with no driver file fails in the generated table (`TS2307: Cannot find module './novita.ts'`). A
+mismatched id/module pairing in the table itself also fails (verified). The generator's own gate
+adds only what types cannot see: filename = id, and one module per id. The generated table uses
+plain static import specifiers, so editor go-to-definition tunnels through it — the property convex
+protects deliberately in its generated `_generated/api`.
 
 This converts the eager import wall into a per-provider cost: a bench job evaluates the one vendor
-SDK it benchmarks (median ~60 ms, worst ~270 ms) instead of all twelve (~0.9 s), and
-harness tests evaluate none.
+SDK it benchmarks (median ~60 ms, worst ~270 ms) instead of all twelve (~0.9 s), and harness tests
+evaluate none.
 
 ### 5. `cliDriver`: vendor stdout is a trust boundary
 
@@ -348,11 +399,10 @@ It keeps all its real value — seven maintained vendor translations — and sto
 ```ts
 import { computeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
 
-export default defineDriver({
-  id: "e2b",
-  driver: ({ env }) =>
+export default defineDriver("e2b", {
+  driver: ({ env, artifact, artifactRef }) =>
     computeSdkDriver(e2bCommandsAsRoot(e2b({ apiKey: env.E2B_API_KEY })), {
-      createOptions: { snapshotId: /* resolved artifact, ADR-0006 §1 */ },
+      createOptions: { [artifact.optionKey]: artifactRef },   // types as { snapshotId: string }
       hasWorkingFilesystem: true,   // explicit, because UnsupportedFileSystem lies
     }),
 });
@@ -365,37 +415,77 @@ is ordinary function composition, not a reach into a generated class's private t
 
 ### 7. Where this meets ADR-0006
 
-`CreateRequest.image` is the boot artifact resolved from ADR-0006 §1's `artifact` descriptor, so the
-registry decides *what* to boot and the driver decides *how*. §6's credential declarations gain two
-derived consumers (`EnvOf`, `envSchemaFor`) alongside the CI regions, which strengthens that ADR's
-"one declaration" claim. The generator's output grows by two files (loader table, exports map) under
-the same drift gate. ADR-0006 §1's `Record<BakedProviderId, BakeFn>` partition applies unchanged.
+`CreateRequest.image` and `DriverContext.artifactRef` are resolved from ADR-0006 §1's `artifact`
+descriptor, so the registry decides *what* to boot and the driver decides *how*. §6's credential
+declarations gain two derived consumers (`EnvOf`, `envSchemaFor`) alongside the CI regions. The
+`Record<BakedProviderId, BakeFn>` partition **stays in `apps/cli`, unchanged**: bake modules import
+the harness, templates pins, and docker orchestration (`bake/e2b.ts` writes a generated Dockerfile
+into `packages/templates/images/e2b/`) — that is release-pipeline altitude, and pulling it into the
+fleet package would invert the DAG for a compile-time property the cli-side `Record` already
+provides.
+
+### 8. The single-file inversion, tested and rejected
+
+The obvious next step — collapse the registry entry *into* the driver file
+(`defineProvider({ id, credentials, artifact, pricing, driver })`, sibling-field inference, registry
+generated from the fleet) — was built, adversarially attacked, and rejected on evidence. It is
+recorded here because its failure modes are subtle and worth not re-discovering:
+
+- **The flagship guarantee fails silently on the fleet's real shape.** Sibling-field inference
+  needs the credentials tuple to stay literal. Factor a shared `const CREDS = [{ name:
+  "DAYTONA_API_KEY" }]` — the natural move for the three variant pairs, minus the `as const` nothing
+  reminds you to write — and `env` silently degrades to an open string record: `env.E2B_API_KEY`
+  compiles for a daytona driver, with zero errors anywhere. The typed join (§3) is structurally
+  immune: literalness is established once, in the reviewed registry, and drivers bind by id.
+- **The generator would evaluate its own output.** Driver files import the schema barrel, whose
+  provider module runs a validation loop that throws on a bad registry — so a broken generated
+  registry (interrupted run, merge conflict between two provider PRs, prior emit bug) bricks the
+  generator that would repair it. ADR-0003's gate works because its inputs are inert vendored XML;
+  this one's inputs would be live modules downstream of its output.
+- **Identity would be authored by a leaf's file listing.** Run documents, legacy aliases, figures
+  and economics key on `ProviderId` — the DAG root's stability contract. Under the inversion,
+  deleting a driver file and regenerating shrinks that vocabulary with no compile error anywhere;
+  for a published benchmark, frictionless deletion is the wrong default. Relatedly, `id: string`
+  (unavoidable when the fleet defines the namespace) makes §4's correlated loader untypeable.
+- **The drift gate would evaluate thirteen vendor SDK graphs on every PR.** All currently import
+  clean under `env -i` (measured, 0.88 s) — but the repo has already once fought vendor import-time
+  flakiness (`bake/novita.ts`'s `createRequire` dance), and coupling every PR's CI to third-party
+  module-graph behavior is a standing liability the registry-→-outward direction avoids entirely.
+
+What the inversion got right is kept: colocation of narrative and behavior (the rationale comments
+move into driver files), declarative policy on the module, and the one-command scaffold. What it
+got wrong was *which* declaration moves: behavior colocates; identity does not.
 
 ### Prior art, credited
 
 The shapes here are deliberately stolen from the ecosystem's best current practice: computesdk's own
 package model (narrow provider modules over a small common core — kept as subpaths over a contract
-package); better-auth's plugin object with optional capability keys and subpath-per-plugin exports;
-eve's filesystem-as-authoring-interface and `defineTool` default-export modules; arkenv's
-env-schema-with-injected-source and its derive-don't-redeclare stance; elysia's and Convex's
-schema-as-single-source-of-truth with thin wrappers over plain-TS helpers. Where a pattern didn't
-fit (elysia-style method chaining; arkenv's coercion), it was left out — the kit has no builder API
-because nothing in it accumulates type state.
+package); convex's registration builders (one generic signature instead of overloads, for error
+quality; a generated registry that preserves go-to-definition) and its validate-args-then-infer
+handler pipeline; elysia's `NoInfer` discipline and schema-as-single-source route contracts;
+better-auth's plugin object with optional capability keys and subpath-per-plugin exports; eve's
+filesystem-as-authoring-interface and `define*` default-export modules; arkenv's
+env-schema-with-injected-source; better-fetch's errors-as-values. The `Prettify` hover flattener is
+the ecosystem-standard `{ [K in keyof T]: T[K] } & {}`. Where a pattern didn't fit (elysia-style
+method chaining; arkenv's coercion; sibling-field inference per §8), it was left out — the kit has
+no builder API because nothing in it accumulates type state.
 
 ## Consequences
 
-**Adding a provider becomes** (the whole workflow):
+**Adding a provider becomes three hand-written edits, each compile-checked against the others:**
 
-1. One registry entry in `schema` — identity, artifact, credentials, economics (ADR-0006).
-2. One file, `packages/drivers/src/<id>.ts`, whose default export is `defineDriver({...})` — a
-   `cliDriver` table for CLI vendors, a `computeSdkDriver` bridge for wrapped ones, or a native-SDK
-   port implementation (the existing `gpu/modal.ts` shape) for the rest.
-3. `bun run generate-provider-wiring` → review one diff that touches the loader table, the exports
-   map, and the CI regions.
+1. The id line in `schema`'s identity leaf — the deliberate act that extends the published
+   vocabulary. `Record<ProviderId, …>` immediately demands the next edit.
+2. The registry entry — identity, artifact, credentials, economics (ADR-0006), with the entry's
+   evidence commentary alongside it.
+3. The driver file, `packages/drivers/src/<id>.ts` — `defineDriver("<id>", …)` autocompletes the
+   id, hands the author their typed env slice and narrowed artifact, and won't compile against an
+   unregistered id; the regenerated loader won't compile without the file.
 
-A bake module only when `artifact.kind === "baked"`; the `bench-matrix.yml` promotion stays a
-deliberate, separate decision. Three hand-edited files against 25–34 today — and the third is a
-reviewed generated diff.
+Then `bun run generate-provider-wiring` → review one diff touching the loader table, the exports
+map, and the CI regions. A bake module only when `artifact.kind === "baked"` (the cli `Record`
+demands exactly those); the `bench-matrix.yml` promotion stays a deliberate, separate step.
+`bun run new-provider <id>` (ADR-0006 §9) scaffolds all three edits from one descriptor.
 
 **We accept:**
 
@@ -406,9 +496,13 @@ reviewed generated diff.
 - **We own the port.** Today computesdk absorbs upstream vendor churn behind a stable interface.
   Nine providers keep that shelter via the bridge; the five hand-written ones already had no
   shelter, and this ADR only stops them pretending otherwise.
+- **The inline-spec rule.** The `defineDriver` spec literal must stay inline (or flow through a
+  `DriverSpec<…>`-typed factory); an untyped extracted const loses the contextual types. This is a
+  property of TypeScript's contextual typing, shared by convex and elysia, and documented in the
+  kit's JSDoc rather than discoverable by failure.
 - **`createOptions` stays an open passthrough on the bridge.** The `snapshotId`/`templateId`
-  conventions are real computesdk knowledge the bake path depends on. They remain a bridge-level
-  concern, not a port concept — the port does not model every vendor's create surface.
+  conventions are real computesdk knowledge the bake path depends on — though the typed
+  `[artifact.optionKey]` projection now covers the common cases.
 - **Losing `getInfo`/`list` as *typed* members.** Both are pure latency probes today. They move to
   the optional `probes` capability, where an absent probe is a recorded gap rather than a stub.
 - **Default exports in `packages/drivers`.** The one place the repo uses them, accepted so the
@@ -416,12 +510,13 @@ reviewed generated diff.
 - **Two more packages under ADR-0002's uniform shape.** The DAG check gains the edges that make the
   design enforceable: `harness → driver` only; vendor SDKs confined to `drivers`.
 
-**We explicitly do not:** create one workspace package per vendor. computesdk's per-package split
-earns its keep on npm, where external consumers install one provider; in a private workspace every
-SDK lands in `bun.lock` regardless, so fourteen `package.json`s would buy ceremony, not isolation.
-Per-provider *subpaths* plus the lazy loader capture the real benefits — dependency visibility,
-import-cost isolation, one-file-per-provider — at zero package overhead. We also do not delete or
-fork `@computesdk/*` (it does real vendor translation for nine providers and remains a first-class
-driver); model streaming exec (declared in `transport`, never used — `execute.ts:108-109`); or move
-vendor quirk-handling into the harness. The port is a shell and a lifecycle, deliberately nothing
-more.
+**We explicitly do not:** collapse the registry into the fleet (§8 — tested, rejected on evidence);
+create one workspace package per vendor (computesdk's per-package split earns its keep on npm,
+where external consumers install one provider; in a private workspace every SDK lands in `bun.lock`
+regardless, so fourteen `package.json`s would buy ceremony, not isolation — per-provider *subpaths*
+plus the lazy loader capture the real benefits at zero package overhead); put `bake` on the driver
+module (§7 — wrong DAG altitude, and the cli `Record` already provides the compile-time property);
+delete or fork `@computesdk/*` (it does real vendor translation for nine providers and remains a
+first-class driver); model streaming exec (declared in `transport`, never used —
+`execute.ts:108-109`); or move vendor quirk-handling into the harness. The port is a shell and a
+lifecycle, deliberately nothing more.
