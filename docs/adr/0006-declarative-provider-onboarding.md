@@ -103,21 +103,33 @@ different sort orders. CONTRIBUTING's own checklist has a step named **"Exhausti
 
 ADR-0001 established parse-don't-validate at every external boundary. The question this ADR has to
 answer is *which* of the provider seams are boundaries, because the answer is measured, not
-aesthetic. Import costs on this machine (bun 1.3.11, arktype 2.2.0):
+aesthetic — and the answer moves, so it has to be re-measured rather than assumed.
 
-| Module | Cost |
+Marginal cost of each module, measured sequentially in one process (bun 1.3.11, arktype 2.2.0), on
+`main` at `0ede640`:
+
+| Module | Marginal cost |
 |---|---|
-| `node:path` (baseline) | 3.1 ms |
-| `@sandbox-benchmarks/schema/toolchain` | 4.3 ms |
-| **`@sandbox-benchmarks/schema/providers`** (no arktype today) | **6.6 ms** |
-| `arktype` (library import alone) | 265 ms |
-| `@sandbox-benchmarks/providers/config` (imports arktype) | 267 ms |
-| compiling a provider-registry schema + asserting 14 entries | +53 ms |
+| `arktype` (library import, cold) | 240 ms |
+| `schema/src/run.ts` (the Run schema graph) | +317 ms |
+| `schema/src/providers.ts` (its own schemas) | +63 ms |
+| `schema/src/index.ts` (barrel, on top of the above) | +50 ms |
+| `schema/src/toolchain.ts` | 1.8 ms |
 
-`config.ts:5-7` already documents choosing leaf imports over the barrel for exactly this reason.
-Putting an arktype schema in `schema/providers` would turn a **6.6 ms leaf into ~320 ms** — a 48×
-regression on the module the config gatekeeper deliberately leaf-imports, paid by every CLI bin and
-every harness process. So:
+**This measurement supersedes an earlier draft of this ADR.** That draft measured
+`schema/providers` at 6.6 ms and argued arktype must be kept out of it. Both halves are now stale:
+`providers.ts` gained `import { type } from "arktype"` and, more expensively, a *value* import of
+`targetSpecSchema` from `run.ts` — which drags the entire Run schema graph into the provider
+identity leaf. Importing `schema/providers` now costs ~620 ms against the barrel's ~662 ms, so
+`config.ts:5-7`'s deliberate leaf import saves roughly **40 ms, not the ~457 ms its comment
+claims**. The optimization is all but gone, and nothing detected that.
+
+That changes the reasoning but not the conclusion, and it adds a finding worth acting on
+independently of this ADR: **restore a genuinely cheap identity leaf.** `identifiers.ts` (added with
+tama) is already that seed — `ProviderId` and its schema, nothing else — but it is not listed in
+`packages/schema/package.json` `exports`, so nothing can import it. Exporting it, and moving
+`TARGET_SPEC` off the `run.ts` value import, returns provider identity to single-digit
+milliseconds. The registry's own validation should then stay out of that leaf on purpose:
 
 - **Tier 1 — committed source (the registry literal): plain TypeScript.** It is not a trust
   boundary; it is type-checked source. `as const satisfies` plus discriminated unions give full
@@ -126,7 +138,7 @@ every harness process. So:
   These are genuinely untrusted, crossed repeatedly, and currently guarded ad hoc. One parser per
   boundary, narrowed literal types out the other side.
 - **Tier 3 — generator and gates (build time): arktype for invariants types can't express.** The
-  265 ms is free in a generator that runs on demand, so the descriptor schema and its `.narrow()`
+  240 ms arktype import is free in a generator that runs on demand, so the descriptor schema and its `.narrow()`
   rules live here, not in the hot import path.
 
 Everything below is verified against arktype 2.2.0, including the type-level assertions.
@@ -274,8 +286,8 @@ The generator is also where the descriptor's **arktype schema** lives: the invar
 asserted only in `providers.test.ts` (`requiredEnvVars` non-empty; `syncCapMs` finite ⇒
 `detachedPoll: true`; variants of one vendor share a pricing object) become `.narrow()` rules on a
 schema the generator runs, so they are enforced against the descriptor *before* it is allowed to emit
-CI wiring that grants secrets. Costing 265 ms in a build-time generator is free; costing it in
-`schema/providers` is not.
+CI wiring that grants secrets. Paying arktype's import in a build-time generator is free; paying it
+in the provider identity leaf every CLI bin and harness process imports is not.
 
 `bench-matrix.yml:64`'s default CSV stays hand-edited: joining the published matrix is a deliberate
 promotion decision, not a mechanical consequence of registering, and the 18-line rationale above it
@@ -323,7 +335,8 @@ its place. The rest dissolve: `validate.test.ts`'s three partition oracles becom
   an arktype schema (Tier 3, for the generator's narrows). They can drift. The mitigation is that
   the generator asserts the committed registry against the schema, so drift fails the gate rather
   than shipping. Collapsing them by inferring the type *from* the schema is the obvious
-  simplification and is explicitly rejected here: it would drag arktype into the 6.6 ms leaf.
+  simplification and is explicitly rejected here: it would pin the registry's validation cost into
+  the identity leaf, which this ADR wants to get *back* to single-digit milliseconds.
 - **Generated YAML regions.** Reviewers read a generated diff, and a bad generator ships bad wiring
   everywhere at once. ADR-0003 already accepted this trade; the drift gate is the same mechanism.
 - **A migration touching every provider.** §1, §5 and §6 rewrite 14 registry entries and delete six
@@ -333,7 +346,8 @@ its place. The rest dissolve: `validate.test.ts`'s three partition oracles becom
   `toHaveLength(3)` count and the scoped `RUNLOOP_API_KEY`/`RUN_CLOUD_API_KEY` expression pins are
   security invariants about *specific* providers, not derivable facts. They are correctly special.
 
-**We explicitly do not:** put arktype in `schema/providers` (measured 48× import regression for
-guarantees `tsc` already provides on committed source); parse the registry at runtime in the harness
-or CLI; or replace `isolationFromRuntime`'s matcher, which handles genuinely open input. The adapter
+**We explicitly do not:** validate the registry at import time in `schema/providers` (it would add
+cost to the identity leaf for guarantees `tsc` already provides on committed source); parse the
+registry at runtime in the harness or CLI; or replace `isolationFromRuntime`'s matcher, which
+handles genuinely open input. The adapter
 contract, harness, results and figures layers are unchanged.
