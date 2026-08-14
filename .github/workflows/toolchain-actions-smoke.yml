@@ -1,11 +1,12 @@
 name: Toolchain actions smoke
 
-# Runtime coverage for the three local composites the toolchain PR lane actually executes. These
+# Runtime coverage for the local setup composites the benchmark and toolchain lanes execute. These
 # actions own only host setup + reporting, not image contents, so prove their contract directly on the
 # standard self-hosted runner instead of compiling the PTS-heavy base image for 6-8 minutes.
 on:
   pull_request:
     paths:
+      - ".github/actions/setup-tama/**"
       - ".github/actions/setup-toolchain/**"
       - ".github/actions/setup-workspace/**"
       - ".github/actions/release-summary/**"
@@ -22,7 +23,7 @@ permissions:
 
 jobs:
   smoke:
-    name: Set up toolchain + summary
+    name: Set up CLIs, toolchain + summary
     # This job checks out and executes the PR's local composites on a self-hosted runner. Keep the
     # same-repository boundary used by ci.yml and the full toolchain PR gate.
     if: github.event.pull_request.head.repo.full_name == github.repository
@@ -39,10 +40,14 @@ jobs:
         with:
           buildx: "true"
 
-      - name: Probe toolchain setup outputs
+      - name: Set up tama
+        uses: ./.github/actions/setup-tama
+
+      - name: Probe setup outputs
         run: |
           set -euo pipefail
           test "$(bun --version)" = "1.3.14"
+          test "$(tama --version | awk '{print $2}')" = "0.1.17"
           bun packages/templates/src/pins.ts >/dev/null
           docker buildx inspect --bootstrap
 
@@ -54,4 +59,4 @@ jobs:
           status: ${{ job.status }}
           mode: pr-gate
           source-ref: ${{ github.sha }}
-          verify: bun packages/templates/src/pins.ts && docker buildx inspect --bootstrap
+          verify: test "$(tama --version | awk '{print $2}')" = "0.1.17" && bun packages/templates/src/pins.ts && docker buildx inspect --bootstrap
