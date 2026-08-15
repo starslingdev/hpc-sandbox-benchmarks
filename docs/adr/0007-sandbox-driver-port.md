@@ -630,11 +630,10 @@ pattern didn't fit (elysia-style method chaining; arkenv's coercion; sibling-fie
 side-by-side anatomy that settled §2's two-layer shape — the same tama-style provider written
 against real `@computesdk/provider`, as a closure spec, and as a stateless table, all
 typechecked — found 134 author lines and 5 fabricated values for the incumbent, 29 lines and 0
-fabrications for the declarative spec, and the table layer decisive for testability. The
-compiling prototypes and runnable proofs behind every claim in this ADR — including the GPU
-three-way comparison and the `verify.ts` runtime suite — are preserved under
-`docs/adr/prototypes/gpu/` on the exploration branch
-(`claude/sdk-provider-benchmark-automation-5hjo0w`).
+fabrications for the declarative spec, and the table layer decisive for testability. Every code
+sample and negative (`@ts-expect-error`) case in this ADR was verified as a compiling prototype
+under the repo's strict compiler settings before acceptance; quoted error messages are verbatim
+compiler or runtime output.
 
 ## Consequences
 

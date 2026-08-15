@@ -45,10 +45,9 @@ The repo already owns the perfect host: the smoke lane (`bench-smoke.yml`) boots
 per provider and is explicitly designed so "a green smoke must never hide that the provider was
 never actually smoked."
 
-The specific invariants below were validated during the driver-kit prototyping rounds (compiling
-prototypes and runtime proofs preserved under `docs/adr/prototypes/gpu/` on the exploration
-branch `claude/sdk-provider-benchmark-automation-5hjo0w`); ADR-0007 §9 lists the reproduced
-failure modes they pin.
+The specific invariants below were each validated by reproducing the failure they guard against
+in an executed prototype before being specified; ADR-0007 §9 lists the reproduced failure modes
+they pin.
 
 ## Decision
 
