@@ -77,12 +77,12 @@ The conformance inventory is closed and explicit:
 |---|---|---|---|
 | core lifecycle | port (always) | create, readiness, live exec 0/7, split streams, destroy twice; kit fakes cover signalled/unknown mapping | `fail` |
 | artifact identity | request + session evidence | reported ref equals requested or guest fingerprint matches; contradiction fake proves orphan teardown | `not-applicable` for `none`; otherwise `unverified` without observation |
-| durable execution | `module.execution.durable` | done-file becomes readable through the selected strategy | `not-applicable` only when durable is `none` and sync is uncapped |
+| durable execution | `module.execution.durable` | done-file becomes readable through the selected strategy | `not-applicable` only when durable is `none` and sync is uncapped; `{ durable: "none", syncCapMs: number }` is a construction error |
 | sync routing | `module.execution.syncCapMs` | kit router selects durable at the boundary; live durable probe passes | `not-applicable` when cap is `null` |
 | filesystem | `session.files` presence | native round-trip when present; exec fallback round-trip when absent | fallback is tested, not skipped |
 | control-plane convergence | `driver.probes.observe` | post-destroy observation is `terminal` or `absent` | `unverified` |
 | snapshots | `driver.snapshots` presence | create, identify, delete; cleanup runs on failure | `not-applicable` |
-| GPU | module accelerator declaration + request | requested count/model appears in `nvidia-smi`, or typed rejection | typed rejection is a pass for CPU-only drivers |
+| GPU | request `gpu` axis (`CreateRequest.gpu?`) | when requested, count/model appears in `nvidia-smi`, or typed rejection | typed rejection is a pass for CPU-only drivers |
 | readiness | module readiness strategy | declared signal reaches ready within its declared budget | `fail` |
 | secret diagnostics | secret-sourced registry inputs + driver spawn/log sinks | no secret in any observable diagnostic surface | `fail` |
 
@@ -122,9 +122,9 @@ Two tiers match the repo's gate altitudes:
   over a fake executable and the pure routing/readiness helpers; the fleet package embeds the same
   suite against its private `computeSdkDriver` over a fake compute. This tier owns
   contradiction cleanup, deep request rejection, typed create failures, retryable lazy context,
-  `SuppressedError` preservation, staged-write aggregation, streaming `TextDecoder` correctness,
-  visible opt-in truncation, uncapped results transport, safe archive extraction, and secret
-  redaction at the spawn boundary.
+  `SuppressedError` preservation, staged-write aggregation, UTF-8 stream `TextDecoder`
+  correctness (chunk-boundary decoding — not transport streaming), visible opt-in truncation,
+  uncapped results transport, safe archive extraction, and secret redaction at the spawn boundary.
 - **Smoke tier (live, per provider):** run the closed inventory against the selected real vendor
   before benchmark steps. It uses the smallest number of sandboxes compatible with teardown and
   snapshot cleanup and emits one parsed report.

@@ -59,7 +59,7 @@ fact is spread across six exhaustive provider-keyed structures plus four hand-wr
 
 `bake.ts` and `promote.ts` differ *only* in candidate-vs-version name. `candidateCreateOptions` is
 `adapters[id].createOptions` with the name swapped. None of this is independent information. Worse,
-**seven of the thirteen `bakers` entries are no-ops** that exist only to satisfy
+**seven of the fourteen `bakers` entries are no-ops** that exist only to satisfy
 `Record<ProviderId, …>` — the type is forcing us to write code for providers that bake nothing.
 
 **2. Provider identity is stringly-typed at every process boundary.** Ids leave TypeScript as CSV in
@@ -225,9 +225,11 @@ export type BakedProviderId = IdsWithArtifact<"baked">;
 
 - the **seven no-op bakers become unconstructable** — giving `blaxel` a baker is a compile error;
 - **omitting a real one is a compile error**, so the map stays exhaustive over exactly the right set;
-- `baseImageUse`, `providerArtifact` and `CandidateRefs` collapse into reads off `artifact`, narrowed
-  by `kind` with no casts; `candidateCreateOptions` disappears because the validation lane passes a
-  resolved artifact to the selected driver instead of manufacturing vendor options in the CLI;
+- `baseImageUse` and `providerArtifact` collapse into reads off `artifact`, narrowed by `kind`
+  with no casts; `CandidateRefs` stays release-lane composition-root data (resolved
+  candidate/version refs), not artifact metadata; `candidateCreateOptions` disappears because the
+  validation lane passes a resolved artifact to the selected driver instead of manufacturing
+  vendor options in the CLI;
 - `bake` and `promote` call **one** map, differing only in the name they pass.
 
 All three negative cases above were verified to fail `tsc --strict` as intended. This is the
