@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
-import type { CreateRequest } from "./index.ts";
-import { sandboxRef } from "./index.ts";
 import type { CliRunResult, CliSpec } from "./cli.ts";
 import { cliDriver, cliMethodTable, redactArgs } from "./cli.ts";
+import type { CreateRequest } from "./index.ts";
+import { DriverError, sandboxRef } from "./index.ts";
 
 const machineRows = type("string.json.parse").to(
 	type({ id: "string", name: "string", status: "string" }).array(),
@@ -25,7 +25,8 @@ function tamaLikeSpec(overrides: Partial<CliSpec<MachineRow>> = {}): CliSpec<Mac
 		ready: {
 			poll: ["list", "--json"],
 			parse: machineRows,
-			select: (rows, name) => rows.find((row) => row.name === name && row.status === "ready") ?? null,
+			select: (rows, name) =>
+				rows.find((row) => row.name === name && row.status === "ready") ?? null,
 			pollIntervalMs: 1,
 		},
 		idOf: (row) => row.id,
@@ -63,7 +64,9 @@ function fakeVendor(options: { readyAfterPolls?: number } = {}) {
 			const id = args[2] ?? "";
 			const existed = [...machines.values()].some((row) => row.id === id);
 			for (const [name, row] of machines) if (row.id === id) machines.delete(name);
-			return existed ? { stdout: "", stderr: "", code: 0 } : { stdout: "", stderr: `machine ${id} not found`, code: 1 };
+			return existed
+				? { stdout: "", stderr: "", code: 0 }
+				: { stdout: "", stderr: `machine ${id} not found`, code: 1 };
 		}
 		return { stdout: "", stderr: `unknown verb ${verb}`, code: 2 };
 	};
@@ -84,17 +87,23 @@ describe("cliDriver", () => {
 		expect(vendor.machines.size).toBe(0);
 	});
 
-	test("destroy tolerates not-found (idempotent); other failures surface", async () => {
+	test("destroy tolerates not-found (idempotent); other failures surface with structured fields", async () => {
 		const vendor = fakeVendor();
 		const table = cliMethodTable(tamaLikeSpec(), { run: vendor.run });
 		// destroy-of-missing MUST succeed (ADR-0008):
 		await table.destroyById?.(null, sandboxRef("tama", "m-gone"));
-		// a genuinely different failure is not swallowed:
-		const failing = cliMethodTable(
-			tamaLikeSpec({ destroy: () => ["boom"] }),
-			{ run: async () => ({ stdout: "", stderr: "quota exceeded", code: 9 }) },
-		);
-		await expect(failing.destroyById?.(null, sandboxRef("tama", "m-1"))).rejects.toThrow(/exit 9: quota exceeded/);
+		// a genuinely different failure is not swallowed — and carries a typed code + vendor fields:
+		const failing = cliMethodTable(tamaLikeSpec({ destroy: () => ["boom"] }), {
+			run: async () => ({ stdout: "", stderr: "quota exceeded", code: 9 }),
+		});
+		const error = (await failing
+			.destroyById?.(null, sandboxRef("tama", "m-1"))
+			.catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toBeInstanceOf(DriverError);
+		expect(error.code).toBe("destroy-failed");
+		expect(error.vendorExitCode).toBe(9);
+		expect(error.vendorMessage).toBe("quota exceeded");
+		expect(error.provider).toBe("tama");
 	});
 
 	test("unparseable vendor output produces a path-bearing report, not an undefined", async () => {
@@ -104,25 +113,30 @@ describe("cliDriver", () => {
 					? { stdout: '[{"id":"m-1","name":"bench"}]', stderr: "", code: 0 }
 					: { stdout: "", stderr: "", code: 0 },
 		});
-		await expect(driver.create(request)).rejects.toThrow(/status must be a string \(was missing\)/);
+		const error = (await driver.create(request).catch((caught: unknown) => caught)) as DriverError;
+		expect(error.code).toBe("vendor-output-unparseable");
+		expect(error.vendorMessage).toMatch(/status must be a string \(was missing\)/);
 	});
 
 	test("a create that never becomes ready fails at the request deadline", async () => {
 		const vendor = fakeVendor({ readyAfterPolls: Number.POSITIVE_INFINITY });
 		const driver = cliDriver(tamaLikeSpec(), { run: vendor.run });
-		await expect(driver.create({ ...request, deadlineMs: 25 })).rejects.toThrow(/not ready within 25ms/);
+		const error = (await driver
+			.create({ ...request, deadlineMs: 25 })
+			.catch((caught: unknown) => caught)) as DriverError;
+		expect(error.code).toBe("readiness-timeout");
+		expect(error.message).toMatch(/tama sandbox not ready within 25ms/);
 	});
 
 	test("secret argv values are redacted from every diagnostic", async () => {
 		const driver = cliDriver(tamaLikeSpec(), {
 			run: async () => ({ stdout: "", stderr: "invalid token", code: 3 }),
 		});
-		const failure = await driver.create(request).then(
-			() => null,
-			(error: unknown) => String(error),
-		);
-		expect(failure).toContain("--token ***");
-		expect(failure).not.toContain("s3cret");
+		const error = (await driver.create(request).catch((caught: unknown) => caught)) as DriverError;
+		expect(error.code).toBe("create-failed");
+		expect(error.message).toContain("--token ***");
+		expect(error.message).not.toContain("s3cret");
+		expect(error.vendorMessage).toBe("invalid token");
 	});
 
 	test("exec caps are per-call opt-in and reported as truncation", async () => {

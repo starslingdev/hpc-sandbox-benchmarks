@@ -10,6 +10,20 @@
 // that matters: the registry identity leaf).
 
 export type {
+	CredentialSpec,
+	DriverContext,
+	DriverModule,
+	DriverSpec,
+	EnvFromCreds,
+	EnvOf,
+} from "./lib/define.ts";
+export { DRIVER_CREDENTIALS, defineDriver } from "./lib/define.ts";
+
+export type { DriverErrorCode, DriverErrorFields } from "./lib/errors.ts";
+export { DriverError, isDriverError } from "./lib/errors.ts";
+export type { ReadinessStrategy } from "./lib/poll.ts";
+export { pollUntilReady } from "./lib/poll.ts";
+export type {
 	ControlPlaneProbes,
 	CreateBudget,
 	CreateRequest,
@@ -34,12 +48,7 @@ export {
 	sandboxRefSchema,
 	succeeded,
 } from "./lib/port.ts";
-
+export { withSessionTeardown } from "./lib/session.ts";
+export { launchDetached, readTextFile, shellQuote, writeTextFile } from "./lib/shell.ts";
 export type { MethodTable } from "./lib/table.ts";
 export { driverFromTable } from "./lib/table.ts";
-
-export type { CredentialSpec, DriverContext, DriverModule, DriverSpec, EnvFromCreds, EnvOf } from "./lib/define.ts";
-export { defineDriver, DRIVER_CREDENTIALS } from "./lib/define.ts";
-
-export { launchDetached, readTextFile, shellQuote, writeTextFile } from "./lib/shell.ts";
-export { withSessionTeardown } from "./lib/session.ts";

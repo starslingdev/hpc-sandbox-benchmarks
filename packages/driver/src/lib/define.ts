@@ -63,7 +63,8 @@ export interface DriverSpec<P extends ProviderId, Handle = unknown> {
 	readonly driver: (context: DriverContext<P>) => SandboxDriver<Handle>;
 }
 
-export interface DriverModule<P extends ProviderId, Handle = unknown> extends DriverSpec<P, Handle> {
+export interface DriverModule<P extends ProviderId, Handle = unknown>
+	extends DriverSpec<P, Handle> {
 	readonly id: P;
 }
 
@@ -82,5 +83,5 @@ export function defineDriver<P extends ProviderId, Handle = unknown>(
 	id: P,
 	spec: DriverSpec<NoInfer<P>, Handle>,
 ): DriverModule<P, Handle> {
-	return { ...spec, id } as DriverModule<P, Handle>;
+	return { ...spec, id };
 }

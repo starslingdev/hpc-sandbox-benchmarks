@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS } from "@sandbox-benchmarks/schema/providers";
-import type { SandboxDriver } from "./port.ts";
 import type { EnvOf } from "./define.ts";
-import { defineDriver, DRIVER_CREDENTIALS } from "./define.ts";
+import { DRIVER_CREDENTIALS, defineDriver } from "./define.ts";
+import type { SandboxDriver } from "./port.ts";
 
 // Minimal type-level assertion helpers (kept local; this is the package's only type-test site).
-type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
+type Equal<X, Y> =
+	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
 const stubDriver: SandboxDriver = {
@@ -25,7 +26,9 @@ describe("DRIVER_CREDENTIALS", () => {
 		const fromKit: Record<string, string[]> = Object.fromEntries(
 			Object.entries(DRIVER_CREDENTIALS).map(([id, credentials]) => [
 				id,
-				credentials.filter((credential) => !("optional" in credential)).map((credential) => credential.name),
+				credentials
+					.filter((credential) => !("optional" in credential))
+					.map((credential) => credential.name),
 			]),
 		);
 		expect(fromKit).toEqual(fromRegistry);

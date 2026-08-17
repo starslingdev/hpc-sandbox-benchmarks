@@ -16,6 +16,7 @@
 import { targetSpecSchema } from "@sandbox-benchmarks/schema";
 import type { ProviderId } from "@sandbox-benchmarks/schema/providers";
 import { regex, type } from "arktype";
+import { DriverError } from "./errors.ts";
 
 type DeepReadonly<T> = T extends (infer U)[]
 	? readonly DeepReadonly<U>[]
@@ -32,7 +33,6 @@ type DeepReadonly<T> = T extends (infer U)[]
 // smoke, loudly, before any benchmark runs. Formats without vendor evidence start at the
 // conservative `slugId` and are tightened by conformance evidence, never by guesswork.
 const slugId = regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"); // conservative default
-const uuidId = regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"); // daytona
 const modalId = regex("^sb-\\w+$"); // observed Modal sandbox id shape
 const e2bLikeId = regex("^i[a-z0-9]+$"); // observed E2B id shape; novita is E2B-compatible
 const runloopId = regex("^dbx_\\w+$"); // Runloop devbox prefix (bpt_/snp_ siblings observed)
@@ -46,8 +46,8 @@ const vercelId = regex("^sbx_\\w+$"); // Vercel Sandbox id prefix
  */
 export const sandboxRefSchema = type.or(
 	{ provider: "'e2b'", id: e2bLikeId },
-	{ provider: "'daytona-vm'", id: uuidId },
-	{ provider: "'daytona-container'", id: uuidId },
+	{ provider: "'daytona-vm'", id: "string.uuid" },
+	{ provider: "'daytona-container'", id: "string.uuid" },
 	{ provider: "'blaxel'", id: slugId },
 	{ provider: "'microsandbox-local'", id: slugId },
 	{ provider: "'microsandbox-cloud'", id: slugId },
@@ -64,15 +64,16 @@ export const sandboxRefSchema = type.or(
 type SandboxRefUnion = typeof sandboxRefSchema.infer;
 
 // The schema's provider branches must cover ProviderId exactly — both directions pinned at
-// compile time, so a provider added to the registry without an id format (or a stray branch)
-// is a type error here, not a runtime surprise.
-type _refCoversRegistry = [SandboxRefUnion["provider"]] extends [ProviderId]
-	? [ProviderId] extends [SandboxRefUnion["provider"]]
-		? true
-		: never
-	: never;
-const _refCoversRegistry: _refCoversRegistry = true;
-void _refCoversRegistry;
+// compile time (type-only; erases entirely), so a provider added to the registry without an id
+// format (or a stray branch) is a type error here, not a runtime surprise.
+type Assert<T extends true> = T;
+type _refCoversRegistry = Assert<
+	[SandboxRefUnion["provider"]] extends [ProviderId]
+		? [ProviderId] extends [SandboxRefUnion["provider"]]
+			? true
+			: false
+		: false
+>;
 
 export type SandboxRef<P extends ProviderId = ProviderId> = DeepReadonly<
 	Extract<SandboxRefUnion, { provider: P }>
@@ -82,7 +83,9 @@ export type SandboxRef<P extends ProviderId = ProviderId> = DeepReadonly<
 export function sandboxRef<P extends ProviderId>(provider: P, id: string): SandboxRef<P> {
 	const parsed = sandboxRefSchema({ provider, id });
 	if (parsed instanceof type.errors) {
-		throw new Error(`invalid sandbox ref: ${parsed.summary}`);
+		throw new DriverError("invalid-sandbox-ref", `invalid sandbox ref: ${parsed.summary}`, {
+			provider,
+		});
 	}
 	// The schema just proved the branch for `provider`; Extract names what arktype validated.
 	return parsed as SandboxRef<P>;
@@ -160,7 +163,7 @@ export type TargetSpec = CreateRequest["spec"];
 export function parseCreateRequest(input: unknown): CreateRequest {
 	const parsed = createRequestSchema(input);
 	if (parsed instanceof type.errors) {
-		throw new Error(`invalid CreateRequest: ${parsed.summary}`);
+		throw new DriverError("invalid-create-request", `invalid CreateRequest: ${parsed.summary}`);
 	}
 	return parsed;
 }
@@ -201,7 +204,8 @@ export interface SandboxSession<Handle = unknown> {
 export interface ControlPlaneProbes {
 	/** Timed only; the value is discarded. */
 	list(): Promise<unknown>;
-	describe(ref: SandboxRef): Promise<unknown>;
+	/** Optional. Absent ⇒ the provider has no per-sandbox describe probe — never a no-op stub. */
+	describe?(ref: SandboxRef): Promise<unknown>;
 }
 
 export interface SnapshotCapability {

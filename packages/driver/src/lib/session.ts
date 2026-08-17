@@ -13,22 +13,28 @@ export async function withSessionTeardown<Handle, T>(
 	session: SandboxSession<Handle>,
 	work: (session: SandboxSession<Handle>) => Promise<T>,
 ): Promise<T> {
-	let primary: unknown;
-	let failed = false;
+	// Run work and teardown as two linear steps (no throw-in-finally, so a teardown failure can be
+	// compared against the primary and combined rather than silently masking it).
+	let outcome: { ok: true; value: T } | { ok: false; error: unknown };
 	try {
-		return await work(session);
+		outcome = { ok: true, value: await work(session) };
 	} catch (error) {
-		primary = error;
-		failed = true;
-		throw error;
-	} finally {
-		try {
-			await session.destroy();
-		} catch (teardown) {
-			if (failed) {
-				throw new SuppressedError(teardown, primary, "sandbox teardown failed after a primary error");
-			}
-			throw teardown;
-		}
+		outcome = { ok: false, error };
 	}
+	try {
+		await session.destroy();
+	} catch (teardown) {
+		if (!outcome.ok) {
+			throw new SuppressedError(
+				teardown,
+				outcome.error,
+				"sandbox teardown failed after a primary error",
+			);
+		}
+		throw teardown;
+	}
+	if (!outcome.ok) {
+		throw outcome.error;
+	}
+	return outcome.value;
 }

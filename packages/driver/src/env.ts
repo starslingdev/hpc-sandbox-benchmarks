@@ -7,16 +7,25 @@ import { type } from "arktype";
 import type { CredentialSpec, EnvOf } from "./lib/define.ts";
 import { DRIVER_CREDENTIALS } from "./lib/define.ts";
 
+// One schema per provider, compiled on first use and reused — arktype's `type()` build is the
+// expensive step, and there are only 14 possible ids.
+const schemaCache = new Map<ProviderId, import("arktype").Type<unknown>>();
+
 /** The arktype schema for a provider's env slice: required credentials are non-empty strings. */
-export function envSchemaFor<P extends ProviderId>(id: P) {
-	const shape: Record<string, "string >= 1"> = {};
-	const declared: readonly CredentialSpec[] = DRIVER_CREDENTIALS[id];
-	for (const credential of declared) {
-		shape[credential.optional ? `${credential.name}?` : credential.name] = "string >= 1";
+export function envSchemaFor<P extends ProviderId>(id: P): import("arktype").Type<EnvOf<P>> {
+	let schema = schemaCache.get(id);
+	if (schema === undefined) {
+		const shape: Record<string, "string >= 1"> = {};
+		const declared: readonly CredentialSpec[] = DRIVER_CREDENTIALS[id];
+		for (const credential of declared) {
+			shape[credential.optional ? `${credential.name}?` : credential.name] = "string >= 1";
+		}
+		schema = type(shape);
+		schemaCache.set(id, schema);
 	}
 	// The runtime shape is built from the same literal the mapped type reads; the cast records
 	// that equivalence (arktype cannot see through the dynamic key loop).
-	return type(shape) as unknown as import("arktype").Type<EnvOf<P>>;
+	return schema as unknown as import("arktype").Type<EnvOf<P>>;
 }
 
 /**

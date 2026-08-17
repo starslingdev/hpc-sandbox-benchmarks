@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecResult, SandboxSession } from "./port.ts";
-import { sandboxRef } from "./port.ts";
+import { stubSession } from "./session.fixture.ts";
 import { launchDetached, readTextFile, shellQuote, writeTextFile } from "./shell.ts";
 
 /**
@@ -12,9 +12,7 @@ import { launchDetached, readTextFile, shellQuote, writeTextFile } from "./shell
  * test are exactly what a capability-less vendor session exercises.
  */
 function localShellSession(cwd: string): SandboxSession {
-	return {
-		sandboxRef: sandboxRef("tama", "local-shell"),
-		artifactRef: "local",
+	return stubSession({
 		native: cwd,
 		async exec(command): Promise<ExecResult> {
 			const started = Date.now();
@@ -30,64 +28,64 @@ function localShellSession(cwd: string): SandboxSession {
 				truncated: false,
 			};
 		},
-		async destroy() {},
-	};
+	});
 }
 
 function recordingSession(record: string[]): SandboxSession {
-	return {
-		sandboxRef: sandboxRef("tama", "recorder"),
-		artifactRef: "none",
-		native: null,
+	return stubSession({
 		async exec(command): Promise<ExecResult> {
 			record.push(command);
-			return { exit: { kind: "exited", code: 0 }, stdout: "", stderr: "", durationMs: 0, truncated: false };
+			return {
+				exit: { kind: "exited", code: 0 },
+				stdout: "",
+				stderr: "",
+				durationMs: 0,
+				truncated: false,
+			};
 		},
-		async destroy() {},
-	};
+	});
 }
+
+let dir: string;
+beforeEach(() => {
+	dir = mkdtempSync(join(tmpdir(), "driver-shell-"));
+});
+afterEach(() => {
+	rmSync(dir, { recursive: true, force: true });
+});
 
 describe("shellQuote", () => {
 	test("survives quotes, spaces, dollars and newlines through a real shell", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "driver-shell-"));
-		try {
-			const session = localShellSession(dir);
-			for (const hostile of ["plain", "with space", `single'quote`, `$HOME and "double"`, "line\nbreak"]) {
-				const result = await session.exec(`printf '%s' ${shellQuote(hostile)}`);
-				expect(result.stdout).toBe(hostile);
-			}
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
+		const session = localShellSession(dir);
+		for (const hostile of [
+			"plain",
+			"with space",
+			`single'quote`,
+			`$HOME and "double"`,
+			"line\nbreak",
+		]) {
+			const result = await session.exec(`printf '%s' ${shellQuote(hostile)}`);
+			expect(result.stdout).toBe(hostile);
 		}
 	});
 });
 
 describe("writeTextFile / readTextFile fallbacks", () => {
 	test("round-trips arbitrary content through base64-over-exec and cat", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "driver-shell-"));
-		try {
-			const session = localShellSession(dir);
-			const content = `#!/bin/sh\necho "hé — $VALUE" 'single' | base64\n`;
-			await writeTextFile(session, join(dir, "staged.sh"), content);
-			expect(await readTextFile(session, join(dir, "staged.sh"))).toBe(content);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
+		const session = localShellSession(dir);
+		const content = `#!/bin/sh\necho "hé — $VALUE" 'single' | base64\n`;
+		await writeTextFile(session, join(dir, "staged.sh"), content);
+		expect(await readTextFile(session, join(dir, "staged.sh"))).toBe(content);
 	});
 
 	test("readTextFile returns null (a recorded gap) for an unreadable path", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "driver-shell-"));
-		try {
-			expect(await readTextFile(localShellSession(dir), join(dir, "missing"))).toBeNull();
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
+		expect(await readTextFile(localShellSession(dir), join(dir, "missing"))).toBeNull();
 	});
 
 	test("prefers the native files capability when the session has one", async () => {
 		const writes: Array<[string, string]> = [];
-		const session: SandboxSession = {
-			...recordingSession([]),
+		const session = stubSession({
+			native: null,
 			files: {
 				readFile: async (path) => `native:${path}`,
 				exists: async () => true,
@@ -95,7 +93,7 @@ describe("writeTextFile / readTextFile fallbacks", () => {
 					writes.push([path, text]);
 				},
 			},
-		};
+		});
 		await writeTextFile(session, "/bench/a", "1");
 		expect(writes).toEqual([["/bench/a", "1"]]);
 		expect(await readTextFile(session, "/bench/a")).toBe("native:/bench/a");
@@ -112,28 +110,26 @@ describe("launchDetached", () => {
 	test("uses the session's native launch when present", async () => {
 		const record: string[] = [];
 		const launches: string[] = [];
-		const session: SandboxSession = {
+		const session = stubSession({
 			...recordingSession(record),
 			launch: async (command) => {
 				launches.push(command);
 			},
-		};
+		});
 		await launchDetached(session, "bash task.sh");
 		expect(launches).toEqual(["bash task.sh"]);
 		expect(record).toEqual([]);
 	});
 
 	test("a detached command actually survives the exec round-trip", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "driver-shell-"));
-		try {
-			const session = localShellSession(dir);
-			await launchDetached(session, `sleep 0.05 && printf done > ${shellQuote(join(dir, "done-file"))}`);
-			// The launch returned before the command finished; the done-file appears afterwards.
-			expect(await readTextFile(session, join(dir, "done-file"))).toBeNull();
-			await new Promise((resolve) => setTimeout(resolve, 300));
-			expect(await readTextFile(session, join(dir, "done-file"))).toBe("done");
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
+		const session = localShellSession(dir);
+		await launchDetached(
+			session,
+			`sleep 0.05 && printf done > ${shellQuote(join(dir, "done-file"))}`,
+		);
+		// The launch returned before the command finished; the done-file appears afterwards.
+		expect(await readTextFile(session, join(dir, "done-file"))).toBeNull();
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		expect(await readTextFile(session, join(dir, "done-file"))).toBe("done");
 	});
 });

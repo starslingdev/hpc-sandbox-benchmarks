@@ -1,19 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { SandboxSession } from "./port.ts";
-import { sandboxRef } from "./port.ts";
+import { stubSession } from "./session.fixture.ts";
 import { withSessionTeardown } from "./session.ts";
 
-function session(onDestroy: () => Promise<void>): SandboxSession {
-	return {
-		sandboxRef: sandboxRef("tama", "m-1"),
-		artifactRef: "im-1",
-		native: null,
-		async exec() {
-			return { exit: { kind: "exited", code: 0 }, stdout: "", stderr: "", durationMs: 0, truncated: false };
-		},
-		destroy: onDestroy,
-	};
-}
+const session = (onDestroy: () => Promise<void>) => stubSession({ destroy: onDestroy });
 
 describe("withSessionTeardown", () => {
 	test("destroys exactly once on success and returns the work's result", async () => {
@@ -30,9 +19,12 @@ describe("withSessionTeardown", () => {
 
 	test("a work failure with clean teardown propagates the work failure", async () => {
 		await expect(
-			withSessionTeardown(session(async () => {}), async () => {
-				throw new Error("benchmark failed");
-			}),
+			withSessionTeardown(
+				session(async () => {}),
+				async () => {
+					throw new Error("benchmark failed");
+				},
+			),
 		).rejects.toThrow("benchmark failed");
 	});
 

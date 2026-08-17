@@ -1,14 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import { DriverError } from "./errors.ts";
 import type { SandboxRef } from "./port.ts";
 import { parseCreateRequest, sandboxRef, sandboxRefSchema, succeeded } from "./port.ts";
 
 // Minimal type-level assertion helpers.
-type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
+type Equal<X, Y> =
+	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
 describe("sandboxRef", () => {
 	test("accepts each provider's id in its own format", () => {
-		expect(sandboxRef("modal-gvisor", "sb-abc123")).toEqual({ provider: "modal-gvisor", id: "sb-abc123" });
+		expect(sandboxRef("modal-gvisor", "sb-abc123")).toEqual({
+			provider: "modal-gvisor",
+			id: "sb-abc123",
+		});
 		expect(sandboxRef("daytona-vm", "8f14e45f-ceea-4b16-a2b8-3c1e5f2a9d01").id).toBe(
 			"8f14e45f-ceea-4b16-a2b8-3c1e5f2a9d01",
 		);
@@ -23,9 +28,23 @@ describe("sandboxRef", () => {
 			/invalid sandbox ref: id must be matched by \^sb-\\w\+\$ \(was "vm-abc123"\)/,
 		);
 		expect(() => sandboxRef("e2b", "sb-abc123")).toThrow(/id must be matched by \^i\[a-z0-9\]\+\$/);
-		expect(() => sandboxRef("daytona-vm", "not-a-uuid")).toThrow(/id must be matched by/);
+		expect(() => sandboxRef("daytona-vm", "not-a-uuid")).toThrow(/id must be a UUID/);
 		expect(() => sandboxRef("tama", "")).toThrow(/invalid sandbox ref/);
 		expect(() => sandboxRef("tama", "has spaces")).toThrow(/invalid sandbox ref/);
+	});
+
+	test("a rejection is a typed DriverError carrying the provider", () => {
+		const error = (() => {
+			try {
+				sandboxRef("modal-gvisor", "vm-abc");
+				return null;
+			} catch (caught) {
+				return caught;
+			}
+		})();
+		expect(error).toBeInstanceOf(DriverError);
+		expect((error as DriverError).code).toBe("invalid-sandbox-ref");
+		expect((error as DriverError).provider).toBe("modal-gvisor");
 	});
 
 	test("the schema rejects an unregistered provider outright", () => {
@@ -63,13 +82,28 @@ describe("parseCreateRequest", () => {
 	});
 
 	test("rejects DEEP undeclared keys — nested misspellings included", () => {
-		expect(() =>
-			parseCreateRequest({ ...valid, spec: { vcpus: 4, memroyGb: 8 } }),
-		).toThrow(/spec\.memroyGb must be removed/);
+		expect(() => parseCreateRequest({ ...valid, spec: { vcpus: 4, memroyGb: 8 } })).toThrow(
+			/spec\.memroyGb must be removed/,
+		);
 		expect(() =>
 			parseCreateRequest({ ...valid, gpu: { model: "H100", count: 1, cout: 2 } }),
 		).toThrow(/gpu\.cout must be removed/);
-		expect(() => parseCreateRequest({ ...valid, deadlienMs: 1 })).toThrow(/deadlienMs must be removed/);
+		expect(() => parseCreateRequest({ ...valid, deadlienMs: 1 })).toThrow(
+			/deadlienMs must be removed/,
+		);
+	});
+
+	test("a rejection is a typed invalid-create-request DriverError", () => {
+		const error = (() => {
+			try {
+				parseCreateRequest({ ...valid, spec: { vcpus: -1, memoryGb: 8 } });
+				return null;
+			} catch (caught) {
+				return caught;
+			}
+		})();
+		expect(error).toBeInstanceOf(DriverError);
+		expect((error as DriverError).code).toBe("invalid-create-request");
 	});
 
 	test("rejects non-positive and malformed values with path-bearing messages", () => {
@@ -78,7 +112,9 @@ describe("parseCreateRequest", () => {
 		);
 		expect(() => parseCreateRequest({ ...valid, artifactRef: "" })).toThrow(/artifactRef/);
 		expect(() => parseCreateRequest({ ...valid, deadlineMs: 0 })).toThrow(/deadlineMs/);
-		expect(() => parseCreateRequest({ ...valid, gpu: { model: "", count: 1 } })).toThrow(/gpu\.model/);
+		expect(() => parseCreateRequest({ ...valid, gpu: { model: "", count: 1 } })).toThrow(
+			/gpu\.model/,
+		);
 	});
 
 	test("gpu and env are genuinely optional", () => {

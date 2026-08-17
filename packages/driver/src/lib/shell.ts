@@ -54,10 +54,11 @@ export async function writeTextFile(
 		await session.files.writeText(path, text);
 		return;
 	}
-	const encoded = Buffer.from(text, "utf8").toString("base64");
-	const result = await session.exec(
-		`printf '%s' ${shellQuote(encoded)} | base64 -d > ${shellQuote(path)}`,
-	);
+	// base64's alphabet (A-Za-z0-9+/=) can never contain a single quote, so the payload — which
+	// can be multi-MB — is wrapped in literal quotes directly instead of scanned by shellQuote.
+	// `Uint8Array.toBase64` is the repo's Bun-native spelling (see harness collect.ts) — no Buffer.
+	const encoded = new TextEncoder().encode(text).toBase64();
+	const result = await session.exec(`printf '%s' '${encoded}' | base64 -d > ${shellQuote(path)}`);
 	if (!succeeded(result.exit)) {
 		throw new Error(`writeTextFile(${path}) failed: ${describeFailure(result)}`);
 	}

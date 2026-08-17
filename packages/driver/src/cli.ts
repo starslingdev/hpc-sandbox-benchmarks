@@ -7,12 +7,18 @@
 //
 // The compiled shape is a MethodTable whose handle is the PARSED READINESS ROW — so every
 // generated member is unit-testable as a pure function and `session.native` is the vendor's
-// own typed record, not an opaque id string.
+// own typed record, not an opaque id string. Readiness polling, output capping and the
+// use-after-destroy guard belong to the kit layer (poll.ts, table.ts); this file supplies only
+// the vendor-specific argv and parsers.
 
+import { randomUUID } from "node:crypto";
 import type { ProviderId } from "@sandbox-benchmarks/schema/providers";
 import type { ArkErrors } from "arktype";
+import { type } from "arktype";
 import type { CreateRequest, ExecResult, SandboxDriver, SandboxRef } from "./index.ts";
 import { driverFromTable, sandboxRef } from "./index.ts";
+import { DriverError } from "./lib/errors.ts";
+import { pollUntilReady } from "./lib/poll.ts";
 import type { MethodTable } from "./lib/table.ts";
 
 export interface CliRunResult {
@@ -55,9 +61,6 @@ export interface CliDriverOptions {
 	readonly run?: CliRunner;
 }
 
-const isArkErrors = (value: unknown): value is ArkErrors =>
-	typeof value === "object" && value !== null && "summary" in value && Symbol.iterator in (value as object);
-
 const defaultRunner: CliRunner = async (binary, args) => {
 	const child = Bun.spawn([binary, ...args], { stdout: "pipe", stderr: "pipe" });
 	const [stdout, stderr, code] = await Promise.all([
@@ -79,89 +82,100 @@ export function redactArgs(args: readonly string[], secretFlags: readonly string
 	return redacted;
 }
 
-class CliError extends Error {
-	constructor(binary: string, args: readonly string[], secretFlags: readonly string[], detail: string) {
-		super(`${binary} ${redactArgs(args, secretFlags).join(" ")}: ${detail}`);
-		this.name = "CliError";
-	}
-}
-
 /** Compile a CLI spec down to a method table (handle = the parsed readiness row). */
 export function cliMethodTable<Row>(
 	spec: CliSpec<Row>,
 	options: CliDriverOptions = {},
 ): MethodTable<Row, null> {
 	const run = options.run ?? defaultRunner;
-	const call = async (args: readonly string[]): Promise<CliRunResult> => {
-		const result = await run(spec.binary, args);
-		return result;
-	};
-	const fail = (args: readonly string[], detail: string): never => {
-		throw new CliError(spec.binary, args, spec.secretFlags, detail);
-	};
-	const parseRows = (raw: string, sourceArgs: readonly string[]): readonly Row[] => {
-		const rows = spec.ready.parse(raw);
-		if (isArkErrors(rows)) {
-			return fail(sourceArgs, `unparseable output: ${rows.summary}`);
-		}
-		return rows;
-	};
-	const destroyByArgs = async (id: string): Promise<void> => {
+	const call = (args: readonly string[]) => run(spec.binary, args);
+	// Vendor failures carry structured fields (exit code + raw stderr) so the harness classifies
+	// by them, not by regexing a formatted message; the message redacts secret argv for humans.
+	const vendorFailed = (
+		code: "create-failed" | "destroy-failed",
+		args: readonly string[],
+		result: CliRunResult,
+		ref?: SandboxRef,
+	): DriverError =>
+		new DriverError(
+			code,
+			`${spec.binary} ${redactArgs(args, spec.secretFlags).join(" ")}: exit ${result.code}`,
+			{
+				provider: spec.provider,
+				vendorExitCode: result.code,
+				vendorMessage: result.stderr.trim(),
+				...(ref ? { ref } : {}),
+			},
+		);
+
+	const destroyByArgs = async (id: string, ref?: SandboxRef): Promise<void> => {
 		const args = spec.destroy(id);
 		const result = await call(args);
-		if (result.code !== 0 && !spec.notFound.test(result.stderr) && !spec.notFound.test(result.stdout)) {
-			fail(args, `exit ${result.code}: ${result.stderr.trim()}`);
+		if (
+			result.code !== 0 &&
+			!spec.notFound.test(result.stderr) &&
+			!spec.notFound.test(result.stdout)
+		) {
+			throw vendorFailed("destroy-failed", args, result, ref);
 		}
 	};
+
 	return {
 		async create(_ctx, request) {
-			const name = `bench-${Math.random().toString(36).slice(2, 10)}`;
+			const name = `bench-${randomUUID()}`;
 			const createArgs = spec.create(request, name);
 			const created = await call(createArgs);
 			if (created.code !== 0) {
-				fail(createArgs, `exit ${created.code}: ${created.stderr.trim()}`);
+				throw vendorFailed("create-failed", createArgs, created);
 			}
-			const deadline = Date.now() + request.deadlineMs;
-			const interval = spec.ready.pollIntervalMs ?? 1_000;
-			for (;;) {
-				const polled = await call(spec.ready.poll);
-				if (polled.code !== 0) {
-					fail(spec.ready.poll, `exit ${polled.code}: ${polled.stderr.trim()}`);
-				}
-				const row = spec.ready.select(parseRows(polled.stdout, spec.ready.poll), name);
-				if (row !== null) {
-					return { handle: row, sandboxRef: sandboxRef(spec.provider, spec.idOf(row)) };
-				}
-				if (Date.now() >= deadline) {
-					return fail(createArgs, `${name} not ready within ${request.deadlineMs}ms`);
-				}
-				await new Promise((resolve) => setTimeout(resolve, interval));
-			}
+			const row = await pollUntilReady({
+				provider: spec.provider,
+				deadlineMs: request.deadlineMs,
+				intervalMs: spec.ready.pollIntervalMs ?? 1_000,
+				poll: async () => {
+					const polled = await call(spec.ready.poll);
+					if (polled.code !== 0) {
+						throw vendorFailed("create-failed", spec.ready.poll, polled);
+					}
+					const rows = spec.ready.parse(polled.stdout);
+					if (rows instanceof type.errors) {
+						throw new DriverError(
+							"vendor-output-unparseable",
+							`${spec.binary} output: ${rows.summary}`,
+							{
+								provider: spec.provider,
+								vendorMessage: rows.summary,
+							},
+						);
+					}
+					return spec.ready.select(rows, name);
+				},
+			});
+			return { handle: row, sandboxRef: sandboxRef(spec.provider, spec.idOf(row)) };
 		},
-		async exec(_ctx, row, command, options_): Promise<ExecResult> {
+		async exec(_ctx, row, command): Promise<ExecResult> {
 			const started = Date.now();
-			const args = spec.exec(spec.idOf(row), command);
-			const result = await call(args);
-			const cap = options_?.maxOutputBytes;
-			const clip = (text: string) => (cap !== undefined && text.length > cap ? text.slice(0, cap) : text);
+			const result = await call(spec.exec(spec.idOf(row), command));
 			return {
 				exit: { kind: "exited", code: result.code },
-				stdout: clip(result.stdout),
-				stderr: clip(result.stderr),
+				stdout: result.stdout,
+				stderr: result.stderr,
 				durationMs: Date.now() - started,
-				truncated:
-					cap !== undefined && (result.stdout.length > cap || result.stderr.length > cap),
+				truncated: false, // the kit applies caps centrally (table.ts / output.ts)
 			};
 		},
 		destroy: (_ctx, row) => destroyByArgs(spec.idOf(row)),
 		// CLI vendors get bare-ref reaping for free: the destroy argv only needs the id, and
 		// notFound tolerance already makes it idempotent.
-		destroyById: (_ctx, ref) => destroyByArgs(ref.id),
+		destroyById: (_ctx, ref) => destroyByArgs(ref.id, ref),
 		// No files, no launch: absent, not stubbed — the harness fallbacks (shell.ts) cover both.
 	};
 }
 
 /** One generic driver; a CLI-only provider becomes a table of argv templates and parsers. */
-export function cliDriver<Row>(spec: CliSpec<Row>, options: CliDriverOptions = {}): SandboxDriver<Row> {
+export function cliDriver<Row>(
+	spec: CliSpec<Row>,
+	options: CliDriverOptions = {},
+): SandboxDriver<Row> {
 	return driverFromTable(cliMethodTable(spec, options), async () => null);
 }
