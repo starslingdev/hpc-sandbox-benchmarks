@@ -15,3 +15,6 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0003](./0003-generated-pts-catalog-and-drift-gate.md) | Generated PTS catalog behind a drift gate |
 | [0004](./0004-consumption-layer-aggregation.md) | Raw-first history, consumption-layer candidate→promote |
 | [0005](./0005-host-vs-effective-spec-split.md) | Host-vs-effective spec split |
+| [0006](./0006-declarative-provider-onboarding.md) | Declarative provider onboarding |
+| [0007](./0007-sandbox-driver-port.md) | Sandbox driver kit: one port, one file per provider; ComputeSDK as one driver |
+| [0008](./0008-driver-conformance-gate.md) | Driver conformance: the behavioral drift gate |
