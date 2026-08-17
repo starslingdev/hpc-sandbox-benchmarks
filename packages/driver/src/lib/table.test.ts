@@ -59,6 +59,20 @@ describe("driverFromTable", () => {
 		expect(session.launch).toBeUndefined();
 	});
 
+	test("preserves an explicitly projected undefined native value", async () => {
+		const table: MethodTable<string, null, undefined> = {
+			create: async () => ({
+				handle: "internal-wrapper",
+				native: undefined,
+				sandboxRef: sandboxRef("tama", "m-native-undefined"),
+			}),
+			exec: async () => okExec,
+			destroy: async () => {},
+		};
+		const session = await driverFromTable(table, async () => null).create(request);
+		expect(session.native).toBeUndefined();
+	});
+
 	test("forwards cooperative cancellation to create, session destroy, and bare-ref destroy", async () => {
 		const createCancellation = new AbortController();
 		const destroyCancellation = new AbortController();

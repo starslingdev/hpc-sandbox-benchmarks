@@ -4,7 +4,7 @@
 // arktype boundary that evaluates the same descriptor tuple.
 
 import type { ProviderId, ProviderInput, REGISTRY } from "@sandbox-benchmarks/schema/providers";
-import type { CreateBudget, SandboxDriver } from "./port.ts";
+import type { CreateBudget, ResolvedArtifact, SandboxDriver } from "./port.ts";
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {};
 
@@ -67,8 +67,32 @@ export type EnvInputOf<P extends ProviderId> = P extends ProviderId
 	? EnvInputFromInputs<(typeof REGISTRY)[P]["inputs"]>
 	: never;
 
+/** The exact, literal artifact descriptor authored for one provider in the registry. */
+export type ArtifactOf<P extends ProviderId> = P extends ProviderId
+	? (typeof REGISTRY)[P]["artifact"]
+	: never;
+
+type ResolvedArtifactFor<Artifact> = Artifact extends { readonly kind: "none" }
+	? Extract<ResolvedArtifact, { readonly kind: "none" }>
+	: Artifact extends { readonly kind: "image" }
+		? Extract<ResolvedArtifact, { readonly kind: "image" }>
+		: Artifact extends { readonly kind: "baked" }
+			? Extract<ResolvedArtifact, { readonly kind: "baked" }>
+			: Artifact extends { readonly kind: "mirror" }
+				? Extract<ResolvedArtifact, { readonly kind: "mirror" }>
+				: Artifact extends { readonly kind: "built" }
+					? Extract<ResolvedArtifact, { readonly kind: "built" }>
+					: never;
+
+/** The lane-resolved artifact shape for one provider; `ref` is impossible for `kind: "none"`. */
+export type ResolvedArtifactOf<P extends ProviderId> = P extends ProviderId
+	? ResolvedArtifactFor<(typeof REGISTRY)[P]["artifact"]>
+	: never;
+
 export interface DriverContext<P extends ProviderId> {
 	readonly env: EnvOf<P>;
+	readonly artifact: ArtifactOf<P>;
+	readonly resolvedArtifact: ResolvedArtifactOf<P>;
 }
 
 export interface DriverSpec<P extends ProviderId, Handle = unknown> {

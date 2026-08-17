@@ -370,6 +370,48 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 	];
 }
 
+interface RootWorkspaceManifest {
+	readonly workspaces?: {
+		readonly catalogs?: {
+			readonly computesdk?: Readonly<Record<string, string>>;
+		};
+	};
+}
+
+/**
+ * The fleet owns every provider SDK while the root catalog owns their exact versions. Project the
+ * whole provider catalog into the private fleet package so migrating or adding a driver never adds
+ * a fourth handwritten package-manifest edit. The forthcoming new-provider scaffold owns adding a
+ * new version pin to the root catalog; this reviewed file is its generated consumer.
+ */
+export function renderDriversPackage(root = REPO_ROOT): string {
+	const rootManifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as
+		| RootWorkspaceManifest
+		| undefined;
+	const providerCatalog = rootManifest?.workspaces?.catalogs?.computesdk;
+	if (providerCatalog === undefined || Object.keys(providerCatalog).length === 0) {
+		throw new Error("package.json: workspaces.catalogs.computesdk must be a non-empty mapping");
+	}
+	for (const [name, version] of Object.entries(providerCatalog)) {
+		if (name.length === 0 || version.length === 0) {
+			throw new Error(
+				"package.json: provider catalog package names and versions must be non-empty",
+			);
+		}
+	}
+
+	const file = "packages/drivers/package.json";
+	const manifest = JSON.parse(readFileSync(resolve(root, file), "utf8")) as Record<string, unknown>;
+	const dependencies: Array<readonly [string, string]> = [
+		...Object.keys(providerCatalog).map((name): [string, string] => [name, "catalog:computesdk"]),
+		["@sandbox-benchmarks/driver", "workspace:*"],
+		["arktype", "catalog:"],
+	];
+	dependencies.sort((left, right) => left[0].localeCompare(right[0]));
+	manifest.dependencies = Object.fromEntries(dependencies);
+	return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
 export function renderProviderWiringFiles(root = REPO_ROOT): Map<string, string> {
 	// The same Tier-3 boundary that guards registry generation runs before wiring emission.
 	validateProviderModules(
@@ -383,6 +425,7 @@ export function renderProviderWiringFiles(root = REPO_ROOT): Map<string, string>
 		const source = rendered.get(region.file) ?? readFileSync(resolve(root, region.file), "utf8");
 		rendered.set(region.file, replaceGeneratedRegion(source, region));
 	}
+	rendered.set("packages/drivers/package.json", renderDriversPackage(root));
 	return rendered;
 }
 

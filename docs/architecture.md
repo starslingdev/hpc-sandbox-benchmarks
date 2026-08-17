@@ -54,6 +54,8 @@ docs/       methodology, ADRs, CI & secrets
 | Member                      | Internal deps (`workspace:*`)                   | External (catalog)                  |
 |-----------------------------|-------------------------------------------------|-------------------------------------|
 | `@sandbox-benchmarks/schema`     | —                                               | `arktype`                           |
+| `@sandbox-benchmarks/driver`     | schema                                          | `arktype`                           |
+| `@sandbox-benchmarks/drivers`    | driver                                          | `arktype`, provider SDKs (`catalog:computesdk`) |
 | `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
 | `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
 | `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { envSchemaFor, parseDriverEnv } from "./env.ts";
+import { envSchemaFor, parseDriverEnv, sensitiveEnvValuesFor } from "./env.ts";
 import { DriverError } from "./lib/errors.ts";
 
 type Equal<X, Y> =
@@ -90,5 +90,20 @@ describe("parseDriverEnv", () => {
 			>
 		>;
 		expect(true).toBe(true);
+	});
+
+	test("marks credential sources sensitive without hiding ordinary overrides", () => {
+		expect(
+			sensitiveEnvValuesFor("e2b", {
+				E2B_API_KEY: "secret-key",
+				E2B_TEMPLATE: "debuggable-template",
+			}),
+		).toEqual(["secret-key"]);
+		expect(
+			sensitiveEnvValuesFor("tama", {
+				TAMA_TOKEN: "secret-token",
+				TAMA_CLI: "/opt/tama",
+			}),
+		).toEqual(["secret-token"]);
 	});
 });
