@@ -24,7 +24,7 @@ function fakeCompute(sandbox: ComputeSdkSandboxLike, withList = false) {
 }
 
 const baseSandbox: ComputeSdkSandboxLike = {
-	sandboxId: "sb-1",
+	sandboxId: "i2f3k4abc",
 	runCommand: async () => ({ exitCode: 0, stdout: "ok", stderr: "" }),
 	destroy: async () => {},
 };
@@ -33,11 +33,12 @@ describe("computeSdkDriver", () => {
 	test("passes create options through with the request deadline", async () => {
 		const { compute, createOptionsSeen } = fakeCompute(baseSandbox);
 		const driver = computeSdkDriver(compute, {
+			provider: "e2b",
 			createOptions: { snapshotId: "template-1" },
 			hasWorkingFilesystem: false,
 		});
 		const session = await driver.create(request);
-		expect(String(session.sandboxId)).toBe("sb-1");
+		expect(session.sandboxRef).toEqual({ provider: "e2b", id: "i2f3k4abc" });
 		expect(session.artifactRef).toBe("template-1");
 		expect(createOptionsSeen).toEqual([{ snapshotId: "template-1", timeout: 30_000 }]);
 	});
@@ -47,7 +48,7 @@ describe("computeSdkDriver", () => {
 			...baseSandbox,
 			runCommand: async () => ({ stdout: "partial", stderr: "" }),
 		});
-		const session = await computeSdkDriver(compute, { hasWorkingFilesystem: false }).create(request);
+		const session = await computeSdkDriver(compute, { provider: "e2b", hasWorkingFilesystem: false }).create(request);
 		const result = await session.exec("true");
 		expect(result.exit).toEqual({ kind: "unknown", detail: "computesdk adapter reported no exit code" });
 		expect(result.stdout).toBe("partial");
@@ -66,7 +67,7 @@ describe("computeSdkDriver", () => {
 			},
 		};
 		const { compute: stubbed } = fakeCompute({ ...baseSandbox, filesystem: throwingStub });
-		const withoutTrust = await computeSdkDriver(stubbed, { hasWorkingFilesystem: false }).create(request);
+		const withoutTrust = await computeSdkDriver(stubbed, { provider: "e2b", hasWorkingFilesystem: false }).create(request);
 		expect(withoutTrust.files).toBeUndefined();
 
 		const reads: string[] = [];
@@ -81,7 +82,7 @@ describe("computeSdkDriver", () => {
 				writeFile: async () => {},
 			},
 		});
-		const withTrust = await computeSdkDriver(working, { hasWorkingFilesystem: true }).create(request);
+		const withTrust = await computeSdkDriver(working, { provider: "e2b", hasWorkingFilesystem: true }).create(request);
 		expect(await withTrust.files?.readFile("/bench/a")).toBe("content");
 		expect(reads).toEqual(["/bench/a"]);
 	});
@@ -95,22 +96,29 @@ describe("computeSdkDriver", () => {
 				return { exitCode: 0, stdout: "", stderr: "" };
 			},
 		});
-		const session = await computeSdkDriver(compute, { hasWorkingFilesystem: false }).create(request);
+		const session = await computeSdkDriver(compute, { provider: "e2b", hasWorkingFilesystem: false }).create(request);
 		await session.launch?.("bash task.sh");
 		expect(commands).toEqual([["bash task.sh", true]]);
 	});
 
 	test("probes exist exactly when the wrapper exposes list", async () => {
 		const { compute: withList } = fakeCompute(baseSandbox, true);
-		expect(computeSdkDriver(withList, { hasWorkingFilesystem: false }).probes).toBeDefined();
+		expect(computeSdkDriver(withList, { provider: "e2b", hasWorkingFilesystem: false }).probes).toBeDefined();
 		const { compute: withoutList } = fakeCompute(baseSandbox, false);
-		expect(computeSdkDriver(withoutList, { hasWorkingFilesystem: false }).probes).toBeUndefined();
+		expect(computeSdkDriver(withoutList, { provider: "e2b", hasWorkingFilesystem: false }).probes).toBeUndefined();
+	});
+
+	test("a vendor id in the wrong format for the provider fails ref construction", async () => {
+		const { compute } = fakeCompute({ ...baseSandbox, sandboxId: "totally wrong id!" });
+		await expect(
+			computeSdkDriver(compute, { provider: "e2b", hasWorkingFilesystem: false }).create(request),
+		).rejects.toThrow(/invalid sandbox ref: id must be matched by/);
 	});
 
 	test("a sandbox without an id fails create loudly", async () => {
 		const { compute } = fakeCompute({ ...baseSandbox, sandboxId: undefined });
 		await expect(
-			computeSdkDriver(compute, { hasWorkingFilesystem: false }).create(request),
+			computeSdkDriver(compute, { provider: "e2b", hasWorkingFilesystem: false }).create(request),
 		).rejects.toThrow("computesdk wrapper returned a sandbox without a sandboxId");
 	});
 });

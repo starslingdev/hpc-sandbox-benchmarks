@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecResult, SandboxSession } from "./port.ts";
-import { sandboxId } from "./port.ts";
+import { sandboxRef } from "./port.ts";
 import { launchDetached, readTextFile, shellQuote, writeTextFile } from "./shell.ts";
 
 /**
@@ -13,7 +13,7 @@ import { launchDetached, readTextFile, shellQuote, writeTextFile } from "./shell
  */
 function localShellSession(cwd: string): SandboxSession {
 	return {
-		sandboxId: sandboxId("local-shell"),
+		sandboxRef: sandboxRef("tama", "local-shell"),
 		artifactRef: "local",
 		native: cwd,
 		async exec(command): Promise<ExecResult> {
@@ -36,7 +36,7 @@ function localShellSession(cwd: string): SandboxSession {
 
 function recordingSession(record: string[]): SandboxSession {
 	return {
-		sandboxId: sandboxId("recorder"),
+		sandboxRef: sandboxRef("tama", "recorder"),
 		artifactRef: "none",
 		native: null,
 		async exec(command): Promise<ExecResult> {

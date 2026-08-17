@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { SandboxSession } from "./port.ts";
-import { sandboxId } from "./port.ts";
+import { sandboxRef } from "./port.ts";
 import { withSessionTeardown } from "./session.ts";
 
 function session(onDestroy: () => Promise<void>): SandboxSession {
 	return {
-		sandboxId: sandboxId("sb-1"),
+		sandboxRef: sandboxRef("tama", "m-1"),
 		artifactRef: "im-1",
 		native: null,
 		async exec() {

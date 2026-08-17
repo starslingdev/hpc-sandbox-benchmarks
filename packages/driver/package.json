@@ -2,7 +2,7 @@
 	"name": "@sandbox-benchmarks/driver",
 	"version": "0.0.0",
 	"private": true,
-	"description": "The sandbox driver kit (ADR-0007): the port every provider implements (create / exec / destroy, capabilities by presence), the method-table layer the kit assembles into sessions, harness-owned shell mechanics, and the generic drivers. The root entry is deliberately arktype-free; parsing lives in the ./env and ./cli subpaths.",
+	"description": "The sandbox driver kit (ADR-0007): the port every provider implements (create / exec / destroy, capabilities by presence), the method-table layer the kit assembles into sessions, harness-owned shell mechanics, and the generic drivers. lib/port.ts is the single arktype source of truth for the port's data shapes, including per-provider sandbox id formats (arkregex); ./env and ./cli carry the other parsing surfaces.",
 	"type": "module",
 	"sideEffects": false,
 	"exports": {

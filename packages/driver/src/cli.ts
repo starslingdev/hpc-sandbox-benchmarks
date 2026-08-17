@@ -9,9 +9,10 @@
 // generated member is unit-testable as a pure function and `session.native` is the vendor's
 // own typed record, not an opaque id string.
 
+import type { ProviderId } from "@sandbox-benchmarks/schema/providers";
 import type { ArkErrors } from "arktype";
-import type { CreateRequest, ExecResult, SandboxDriver, SandboxId } from "./index.ts";
-import { driverFromTable, sandboxId } from "./index.ts";
+import type { CreateRequest, ExecResult, SandboxDriver, SandboxRef } from "./index.ts";
+import { driverFromTable, sandboxRef } from "./index.ts";
 import type { MethodTable } from "./lib/table.ts";
 
 export interface CliRunResult {
@@ -24,6 +25,8 @@ export interface CliRunResult {
 export type CliRunner = (binary: string, args: readonly string[]) => Promise<CliRunResult>;
 
 export interface CliSpec<Row> {
+	/** The provider this CLI fronts — sandbox refs are validated in its id format. */
+	readonly provider: ProviderId;
 	/** Resolved binary path or name (the caller applies any env override). */
 	readonly binary: string;
 	/** Flags whose FOLLOWING argv value is a secret: redacted from every diagnostic. */
@@ -39,10 +42,10 @@ export interface CliSpec<Row> {
 		readonly select: (rows: readonly Row[], name: string) => Row | null;
 		readonly pollIntervalMs?: number;
 	};
-	/** The row's stable sandbox id. */
+	/** The row's stable sandbox id (validated into a SandboxRef by the kit). */
 	readonly idOf: (row: Row) => string;
-	readonly exec: (id: SandboxId, command: string) => readonly string[];
-	readonly destroy: (id: SandboxId) => readonly string[];
+	readonly exec: (id: string, command: string) => readonly string[];
+	readonly destroy: (id: string) => readonly string[];
 	/** Vendor prose meaning "already gone" — destroy-of-missing MUST succeed (ADR-0008). */
 	readonly notFound: RegExp;
 }
@@ -103,7 +106,7 @@ export function cliMethodTable<Row>(
 		}
 		return rows;
 	};
-	const destroyByArgs = async (id: SandboxId): Promise<void> => {
+	const destroyByArgs = async (id: string): Promise<void> => {
 		const args = spec.destroy(id);
 		const result = await call(args);
 		if (result.code !== 0 && !spec.notFound.test(result.stderr) && !spec.notFound.test(result.stdout)) {
@@ -127,7 +130,7 @@ export function cliMethodTable<Row>(
 				}
 				const row = spec.ready.select(parseRows(polled.stdout, spec.ready.poll), name);
 				if (row !== null) {
-					return { handle: row, sandboxId: sandboxId(spec.idOf(row)) };
+					return { handle: row, sandboxRef: sandboxRef(spec.provider, spec.idOf(row)) };
 				}
 				if (Date.now() >= deadline) {
 					return fail(createArgs, `${name} not ready within ${request.deadlineMs}ms`);
@@ -137,7 +140,7 @@ export function cliMethodTable<Row>(
 		},
 		async exec(_ctx, row, command, options_): Promise<ExecResult> {
 			const started = Date.now();
-			const args = spec.exec(sandboxId(spec.idOf(row)), command);
+			const args = spec.exec(spec.idOf(row), command);
 			const result = await call(args);
 			const cap = options_?.maxOutputBytes;
 			const clip = (text: string) => (cap !== undefined && text.length > cap ? text.slice(0, cap) : text);
@@ -150,10 +153,10 @@ export function cliMethodTable<Row>(
 					cap !== undefined && (result.stdout.length > cap || result.stderr.length > cap),
 			};
 		},
-		destroy: (_ctx, row) => destroyByArgs(sandboxId(spec.idOf(row))),
-		// CLI vendors get bare-id reaping for free: the destroy argv only needs the id, and
+		destroy: (_ctx, row) => destroyByArgs(spec.idOf(row)),
+		// CLI vendors get bare-ref reaping for free: the destroy argv only needs the id, and
 		// notFound tolerance already makes it idempotent.
-		destroyById: (_ctx, id) => destroyByArgs(id),
+		destroyById: (_ctx, ref) => destroyByArgs(ref.id),
 		// No files, no launch: absent, not stubbed — the harness fallbacks (shell.ts) cover both.
 	};
 }

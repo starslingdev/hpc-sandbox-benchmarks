@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CreateRequest, ExecResult } from "./port.ts";
-import { sandboxId, succeeded } from "./port.ts";
+import { sandboxRef } from "./port.ts";
 import type { MethodTable } from "./table.ts";
 import { driverFromTable } from "./table.ts";
 
@@ -19,31 +19,16 @@ const request: CreateRequest = {
 };
 
 const baseTable: MethodTable<string, null> = {
-	create: async () => ({ handle: "h", sandboxId: sandboxId("sb-1") }),
+	create: async () => ({ handle: "h", sandboxRef: sandboxRef("tama", "m-1") }),
 	exec: async () => okExec,
 	destroy: async () => {},
 };
-
-describe("sandboxId", () => {
-	test("rejects the empty string at construction", () => {
-		expect(() => sandboxId("")).toThrow("sandboxId must be non-empty");
-	});
-});
-
-describe("succeeded", () => {
-	test("only a zero exited code succeeds", () => {
-		expect(succeeded({ kind: "exited", code: 0 })).toBe(true);
-		expect(succeeded({ kind: "exited", code: 7 })).toBe(false);
-		expect(succeeded({ kind: "signalled", signal: "KILL" })).toBe(false);
-		expect(succeeded({ kind: "unknown", detail: "no code" })).toBe(false);
-	});
-});
 
 describe("driverFromTable", () => {
 	test("assembles a session over the table with the request's artifactRef", async () => {
 		const driver = driverFromTable(baseTable, async () => null);
 		const session = await driver.create(request);
-		expect(String(session.sandboxId)).toBe("sb-1");
+		expect(session.sandboxRef).toEqual({ provider: "tama", id: "m-1" });
 		expect(session.artifactRef).toBe("im-abc123");
 		expect(session.native).toBe("h");
 		expect(session.files).toBeUndefined();
@@ -60,7 +45,7 @@ describe("driverFromTable", () => {
 		await expect(driver.create(request)).rejects.toThrow("transient plumbing failure");
 		// Before the memo-clear rule this replayed the memoized rejection and bricked the driver.
 		const session = await driver.create(request);
-		expect(String(session.sandboxId)).toBe("sb-1");
+		expect(session.sandboxRef.id).toBe("m-1");
 		expect(attempts).toBe(2);
 	});
 
@@ -69,7 +54,7 @@ describe("driverFromTable", () => {
 		const driver = driverFromTable(
 			{
 				...baseTable,
-				create: async () => ({ handle: "h", sandboxId: sandboxId("sb-2"), artifactRef: "im-OTHER" }),
+				create: async () => ({ handle: "h", sandboxRef: sandboxRef("tama", "m-2"), artifactRef: "im-OTHER" }),
 				destroy: async () => {
 					destroyed += 1;
 				},
@@ -86,7 +71,7 @@ describe("driverFromTable", () => {
 		const driver = driverFromTable(
 			{
 				...baseTable,
-				create: async () => ({ handle: "h", sandboxId: sandboxId("sb-3"), artifactRef: "im-abc123" }),
+				create: async () => ({ handle: "h", sandboxRef: sandboxRef("tama", "m-3"), artifactRef: "im-abc123" }),
 			},
 			async () => null,
 		);
@@ -126,13 +111,13 @@ describe("driverFromTable", () => {
 		const withReap = driverFromTable(
 			{
 				...baseTable,
-				destroyById: async (_ctx, id) => {
-					reaped.push(id);
+				destroyById: async (_ctx, ref) => {
+					reaped.push(ref.id);
 				},
 			},
 			async () => null,
 		);
-		await withReap.destroyById?.(sandboxId("sb-gone"));
-		expect(reaped).toEqual(["sb-gone"]);
+		await withReap.destroyById?.(sandboxRef("tama", "m-gone"));
+		expect(reaped).toEqual(["m-gone"]);
 	});
 });

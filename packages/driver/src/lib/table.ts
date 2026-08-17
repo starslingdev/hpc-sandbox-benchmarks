@@ -8,7 +8,7 @@ import type {
 	ExecOptions,
 	ExecResult,
 	SandboxDriver,
-	SandboxId,
+	SandboxRef,
 	SandboxSession,
 } from "./port.ts";
 
@@ -21,10 +21,10 @@ export interface MethodTable<Handle, Ctx> {
 	create(
 		ctx: Ctx,
 		request: CreateRequest,
-	): Promise<{ readonly handle: Handle; readonly sandboxId: SandboxId; readonly artifactRef?: string }>;
+	): Promise<{ readonly handle: Handle; readonly sandboxRef: SandboxRef; readonly artifactRef?: string }>;
 	exec(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<ExecResult>;
 	destroy(ctx: Ctx, handle: Handle): Promise<void>;
-	destroyById?(ctx: Ctx, id: SandboxId): Promise<void>;
+	destroyById?(ctx: Ctx, ref: SandboxRef): Promise<void>;
 	launch?(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<void>;
 	readonly files?: {
 		readFile(ctx: Ctx, handle: Handle, path: string): Promise<string>;
@@ -69,7 +69,7 @@ export function driverFromTable<Handle, Ctx>(
 			}
 			const handle = created.handle;
 			const session: SandboxSession<Handle> = {
-				sandboxId: created.sandboxId,
+				sandboxRef: created.sandboxRef,
 				artifactRef: created.artifactRef ?? request.artifactRef,
 				native: handle,
 				exec: (command, options) => table.exec(resolved, handle, command, options),
@@ -90,7 +90,7 @@ export function driverFromTable<Handle, Ctx>(
 			return session;
 		},
 		...(table.destroyById
-			? { destroyById: async (id: SandboxId) => table.destroyById!(await ctx(), id) }
+			? { destroyById: async (ref: SandboxRef) => table.destroyById!(await ctx(), ref) }
 			: {}),
 	};
 }

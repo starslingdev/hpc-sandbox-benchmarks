@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import type { CreateRequest } from "./index.ts";
-import { sandboxId } from "./index.ts";
+import { sandboxRef } from "./index.ts";
 import type { CliRunResult, CliSpec } from "./cli.ts";
 import { cliDriver, cliMethodTable, redactArgs } from "./cli.ts";
 
@@ -18,6 +18,7 @@ const request: CreateRequest = {
 
 function tamaLikeSpec(overrides: Partial<CliSpec<MachineRow>> = {}): CliSpec<MachineRow> {
 	return {
+		provider: "tama",
 		binary: "fake-cli",
 		secretFlags: ["--token"],
 		create: (r, name) => ["new", name, "--token", "s3cret", "--image", r.artifactRef],
@@ -74,7 +75,7 @@ describe("cliDriver", () => {
 		const vendor = fakeVendor({ readyAfterPolls: 2 });
 		const driver = cliDriver(tamaLikeSpec(), { run: vendor.run });
 		const session = await driver.create(request);
-		expect(String(session.sandboxId)).toBe("m-1");
+		expect(session.sandboxRef).toEqual({ provider: "tama", id: "m-1" });
 		expect(session.native.status).toBe("ready");
 		const result = await session.exec("echo hi");
 		expect(result.exit).toEqual({ kind: "exited", code: 0 });
@@ -87,13 +88,13 @@ describe("cliDriver", () => {
 		const vendor = fakeVendor();
 		const table = cliMethodTable(tamaLikeSpec(), { run: vendor.run });
 		// destroy-of-missing MUST succeed (ADR-0008):
-		await table.destroyById?.(null, sandboxId("m-gone"));
+		await table.destroyById?.(null, sandboxRef("tama", "m-gone"));
 		// a genuinely different failure is not swallowed:
 		const failing = cliMethodTable(
 			tamaLikeSpec({ destroy: () => ["boom"] }),
 			{ run: async () => ({ stdout: "", stderr: "quota exceeded", code: 9 }) },
 		);
-		await expect(failing.destroyById?.(null, sandboxId("m-1"))).rejects.toThrow(/exit 9: quota exceeded/);
+		await expect(failing.destroyById?.(null, sandboxRef("tama", "m-1"))).rejects.toThrow(/exit 9: quota exceeded/);
 	});
 
 	test("unparseable vendor output produces a path-bearing report, not an undefined", async () => {

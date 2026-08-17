@@ -14,8 +14,9 @@
 //     classes are nominally different. Code that needs the repo's SDK types is code that
 //     should be a native driver.
 
+import type { ProviderId } from "@sandbox-benchmarks/schema/providers";
 import type { CreateRequest, SandboxDriver, SandboxSession } from "./index.ts";
-import { sandboxId } from "./index.ts";
+import { sandboxRef } from "./index.ts";
 
 /** The structural slice of a computesdk provider instance this bridge consumes. */
 export interface ComputeSdkLike<TSandbox extends ComputeSdkSandboxLike = ComputeSdkSandboxLike> {
@@ -40,6 +41,8 @@ export interface ComputeSdkSandboxLike {
 }
 
 export interface ComputeSdkDriverOptions {
+	/** The provider this wrapper fronts — sandbox refs are validated in its id format. */
+	readonly provider: ProviderId;
 	/**
 	 * Extra create options for the wrapper (the `snapshotId`/`templateId` conventions the bake
 	 * path relies on). An open passthrough by design: the port does not model every vendor's
@@ -71,7 +74,7 @@ export function computeSdkDriver<TSandbox extends ComputeSdkSandboxLike>(
 				throw new Error("computesdk wrapper returned a sandbox without a sandboxId");
 			}
 			return {
-				sandboxId: sandboxId(id),
+				sandboxRef: sandboxRef(options.provider, id),
 				artifactRef: request.artifactRef,
 				native: created,
 				async exec(command) {
