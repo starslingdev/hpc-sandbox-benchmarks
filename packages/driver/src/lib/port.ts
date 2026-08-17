@@ -52,6 +52,11 @@ export interface ExecOptions {
 	readonly maxOutputBytes?: number;
 }
 
+/** Cooperative cancellation for process-owned create/destroy operations. */
+export interface DriverOperationOptions {
+	readonly signal?: AbortSignal;
+}
+
 /* --------------------------------- Create requests --------------------------------- */
 
 export interface GpuSpec {
@@ -87,7 +92,7 @@ export interface SandboxSession<Handle = unknown> {
 	readonly artifact: ResolvedArtifact;
 	readonly native: Handle;
 	exec(command: string, options?: ExecOptions): Promise<ExecResult>;
-	destroy(): Promise<void>;
+	destroy(options?: DriverOperationOptions): Promise<void>;
 	readonly files?: SandboxFiles;
 	launch?(command: string, options?: ExecOptions): Promise<void>;
 }
@@ -109,8 +114,8 @@ export interface SnapshotCapability<Handle = unknown> {
 }
 
 export interface SandboxDriver<Handle = unknown> {
-	create(request: CreateRequest): Promise<SandboxSession<Handle>>;
-	destroyById?(ref: SandboxRef): Promise<void>;
+	create(request: CreateRequest, options?: DriverOperationOptions): Promise<SandboxSession<Handle>>;
+	destroyById?(ref: SandboxRef, options?: DriverOperationOptions): Promise<void>;
 	readonly probes?: ControlPlaneProbes;
 	readonly snapshots?: SnapshotCapability<Handle>;
 }

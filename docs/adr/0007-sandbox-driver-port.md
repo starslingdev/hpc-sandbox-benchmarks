@@ -243,9 +243,9 @@ export type ResolvedArtifact =
   | { readonly kind: "image" | "baked" | "mirror" | "built"; readonly ref: string };
 
 export interface SandboxDriver<Handle = unknown> {
-  create(request: CreateRequest): Promise<SandboxSession<Handle>>;
+  create(request: CreateRequest, options?: DriverOperationOptions): Promise<SandboxSession<Handle>>;
   /** Optional: destroy by bare id, no session needed — reaper/cleanup lanes. Idempotent. */
-  destroyById?(id: SandboxId): Promise<void>;
+  destroyById?(id: SandboxId, options?: DriverOperationOptions): Promise<void>;
   readonly probes?: ControlPlaneProbes;    // control-plane observation + optional latency probes
   readonly snapshots?: SnapshotCapability<Handle>; // optional: lifecycle measurement only
 }
@@ -255,7 +255,7 @@ export interface SandboxSession<Handle = unknown> {
   /** Effective boot artifact; request fallback is tracked as such in evidence. */
   readonly artifact: ResolvedArtifact;
   exec(command: string, options?: ExecOptions): Promise<ExecResult>;
-  destroy(): Promise<void>;
+  destroy(options?: DriverOperationOptions): Promise<void>;
   /** The vendor's native handle — the JDBC `unwrap()` idea, typed. */
   readonly native: Handle;
   /** Optional. A WORKING filesystem API — reads and writes — or absent; never a throwing stub. */
@@ -461,35 +461,67 @@ The whole provider file, in the shape an author actually writes:
 
 ```ts
 // packages/drivers/src/tama.ts — the provider's behavior. The filename is the id.
-import { defineDriver } from "@sandbox-benchmarks/driver";
-import { cliDriver } from "@sandbox-benchmarks/driver/cli";
+import { defineCliDriver, defineCliSpec } from "@sandbox-benchmarks/driver/cli";
 import { type } from "arktype";
 
 const Machines = type("string.json.parse").to(
-  type({ id: "string", name: "string", status: "string" }).array(),
+  type({ id: "string", name: "string", status: "string", "status_detail?": "string" }).array(),
 );
+// Exact shape observed in committed real Tama runs (for example machine-obusdw8bsyw2).
+const TamaSandboxId = type(/^machine-[a-z0-9]{12}$/);
+const TAMA_CREATE_CEILING_MS = 25 * 60_000;
 
-export default defineDriver("tama", {
+export default defineCliDriver("tama", {
   // `tama new` blocks until ready (~2m10s cold pull) and owns failed-create cleanup, so the
-  // driver owns the create budget — abandoning it mid-teardown would strand a billable machine.
-  createBudget: { owner: "driver", attemptCeilingMs: TAMA_CREATE_CEILING_MS },
-  execution: { syncCapMs: 60_000, durable: "shell-detach" },
-  driver: ({ env, resolvedArtifact }) =>
-    cliDriver({
-      binary: env.TAMA_CLI ?? "tama",
-      secretFlags: ["--token"],
-      create: (r, name) => ["new", name, "--ttl", "0", "--json", "--image",
-        resolvedArtifact.ref, "--cpu", String(r.spec.vcpus),
-        // Tama's CLI boundary is MiB; the canonical request stays in GiB everywhere else.
-        "--memory", String(r.spec.memoryGb * 1024)],
-      ready: { poll: ["list", "--json"], parse: Machines,
-        select: (rows, name) => rows.find((m) => m.name === name && m.status === "ready")?.id ?? null },
-      exec: (id, command) => ["exec", id, "--", "bash", "-lc", command],
-      destroy: (id) => ["rm", "-y", id],
-      notFound: /not found|no such machine|unknown machine/i, // private bridge translation only
-    }),
+  // joined helper derives a driver-owned budget — abandoning teardown could strand a machine.
+  createAttemptCeilingMs: TAMA_CREATE_CEILING_MS,
+  spec: ({ env }) => defineCliSpec(Machines, {
+    binary: env.TAMA_CLI ?? "tama",
+    secretFlags: ["--token"],
+    commandTimeoutMs: 60_000,
+    // `new` owns the cold image pull; short list/login/rm/exec calls keep the tighter bound above.
+    createCommandTimeoutMs: 20 * 60_000,
+    // Preserve a working developer profile; a fresh CI runner falls back to token login.
+    prepare: {
+      probe: ["list", "--json"],
+      fallback: ["login", "--token", env.TAMA_TOKEN],
+    },
+    create: (r, name) => ["new", name, "--ttl", "0", "--json", "--image",
+      r.artifact.kind === "none" ? "stock" : r.artifact.ref,
+      "--cpu", String(r.spec.vcpus),
+      // Tama's CLI boundary is MiB; the canonical request stays in GiB everywhere else.
+      "--memory", String(r.spec.memoryGb * 1024)],
+    // `rm` accepts only an id: reconcile the generated name through typed list output first.
+    cleanupCreated: {
+      kind: "lookup",
+      select: (rows, name) => rows.find((m) => m.name === name) ?? null,
+      // A just-accepted allocation can lag the name index. Absence is stable only after this.
+      absenceConfirmationMs: 2_000,
+    },
+    ready: {
+      poll: ["list", "--json"],
+      select: (rows, name) => rows.find((m) => m.name === name) ?? null,
+      classify: (m) => m.status === "ready" ? "ready"
+        : /^(failed|error|terminated|deleted|gone)$/i.test(m.status)
+          ? { terminal: `status=${m.status}${m.status_detail ? ` (${m.status_detail})` : ""}` }
+          : "pending",
+    },
+    sandboxId: { fromRow: (row) => row.id, parse: TamaSandboxId },
+    exec: (id, command) => ["exec", id, "--", "bash", "-lc", command],
+    destroy: (id) => ["rm", "-y", id],
+    notFound: /not found|no such machine|unknown machine/i, // private bridge translation only
+  }),
 });
 ```
+
+That sequence is pinned against Tama's real CLI contract: only `login` receives `--token`, `new`
+does not, and a fallback login is followed by another parsed `list` before allocation. `rm` receives
+the module-validated machine id because it has no name-addressed form. A failed `new` therefore
+performs a typed `list` lookup by the preallocated unique name before issuing `rm -y <id>`. The
+generic driver retains that name as a retryable recovery locator whenever the lookup, validation,
+or removal cannot prove the allocation gone. A selected `failed`/`error`/`terminated` row is a
+typed terminal readiness result, so the kit begins that same cleanup immediately instead of
+spending the remaining create window polling a machine the vendor has already declared unusable.
 
 What the typed join must buy, with each property pinned by implementation tests:
 
@@ -614,8 +646,26 @@ a convenience over `SandboxDriver`, not a second contract.
 `cliDriver` compiles its declarative spec down to a §2 method table whose handle is the **parsed
 readiness row** (`ready.select` returns the row, not a bare id string) — so every generated member
 is unit-testable as a pure function, and `session.native` is the vendor's own typed record rather
-than an opaque string. The side-by-side anatomy confirmed the spec stays ~29 author lines while the
-three per-vendor quirks each remain one field: `secretFlags`, `ready`, `notFound`.
+than an opaque string. The side-by-side anatomy confirmed the spec stays roughly 30 author lines,
+with provider-specific parsing, eventual-consistency, secret, readiness, and absence rules kept as
+small declarative fields rather than repeated control flow.
+
+Every failed create outcome is reconciled by the generated name, including a nonzero CLI exit that
+may have followed a server-side allocation. If that rollback also fails, the driver rejects with a
+`FailedCreateCleanupError`: a `SuppressedError` preserving both failures plus a structured
+provider/name locator and an idempotent `Symbol.asyncDispose` retry. A generated name is released
+only after two absence observations separated by the provider-declared convergence horizon. The
+process owner recognizes that standard protocol, retains the rejected create in its bounded cleanup
+registry, and releases it only after a retry confirms teardown. A failed rollback therefore cannot
+discard the only handle to a billable allocation.
+
+Create and destroy also accept a cooperative `AbortSignal`. On process shutdown the owner aborts a
+pending create immediately, and the CLI runner kills the detached process group, cancels inherited
+pipes, and waits for the child to be reaped before rejecting. Once that rejection installs the
+generated-name recovery record, the owner spends the remainder of its existing bounded shutdown
+window on reconciliation; cancellation of that cleanup follows the same kill-and-reap rule. The
+signal is an interruption channel, not evidence that the remote allocation is absent, so aborting a
+create never releases ownership by itself.
 
 ### 6. ComputeSDK becomes a driver
 

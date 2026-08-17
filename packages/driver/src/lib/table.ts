@@ -6,11 +6,12 @@
 // the use-after-destroy guard, artifact reconciliation, and the lazy-context memo. A driver that
 // bypassed this layer would have to re-implement all four; none do.
 
-import { DriverError } from "./errors.ts";
+import { DriverError, FailedCreateCleanupError } from "./errors.ts";
 import { capExecOutput } from "./output.ts";
 import type {
 	ControlPlaneProbes,
 	CreateRequest,
+	DriverOperationOptions,
 	ExecOptions,
 	ExecResult,
 	ResolvedArtifact,
@@ -32,6 +33,7 @@ export interface MethodTable<Handle, Ctx> {
 	create(
 		ctx: Ctx,
 		request: CreateRequest,
+		options?: DriverOperationOptions,
 	): Promise<{
 		readonly handle: Handle;
 		readonly sandboxRef: SandboxRef;
@@ -39,8 +41,8 @@ export interface MethodTable<Handle, Ctx> {
 	}>;
 	/** Run a command. Options are forwarded unchanged; the kit still enforces output caps. */
 	exec(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<ExecResult>;
-	destroy(ctx: Ctx, handle: Handle): Promise<void>;
-	destroyById?(ctx: Ctx, ref: SandboxRef): Promise<void>;
+	destroy(ctx: Ctx, handle: Handle, options?: DriverOperationOptions): Promise<void>;
+	destroyById?(ctx: Ctx, ref: SandboxRef, options?: DriverOperationOptions): Promise<void>;
 	launch?(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<void>;
 	readonly files?: {
 		readFile(ctx: Ctx, handle: Handle, path: string): Promise<string>;
@@ -171,9 +173,9 @@ export function driverFromTable<Handle, Ctx>(
 	const probeDescribe = tableProbes?.describe;
 	const tableSnapshots = table.snapshots;
 	return {
-		async create(request) {
+		async create(request, operationOptions) {
 			const resolved = await ctx();
-			const created = await table.create(resolved, request);
+			const created = await table.create(resolved, request, operationOptions);
 			const artifact = created.artifact ?? request.artifact;
 			if (!artifactsEqual(artifact, request.artifact)) {
 				const mismatch = new DriverError(
@@ -185,13 +187,13 @@ export function driverFromTable<Handle, Ctx>(
 				// mismatch (the primary, and the one naming the wrong-artifact boot). Same double-fault
 				// shape as withSessionTeardown.
 				try {
-					await table.destroy(resolved, created.handle);
+					await table.destroy(resolved, created.handle, operationOptions);
 				} catch (teardown) {
-					throw new SuppressedError(
-						teardown,
-						mismatch,
-						"orphan teardown failed after an artifact mismatch",
-					);
+					throw new FailedCreateCleanupError(teardown, mismatch, {
+						provider: created.sandboxRef.provider,
+						locator: { kind: "id", value: created.sandboxRef.id },
+						cleanup: (options = {}) => table.destroy(resolved, created.handle, options),
+					});
 				}
 				throw mismatch;
 			}
@@ -201,6 +203,8 @@ export function driverFromTable<Handle, Ctx>(
 			let destroyInFlight: Promise<void> | undefined;
 			let teardownInFlight: Promise<void> | undefined;
 			let teardownDrain: Promise<void> | undefined;
+			let teardownCancellation: AbortController | undefined;
+			let teardownAbortUnlinks: Array<() => void> = [];
 			let activeOperations = 0;
 			let operationsDrained: Promise<void> | undefined;
 			let resolveOperationsDrained: (() => void) | undefined;
@@ -239,20 +243,37 @@ export function driverFromTable<Handle, Ctx>(
 					}
 				});
 			};
-			const invokeDestroy = (): Promise<void> => {
+			const invokeDestroy = (options?: DriverOperationOptions): Promise<void> => {
 				try {
-					return Promise.resolve(table.destroy(resolved, handle));
+					return Promise.resolve(table.destroy(resolved, handle, options));
 				} catch (caught) {
 					return Promise.reject(caught);
 				}
 			};
-			const beginTeardown = (): Promise<void> => {
-				if (teardownInFlight !== undefined) return teardownInFlight;
+			const forwardTeardownCancellation = (signal: AbortSignal | undefined): void => {
+				const controller = teardownCancellation;
+				if (signal === undefined || controller === undefined) return;
+				const abort = () => controller.abort(signal.reason);
+				signal.addEventListener("abort", abort, { once: true });
+				teardownAbortUnlinks.push(() => signal.removeEventListener("abort", abort));
+				// Register before re-checking so an abort cannot win the check/listen edge.
+				if (signal.aborted) abort();
+			};
+			const beginTeardown = (options?: DriverOperationOptions): Promise<void> => {
+				if (teardownInFlight !== undefined) {
+					forwardTeardownCancellation(options?.signal);
+					return teardownInFlight;
+				}
 
 				state = "destroying";
 				teardownDrain = operationsDrained;
+				teardownCancellation = new AbortController();
+				forwardTeardownCancellation(options?.signal);
+				const providerOptions = { signal: teardownCancellation.signal };
 				const destroying =
-					teardownDrain === undefined ? invokeDestroy() : teardownDrain.then(invokeDestroy);
+					teardownDrain === undefined
+						? invokeDestroy(providerOptions)
+						: teardownDrain.then(() => invokeDestroy(providerOptions));
 				const teardown = destroying
 					.then(
 						() => {
@@ -264,6 +285,9 @@ export function driverFromTable<Handle, Ctx>(
 						},
 					)
 					.finally(() => {
+						for (const unlink of teardownAbortUnlinks) unlink();
+						teardownAbortUnlinks = [];
+						teardownCancellation = undefined;
 						teardownInFlight = undefined;
 						teardownDrain = undefined;
 					});
@@ -280,11 +304,14 @@ export function driverFromTable<Handle, Ctx>(
 							.exec(resolved, handle, command, options)
 							.then((result) => capExecOutput(result, options?.maxOutputBytes)),
 					),
-				async destroy() {
+				async destroy(options?: DriverOperationOptions) {
 					if (state === "destroyed") return;
-					if (destroyInFlight !== undefined) return destroyInFlight;
+					if (destroyInFlight !== undefined) {
+						forwardTeardownCancellation(options?.signal);
+						return destroyInFlight;
+					}
 
-					const teardown = beginTeardown();
+					const teardown = beginTeardown(options);
 					const drain = teardownDrain;
 					const bounded =
 						drain === undefined
@@ -323,7 +350,10 @@ export function driverFromTable<Handle, Ctx>(
 			return session;
 		},
 		...(destroyById
-			? { destroyById: async (ref: SandboxRef) => destroyById(await ctx(), ref) }
+			? {
+					destroyById: async (ref: SandboxRef, options?: DriverOperationOptions) =>
+						destroyById(await ctx(), ref, options),
+				}
 			: {}),
 		...(tableProbes
 			? {
