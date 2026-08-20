@@ -149,9 +149,10 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    public base moves:
 
    - **`providers: blaxel` is refused.** It still boots a vendor stock image, so the release lane has
-     no artifact to publish and carries no `BL_API_KEY`/`BL_WORKSPACE`. An *unscoped* release simply
-     skips it. Runloop is scopable: its protected `RUNLOOP_API_KEY` builds and validates a candidate
-     Blueprint, and a scoped Runloop dispatch is required/fail-closed.
+     no artifact a scoped backfill can publish. Generated credentials let an *unscoped* release
+     validate it best-effort, but validation alone cannot turn the stock image into a release output.
+     Runloop is scopable: its protected `RUNLOOP_API_KEY` builds and validates a candidate Blueprint,
+     and a scoped Runloop dispatch is required/fail-closed.
    - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
      *from* the base (e2b, daytona, novita, runloop). Those providers' candidates are verified but their version
      artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
@@ -207,20 +208,27 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    without it.
 4. Add these **environment** secrets (then delete repository-level copies if present):
 
+   <!-- >>> generated: provider-secrets — bun run generate-provider-wiring -->
    | Secret | Used by |
    | --- | --- |
-   | `E2B_API_KEY` | toolchain bake, bench matrix/smoke |
-   | `DAYTONA_API_KEY` | toolchain bake, bench matrix/smoke |
-   | `DAYTONA_TARGET` | optional; workflows default to `us-west-2` |
-   | `MODAL_TOKEN_ID` | toolchain bake, bench matrix/smoke |
-   | `MODAL_TOKEN_SECRET` | toolchain bake, bench matrix/smoke |
-   | `NOVITA_API_KEY` | optional for toolchain; bench matrix/smoke |
-   | `RUNLOOP_API_KEY` | protected toolchain Blueprint bake/promote, bench matrix/smoke |
-   | `BL_API_KEY` | bench matrix/smoke only |
-   | `BL_WORKSPACE` | bench matrix/smoke only |
-   | `MSB_API_KEY` | Microsandbox Cloud toolchain validation and bench matrix/smoke |
-   | `RUN_CLOUD_API_KEY` | optional for toolchain validation; bench matrix/smoke |
-   | `TAMA_TOKEN` | bench matrix/smoke only |
+   | `E2B_API_KEY` | E2B provider runtime and validation |
+   | `DAYTONA_API_KEY` | Daytona (VM), Daytona (container) provider runtime and validation |
+   | `BL_API_KEY` | Blaxel provider runtime and validation |
+   | `BL_WORKSPACE` | Blaxel provider runtime and validation |
+   | `MSB_API_KEY` | Microsandbox Cloud provider runtime and validation |
+   | `MODAL_TOKEN_ID` | Modal (gVisor), Modal (VM) provider runtime and validation |
+   | `MODAL_TOKEN_SECRET` | Modal (gVisor), Modal (VM) provider runtime and validation |
+   | `NOVITA_API_KEY` | Novita provider runtime and validation |
+   | `RUNLOOP_API_KEY` | Runloop provider runtime and validation |
+   | `RUN_CLOUD_API_KEY` | run.cloud provider runtime and validation |
+   | `TAMA_TOKEN` | tama provider runtime and validation |
+   <!-- <<< end generated: provider-secrets -->
+
+   Vercel bootstrap credentials are workflow infrastructure, not provider runtime inputs, so they
+   remain an explicit list:
+
+   | Secret | Used by |
+   | --- | --- |
    | `VERCEL_TOKEN` | Bootstrap only: Vercel CLI pulls a short-lived project OIDC token |
    | `VERCEL_ORG_ID` | Links the Vercel CLI to the repository's organization (`team_*`) |
    | `VERCEL_PROJECT_ID` | Links the Vercel CLI to the repository's project (`prj_*`) |
@@ -234,16 +242,28 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    file. Toolchain jobs additionally run `vercel vcr login docker`, use `vercel vcr push docker` for
    publication, and always run `docker logout vcr.vercel.com`.
 
-   GitHub Actions **variables** (Settings → Secrets and variables → Actions → Variables), *not*
-   secrets — a team slug and a project name are not credentials, and leaving them readable in job logs
-   is what makes a mirror into the wrong namespace diagnosable:
+   Put ordinary, non-credential provider configuration in GitHub Actions **variables** (Settings →
+   Secrets and variables → Actions → Variables), *not* secrets. The generated workflow accepts the
+   legacy secret location as a migration fallback, but new configuration should use variables:
 
-   | Variable | Purpose |
-   | --- | --- |
-   | `VERCEL_TEAM_SLUG` | Vercel team slug (org) the VCR namespace is rooted at |
-   | `VERCEL_PROJECT_NAME` | Vercel project name the VCR namespace is scoped to |
+   <!-- >>> generated: provider-variables — bun run generate-provider-wiring -->
+   | Variable | Used by | Default |
+   | --- | --- | --- |
+   | `E2B_TEMPLATE` | E2B | — |
+   | `DAYTONA_TARGET` | Daytona (VM) | <code>us-west-2</code> |
+   | `DAYTONA_SNAPSHOT` | Daytona (VM) | — |
+   | `DAYTONA_CONTAINER_TARGET` | Daytona (container) | <code>us-west-2</code> |
+   | `DAYTONA_CONTAINER_SNAPSHOT` | Daytona (container) | — |
+   | `MSB_API_URL` | Microsandbox Cloud | — |
+   | `NOVITA_TEMPLATE` | Novita | — |
+   | `RUNLOOP_BLUEPRINT` | Runloop | — |
+   | `VERCEL_TEAM_SLUG` | Vercel Sandbox | — |
+   | `VERCEL_PROJECT_NAME` | Vercel Sandbox | — |
+   | `TAMA_CLI` | tama | — |
+   <!-- <<< end generated: provider-variables -->
 
-   Both are optional: unset, they fall back to `VERCEL_TEAM_SLUG_DEFAULT` /
+   Optional values with a declared provider default use it when unset. The two Vercel namespace
+   values fall back to `VERCEL_TEAM_SLUG_DEFAULT` /
    `VERCEL_PROJECT_NAME_DEFAULT` in `packages/schema/src/toolchain.ts`, which is the single place the
    default namespace is defined. Set them only to publish into a different team or project.
 

@@ -314,13 +314,14 @@ registry claims that every consumer must reinterpret.
 
 ### 6. Provider-input descriptors with a normalizing morph (Tiers 2 + 3)
 
-`requiredEnvVars: string[]` cannot distinguish secrets, ordinary variables, generated step output,
+`requiredEnvVars: string[]` cannot distinguish secrets, ordinary variables, generated step values,
 optional tuning, or values with defaults. Replace it with `inputs`, keep the string shorthand for a
 required secret, and normalize once so no consumer handles two shapes:
 
 ```ts
 const inputSource = type({ kind: "'secret'" })
   .or({ kind: "'variable'" })
+  .or({ kind: "'step-env'", step: "string >= 1" })
   .or({ kind: "'step-output'", step: "string >= 1", output: "string >= 1" });
 
 const providerInput = type("string >= 1").or({
@@ -328,6 +329,7 @@ const providerInput = type("string >= 1").or({
   "source?": inputSource,
   "required?": "boolean",
   "default?": "string >= 1",            // DAYTONA_TARGET → "us-west-2"
+  "ciValue?": "string >= 1",            // MICROSANDBOX_LOCAL_BENCH → "1" in CI
 });
 
 export const input = providerInput.pipe((c) =>
@@ -339,9 +341,10 @@ export const input = providerInput.pipe((c) =>
 ```
 
 Verified: mixed shorthand/full input normalizes to one shape, and `""` is rejected at
-`value at [0] must be non-empty`. A step output names its producer step and output explicitly, so
-the emitter never guesses an expression from an env name. Tier-3 narrows reject a default on a
-secret or step output and a required input with a default. Reusing the same `name` across provider
+`value at [0] must be non-empty`. A step-provided environment value names its producer step; a step
+output names both step and output, so the emitter never guesses provenance from an env name. Tier-3
+narrows reject a default on a secret, step env, or step output; reject `ciValue` anywhere except an
+ordinary variable; and reject a required input with a default. Reusing the same `name` across provider
 variants is the declaration that they share it; a parallel `sharedWith` list would be another drift
 surface.
 
@@ -352,7 +355,10 @@ defaulted input a required `string` and leaves only genuinely optional inputs as
 undefined`. This avoids the common mistake where a default is modeled as optional all the way into
 driver code. The descriptor is the single declaration behind CI wiring, compile-time access, and
 runtime parsing. Two further Tier-1 fields cover the remaining per-provider CI facts that are
-ternaries in YAML today: `runner?: string` and `preAuth?: "namespace-token" | "vercel-auth"`.
+ternaries in YAML today: `runner?: { label: string; noCache: boolean; lifetimeMinutes?: number }`
+and `preAuth?: "namespace-token" | "vercel-auth"`. Runner routing, setup cache policy, and the
+advertised reaping budget are one structured declaration because all three are properties of the
+same runner label; Tier-3 rejects providers that assign contradictory policies to a shared label.
 
 ### 7. Generate the managed regions, gate them the way ADR-0003 gates the catalog (Tier 3)
 
@@ -381,8 +387,9 @@ in the provider identity leaf every CLI bin and harness process imports is not.
 promotion decision, not a mechanical consequence of registering, and the 18-line rationale above it
 is real content. `workflow-sync.ts` invariants 1 and 3 are deleted as redundant — a generated region
 cannot drift from its generator. Invariants 2, 3b, 4–7 are unrelated to onboarding and stay.
-Pre-auth steps stay hand-written (Vercel's VCR mirror is ~50 bespoke lines) but gain a cheap gate: a
-provider declaring `preAuth` must have the step in both lanes.
+Pre-auth steps stay hand-written (Vercel's VCR mirror is ~50 bespoke lines), while their mechanical
+owner-aware `if` expressions are generated for benchmark, bake, and promote. A structural gate also
+requires every provider declaring `preAuth` to have that exact producer step in all three jobs.
 
 ### 8. Close the loop: the generator emits `as const satisfies`
 

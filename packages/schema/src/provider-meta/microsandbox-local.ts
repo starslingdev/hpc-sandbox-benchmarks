@@ -8,7 +8,13 @@ export default defineProviderMeta("microsandbox-local", {
 	artifact: { kind: "image" },
 	// This is an explicit capability opt-in rather than a credential. Local runs require a host
 	// with KVM on Linux or Hypervisor.framework on macOS and should skip everywhere else.
-	inputs: [{ name: "MICROSANDBOX_LOCAL_BENCH", source: { kind: "variable" } }],
+	inputs: [
+		{
+			name: "MICROSANDBOX_LOCAL_BENCH",
+			source: { kind: "variable" },
+			ciValue: "1",
+		},
+	],
 	isolation: {
 		class: "microVM",
 		technology: "libkrun microVM (local)",
@@ -42,5 +48,9 @@ export default defineProviderMeta("microsandbox-local", {
 		syncCapMs: 60_000,
 		detachedPoll: true,
 	},
-	runner: "starsling-ubuntu-24.04-2",
+	runner: {
+		label: "starsling-ubuntu-24.04-2",
+		noCache: true,
+		lifetimeMinutes: 70,
+	},
 });

@@ -45,30 +45,27 @@ on:
   workflow_dispatch:
     inputs:
       provider:
-        # Constrained to the PROVIDERS registry (packages/schema/src/providers.ts); the
-        # workflow-registry-sync drift gate keeps this list in lockstep, so a new provider must be
-        # added here too. The plan step re-validates it against the registry anyway, so a stale option
-        # fails the plan rather than running nothing.
+        # Generated from PROVIDER_IDS; the plan step still parses it at the external input boundary.
         description: Provider to benchmark
         type: choice
         default: daytona-vm
         options:
-          [
-            daytona-vm,
-            daytona-container,
-            e2b,
-            modal-gvisor,
-            modal-vm,
-            blaxel,
-            novita,
-            runloop,
-            vercel,
-            namespace,
-            microsandbox-local,
-            microsandbox-cloud,
-            runcloud,
-            tama,
-          ]
+          # >>> generated: provider-options — bun run generate-provider-wiring
+          - 'e2b'
+          - 'daytona-vm'
+          - 'daytona-container'
+          - 'blaxel'
+          - 'microsandbox-local'
+          - 'microsandbox-cloud'
+          - 'modal-gvisor'
+          - 'modal-vm'
+          - 'novita'
+          - 'runloop'
+          - 'namespace'
+          - 'vercel'
+          - 'runcloud'
+          - 'tama'
+          # <<< end generated: provider-options
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
         # workflow-registry-sync drift gate keeps this list in lockstep, so a new suite must be added

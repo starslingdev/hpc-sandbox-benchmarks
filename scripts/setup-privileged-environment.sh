@@ -55,11 +55,12 @@ echo "     it, a branch dispatch is refused here regardless of the workflow's ow
 echo "  3. Move provider secrets onto this environment; delete repository-level copies"
 echo
 echo "Secret checklist:"
-echo "  E2B_API_KEY, DAYTONA_API_KEY, DAYTONA_TARGET,"
-echo "  MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, NOVITA_API_KEY,"
-echo "  MSB_API_KEY (and optional MSB_API_URL),"
-echo "  RUN_CLOUD_API_KEY,"
-echo "  BL_API_KEY, BL_WORKSPACE"
+# >>> generated: provider-secret-checklist — bun run generate-provider-wiring
+echo "  E2B_API_KEY, DAYTONA_API_KEY, BL_API_KEY, BL_WORKSPACE"
+echo "  MSB_API_KEY, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, NOVITA_API_KEY"
+echo "  RUNLOOP_API_KEY, RUN_CLOUD_API_KEY, TAMA_TOKEN"
+# <<< end generated: provider-secret-checklist
+echo "  VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID (Vercel bootstrap)"
 echo
 echo "Also required outside this Environment (see docs/ci-secrets.md):"
 echo "  - 'Allow GitHub Actions to create and approve pull requests' on"

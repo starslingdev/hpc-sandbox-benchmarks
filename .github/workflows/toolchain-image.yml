@@ -412,14 +412,18 @@ jobs:
       # id/output identical is what lets provider metadata describe this input without lane-specific
       # generator exceptions. A failed federation still degrades to the normal missing-input skip.
       - name: Set up Namespace credentials
+        # >>> generated: preauth-namespace-token-bake — bun run generate-provider-wiring
         if: matrix.provider == 'namespace'
+        # <<< end generated: preauth-namespace-token-bake
         continue-on-error: true
         id: namespace
         uses: ./.github/actions/namespace-token
         with:
           token-name: sandbox-benchmarks-toolchain-bake-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Authenticate with Vercel and VCR
+        # >>> generated: preauth-vercel-auth-bake — bun run generate-provider-wiring
         if: matrix.provider == 'vercel'
+        # <<< end generated: preauth-vercel-auth-bake
         continue-on-error: true
         id: vercel-auth
         uses: ./.github/actions/vercel-auth
@@ -487,39 +491,33 @@ jobs:
           # immutable output digest; a build-skipped scoped backfill supplies the published version,
           # never the mutable candidate that may already contain the next release's bytes.
           BASE_IMAGE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          # >>> generated: provider-inputs-bake — bun run generate-provider-wiring
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          # Both Daytona isolation variants share the account key and bake in their own region.
+          E2B_TEMPLATE: ${{ matrix.provider == 'e2b' && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
           DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
-          # Both Daytona variants bake in us-west-2, pinned by a variant-specific secret so
-          # operators can retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET
-          # (LINUX_VM snapshot, us-west-2 default), daytona-container reads DAYTONA_CONTAINER_TARGET
-          # (us-west-2 default). Both default so an unsynced secret can't leave a snapshot in the account's
-          # default region and fail the bake at snapshot creation.
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
-          # Both Modal variants share the account tokens; the bake is a no-op for each (the image is
-          # pushed once and booted directly), but validate still boots each to prove reachability.
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_SNAPSHOT: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_SNAPSHOT: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
+          BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
+          MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
+          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
+          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
           MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
           MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
-          # Optional: a missing NOVITA_API_KEY skips the novita bake without failing the release.
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-          # Runloop builds and validates a candidate Blueprint. Best-effort in an unscoped release;
-          # required (and therefore fail-closed on a missing key/build failure) when explicitly scoped.
+          NOVITA_TEMPLATE: ${{ matrix.provider == 'novita' && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
           RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
-          # run.cloud boots the candidate OCI image directly; the key is needed only for its validate boot.
-          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
-          # Namespace pulls the candidate image directly (no bake artifact) — its validate boot reads
-          # this OIDC-federated token file (see the Namespace CLI steps above). Not a stored secret:
-          # empty unless THIS is the namespace cell AND the mint succeeded, which the harness reads as
-          # the standard missing-credentials skip on every other cell. Best-effort like novita: namespace
-          # is not in --require, so a skipped/failed mint skips its validate boot without failing publish.
+          RUNLOOP_BLUEPRINT: ${{ matrix.provider == 'runloop' && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
-          # Microsandbox backends boot the candidate OCI image directly. Local is an explicit runner
-          # capability opt-in. Cloud needs only its key; the URL is an optional deployment override.
-          MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
-          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
-          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
           VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+          VERCEL_TEAM_SLUG: ${{ matrix.provider == 'vercel' && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
+          VERCEL_PROJECT_NAME: ${{ matrix.provider == 'vercel' && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
+          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
+          TAMA_TOKEN: ${{ matrix.provider == 'tama' && secrets.TAMA_TOKEN || '' }}
+          TAMA_CLI: ${{ matrix.provider == 'tama' && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          # <<< end generated: provider-inputs-bake
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail
@@ -636,7 +634,9 @@ jobs:
       # Namespace best-effort; the scope test uses matrix element equality because string contains
       # would also match a future provider id that merely contains `namespace`.
       - name: Set up Namespace credentials
+        # >>> generated: preauth-namespace-token-promote — bun run generate-provider-wiring
         if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'namespace')
+        # <<< end generated: preauth-namespace-token-promote
         continue-on-error: true
         id: namespace
         uses: ./.github/actions/namespace-token
@@ -645,7 +645,9 @@ jobs:
       # Same scope gate as the Namespace mint above: a release that isn't promoting vercel has no reason
       # to pull a project OIDC token or log docker into VCR.
       - name: Authenticate with Vercel and VCR
+        # >>> generated: preauth-vercel-auth-promote — bun run generate-provider-wiring
         if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel')
+        # <<< end generated: preauth-vercel-auth-promote
         continue-on-error: true
         id: vercel-auth
         uses: ./.github/actions/vercel-auth
@@ -676,37 +678,33 @@ jobs:
           # CLIs inherit stdout, so a redirect would splice their chatter into the payload. bake.ts
           # writes the file even when promote aborts (it records the structured reports before exiting).
           BAKE_REPORT_FILE: promote-payload.json
-          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
-          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-          # Both Daytona variants may be promoted in one payload, so thread each variant's region
-          # secret (daytona-vm ⇒ DAYTONA_TARGET, daytona-container ⇒ DAYTONA_CONTAINER_TARGET).
-          DAYTONA_TARGET: ${{ secrets.DAYTONA_TARGET || 'us-west-2' }}
-          DAYTONA_CONTAINER_TARGET: ${{ secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2' }}
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
-          # The serial transaction re-validates the candidate Blueprint, then builds the version-named
-          # Blueprint from the same pinned base. Keep the SDK control-plane key out of unrelated scoped
-          # promotes, matching the run.cloud credential posture below.
+          # >>> generated: provider-inputs-promote — bun run generate-provider-wiring
+          E2B_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && secrets.E2B_API_KEY || '' }}
+          E2B_TEMPLATE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
+          DAYTONA_API_KEY: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container')) && secrets.DAYTONA_API_KEY || '' }}
+          DAYTONA_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_SNAPSHOT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_SNAPSHOT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container') && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
+          BL_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel') && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel') && secrets.BL_WORKSPACE || '' }}
+          MICROSANDBOX_LOCAL_BENCH: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'microsandbox-local') && '1' || '' }}
+          MSB_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'microsandbox-cloud') && secrets.MSB_API_KEY || '' }}
+          MSB_API_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'microsandbox-cloud') && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
+          MODAL_TOKEN_ID: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm')) && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm')) && secrets.MODAL_TOKEN_SECRET || '' }}
+          NOVITA_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'novita') && secrets.NOVITA_API_KEY || '' }}
+          NOVITA_TEMPLATE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'novita') && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
           RUNLOOP_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && secrets.RUNLOOP_API_KEY || '' }}
-          # A scoped promote imports every provider module in one process. Keep the run.cloud key out
-          # of that process unless the resolved release plan will actually re-validate runcloud.
-          RUN_CLOUD_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
-          # Namespace's re-validation boot reads this OIDC-federated token file (see the Namespace CLI
-          # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
-          # skips namespace's re-validation without failing the promote (namespace is not in --require).
+          RUNLOOP_BLUEPRINT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
-          # The promote transaction re-validates every in-scope provider. Unlike every credential around it, this
-          # is a literal rather than a `secrets.*` reference, so it has no missing-value skip path — it
-          # is safe only because this job is PINNED to `starsling-ubuntu-24.04-2` (see runs-on above),
-          # the same virtualization-capable label the bake matrix uses. Moving promote to a runner
-          # without KVM must clear this at the same time, or every release spends a doomed libkrun boot
-          # whose failure is invisible in promote-payload.json (microsandbox-local is not in --require,
-          # so `blocks()` is false and promote never records it). Cloud uses its key + optional endpoint.
-          MICROSANDBOX_LOCAL_BENCH: "1"
-          MSB_API_URL: ${{ secrets.MSB_API_URL }}
-          MSB_API_KEY: ${{ secrets.MSB_API_KEY }}
-          VERCEL_OIDC_TOKEN: ${{ steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+          VERCEL_OIDC_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel') && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+          VERCEL_TEAM_SLUG: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel') && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
+          VERCEL_PROJECT_NAME: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel') && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
+          RUN_CLOUD_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
+          TAMA_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama') && secrets.TAMA_TOKEN || '' }}
+          TAMA_CLI: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama') && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          # <<< end generated: provider-inputs-promote
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail

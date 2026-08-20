@@ -1,8 +1,8 @@
-// Invariant: the GitHub workflows that dispatch live benchmarks stay in lockstep with the schema
-// registries (PROVIDERS + SUITE_NAMES). GHA can't import TypeScript, so the provider/suite choices and
-// the per-provider credential env block are hand-written YAML; this gate re-derives the truth from the
-// registries and fails if someone adds a provider/suite (or its required secret) without updating the
-// workflows. Both dispatch lanes — bench-matrix.yml (the full matrix, ending in a dataset commit) and
+// Invariant: the GitHub workflows that dispatch live benchmarks stay in lockstep with the suite
+// registry and retain their safe delegation/timeout shape. Provider choices and provider input env are
+// generated from metadata and owned by check:provider-wiring, so this gate deliberately does not
+// compare those managed regions a second time. Both dispatch lanes — bench-matrix.yml (the full
+// matrix, ending in a dataset commit) and
 // bench-smoke.yml (the same pipeline narrowed to one provider × suite and stopped before that commit) —
 // are one `plan` job plus one suite-matrix job calling the reusable bench-suite.yml (native nesting:
 // suite / provider). The credential block + run-job timeout live in that single reusable, so the
@@ -16,14 +16,12 @@
 // `bun test`, same precedent as boundary.test.ts); the rest is unit coverage of the parsers and the
 // failure messages on synthetic drift, so a future regression names the offending file + key.
 import { describe, expect, test } from "bun:test";
-import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
+import { SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import type { SuiteMatrixCaller } from "./lib/workflow-sync.ts";
 import {
 	CELL_BUDGET_ENV_KEY,
 	checkCellBudgetEnv,
-	checkCredentialEnv,
 	checkLaneDelegates,
-	checkProviderInput,
 	checkSmokeSingleSandboxDefault,
 	checkSuiteInput,
 	checkSuiteMatrixCaller,
@@ -57,18 +55,10 @@ import {
 const smoke = readWorkflow(SMOKE_WORKFLOW);
 const matrix = readWorkflow(MATRIX_WORKFLOW);
 const suiteWf = readWorkflow(SUITE_WORKFLOW);
-const providerInput = dispatchInput(smoke, "provider", SMOKE_WORKFLOW);
 const suiteInput = dispatchInput(smoke, "suite", SMOKE_WORKFLOW);
 const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 
 describe("parsers against the real workflow files", () => {
-	test("dispatchInput extracts the smoke provider choice (type + options + default)", () => {
-		expect(new Set(providerInput.options)).toEqual(new Set(PROVIDERS.map((p) => p.id)));
-		expect(providerInput.default).toBeDefined();
-		// `type: choice` is what makes GitHub enforce the options — assert it's captured.
-		expect(providerInput.type).toBe("choice");
-	});
-
 	test("dispatchInput extracts the smoke suite choice", () => {
 		expect(new Set(suiteInput.options)).toEqual(new Set(SUITE_NAMES));
 		expect(suiteInput.type).toBe("choice");
@@ -151,62 +141,6 @@ describe("checkCellBudgetEnv", () => {
 	});
 });
 
-describe("checkProviderInput", () => {
-	test("the real provider choice is in sync", () => {
-		expect(checkProviderInput(providerInput)).toEqual([]);
-	});
-
-	test("flags a registry provider dropped from the options", () => {
-		const drifted = {
-			...providerInput,
-			options: providerInput.options?.filter((o) => o !== "modal-gvisor"),
-		};
-		const errors = checkProviderInput(drifted);
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain('missing "modal-gvisor"');
-		expect(errors[0]).toContain("PROVIDERS");
-	});
-
-	test("flags a stray option that no provider owns", () => {
-		const drifted = { ...providerInput, options: [...(providerInput.options ?? []), "fly"] };
-		const errors = checkProviderInput(drifted);
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain('option "fly" is not in PROVIDERS');
-	});
-
-	test("flags a default that is not a known provider", () => {
-		const errors = checkProviderInput({ ...providerInput, default: "ghost" });
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain('default "ghost"');
-	});
-
-	test("flags a missing options list entirely", () => {
-		const errors = checkProviderInput({ type: "choice", default: "e2b" });
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("no options list");
-	});
-
-	test("flags a missing default (the invariant requires one, not a vacuous pass)", () => {
-		const errors = checkProviderInput({ type: "choice", options: providerInput.options });
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("no valid string default");
-	});
-
-	test('flags a non-choice type (options are unenforced free text unless "type: choice")', () => {
-		// Registry-matching options/default, but type: string → GitHub ignores the options list.
-		const errors = checkProviderInput({ ...providerInput, type: "string" });
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain('not "type: choice"');
-		expect(errors[0]).toContain('"string"');
-	});
-
-	test("flags a missing type (defaults to free-text string in GHA)", () => {
-		const errors = checkProviderInput({ ...providerInput, type: undefined });
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("no type");
-	});
-});
-
 describe("checkSuiteInput", () => {
 	test("the real suite choice is in sync", () => {
 		expect(checkSuiteInput(suiteInput)).toEqual([]);
@@ -235,63 +169,13 @@ describe("checkSuiteInput", () => {
 	});
 });
 
-describe("checkCredentialEnv", () => {
-	// A hypothetical second lane declaring its own block, spelled with the OTHER provider selector —
-	// the shape the fold exists for. The real repo has exactly one block (Invariant 3b keeps it that
-	// way), so the cross-workflow half of this check is exercised synthetically.
-	const laneEnv = Object.fromEntries(
-		Object.entries(suiteEnv).map(([key, value]) => [
-			key,
-			value.replaceAll("matrix.provider", "inputs.provider"),
-		]),
-	);
-
+describe("requiredCredentialKeys", () => {
 	test("requiredCredentialKeys records provenance per provider", () => {
 		const required = requiredCredentialKeys();
 		expect(required.get("E2B_API_KEY")).toEqual(["e2b"]);
 		// A credential shared by a vendor's isolation variants records every owner, in registry order.
 		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal-gvisor", "modal-vm"]);
 		expect(required.get("DAYTONA_API_KEY")).toEqual(["daytona-vm", "daytona-container"]);
-	});
-
-	test("the real reusable block covers every registered provider's credentials", () => {
-		expect(checkCredentialEnv({ [SUITE_WORKFLOW]: suiteEnv })).toEqual([]);
-	});
-
-	test("flags a required key dropped from the reusable block, naming key and file", () => {
-		const { E2B_API_KEY: _, ...drifted } = suiteEnv;
-		const errors = checkCredentialEnv({ [SUITE_WORKFLOW]: drifted });
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("E2B_API_KEY");
-		expect(errors[0]).toContain("required by provider e2b");
-		expect(errors[0]).toContain(SUITE_WORKFLOW);
-	});
-
-	// The selector fold: the same secret guarded on `inputs.provider` rather than `matrix.provider` is
-	// the same wiring, not drift, so two lanes spelling it either way must still agree.
-	test("folds the two provider selectors together across workflows", () => {
-		expect(checkCredentialEnv({ [SMOKE_WORKFLOW]: laneEnv, [SUITE_WORKFLOW]: suiteEnv })).toEqual(
-			[],
-		);
-	});
-
-	test("flags a shared key whose value expression differs across two workflows", () => {
-		const drifted = { ...suiteEnv, DAYTONA_API_KEY: `\${{ secrets.DAYTONA_API_KEY_OTHER }}` };
-		const errors = checkCredentialEnv({
-			[SMOKE_WORKFLOW]: laneEnv,
-			[SUITE_WORKFLOW]: drifted,
-		});
-		expect(errors).toHaveLength(1);
-		expect(errors[0]).toContain("DAYTONA_API_KEY:");
-		expect(errors[0]).toContain(laneEnv.DAYTONA_API_KEY);
-		expect(errors[0]).toContain("DAYTONA_API_KEY_OTHER");
-	});
-
-	test("tolerates extra runtime-context vars beyond the required credentials", () => {
-		const errors = checkCredentialEnv({
-			[SUITE_WORKFLOW]: { ...suiteEnv, SOME_RUNTIME_CONTEXT: "x" },
-		});
-		expect(errors).toEqual([]);
 	});
 });
 
