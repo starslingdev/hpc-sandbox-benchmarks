@@ -271,6 +271,25 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createAttemptCeilingMs: RUNCLOUD_CREATE_CEILING_MS,
 		costEvidence: runcloudCostEvidence,
 	},
+	// Host-ingest only: suites run on the Claude Code remote session VM, then results are staged +
+	// normalized. The DirectProvider stub exists so the PROVIDERS × adapters join typechecks; create
+	// always refuses.
+	"claude-cloud": {
+		createCompute: () => ({
+			name: "claude-cloud",
+			sandbox: {
+				create: async () => {
+					throw new Error(
+						"claude-cloud is host-ingest only — run mise suite tasks on the session VM and normalize staged benchmark-results/",
+					);
+				},
+				getById: async () => null,
+				list: async () => [],
+				destroy: async () => {},
+			},
+		}),
+		createOptions: {},
+	},
 	// Host-ingest only: suites run on the Cloud Agent VM, then results are staged + normalized. The
 	// DirectProvider stub exists so the PROVIDERS × adapters join typechecks; create always refuses.
 	"cursor-cloud-agent": {

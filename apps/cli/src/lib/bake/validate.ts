@@ -54,6 +54,7 @@ export function baseImageUse(id: ProviderId): BaseImageUse {
 		case "blaxel":
 		case "vercel":
 		case "cursor-cloud-agent":
+		case "claude-cloud":
 			return "none";
 	}
 }
@@ -105,6 +106,7 @@ export function candidateCreateOptions(
 		case "vercel":
 			return { templateId: refs.vercelImageCandidate };
 		case "cursor-cloud-agent":
+		case "claude-cloud":
 			// Host-ingest only — no remote create options.
 			return {};
 	}

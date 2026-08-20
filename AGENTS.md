@@ -67,3 +67,28 @@ directly:
   `Intel(R) Xeon(R) Platinum 8559C` when PTS CPUID is Family 6 Model 207).
 - Then refresh `LEADERBOARD.md` from the newest index run via
   `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md`.
+
+### Claude Cloud host ingest
+- Provider id `claude-cloud` is host-ingest only (Firecracker Claude Code remote session VM). Opt in
+  with `CLAUDE_CLOUD_BENCH=1`; the harness adapter refuses remote `create`.
+- The session image ships neither `mise` nor PTS. Install `mise` (`curl -fsSL https://mise.run | sh`,
+  symlink into `/usr/local/bin`) and run `mise trust` — then `mise install`, because **`mise run`
+  auto-installs the pinned tools first and aborts the task if any of them fails to download**
+  (a flaky `typos` fetch is what fails; retry `mise install typos@<pin>`). Then install PTS with
+  `SUDO=sudo bash -c 'source lib/bench.sh && ensure_pts'`, same as the Cursor host.
+- After running host suites (`mise run benchmark:system:all`, `benchmark:disk:all`,
+  `benchmark:network:suite`, `benchmark:cpu:node`), stage + splice into the dataset with
+  `bun scripts/ingest-claude-cloud.ts`. It routes the flat `benchmark-results/` into suites by
+  producer prefix and hand-writes `observed-specs.json` (the file the harness would normally write);
+  every value there is a measurement from the session VM, and the CPU SKU is deliberately left as the
+  hypervisor's masked `/proc/cpuinfo` string rather than inferred from CPUID.
+- Then refresh `LEADERBOARD.md` from the newest index run via
+  `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md`.
+  The bin also re-renders `docs/figures/*.webp` through `Bun.WebView`, which needs Bun >= 1.3.14 and a
+  Chrome that will start: this VM runs as root, where Chrome refuses to launch without `--no-sandbox`,
+  so point `BUN_CHROME_PATH` at a wrapper that adds the flag. Those rasters are authored by CI's
+  pinned Chrome — `git checkout -- docs/figures/` after the render so an unpinned browser's bytes do
+  not land in the diff.
+- Finally `bunx biome format --write data/dataset/runs/<id>.json` — the ingest writes
+  `JSON.stringify(…, null, 2)`, which expands short arrays that biome collapses, so `bun run lint`
+  fails without it.

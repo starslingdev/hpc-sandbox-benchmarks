@@ -69,6 +69,7 @@ describe("buildReleasePlan matrix", () => {
 			"daytona-container",
 			"blaxel",
 			"microsandbox-local",
+			"claude-cloud",
 			"cursor-cloud-agent",
 			"microsandbox-cloud",
 			"modal-gvisor",
@@ -132,6 +133,7 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.required).not.toContain("runloop");
 		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS).sort()).toEqual([
 			"blaxel",
+			"claude-cloud",
 			"cursor-cloud-agent",
 		]);
 	});

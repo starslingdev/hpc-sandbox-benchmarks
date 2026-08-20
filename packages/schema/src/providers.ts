@@ -625,6 +625,39 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
+	"claude-cloud": {
+		displayName: "Claude Cloud",
+		website: "https://claude.com",
+		sdkPackage: "none",
+		// Host-ingest opt-in, same posture as cursor-cloud-agent: suites run on the Claude Code remote
+		// session VM itself, then raw `benchmark-results/` are staged into
+		// `data/raw/<runId>/claude-cloud/<suite>/` and normalized. No remote sandbox API — keep it out
+		// of the default matrix.
+		requiredEnvVars: ["CLAUDE_CLOUD_BENCH"],
+		isolation: {
+			technology: "Firecracker microVM",
+			notes:
+				"Claude Code remote session VMs are Firecracker guests (ACPI OEM FIRECK, OEM table FCVMDSDT, creator FCAT) with virtio balloon/blk/net/rng/vsock over PCI. The isolation probe classified the runtime `firecracker` at `confirmed` confidence and found no container runtime above threshold, so the workload runs directly in the guest rather than in a nested OCI container. Results measure that host fleet, not a provider SDK sandbox.",
+		},
+		pricing: {
+			model: "unavailable",
+			reason: "self_hosted",
+			notes:
+				"Remote session compute is bundled into the Claude subscription; there is no published per-vCPU sandbox rate comparable to the other providers.",
+			sources: [{ label: "Claude", url: "https://claude.com", checkedAt: "2026-08-20" }],
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Host-ingest path only. The harness adapter refuses remote create; use mise suite tasks on the session VM and normalize staged results.",
+		},
+		specPinning: "fixed",
+		transport: {
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
 	"cursor-cloud-agent": {
 		displayName: "Cursor Cloud Agent",
 		website: "https://cursor.com",
@@ -643,9 +676,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			reason: "self_hosted",
 			notes:
 				"Cloud Agent compute is part of the Cursor product; there is no published per-vCPU sandbox rate comparable to the other providers.",
-			sources: [
-				{ label: "Cursor", url: "https://cursor.com", checkedAt: "2026-08-14" },
-			],
+			sources: [{ label: "Cursor", url: "https://cursor.com", checkedAt: "2026-08-14" }],
 		},
 		maturity: {
 			status: "beta",

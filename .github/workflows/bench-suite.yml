@@ -270,6 +270,8 @@ jobs:
           MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
           # Host-ingest opt-in for Cursor Cloud Agent VMs (no remote sandbox API).
           CURSOR_CLOUD_AGENT_BENCH: ${{ matrix.provider == 'cursor-cloud-agent' && '1' || '' }}
+          # Host-ingest opt-in for Claude Code remote session VMs (no remote sandbox API).
+          CLAUDE_CLOUD_BENCH: ${{ matrix.provider == 'claude-cloud' && '1' || '' }}
           # Paired with the microsandbox-local runner route above: that self-hosted label is reaped at
           # 70 minutes regardless of timeout-minutes, which no expression can encode (the workflow gate
           # requires a literal). Declaring it here lets bench-suite reject a suite that cannot finish

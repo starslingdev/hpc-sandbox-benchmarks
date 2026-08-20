@@ -70,6 +70,9 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	"cursor-cloud-agent": async (_image, log) => {
 		log("cursor-cloud-agent is host-ingest only — no candidate artifact to bake");
 	},
+	"claude-cloud": async (_image, log) => {
+		log("claude-cloud is host-ingest only — no candidate artifact to bake");
+	},
 };
 
 /**
