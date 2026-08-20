@@ -60,7 +60,10 @@
     "spell": "mise exec -- typos",
     "spell:fix": "mise exec -- typos --write-changes",
     "check:catalog-drift": "bun --filter '@sandbox-benchmarks/schema' check:catalog-drift",
+    "generate-provider-registry": "bun --filter '@sandbox-benchmarks/schema' generate-provider-registry",
     "check:provider-registry-drift": "bun --filter '@sandbox-benchmarks/schema' check:provider-registry-drift",
+    "generate-provider-wiring": "bun --filter '@sandbox-benchmarks/schema' generate-provider-wiring",
+    "check:provider-wiring": "bun --filter '@sandbox-benchmarks/schema' check:provider-wiring",
     "prepare": "lefthook install"
   },
   "devDependencies": {

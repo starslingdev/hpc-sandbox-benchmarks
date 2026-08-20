@@ -8,7 +8,7 @@ export default defineProviderMeta("vercel", {
 	sdkPackage: "@vercel/sandbox",
 	artifact: { kind: "mirror", repository: VERCEL_VCR_REPOSITORY },
 	inputs: [
-		{ name: "VERCEL_OIDC_TOKEN", source: { kind: "variable" } },
+		{ name: "VERCEL_OIDC_TOKEN", source: { kind: "step-env", step: "vercel-auth" } },
 		{ name: "VERCEL_TEAM_SLUG", source: { kind: "variable" }, required: false },
 		{ name: "VERCEL_PROJECT_NAME", source: { kind: "variable" }, required: false },
 	],

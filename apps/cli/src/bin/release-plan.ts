@@ -58,13 +58,13 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
  * fail-fast with an explanation.
  *
  * Keyed by provider so the reason travels with the refusal. Blaxel still boots a stock vendor image,
- * so its bake/promote publishes nothing. Adding a toolchain artifact and release credential wiring is
- * what would remove the remaining entry here.
+ * so its bake/promote publishes nothing even though generated wiring now allows an unscoped release
+ * to validate it best-effort. Giving it a toolchain artifact is what would remove this entry.
  */
 export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, string>>> = {
 	blaxel:
-		"it boots the vendor's stock image rather than the toolchain, so the release lane carries no " +
-		"BL_API_KEY/BL_WORKSPACE and has no artifact to publish for it",
+		"it boots the vendor's stock image rather than the toolchain and has no artifact to publish; " +
+		"credentialed validation alone cannot produce a scoped backfill",
 };
 
 const MIRRORED_CANDIDATE_REFS = {

@@ -105,9 +105,8 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.matrix.include.every((c) => c.required)).toBe(true);
 	});
 
-	// The flip side of "everything you name is required": a provider the lane carries no credentials
-	// for would fail its cell deterministically, after a privileged approval and (on `build: full`) an
-	// hour of rebuild. The plan refuses instead, naming the reason.
+	// The flip side of "everything you name is required": validating a stock provider does not create
+	// an artifact a scoped backfill can ship. The plan refuses that impossible request before approval.
 	test("refuses a scope naming a provider the release lane cannot ship", () => {
 		expect(() => buildReleasePlan({ ...base, providers: "blaxel" })).toThrow(/blaxel/);
 		expect(() => buildReleasePlan({ ...base, providers: "e2b,blaxel" })).toThrow(

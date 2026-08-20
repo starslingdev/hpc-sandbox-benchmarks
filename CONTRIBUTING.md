@@ -42,6 +42,7 @@ PTS-catalog changes also have a drift gate:
 bun run --filter @sandbox-benchmarks/schema generate-catalog   # regenerate from vendored profiles
 bun run check:catalog-drift                                    # fail if the committed draft drifted
 bun run check:provider-registry-drift                           # fail if provider metadata assembly drifted
+bun run check:provider-wiring                                   # fail if generated CI/docs/env wiring drifted
 ```
 
 ## Add a provider
@@ -50,10 +51,10 @@ bun run check:provider-registry-drift                           # fail if provid
    [`packages/schema/src/provider-ids.ts`](./packages/schema/src/provider-ids.ts), then add the one
    hand-authored `packages/schema/src/provider-meta/<id>.ts` module. Declare display/vendor identity,
    inputs, artifact lifecycle, isolation, vetted pricing, maturity, spec pinning, and transport there.
-   Run `bun run --filter @sandbox-benchmarks/schema generate-provider-registry` and review the
-   generated correlated index. Filename, tuple key, and declared id disagreement is a compile error;
-   malformed descriptor semantics fail the generator's Tier-3 arktype gate. Keep the independent
-   hardcoded provider oracle in `providers.test.ts` current.
+   Run `bun run generate-provider-registry` and `bun run generate-provider-wiring`, then review the
+   generated correlated index plus managed workflow/docs/env regions. Filename, tuple key, and
+   declared id disagreement is a compile error; malformed descriptor semantics fail the generator's
+   Tier-3 arktype gate. Keep the independent hardcoded provider oracle in `providers.test.ts` current.
 2. **Adapter** — add a matching entry to the adapter map in
    [`packages/providers`](./packages/providers): how to `createCompute()` and the create-time
    `createOptions` (the pinned target spec + toolchain image). The two registries are joined by id, so a
@@ -61,10 +62,10 @@ bun run check:provider-registry-drift                           # fail if provid
 3. **Artifact implementation** — only when the descriptor's `artifact.kind` requires one, add the
    provider-specific bake/template implementation. Providers using a stock or shared image do not get
    no-op bakers.
-4. **Transitional wiring** — until the provider-wiring generator lands, update the remaining CLI bake,
-   release, workflow-input, docs, and dispatch surfaces manually. `bun run
-   check:provider-registry-drift` already gates the metadata assembly; the later wiring generator will
-   replace this temporary exhaustive-consumer step.
+4. **Generated wiring** — do not hand-edit provider choice/input regions. Provider metadata generates
+   the smoke dispatch options, three least-privilege workflow input blocks, runner routing,
+   `.env.example`, CI configuration docs, and the privileged-environment checklist. The drift gate
+   rejects stale or hand-edited output.
 5. Bring the provider up with a single-provider branch dispatch. Adding it to the default benchmark
    matrix remains a separate promotion decision after live validation.
 
