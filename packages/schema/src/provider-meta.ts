@@ -16,7 +16,7 @@ export type IsolationClass = "microVM" | "container" | "userspace" | "unknown";
 export type ProviderArtifact =
 	| { readonly kind: "none" }
 	| { readonly kind: "image" }
-	| { readonly kind: "baked"; readonly nameSuffix?: string }
+	| { readonly kind: "baked"; readonly nameSuffix?: `-${string}` }
 	| { readonly kind: "mirror"; readonly repository: string }
 	| { readonly kind: "built"; readonly recipe: string };
 

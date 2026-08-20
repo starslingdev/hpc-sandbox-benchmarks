@@ -34,9 +34,18 @@ const providerInputSchema = nonemptyStringSchema.or(inputDescriptorSchema);
 
 const noArtifactSchema = type({ kind: "'none'" }).onUndeclaredKey("reject");
 const imageArtifactSchema = type({ kind: "'image'" }).onUndeclaredKey("reject");
+const bakedNameSuffixSchema = nonemptyStringSchema.narrow((suffix, ctx) => {
+	if (!/^-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(suffix)) {
+		return ctx.mustBe("a lowercase kebab-case suffix beginning with '-' (for example -container)");
+	}
+	if (suffix.endsWith("-candidate")) {
+		return ctx.mustBe("a suffix whose final segment is not the reserved word 'candidate'");
+	}
+	return true;
+});
 const bakedArtifactSchema = type({
 	kind: "'baked'",
-	"nameSuffix?": nonemptyStringSchema,
+	"nameSuffix?": bakedNameSuffixSchema,
 }).onUndeclaredKey("reject");
 const mirrorArtifactSchema = type({
 	kind: "'mirror'",
@@ -140,6 +149,27 @@ export function validateProviderModules(
 				throw new Error(`${group.join("/")}: isolation variants must share one pricing object`);
 			}
 		}
+	}
+
+	// Baked artifacts share one canonical base name. Separate vendors own separate control-plane
+	// namespaces and may safely reuse it (e2b/Novita/Runloop do); variants of the same vendor do not.
+	// Their declared suffix is therefore the collision key that keeps bake/promote from overwriting a
+	// sibling artifact while validating a different one.
+	const bakedNamesByVendor = new Map<string, Map<string, ProviderId>>();
+	for (const id of PROVIDER_IDS) {
+		const { artifact, vendor } = parsed[id].meta;
+		if (artifact.kind !== "baked") continue;
+		const suffix = artifact.nameSuffix ?? "";
+		const names = bakedNamesByVendor.get(vendor) ?? new Map<string, ProviderId>();
+		const existing = names.get(suffix);
+		if (existing !== undefined) {
+			throw new Error(
+				`${existing}/${id}: baked artifacts for vendor ${vendor} derive the same release name; ` +
+					`give ${id} a unique artifact.nameSuffix`,
+			);
+		}
+		names.set(suffix, id);
+		bakedNamesByVendor.set(vendor, names);
 	}
 	return parsed as CorrelatedProviderModules;
 }

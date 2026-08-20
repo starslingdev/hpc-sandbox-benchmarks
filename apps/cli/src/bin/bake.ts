@@ -18,61 +18,18 @@ import type { ProviderConfig } from "@sandbox-benchmarks/providers";
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
-import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "../lib/bake/daytona.ts";
-import { bakeE2bTemplate } from "../lib/bake/e2b.ts";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
-import { bakeModalImage } from "../lib/bake/modal.ts";
-import { bakeNovitaTemplate } from "../lib/bake/novita.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
-import { bakeRunloopBlueprint } from "../lib/bake/runloop.ts";
+import {
+	buildBakedProviderArtifact,
+	isBakedProviderId,
+	nonBakedArtifactAction,
+} from "../lib/bake/provider-artifacts.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
 import { baseImageUse, candidateCreateOptions } from "../lib/bake/validate.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
-
-// Each provider's candidate bake, bound to the candidate artifact name but NOT the mutable image
-// tag. The caller resolves that tag once and passes the same immutable digest to every baker.
-const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
-	e2b: (image, log) => bakeE2bTemplate(config.e2bTemplateCandidate, image, log),
-	"daytona-vm": (image, log) => bakeDaytonaVmSnapshot(config.daytonaSnapshotCandidate, image, log),
-	"daytona-container": (image, log) =>
-		bakeDaytonaContainerSnapshot(config.daytonaContainerSnapshotCandidate, image, log),
-	// Both Modal variants boot the same pushed image via Image.fromRegistry — no per-variant artifact.
-	"modal-gvisor": bakeModalImage,
-	"modal-vm": bakeModalImage,
-	// Both Microsandbox variants boot the candidate OCI image directly. Local and cloud remain separate
-	// validation cells because they exercise different control planes and virtualization hosts.
-	"microsandbox-local": async (_image, log) => {
-		log("microsandbox-local boots the candidate image directly — no candidate artifact to bake");
-	},
-	"microsandbox-cloud": async (_image, log) => {
-		log("microsandbox-cloud boots the candidate image directly — no candidate artifact to bake");
-	},
-	blaxel: async (_image, log) => {
-		log("blaxel boots the stock base image — no candidate artifact to bake");
-	},
-	novita: (image, log) => bakeNovitaTemplate(config.novitaTemplateCandidate, image, log),
-	runloop: (image, log) => bakeRunloopBlueprint(config.runloopBlueprintCandidate, image, log),
-	// Same shape as blaxel: namespace pulls the toolchain image straight into a container instance at
-	// create time (no template/snapshot system), so there's no candidate artifact to bake — the
-	// validate boot right after this proves reachability. Takes the pinned candidate image like the
-	// others but doesn't need it (nothing to bake), so `_image`.
-	namespace: async (_image, log) => {
-		log("namespace boots the candidate image directly — no candidate artifact to bake");
-	},
-	vercel: async (_image, log) => {
-		log("vercel boots the candidate image mirrored to VCR — no separate sandbox artifact to bake");
-	},
-	runcloud: async (_image, log) => {
-		log("runcloud boots the candidate image directly — no candidate artifact to bake");
-	},
-	tama: async (_image, log) => {
-		log(
-			"tama boots the candidate image directly via `tama new --image` — no candidate artifact to bake",
-		);
-	},
-};
 
 /**
  * Emit the bake/promote report JSON. To `$BAKE_REPORT_FILE` when set — the provider CLIs (e2b) and
@@ -252,8 +209,14 @@ if (import.meta.main) {
 
 	const runs = await forEachProviderWithCreds(
 		async (provider) => {
-			log(`>>> ${provider.name}: baking candidate…`);
-			await bakers[provider.name](pinnedBaseImage, (m) => log(`    ${m}`));
+			if (isBakedProviderId(provider.name)) {
+				log(`>>> ${provider.name}: baking candidate…`);
+				await buildBakedProviderArtifact(provider.name, "candidate", pinnedBaseImage, (m) =>
+					log(`    ${m}`),
+				);
+			} else {
+				log(`>>> ${provider.name}: ${nonBakedArtifactAction(provider.name, "candidate")}`);
+			}
 
 			log(`>>> ${provider.name}: validating (boot + smoke)…`);
 			// Boot the just-baked candidate (override the registry adapter's version create-options).

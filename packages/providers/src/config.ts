@@ -5,7 +5,7 @@
 // The two LEAF modules, not the `@sandbox-benchmarks/schema` barrel. Every consumer of this gatekeeper
 // pays its module init, and the barrel arktype-compiles every Run/suite/catalog schema at load — 474 ms
 // against 17 ms for these two, which carry no arktype at all. The constants are identical either way.
-import { TARGET_SPEC } from "@sandbox-benchmarks/schema/providers";
+import { bakedArtifactName, TARGET_SPEC } from "@sandbox-benchmarks/schema/providers";
 import {
 	TOOLCHAIN_IMAGE_NAME,
 	TOOLCHAIN_VERSION,
@@ -115,26 +115,19 @@ const CANDIDATE_SUFFIX = "-candidate";
 
 const toolchainImageVersion = `${imageRepo}:${TOOLCHAIN_VERSION}`;
 const toolchainImageCandidate = `${toolchainImageVersion}${CANDIDATE_SUFFIX}`;
-// Version-scope the e2b template + daytona snapshot (parity with each other): a v2 makes a new
-// named artifact instead of overwriting v1.
-const e2bTemplateVersion = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
-const e2bTemplateCandidate = `${e2bTemplateVersion}${CANDIDATE_SUFFIX}`;
-const daytonaSnapshotDefault = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}`;
-const daytonaSnapshotCandidate = `${daytonaSnapshotDefault}${CANDIDATE_SUFFIX}`;
-// The container variant needs its OWN snapshot (a Daytona snapshot's sandbox class is fixed at bake
-// time), so it gets a distinct `-container`-suffixed name in the same version namespace.
-const daytonaContainerSnapshotDefault = `${daytonaSnapshotDefault}-container`;
-const daytonaContainerSnapshotCandidate = `${daytonaContainerSnapshotDefault}${CANDIDATE_SUFFIX}`;
-// The novita template lives on Novita's E2B-compatible control plane (a separate namespace from
-// e2b.dev), so it reuses the same version-scoped artifact name as the e2b template — aliased, not
-// recomputed, so a change to the e2b naming formula can't silently break the shared-name invariant.
-const novitaTemplateVersion = e2bTemplateVersion;
-const novitaTemplateCandidate = e2bTemplateCandidate;
-// Runloop Blueprints live in their own provider namespace, so they can share the canonical
-// version-scoped toolchain name while remaining independent from e2b/Novita templates. Reusing the
-// same candidate suffix means every provider artifact advances together when TOOLCHAIN_VERSION bumps.
-const runloopBlueprintVersion = e2bTemplateVersion;
-const runloopBlueprintCandidate = e2bTemplateCandidate;
+// Provider-side names are the artifact metadata projection from ADR-0006. Providers live in distinct
+// control-plane namespaces, so the shared canonical name is sufficient; only isolation variants that
+// share a namespace declare a suffix (daytona-container). A new baked provider gets naming for free.
+const e2bTemplateVersion = bakedArtifactName("e2b", "version");
+const e2bTemplateCandidate = bakedArtifactName("e2b", "candidate");
+const daytonaSnapshotDefault = bakedArtifactName("daytona-vm", "version");
+const daytonaSnapshotCandidate = bakedArtifactName("daytona-vm", "candidate");
+const daytonaContainerSnapshotDefault = bakedArtifactName("daytona-container", "version");
+const daytonaContainerSnapshotCandidate = bakedArtifactName("daytona-container", "candidate");
+const novitaTemplateVersion = bakedArtifactName("novita", "version");
+const novitaTemplateCandidate = bakedArtifactName("novita", "candidate");
+const runloopBlueprintVersion = bakedArtifactName("runloop", "version");
+const runloopBlueprintCandidate = bakedArtifactName("runloop", "candidate");
 // VCR refs are rooted at a human-readable Vercel namespace resolved from the environment, defaulting
 // to this repository's own team/project (schema-owned, so the build pins and the runtime agree). The
 // workflow overrides the candidate tag with the immutable fully-qualified digest after mirroring the
