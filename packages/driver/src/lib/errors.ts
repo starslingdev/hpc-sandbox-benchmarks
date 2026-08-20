@@ -19,6 +19,7 @@ import type { SandboxRef } from "./port.ts";
  *     (a designated field — NOT a formatted message that embeds argv).
  *   - `readiness-timeout` — create was accepted but the sandbox never became ready in budget.
  *   - `vendor-output-unparseable` — the vendor's control-plane output drifted from its schema.
+ *   - `exec-failed` — a kit-owned shell fallback failed before it could satisfy its contract.
  *   - `destroy-failed` — teardown could not converge.
  */
 export type DriverErrorCode =
@@ -31,6 +32,7 @@ export type DriverErrorCode =
 	| "create-failed"
 	| "readiness-timeout"
 	| "vendor-output-unparseable"
+	| "exec-failed"
 	| "destroy-failed";
 
 export interface DriverErrorFields {
