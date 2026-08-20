@@ -431,7 +431,7 @@ export function defineDriver<P extends ProviderId, Handle>(
 export interface DriverModule<P extends ProviderId, Handle = unknown> {
   readonly id: P;
   create(context: DriverContext<P>): SandboxDriver<Handle>;
-  // readiness, execution, createBudget, provenance, costEvidence …
+  // readiness, execution, accelerator, createBudget, provenance, costEvidence …
 }
 
 export interface DriverContext<P extends ProviderId> {
@@ -446,12 +446,29 @@ export interface DriverContext<P extends ProviderId> {
 
 `defineDriver` returns an inert `DriverModule`, not an already-configured global. The module owns
 behavioral policy next to the implementation: integration provenance, create budget, readiness
-strategy, cost-evidence hook, and execution strategy
-`{ syncCapMs: number | null; durable: "native-launch" | "shell-detach" | "none" }`. The exact
-`syncCapMs` is a conservative routing policy, not a claim that smoke must wait that long to prove.
-The unused `transport.streaming` flag is removed until a consumer actually models streaming.
+strategy, cost-evidence hook, accelerator observation strategy, and execution strategy. Execution is
+a discriminated union rather than two independently optional claims:
+
+```ts
+type ExecutionPolicy =
+  | { syncCapMs: null; durable: "native-launch" | "shell-detach" | "none" }
+  | { syncCapMs: number; durable: "native-launch" | "shell-detach" };
+```
+
+A finite cap therefore cannot be declared without a durable route to fall back to — the invalid
+`{ durable: "none", syncCapMs: number }` combination is unconstructable rather than a runtime check.
+The exact `syncCapMs` is a conservative routing policy, not a claim that smoke must wait that long
+to prove. The unused `transport.streaming` flag is removed until a consumer actually models
+streaming.
 `native-launch` requires a `launch` table member; `shell-detach` selects the kit fallback; both are
 live-verified by ADR-0008.
+
+The optional accelerator strategy owns guest observation and normalization for the accelerator
+family the module accepts. The shared NVIDIA strategy shells out to `nvidia-smi`; a future AMD, TPU,
+or other driver supplies its own probe command, parser, and normalized model/count matcher. This
+keeps the vendor-neutral `CreateRequest.gpu.model` axis unchanged while giving ADR-0008's
+conformance suite a real observation path per module, instead of hard-coding one vendor's tool into
+the shared gate.
 
 One generic call signature, deliberately not overloads — convex's registration builder documents
 the reason and it held up in our error-message tests: overloads prefix every mistake with a

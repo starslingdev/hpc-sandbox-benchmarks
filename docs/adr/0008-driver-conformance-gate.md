@@ -82,7 +82,7 @@ The conformance inventory is closed and explicit:
 | filesystem | `session.files` presence | native round-trip when present; exec fallback round-trip when absent | fallback is tested, not skipped |
 | control-plane convergence | `driver.probes.observe` | post-destroy observation is `terminal` or `absent` | `unverified` |
 | snapshots | `driver.snapshots` presence | create, identify, delete; cleanup runs on failure | `not-applicable` |
-| GPU | request `gpu` axis (`CreateRequest.gpu?`) | when requested, count/model appears in `nvidia-smi`, or typed rejection | typed rejection is a pass for CPU-only drivers |
+| GPU | request `gpu` axis (`CreateRequest.gpu?`) + `module.accelerator` | when requested, the module's accelerator strategy observes the normalized model/count in-guest, or typed rejection | typed rejection is a pass for drivers with no accelerator strategy |
 | readiness | module readiness strategy | declared signal reaches ready within its declared budget | `fail` |
 | secret diagnostics | secret-sourced registry inputs + driver spawn/log sinks | no secret in any observable diagnostic surface | `fail` |
 
@@ -91,6 +91,14 @@ not in this inventory. Streaming has no consumer; retry classification is a type
 vendor artifact syntax is driver code. `syncCapMs` is treated as a conservative routing policy: smoke
 does not sleep for the cap, but it does prove the router and the durable consequence used at that
 boundary.
+
+Two of these rows lean on module-side declarations that ADR-0007 makes structural rather than
+conventional. Execution is a discriminated union, so the `{ durable: "none", syncCapMs: number }`
+combination the durable row excludes is a compile-time or boundary-validation failure — never a
+conformance row asking the suite to exercise an undefined route. The GPU row reads the module's
+accelerator strategy for its guest probe: the shared NVIDIA strategy uses `nvidia-smi`, while each
+future accelerator family supplies its own command, parser, and normalized model/count matcher. The
+gate stays vendor-neutral; only the strategy knows the tool.
 
 This design also drops the old “observed-but-undeclared” promise. A generic port cannot safely
 discover a native filesystem or snapshot API that the driver did not expose, and probing vendor
