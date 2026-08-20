@@ -44,3 +44,5 @@ export {
 } from "./lib/port.ts";
 export { withSessionTeardown } from "./lib/session.ts";
 export { launchDetached, readTextFile, shellQuote, writeTextFile } from "./lib/shell.ts";
+export type { MethodTable } from "./lib/table.ts";
+export { DeferredTeardownError, driverFromTable } from "./lib/table.ts";
