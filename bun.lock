@@ -32,6 +32,7 @@
         "promote": "./src/bin/promote.ts",
         "stability": "./src/bin/stability.ts",
         "leaderboard": "./src/bin/leaderboard.ts",
+        "reprice-dataset": "./src/bin/reprice-dataset.ts",
       },
       "dependencies": {
         "@actions/core": "1.11.1",
@@ -44,6 +45,7 @@
         "@sandbox-benchmarks/results": "workspace:*",
         "@sandbox-benchmarks/schema": "workspace:*",
         "@sandbox-benchmarks/templates": "workspace:*",
+        "arktype": "catalog:",
         "dotenv": "catalog:",
         "modal": "catalog:computesdk",
         "novita-sandbox": "catalog:computesdk",

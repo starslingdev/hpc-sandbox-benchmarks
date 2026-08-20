@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
+import { isSyntheticSuite, planPtsWarm, resolveWarmSuites, suiteWarmKind } from "./pts-warm.ts";
 import { suiteMetricSummaryRows, suiteTaskSummaryRows } from "./suite-summary.ts";
 import {
 	conventionalTaskFile,
@@ -12,6 +13,7 @@ import {
 	ptsPinsFromScript,
 	realworldVersionFromBenchSh,
 	runTaskChildren,
+	warmHintsFromScript,
 } from "./suite-tasks.ts";
 
 // apps/cli/src/lib → repo root
@@ -204,5 +206,141 @@ describe("summary rows", () => {
 		const metricRows = suiteMetricSummaryRows(plan);
 		expect(metricRows[0]?.[0]).toEqual({ data: "Metric", header: true });
 		expect(metricRows.length).toBe(1 + plan.metrics.length);
+	});
+});
+
+describe("warmHintsFromScript", () => {
+	it("mines multiline seed_pts_download_cache + vendored install from iperf-localhost", () => {
+		const script = readFileSync(
+			join(root, ".mise/tasks/benchmark/network/pts/iperf-localhost"),
+			"utf8",
+		);
+		const hints = warmHintsFromScript(script);
+		expect(hints.vendoredProfiles).toEqual(["iperf-1.2.0"]);
+		expect(hints.localProfiles).toEqual([]);
+		expect(hints.seeds).toEqual([
+			{
+				filename: "iperf-3.14.tar.gz",
+				sha256: "723fcc430a027bc6952628fa2a3ac77584a1d0bd328275e573fc9b206c155004",
+				urls: [
+					"https://downloads.es.net/pub/iperf/iperf-3.14.tar.gz",
+					"https://sources.buildroot.net/iperf3/iperf-3.14.tar.gz",
+				],
+			},
+		]);
+	});
+
+	it("mines STREAM_ARRAY_SIZE and profile=$profile vendored installs", () => {
+		const stream = readFileSync(join(root, ".mise/tasks/benchmark/memory/pts/stream"), "utf8");
+		expect(warmHintsFromScript(stream).streamArraySize).toBe(150_000_000);
+
+		const fastCli = readFileSync(join(root, ".mise/tasks/benchmark/network/pts/fast-cli"), "utf8");
+		expect(warmHintsFromScript(fastCli).vendoredProfiles).toEqual(["fast-cli-1.0.0"]);
+	});
+
+	it("mines local hardlink install", () => {
+		const script = readFileSync(join(root, ".mise/tasks/benchmark/disk/pts/hardlink"), "utf8");
+		expect(warmHintsFromScript(script).localProfiles).toEqual(["hardlink-1.0.0"]);
+	});
+});
+
+describe("planPtsWarm / resolveWarmSuites", () => {
+	it("classifies suite warm kinds and presets", () => {
+		expect(suiteWarmKind("disk")).toBe("synthetic");
+		expect(suiteWarmKind("network")).toBe("synthetic");
+		expect(suiteWarmKind("pgbench")).toBe("synthetic");
+		expect(suiteWarmKind("realworld-mastra")).toBe("realworld");
+		expect(isSyntheticSuite("pgbench")).toBe(true);
+		expect(isSyntheticSuite("realworld-mastra")).toBe(false);
+
+		expect(resolveWarmSuites([])).toEqual([
+			"cpu-node",
+			"system",
+			"pgbench",
+			"memory",
+			"disk",
+			"network",
+		]);
+		expect(resolveWarmSuites(["synthetic"])).toEqual(resolveWarmSuites([]));
+		expect(resolveWarmSuites(["network"])).toEqual(["network"]);
+		expect(resolveWarmSuites(["realworld"])).toEqual([
+			"realworld-mastra",
+			"realworld-better-auth",
+			"realworld-openclaw",
+		]);
+		expect(resolveWarmSuites(["all"])).toEqual([
+			"cpu-node",
+			"system",
+			"pgbench",
+			"memory",
+			"disk",
+			"network",
+			"realworld-mastra",
+			"realworld-better-auth",
+			"realworld-openclaw",
+		]);
+		expect(resolveWarmSuites(["disk", "network"])).toEqual(["disk", "network"]);
+		expect(() => resolveWarmSuites(["not-a-suite"])).toThrow(/invalid warm suite token/);
+	});
+
+	it("plans a single suite (network) without pulling unrelated profiles", async () => {
+		const plan = await planPtsWarm(root, { suites: ["network"] });
+		expect(plan.selection).toEqual(["network"]);
+		expect(plan.suites).toEqual(["network"]);
+		expect(plan.targets).toContain("pts/iperf-1.2.0");
+		expect(plan.targets).toContain("local/iperf-wan-1.0.0");
+		expect(plan.targets).not.toContain("pts/fio-2.1.0");
+		expect(plan.targets).not.toContain("pts/stream-1.3.4");
+		expect(plan.localInstalls).toEqual([{ name: "iperf-wan-1.0.0", overlays: [] }]);
+		expect(plan.vendoredProfiles).toEqual(["iperf-1.2.0"]);
+		expect(plan.streamArraySize).toBeUndefined();
+	});
+
+	it("plans synthetic targets/seeds from the suite registry without hard-coded profile lists", async () => {
+		const plan = await planPtsWarm(root, { suites: ["synthetic"] });
+		expect(plan.suites).toEqual(["cpu-node", "system", "pgbench", "memory", "disk", "network"]);
+		expect(plan.targets).toContain("pts/fio-2.1.0");
+		expect(plan.targets).toContain("pts/iperf-1.2.0");
+		expect(plan.targets).toContain("pts/pgbench-1.15.0");
+		expect(plan.targets).toContain("local/hardlink-1.0.0");
+		expect(plan.targets).toContain("local/iperf-wan-1.0.0");
+		expect(plan.targets).toContain("pts/stream-1.3.4");
+		expect(plan.targets).not.toContain("pts/fast-cli-1.0.0");
+		expect(plan.localInstalls).toEqual([
+			{ name: "hardlink-1.0.0", overlays: [] },
+			{ name: "iperf-wan-1.0.0", overlays: [] },
+		]);
+		expect(plan.vendoredProfiles).toEqual(["iperf-1.2.0"]);
+		expect(plan.streamArraySize).toBe(150_000_000);
+		const fio = plan.seeds.find((s) => s.filename === "fio-3.36.tar.gz");
+		expect(fio?.sha256).toBe("0a07354876ca4d23518f8aa88682f23866455bbd2ff2d0f055d6e4b72f156553");
+		const iperf = plan.seeds.find((s) => s.filename === "iperf-3.14.tar.gz");
+		expect(iperf?.urls.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("plans realworld local profile targets with shared overlays", async () => {
+		const plan = await planPtsWarm(root, { suites: ["realworld"] });
+		expect(plan.suites).toEqual([
+			"realworld-mastra",
+			"realworld-better-auth",
+			"realworld-openclaw",
+		]);
+		expect(plan.targets).toContain("local/realworld-mastra-1.0.0");
+		expect(plan.targets).toContain("local/realworld-better-auth-1.0.0");
+		expect(plan.targets).toContain("local/realworld-openclaw-1.0.0");
+		expect(plan.localInstalls).toEqual([
+			{
+				name: "realworld-better-auth-1.0.0",
+				overlays: ["lib/pts/realworld/install.sh", "lib/pts/realworld/realworld-runner.sh"],
+			},
+			{
+				name: "realworld-mastra-1.0.0",
+				overlays: ["lib/pts/realworld/install.sh", "lib/pts/realworld/realworld-runner.sh"],
+			},
+			{
+				name: "realworld-openclaw-1.0.0",
+				overlays: ["lib/pts/realworld/install.sh", "lib/pts/realworld/realworld-runner.sh"],
+			},
+		]);
 	});
 });
