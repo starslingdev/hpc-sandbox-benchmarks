@@ -35,8 +35,6 @@ import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
-import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
-import { bakeE2bTemplate } from "./e2b.ts";
 import {
 	imageDigest,
 	imageExistsInRegistry,
@@ -44,8 +42,13 @@ import {
 	releaseBaseTag,
 	resolveImageDigestRef,
 } from "./image.ts";
-import { bakeNovitaTemplate } from "./novita.ts";
-import { bakeRunloopBlueprint } from "./runloop.ts";
+import {
+	buildBakedProviderArtifact,
+	isBakedProviderId,
+	isMirroredProviderId,
+	nonBakedArtifactAction,
+	promoteMirroredProviderArtifact,
+} from "./provider-artifacts.ts";
 import type { BakeReport, Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
 import { baseImageUse } from "./validate.ts";
@@ -291,63 +294,16 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 			? []
 			: await forEachProviderWithCreds(
 					async (provider) => {
-						log(`>>> ${provider.name}: building version artifact from ${pinnedBaseImage}…`);
-						switch (provider.name) {
-							case "e2b":
-								await bakeE2bTemplate(config.e2bTemplateVersion, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "daytona-vm":
-								await bakeDaytonaVmSnapshot(config.daytonaSnapshotDefault, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "daytona-container":
-								await bakeDaytonaContainerSnapshot(
-									config.daytonaContainerSnapshotDefault,
-									pinnedBaseImage,
-									(m) => log(`    ${m}`),
-								);
-								break;
-							case "modal-gvisor":
-							case "modal-vm":
-								log(`    ${provider.name} boots the published version image — nothing to build`);
-								break;
-							case "microsandbox-local":
-							case "microsandbox-cloud":
-								log(`    ${provider.name} boots the published version image — nothing to build`);
-								break;
-							case "blaxel":
-								log("    blaxel boots the stock base image — nothing to promote");
-								break;
-							case "novita":
-								await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "runloop":
-								await bakeRunloopBlueprint(config.runloopBlueprintVersion, pinnedBaseImage, (m) =>
-									log(`    ${m}`),
-								);
-								break;
-							case "namespace":
-								log("    namespace pulls the published version image — nothing to build");
-								break;
-							case "runcloud":
-								log("    runcloud pulls the published version image — nothing to build");
-								break;
-							case "tama":
-								log("    tama pulls the published version image — nothing to build");
-								break;
-							case "vercel":
-								await promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion);
-								break;
-							default: {
-								// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
-								const unhandled: never = provider.name;
-								throw new Error(`unhandled provider: ${String(unhandled)}`);
-							}
+						if (isBakedProviderId(provider.name)) {
+							log(`>>> ${provider.name}: building version artifact from ${pinnedBaseImage}…`);
+							await buildBakedProviderArtifact(provider.name, "version", pinnedBaseImage, (m) =>
+								log(`    ${m}`),
+							);
+						} else if (isMirroredProviderId(provider.name)) {
+							log(`>>> ${provider.name}: ${nonBakedArtifactAction(provider.name, "version")}…`);
+							await promoteMirroredProviderArtifact(provider.name, (m) => log(`    ${m}`));
+						} else {
+							log(`>>> ${provider.name}: ${nonBakedArtifactAction(provider.name, "version")}`);
 						}
 					},
 					{

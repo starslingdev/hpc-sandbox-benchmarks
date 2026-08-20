@@ -39,6 +39,24 @@ describe("Tier-3 provider metadata schema", () => {
 		);
 	});
 
+	test("rejects malformed, reserved, and same-vendor colliding baked suffixes", () => {
+		expect(() =>
+			validateProviderModules(
+				meta("daytona-container", { artifact: { kind: "baked", nameSuffix: "container" } }),
+			),
+		).toThrow(/lowercase kebab-case suffix/);
+		expect(() =>
+			validateProviderModules(
+				meta("daytona-container", {
+					artifact: { kind: "baked", nameSuffix: "-container-candidate" },
+				}),
+			),
+		).toThrow(/reserved word 'candidate'/);
+		expect(() =>
+			validateProviderModules(meta("daytona-container", { artifact: { kind: "baked" } })),
+		).toThrow(/daytona-vm\/daytona-container.*derive the same release name/);
+	});
+
 	test("rejects duplicate, secret-defaulted, and required-defaulted inputs", () => {
 		expect(() =>
 			validateProviderModules(meta("e2b", { inputs: ["E2B_API_KEY", "E2B_API_KEY"] })),
