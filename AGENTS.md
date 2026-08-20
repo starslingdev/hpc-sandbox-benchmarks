@@ -89,6 +89,15 @@ directly:
   so point `BUN_CHROME_PATH` at a wrapper that adds the flag. Those rasters are authored by CI's
   pinned Chrome — `git checkout -- docs/figures/` after the render so an unpinned browser's bytes do
   not land in the diff.
+- The realworld suites need no Docker (that is only `benchmark:realworld:selftest`); they git-clone
+  the upstream repos and run pnpm tasks, so they need the matrix's own pins on PATH — `mise use
+  --global node@22.23.1` plus `npm install --global --prefix "$HOME/.local" pnpm@10.34.5`, matching
+  `packages/harness/src/lib/setup.ts`. Each leaves a multi-GB checkout under the installed-profile
+  dir; delete it between suites or the next one runs out of the session's disk allowance.
+- If the container restarts mid-session the agent proxy comes back on a NEW port. Anything launched
+  with the stale `HTTPS_PROXY` fails with `ECONNREFUSED 127.0.0.1:<old-port>` inside package
+  postinstalls — re-read the port from the environment and relaunch rather than debugging the
+  workload.
 - Finally `bunx biome format --write data/dataset/runs/<id>.json` — the ingest writes
   `JSON.stringify(…, null, 2)`, which expands short arrays that biome collapses, so `bun run lint`
   fails without it.

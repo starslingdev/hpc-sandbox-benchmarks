@@ -63,6 +63,11 @@ const SUITE_PREFIXES: Record<string, readonly string[]> = {
 		"network-dns",
 	],
 	system: ["pts_pybench", "pts_sqlite-speedtest", "pts_git", "system-provider"],
+	memory: ["pts_stream"],
+	pgbench: ["pts_pgbench"],
+	"realworld-mastra": ["pts_realworld-mastra"],
+	"realworld-better-auth": ["pts_realworld-better-auth"],
+	"realworld-openclaw": ["pts_realworld-openclaw"],
 };
 
 /**

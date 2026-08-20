@@ -1,10 +1,10 @@
 # Sandbox provider leaderboard
 
-Run [`202608200001`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/202608200001) · commit [`64ecf005cb60ea6de949244b7b6d166d5f6a78cb`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/64ecf005cb60ea6de949244b7b6d166d5f6a78cb) ·
-dataset [`data/dataset/runs/202608200001.json`](data/dataset/runs/202608200001.json) · generated 2026-08-20T07:25:11.415Z
+Run [`202608200001`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/202608200001) · commit [`5f7e2000efae8bcc2818cbc80f88ac26d5c4e70b`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/5f7e2000efae8bcc2818cbc80f88ac26d5c4e70b) ·
+dataset [`data/dataset/runs/202608200001.json`](data/dataset/runs/202608200001.json) · generated 2026-08-20T16:18:13.724Z
 
-Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **528 metric records**
-backed by **5205 retained trial observations**, across **46 metrics** and
+Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **556 metric records**
+backed by **5233 retained trial observations**, across **47 metrics** and
 **13 providers**; every emitted, catalogued metric has a ranked table below
 (median across sandboxes), grouped by dimension with its headline first — some behind a disclosure triangle, none omitted.
 Generated from the published Run dataset — do not edit by hand. Methodology:
@@ -60,14 +60,12 @@ _Not present in this run: Daytona (container), Microsandbox (local) — register
 What a developer or a CI job actually waits on: each bar is one environment's whole pipeline
 for that repo, segmented by task in execution order. The charts share one time scale, so a second is the same length in all of them.
 
-<img src="docs/figures/realworld-better-auth.webp" width="960" alt="Better-Auth: 10 pipeline tasks across 11 environments, 2 disclosed as incomplete, stacked by task and sorted fastest-first">
+<img src="docs/figures/realworld-better-auth.webp" width="960" alt="Better-Auth: 10 pipeline tasks across 12 environments, 1 disclosed as incomplete, stacked by task and sorted fastest-first">
 
-<img src="docs/figures/realworld-mastra.webp" width="960" alt="Mastra: 4 pipeline tasks across 11 environments, 2 disclosed as incomplete, stacked by task and sorted fastest-first">
-
-<img src="docs/figures/realworld-openclaw.webp" width="960" alt="OpenClaw: 5 pipeline tasks across 10 environments, 3 disclosed as incomplete, stacked by task and sorted fastest-first">
+<img src="docs/figures/realworld-mastra.webp" width="960" alt="Mastra: 4 pipeline tasks across 12 environments, 1 disclosed as incomplete, stacked by task and sorted fastest-first">
 
 <details>
-<summary><strong>Per-task rankings</strong> · 19 tasks, with medians, intervals and trial counts</summary>
+<summary><strong>Per-task rankings</strong> · 20 tasks, with medians, intervals and trial counts</summary>
 
 ### Mastra: cold install _(headline)_
 
@@ -88,6 +86,7 @@ _Blaxel, Daytona (VM) and Namespace share the top on this metric (lower is bette
 | 7 | Vercel Sandbox | 73.87 | 59.14 – 75.18 | 12 | 12 | tied |
 | 10 | Runloop | 92.42 | 89.79 – 97.35 | 12 | 12 | — |
 | 10 | Modal (gVisor) | 97.18 | 96.14 – 100.5 | 12 | 12 | tied |
+| 12 | Claude Cloud | 195.3 | — | 1 | 1 | — |
 
 ### Better-Auth: build
 
@@ -108,6 +107,7 @@ _Namespace leads · Blaxel is ~1.3× higher (lower is better)._
 | 7 | E2B | 102.5 | 98.31 – 106.6 | 12 | 12 | tied |
 | 10 | Modal (gVisor) | 136.4 | 129.2 – 139.3 | 12 | 12 | — |
 | 11 | Runloop | 141.5 | 138.3 – 142.6 | 12 | 12 | — |
+| 12 | Claude Cloud | 157 | — | 1 | 1 | — |
 
 ### Better-Auth: cold install
 
@@ -128,6 +128,7 @@ _Blaxel leads · Daytona (VM) is ~1.2× higher (lower is better)._
 | 9 | Runloop | 28.02 | 27.84 – 28.18 | 12 | 12 | — |
 | 10 | Modal (gVisor) | 35.93 | 32.48 – 38.03 | 12 | 12 | — |
 | 10 | run.cloud | 54.9 | 16.29 – 68.62 | 12 | 12 | tied |
+| 12 | Claude Cloud | 58.17 | — | 1 | 1 | — |
 
 ### Better-Auth: git clone
 
@@ -148,6 +149,7 @@ _Blaxel leads · Vercel Sandbox is ~1.3× higher (lower is better)._
 | 5 | run.cloud | 1.946 | 1.73 – 2.982 | 12 | 12 | tied |
 | 5 | Runloop | 2.079 | 1.715 – 2.758 | 12 | 12 | tied |
 | 5 | Modal (gVisor) | 2.683 | 2.542 – 2.813 | 12 | 12 | tied |
+| 12 | Claude Cloud | 3.964 | — | 1 | 1 | — |
 
 ### Better-Auth: lint (Biome)
 
@@ -167,7 +169,8 @@ _Namespace leads · Daytona (VM) is ~1.2× higher (lower is better)._
 | 8 | Vercel Sandbox | 4.279 | 4.239 – 4.424 | 12 | 12 | — |
 | 9 | E2B | 5.075 | 4.934 – 5.213 | 12 | 12 | — |
 | 10 | Runloop | 6.4 | 6.21 – 6.591 | 12 | 12 | — |
-| 11 | Modal (gVisor) | 10.27 | 9.296 – 10.62 | 12 | 12 | — |
+| 11 | Claude Cloud | 7.319 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 10.27 | 9.296 – 10.62 | 12 | 12 | — |
 
 ### Better-Auth: lint deps (Knip)
 
@@ -187,7 +190,8 @@ _Namespace leads · Blaxel is ~1.3× higher (lower is better)._
 | 8 | run.cloud | 16.74 | 15 – 18.08 | 12 | 12 | — |
 | 9 | E2B | 19.02 | 18.56 – 19.75 | 12 | 12 | — |
 | 10 | Runloop | 22.38 | 22.1 – 22.65 | 12 | 12 | — |
-| 11 | Modal (gVisor) | 27.99 | 26.8 – 29.7 | 12 | 12 | — |
+| 11 | Claude Cloud | 27.73 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 27.99 | 26.8 – 29.7 | 12 | 12 | — |
 
 ### Better-Auth: lint format
 
@@ -208,6 +212,7 @@ _Namespace leads · Daytona (VM) is ~1.3× higher (lower is better)._
 | 9 | E2B | 5.256 | 4.954 – 5.421 | 12 | 12 | — |
 | 10 | Modal (gVisor) | 6.348 | 5.988 – 6.975 | 12 | 12 | — |
 | 10 | Runloop | 6.686 | 6.534 – 6.849 | 12 | 12 | tied |
+| 12 | Claude Cloud | 7.032 | — | 1 | 1 | — |
 
 ### Better-Auth: lint packages
 
@@ -227,7 +232,8 @@ _Namespace leads · Blaxel is ~1.2× higher (lower is better)._
 | 4 | Vercel Sandbox | 3.688 | 3.62 – 3.766 | 12 | 12 | tied |
 | 9 | E2B | 4.271 | 4.151 – 4.539 | 12 | 12 | — |
 | 10 | Runloop | 6.524 | 6.396 – 6.563 | 12 | 12 | — |
-| 11 | Modal (gVisor) | 9.409 | 8.922 – 9.678 | 12 | 12 | — |
+| 11 | Claude Cloud | 7.052 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 9.409 | 8.922 – 9.678 | 12 | 12 | — |
 
 ### Better-Auth: lint spell
 
@@ -248,6 +254,7 @@ _Namespace leads · Blaxel is ~1.3× higher (lower is better)._
 | 9 | E2B | 13.43 | 12.97 – 14.51 | 12 | 12 | — |
 | 9 | Modal (gVisor) | 14.65 | 13.99 – 16 | 12 | 12 | tied |
 | 11 | Runloop | 16.71 | 16.52 – 17.16 | 12 | 12 | — |
+| 12 | Claude Cloud | 20.55 | — | 1 | 1 | — |
 
 ### Better-Auth: lint types
 
@@ -267,7 +274,8 @@ _Namespace, Daytona (VM) and Blaxel share the top on this metric (lower is bette
 | 7 | run.cloud | 48.55 | 40.39 – 79.95 | 12 | 12 | tied |
 | 7 | E2B | 52.28 | 50.71 – 56.95 | 12 | 12 | tied |
 | 10 | Runloop | 76.78 | 75.51 – 79.73 | 12 | 12 | — |
-| 11 | Modal (gVisor) | 101.6 | 95.9 – 108.8 | 12 | 12 | — |
+| 11 | Claude Cloud | 98.93 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 101.6 | 95.9 – 108.8 | 12 | 12 | — |
 
 ### Better-Auth: typecheck
 
@@ -288,6 +296,7 @@ _Namespace leads · Daytona (VM) is ~1.3× higher (lower is better)._
 | 7 | E2B | 76.66 | 72.24 – 81.05 | 12 | 12 | tied |
 | 7 | Modal (gVisor) | 79.19 | 75.11 – 86.39 | 12 | 12 | tied |
 | 11 | Runloop | 100.2 | 99.45 – 103.5 | 12 | 12 | — |
+| 12 | Claude Cloud | 129.7 | — | 1 | 1 | — |
 
 ### Mastra: build:core
 
@@ -308,6 +317,7 @@ _Namespace leads · Daytona (VM) is ~1.3× higher (lower is better)._
 | 8 | Vercel Sandbox | 150.6 | 109.1 – 155 | 12 | 12 | tied |
 | 10 | Runloop | 159.4 | 152.6 – 178.5 | 12 | 12 | — |
 | 10 | Modal (gVisor) | 171.5 | 163.3 – 177 | 12 | 12 | tied |
+| 12 | Claude Cloud | 201 | — | 1 | 1 | — |
 
 ### Mastra: git clone
 
@@ -328,6 +338,7 @@ _Blaxel, Modal (VM), Daytona (VM), Vercel Sandbox, Microsandbox Cloud, run.cloud
 | 1 | Novita | 4.061 | 3.184 – 5.328 | 12 | 12 | tied |
 | 10 | Runloop | 5.427 | 4.671 – 6.383 | 12 | 12 | — |
 | 10 | Modal (gVisor) | 6.489 | 6.22 – 6.737 | 12 | 12 | tied |
+| 12 | Claude Cloud | 86.25 | — | 1 | 1 | — |
 
 ### Mastra: lint:format
 
@@ -348,6 +359,7 @@ _Namespace leads · Blaxel is ~1.3× higher (lower is better)._
 | 9 | Modal (gVisor) | 189.2 | 187.1 – 194.5 | 12 | 12 | — |
 | 9 | Vercel Sandbox | 189.3 | 140 – 192.1 | 12 | 12 | tied |
 | 11 | Runloop | 199.8 | 192.2 – 225.7 | 12 | 12 | — |
+| 12 | Claude Cloud | 254.9 | — | 1 | 1 | — |
 
 ### OpenClaw: cold install
 
@@ -368,6 +380,7 @@ _Blaxel, Namespace, Daytona (VM), Modal (VM), Novita, Vercel Sandbox, E2B, Micro
 | 1 | run.cloud | 21.28 | 18.32 – 24.21 | 11 | 11 | tied |
 | 1 | Runloop | 24.34 | 22.76 – 26.59 | 12 | 12 | tied |
 | 11 | Modal (gVisor) | 31.91 | 30.17 – 36.44 | 9 | 9 | — |
+| 12 | Claude Cloud | 109 | — | 1 | 1 | — |
 
 ### OpenClaw: git clone
 
@@ -388,6 +401,7 @@ _Blaxel leads · Modal (VM) is ~1.3× higher (lower is better)._
 | 9 | Namespace | 6.213 | 4.639 – 8.429 | 12 | 12 | — |
 | 9 | Runloop | 6.78 | 5.619 – 8.105 | 12 | 12 | tied |
 | 11 | Modal (gVisor) | 10.32 | 9.888 – 12.82 | 9 | 9 | — |
+| 12 | Claude Cloud | 17.08 | — | 1 | 1 | — |
 
 ### OpenClaw: lint (extension channels)
 
@@ -408,6 +422,17 @@ _Namespace leads · Blaxel is ~1.2× higher (lower is better)._
 | 8 | Vercel Sandbox | 111 | 93.67 – 127.1 | 12 | 12 | tied |
 | 10 | Runloop | 133.7 | 132.1 – 140 | 12 | 12 | — |
 | 11 | Modal (gVisor) | 177.8 | 158.8 – 191.9 | 9 | 9 | — |
+| 12 | Claude Cloud | 195.5 | — | 1 | 1 | — |
+
+### OpenClaw: lint (Oxlint)
+
+Seconds · lower is better
+
+_Claude Cloud is the only ranked provider (319.6 Seconds; lower is better)._
+
+| Rank | Provider | OpenClaw: lint (Oxlint) (Seconds) | 95% bootstrap interval | Sandboxes | Trials |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | Claude Cloud | 319.6 | — | 1 | 1 |
 
 ### OpenClaw: typecheck (test tree)
 
@@ -426,7 +451,8 @@ _Namespace leads · Daytona (VM) is ~1.2× higher (lower is better)._
 | 6 | Vercel Sandbox | 170.5 | 145 – 193.7 | 12 | 12 | tied |
 | 6 | E2B | 184.4 | 179 – 188 | 12 | 12 | tied |
 | 9 | Runloop | 208.8 | 202.2 – 212.7 | 12 | 12 | — |
-| 10 | Modal (gVisor) | 315.2 | 275.3 – 331.2 | 9 | 9 | — |
+| 10 | Claude Cloud | 294.6 | — | 1 | 1 | — |
+| 11 | Modal (gVisor) | 315.2 | 275.3 – 331.2 | 9 | 9 | — |
 
 ### OpenClaw: typecheck (tsgo)
 
@@ -446,7 +472,8 @@ _Namespace leads · Daytona (VM) is ~1.3× higher (lower is better)._
 | 5 | Vercel Sandbox | 30.06 | 26.59 – 34.92 | 12 | 12 | tied |
 | 9 | Runloop | 36.4 | 35.08 – 37.78 | 12 | 12 | — |
 | 9 | E2B | 37.39 | 35.04 – 37.94 | 12 | 12 | tied |
-| 11 | Modal (gVisor) | 70.31 | 52.44 – 91.65 | 9 | 9 | — |
+| 11 | Claude Cloud | 54.11 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 70.31 | 52.44 – 91.65 | 9 | 9 | — |
 
 </details>
 
@@ -704,8 +731,9 @@ _Daytona (VM) leads · ~1.8× Blaxel on median (higher is better)._
 | 7 | E2B | 48030 | 46630 – 51460 | 3 | 15 | too few sandboxes |
 | 8 | Vercel Sandbox | 47710 | 47610 – 54370 | 3 | 15 | too few sandboxes |
 | 9 | Runloop | 41900 | 31770 – 42050 | 3 | 15 | too few sandboxes |
-| 10 | Namespace | 33830 | 33820 – 33930 | 3 | 15 | too few sandboxes |
-| 11 | run.cloud | 32050 | 25540 – 32290 | 3 | 15 | too few sandboxes |
+| 10 | Claude Cloud | 37310 | — | 1 | 1 | — |
+| 11 | Namespace | 33830 | 33820 – 33930 | 3 | 15 | — |
+| 12 | run.cloud | 32050 | 25540 – 32290 | 3 | 15 | too few sandboxes |
 
 ### STREAM Add
 
@@ -724,8 +752,9 @@ _Daytona (VM) leads · ~1.8× Blaxel on median (higher is better)._
 | 7 | E2B | 47880 | 46770 – 51340 | 3 | 15 | too few sandboxes |
 | 8 | Vercel Sandbox | 46810 | 46738 – 54150 | 3 | 15 | too few sandboxes |
 | 9 | Runloop | 41196 | 30580 – 42450 | 3 | 15 | too few sandboxes |
-| 10 | Namespace | 33770 | 33750 – 33870 | 3 | 15 | too few sandboxes |
-| 11 | run.cloud | 31550 | 25810 – 32330 | 3 | 15 | too few sandboxes |
+| 10 | Claude Cloud | 37232 | — | 1 | 1 | — |
+| 11 | Namespace | 33770 | 33750 – 33870 | 3 | 15 | — |
+| 12 | run.cloud | 31550 | 25810 – 32330 | 3 | 15 | too few sandboxes |
 
 ### STREAM Copy
 
@@ -745,7 +774,8 @@ _Daytona (VM) leads · ~1.8× Blaxel on median (higher is better)._
 | 8 | Runloop | 47010 | 43670 – 48260 | 3 | 72 | too few sandboxes |
 | 9 | Namespace | 44090 | 44010 – 44920 | 3 | 15 | too few sandboxes |
 | 10 | run.cloud | 42850 | 36610 – 43580 | 3 | 55 | too few sandboxes |
-| 11 | Vercel Sandbox | 40240 | 40120 – 83570 | 3 | 20 | too few sandboxes |
+| 11 | Claude Cloud | 41920 | — | 1 | 1 | — |
+| 12 | Vercel Sandbox | 40240 | 40120 – 83570 | 3 | 20 | — |
 
 ### STREAM Scale
 
@@ -764,8 +794,9 @@ _Daytona (VM) leads · ~1.8× Blaxel on median (higher is better)._
 | 7 | E2B | 45010 | 44660 – 45445 | 3 | 15 | too few sandboxes |
 | 8 | Vercel Sandbox | 43510 | 43143 – 46530 | 3 | 15 | too few sandboxes |
 | 9 | Runloop | 38120 | 28180 – 40260 | 3 | 15 | too few sandboxes |
-| 10 | Namespace | 30660 | 30630 – 30770 | 3 | 15 | too few sandboxes |
-| 11 | run.cloud | 29280 | 23000 – 29600 | 3 | 15 | too few sandboxes |
+| 10 | Claude Cloud | 33870 | — | 1 | 1 | — |
+| 11 | Namespace | 30660 | 30630 – 30770 | 3 | 15 | — |
+| 12 | run.cloud | 29280 | 23000 – 29600 | 3 | 15 | too few sandboxes |
 
 </details>
 
@@ -949,7 +980,8 @@ _Blaxel leads · ~1.1× Daytona (VM) on median (higher is better)._
 | 8 | Vercel Sandbox | 175400 | 118800 – 177000 | 3 | 6 | too few sandboxes |
 | 9 | run.cloud | 142500 | 142200 – 214500 | 3 | 6 | too few sandboxes |
 | 10 | Runloop | 98830 | 95840 – 100500 | 3 | 6 | too few sandboxes |
-| 11 | Modal (gVisor) | 11220 | 11140 – 11230 | 3 | 6 | too few sandboxes |
+| 11 | Claude Cloud | 76230 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 11220 | 11140 – 11230 | 3 | 6 | — |
 
 ### pgbench RO latency (s100, 50c)
 
@@ -969,7 +1001,8 @@ _Blaxel leads · Daytona (VM) is ~1.1× higher (lower is better)._
 | 8 | Vercel Sandbox | 0.285 | 0.2825 – 0.4215 | 3 | 6 | too few sandboxes |
 | 9 | run.cloud | 0.351 | 0.2345 – 0.352 | 3 | 6 | too few sandboxes |
 | 10 | Runloop | 0.5065 | 0.4975 – 0.5215 | 3 | 6 | too few sandboxes |
-| 11 | Modal (gVisor) | 4.463 | 4.455 – 4.49 | 3 | 6 | too few sandboxes |
+| 11 | Claude Cloud | 0.656 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 4.463 | 4.455 – 4.49 | 3 | 6 | — |
 
 ### pgbench RW (s100, 50c)
 
@@ -989,7 +1022,8 @@ _Namespace leads · ~1.1× Novita on median (higher is better)._
 | 8 | Modal (VM) | 13350 | 13330 – 13650 | 3 | 6 | too few sandboxes |
 | 9 | Runloop | 9565 | 9291 – 9682 | 3 | 6 | too few sandboxes |
 | 10 | run.cloud | 7894 | 7619 – 16200 | 3 | 6 | too few sandboxes |
-| 11 | Modal (gVisor) | 1946 | 1927 – 1964 | 3 | 6 | too few sandboxes |
+| 11 | Claude Cloud | 4561 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 1946 | 1927 – 1964 | 3 | 6 | — |
 
 ### pgbench RW latency (s100, 50c)
 
@@ -1009,7 +1043,8 @@ _Namespace leads · Novita is ~1.1× higher (lower is better)._
 | 8 | Modal (VM) | 3.746 | 3.674 – 3.752 | 3 | 6 | too few sandboxes |
 | 9 | Runloop | 5.229 | 5.172 – 5.405 | 3 | 6 | too few sandboxes |
 | 10 | run.cloud | 6.335 | 3.103 – 6.59 | 3 | 6 | too few sandboxes |
-| 11 | Modal (gVisor) | 25.69 | 25.47 – 25.95 | 3 | 6 | too few sandboxes |
+| 11 | Claude Cloud | 10.96 | — | 1 | 1 | — |
+| 12 | Modal (gVisor) | 25.69 | 25.47 – 25.95 | 3 | 6 | — |
 
 ### SQLite Speedtest
 
@@ -1052,7 +1087,7 @@ _Novita is cheapest · Daytona (VM) is ~1.4× higher (lower is better)._
 
 ## Coverage gaps
 
-43 uncovered results across 13 providers (Blaxel 2, Claude Cloud 8, Cursor Cloud Agent 5, Daytona (VM) 2, E2B 3, Microsandbox Cloud 2, Modal (gVisor) 4, Modal (VM) 2, Namespace 2, Novita 2, run.cloud 4, Runloop 2, Vercel Sandbox 5). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
+40 uncovered results across 13 providers (Blaxel 2, Claude Cloud 5, Cursor Cloud Agent 5, Daytona (VM) 2, E2B 3, Microsandbox Cloud 2, Modal (gVisor) 4, Modal (VM) 2, Namespace 2, Novita 2, run.cloud 4, Runloop 2, Vercel Sandbox 5). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
 
 <details>
 <summary>Full coverage table</summary>
@@ -1064,6 +1099,8 @@ _Novita is cheapest · Daytona (VM) is ~1.4× higher (lower is better)._
 | Blaxel | realworld-openclaw | **failed** | PTS ran but every trial failed for 4 of 8 declared metrics: realworld_openclaw_task_lint_oxlint (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_shrinkwrap_check (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_test_types (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_test_unit_fast (realworld-openclaw/pts_realworld-openclaw.xml) — attempted, no value recorded |
 | Claude Cloud | network | **failed** | pts_iperf-wan-download: pts_iperf-wan-download did not produce 1 numeric metric value(s) |
 | Claude Cloud | network | **failed** | pts_iperf-wan-upload: PTS batch-run of local/iperf-wan-1.0.0 completed but every trial errored (composite carries no values) |
+| Claude Cloud | realworld-mastra | **failed** | PTS ran but every trial failed for 1 of 5 declared metrics: realworld_mastra_task_test_core (realworld-mastra/pts_realworld-mastra.xml) — attempted, no value recorded |
+| Claude Cloud | realworld-openclaw | **failed** | PTS ran but every trial failed for 2 of 8 declared metrics: realworld_openclaw_task_shrinkwrap_check (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_test_unit_fast (realworld-openclaw/pts_realworld-openclaw.xml) — attempted, no value recorded |
 | Daytona (VM) | realworld-mastra | **failed** | PTS ran but every trial failed for 1 of 5 declared metrics: realworld_mastra_task_test_core (realworld-mastra/pts_realworld-mastra.xml) — attempted, no value recorded |
 | Daytona (VM) | realworld-openclaw | **failed** | PTS ran but every trial failed for 3 of 8 declared metrics: realworld_openclaw_task_lint_oxlint (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_shrinkwrap_check (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_test_unit_fast (realworld-openclaw/pts_realworld-openclaw.xml) — attempted, no value recorded |
 | E2B | pgbench | **failed** | Step "clone repo" failed with exit code 128 |
@@ -1092,11 +1129,6 @@ _Novita is cheapest · Daytona (VM) is ~1.4× higher (lower is better)._
 | Vercel Sandbox | network | **failed** | Step "mise run benchmark:network:suite" failed with exit code 1 |
 | Vercel Sandbox | realworld-mastra | **failed** | PTS ran but every trial failed for 1 of 5 declared metrics: realworld_mastra_task_test_core (realworld-mastra/pts_realworld-mastra.xml) — attempted, no value recorded |
 | Vercel Sandbox | realworld-openclaw | **failed** | PTS ran but every trial failed for 3 of 8 declared metrics: realworld_openclaw_task_lint_oxlint (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_shrinkwrap_check (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_test_unit_fast (realworld-openclaw/pts_realworld-openclaw.xml) — attempted, no value recorded |
-| Claude Cloud | memory | **missing** | No result and no marker — the suite never reported for this provider. |
-| Claude Cloud | pgbench | **missing** | No result and no marker — the suite never reported for this provider. |
-| Claude Cloud | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
-| Claude Cloud | realworld-mastra | **missing** | No result and no marker — the suite never reported for this provider. |
-| Claude Cloud | realworld-openclaw | **missing** | No result and no marker — the suite never reported for this provider. |
 | Cursor Cloud Agent | memory | **missing** | No result and no marker — the suite never reported for this provider. |
 | Cursor Cloud Agent | pgbench | **missing** | No result and no marker — the suite never reported for this provider. |
 | Cursor Cloud Agent | realworld-better-auth | **missing** | No result and no marker — the suite never reported for this provider. |
@@ -1201,6 +1233,7 @@ correction is applied across providers or metrics.
 | realworld | Mastra: cold install | Vercel Sandbox | 0.84 (tied) | 0.43 |
 | realworld | Mastra: cold install | Runloop | <0.001 | <0.001 |
 | realworld | Mastra: cold install | Modal (gVisor) | 0.089 (tied) | 0.019 |
+| realworld | Mastra: cold install | Claude Cloud | — | — |
 | realworld | Better-Auth: build | Namespace | — | — |
 | realworld | Better-Auth: build | Blaxel | <0.001 | <0.001 |
 | realworld | Better-Auth: build | Daytona (VM) | 0.98 (tied) | 0.43 |
@@ -1212,6 +1245,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: build | E2B | 0.24 (tied) | 0.019 |
 | realworld | Better-Auth: build | Modal (gVisor) | <0.001 | <0.001 |
 | realworld | Better-Auth: build | Runloop | 0.017 | 0.066 |
+| realworld | Better-Auth: build | Claude Cloud | — | — |
 | realworld | Better-Auth: cold install | Blaxel | — | — |
 | realworld | Better-Auth: cold install | Daytona (VM) | <0.001 | <0.001 |
 | realworld | Better-Auth: cold install | Novita | <0.001 | <0.001 |
@@ -1223,6 +1257,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: cold install | Runloop | <0.001 | <0.001 |
 | realworld | Better-Auth: cold install | Modal (gVisor) | 0.0045 | <0.001 |
 | realworld | Better-Auth: cold install | run.cloud | 0.35 (tied) | 0.066 |
+| realworld | Better-Auth: cold install | Claude Cloud | — | — |
 | realworld | Better-Auth: git clone | Blaxel | — | — |
 | realworld | Better-Auth: git clone | Vercel Sandbox | <0.001 | <0.001 |
 | realworld | Better-Auth: git clone | Modal (VM) | 0.55 (tied) | 0.066 |
@@ -1234,6 +1269,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: git clone | run.cloud | 0.41 (tied) | 0.79 |
 | realworld | Better-Auth: git clone | Runloop | 0.80 (tied) | 0.79 |
 | realworld | Better-Auth: git clone | Modal (gVisor) | 0.29 (tied) | 0.019 |
+| realworld | Better-Auth: git clone | Claude Cloud | — | — |
 | realworld | Better-Auth: lint (Biome) | Namespace | — | — |
 | realworld | Better-Auth: lint (Biome) | Daytona (VM) | <0.001 | <0.001 |
 | realworld | Better-Auth: lint (Biome) | Blaxel | 0.0068 | <0.001 |
@@ -1244,7 +1280,8 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint (Biome) | Vercel Sandbox | 0.0045 | 0.0046 |
 | realworld | Better-Auth: lint (Biome) | E2B | 0.0045 | <0.001 |
 | realworld | Better-Auth: lint (Biome) | Runloop | <0.001 | <0.001 |
-| realworld | Better-Auth: lint (Biome) | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | Better-Auth: lint (Biome) | Claude Cloud | — | — |
+| realworld | Better-Auth: lint (Biome) | Modal (gVisor) | — | — |
 | realworld | Better-Auth: lint deps (Knip) | Namespace | — | — |
 | realworld | Better-Auth: lint deps (Knip) | Blaxel | <0.001 | <0.001 |
 | realworld | Better-Auth: lint deps (Knip) | Daytona (VM) | 0.22 (tied) | 0.43 |
@@ -1255,7 +1292,8 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint deps (Knip) | run.cloud | 0.028 | 0.0046 |
 | realworld | Better-Auth: lint deps (Knip) | E2B | 0.010 | <0.001 |
 | realworld | Better-Auth: lint deps (Knip) | Runloop | <0.001 | <0.001 |
-| realworld | Better-Auth: lint deps (Knip) | Modal (gVisor) | 0.0045 | <0.001 |
+| realworld | Better-Auth: lint deps (Knip) | Claude Cloud | — | — |
+| realworld | Better-Auth: lint deps (Knip) | Modal (gVisor) | — | — |
 | realworld | Better-Auth: lint format | Namespace | — | — |
 | realworld | Better-Auth: lint format | Daytona (VM) | <0.001 | <0.001 |
 | realworld | Better-Auth: lint format | Blaxel | 0.045 | 0.019 |
@@ -1267,6 +1305,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint format | E2B | 0.0045 | <0.001 |
 | realworld | Better-Auth: lint format | Modal (gVisor) | 0.0045 | <0.001 |
 | realworld | Better-Auth: lint format | Runloop | 0.16 (tied) | 0.019 |
+| realworld | Better-Auth: lint format | Claude Cloud | — | — |
 | realworld | Better-Auth: lint packages | Namespace | — | — |
 | realworld | Better-Auth: lint packages | Blaxel | <0.001 | <0.001 |
 | realworld | Better-Auth: lint packages | Daytona (VM) | 0.36 (tied) | 0.19 |
@@ -1277,7 +1316,8 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint packages | Vercel Sandbox | 0.29 (tied) | 0.019 |
 | realworld | Better-Auth: lint packages | E2B | 0.0029 | <0.001 |
 | realworld | Better-Auth: lint packages | Runloop | <0.001 | <0.001 |
-| realworld | Better-Auth: lint packages | Modal (gVisor) | 0.0043 | <0.001 |
+| realworld | Better-Auth: lint packages | Claude Cloud | — | — |
+| realworld | Better-Auth: lint packages | Modal (gVisor) | — | — |
 | realworld | Better-Auth: lint spell | Namespace | — | — |
 | realworld | Better-Auth: lint spell | Blaxel | <0.001 | <0.001 |
 | realworld | Better-Auth: lint spell | Daytona (VM) | 0.0045 | <0.001 |
@@ -1289,6 +1329,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint spell | E2B | 0.0023 | <0.001 |
 | realworld | Better-Auth: lint spell | Modal (gVisor) | 0.11 (tied) | 0.19 |
 | realworld | Better-Auth: lint spell | Runloop | <0.001 | <0.001 |
+| realworld | Better-Auth: lint spell | Claude Cloud | — | — |
 | realworld | Better-Auth: lint types | Namespace | — | — |
 | realworld | Better-Auth: lint types | Daytona (VM) | 0.59 (tied) | 0.43 |
 | realworld | Better-Auth: lint types | Blaxel | 0.20 (tied) | 0.019 |
@@ -1299,7 +1340,8 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint types | run.cloud | 0.76 (tied) | 0.19 |
 | realworld | Better-Auth: lint types | E2B | 0.18 (tied) | 0.0046 |
 | realworld | Better-Auth: lint types | Runloop | <0.001 | <0.001 |
-| realworld | Better-Auth: lint types | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | Better-Auth: lint types | Claude Cloud | — | — |
+| realworld | Better-Auth: lint types | Modal (gVisor) | — | — |
 | realworld | Better-Auth: typecheck | Namespace | — | — |
 | realworld | Better-Auth: typecheck | Daytona (VM) | <0.001 | <0.001 |
 | realworld | Better-Auth: typecheck | Blaxel | 0.59 (tied) | 0.19 |
@@ -1311,6 +1353,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: typecheck | E2B | 0.20 (tied) | 0.019 |
 | realworld | Better-Auth: typecheck | Modal (gVisor) | 0.51 (tied) | 0.43 |
 | realworld | Better-Auth: typecheck | Runloop | <0.001 | <0.001 |
+| realworld | Better-Auth: typecheck | Claude Cloud | — | — |
 | realworld | Mastra: build:core | Namespace | — | — |
 | realworld | Mastra: build:core | Daytona (VM) | <0.001 | <0.001 |
 | realworld | Mastra: build:core | Blaxel | 0.35 (tied) | 0.43 |
@@ -1322,6 +1365,7 @@ correction is applied across providers or metrics.
 | realworld | Mastra: build:core | Vercel Sandbox | 0.18 (tied) | 0.0046 |
 | realworld | Mastra: build:core | Runloop | 0.0068 | 0.019 |
 | realworld | Mastra: build:core | Modal (gVisor) | 0.41 (tied) | 0.19 |
+| realworld | Mastra: build:core | Claude Cloud | — | — |
 | realworld | Mastra: git clone | Blaxel | — | — |
 | realworld | Mastra: git clone | Modal (VM) | 0.068 (tied) | 0.066 |
 | realworld | Mastra: git clone | Daytona (VM) | 0.34 (tied) | 0.43 |
@@ -1333,6 +1377,7 @@ correction is applied across providers or metrics.
 | realworld | Mastra: git clone | Novita | 0.32 (tied) | 0.43 |
 | realworld | Mastra: git clone | Runloop | 0.028 | 0.066 |
 | realworld | Mastra: git clone | Modal (gVisor) | 0.068 (tied) | 0.019 |
+| realworld | Mastra: git clone | Claude Cloud | — | — |
 | realworld | Mastra: lint:format | Namespace | — | — |
 | realworld | Mastra: lint:format | Blaxel | <0.001 | <0.001 |
 | realworld | Mastra: lint:format | Daytona (VM) | 0.32 (tied) | 0.19 |
@@ -1344,6 +1389,7 @@ correction is applied across providers or metrics.
 | realworld | Mastra: lint:format | Modal (gVisor) | <0.001 | <0.001 |
 | realworld | Mastra: lint:format | Vercel Sandbox | 0.35 (tied) | 0.43 |
 | realworld | Mastra: lint:format | Runloop | 0.0011 | 0.019 |
+| realworld | Mastra: lint:format | Claude Cloud | — | — |
 | realworld | OpenClaw: cold install | Blaxel | — | — |
 | realworld | OpenClaw: cold install | Namespace | 0.25 (tied) | 0.066 |
 | realworld | OpenClaw: cold install | Daytona (VM) | 1.0 (tied) | 0.066 |
@@ -1355,6 +1401,7 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: cold install | run.cloud | 0.49 (tied) | 0.33 |
 | realworld | OpenClaw: cold install | Runloop | 0.10 (tied) | 0.12 |
 | realworld | OpenClaw: cold install | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | OpenClaw: cold install | Claude Cloud | — | — |
 | realworld | OpenClaw: git clone | Blaxel | — | — |
 | realworld | OpenClaw: git clone | Modal (VM) | 0.0045 | <0.001 |
 | realworld | OpenClaw: git clone | Daytona (VM) | 0.14 (tied) | 0.43 |
@@ -1366,6 +1413,7 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: git clone | Namespace | 0.039 | <0.001 |
 | realworld | OpenClaw: git clone | Runloop | 0.89 (tied) | 0.79 |
 | realworld | OpenClaw: git clone | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | OpenClaw: git clone | Claude Cloud | — | — |
 | realworld | OpenClaw: lint (extension channels) | Namespace | — | — |
 | realworld | OpenClaw: lint (extension channels) | Blaxel | <0.001 | <0.001 |
 | realworld | OpenClaw: lint (extension channels) | Daytona (VM) | 0.41 (tied) | 0.19 |
@@ -1377,6 +1425,8 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: lint (extension channels) | Vercel Sandbox | 1.0 (tied) | 0.066 |
 | realworld | OpenClaw: lint (extension channels) | Runloop | <0.001 | <0.001 |
 | realworld | OpenClaw: lint (extension channels) | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | OpenClaw: lint (extension channels) | Claude Cloud | — | — |
+| realworld | OpenClaw: lint (Oxlint) | Claude Cloud | — | — |
 | realworld | OpenClaw: typecheck (test tree) | Namespace | — | — |
 | realworld | OpenClaw: typecheck (test tree) | Daytona (VM) | <0.001 | <0.001 |
 | realworld | OpenClaw: typecheck (test tree) | Modal (VM) | <0.001 | 0.0046 |
@@ -1386,7 +1436,8 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: typecheck (test tree) | Vercel Sandbox | 0.69 (tied) | 0.075 |
 | realworld | OpenClaw: typecheck (test tree) | E2B | 0.48 (tied) | 0.066 |
 | realworld | OpenClaw: typecheck (test tree) | Runloop | <0.001 | <0.001 |
-| realworld | OpenClaw: typecheck (test tree) | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | OpenClaw: typecheck (test tree) | Claude Cloud | — | — |
+| realworld | OpenClaw: typecheck (test tree) | Modal (gVisor) | — | — |
 | realworld | OpenClaw: typecheck (tsgo) | Namespace | — | — |
 | realworld | OpenClaw: typecheck (tsgo) | Daytona (VM) | <0.001 | <0.001 |
 | realworld | OpenClaw: typecheck (tsgo) | Blaxel | 0.84 (tied) | 0.99 |
@@ -1397,7 +1448,8 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: typecheck (tsgo) | Vercel Sandbox | 0.17 (tied) | 0.075 |
 | realworld | OpenClaw: typecheck (tsgo) | Runloop | 0.0056 | 0.0046 |
 | realworld | OpenClaw: typecheck (tsgo) | E2B | 0.76 (tied) | 0.79 |
-| realworld | OpenClaw: typecheck (tsgo) | Modal (gVisor) | 0.0018 | <0.001 |
+| realworld | OpenClaw: typecheck (tsgo) | Claude Cloud | — | — |
+| realworld | OpenClaw: typecheck (tsgo) | Modal (gVisor) | — | — |
 | cpu | Node.js web tooling | Namespace | — | — |
 | cpu | Node.js web tooling | Blaxel | 0.10 (too few sandboxes) | <0.001 |
 | cpu | Node.js web tooling | Cursor Cloud Agent | — | — |
@@ -1535,7 +1587,8 @@ correction is applied across providers or metrics.
 | memory | STREAM Triad | E2B | 0.20 (too few sandboxes) | 0.0011 |
 | memory | STREAM Triad | Vercel Sandbox | 1.0 (too few sandboxes) | 0.31 |
 | memory | STREAM Triad | Runloop | 0.10 (too few sandboxes) | <0.001 |
-| memory | STREAM Triad | Namespace | 0.70 (too few sandboxes) | <0.001 |
+| memory | STREAM Triad | Claude Cloud | — | — |
+| memory | STREAM Triad | Namespace | — | — |
 | memory | STREAM Triad | run.cloud | 0.10 (too few sandboxes) | <0.001 |
 | memory | STREAM Add | Daytona (VM) | — | — |
 | memory | STREAM Add | Blaxel | 0.70 (too few sandboxes) | 0.0011 |
@@ -1546,7 +1599,8 @@ correction is applied across providers or metrics.
 | memory | STREAM Add | E2B | 0.20 (too few sandboxes) | 0.0011 |
 | memory | STREAM Add | Vercel Sandbox | 1.0 (too few sandboxes) | 0.14 |
 | memory | STREAM Add | Runloop | 0.10 (too few sandboxes) | <0.001 |
-| memory | STREAM Add | Namespace | 0.70 (too few sandboxes) | <0.001 |
+| memory | STREAM Add | Claude Cloud | — | — |
+| memory | STREAM Add | Namespace | — | — |
 | memory | STREAM Add | run.cloud | 0.10 (too few sandboxes) | <0.001 |
 | memory | STREAM Copy | Daytona (VM) | — | — |
 | memory | STREAM Copy | Blaxel | 0.70 (too few sandboxes) | <0.001 |
@@ -1558,7 +1612,8 @@ correction is applied across providers or metrics.
 | memory | STREAM Copy | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | memory | STREAM Copy | Namespace | 0.70 (too few sandboxes) | <0.001 |
 | memory | STREAM Copy | run.cloud | 0.10 (too few sandboxes) | <0.001 |
-| memory | STREAM Copy | Vercel Sandbox | 1.0 (too few sandboxes) | 0.0013 |
+| memory | STREAM Copy | Claude Cloud | — | — |
+| memory | STREAM Copy | Vercel Sandbox | — | — |
 | memory | STREAM Scale | Daytona (VM) | — | — |
 | memory | STREAM Scale | Blaxel | 0.70 (too few sandboxes) | 0.0011 |
 | memory | STREAM Scale | Modal (VM) | 0.10 (too few sandboxes) | <0.001 |
@@ -1568,7 +1623,8 @@ correction is applied across providers or metrics.
 | memory | STREAM Scale | E2B | 0.10 (too few sandboxes) | <0.001 |
 | memory | STREAM Scale | Vercel Sandbox | 0.70 (too few sandboxes) | 0.14 |
 | memory | STREAM Scale | Runloop | 0.10 (too few sandboxes) | <0.001 |
-| memory | STREAM Scale | Namespace | 0.70 (too few sandboxes) | <0.001 |
+| memory | STREAM Scale | Claude Cloud | — | — |
+| memory | STREAM Scale | Namespace | — | — |
 | memory | STREAM Scale | run.cloud | 0.10 (too few sandboxes) | <0.001 |
 | network | iperf3 loopback TCP, 1 stream | Novita | — | — |
 | network | iperf3 loopback TCP, 1 stream | Blaxel | 0.10 (too few sandboxes) | 0.0013 |
@@ -1667,7 +1723,8 @@ correction is applied across providers or metrics.
 | system | pgbench RO (s100, 50c) | Vercel Sandbox | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RO (s100, 50c) | run.cloud | 1.0 (too few sandboxes) | 0.81 |
 | system | pgbench RO (s100, 50c) | Runloop | 0.10 (too few sandboxes) | 0.0013 |
-| system | pgbench RO (s100, 50c) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RO (s100, 50c) | Claude Cloud | — | — |
+| system | pgbench RO (s100, 50c) | Modal (gVisor) | — | — |
 | system | pgbench RO latency (s100, 50c) | Blaxel | — | — |
 | system | pgbench RO latency (s100, 50c) | Daytona (VM) | 0.40 (too few sandboxes) | 0.077 |
 | system | pgbench RO latency (s100, 50c) | Novita | 0.40 (too few sandboxes) | 0.077 |
@@ -1678,7 +1735,8 @@ correction is applied across providers or metrics.
 | system | pgbench RO latency (s100, 50c) | Vercel Sandbox | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RO latency (s100, 50c) | run.cloud | 1.0 (too few sandboxes) | 0.81 |
 | system | pgbench RO latency (s100, 50c) | Runloop | 0.10 (too few sandboxes) | 0.0013 |
-| system | pgbench RO latency (s100, 50c) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RO latency (s100, 50c) | Claude Cloud | — | — |
+| system | pgbench RO latency (s100, 50c) | Modal (gVisor) | — | — |
 | system | pgbench RW (s100, 50c) | Namespace | — | — |
 | system | pgbench RW (s100, 50c) | Novita | 0.70 (too few sandboxes) | 0.077 |
 | system | pgbench RW (s100, 50c) | Blaxel | 0.70 (too few sandboxes) | 0.32 |
@@ -1689,7 +1747,8 @@ correction is applied across providers or metrics.
 | system | pgbench RW (s100, 50c) | Modal (VM) | 0.50 (too few sandboxes) | 0.68 |
 | system | pgbench RW (s100, 50c) | Runloop | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RW (s100, 50c) | run.cloud | 0.70 (too few sandboxes) | 0.077 |
-| system | pgbench RW (s100, 50c) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RW (s100, 50c) | Claude Cloud | — | — |
+| system | pgbench RW (s100, 50c) | Modal (gVisor) | — | — |
 | system | pgbench RW latency (s100, 50c) | Namespace | — | — |
 | system | pgbench RW latency (s100, 50c) | Novita | 0.70 (too few sandboxes) | 0.077 |
 | system | pgbench RW latency (s100, 50c) | Blaxel | 0.70 (too few sandboxes) | 0.32 |
@@ -1700,7 +1759,8 @@ correction is applied across providers or metrics.
 | system | pgbench RW latency (s100, 50c) | Modal (VM) | 0.50 (too few sandboxes) | 0.68 |
 | system | pgbench RW latency (s100, 50c) | Runloop | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RW latency (s100, 50c) | run.cloud | 0.70 (too few sandboxes) | 0.077 |
-| system | pgbench RW latency (s100, 50c) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RW latency (s100, 50c) | Claude Cloud | — | — |
+| system | pgbench RW latency (s100, 50c) | Modal (gVisor) | — | — |
 | system | SQLite Speedtest | Daytona (VM) | — | — |
 | system | SQLite Speedtest | Blaxel | 0.10 (too few sandboxes) | 0.0013 |
 | system | SQLite Speedtest | Novita | 0.40 (too few sandboxes) | 0.077 |

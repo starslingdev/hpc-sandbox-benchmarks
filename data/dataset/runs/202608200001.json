@@ -1,8 +1,8 @@
 {
   "schemaVersion": "5",
   "runId": "202608200001",
-  "sha": "64ecf005cb60ea6de949244b7b6d166d5f6a78cb",
-  "generatedAt": "2026-08-20T07:25:11.415Z",
+  "sha": "5f7e2000efae8bcc2818cbc80f88ac26d5c4e70b",
+  "generatedAt": "2026-08-20T16:18:13.724Z",
   "targetSpec": {
     "vcpus": 4,
     "memoryGb": 8,
@@ -5618,6 +5618,80 @@
         },
         {
           "source": "phoronix/result-file-to-json",
+          "sourceFile": "memory/pts_stream--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=2 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/gcc-13-EldibY/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-EldibY/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "CFLAGS_OVERRIDE=\"-O3 -march=native -DSTREAM_ARRAY_SIZE=150000000\" CLAUDE_CODE_DEBUG=true"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of Enhanced IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "252GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "16GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.5-fc-v20 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "docker"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-20 13:38:08"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
           "sourceFile": "network/pts_iperf-tcp-p1--metadata.json",
           "fields": [
             {
@@ -5979,6 +6053,364 @@
             {
               "path": "ci.timestamp",
               "value": "2026-08-20 07:04:04"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "pgbench/pts_pgbench-read-only--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=2 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/gcc-13-EldibY/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-EldibY/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "CLAUDE_CODE_DEBUG=true"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of Enhanced IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "252GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "16GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.5-fc-v20 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "docker"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-20 13:54:01"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "pgbench/pts_pgbench-read-write--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=2 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/gcc-13-EldibY/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-EldibY/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "CLAUDE_CODE_DEBUG=true"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of Enhanced IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "252GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "16GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.5-fc-v20 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "docker"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-20 13:57:31"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "CLAUDE_CODE_DEBUG=true"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of Enhanced IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "252GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "16GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.5-fc-v20 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "docker"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-20 14:05:44"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "realworld-mastra/pts_realworld-mastra--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "CLAUDE_CODE_DEBUG=true"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of Enhanced IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "252GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "16GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.5-fc-v20 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "docker"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-20 15:26:18"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "CLAUDE_CODE_DEBUG=true"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of Enhanced IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "252GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "16GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.5-fc-v20 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "docker"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-20 14:29:39"
             },
             {
               "path": "ci.user",
@@ -6818,6 +7250,70 @@
           "arguments": "-c localhost -p 5201 -t 10 -u -b 10000m -P 1"
         },
         {
+          "metricId": "pgbench_scaling_factor_100_clients_50_mode_read_only",
+          "samples": [76225.459477],
+          "aggregates": {
+            "p50": 76225.459477,
+            "p95": 76225.459477,
+            "mean": 76225.459477,
+            "stdev": 0,
+            "min": 76225.459477,
+            "max": 76225.459477,
+            "n": 1
+          },
+          "sourceFile": "pgbench/pts_pgbench-read-only.xml",
+          "appVersion": "17",
+          "arguments": "-s 100 -c 50 -S"
+        },
+        {
+          "metricId": "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+          "samples": [0.656],
+          "aggregates": {
+            "p50": 0.656,
+            "p95": 0.656,
+            "mean": 0.656,
+            "stdev": 0,
+            "min": 0.656,
+            "max": 0.656,
+            "n": 1
+          },
+          "sourceFile": "pgbench/pts_pgbench-read-only.xml",
+          "appVersion": "17",
+          "arguments": "-s 100 -c 50 -S"
+        },
+        {
+          "metricId": "pgbench_scaling_factor_100_clients_50_mode_read_write",
+          "samples": [4561.06431],
+          "aggregates": {
+            "p50": 4561.06431,
+            "p95": 4561.06431,
+            "mean": 4561.06431,
+            "stdev": 0,
+            "min": 4561.06431,
+            "max": 4561.06431,
+            "n": 1
+          },
+          "sourceFile": "pgbench/pts_pgbench-read-write.xml",
+          "appVersion": "17",
+          "arguments": "-s 100 -c 50"
+        },
+        {
+          "metricId": "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency",
+          "samples": [10.962],
+          "aggregates": {
+            "p50": 10.962,
+            "p95": 10.962,
+            "mean": 10.962,
+            "stdev": 0,
+            "min": 10.962,
+            "max": 10.962,
+            "n": 1
+          },
+          "sourceFile": "pgbench/pts_pgbench-read-write.xml",
+          "appVersion": "17",
+          "arguments": "-s 100 -c 50"
+        },
+        {
           "metricId": "pybench_milliseconds",
           "samples": [1211],
           "aggregates": {
@@ -6833,6 +7329,326 @@
           "appVersion": "2018-02-16"
         },
         {
+          "metricId": "realworld_better_auth_task_build",
+          "samples": [156.997],
+          "aggregates": {
+            "p50": 156.997,
+            "p95": 156.997,
+            "mean": 156.997,
+            "stdev": 0,
+            "min": 156.997,
+            "max": 156.997,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "build"
+        },
+        {
+          "metricId": "realworld_better_auth_task_cold_install",
+          "samples": [58.171],
+          "aggregates": {
+            "p50": 58.171,
+            "p95": 58.171,
+            "mean": 58.171,
+            "stdev": 0,
+            "min": 58.171,
+            "max": 58.171,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_better_auth_task_git_clone",
+          "samples": [3.964],
+          "aggregates": {
+            "p50": 3.964,
+            "p95": 3.964,
+            "mean": 3.964,
+            "stdev": 0,
+            "min": 3.964,
+            "max": 3.964,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_biome",
+          "samples": [7.319],
+          "aggregates": {
+            "p50": 7.319,
+            "p95": 7.319,
+            "mean": 7.319,
+            "stdev": 0,
+            "min": 7.319,
+            "max": 7.319,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_biome"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_deps_knip",
+          "samples": [27.728],
+          "aggregates": {
+            "p50": 27.728,
+            "p95": 27.728,
+            "mean": 27.728,
+            "stdev": 0,
+            "min": 27.728,
+            "max": 27.728,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_deps"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_format",
+          "samples": [7.032],
+          "aggregates": {
+            "p50": 7.032,
+            "p95": 7.032,
+            "mean": 7.032,
+            "stdev": 0,
+            "min": 7.032,
+            "max": 7.032,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_packages",
+          "samples": [7.052],
+          "aggregates": {
+            "p50": 7.052,
+            "p95": 7.052,
+            "mean": 7.052,
+            "stdev": 0,
+            "min": 7.052,
+            "max": 7.052,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_packages"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_spell",
+          "samples": [20.554],
+          "aggregates": {
+            "p50": 20.554,
+            "p95": 20.554,
+            "mean": 20.554,
+            "stdev": 0,
+            "min": 20.554,
+            "max": 20.554,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_spell"
+        },
+        {
+          "metricId": "realworld_better_auth_task_lint_types",
+          "samples": [98.93],
+          "aggregates": {
+            "p50": 98.93,
+            "p95": 98.93,
+            "mean": 98.93,
+            "stdev": 0,
+            "min": 98.93,
+            "max": 98.93,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "lint_types"
+        },
+        {
+          "metricId": "realworld_better_auth_task_typecheck",
+          "samples": [129.706],
+          "aggregates": {
+            "p50": 129.706,
+            "p95": 129.706,
+            "mean": 129.706,
+            "stdev": 0,
+            "min": 129.706,
+            "max": 129.706,
+            "n": 1
+          },
+          "sourceFile": "realworld-better-auth/pts_realworld-better-auth.xml",
+          "appVersion": "6f3ba45639579da152b69e8e5342e02f28288670",
+          "arguments": "typecheck"
+        },
+        {
+          "metricId": "realworld_mastra_task_build_core",
+          "samples": [200.953],
+          "aggregates": {
+            "p50": 200.953,
+            "p95": 200.953,
+            "mean": 200.953,
+            "stdev": 0,
+            "min": 200.953,
+            "max": 200.953,
+            "n": 1
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "build_core"
+        },
+        {
+          "metricId": "realworld_mastra_task_cold_install",
+          "samples": [195.314],
+          "aggregates": {
+            "p50": 195.314,
+            "p95": 195.314,
+            "mean": 195.314,
+            "stdev": 0,
+            "min": 195.314,
+            "max": 195.314,
+            "n": 1
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_mastra_task_git_clone",
+          "samples": [86.253],
+          "aggregates": {
+            "p50": 86.253,
+            "p95": 86.253,
+            "mean": 86.253,
+            "stdev": 0,
+            "min": 86.253,
+            "max": 86.253,
+            "n": 1
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_mastra_task_lint_format",
+          "samples": [254.899],
+          "aggregates": {
+            "p50": 254.899,
+            "p95": 254.899,
+            "mean": 254.899,
+            "stdev": 0,
+            "min": 254.899,
+            "max": 254.899,
+            "n": 1
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "lint_format"
+        },
+        {
+          "metricId": "realworld_openclaw_task_cold_install",
+          "samples": [108.979],
+          "aggregates": {
+            "p50": 108.979,
+            "p95": 108.979,
+            "mean": 108.979,
+            "stdev": 0,
+            "min": 108.979,
+            "max": 108.979,
+            "n": 1
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "cold_install"
+        },
+        {
+          "metricId": "realworld_openclaw_task_git_clone",
+          "samples": [17.079],
+          "aggregates": {
+            "p50": 17.079,
+            "p95": 17.079,
+            "mean": 17.079,
+            "stdev": 0,
+            "min": 17.079,
+            "max": 17.079,
+            "n": 1
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "git_clone"
+        },
+        {
+          "metricId": "realworld_openclaw_task_lint_extensions",
+          "samples": [195.451],
+          "aggregates": {
+            "p50": 195.451,
+            "p95": 195.451,
+            "mean": 195.451,
+            "stdev": 0,
+            "min": 195.451,
+            "max": 195.451,
+            "n": 1
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "lint_extensions"
+        },
+        {
+          "metricId": "realworld_openclaw_task_lint_oxlint",
+          "samples": [319.561],
+          "aggregates": {
+            "p50": 319.561,
+            "p95": 319.561,
+            "mean": 319.561,
+            "stdev": 0,
+            "min": 319.561,
+            "max": 319.561,
+            "n": 1
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "lint_oxlint"
+        },
+        {
+          "metricId": "realworld_openclaw_task_test_types",
+          "samples": [294.6],
+          "aggregates": {
+            "p50": 294.6,
+            "p95": 294.6,
+            "mean": 294.6,
+            "stdev": 0,
+            "min": 294.6,
+            "max": 294.6,
+            "n": 1
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "test_types"
+        },
+        {
+          "metricId": "realworld_openclaw_task_typecheck",
+          "samples": [54.106],
+          "aggregates": {
+            "p50": 54.106,
+            "p95": 54.106,
+            "mean": 54.106,
+            "stdev": 0,
+            "min": 54.106,
+            "max": 54.106,
+            "n": 1
+          },
+          "sourceFile": "realworld-openclaw/pts_realworld-openclaw.xml",
+          "appVersion": "623534400684eca7c451cf587189fae714f2abe2",
+          "arguments": "typecheck"
+        },
+        {
           "metricId": "sqlite_speedtest_seconds",
           "samples": [114.872],
           "aggregates": {
@@ -6846,9 +7662,82 @@
           },
           "sourceFile": "system/pts_sqlite-speedtest.xml",
           "appVersion": "3.30"
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [37232],
+          "aggregates": {
+            "p50": 37232,
+            "p95": 37232,
+            "mean": 37232,
+            "stdev": 0,
+            "min": 37232,
+            "max": 37232,
+            "n": 1
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add"
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [41919.3],
+          "aggregates": {
+            "p50": 41919.3,
+            "p95": 41919.3,
+            "mean": 41919.3,
+            "stdev": 0,
+            "min": 41919.3,
+            "max": 41919.3,
+            "n": 1
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy"
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [33870.6],
+          "aggregates": {
+            "p50": 33870.6,
+            "p95": 33870.6,
+            "mean": 33870.6,
+            "stdev": 0,
+            "min": 33870.6,
+            "max": 33870.6,
+            "n": 1
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale"
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [37310.3],
+          "aggregates": {
+            "p50": 37310.3,
+            "p95": 37310.3,
+            "mean": 37310.3,
+            "stdev": 0,
+            "min": 37310.3,
+            "max": 37310.3,
+            "n": 1
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad"
         }
       ],
-      "suitesCovered": ["disk", "network", "system"],
+      "suitesCovered": [
+        "disk",
+        "memory",
+        "network",
+        "pgbench",
+        "realworld-better-auth",
+        "realworld-mastra",
+        "realworld-openclaw",
+        "system"
+      ],
       "gaps": [
         {
           "scope": "suite",
@@ -6867,6 +7756,31 @@
           "id": "network",
           "outcome": "failed",
           "reason": "pts_iperf-wan-upload: PTS batch-run of local/iperf-wan-1.0.0 completed but every trial errored (composite carries no values)"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "failed",
+          "reason": "PTS ran but every trial failed for 1 of 5 declared metrics: realworld_mastra_task_test_core (realworld-mastra/pts_realworld-mastra.xml) — attempted, no value recorded",
+          "cause": {
+            "kind": "metrics-unrecorded",
+            "metricIds": ["realworld_mastra_task_test_core"],
+            "declared": 5
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "failed",
+          "reason": "PTS ran but every trial failed for 2 of 8 declared metrics: realworld_openclaw_task_shrinkwrap_check (realworld-openclaw/pts_realworld-openclaw.xml), realworld_openclaw_task_test_unit_fast (realworld-openclaw/pts_realworld-openclaw.xml) — attempted, no value recorded",
+          "cause": {
+            "kind": "metrics-unrecorded",
+            "metricIds": [
+              "realworld_openclaw_task_shrinkwrap_check",
+              "realworld_openclaw_task_test_unit_fast"
+            ],
+            "declared": 8
+          }
         }
       ],
       "uncatalogued": []
