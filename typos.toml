@@ -21,3 +21,10 @@ PN = "PN"
 # POSIX Basic Regular Expression, the grep dialect. Named in lib/probe/isolation/20-collect.sh to
 # explain why a match is done in the shell instead of with a `grep` alternation, a GNU extension to BRE.
 BRE = "BRE"
+# The driver kit's `vendor-output-unparseable` error code (packages/driver/src/lib/errors.ts). The
+# code is a literal in a union the harness switches on and rides in persisted run documents, so the
+# spelling is a wire-format identifier, not prose to reword.
+unparseable = "unparseable"
+# Deliberately misspelled fixture key in packages/driver/src/lib/port.test.ts: the test proves that
+# `onDeepUndeclaredKey("reject")` catches NESTED misspellings, so the misspelling IS the test input.
+memroy = "memroy"

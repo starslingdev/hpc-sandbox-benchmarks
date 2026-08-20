@@ -54,6 +54,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/driver": {
+      "name": "@sandbox-benchmarks/driver",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/figures": {
       "name": "@sandbox-benchmarks/figures",
       "version": "0.0.0",
@@ -704,6 +717,8 @@
     "@runloop/api-client": ["@runloop/api-client@1.28.0", "", { "dependencies": { "@types/node": "^18.11.18", "@types/node-fetch": "^2.6.4", "abort-controller": "^3.0.0", "agentkeepalive": "^4.2.1", "form-data-encoder": "1.7.2", "formdata-node": "^4.3.2", "node-fetch": "^2.6.7", "tar": "^7.5.2", "uuidv7": "^1.0.2", "zod": "^3.24.1" } }, "sha512-ZQVSbSutqknTjgRpsfiiI5WXSkx5KgQvWkUpZQwGMsHR+dPCyM6QQegbAYqQaKuhIxEwxsLkJrSTm2fJkXmunw=="],
 
     "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
+
+    "@sandbox-benchmarks/driver": ["@sandbox-benchmarks/driver@workspace:packages/driver"],
 
     "@sandbox-benchmarks/figures": ["@sandbox-benchmarks/figures@workspace:packages/figures"],
 
