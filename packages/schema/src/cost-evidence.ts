@@ -1,6 +1,7 @@
 import { type } from "arktype";
 import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "./canonical-json.ts";
-import { providerIdSchema, runIdSchema } from "./identifiers.ts";
+import { runIdSchema } from "./identifiers.ts";
+import { providerIdSchema } from "./provider-parsers.ts";
 import { suiteNameSchema } from "./suites.ts";
 
 const boundedString = (maximum: number) =>

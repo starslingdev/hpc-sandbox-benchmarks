@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import {
+	parseCreateRequest,
+	parseSandboxRefEnvelope,
+	sandboxRefEnvelopeSchema,
+} from "../schemas.ts";
 import { DriverError } from "./errors.ts";
 import type { SandboxRef } from "./port.ts";
-import { parseCreateRequest, sandboxRef, sandboxRefSchema, succeeded } from "./port.ts";
+import { sandboxRef, succeeded } from "./port.ts";
 
 // Minimal type-level assertion helpers.
 type Equal<X, Y> =
@@ -9,21 +14,11 @@ type Equal<X, Y> =
 type Expect<T extends true> = T;
 
 describe("sandboxRef", () => {
-	test("accepts each provider's id in its own format", () => {
+	test("constructs a provider-qualified ref from a driver-validated id", () => {
 		const valid = [
 			["e2b", "i2f3k4abc"],
-			["daytona-vm", "8f14e45f-ceea-4b16-a2b8-3c1e5f2a9d01"],
-			["daytona-container", "7c9e6679-7425-40de-944b-e07fc1f90ae7"],
-			["blaxel", "sandbox-abc"],
-			["microsandbox-local", "local-sandbox"],
-			["microsandbox-cloud", "cloud-sandbox"],
 			["modal-gvisor", "sb-abc123"],
-			["modal-vm", "sb-def456"],
-			["novita", "i9z8y7x6"],
 			["runloop", "dbx_9f8e7d"],
-			["namespace", "namespace-abc"],
-			["vercel", "sandbox-benchmarks-abc123"],
-			["runcloud", "sb-abc123"],
 			["tama", "m-1"],
 		] as const;
 
@@ -34,20 +29,22 @@ describe("sandboxRef", () => {
 		}
 	});
 
-	test("rejects an id in the wrong format for the provider, naming the pattern", () => {
-		expect(() => sandboxRef("modal-gvisor", "vm-abc123")).toThrow(
-			/invalid sandbox ref: id must be matched by \^sb-\\w\+\$ \(was "vm-abc123"\)/,
+	test("the generic process parser validates qualification, not vendor-specific id syntax", () => {
+		expect(
+			parseSandboxRefEnvelope({ provider: "modal-gvisor", id: "vendor-owned-format" }),
+		).toEqual({
+			provider: "modal-gvisor",
+			id: "vendor-owned-format",
+		});
+		expect(() => parseSandboxRefEnvelope({ provider: "tama", id: "" })).toThrow(
+			/invalid sandbox ref/,
 		);
-		expect(() => sandboxRef("e2b", "sb-abc123")).toThrow(/id must be matched by \^i\[a-z0-9\]\+\$/);
-		expect(() => sandboxRef("daytona-vm", "not-a-uuid")).toThrow(/id must be a UUID/);
-		expect(() => sandboxRef("tama", "")).toThrow(/invalid sandbox ref/);
-		expect(() => sandboxRef("tama", "has spaces")).toThrow(/invalid sandbox ref/);
 	});
 
-	test("a rejection is a typed DriverError carrying the provider", () => {
+	test("a process-boundary rejection is a typed DriverError", () => {
 		const error = (() => {
 			try {
-				sandboxRef("modal-gvisor", "vm-abc");
+				parseSandboxRefEnvelope({ provider: "modal-gvisor", id: "" });
 				return null;
 			} catch (caught) {
 				return caught;
@@ -55,25 +52,20 @@ describe("sandboxRef", () => {
 		})();
 		expect(error).toBeInstanceOf(DriverError);
 		expect((error as DriverError).code).toBe("invalid-sandbox-ref");
-		expect((error as DriverError).provider).toBe("modal-gvisor");
 	});
 
 	test("the schema rejects an unregistered provider outright", () => {
-		const parsed = sandboxRefSchema({ provider: "not-a-provider", id: "x" });
+		const parsed = sandboxRefEnvelopeSchema({ provider: "not-a-provider", id: "x" });
 		expect(String(parsed)).toContain("provider must be");
 	});
 
-	test("the id types are narrowed per provider, statically", () => {
-		// arkregex parses the pattern at the type level: Modal ids ARE `sb-${string}`.
-		type _modal = Expect<Equal<SandboxRef<"modal-gvisor">["id"], `sb-${string}`>>;
-		type _runloop = Expect<Equal<SandboxRef<"runloop">["id"], `dbx_${string}`>>;
+	test("the provider remains narrowed while id syntax belongs to its driver", () => {
+		type _modal = Expect<Equal<SandboxRef<"modal-gvisor">["id"], string>>;
+		type _runloop = Expect<Equal<SandboxRef<"runloop">["id"], string>>;
 		type _provider = Expect<Equal<SandboxRef<"tama">["provider"], "tama">>;
 		const modal = sandboxRef("modal-gvisor", "sb-abc");
-		// @ts-expect-error — a modal ref's id is `sb-${string}`, not any string
-		const wrong: SandboxRef<"modal-gvisor">["id"] = "vm-abc";
-		void wrong;
-		const ok: `sb-${string}` = modal.id;
-		void ok;
+		const id: string = modal.id;
+		void id;
 		expect(true).toBe(true); // the assertions above are compile-time; typecheck is the oracle
 	});
 });

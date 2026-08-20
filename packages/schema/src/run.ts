@@ -12,6 +12,11 @@ import { aggregatesSchema } from "./analysis.ts";
 import { providerCostEvidenceSchema } from "./cost-evidence.ts";
 import { runIdSchema } from "./identifiers.ts";
 import { directionSchema } from "./metrics.ts";
+import type { TargetSpec } from "./target-spec.ts";
+import { targetSpecSchema } from "./target-spec-schema.ts";
+
+export type { TargetSpec } from "./target-spec.ts";
+export { targetSpecSchema } from "./target-spec-schema.ts";
 
 /** Whether a ProviderRun carries at least one catalogued Metric (validated) or none yet (pending). */
 export const validationStatusSchema = type("'validated' | 'pending'");
@@ -419,14 +424,6 @@ export const observedMixturesSchema = type({
 	return true;
 });
 export type ObservedMixtures = typeof observedMixturesSchema.infer;
-
-/** The pinned size every provider is asked to match; compared against each provider's {@link ObservedSpecs}. */
-export const targetSpecSchema = type({
-	vcpus: "number > 0",
-	memoryGb: "number > 0",
-	"diskGb?": "number > 0",
-});
-export type TargetSpec = typeof targetSpecSchema.infer;
 
 /**
  * Where a Run document of this identity is written, relative to the ROOT of the tree that holds it —

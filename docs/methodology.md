@@ -21,7 +21,7 @@ a source of truth.
 
 ## Target spec
 
-Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/providers.ts): **4 vCPU,
+Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/target-spec.ts): **4 vCPU,
 8 GiB RAM, 40 GB disk**. 8 GiB RAM fits inside every provider's reproducible envelope (E2B caps sandbox
 RAM at 8 GiB); vCPU is pinned at 4 because Blaxel couples CPU to RAM (8 GiB forces 4 vCPU there), so
 targeting 4 lets every provider — Blaxel included — match on the same shape. A provider that can't express a dimension
