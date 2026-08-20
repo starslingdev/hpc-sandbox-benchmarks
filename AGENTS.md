@@ -57,47 +57,19 @@ directly:
   `nc`) call `skip_result` and exit 0 — a green task exit does **not** prove the benchmark ran.
   Check for `benchmark-results/<prefix>.xml` (success) vs `benchmark-results/<prefix>--skipped.json`.
 
+### Benchmarking this sandbox (host ingest)
+Agent sandboxes have no remote sandbox API, so they run the suites on their OWN VM and splice the
+results into the dataset afterwards. **The full procedure — toolchain bootstrap, the nine suites,
+provider registration, ingest, and a symptom/cause/fix table — lives in
+[docs/agent-sandbox-benchmarking.md](./docs/agent-sandbox-benchmarking.md).** Read that before
+starting; the short version:
 
-### Cursor Cloud Agent host ingest
-- Provider id `cursor-cloud-agent` is host-ingest only (Firecracker Cloud Agent VM). Opt in with
-  `CURSOR_CLOUD_AGENT_BENCH=1`; the harness adapter refuses remote `create`.
-- After running host suites (`mise run benchmark:system:all`, `benchmark:disk:all`,
-  `benchmark:network:suite`, `benchmark:cpu:node`), stage + splice into the dataset with
-  `bun scripts/ingest-cursor-cloud-agent.ts` (sets `observedSpecs.cpuModel` to
-  `Intel(R) Xeon(R) Platinum 8559C` when PTS CPUID is Family 6 Model 207).
-- Then refresh `LEADERBOARD.md` from the newest index run via
-  `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md`.
-
-### Claude Cloud host ingest
-- Provider id `claude-cloud` is host-ingest only (Firecracker Claude Code remote session VM). Opt in
-  with `CLAUDE_CLOUD_BENCH=1`; the harness adapter refuses remote `create`.
-- The session image ships neither `mise` nor PTS. Install `mise` (`curl -fsSL https://mise.run | sh`,
-  symlink into `/usr/local/bin`) and run `mise trust` — then `mise install`, because **`mise run`
-  auto-installs the pinned tools first and aborts the task if any of them fails to download**
-  (a flaky `typos` fetch is what fails; retry `mise install typos@<pin>`). Then install PTS with
-  `SUDO=sudo bash -c 'source lib/bench.sh && ensure_pts'`, same as the Cursor host.
-- After running host suites (`mise run benchmark:system:all`, `benchmark:disk:all`,
-  `benchmark:network:suite`, `benchmark:cpu:node`), stage + splice into the dataset with
-  `bun scripts/ingest-claude-cloud.ts`. It routes the flat `benchmark-results/` into suites by
-  producer prefix and hand-writes `observed-specs.json` (the file the harness would normally write);
-  every value there is a measurement from the session VM, and the CPU SKU is deliberately left as the
-  hypervisor's masked `/proc/cpuinfo` string rather than inferred from CPUID.
-- Then refresh `LEADERBOARD.md` from the newest index run via
-  `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json LEADERBOARD.md`.
-  The bin also re-renders `docs/figures/*.webp` through `Bun.WebView`, which needs Bun >= 1.3.14 and a
-  Chrome that will start: this VM runs as root, where Chrome refuses to launch without `--no-sandbox`,
-  so point `BUN_CHROME_PATH` at a wrapper that adds the flag. Those rasters are authored by CI's
-  pinned Chrome — `git checkout -- docs/figures/` after the render so an unpinned browser's bytes do
-  not land in the diff.
-- The realworld suites need no Docker (that is only `benchmark:realworld:selftest`); they git-clone
-  the upstream repos and run pnpm tasks, so they need the matrix's own pins on PATH — `mise use
-  --global node@22.23.1` plus `npm install --global --prefix "$HOME/.local" pnpm@10.34.5`, matching
-  `packages/harness/src/lib/setup.ts`. Each leaves a multi-GB checkout under the installed-profile
-  dir; delete it between suites or the next one runs out of the session's disk allowance.
-- If the container restarts mid-session the agent proxy comes back on a NEW port. Anything launched
-  with the stale `HTTPS_PROXY` fails with `ECONNREFUSED 127.0.0.1:<old-port>` inside package
-  postinstalls — re-read the port from the environment and relaunch rather than debugging the
-  workload.
-- Finally `bunx biome format --write data/dataset/runs/<id>.json` — the ingest writes
-  `JSON.stringify(…, null, 2)`, which expands short arrays that biome collapses, so `bun run lint`
-  fails without it.
+- Host-ingest provider ids so far: `cursor-cloud-agent`, `claude-cloud`. Each is opt-in via its own
+  `*_BENCH` env var and its harness adapter refuses remote `create`.
+- `mise install` must succeed before any `mise run` — task auto-install aborts the task on a failed
+  tool download, which reads as a benchmark failure but is not one.
+- Capture `benchmark-results/observed-specs.json` with the harness's `OBSERVED_SPECS_SCRIPT`; never
+  hand-write spec values.
+- Ingest with `bun scripts/ingest-host-run.ts --provider <id>`, then refresh `LEADERBOARD.md` and
+  `bunx biome format --write` the new run file.
+- A suite that cannot run is a **gap with its real reason**, never an estimate or a weakened workload.

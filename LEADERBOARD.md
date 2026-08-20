@@ -1,7 +1,7 @@
 # Sandbox provider leaderboard
 
-Run [`202608200001`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/202608200001) · commit [`5f7e2000efae8bcc2818cbc80f88ac26d5c4e70b`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/5f7e2000efae8bcc2818cbc80f88ac26d5c4e70b) ·
-dataset [`data/dataset/runs/202608200001.json`](data/dataset/runs/202608200001.json) · generated 2026-08-20T16:18:13.724Z
+Run [`202608200001`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/202608200001) · commit [`c46acf85f48f2028242098263d2622f410516b2f`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/c46acf85f48f2028242098263d2622f410516b2f) ·
+dataset [`data/dataset/runs/202608200001.json`](data/dataset/runs/202608200001.json) · generated 2026-08-20T18:10:29.535Z
 
 Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **556 metric records**
 backed by **5233 retained trial observations**, across **47 metrics** and
@@ -36,7 +36,7 @@ cross-check.
 | Provider | Isolation (declared) | Detected |
 | --- | --- | --- |
 | Blaxel | microVM | vm |
-| Claude Cloud | Firecracker microVM | firecracker |
+| Claude Cloud | Firecracker microVM | vm |
 | Cursor Cloud Agent | Firecracker microVM + OCI container | firecracker+oci |
 | Daytona (VM) | microVM (Linux VM) | vm |
 | E2B | Firecracker microVM | vm |
@@ -51,7 +51,7 @@ cross-check.
 
 _Not present in this run: Daytona (container), Microsandbox (local) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._
 
-> **Comparability warning:** Claude Cloud's observed compute did not match the requested CPU/RAM target; its observed allocation was **4 vCPU · 16 GiB RAM · 252 GB disk**. Its measured ranks are not like-for-like with compute-matched providers.
+> **Comparability warning:** Claude Cloud's observed compute did not match the requested CPU/RAM target; its observed allocation was **4 vCPU · 15.7 GiB RAM · 252 GB disk**. Its measured ranks are not like-for-like with compute-matched providers.
 
 > **Comparability warning:** Cursor Cloud Agent's observed compute did not match the requested CPU/RAM target; its observed allocation was **4 vCPU · 16 GiB RAM · 252 GB disk**. Its measured ranks are not like-for-like with compute-matched providers.
 

@@ -7,6 +7,7 @@
 | [Leaderboard](../LEADERBOARD.md) | Public provider rankings (generated from the published Run dataset) |
 | [ADRs](./adr/README.md) | Load-bearing architecture decisions |
 | [Contributing](../CONTRIBUTING.md) | Local gate; adding a provider, suite, or metric |
+| [Benchmarking an agent sandbox](./agent-sandbox-benchmarking.md) | Running the suites on the VM an AI agent is itself running in, and publishing the row (host ingest) |
 | [CI & secrets](./ci-secrets.md) | GitHub Environment `privileged`, release gates, operator setup |
 | [Security](../SECURITY.md) | Vulnerability reporting |
 

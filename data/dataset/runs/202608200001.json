@@ -1,8 +1,8 @@
 {
   "schemaVersion": "5",
   "runId": "202608200001",
-  "sha": "5f7e2000efae8bcc2818cbc80f88ac26d5c4e70b",
-  "generatedAt": "2026-08-20T16:18:13.724Z",
+  "sha": "c46acf85f48f2028242098263d2622f410516b2f",
+  "generatedAt": "2026-08-20T18:10:29.535Z",
   "targetSpec": {
     "vcpus": 4,
     "memoryGb": 8,
@@ -5166,7 +5166,7 @@
         "hostMemoryGb": 16,
         "os": "Ubuntu 24.04.4 LTS",
         "kernel": "6.18.5-fc-v20",
-        "virtualization": "kvm",
+        "virtualization": "docker",
         "user": "root",
         "vcpus": 4,
         "publicIp": "192.178.119.150",
@@ -5181,9 +5181,9 @@
         "networkPrefix": "192.178.0.0/15",
         "asnSource": "cymru",
         "geoSource": "ipinfo",
-        "memoryGb": 16,
+        "memoryGb": 15.7,
         "diskGb": 252,
-        "detectedIsolation": "firecracker"
+        "detectedIsolation": "vm"
       },
       "hostMetadata": [
         {
