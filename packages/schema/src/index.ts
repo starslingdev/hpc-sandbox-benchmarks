@@ -20,7 +20,7 @@ export * from "./harness-metrics.ts";
 export * from "./identifiers.ts";
 // Metric vocabulary: Dimension, Direction and the MetricDef shape every Metric declares.
 export * from "./metrics.ts";
-// Provider identity & economics registry (id, requiredEnvVars, pricing, isolation, spec-pinning).
+// Provider identity, declarative inputs/artifacts, and economics registry.
 export * from "./providers.ts";
 // The hand-authored curation layer over the generated PTS catalog (label/headline/dimension).
 export * from "./pts-overrides.ts";

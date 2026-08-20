@@ -233,6 +233,21 @@ describe("Vercel CLI authentication", () => {
 });
 
 describe("Namespace token authentication", () => {
+	test("all managed lanes share one producer id and output contract", () => {
+		const root = findRepoRoot();
+		const workflowText = ["bench-suite.yml", "toolchain-image.yml"]
+			.map((file) => readFileSync(join(root, WORKFLOWS_DIR, file), "utf8"))
+			.join("\n");
+		expect(workflowText.match(/uses: \.\/\.github\/actions\/namespace-token/g)).toHaveLength(3);
+		expect(workflowText.match(/id: namespace/g)).toHaveLength(3);
+		expect(
+			workflowText.match(/NSC_TOKEN_FILE: \$\{\{ steps\.namespace\.outputs\.token-file \}\}/g),
+		).toHaveLength(3);
+		expect(workflowText).not.toContain("id: nsc-token");
+		expect(workflowText).not.toContain("id: nsc-setup");
+		expect(workflowText).not.toMatch(/run: \|\s*\n\s*nsc token create/);
+	});
+
 	test("the composite explicitly bounds each minted token to the benchmark cell window", () => {
 		const action = readFileSync(
 			join(findRepoRoot(), ".github/actions/namespace-token/action.yml"),

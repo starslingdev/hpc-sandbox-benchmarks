@@ -6,8 +6,10 @@
   "exports": {
     ".": "./src/index.ts",
     "./driver-schemas": "./src/driver-schemas.ts",
+    "./provider-meta": "./src/provider-meta.ts",
     "./provider-ids": "./src/provider-ids.ts",
     "./provider-parsers": "./src/provider-parsers.ts",
+    "./provider-pricing": "./src/provider-pricing.ts",
     "./providers": "./src/providers.ts",
     "./target-spec": "./src/target-spec.ts",
     "./target-spec-schema": "./src/target-spec-schema.ts",
@@ -18,7 +20,9 @@
     "typecheck": "tsc --noEmit",
     "fetch-profiles": "bun run scripts/fetch-profiles.ts",
     "generate-catalog": "bun run scripts/generate-catalog.ts",
-    "check:catalog-drift": "bun run scripts/check-catalog-drift.ts"
+    "check:catalog-drift": "bun run scripts/check-catalog-drift.ts",
+    "generate-provider-registry": "bun run scripts/generate-provider-registry.ts",
+    "check:provider-registry-drift": "bun run scripts/check-provider-registry-drift.ts"
   },
   "dependencies": {
     "arktype": "catalog:"
