@@ -1,8 +1,19 @@
 // @sandbox-benchmarks/driver — the sandbox driver kit (ADR-0007).
 //
 // This root entry is the trusted, arktype-free port and kit: everything the harness consumes and
-// everything a driver author implements. Runtime validation is deliberately isolated at `./schemas`;
-// importing the core must not evaluate arktype or the schema package's Run graph.
+// everything a driver author implements. Runtime validation is isolated at `./env` and `./schemas`;
+// importing the core must not evaluate arktype or any schema-package runtime graph.
+
+export type {
+	DriverContext,
+	DriverModule,
+	DriverSpec,
+	EnvFromInputs,
+	EnvInputFromInputs,
+	EnvInputOf,
+	EnvOf,
+} from "./lib/define.ts";
+export { defineDriver } from "./lib/define.ts";
 
 export type { DriverErrorCode, DriverErrorFields } from "./lib/errors.ts";
 export { DriverError, isDriverError } from "./lib/errors.ts";
