@@ -83,6 +83,11 @@ jobs:
       - name: Catalog drift
         run: bun run check:catalog-drift
 
+      # Provider registry drift gate — the tuple owns identity, provider files own metadata, and the
+      # generated correlated index must be the exact mechanical join of the two.
+      - name: Provider registry drift
+        run: bun run check:provider-registry-drift
+
       # Spelling gate — typos (pinned in mise.toml); misspellings fail the build.
       - name: Spell (typos)
         run: bun run spell
