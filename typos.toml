@@ -11,6 +11,12 @@
 # whole tree and anything published under it.
 extend-exclude = ["bun.lock", "packages/schema/src/pts-profiles/**", "data/dataset/**"]
 
+[default]
+# LEADERBOARD.md includes provider-generated sandbox and machine IDs copied from committed run
+# errors. Their opaque suffixes can contain typo-like fragments, so ignore only the complete IDs
+# while continuing to spell-check the surrounding generated report.
+extend-ignore-re = ["\\bsbx_[0-9a-f]+\\b", "\\btama machine machine-[a-z0-9]{12}\\b"]
+
 [default.extend-words]
 # Domain term: a parsed result not (yet) in the Metric Catalog. International spelling, used as the
 # `uncatalogued` field name and `UncataloguedResult` type throughout the dataset model.
