@@ -45,6 +45,7 @@ Read the full [methodology](./docs/methodology.md).
 ## Development
 
 ```bash
+bun --version                    # 1.4.x — `bun upgrade` if older; CI pins 1.4.0
 mise install                     # pinned non-Bun tools (typos, shellcheck, hadolint)
 bun install --frozen-lockfile
 bun run typecheck

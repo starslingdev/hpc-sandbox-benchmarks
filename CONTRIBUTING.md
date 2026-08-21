@@ -21,8 +21,9 @@ file or secret token is tracked ([SECURITY.md](./SECURITY.md)).
 
 ## Local checks (the browser-free gate)
 
-The browser-free checks below are the shared local/CI baseline. CI runs the figures screenshot suite
-in a separate job that provisions pinned headless Chrome.
+The browser-free checks below are the shared local/CI baseline, and they run on **Bun 1.4** — CI
+pins `1.4.0`, so `bun upgrade` a stale local install rather than debugging a version-only difference.
+CI runs the figures screenshot suite in a separate job that provisions pinned headless Chrome.
 
 ```sh
 bun install          # resolve the graph (frozen lockfile in CI)

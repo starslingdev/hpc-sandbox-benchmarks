@@ -120,6 +120,13 @@ the same image that renders the committed figures, and the one where Chrome can 
 A separate `ci-lint.yml` lints the workflows themselves (actionlint + zizmor). The browser-free
 checks run locally; CI additionally exercises the Chrome-backed figures suite with its pinned browser.
 
+Bun's own version is pinned in three independent places, because nothing propagates it between them:
+`setup-bun` (`bun-version: 1.4.0`) in `ci.yml` and the shared `setup-workspace` composite, the
+toolchain smoke's `bun --version` probe (which the workflow-hardening gate keeps pointing at that same
+version), and [`vercel.json`](../vercel.json)'s `bunVersion: "1.4.x"` for preview Functions. The last
+one is an explicit opt-in on purpose: Vercel's `"1.x"` alias still resolves to Bun 1.3.14, so previews
+run a release line behind CI until the config names 1.4.
+
 CI runs on a maintainer-controlled runner, so it never executes fork-PR code — the gate runs only
 for pushes and same-repo pull requests. Anything that needs provider credentials additionally runs
 only from `main`, behind Environment [`privileged`](./ci-secrets.md); pull requests never
