@@ -19,6 +19,7 @@ import {
 	renderCiSecretTable,
 	renderCiVariableTable,
 	renderDotenvValue,
+	renderDriversPackage,
 	renderEnvExample,
 	renderPreAuthCondition,
 	renderPreAuthOwnerCondition,
@@ -210,8 +211,25 @@ describe("provider wiring projections", () => {
 	test("owns one uniquely labelled region for every generated projection", () => {
 		const regions = generatedProviderRegions();
 		expect(new Set(regions.map(({ file, label }) => `${file}:${label}`)).size).toBe(regions.length);
-		expect(new Set(regions.map(({ file }) => file))).toEqual(
-			new Set(renderProviderWiringFiles().keys()),
+		expect(new Set(renderProviderWiringFiles().keys())).toEqual(
+			new Set([...regions.map(({ file }) => file), "packages/drivers/package.json"]),
 		);
+	});
+
+	test("projects the provider SDK catalog into the fleet manifest", () => {
+		const root = record(
+			JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf8")),
+			"root",
+		);
+		const workspaces = record(root.workspaces, "workspaces");
+		const catalogs = record(workspaces.catalogs, "catalogs");
+		const providerCatalog = record(catalogs.computesdk, "computesdk catalog");
+		const drivers = record(JSON.parse(renderDriversPackage()), "drivers");
+		const dependencies = record(drivers.dependencies, "drivers dependencies");
+		for (const name of Object.keys(providerCatalog)) {
+			expect(dependencies[name], name).toBe("catalog:computesdk");
+		}
+		expect(dependencies["@sandbox-benchmarks/driver"]).toBe("workspace:*");
+		expect(dependencies.arktype).toBe("catalog:");
 	});
 });
