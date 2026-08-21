@@ -4,7 +4,7 @@
 // literal `code` the harness switches on, plus structured context — so the retry-vs-terminal and
 // invalid-input-vs-vendor decisions read a field, never a regex over a formatted message.
 
-import type { ProviderId } from "@sandbox-benchmarks/schema/providers";
+import type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
 import type { SandboxRef } from "./port.ts";
 
 /**

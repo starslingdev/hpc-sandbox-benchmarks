@@ -6,7 +6,7 @@ status: accepted
 
 ## Context
 
-Every provider is created at one pinned [`TARGET_SPEC`](../../packages/schema/src/providers.ts)
+Every provider is created at one pinned [`TARGET_SPEC`](../../packages/schema/src/target-spec.ts)
 (2 vCPU / 8 GiB) for fairness, but what an in-sandbox probe *sees* varies by provider. Some enforce a
 cgroup quota so the sandbox really is 2 vCPU; others run that 2-vCPU sandbox on a large shared host
 (e.g. Daytona: a 4-vCPU quota on a 48-thread machine) and the probe can see straight through the
