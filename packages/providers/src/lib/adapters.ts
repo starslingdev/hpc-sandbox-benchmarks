@@ -271,6 +271,24 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createAttemptCeilingMs: RUNCLOUD_CREATE_CEILING_MS,
 		costEvidence: runcloudCostEvidence,
 	},
+	// Host-ingest only: suites run on the Codex Cloud session VM, then results are staged and
+	// normalized. The DirectProvider stub exists only to keep the registry join exhaustive.
+	"codex-cloud": {
+		createCompute: () => ({
+			name: "codex-cloud",
+			sandbox: {
+				create: async () => {
+					throw new Error(
+						"codex-cloud is host-ingest only — run mise suite tasks on the session VM and normalize staged benchmark-results/",
+					);
+				},
+				getById: async () => null,
+				list: async () => [],
+				destroy: async () => {},
+			},
+		}),
+		createOptions: {},
+	},
 	// Host-ingest only: suites run on the Claude Code remote session VM, then results are staged +
 	// normalized. The DirectProvider stub exists so the PROVIDERS × adapters join typechecks; create
 	// always refuses.

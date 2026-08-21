@@ -120,7 +120,7 @@ describe("baseImageUse", () => {
 	// Providers that can validate without the candidate base existing at all.
 	it("marks the providers that never reference the toolchain base", () => {
 		const none = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "none");
-		expect(none).toEqual(["blaxel", "claude-cloud", "cursor-cloud-agent", "vercel"]);
+		expect(none).toEqual(["blaxel", "codex-cloud", "claude-cloud", "cursor-cloud-agent", "vercel"]);
 	});
 
 	// Anything that reads the base ref in candidateCreateOptions must not be classified "none", or the

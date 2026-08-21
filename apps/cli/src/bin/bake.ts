@@ -73,6 +73,9 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	"claude-cloud": async (_image, log) => {
 		log("claude-cloud is host-ingest only — no candidate artifact to bake");
 	},
+	"codex-cloud": async (_image, log) => {
+		log("codex-cloud is host-ingest only — no candidate artifact to bake");
+	},
 };
 
 /**

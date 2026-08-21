@@ -61,6 +61,9 @@ export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, s
 	"claude-cloud":
 		"it is host-ingest only (Firecracker Claude Code session VM results staged into the dataset) — " +
 		"no remote sandbox API, bake artifact, or release credential wiring",
+	"codex-cloud":
+		"it is host-ingest only (Codex Cloud session VM results staged into the dataset) — no remote " +
+		"sandbox API, bake artifact, or release credential wiring",
 };
 
 /** Per-provider baked artifact name (what a cell produces), or a note for the providers that bake none. */
@@ -93,6 +96,7 @@ function providerArtifact(id: ProviderId): string {
 			return config.vercelImageCandidate;
 		case "cursor-cloud-agent":
 		case "claude-cloud":
+		case "codex-cloud":
 			return "host-ingest only (no baked artifact)";
 	}
 }

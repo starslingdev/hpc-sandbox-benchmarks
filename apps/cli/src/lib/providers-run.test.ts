@@ -37,6 +37,7 @@ describe("forEachProviderWithCreds `only`", () => {
 			"daytona-container",
 			"blaxel",
 			"microsandbox-local",
+			"codex-cloud",
 			"claude-cloud",
 			"cursor-cloud-agent",
 			"microsandbox-cloud",

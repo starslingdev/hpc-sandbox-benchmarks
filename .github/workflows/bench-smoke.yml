@@ -69,6 +69,7 @@ on:
             runcloud,
             cursor-cloud-agent,
             claude-cloud,
+            codex-cloud,
           ]
       suite:
         # Constrained to the SUITE_NAMES registry (packages/schema/src/suites.ts); the
