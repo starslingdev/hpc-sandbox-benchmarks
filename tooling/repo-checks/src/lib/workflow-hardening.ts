@@ -604,7 +604,7 @@ export function checkToolchainPrScope(
 		.join("\n");
 	for (const probe of [
 		"bun --version",
-		"1.3.14",
+		"1.4.0",
 		"tama --version",
 		"0.1.17",
 		"bun packages/templates/src/pins.ts",

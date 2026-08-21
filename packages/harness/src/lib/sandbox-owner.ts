@@ -8,6 +8,8 @@
  * natural fallthrough, and a second signal preserves the usual "force quit now" escape hatch.
  */
 
+import type { EventEmitter } from "node:events";
+
 interface DestroyableSandbox {
 	readonly sandboxId?: string;
 	destroy(): Promise<unknown>;
@@ -30,6 +32,8 @@ export interface SandboxCleanupOptions {
 
 const owned = new Set<OwnedEntry<DestroyableSandbox>>();
 const signals = ["SIGINT", "SIGTERM"] as const;
+// Bun 1.4 adds a memoryPressure-only Process.off overload that hides EventEmitter.off.
+const processEvents = process as EventEmitter;
 const DEFAULT_CLEANUP_ATTEMPTS = 3;
 const DEFAULT_CLEANUP_TIMEOUT_MS = 15_000;
 const DEFAULT_CLEANUP_RETRY_MS = 250;
@@ -45,8 +49,8 @@ function signalExitCode(signal: (typeof signals)[number]): number {
 
 function uninstallProcessHandlers(): void {
 	if (!handlersInstalled) return;
-	for (const signal of signals) process.off(signal, onSignal);
-	process.off("beforeExit", onBeforeExit);
+	for (const signal of signals) processEvents.off(signal, onSignal);
+	processEvents.off("beforeExit", onBeforeExit);
 	handlersInstalled = false;
 }
 

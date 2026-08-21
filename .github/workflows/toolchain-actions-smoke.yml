@@ -46,7 +46,7 @@ jobs:
       - name: Probe setup outputs
         run: |
           set -euo pipefail
-          test "$(bun --version)" = "1.3.14"
+          test "$(bun --version)" = "1.4.0"
           test "$(tama --version | awk '{print $2}')" = "0.1.17"
           bun packages/templates/src/pins.ts >/dev/null
           docker buildx inspect --bootstrap
