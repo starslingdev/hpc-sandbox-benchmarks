@@ -521,12 +521,12 @@ describe("E2B proof driver", () => {
 			}),
 		} as unknown as ComputeSdkSandboxOf<ReturnType<typeof e2bSpec>["compute"]>;
 
-		expect(await execE2bCommandAsRoot(wrapper, "id -u", {})).toEqual({
+		expect(await execE2bCommandAsRoot(wrapper, "id -u")).toEqual({
 			exitCode: 0,
 			stdout: "0\n",
 			stderr: "",
 		});
-		expect(await launchE2bCommandAsRoot(wrapper, "daemon", {})).toBeUndefined();
+		expect(await launchE2bCommandAsRoot(wrapper, "daemon")).toBeUndefined();
 		expect(calls).toEqual([
 			["id -u", { user: "root", background: false }],
 			["daemon", { user: "root", background: true }],
@@ -538,7 +538,7 @@ describe("E2B proof driver", () => {
 		const wrapper = {
 			getInstance: () => ({ commands: { run: async () => Promise.reject(failure) } }),
 		} as unknown as Parameters<typeof execE2bCommandAsRoot>[0];
-		expect(await execE2bCommandAsRoot(wrapper, "false", {})).toEqual({
+		expect(await execE2bCommandAsRoot(wrapper, "false")).toEqual({
 			exitCode: 23,
 			stdout: "",
 			stderr: "command failed",
@@ -553,7 +553,7 @@ describe("E2B proof driver", () => {
 		const foreignWrapper = {
 			getInstance: () => ({ commands: { run: async () => Promise.reject(foreignFailure) } }),
 		} as unknown as Parameters<typeof execE2bCommandAsRoot>[0];
-		expect(await execE2bCommandAsRoot(foreignWrapper, "false", {})).toEqual({
+		expect(await execE2bCommandAsRoot(foreignWrapper, "false")).toEqual({
 			exitCode: 29,
 			stdout: "foreign stdout",
 			stderr: "foreign stderr",

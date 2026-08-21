@@ -14,7 +14,6 @@ import type {
 import { type } from "arktype";
 import { Sandbox, SandboxNotFoundError } from "e2b";
 import type {
-	ComputeSdkCommandOptions,
 	ComputeSdkCreatedRequestVerification,
 	ComputeSdkCreateRecovery,
 	ComputeSdkCreateRequestCoverage,
@@ -77,14 +76,12 @@ function foreignCommandExit(
 export async function execE2bCommandAsRoot(
 	sandbox: E2bWrapperSandbox,
 	command: string,
-	options: ComputeSdkCommandOptions,
 ): Promise<unknown> {
 	const native = sandbox.getInstance();
 	try {
 		return await native.commands.run(command, {
 			user: "root",
 			background: false,
-			...(options.signal === undefined ? {} : { signal: options.signal }),
 		});
 	} catch (caught) {
 		const failure = foreignCommandExit(caught);
@@ -97,12 +94,10 @@ export async function execE2bCommandAsRoot(
 export async function launchE2bCommandAsRoot(
 	sandbox: E2bWrapperSandbox,
 	command: string,
-	options: ComputeSdkCommandOptions,
 ): Promise<void> {
 	const handle = await sandbox.getInstance().commands.run(command, {
 		user: "root",
 		background: true,
-		...(options.signal === undefined ? {} : { signal: options.signal }),
 	});
 	if (!Number.isSafeInteger(handle.pid) || handle.pid <= 0) {
 		throw new Error("E2B background command returned no positive process id");
@@ -189,8 +184,8 @@ export function e2bCreateRecovery(apiKey: string): ComputeSdkCreateRecovery<E2bC
 		absenceConfirmationMs: E2B_RECOVERY_CONFIRMATION_MS,
 		maxAttempts: E2B_RECOVERY_MAX_ATTEMPTS,
 		locator: (createOptions) => ({ kind: "name", value: attemptMarker(createOptions) }),
-		cleanup: async (_compute, createOptions, options) => {
-			const marker = attemptMarker(createOptions);
+		cleanup: async (_compute, locator, options) => {
+			const marker = locator.value;
 			const controlOptions = {
 				apiKey,
 				requestTimeoutMs: E2B_CONTROL_PLANE_TIMEOUT_MS,

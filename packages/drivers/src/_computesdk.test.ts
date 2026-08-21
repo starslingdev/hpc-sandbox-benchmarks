@@ -698,6 +698,35 @@ describe("computeSdkDriver", () => {
 		expect(error.message).not.toContain(invalidId);
 	});
 
+	test("an invalid returned id reconciles the preallocated name across a transient first miss", async () => {
+		const { compute } = fakeCompute({ ...baseSandbox, sandboxId: "wrong-id" });
+		let recoveryCalls = 0;
+		let lifecycleCalls = 0;
+		const error = (await bridge(compute, {
+			createOptions: () => ({ name: "benchmark-stable" }),
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 3,
+				locator: () => ({ kind: "name", value: "benchmark-stable" }),
+				cleanup: async (_compute, locator) => {
+					expect(locator).toEqual({ kind: "name", value: "benchmark-stable" });
+					recoveryCalls += 1;
+					return recoveryCalls === 1 ? { status: "absent" } : { status: "destroyed" };
+				},
+			},
+			lifecycle: {
+				destroy: async () => {
+					lifecycleCalls += 1;
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toMatchObject({ code: "invalid-sandbox-ref", provider: "e2b" });
+		expect(recoveryCalls).toBe(2);
+		expect(lifecycleCalls).toBe(0);
+	});
+
 	test("redacts a credential-shaped invalid id from ArkType summaries before rollback returns", async () => {
 		let destroys = 0;
 		const { compute } = fakeCompute({
@@ -1073,7 +1102,7 @@ describe("computeSdkDriver", () => {
 	});
 
 	test("a command projection composes over the exact wrapper without mutating its method table", async () => {
-		const projected: Array<[ComputeSdkSandboxLike, string, "exec" | "launch"]> = [];
+		const projected: Array<[ComputeSdkSandboxLike, string, "exec" | "launch", string]> = [];
 		const sandbox = {
 			...baseSandbox,
 			runCommand: async () => {
@@ -1083,21 +1112,21 @@ describe("computeSdkDriver", () => {
 		const { compute } = fakeCompute(sandbox);
 		const session = await bridge(compute, {
 			commands: {
-				exec: async (sandbox, command) => {
-					projected.push([sandbox, command, "exec"]);
+				exec: async (sandbox, command, ref) => {
+					projected.push([sandbox, command, "exec", ref.id]);
 					return { exitCode: 0, stdout: "root\n", stderr: "" };
 				},
-				launch: async (sandbox, command) => {
-					projected.push([sandbox, command, "launch"]);
+				launch: async (sandbox, command, ref) => {
+					projected.push([sandbox, command, "launch", ref.id]);
 				},
 			},
 		}).create(request);
 
 		expect((await session.exec("id -u")).stdout).toBe("root\n");
 		await session.launch?.("daemon --start");
-		expect(projected.map(([, command, operation]) => [command, operation])).toEqual([
-			["id -u", "exec"],
-			["daemon --start", "launch"],
+		expect(projected.map(([, command, operation, id]) => [command, operation, id])).toEqual([
+			["id -u", "exec", "i2f3k4abc"],
+			["daemon --start", "launch", "i2f3k4abc"],
 		]);
 		expect(projected.every(([projectedSandbox]) => projectedSandbox === sandbox)).toBe(true);
 	});
@@ -1710,6 +1739,28 @@ describe("computeSdkDriver", () => {
 		expect(identityReads).toBe(1);
 	});
 
+	test("post-create verification receives the same single-read canonical identity", async () => {
+		let identityReads = 0;
+		const sandbox: ComputeSdkSandboxLike = {
+			...baseSandbox,
+			get sandboxId() {
+				identityReads += 1;
+				return identityReads === 1 ? "iright" : "iwrong";
+			},
+		};
+		const { compute } = fakeCompute(sandbox);
+		let verifiedRef: string | undefined;
+		const session = await bridge(compute, {
+			verifyCreatedRequest: async (_sandbox, _request, _options, ref) => {
+				verifiedRef = ref.id;
+				return { status: "honored" };
+			},
+		}).create(request);
+		expect(session.sandboxRef.id).toBe("iright");
+		expect(verifiedRef).toBe("iright");
+		expect(identityReads).toBe(1);
+	});
+
 	test("ambiguous create cleanup retains a stable locator and retryable ownership", async () => {
 		let cleanupCalls = 0;
 		const compute: ComputeSdkLike = {
@@ -1728,8 +1779,8 @@ describe("computeSdkDriver", () => {
 					kind: "name",
 					value: String(createOptions.attempt),
 				}),
-				cleanup: async (_compute, createOptions) => {
-					expect(createOptions.attempt).toBe("attempt-123");
+				cleanup: async (_compute, locator) => {
+					expect(locator).toEqual({ kind: "name", value: "attempt-123" });
 					cleanupCalls += 1;
 					if (cleanupCalls === 1) throw new Error("control plane unavailable");
 					return { status: "destroyed" };
@@ -1747,6 +1798,76 @@ describe("computeSdkDriver", () => {
 		expect((error.error as DriverError).code).toBe("destroy-failed");
 		await error.cleanup();
 		expect(cleanupCalls).toBe(2);
+	});
+
+	test("ambiguous create cleanup cannot mutate the bridge-owned locator", async () => {
+		const originalName = "attempt-original";
+		const seenLocators: string[] = [];
+		let cleanupCalls = 0;
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async () => {
+					throw new Error("response lost after remote acceptance");
+				},
+			},
+		};
+		const error = (await bridge(compute, {
+			createOptions: () => ({ name: originalName }),
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 2,
+				locator: () => ({ kind: "name", value: originalName }),
+				cleanup: async (_compute, locator) => {
+					cleanupCalls += 1;
+					seenLocators.push(locator.value);
+					expect(Object.isFrozen(locator)).toBe(true);
+					try {
+						Object.defineProperty(locator, "value", { value: "attempt-mutated" });
+					} catch {
+						// A hostile cleanup cannot rewrite the bridge-owned locator.
+					}
+					if (cleanupCalls === 1) throw new Error("control plane unavailable");
+					return { status: "destroyed" };
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
+		expect(error.locator).toEqual({ kind: "name", value: originalName });
+		expect(error.message).not.toContain("attempt-mutated");
+		await error.cleanup();
+		expect(seenLocators).toEqual([originalName, originalName]);
+	});
+
+	test("ambiguous create cleanup never rereads options the wrapper mutated", async () => {
+		const originalName = "benchmark-original";
+		const replacementName = "benchmark-mutated";
+		let cleanupLocator: unknown;
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async (options) => {
+					(options as Record<string, unknown>).name = replacementName;
+					throw new Error("response lost after options mutation");
+				},
+			},
+		};
+		const error = await bridge(compute, {
+			createOptions: () => ({ name: originalName }),
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 2,
+				locator: (options) => ({ kind: "name", value: String(options.name) }),
+				cleanup: async (_compute, locator) => {
+					cleanupLocator = locator;
+					return { status: "destroyed" };
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(cleanupLocator).toEqual({ kind: "name", value: originalName });
 	});
 
 	test("ambiguous create absence needs two horizon-separated observations", async () => {
@@ -1795,7 +1916,7 @@ describe("computeSdkDriver", () => {
 				absenceConfirmationMs: 5,
 				maxAttempts: 2,
 				locator: () => ({ kind: "name", value: "attempt-signal" }),
-				cleanup: async (_compute, _createOptions, options) => {
+				cleanup: async (_compute, _locator, options) => {
 					receivedSignal = options.signal;
 					return { status: "destroyed" };
 				},
