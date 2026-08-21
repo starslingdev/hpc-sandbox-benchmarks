@@ -21,12 +21,9 @@ file or secret token is tracked ([SECURITY.md](./SECURITY.md)).
 
 ## Local checks (the browser-free gate)
 
-Develop against **Bun 1.4** (`bun --version` should report `1.4.x`; `bun upgrade` is the supported
-update path). CI pins `1.4.0`; Vercel preview Functions opt into the same line via
-[`vercel.json`](./vercel.json) `bunVersion: "1.4.x"` (the `"1.x"` alias still resolves to 1.3.14).
-
-The browser-free checks below are the shared local/CI baseline. CI runs the figures screenshot suite
-in a separate job that provisions pinned headless Chrome.
+The browser-free checks below are the shared local/CI baseline, and they run on **Bun 1.4** — CI
+pins `1.4.0`, so `bun upgrade` a stale local install rather than debugging a version-only difference.
+CI runs the figures screenshot suite in a separate job that provisions pinned headless Chrome.
 
 ```sh
 bun install          # resolve the graph (frozen lockfile in CI)

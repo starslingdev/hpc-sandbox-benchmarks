@@ -44,10 +44,8 @@ Read the full [methodology](./docs/methodology.md).
 
 ## Development
 
-Requires **Bun 1.4** (`bun upgrade` if you are still on 1.3). Vercel previews use the same line via
-`vercel.json` (`bunVersion: "1.4.x"`).
-
 ```bash
+bun --version                    # 1.4.x — `bun upgrade` if older; CI pins 1.4.0
 mise install                     # pinned non-Bun tools (typos, shellcheck, hadolint)
 bun install --frozen-lockfile
 bun run typecheck
