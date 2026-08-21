@@ -475,22 +475,34 @@ export default defineCliDriver("tama", {
   // `tama new` blocks until ready (~2m10s cold pull) and owns failed-create cleanup, so the
   // joined helper derives a driver-owned budget — abandoning teardown could strand a machine.
   createAttemptCeilingMs: TAMA_CREATE_CEILING_MS,
-  spec: ({ env }) => defineCliSpec(Machines, {
+  spec: ({ env, resolvedArtifact }) => defineCliSpec(Machines, {
     binary: env.TAMA_CLI ?? "tama",
     secretFlags: ["--token"],
     commandTimeoutMs: 60_000,
     // `new` owns the cold image pull; short list/login/rm/exec calls keep the tighter bound above.
     createCommandTimeoutMs: 20 * 60_000,
+    // Every canonical axis is mapped, artifact-pinned, capacity-checked, or rejected pre-spawn.
+    requestCoverage: {
+      spec: { vcpus: "mapped", memoryGb: "mapped", diskGb: { capacityAtLeast: 40 } },
+      artifact: "context",
+      deadlineMs: "driver",
+      gpu: { model: "unsupported", count: "unsupported" },
+      env: "unsupported",
+    },
     // Preserve a working developer profile; a fresh CI runner falls back to token login.
     prepare: {
-      probe: ["list", "--json"],
+      probe: ["list", "--all", "--json"],
       fallback: ["login", "--token", env.TAMA_TOKEN],
     },
-    create: (r, name) => ["new", name, "--ttl", "0", "--json", "--image",
-      r.artifact.kind === "none" ? "stock" : r.artifact.ref,
-      "--cpu", String(r.spec.vcpus),
-      // Tama's CLI boundary is MiB; the canonical request stays in GiB everywhere else.
-      "--memory", String(r.spec.memoryGb * 1024)],
+    create: (r, name) => {
+      if (r.artifact.kind !== "image" || r.artifact.ref !== resolvedArtifact.ref) {
+        throw new Error("the request artifact does not match the resolved Tama image");
+      }
+      return ["new", name, "--ttl", "0", "--json", "--image", resolvedArtifact.ref,
+        "--cpu", String(r.spec.vcpus),
+        // Tama's CLI boundary is MiB; the canonical request stays in GiB everywhere else.
+        "--memory", String(r.spec.memoryGb * 1024)];
+    },
     // `rm` accepts only an id: reconcile the generated name through typed list output first.
     cleanupCreated: {
       kind: "lookup",
@@ -499,17 +511,18 @@ export default defineCliDriver("tama", {
       absenceConfirmationMs: 2_000,
     },
     ready: {
-      poll: ["list", "--json"],
+      // `--all` is mandatory for reconciliation: ordinary list output omits stopped machines.
+      poll: ["list", "--all", "--json"],
       select: (rows, name) => rows.find((m) => m.name === name) ?? null,
       classify: (m) => m.status === "ready" ? "ready"
-        : /^(failed|error|terminated|deleted|gone)$/i.test(m.status)
+        : /^(failed|error|stopped|terminated|deleted|gone)$/i.test(m.status)
           ? { terminal: `status=${m.status}${m.status_detail ? ` (${m.status_detail})` : ""}` }
           : "pending",
     },
     sandboxId: { fromRow: (row) => row.id, parse: TamaSandboxId },
     exec: (id, command) => ["exec", id, "--", "bash", "-lc", command],
     destroy: (id) => ["rm", "-y", id],
-    notFound: /not found|no such machine|unknown machine/i, // private bridge translation only
+    notFound: /^(?:error:\s*)?(?:machine(?:\s+machine-[a-z0-9]{12})?\s+not found|no such machine|unknown machine)[.!]?\s*$/i,
   }),
 });
 ```
@@ -519,7 +532,7 @@ does not, and a fallback login is followed by another parsed `list` before alloc
 the module-validated machine id because it has no name-addressed form. A failed `new` therefore
 performs a typed `list` lookup by the preallocated unique name before issuing `rm -y <id>`. The
 generic driver retains that name as a retryable recovery locator whenever the lookup, validation,
-or removal cannot prove the allocation gone. A selected `failed`/`error`/`terminated` row is a
+or removal cannot prove the allocation gone. A selected `failed`/`error`/`stopped`/`terminated` row is a
 typed terminal readiness result, so the kit begins that same cleanup immediately instead of
 spending the remaining create window polling a machine the vendor has already declared unusable.
 
@@ -638,7 +651,7 @@ value at [0].status must be a string (was missing)
 
 — instead of an `undefined` threading through readiness logic. The generic driver owns spawn,
 timeout-and-kill, argv secret redaction and not-found matching once; a new CLI vendor is a table of
-argv templates and parsers, ~15 declarative lines against tama's 636 hand-written ones, with no
+argv templates and parsers rather than tama's former 636-line adapter, with no
 `getUrl` regex-scraping prose, no `createdAt: new Date(0)`, no `mapStatus` collapse. Where a
 vendor's CLI needs logic a table can't express, the escape hatch is the port itself — `cliDriver` is
 a convenience over `SandboxDriver`, not a second contract.
@@ -646,9 +659,11 @@ a convenience over `SandboxDriver`, not a second contract.
 `cliDriver` compiles its declarative spec down to a §2 method table whose handle is the **parsed
 readiness row** (`ready.select` returns the row, not a bare id string) — so every generated member
 is unit-testable as a pure function, and `session.native` is the vendor's own typed record rather
-than an opaque string. The side-by-side anatomy confirmed the spec stays roughly 30 author lines,
-with provider-specific parsing, eventual-consistency, secret, readiness, and absence rules kept as
-small declarative fields rather than repeated control flow.
+than an opaque string. The proof module is about one hundred lines including imports, comments, schemas,
+constants, and registration. Provider-specific parsing, eventual-consistency, secret, readiness,
+and absence rules remain visible as declarative fields rather than repeated control flow. That is a
+large reduction, but it is not a 15-line provider and the ADR does not treat line count as proof of
+safety.
 
 Every failed create outcome is reconciled by the generated name, including a nonzero CLI exit that
 may have followed a server-side allocation. If that rollback also fails, the driver rejects with a
@@ -669,34 +684,59 @@ create never releases ownership by itself.
 
 ### 6. ComputeSDK becomes a driver
 
-It keeps all its real value — seven maintained vendor translations — and stops being mandatory:
+It keeps all its real value — seven maintained vendor translations — and stops being mandatory. The
+following is the actual composition section of the E2B proof module; every referenced constant and
+helper is a concrete declaration earlier in that same file, not pseudocode:
 
 ```ts
 import { computeSdkSpec, defineComputeSdkDriver } from "./_computesdk.ts";
 
 export default defineComputeSdkDriver("e2b", {
-  spec: ({ env, resolvedArtifact }) =>
-    computeSdkSpec(e2bCommandsAsRoot(e2b({ apiKey: env.E2B_API_KEY })), {
-      sandboxId: E2bSandboxId,       // provider-local arktype trust boundary
+  spec: ({ env, resolvedArtifact }) => {
+    const apiKey = env.E2B_API_KEY;
+    return computeSdkSpec(e2b({ apiKey, timeout: E2B_SANDBOX_LIFETIME_MS }), {
+      sandboxId: E2B_SANDBOX_ID,     // provider-local arktype trust boundary
       createOptions: {
-        coverage: {
-          spec: { vcpus: "artifact", memoryGb: "artifact", diskGb: "artifact" },
-          artifact: "context",
-          deadlineMs: "harness",
-          gpu: { model: "unsupported", count: "unsupported" },
-          env: "unsupported",
+        coverage: E2B_REQUEST_COVERAGE,
+        // `deadlineMs` is a create-attempt budget, not the remotely enforced sandbox lifetime.
+        map: (request, unsupported) => {
+          if (request.artifact.kind !== "baked" ||
+              request.artifact.ref !== resolvedArtifact.ref) {
+            unsupported("the request artifact does not match the resolved E2B template");
+          }
+          return { snapshotId: resolvedArtifact.ref, timeout: E2B_SANDBOX_LIFETIME_MS,
+            metadata: { [E2B_ATTEMPT_METADATA_KEY]: `benchmark-${randomUUID()}` } };
         },
-        map: () => ({ snapshotId: resolvedArtifact.ref }),
       },
+      // The wrapper omits E2B's user option. Compose over its public native instance instead of
+      // mutating @computesdk/provider's private method table.
+      commands: { exec: execE2bCommandAsRoot, launch: launchE2bCommandAsRoot },
+      // The published wrapper swallows every teardown error. Direct SDK kill surfaces auth/network
+      // faults, while marker-based recovery owns a create whose success response was lost.
+      lifecycle: e2bLifecycle(apiKey),
+      createRecovery: e2bCreateRecovery(apiKey),
+      // E2B does not control disk size at create; verify the allocation and tear it down if short.
+      verifyCreatedRequest: verifyE2bDiskCapacity,
+      probes: e2bProbes(apiKey),
       hasWorkingFilesystem: true,    // explicit, because UnsupportedFileSystem lies
-    }),
+    });
+  },
 });
 ```
 
+The complete E2B proof module is a few hundred lines, not the composition excerpt
+above. Roughly half is provider-specific safety work the generic wrapper cannot truthfully infer: structural
+nonzero-exit decoding across vendored SDK copies, root command execution, canonical-id teardown,
+bounded marker reconciliation, conservative paused-state observation, and live disk-capacity
+verification. The bridge removes repeated session/error/ownership machinery; it does not make those
+vendor semantics disappear. Later shared wrapper factories may reduce repeated policy across
+providers, but only where conformance proves the abstraction honest.
+
 The nine wrapper-based providers keep working through the bridge, including the
 `snapshotId`/`templateId` create-option conventions the bake path relies on. The five hand-written
-adapters stop paying the `defineProvider` tax, and `assertPatchable` disappears: patching a driver
-is ordinary function composition, not a reach into a generated class's private table.
+adapters stop paying the `defineProvider` tax, and `assertPatchable` disappears: an execution
+projection is ordinary function composition over the wrapper's typed `getInstance()` value, not a
+reach into a generated class's private table.
 
 One typing rule, learned from the GPU prototype: the bridge's `session.native` is typed as **the
 wrapper's `getInstance()` type — never the repo's own vendor SDK types**. Wrappers vendor their own
