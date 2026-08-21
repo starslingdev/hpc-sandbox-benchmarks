@@ -346,6 +346,9 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 							case "claude-cloud":
 								log("    claude-cloud is host-ingest only — nothing to promote");
 								break;
+							case "codex-cloud":
+								log("    codex-cloud is host-ingest only — nothing to promote");
+								break;
 							default: {
 								// Exhaustiveness: a new ProviderId must add a promote branch above (compile error here).
 								const unhandled: never = provider.name;

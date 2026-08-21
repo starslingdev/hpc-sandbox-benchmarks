@@ -625,6 +625,37 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			detachedPoll: true,
 		},
 	},
+	"codex-cloud": {
+		displayName: "ChatGPT Codex Cloud",
+		website: "https://openai.com/codex/",
+		sdkPackage: "none",
+		// Host-ingest opt-in: suites run on the Codex Cloud session VM itself, then raw results are
+		// staged and normalized. There is no remote sandbox API, so keep it out of the default matrix.
+		requiredEnvVars: ["CODEX_CLOUD_BENCH"],
+		isolation: {
+			technology: "Cloud Hypervisor microVM + OCI container",
+			notes:
+				"Codex Cloud sessions run in an OCI container inside a Cloud Hypervisor guest (ACPI OEM CLOUDH), with virtio devices exposed by KVM. Results measure the Codex Cloud host fleet, not a provider SDK sandbox.",
+		},
+		pricing: {
+			model: "unavailable",
+			reason: "self_hosted",
+			notes:
+				"Codex Cloud session compute is bundled into ChatGPT plans; there is no published per-vCPU sandbox rate comparable to the other providers.",
+			sources: [{ label: "OpenAI Codex", url: "https://openai.com/codex/", checkedAt: "2026-08-21" }],
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Host-ingest path only. The harness adapter refuses remote create; use mise suite tasks on the session VM and normalize staged results.",
+		},
+		specPinning: "fixed",
+		transport: {
+			streaming: false,
+			syncCapMs: 60_000,
+			detachedPoll: true,
+		},
+	},
 	"claude-cloud": {
 		displayName: "Claude Cloud",
 		website: "https://claude.com",
