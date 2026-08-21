@@ -15,14 +15,25 @@ export type {
 } from "./lib/define.ts";
 export { defineDriver } from "./lib/define.ts";
 
-export type { DriverErrorCode, DriverErrorFields } from "./lib/errors.ts";
-export { DriverError, isDriverError } from "./lib/errors.ts";
+export type {
+	DriverErrorCode,
+	DriverErrorFields,
+	FailedCreateCleanupErrorOptions,
+	FailedCreateRecovery,
+} from "./lib/errors.ts";
+export {
+	DriverError,
+	FailedCreateCleanupError,
+	isDriverError,
+	isFailedCreateCleanupError,
+} from "./lib/errors.ts";
 export type { ReadinessStrategy } from "./lib/poll.ts";
 export { pollUntilReady } from "./lib/poll.ts";
 export type {
 	ControlPlaneProbes,
 	CreateBudget,
 	CreateRequest,
+	DriverOperationOptions,
 	ExecOptions,
 	ExecResult,
 	Exit,
