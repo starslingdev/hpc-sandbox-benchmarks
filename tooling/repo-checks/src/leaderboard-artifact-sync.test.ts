@@ -483,11 +483,23 @@ describe("LEADERBOARD.md publishes auditable provenance", () => {
 	// text (which is what a broken renderer would get wrong in the first place).
 	it("links the run id to its workflow run, the sha to its commit, and names the dataset file it rendered", () => {
 		const { committed, runId, run } = loadCommittedRun();
-		// A composite id (`<runA>+<runB>`) names no single workflow run, so each component links separately.
+		// A composite id (`<runA>+<runB>`) names no single workflow run, so each component is published
+		// separately — and how, per component, is the point. Mirror `runSourceLinks`: a NUMERIC component
+		// is a GitHub run id and must link to it; anything else (a host-ingest component such as
+		// `claude-cloud-20260820`, or a local run) must render as BARE CODE. Asserting the negative there
+		// is the load-bearing half: linking a non-issued run id would publish a 404 dressed as provenance,
+		// which is worse than no link because it asserts a primary source that does not exist.
 		for (const component of run.runId.split("+")) {
-			expect(committed, `run ${component} workflow link`).toContain(
-				`[\`${component}\`](${REPO_URL}/actions/runs/${component})`,
-			);
+			if (/^\d+$/.test(component)) {
+				expect(committed, `run ${component} workflow link`).toContain(
+					`[\`${component}\`](${REPO_URL}/actions/runs/${component})`,
+				);
+			} else {
+				expect(committed, `run ${component} rendered as bare code`).toContain(`\`${component}\``);
+				expect(committed, `run ${component} must not claim a workflow run`).not.toContain(
+					`${REPO_URL}/actions/runs/${component}`,
+				);
+			}
 		}
 		expect(committed).toContain(`[\`${run.sha}\`](${REPO_URL}/commit/${run.sha})`);
 

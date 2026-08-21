@@ -162,16 +162,27 @@ Provider ids are a closed union, and several `switch`es over it are exhaustive. 
 bun scripts/ingest-host-run.ts --provider <providerId>
 ```
 
-It routes the flat `benchmark-results/` into `data/raw/<runId>/<providerId>/<suite>/`, normalizes,
-asserts the row is `validated`, splices it into the newest published run, and writes a new run +
-index entry. Defaults: base = newest indexed run, id = `<UTC-date>0001`. Override with `--base` /
-`--run-id` to re-ingest in place.
+It routes the flat `benchmark-results/` into `data/raw/<runId>/<providerId>/<suite>/`, normalizes it
+once through the same `writeNormalizedRun` the CI `normalize` bin uses, asserts the row is
+`validated`, splices it into the newest published run with `spliceProviderRun`, and publishes through
+`writeRunDocument` — the atomic write + index update the candidate→promote flow uses. Override
+`--base` / `--run-id` to re-ingest in place. It also leaves the normalized shard at
+`data/runs/<runId>-shard.json` for debugging a row without re-reading the merged Run.
 
-Then regenerate the board and satisfy the formatter:
+**Run ids are composite**, defaulting to `<baseRunId>+<providerId>-<YYYYMMDD>`, e.g.
+`31066359914+cursor-cloud-agent-20260814+claude-cloud-20260820`. This is provenance, not decoration:
+`LEADERBOARD.md` renders each `+`-separated component as a source link, and a **numeric** component
+becomes `/actions/runs/<id>`. Inventing a numeric id for a locally-measured run therefore publishes a
+link to a workflow run that never existed — the board asserting a primary source it does not have. A
+non-numeric component renders as bare code, so the base still links to the CI run behind its other
+rows while the host-measured components correctly claim no workflow run.
+
+A composite id contains `+`, so **quote the path** in every later command:
 
 ```bash
-bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<runId>.json LEADERBOARD.md
-bunx biome format --write data/dataset/runs/<runId>.json data/dataset/index.json
+RUN="data/dataset/runs/<runId>.json"
+bun apps/cli/src/bin/leaderboard.ts "$RUN" LEADERBOARD.md
+bunx biome format --write "$RUN" data/dataset/index.json
 ```
 
 `leaderboard.ts` also re-renders `docs/figures/*.webp` via `Bun.WebView` — needs Bun ≥ 1.3.14 and a

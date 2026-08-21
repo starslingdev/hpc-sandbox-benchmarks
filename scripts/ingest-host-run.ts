@@ -21,9 +21,15 @@
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { normalizeResultsTree, writeNormalizedRun } from "@sandbox-benchmarks/results";
-import type { ProviderId, ProviderRun, Run } from "@sandbox-benchmarks/schema";
-import { PROVIDERS, parseRun } from "@sandbox-benchmarks/schema";
+import {
+	hostIngestRunId,
+	spliceProviderRun,
+	summarizeRun,
+	writeNormalizedRun,
+	writeRunDocument,
+} from "@sandbox-benchmarks/results";
+import type { ProviderId } from "@sandbox-benchmarks/schema";
+import { PROVIDERS, parseRun, parseRunIndex } from "@sandbox-benchmarks/schema";
 
 const REPO = join(import.meta.dir, "..");
 const RESULTS = join(REPO, "benchmark-results");
@@ -100,13 +106,10 @@ function parseArgs(argv: readonly string[]): Args {
 	return { provider: provider as ProviderId, base: get("--base"), runId: get("--run-id") };
 }
 
-interface Index {
-	schemaVersion: string;
-	runs: Array<{ runId: string; generatedAt: string; path: string }>;
-}
+const INDEX_FILE = join(DATASET, "index.json");
 
-const readIndex = (): Index =>
-	JSON.parse(readFileSync(join(DATASET, "index.json"), "utf8")) as Index;
+/** Parse the Run index through the schema — the same validation the CI dataset flow applies. */
+const readIndex = () => parseRunIndex(JSON.parse(readFileSync(INDEX_FILE, "utf8")));
 
 /**
  * Does `name` belong to `prefix`? The prefix must be followed by end-of-name or a separator the
@@ -139,25 +142,6 @@ function stageSuite(
 	return copied;
 }
 
-function updateIndex(run: Run): void {
-	const index = readIndex();
-	const entry = { runId: run.runId, generatedAt: run.generatedAt, path: `runs/${run.runId}.json` };
-	index.runs = [entry, ...index.runs.filter((r) => r.runId !== run.runId)];
-	writeFileSync(join(DATASET, "index.json"), `${JSON.stringify(index, null, 2)}\n`);
-}
-
-/** `<UTC-date>0001`, bumped past any id already in the dataset. Numeric so it keeps the shape the
- *  LEADERBOARD's `actions/runs/<id>` provenance link expects (documentary for a host ingest). */
-function nextRunId(now: Date): string {
-	const day = now.toISOString().slice(0, 10).replaceAll("-", "");
-	const taken = new Set(readIndex().runs.map((r) => r.runId));
-	for (let n = 1; n < 10_000; n += 1) {
-		const candidate = `${day}${String(n).padStart(4, "0")}`;
-		if (!taken.has(candidate)) return candidate;
-	}
-	throw new Error(`no free run id for ${day}`);
-}
-
 function main(): void {
 	const args = parseArgs(process.argv.slice(2));
 
@@ -182,7 +166,7 @@ function main(): void {
 	if (!existsSync(basePath)) throw new Error(`base run missing: ${basePath}`);
 	const base = parseRun(JSON.parse(readFileSync(basePath, "utf8")));
 
-	const runId = args.runId ?? nextRunId(new Date());
+	const runId = args.runId ?? hostIngestRunId(baseRunId, args.provider, new Date());
 	const rawRoot = join(REPO, "data/raw", runId);
 	const providerRoot = join(rawRoot, args.provider);
 	mkdirSync(providerRoot, { recursive: true });
@@ -195,11 +179,14 @@ function main(): void {
 		console.log(`staged ${suite}: ${n} files`);
 	}
 
-	const shard = normalizeResultsTree({
+	// ONE normalize of the staged tree, through the same writer the CI `normalize` bin uses. The shard
+	// it writes is both the debugging artifact and the source of the row spliced below — normalizing
+	// twice (once to read, once to write) would let the two copies disagree.
+	const shard = writeNormalizedRun({
 		rawRoot,
 		runId: `${runId}-shard`,
 		sha,
-		generatedAt: new Date().toISOString(),
+		outFile: join(REPO, "data/runs", `${runId}-shard.json`),
 	});
 	const host = shard.providers.find((p) => p.providerId === args.provider);
 	if (host?.validationStatus !== "validated") {
@@ -207,38 +194,15 @@ function main(): void {
 			`${args.provider} normalize failed: status=${host?.validationStatus} metrics=${host?.metrics.length ?? 0}`,
 		);
 	}
-	console.log(
-		`normalized ${args.provider}: metrics=${host.metrics.length} suites=${host.suitesCovered.join(",")}`,
-	);
 
-	const providers: ProviderRun[] = [
-		...base.providers
-			.filter((p) => p.providerId !== args.provider)
-			// A pre-v5 base run carries no costEvidence; v5 requires the array on every row.
-			.map((p) => ({ ...p, costEvidence: p.costEvidence ?? [] })),
-		host,
-	].sort((a, b) => a.providerId.localeCompare(b.providerId));
+	const merged = spliceProviderRun({ base, provider: host, runId, sha });
 
-	const merged = parseRun({
-		schemaVersion: "5",
-		runId,
-		sha,
-		generatedAt: new Date().toISOString(),
-		...(base.sourceRunUrl ? { sourceRunUrl: base.sourceRunUrl } : {}),
-		targetSpec: base.targetSpec,
-		providers,
-	});
-
+	// writeRunDocument owns the atomic write AND the index update (sorted newest-first, validated,
+	// relative path) — the same publish primitive the candidate→promote flow uses.
 	const outFile = join(DATASET, "runs", `${runId}.json`);
-	writeFileSync(outFile, `${JSON.stringify(merged, null, 2)}\n`);
-	updateIndex(merged);
-	// Scratch normalized shard, for debugging a row without re-reading the merged Run.
-	writeNormalizedRun({
-		rawRoot,
-		runId: `${runId}-shard`,
-		sha,
-		outFile: join(REPO, "data/runs", `${runId}-shard.json`),
-	});
+	writeRunDocument(merged, outFile, INDEX_FILE);
+
+	for (const line of summarizeRun(merged)) console.log(line);
 	console.log(`wrote ${outFile}`);
 	console.log(`index newest=${merged.runId}`);
 }

@@ -2,14 +2,14 @@
   "schemaVersion": "1",
   "runs": [
     {
-      "runId": "202608200001",
+      "runId": "31066359914+cursor-cloud-agent-20260814+claude-cloud-20260820",
       "generatedAt": "2026-08-20T18:10:29.535Z",
-      "path": "runs/202608200001.json"
+      "path": "runs/31066359914+cursor-cloud-agent-20260814+claude-cloud-20260820.json"
     },
     {
-      "runId": "202608140001",
+      "runId": "31066359914+cursor-cloud-agent-20260814",
       "generatedAt": "2026-08-14T05:10:52.227Z",
-      "path": "runs/202608140001.json"
+      "path": "runs/31066359914+cursor-cloud-agent-20260814.json"
     },
     {
       "runId": "31066359914",

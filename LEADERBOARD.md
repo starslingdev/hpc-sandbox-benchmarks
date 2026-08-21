@@ -1,7 +1,7 @@
 # Sandbox provider leaderboard
 
-Run [`202608200001`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/202608200001) · commit [`c46acf85f48f2028242098263d2622f410516b2f`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/c46acf85f48f2028242098263d2622f410516b2f) ·
-dataset [`data/dataset/runs/202608200001.json`](data/dataset/runs/202608200001.json) · generated 2026-08-20T18:10:29.535Z
+Run [`31066359914`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/31066359914) + `cursor-cloud-agent-20260814` + `claude-cloud-20260820` · commit [`c46acf85f48f2028242098263d2622f410516b2f`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/c46acf85f48f2028242098263d2622f410516b2f) ·
+dataset [`data/dataset/runs/31066359914+cursor-cloud-agent-20260814+claude-cloud-20260820.json`](data/dataset/runs/31066359914%2Bcursor-cloud-agent-20260814%2Bclaude-cloud-20260820.json) · generated 2026-08-20T18:10:29.535Z
 
 Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **556 metric records**
 backed by **5233 retained trial observations**, across **47 metrics** and

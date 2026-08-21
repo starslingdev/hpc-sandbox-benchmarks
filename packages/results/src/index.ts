@@ -20,6 +20,13 @@ export {
 	suiteFigureFile,
 	suiteFigureNote,
 } from "./lib/figures.ts";
+// Host ingest — splicing a locally-measured provider row into an already-published Run. Deliberately
+// NOT aggregateRuns: see ./lib/host-ingest.ts on why re-merging an aggregated Run is invalid.
+export {
+	hostIngestRunId,
+	type SpliceProviderRunInput,
+	spliceProviderRun,
+} from "./lib/host-ingest.ts";
 export {
 	type AbsentProvider,
 	buildLeaderboard,
