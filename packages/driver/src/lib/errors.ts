@@ -7,6 +7,13 @@
 import type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
 import type { DriverOperationOptions, SandboxRef } from "./port.ts";
 
+// `instanceof` is not a safe predicate at a public error boundary: a rejected Proxy can trap
+// [[GetPrototypeOf]] and make the predicate itself throw, bypassing normalization. Brand the two
+// errors the kit must recognize instead. WeakSet.has does not invoke user code and preserves the
+// nominal "created by this kit instance" guarantee that a structural code/name check would lose.
+const driverErrors = new WeakSet<object>();
+const failedCreateCleanupErrors = new WeakSet<object>();
+
 /**
  * What went wrong, in terms of what the caller may do next:
  *
@@ -104,6 +111,7 @@ export class FailedCreateCleanupError extends SuppressedError implements AsyncDi
 			`failed to clean up ${options.provider} sandbox ${locatorLabel} after create failure`,
 		);
 		this.name = "FailedCreateCleanupError";
+		failedCreateCleanupErrors.add(this);
 		this.provider = options.provider;
 		this.locator = Object.freeze({ ...options.locator });
 		this.#cleanup = options.cleanup;
@@ -156,6 +164,7 @@ export class DriverError extends Error {
 
 	constructor(code: DriverErrorCode, message: string, fields: DriverErrorFields = {}) {
 		super(message, fields.cause !== undefined ? { cause: fields.cause } : undefined);
+		driverErrors.add(this);
 		this.name = "DriverError";
 		this.code = code;
 		this.provider = fields.provider;
@@ -165,7 +174,12 @@ export class DriverError extends Error {
 	}
 }
 
-export const isDriverError = (value: unknown): value is DriverError => value instanceof DriverError;
+export const isDriverError = (value: unknown): value is DriverError =>
+	(typeof value === "object" || typeof value === "function") &&
+	value !== null &&
+	driverErrors.has(value);
 
 export const isFailedCreateCleanupError = (value: unknown): value is FailedCreateCleanupError =>
-	value instanceof FailedCreateCleanupError;
+	(typeof value === "object" || typeof value === "function") &&
+	value !== null &&
+	failedCreateCleanupErrors.has(value);

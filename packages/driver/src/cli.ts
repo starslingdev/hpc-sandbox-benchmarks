@@ -25,7 +25,7 @@ import type {
 	SandboxRef,
 } from "./index.ts";
 import { defineDriver, driverFromTable, sandboxRef } from "./index.ts";
-import { DriverError, FailedCreateCleanupError } from "./lib/errors.ts";
+import { DriverError, FailedCreateCleanupError, isDriverError } from "./lib/errors.ts";
 import { pollUntilReady } from "./lib/poll.ts";
 import type { MethodTable } from "./lib/table.ts";
 
@@ -42,6 +42,9 @@ export interface CliRunOptions {
 	readonly signal?: AbortSignal;
 }
 
+/** A runnable command always contains at least one argument after the selected binary. */
+export type CliArgv = readonly [string, ...string[]];
+
 /** Runs the vendor binary. Injectable so cliDriver tables are testable without a real CLI. */
 export type CliRunner = (
 	binary: string,
@@ -56,7 +59,7 @@ export type CliFailedCreateCleanup<Row> =
 	| {
 			/** Direct name-addressed delete for CLIs that genuinely support it. */
 			readonly kind: "command";
-			readonly command: (name: string) => readonly string[];
+			readonly command: (name: string) => CliArgv;
 			readonly absenceConfirmationMs: number;
 	  }
 	| {
@@ -69,6 +72,367 @@ export type CliFailedCreateCleanup<Row> =
 /** Provider classification of one selected readiness row; the kit owns the resulting control flow. */
 export type CliReadinessStatus = "ready" | "pending" | { readonly terminal: string };
 
+function sanitizedCliCallbackCause(): Error {
+	// Author callbacks close over provider credentials that need not appear in any argv. Never retain
+	// their arbitrary thrown value or prose: error serializers may traverse custom fields and nested
+	// causes, while the outer DriverError already identifies the exact failing callback boundary.
+	return new Error("provider callback failed; original diagnostic omitted to protect credentials");
+}
+
+function invokeCliProviderCallback<T>(
+	provider: ProviderId,
+	boundary: string,
+	callback: () => T,
+	ref?: SandboxRef,
+): T {
+	try {
+		return callback();
+	} catch {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} CLI ${boundary} callback failed`,
+			{
+				provider,
+				...(ref === undefined ? {} : { ref }),
+				cause: sanitizedCliCallbackCause(),
+			},
+		);
+	}
+}
+
+function runtimeNumberLabel(value: unknown): string {
+	return typeof value === "number" ? `${value}` : "a non-number value";
+}
+
+function normalizeCliArgv(
+	provider: ProviderId,
+	boundary: string,
+	value: unknown,
+	ref?: SandboxRef,
+): CliArgv {
+	try {
+		if (!Array.isArray(value)) throw new Error("non-array argv");
+		const length: unknown = Reflect.get(value, "length");
+		if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 1) {
+			throw new Error("empty argv");
+		}
+		const args: string[] = [];
+		for (let index = 0; index < length; index += 1) {
+			const arg: unknown = Reflect.get(value, index);
+			if (typeof arg !== "string") throw new Error("non-string argv member");
+			if (index === 0 && arg.trim() === "") throw new Error("empty command name");
+			args.push(arg);
+		}
+		return args as unknown as CliArgv;
+	} catch {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} CLI ${boundary} must be a nonempty string argv`,
+			{
+				provider,
+				...(ref === undefined ? {} : { ref }),
+				cause: sanitizedCliCallbackCause(),
+			},
+		);
+	}
+}
+
+function normalizeCliStringList(
+	provider: ProviderId,
+	boundary: string,
+	value: unknown,
+): readonly string[] {
+	try {
+		if (!Array.isArray(value)) throw new Error("not an array");
+		const length: unknown = Reflect.get(value, "length");
+		if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) {
+			throw new Error("invalid array length");
+		}
+		const entries: string[] = [];
+		for (let index = 0; index < length; index += 1) {
+			const entry: unknown = Reflect.get(value, index);
+			if (typeof entry !== "string") throw new Error("non-string member");
+			entries.push(entry);
+		}
+		return entries;
+	} catch {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} CLI ${boundary} must be a string array`,
+			{ provider, cause: sanitizedCliCallbackCause() },
+		);
+	}
+}
+
+function snapshotCliCoverage(value: unknown): CliCreateRequestCoverage {
+	if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+		throw new Error("request coverage is not an object");
+	}
+	const defineOwn = (target: Record<string, unknown>, key: string, entry: unknown): void => {
+		Object.defineProperty(target, key, {
+			value: entry,
+			enumerable: true,
+			writable: false,
+			configurable: false,
+		});
+	};
+	const copyRecord = (candidate: unknown, copyDispositions = false): Record<string, unknown> => {
+		if (
+			(typeof candidate !== "object" && typeof candidate !== "function") ||
+			candidate === null ||
+			Array.isArray(candidate)
+		) {
+			throw new Error("request coverage member is not an object");
+		}
+		const copy = Object.create(null) as Record<string, unknown>;
+		for (const [key, entry] of Object.entries(candidate)) {
+			const copied =
+				copyDispositions &&
+				(typeof entry === "object" || typeof entry === "function") &&
+				entry !== null &&
+				!Array.isArray(entry)
+					? copyRecord(entry)
+					: entry;
+			defineOwn(copy, key, copied);
+		}
+		return copy;
+	};
+	const outer = Object.create(null) as Record<string, unknown>;
+	let spec: unknown;
+	let gpu: unknown;
+	let hasSpec = false;
+	let hasGpu = false;
+	for (const [key, entry] of Object.entries(value)) {
+		if (key === "spec") {
+			spec = entry;
+			hasSpec = true;
+		} else if (key === "gpu") {
+			gpu = entry;
+			hasGpu = true;
+		} else {
+			defineOwn(outer, key, entry);
+		}
+	}
+	if (!hasSpec || !hasGpu) throw new Error("request coverage is missing a required member");
+	defineOwn(outer, "spec", copyRecord(spec, true));
+	defineOwn(outer, "gpu", copyRecord(gpu));
+	return outer as unknown as CliCreateRequestCoverage;
+}
+
+function snapshotCliSpec<Row>(provider: ProviderId, spec: CliSpec<Row>): CliSpec<Row> {
+	return invokeCliProviderCallback(provider, "spec normalization", () => {
+		const objectMember = (value: unknown): object => {
+			if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+				throw new Error("CLI spec member is not an object");
+			}
+			return value;
+		};
+		const ready = objectMember(Reflect.get(spec, "ready"));
+		const sandboxId = objectMember(Reflect.get(spec, "sandboxId"));
+		const cleanupCreated = objectMember(Reflect.get(spec, "cleanupCreated"));
+		const prepare: unknown = Reflect.get(spec, "prepare");
+		const prepared = prepare === undefined ? undefined : objectMember(prepare);
+		const cleanupKind: unknown = Reflect.get(cleanupCreated, "kind");
+		const absenceConfirmationMs: unknown = Reflect.get(cleanupCreated, "absenceConfirmationMs");
+		let normalizedCleanup: CliFailedCreateCleanup<Row>;
+		if (cleanupKind === "command") {
+			const command: unknown = Reflect.get(cleanupCreated, "command");
+			if (typeof command !== "function") throw new Error("cleanup command is not callable");
+			normalizedCleanup = {
+				kind: "command",
+				command: command as (name: string) => CliArgv,
+				absenceConfirmationMs: absenceConfirmationMs as number,
+			};
+		} else if (cleanupKind === "lookup") {
+			const select: unknown = Reflect.get(cleanupCreated, "select");
+			if (typeof select !== "function") throw new Error("cleanup selector is not callable");
+			normalizedCleanup = {
+				kind: "lookup",
+				select: select as (rows: readonly Row[], name: string) => Row | null,
+				absenceConfirmationMs: absenceConfirmationMs as number,
+			};
+		} else {
+			throw new Error("cleanup kind is invalid");
+		}
+		return {
+			binary: Reflect.get(spec, "binary"),
+			secretFlags: Reflect.get(spec, "secretFlags"),
+			commandTimeoutMs: Reflect.get(spec, "commandTimeoutMs"),
+			createCommandTimeoutMs: Reflect.get(spec, "createCommandTimeoutMs"),
+			requestCoverage: snapshotCliCoverage(Reflect.get(spec, "requestCoverage")),
+			create: Reflect.get(spec, "create"),
+			...(prepared === undefined
+				? {}
+				: {
+						prepare: {
+							probe: Reflect.get(prepared, "probe"),
+							fallback: Reflect.get(prepared, "fallback"),
+						},
+					}),
+			cleanupCreated: normalizedCleanup,
+			ready: {
+				poll: Reflect.get(ready, "poll"),
+				parse: Reflect.get(ready, "parse"),
+				select: Reflect.get(ready, "select"),
+				classify: Reflect.get(ready, "classify"),
+				pollIntervalMs: Reflect.get(ready, "pollIntervalMs"),
+			},
+			sandboxId: {
+				fromRow: Reflect.get(sandboxId, "fromRow"),
+				parse: Reflect.get(sandboxId, "parse"),
+			},
+			exec: Reflect.get(spec, "exec"),
+			destroy: Reflect.get(spec, "destroy"),
+			notFound: Reflect.get(spec, "notFound"),
+		} as CliSpec<Row>;
+	});
+}
+
+function normalizeCliRows<Row>(provider: ProviderId, value: unknown): readonly Row[] {
+	try {
+		if (!Array.isArray(value)) throw new Error("non-array rows");
+		const length: unknown = Reflect.get(value, "length");
+		if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) {
+			throw new Error("invalid rows length");
+		}
+		const rows: Row[] = [];
+		for (let index = 0; index < length; index += 1) {
+			rows.push(Reflect.get(value, index) as Row);
+		}
+		return rows;
+	} catch {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} CLI readiness parser returned an unreadable row array`,
+			{ provider, cause: sanitizedCliCallbackCause() },
+		);
+	}
+}
+
+function arkErrorsResult(
+	provider: ProviderId,
+	boundary: string,
+	value: unknown,
+	ref?: SandboxRef,
+): value is type.errors {
+	try {
+		return value instanceof type.errors;
+	} catch {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} CLI ${boundary} returned an unreadable schema result`,
+			{
+				provider,
+				...(ref === undefined ? {} : { ref }),
+				cause: sanitizedCliCallbackCause(),
+			},
+		);
+	}
+}
+
+function arkErrorSummary(
+	provider: ProviderId,
+	boundary: string,
+	errors: type.errors,
+	ref?: SandboxRef,
+): string {
+	try {
+		const summary: unknown = Reflect.get(errors, "summary");
+		if (typeof summary === "string") return summary;
+	} catch {
+		// The generic contract failure below intentionally omits the hostile thrown value.
+	}
+	throw new DriverError(
+		"vendor-contract-violation",
+		`${provider} CLI ${boundary} returned unreadable schema diagnostics`,
+		{
+			provider,
+			...(ref === undefined ? {} : { ref }),
+			cause: sanitizedCliCallbackCause(),
+		},
+	);
+}
+
+function normalizeCliReadinessStatus(
+	provider: ProviderId,
+	value: unknown,
+	redact: (detail: string) => string,
+	ref?: SandboxRef,
+): CliReadinessStatus {
+	if (value === "ready" || value === "pending") return value;
+	if ((typeof value === "object" || typeof value === "function") && value !== null) {
+		let terminal: unknown;
+		try {
+			terminal = Reflect.get(value, "terminal");
+		} catch {
+			throw new DriverError(
+				"vendor-contract-violation",
+				`${provider} CLI readiness classifier returned an unreadable terminal result`,
+				{
+					provider,
+					...(ref === undefined ? {} : { ref }),
+					cause: sanitizedCliCallbackCause(),
+				},
+			);
+		}
+		if (typeof terminal === "string" && terminal.trim() !== "") {
+			return { terminal: redact(terminal.trim()) };
+		}
+	}
+	throw new DriverError(
+		"vendor-contract-violation",
+		`${provider} CLI readiness classifier must return ready, pending, or a nonempty terminal detail`,
+		{ provider, ...(ref === undefined ? {} : { ref }) },
+	);
+}
+
+export type CliResourceAxisDisposition =
+	| "mapped"
+	| "unsupported"
+	| { readonly artifact: number }
+	| { readonly capacityAtLeast: number };
+export type CliOptionalAxisDisposition = "mapped" | "unsupported";
+
+/**
+ * Compile-time proof that a CLI author considered every canonical create axis. Resource axes can be
+ * translated into argv, fixed by an artifact, satisfied by a declared minimum capacity, or rejected.
+ * Adding a CreateRequest field breaks every CLI spec until the new axis receives an explicit policy.
+ */
+export type CliCreateRequestCoverage = {
+	readonly spec: {
+		readonly [Axis in keyof CreateRequest["spec"]]-?: CliResourceAxisDisposition;
+	};
+	readonly artifact: "context";
+	readonly deadlineMs: "driver";
+	readonly gpu: {
+		readonly [Axis in keyof NonNullable<CreateRequest["gpu"]>]-?: CliOptionalAxisDisposition;
+	};
+} & {
+	readonly [Axis in Exclude<
+		keyof CreateRequest,
+		"spec" | "artifact" | "deadlineMs" | "gpu"
+	>]-?: CliOptionalAxisDisposition;
+};
+
+const CLI_TARGET_COVERAGE_AXES = {
+	vcpus: true,
+	memoryGb: true,
+	diskGb: true,
+} as const satisfies Record<keyof CreateRequest["spec"], true>;
+
+const CLI_GPU_COVERAGE_AXES = {
+	model: true,
+	count: true,
+} as const satisfies Record<keyof NonNullable<CreateRequest["gpu"]>, true>;
+
+const CLI_REQUEST_COVERAGE_AXES = {
+	spec: true,
+	artifact: true,
+	deadlineMs: true,
+	gpu: true,
+	env: true,
+} as const satisfies Record<keyof CliCreateRequestCoverage, true>;
+
 export interface CliSpec<Row> {
 	/** Resolved binary path or name (the caller applies any env override). */
 	readonly binary: string;
@@ -78,20 +442,22 @@ export interface CliSpec<Row> {
 	readonly commandTimeoutMs: number;
 	/** Optional longer kill budget for the create subprocess; defaults to commandTimeoutMs. */
 	readonly createCommandTimeoutMs?: number;
+	/** Exhaustive, pre-allocation disposition of every canonical request axis. */
+	readonly requestCoverage: CliCreateRequestCoverage;
 	/** argv to create a sandbox named `name` for `request`. */
-	readonly create: (request: CreateRequest, name: string) => readonly string[];
+	readonly create: (request: CreateRequest, name: string) => CliArgv;
 	/** Optional pre-create probe with a fallback action (for profile-based CLI authentication). */
 	readonly prepare?: {
 		/** Must exit zero and parse through the readiness-row schema to count as prepared. */
-		readonly probe: readonly string[];
+		readonly probe: CliArgv;
 		/** Checked fallback command, commonly `login --token …`; secret flags still redact it. */
-		readonly fallback: readonly string[];
+		readonly fallback: CliArgv;
 	};
 	/** Rollback/reconciliation used when no session handle can be returned. */
 	readonly cleanupCreated: CliFailedCreateCleanup<Row>;
 	readonly ready: {
 		/** argv that lists/inspects sandboxes; polled until `select` finds the row. */
-		readonly poll: readonly string[];
+		readonly poll: CliArgv;
 		/** Trust boundary: raw stdout → rows, as an arktype pipeline (path-bearing errors). */
 		readonly parse: CliRowsSchema<Row>;
 		/** The created row for `name`, or null while it is not visible. */
@@ -105,8 +471,8 @@ export interface CliSpec<Row> {
 		readonly fromRow: (row: Row) => unknown;
 		readonly parse: Type<string>;
 	};
-	readonly exec: (id: string, command: string) => readonly string[];
-	readonly destroy: (id: string) => readonly string[];
+	readonly exec: (id: string, command: string) => CliArgv;
+	readonly destroy: (id: string) => CliArgv;
 	/** Vendor prose meaning "already gone" — destroy-of-missing MUST succeed (ADR-0008). */
 	readonly notFound: RegExp;
 }
@@ -154,9 +520,13 @@ export interface CliDriverModuleSpec<P extends ProviderId, Row> {
 	readonly spec: (context: DriverContext<P>) => CliSpec<Row>;
 }
 
+const cliRunTimeoutErrors = new WeakSet<object>();
+const cliRunnerContractErrors = new WeakSet<object>();
+
 class CliRunTimeoutError extends Error {
 	constructor(readonly timeoutMs: number) {
 		super(`CLI process exceeded its ${timeoutMs}ms timeout`);
+		cliRunTimeoutErrors.add(this);
 		this.name = "CliRunTimeoutError";
 	}
 }
@@ -166,6 +536,66 @@ class CliRunAbortedError extends Error {
 		super("CLI process was aborted", { cause: reason });
 		this.name = "CliRunAbortedError";
 	}
+}
+
+class CliRunnerContractError extends DriverError {
+	constructor(...args: ConstructorParameters<typeof DriverError>) {
+		super(...args);
+		cliRunnerContractErrors.add(this);
+	}
+}
+
+function isCliRunTimeoutError(value: unknown): value is CliRunTimeoutError {
+	return (
+		(typeof value === "object" || typeof value === "function") &&
+		value !== null &&
+		cliRunTimeoutErrors.has(value)
+	);
+}
+
+function isCliRunnerContractError(value: unknown): value is CliRunnerContractError {
+	return (
+		(typeof value === "object" || typeof value === "function") &&
+		value !== null &&
+		cliRunnerContractErrors.has(value)
+	);
+}
+
+function normalizeCliRunResult(provider: ProviderId, value: unknown): CliRunResult {
+	if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+		throw new CliRunnerContractError(
+			"vendor-contract-violation",
+			`${provider} CLI runner returned a non-object result`,
+			{ provider, cause: sanitizedCliCallbackCause() },
+		);
+	}
+	let stdout: unknown;
+	let stderr: unknown;
+	let code: unknown;
+	try {
+		stdout = Reflect.get(value, "stdout");
+		stderr = Reflect.get(value, "stderr");
+		code = Reflect.get(value, "code");
+	} catch {
+		throw new CliRunnerContractError(
+			"vendor-contract-violation",
+			`${provider} CLI runner returned an unreadable result`,
+			{ provider, cause: sanitizedCliCallbackCause() },
+		);
+	}
+	if (
+		typeof stdout !== "string" ||
+		typeof stderr !== "string" ||
+		typeof code !== "number" ||
+		!Number.isSafeInteger(code)
+	) {
+		throw new CliRunnerContractError(
+			"vendor-contract-violation",
+			`${provider} CLI runner returned malformed stdout, stderr, or exit code`,
+			{ provider, cause: sanitizedCliCallbackCause() },
+		);
+	}
+	return { stdout, stderr, code };
 }
 
 function subscribeToAbort(signal: AbortSignal | undefined, listener: () => void): () => void {
@@ -228,7 +658,7 @@ const defaultRunner: CliRunner = async (binary, args, options) => {
 	if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0) {
 		throw new DriverError(
 			"vendor-contract-violation",
-			`CLI timeout must be a positive safe integer, received ${String(options.timeoutMs)}`,
+			`CLI timeout must be a positive safe integer, received ${runtimeNumberLabel(options.timeoutMs)}`,
 		);
 	}
 	if (options.signal?.aborted) throw new CliRunAbortedError(options.signal.reason);
@@ -334,82 +764,278 @@ function redactDiagnostics(
 	return secrets.reduce((redacted, secret) => redacted.replaceAll(secret, "***"), text);
 }
 
+function invalidCliCreateRequest(provider: ProviderId, detail: string): never {
+	throw new DriverError(
+		"invalid-create-request",
+		`${provider} CLI cannot honor the requested sandbox shape: ${detail}`,
+		{ provider },
+	);
+}
+
+function invalidCliCoverage(provider: ProviderId, detail: string): never {
+	throw new DriverError("vendor-contract-violation", `CLI request coverage is invalid: ${detail}`, {
+		provider,
+	});
+}
+
+function requireExactCliCoverageAxes(
+	provider: ProviderId,
+	label: string,
+	coverage: Readonly<Record<string, unknown>>,
+	expected: Readonly<Record<string, true>>,
+): void {
+	for (const axis of Object.keys(expected)) {
+		if (!Object.hasOwn(coverage, axis)) {
+			invalidCliCoverage(provider, `${label} is missing canonical axis ${axis}`);
+		}
+	}
+	for (const axis of Object.keys(coverage)) {
+		if (!Object.hasOwn(expected, axis)) {
+			invalidCliCoverage(provider, `${label} declares unknown axis ${axis}`);
+		}
+	}
+}
+
+function validateCliCoverage(provider: ProviderId, coverage: CliCreateRequestCoverage): void {
+	requireExactCliCoverageAxes(
+		provider,
+		"request coverage",
+		coverage as Readonly<Record<string, unknown>>,
+		CLI_REQUEST_COVERAGE_AXES,
+	);
+	requireExactCliCoverageAxes(provider, "target coverage", coverage.spec, CLI_TARGET_COVERAGE_AXES);
+	requireExactCliCoverageAxes(provider, "GPU coverage", coverage.gpu, CLI_GPU_COVERAGE_AXES);
+	if (coverage.artifact !== "context") {
+		invalidCliCoverage(provider, "artifact must be owned by the resolved driver context");
+	}
+	if (coverage.deadlineMs !== "driver") {
+		invalidCliCoverage(provider, "deadlineMs must be owned by the CLI driver");
+	}
+	for (const [axis, disposition] of Object.entries(coverage.spec)) {
+		if (disposition === "mapped" || disposition === "unsupported") continue;
+		if (disposition === null || typeof disposition !== "object" || Array.isArray(disposition)) {
+			invalidCliCoverage(provider, `target axis ${axis} has an unknown disposition`);
+		}
+		const entries = Object.entries(disposition);
+		if (
+			entries.length !== 1 ||
+			(entries[0]?.[0] !== "artifact" && entries[0]?.[0] !== "capacityAtLeast")
+		) {
+			invalidCliCoverage(provider, `target axis ${axis} must declare exactly one numeric bound`);
+		}
+		const value = entries[0]?.[1];
+		if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+			invalidCliCoverage(
+				provider,
+				`target axis ${axis} numeric bound must be positive and finite, received ${runtimeNumberLabel(value)}`,
+			);
+		}
+	}
+	for (const [axis, disposition] of Object.entries(coverage.gpu)) {
+		if (disposition !== "mapped" && disposition !== "unsupported") {
+			invalidCliCoverage(provider, `GPU axis ${axis} has an unknown disposition`);
+		}
+	}
+	for (const [axis, disposition] of Object.entries(coverage)) {
+		if (axis === "spec" || axis === "gpu" || axis === "artifact" || axis === "deadlineMs") continue;
+		if (disposition !== "mapped" && disposition !== "unsupported") {
+			invalidCliCoverage(provider, `request axis ${axis} has an unknown disposition`);
+		}
+	}
+}
+
+function validateCliCreateRequest(
+	provider: ProviderId,
+	coverage: CliCreateRequestCoverage,
+	request: CreateRequest,
+): void {
+	for (const [axis, disposition] of Object.entries(coverage.spec)) {
+		const value = request.spec[axis as keyof CreateRequest["spec"]];
+		if (value === undefined) continue;
+		if (disposition === "unsupported") {
+			invalidCliCreateRequest(provider, `target axis ${axis} is unsupported`);
+		}
+		if (typeof disposition === "object" && "artifact" in disposition) {
+			if (value !== disposition.artifact) {
+				invalidCliCreateRequest(
+					provider,
+					`target axis ${axis} must equal the artifact-pinned value ${disposition.artifact}`,
+				);
+			}
+		}
+		if (typeof disposition === "object" && "capacityAtLeast" in disposition) {
+			if (value > disposition.capacityAtLeast) {
+				invalidCliCreateRequest(
+					provider,
+					`target axis ${axis} exceeds the declared capacity ${disposition.capacityAtLeast}`,
+				);
+			}
+		}
+	}
+	if (request.gpu !== undefined) {
+		const gpu = request.gpu as unknown as Readonly<Record<string, unknown>>;
+		for (const [axis, disposition] of Object.entries(coverage.gpu)) {
+			if (disposition === "unsupported" && gpu[axis] !== undefined) {
+				invalidCliCreateRequest(
+					provider,
+					`GPU ${request.gpu.model} x${request.gpu.count} is unsupported (axis ${axis})`,
+				);
+			}
+		}
+	}
+	const requestRecord = request as unknown as Readonly<Record<string, unknown>>;
+	for (const [axis, disposition] of Object.entries(coverage)) {
+		if (axis === "spec" || axis === "artifact" || axis === "deadlineMs" || axis === "gpu") {
+			continue;
+		}
+		const value = requestRecord[axis];
+		const emptyEnvironment =
+			axis === "env" &&
+			value !== null &&
+			typeof value === "object" &&
+			Object.keys(value).length === 0;
+		if (disposition === "unsupported" && value !== undefined && !emptyEnvironment) {
+			invalidCliCreateRequest(
+				provider,
+				axis === "env"
+					? "guest environment injection is unsupported"
+					: `request axis ${axis} is unsupported`,
+			);
+		}
+	}
+}
+
 /** Compile a CLI spec down to a method table (handle = the parsed readiness row). */
 export function cliMethodTable<Row>(
 	provider: ProviderId,
 	spec: CliSpec<Row>,
 	options: CliDriverOptions = {},
 ): MethodTable<Row, CliDriverContext> {
-	const run = options.run ?? defaultRunner;
-	if (!Number.isSafeInteger(spec.commandTimeoutMs) || spec.commandTimeoutMs <= 0) {
+	const normalizedOptions = invokeCliProviderCallback(provider, "options normalization", () => ({
+		run: Reflect.get(options, "run") as unknown,
+		createAttemptCeilingMs: Reflect.get(options, "createAttemptCeilingMs") as unknown,
+	}));
+	if (normalizedOptions.run !== undefined && typeof normalizedOptions.run !== "function") {
+		throw new DriverError("vendor-contract-violation", "CLI runner must be callable", {
+			provider,
+		});
+	}
+	const run = (normalizedOptions.run as CliRunner | undefined) ?? defaultRunner;
+	const createAttemptCeilingMs = normalizedOptions.createAttemptCeilingMs;
+	const compiled = snapshotCliSpec(provider, spec);
+	validateCliCoverage(provider, compiled.requestCoverage);
+	if (typeof compiled.binary !== "string" || compiled.binary.trim() === "") {
+		throw new DriverError("vendor-contract-violation", `${provider} CLI binary must be nonempty`, {
+			provider,
+		});
+	}
+	const binary = compiled.binary;
+	const commandTimeoutMs = compiled.commandTimeoutMs;
+	const createCommandTimeoutMs = compiled.createCommandTimeoutMs;
+	const requestCoverage = compiled.requestCoverage;
+	const createArgv = compiled.create;
+	const cleanupCreated = compiled.cleanupCreated;
+	const ready = compiled.ready;
+	const sandboxId = compiled.sandboxId;
+	const execArgv = compiled.exec;
+	const destroyArgv = compiled.destroy;
+	const secretFlags = normalizeCliStringList(provider, "secretFlags", compiled.secretFlags);
+	const readyPoll = normalizeCliArgv(provider, "ready.poll", ready.poll);
+	const prepare =
+		compiled.prepare === undefined
+			? undefined
+			: {
+					probe: normalizeCliArgv(provider, "prepare.probe", compiled.prepare.probe),
+					fallback: normalizeCliArgv(provider, "prepare.fallback", compiled.prepare.fallback),
+				};
+	let notFoundSource: string;
+	let notFoundFlags: string;
+	try {
+		const source: unknown = Reflect.get(compiled.notFound, "source");
+		const flags: unknown = Reflect.get(compiled.notFound, "flags");
+		if (typeof source !== "string" || typeof flags !== "string") throw new Error("invalid regexp");
+		// Compile once now to reject invalid flag/source combinations before any allocation.
+		new RegExp(source, flags);
+		notFoundSource = source;
+		notFoundFlags = flags;
+	} catch {
 		throw new DriverError(
 			"vendor-contract-violation",
-			`commandTimeoutMs must be a positive safe integer, received ${String(spec.commandTimeoutMs)}`,
+			`${provider} CLI notFound must be a readable regular expression`,
+			{ provider, cause: sanitizedCliCallbackCause() },
+		);
+	}
+	if (!Number.isSafeInteger(commandTimeoutMs) || commandTimeoutMs <= 0) {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`commandTimeoutMs must be a positive safe integer, received ${runtimeNumberLabel(commandTimeoutMs)}`,
 			{ provider },
 		);
 	}
 	if (
-		spec.createCommandTimeoutMs !== undefined &&
-		(!Number.isSafeInteger(spec.createCommandTimeoutMs) || spec.createCommandTimeoutMs <= 0)
+		createCommandTimeoutMs !== undefined &&
+		(!Number.isSafeInteger(createCommandTimeoutMs) || createCommandTimeoutMs <= 0)
 	) {
 		throw new DriverError(
 			"vendor-contract-violation",
-			`createCommandTimeoutMs must be a positive safe integer, received ${String(spec.createCommandTimeoutMs)}`,
+			`createCommandTimeoutMs must be a positive safe integer, received ${runtimeNumberLabel(createCommandTimeoutMs)}`,
 			{ provider },
 		);
 	}
 	if (
-		options.createAttemptCeilingMs !== undefined &&
-		(!Number.isSafeInteger(options.createAttemptCeilingMs) || options.createAttemptCeilingMs <= 0)
+		createAttemptCeilingMs !== undefined &&
+		(!Number.isSafeInteger(createAttemptCeilingMs) || (createAttemptCeilingMs as number) <= 0)
 	) {
 		throw new DriverError(
 			"vendor-contract-violation",
-			`createAttemptCeilingMs must be a positive safe integer, received ${String(options.createAttemptCeilingMs)}`,
+			`createAttemptCeilingMs must be a positive safe integer, received ${runtimeNumberLabel(createAttemptCeilingMs)}`,
 			{ provider },
 		);
 	}
 	if (
-		spec.ready.pollIntervalMs !== undefined &&
-		(!Number.isSafeInteger(spec.ready.pollIntervalMs) || spec.ready.pollIntervalMs <= 0)
+		ready.pollIntervalMs !== undefined &&
+		(!Number.isSafeInteger(ready.pollIntervalMs) || ready.pollIntervalMs <= 0)
 	) {
 		throw new DriverError(
 			"vendor-contract-violation",
-			`ready.pollIntervalMs must be a positive safe integer, received ${String(spec.ready.pollIntervalMs)}`,
+			`ready.pollIntervalMs must be a positive safe integer, received ${runtimeNumberLabel(ready.pollIntervalMs)}`,
 			{ provider },
 		);
 	}
 	if (
-		!Number.isSafeInteger(spec.cleanupCreated.absenceConfirmationMs) ||
-		spec.cleanupCreated.absenceConfirmationMs <= 0
+		!Number.isSafeInteger(cleanupCreated.absenceConfirmationMs) ||
+		cleanupCreated.absenceConfirmationMs <= 0
 	) {
 		throw new DriverError(
 			"vendor-contract-violation",
-			`cleanupCreated.absenceConfirmationMs must be a positive safe integer, received ${String(spec.cleanupCreated.absenceConfirmationMs)}`,
+			`cleanupCreated.absenceConfirmationMs must be a positive safe integer, received ${runtimeNumberLabel(cleanupCreated.absenceConfirmationMs)}`,
 			{ provider },
 		);
 	}
-	const call = (
-		args: readonly string[],
-		timeoutMs = spec.commandTimeoutMs,
+	const call = async (
+		args: CliArgv,
+		timeoutMs = commandTimeoutMs,
 		signal?: AbortSignal,
-	) => {
+	): Promise<CliRunResult> => {
 		const boundedTimeoutMs = Math.floor(timeoutMs);
 		if (boundedTimeoutMs <= 0) throw new CliRunTimeoutError(timeoutMs);
-		return run(spec.binary, args, {
+		const result: unknown = await run(binary, args, {
 			timeoutMs: boundedTimeoutMs,
 			...(signal === undefined ? {} : { signal }),
 		});
+		return normalizeCliRunResult(provider, result);
 	};
 	const redactKnownDiagnostic = (text: string, args: readonly (readonly string[])[]): string => {
-		const allArgs =
-			spec.prepare === undefined ? args : [...args, spec.prepare.probe, spec.prepare.fallback];
-		return redactDiagnostics(text, allArgs, spec.secretFlags);
+		const allArgs = prepare === undefined ? args : [...args, prepare.probe, prepare.fallback];
+		return redactDiagnostics(text, allArgs, secretFlags);
 	};
+	const providerCallback = <T>(boundary: string, callback: () => T, ref?: SandboxRef): T =>
+		invokeCliProviderCallback(provider, boundary, callback, ref);
 	// Vendor failures carry structured fields (exit code + vendor diagnostic) so the harness classifies
 	// by them, not by regexing a formatted message; the message redacts secret argv for humans.
 	const vendorFailed = (
-		code: "create-failed" | "destroy-failed",
-		args: readonly string[],
+		code: "create-failed" | "destroy-failed" | "probe-failed",
+		args: CliArgv,
 		result: CliRunResult,
 		ref?: SandboxRef,
 		diagnosticArgs: readonly (readonly string[])[] = [args],
@@ -417,7 +1043,7 @@ export function cliMethodTable<Row>(
 		const vendorDiagnostic = result.stderr.trim() || result.stdout.trim();
 		return new DriverError(
 			code,
-			`${spec.binary} ${redactArgs(args, spec.secretFlags).join(" ")}: exit ${result.code}`,
+			`${binary} ${redactArgs(args, secretFlags).join(" ")}: exit ${result.code}`,
 			{
 				provider,
 				vendorExitCode: result.code,
@@ -428,16 +1054,17 @@ export function cliMethodTable<Row>(
 	};
 
 	const runnerFailed = (
-		code: "create-failed" | "exec-failed" | "destroy-failed",
-		args: readonly string[],
+		code: "create-failed" | "exec-failed" | "destroy-failed" | "probe-failed",
+		args: CliArgv,
 		caught: unknown,
 		ref?: SandboxRef,
-		diagnosticArgs: readonly (readonly string[])[] = [args],
+		_diagnosticArgs: readonly (readonly string[])[] = [args],
 	): DriverError => {
-		const detail = redactKnownDiagnostic(String(caught), diagnosticArgs);
+		if (isCliRunnerContractError(caught)) return caught;
+		const detail = "CLI runner failed; original diagnostic omitted to protect credentials";
 		return new DriverError(
 			code,
-			`${spec.binary} ${redactArgs(args, spec.secretFlags).join(" ")}: ${detail}`,
+			`${binary} ${redactArgs(args, secretFlags).join(" ")}: ${detail}`,
 			{
 				provider,
 				vendorMessage: detail,
@@ -450,12 +1077,22 @@ export function cliMethodTable<Row>(
 		result: CliRunResult,
 		diagnosticArgs: readonly (readonly string[])[],
 	): readonly Row[] => {
-		const rows = spec.ready.parse(result.stdout);
+		const rows: unknown = providerCallback("readiness parser", () => ready.parse(result.stdout));
 		// CliRowsSchema's output side is readonly Row[]. ArkType's internal distillation cannot
 		// prove that equality for an arbitrary generic Row, even though the public schema type does.
-		if (!(rows instanceof type.errors)) return rows as readonly Row[];
-		const summary = redactKnownDiagnostic(rows.summary, diagnosticArgs);
-		throw new DriverError("vendor-output-unparseable", `${spec.binary} output: ${summary}`, {
+		if (!arkErrorsResult(provider, "readiness parser", rows)) {
+			if (Array.isArray(rows)) return normalizeCliRows<Row>(provider, rows);
+			throw new DriverError(
+				"vendor-contract-violation",
+				`${provider} CLI readiness parser must return a row array or schema errors`,
+				{ provider, cause: sanitizedCliCallbackCause() },
+			);
+		}
+		const summary = redactKnownDiagnostic(
+			arkErrorSummary(provider, "readiness parser", rows),
+			diagnosticArgs,
+		);
+		throw new DriverError("vendor-output-unparseable", `${binary} output: ${summary}`, {
 			provider,
 			vendorMessage: summary,
 		});
@@ -471,18 +1108,21 @@ export function cliMethodTable<Row>(
 		deadlineMs: number,
 		signal?: AbortSignal,
 	): Promise<void> => {
-		const prepare = spec.prepare;
 		if (prepare === undefined) return;
 		const probeBudget = remaining();
 		if (probeBudget < 1) throw createDeadlineError(deadlineMs);
-		let probed: CliRunResult | undefined;
+		let probed: CliRunResult;
 		try {
-			probed = await call(prepare.probe, Math.min(probeBudget, spec.commandTimeoutMs), signal);
+			probed = await call(prepare.probe, Math.min(probeBudget, commandTimeoutMs), signal);
 		} catch (caught) {
-			if (signal?.aborted) throw caught;
-			// A failed profile probe selects the checked fallback below.
+			if (isCliRunTimeoutError(caught) && probeBudget <= commandTimeoutMs) {
+				throw createDeadlineError(deadlineMs);
+			}
+			// A transport, cancellation, timeout, or runner-contract failure says nothing about the
+			// profile. Only a completed nonzero probe may authorize the state-changing fallback.
+			throw runnerFailed("create-failed", prepare.probe, caught);
 		}
-		if (probed?.code === 0) {
+		if (probed.code === 0) {
 			// Exit zero already proves authentication. Schema drift is not repaired by overwriting a
 			// developer's working profile, so surface it through the normal trust-boundary error.
 			parseRows(probed, [prepare.probe]);
@@ -493,13 +1133,9 @@ export function cliMethodTable<Row>(
 		if (fallbackBudget < 1) throw createDeadlineError(deadlineMs);
 		let fallback: CliRunResult;
 		try {
-			fallback = await call(
-				prepare.fallback,
-				Math.min(fallbackBudget, spec.commandTimeoutMs),
-				signal,
-			);
+			fallback = await call(prepare.fallback, Math.min(fallbackBudget, commandTimeoutMs), signal);
 		} catch (caught) {
-			if (caught instanceof CliRunTimeoutError && fallbackBudget <= spec.commandTimeoutMs) {
+			if (isCliRunTimeoutError(caught) && fallbackBudget <= commandTimeoutMs) {
 				throw createDeadlineError(deadlineMs);
 			}
 			throw runnerFailed("create-failed", prepare.fallback, caught);
@@ -514,13 +1150,9 @@ export function cliMethodTable<Row>(
 		if (verificationBudget < 1) throw createDeadlineError(deadlineMs);
 		let verified: CliRunResult;
 		try {
-			verified = await call(
-				prepare.probe,
-				Math.min(verificationBudget, spec.commandTimeoutMs),
-				signal,
-			);
+			verified = await call(prepare.probe, Math.min(verificationBudget, commandTimeoutMs), signal);
 		} catch (caught) {
-			if (caught instanceof CliRunTimeoutError && verificationBudget <= spec.commandTimeoutMs) {
+			if (isCliRunTimeoutError(caught) && verificationBudget <= commandTimeoutMs) {
 				throw createDeadlineError(deadlineMs);
 			}
 			throw runnerFailed("create-failed", prepare.probe, caught);
@@ -536,7 +1168,7 @@ export function cliMethodTable<Row>(
 		deadlineMs: number,
 		signal?: AbortSignal,
 	): Promise<void> => {
-		if (spec.prepare === undefined) return Promise.resolve();
+		if (prepare === undefined) return Promise.resolve();
 		if (context.prepare === true) {
 			if (signal?.aborted) return Promise.reject(new CliRunAbortedError(signal.reason));
 			return remaining() < 1 ? Promise.reject(createDeadlineError(deadlineMs)) : Promise.resolve();
@@ -548,7 +1180,7 @@ export function cliMethodTable<Row>(
 			// Preparation is driver-owned, not owned by whichever create happened to arrive first. Each
 			// control command retains its own hard bound; callers race the shared task below against their
 			// individual request budgets and cancellation signals.
-			const sharedBudgetMs = Math.min(Number.MAX_SAFE_INTEGER, spec.commandTimeoutMs * 3);
+			const sharedBudgetMs = Math.min(Number.MAX_SAFE_INTEGER, commandTimeoutMs * 3);
 			const sharedDeadline = performance.now() + sharedBudgetMs;
 			const cancellation = new AbortController();
 			const waiters = new Set<symbol>();
@@ -637,26 +1269,48 @@ export function cliMethodTable<Row>(
 	};
 
 	const matchesNotFound = (text: string): boolean =>
-		new RegExp(spec.notFound.source, spec.notFound.flags).test(text);
+		new RegExp(notFoundSource, notFoundFlags).test(text);
 
 	const parseSandboxId = (
 		raw: unknown,
 		ref?: SandboxRef,
 		diagnosticArgs: readonly (readonly string[])[] = [],
 	): string => {
-		const id = spec.sandboxId.parse(raw);
-		if (id instanceof type.errors) {
-			const summary = redactKnownDiagnostic(id.summary, diagnosticArgs);
+		const id: unknown = providerCallback("sandbox-id parser", () => sandboxId.parse(raw), ref);
+		if (arkErrorsResult(provider, "sandbox-id parser", id, ref)) {
+			const summary = redactKnownDiagnostic(
+				arkErrorSummary(provider, "sandbox-id parser", id, ref),
+				diagnosticArgs,
+			);
 			throw new DriverError(
 				"invalid-sandbox-ref",
 				`${provider} CLI returned an invalid sandbox id: ${summary}`,
 				{ provider, ...(ref ? { ref } : {}) },
 			);
 		}
+		if (typeof id !== "string" || id.length === 0) {
+			throw new DriverError(
+				"vendor-contract-violation",
+				`${provider} CLI sandbox-id parser must return a nonempty string or schema errors`,
+				{
+					provider,
+					...(ref === undefined ? {} : { ref }),
+					cause: sanitizedCliCallbackCause(),
+				},
+			);
+		}
 		return id;
 	};
-	const sandboxIdOf = (row: Row, diagnosticArgs: readonly (readonly string[])[] = []): string =>
-		parseSandboxId(spec.sandboxId.fromRow(row), undefined, diagnosticArgs);
+	const sandboxIdOf = (
+		row: Row,
+		diagnosticArgs: readonly (readonly string[])[] = [],
+		ref?: SandboxRef,
+	): string =>
+		parseSandboxId(
+			providerCallback("sandbox-id extractor", () => sandboxId.fromRow(row), ref),
+			ref,
+			diagnosticArgs,
+		);
 	const sandboxIdFromRef = (ref: SandboxRef): string => {
 		if (ref.provider !== provider) {
 			throw new DriverError(
@@ -669,7 +1323,7 @@ export function cliMethodTable<Row>(
 	};
 
 	const destroyByArgs = async (
-		args: readonly string[],
+		args: CliArgv,
 		options: {
 			readonly ref?: SandboxRef;
 			readonly timeoutMs?: number;
@@ -680,7 +1334,7 @@ export function cliMethodTable<Row>(
 		| { readonly status: "destroyed" }
 		| { readonly status: "not-found"; readonly result: CliRunResult }
 	> => {
-		const timeoutMs = options.timeoutMs ?? spec.commandTimeoutMs;
+		const timeoutMs = options.timeoutMs ?? commandTimeoutMs;
 		let result: CliRunResult;
 		try {
 			result = await call(args, timeoutMs, options.signal);
@@ -701,42 +1355,43 @@ export function cliMethodTable<Row>(
 			const name = `bench-${randomUUID()}`;
 			const deadlineMs = Math.min(
 				request.deadlineMs,
-				options.createAttemptCeilingMs ?? request.deadlineMs,
+				(createAttemptCeilingMs as number | undefined) ?? request.deadlineMs,
 			);
 			const boundedRequest =
 				deadlineMs === request.deadlineMs ? request : { ...request, deadlineMs };
+			validateCliCreateRequest(provider, requestCoverage, boundedRequest);
 			const deadline = performance.now() + deadlineMs;
 			const remaining = (): number => Math.max(0, deadline - performance.now());
 			// Compile every argv that rollback may need before the first external side effect. A
 			// declarative callback bug is then allocation-safe and cannot discard the only locator.
-			let createArgs: readonly string[];
-			let cleanupArgs: readonly string[] | undefined;
-			try {
-				if (spec.cleanupCreated.kind === "command") {
-					cleanupArgs = spec.cleanupCreated.command(name);
-				}
-				createArgs = spec.create(boundedRequest, name);
-			} catch (caught) {
-				throw new DriverError(
-					"vendor-contract-violation",
-					`${provider} CLI argv builder threw before create`,
-					{ provider, cause: caught },
+			let createArgs: CliArgv;
+			let cleanupArgs: CliArgv | undefined;
+			if (cleanupCreated.kind === "command") {
+				cleanupArgs = normalizeCliArgv(
+					provider,
+					"cleanup argv builder",
+					providerCallback("cleanup argv builder", () =>
+						cleanupCreated.kind === "command" ? cleanupCreated.command(name) : ["unreachable"],
+					),
 				);
 			}
+			createArgs = normalizeCliArgv(
+				provider,
+				"create argv builder",
+				providerCallback("create argv builder", () => createArgv(boundedRequest, name)),
+			);
 			const attemptArgs: readonly (readonly string[])[] =
-				cleanupArgs === undefined
-					? [createArgs, spec.ready.poll]
-					: [createArgs, spec.ready.poll, cleanupArgs];
+				cleanupArgs === undefined ? [createArgs, readyPoll] : [createArgs, readyPoll, cleanupArgs];
 			await ensurePreparedOnce(context, remaining, deadlineMs, signal);
 			try {
 				const createBudget = remaining();
 				if (createBudget < 1) throw createDeadlineError(deadlineMs);
-				const createCommandTimeoutMs = spec.createCommandTimeoutMs ?? spec.commandTimeoutMs;
+				const createTimeoutMs = createCommandTimeoutMs ?? commandTimeoutMs;
 				let created: CliRunResult;
 				try {
-					created = await call(createArgs, Math.min(createBudget, createCommandTimeoutMs), signal);
+					created = await call(createArgs, Math.min(createBudget, createTimeoutMs), signal);
 				} catch (caught) {
-					if (caught instanceof CliRunTimeoutError && createBudget <= createCommandTimeoutMs) {
+					if (isCliRunTimeoutError(caught) && createBudget <= createTimeoutMs) {
 						throw createDeadlineError(deadlineMs);
 					}
 					throw runnerFailed("create-failed", createArgs, caught, undefined, attemptArgs);
@@ -753,18 +1408,14 @@ export function cliMethodTable<Row>(
 					row = await pollUntilReady({
 						provider,
 						deadlineMs: pollBudget,
-						intervalMs: spec.ready.pollIntervalMs ?? 1_000,
+						intervalMs: ready.pollIntervalMs ?? 1_000,
 						signal,
 						poll: async () => {
 							const probeBudget = remaining();
 							if (probeBudget < 1) throw createDeadlineError(deadlineMs);
 							let polled: CliRunResult;
 							try {
-								const running = call(
-									spec.ready.poll,
-									Math.min(probeBudget, spec.commandTimeoutMs),
-									signal,
-								);
+								const running = call(readyPoll, Math.min(probeBudget, commandTimeoutMs), signal);
 								activePoll = running;
 								try {
 									polled = await running;
@@ -772,40 +1423,26 @@ export function cliMethodTable<Row>(
 									if (activePoll === running) activePoll = undefined;
 								}
 							} catch (caught) {
-								if (caught instanceof CliRunTimeoutError && probeBudget <= spec.commandTimeoutMs) {
+								if (isCliRunTimeoutError(caught) && probeBudget <= commandTimeoutMs) {
 									throw createDeadlineError(deadlineMs);
 								}
-								throw runnerFailed(
-									"create-failed",
-									spec.ready.poll,
-									caught,
-									undefined,
-									attemptArgs,
-								);
+								throw runnerFailed("create-failed", readyPoll, caught, undefined, attemptArgs);
 							}
 							if (polled.code !== 0) {
-								throw vendorFailed(
-									"create-failed",
-									spec.ready.poll,
-									polled,
-									undefined,
-									attemptArgs,
-								);
+								throw vendorFailed("create-failed", readyPoll, polled, undefined, attemptArgs);
 							}
 							const rows = parseRows(polled, attemptArgs);
-							const row = spec.ready.select(rows, name);
+							const row = providerCallback("readiness selector", () => ready.select(rows, name));
 							if (row === null) return null;
-							const status = spec.ready.classify(row);
+							const classified: unknown = providerCallback("readiness classifier", () =>
+								ready.classify(row),
+							);
+							const status = normalizeCliReadinessStatus(provider, classified, (detail) =>
+								redactKnownDiagnostic(detail, attemptArgs),
+							);
 							if (status === "ready") return row;
 							if (status === "pending") return null;
-							const detail = redactKnownDiagnostic(status.terminal.trim(), attemptArgs);
-							if (detail === "") {
-								throw new DriverError(
-									"vendor-contract-violation",
-									`${provider} CLI readiness terminal detail must not be empty`,
-									{ provider },
-								);
-							}
+							const detail = status.terminal;
 							throw new DriverError(
 								"create-failed",
 								`${provider} sandbox entered a terminal state: ${detail}`,
@@ -824,7 +1461,7 @@ export function cliMethodTable<Row>(
 							() => undefined,
 						);
 					}
-					if (caught instanceof DriverError && caught.code === "readiness-timeout") {
+					if (isDriverError(caught) && caught.code === "readiness-timeout") {
 						throw createDeadlineError(deadlineMs);
 					}
 					throw caught;
@@ -846,7 +1483,7 @@ export function cliMethodTable<Row>(
 					| {
 							readonly status: "absent";
 							readonly result: CliRunResult;
-							readonly args: readonly string[];
+							readonly args: CliArgv;
 							readonly diagnosticArgs: readonly (readonly string[])[];
 					  };
 				const observeCleanup = async (
@@ -856,7 +1493,7 @@ export function cliMethodTable<Row>(
 					const observationDeadline = performance.now() + timeoutMs;
 					const remainingObservation = (): number =>
 						Math.max(0, observationDeadline - performance.now());
-					if (spec.cleanupCreated.kind === "command") {
+					if (cleanupCreated.kind === "command") {
 						if (cleanupArgs === undefined) {
 							throw new DriverError(
 								"vendor-contract-violation",
@@ -881,29 +1518,22 @@ export function cliMethodTable<Row>(
 
 					let listed: CliRunResult;
 					try {
-						listed = await call(spec.ready.poll, remainingObservation(), signal);
+						listed = await call(readyPoll, remainingObservation(), signal);
 					} catch (caught) {
-						throw runnerFailed("destroy-failed", spec.ready.poll, caught, undefined, attemptArgs);
+						throw runnerFailed("destroy-failed", readyPoll, caught, undefined, attemptArgs);
 					}
 					if (listed.code !== 0) {
-						throw vendorFailed("destroy-failed", spec.ready.poll, listed, undefined, attemptArgs);
+						throw vendorFailed("destroy-failed", readyPoll, listed, undefined, attemptArgs);
 					}
 					const rows = parseRows(listed, attemptArgs);
-					let row: Row | null;
-					try {
-						row = spec.cleanupCreated.select(rows, name);
-					} catch (caught) {
-						throw new DriverError(
-							"vendor-contract-violation",
-							`${provider} failed-create lookup selector threw`,
-							{ provider, cause: caught },
-						);
-					}
+					const row = providerCallback("failed-create lookup selector", () =>
+						cleanupCreated.kind === "lookup" ? cleanupCreated.select(rows, name) : null,
+					);
 					if (row === null) {
 						return {
 							status: "absent",
 							result: listed,
-							args: spec.ready.poll,
+							args: readyPoll,
 							diagnosticArgs: attemptArgs,
 						};
 					}
@@ -912,16 +1542,11 @@ export function cliMethodTable<Row>(
 					firstMissingAt = undefined;
 
 					const id = sandboxIdOf(row, attemptArgs);
-					let destroyArgs: readonly string[];
-					try {
-						destroyArgs = spec.destroy(id);
-					} catch (caught) {
-						throw new DriverError(
-							"vendor-contract-violation",
-							`${provider} destroy argv builder threw during failed-create recovery`,
-							{ provider, cause: caught },
-						);
-					}
+					const destroyArgs = normalizeCliArgv(
+						provider,
+						"destroy argv builder",
+						providerCallback("destroy argv builder", () => destroyArgv(id)),
+					);
 					const destroyBudget = remainingObservation();
 					if (destroyBudget < 1) {
 						throw new DriverError(
@@ -946,7 +1571,7 @@ export function cliMethodTable<Row>(
 							};
 				};
 				const retryCleanup = async (
-					timeoutMs = spec.commandTimeoutMs,
+					timeoutMs = commandTimeoutMs,
 					signal?: AbortSignal,
 				): Promise<void> => {
 					if (signal?.aborted) throw new CliRunAbortedError(signal.reason);
@@ -966,7 +1591,7 @@ export function cliMethodTable<Row>(
 					const observedAt = performance.now();
 					if (
 						firstMissingAt !== undefined &&
-						observedAt - firstMissingAt >= spec.cleanupCreated.absenceConfirmationMs
+						observedAt - firstMissingAt >= cleanupCreated.absenceConfirmationMs
 					) {
 						return;
 					}
@@ -975,7 +1600,7 @@ export function cliMethodTable<Row>(
 					// The first absence can be an indexing race after remote acceptance. Re-observe
 					// only after the provider-declared convergence horizon; if this attempt cannot
 					// afford that wait, retain ownership for the process-level cleanup owner.
-					const confirmationAt = firstMissingAt + spec.cleanupCreated.absenceConfirmationMs;
+					const confirmationAt = firstMissingAt + cleanupCreated.absenceConfirmationMs;
 					const waitMs = Math.max(0, confirmationAt - performance.now());
 					const waitDurationMs = Math.ceil(waitMs);
 					if (remainingAttempt() <= waitDurationMs) {
@@ -1001,8 +1626,7 @@ export function cliMethodTable<Row>(
 					}
 					outcome = await observeCleanup(confirmationBudget, signal);
 					if (outcome.status === "destroyed") return;
-					if (performance.now() - firstMissingAt >= spec.cleanupCreated.absenceConfirmationMs)
-						return;
+					if (performance.now() - firstMissingAt >= cleanupCreated.absenceConfirmationMs) return;
 					throw vendorFailed(
 						"destroy-failed",
 						outcome.args,
@@ -1027,7 +1651,7 @@ export function cliMethodTable<Row>(
 					);
 				} else {
 					try {
-						await retryCleanup(Math.min(cleanupBudget, spec.commandTimeoutMs), signal);
+						await retryCleanup(Math.min(cleanupBudget, commandTimeoutMs), signal);
 					} catch (caught) {
 						cleanupError = caught;
 					}
@@ -1037,7 +1661,7 @@ export function cliMethodTable<Row>(
 						provider,
 						locator: { kind: "name", value: name },
 						cleanup: (cleanupOptions: DriverOperationOptions = {}) =>
-							retryCleanup(spec.commandTimeoutMs, cleanupOptions.signal),
+							retryCleanup(commandTimeoutMs, cleanupOptions.signal),
 					});
 				}
 				throw primary;
@@ -1045,7 +1669,12 @@ export function cliMethodTable<Row>(
 		},
 		async exec(_ctx, row, command): Promise<ExecResult> {
 			const started = Date.now();
-			const args = spec.exec(sandboxIdOf(row), command);
+			const id = sandboxIdOf(row);
+			const args = normalizeCliArgv(
+				provider,
+				"exec argv builder",
+				providerCallback("exec argv builder", () => execArgv(id, command)),
+			);
 			let result: CliRunResult;
 			try {
 				result = await call(args);
@@ -1061,17 +1690,63 @@ export function cliMethodTable<Row>(
 			};
 		},
 		destroy: async (_ctx, row, operationOptions) => {
-			await destroyByArgs(spec.destroy(sandboxIdOf(row)), {
+			const id = sandboxIdOf(row);
+			const args = normalizeCliArgv(
+				provider,
+				"destroy argv builder",
+				providerCallback("destroy argv builder", () => destroyArgv(id)),
+			);
+			await destroyByArgs(args, {
 				signal: operationOptions?.signal,
 			});
 		},
 		// CLI vendors get bare-ref reaping for free: the destroy argv only needs the id, and
 		// notFound tolerance already makes it idempotent.
 		destroyById: async (_ctx, ref, operationOptions) => {
-			await destroyByArgs(spec.destroy(sandboxIdFromRef(ref)), {
+			const id = sandboxIdFromRef(ref);
+			const args = normalizeCliArgv(
+				provider,
+				"destroy argv builder",
+				providerCallback("destroy argv builder", () => destroyArgv(id), ref),
+				ref,
+			);
+			await destroyByArgs(args, {
 				ref,
 				signal: operationOptions?.signal,
 			});
+		},
+		probes: {
+			observe: async (_ctx, ref) => {
+				const expectedId = sandboxIdFromRef(ref);
+				let result: CliRunResult;
+				try {
+					result = await call(readyPoll);
+				} catch (caught) {
+					throw runnerFailed("probe-failed", readyPoll, caught, ref);
+				}
+				if (result.code !== 0) {
+					throw vendorFailed("probe-failed", readyPoll, result, ref);
+				}
+				const rows = parseRows(result, [readyPoll]);
+				const row = rows.find(
+					(candidate) => sandboxIdOf(candidate, [readyPoll], ref) === expectedId,
+				);
+				if (row === undefined) return { state: "absent" as const };
+				const classified: unknown = providerCallback(
+					"readiness classifier",
+					() => ready.classify(row),
+					ref,
+				);
+				const status = normalizeCliReadinessStatus(
+					provider,
+					classified,
+					(detail) => redactKnownDiagnostic(detail, [readyPoll]),
+					ref,
+				);
+				return status === "ready" || status === "pending"
+					? { state: "running" as const }
+					: { state: "terminal" as const };
+			},
 		},
 		// No files, no launch: absent, not stubbed — the harness fallbacks (shell.ts) cover both.
 	};
@@ -1096,18 +1771,36 @@ export function defineCliDriver<P extends ProviderId, Row>(
 	id: P,
 	module: CliDriverModuleSpec<NoInfer<P>, Row>,
 ): DriverModule<P, Row> {
-	if (!Number.isSafeInteger(module.createAttemptCeilingMs) || module.createAttemptCeilingMs <= 0) {
+	const normalized = invokeCliProviderCallback(id, "module normalization", () => ({
+		createAttemptCeilingMs: Reflect.get(module, "createAttemptCeilingMs") as unknown,
+		spec: Reflect.get(module, "spec") as unknown,
+	}));
+	const createAttemptCeilingMs = normalized.createAttemptCeilingMs;
+	if (!Number.isSafeInteger(createAttemptCeilingMs) || (createAttemptCeilingMs as number) <= 0) {
 		throw new DriverError(
 			"vendor-contract-violation",
-			`createAttemptCeilingMs must be a positive safe integer, received ${String(module.createAttemptCeilingMs)}`,
+			`createAttemptCeilingMs must be a positive safe integer, received ${runtimeNumberLabel(createAttemptCeilingMs)}`,
 			{ provider: id },
 		);
 	}
+	if (typeof normalized.spec !== "function") {
+		throw new DriverError("vendor-contract-violation", "CLI module spec must be callable", {
+			provider: id,
+		});
+	}
+	const specFactory = normalized.spec as CliDriverModuleSpec<NoInfer<P>, Row>["spec"];
+	const ownedCreateAttemptCeilingMs = createAttemptCeilingMs as number;
+	const createBudget = Object.freeze({
+		owner: "driver" as const,
+		attemptCeilingMs: ownedCreateAttemptCeilingMs,
+	});
 	return defineDriver(id, {
-		createBudget: { owner: "driver", attemptCeilingMs: module.createAttemptCeilingMs },
+		createBudget,
 		driver: (context) =>
-			cliDriver(id, module.spec(context), {
-				createAttemptCeilingMs: module.createAttemptCeilingMs,
-			}),
+			invokeCliProviderCallback(id, "module spec factory", () =>
+				cliDriver(id, specFactory(context), {
+					createAttemptCeilingMs: ownedCreateAttemptCeilingMs,
+				}),
+			),
 	});
 }
