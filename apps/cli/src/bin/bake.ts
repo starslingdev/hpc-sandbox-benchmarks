@@ -43,6 +43,14 @@ const bakers: Record<ProviderId, (image: string, log: Log) => Promise<void>> = {
 	"ascii-box": async (_image, log) => {
 		log("ascii-box boots the stock platform image — no candidate artifact to bake");
 	},
+	"ascii-box-bare-metal": async (_image, log) => {
+		log(
+			"ascii-box-bare-metal boots the stock bare-metal platform image — no candidate artifact to bake",
+		);
+	},
+	freestyle: async (_image, log) => {
+		log("freestyle boots the stock platform image — no candidate artifact to bake");
+	},
 	novita: (image, log) => bakeNovitaTemplate(config.novitaTemplateCandidate, image, log),
 };
 

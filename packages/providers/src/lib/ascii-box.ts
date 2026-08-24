@@ -36,8 +36,11 @@ import type {
 } from "computesdk";
 import type { DirectProvider } from "./types.ts";
 
-/** Provider label stamped on every sandbox handle (computesdk's Sandbox.provider). */
+/** Default provider label stamped on the historical Hetzner-backed Box variant. */
 const PROVIDER = "ascii-box";
+
+/** Box control-plane machine provider values accepted by `box new --machine-provider`. */
+export type BoxMachineProvider = "hetzner" | "cloudstack" | "baremetal";
 
 /** Default control plane; overridable for a staging/dev backend (same env name the Box CLI uses). */
 const DEFAULT_API_BASE = "https://ascii.dev/api/box/v1";
@@ -95,6 +98,7 @@ interface BoxRecord {
 	id: string;
 	state: string;
 	ip: string | null;
+	sshEndpoint?: string | null;
 	createdAt?: string;
 }
 
@@ -241,18 +245,34 @@ function sshBaseArgs(identity: SshIdentity): string[] {
 	];
 }
 
+function sshEndpointArgs(endpoint: string): string[] {
+	const parts = endpoint.split(":");
+	if (parts.length === 2 && /^\d+$/.test(parts[1] ?? "")) {
+		return ["-p", parts[1] as string, `user@${parts[0]}`];
+	}
+	return [`user@${endpoint}`];
+}
+
+function connectEndpoint(box: BoxRecord): string | undefined {
+	return box.sshEndpoint ?? box.ip ?? undefined;
+}
+
 /**
  * Run a command on the box over SSH: `ssh -T user@<ip> bash -s`, the command fed on stdin (see the
  * module header for why stdin, not argv). Resolves with stdout/stderr/exitCode — a non-zero exit is
  * NOT a rejection (the harness reads exit codes; 255 is ssh's own transport failure). Rejects only
  * when the ssh process itself can't run or the backstop fires.
  */
-function sshExec(identity: SshIdentity, ip: string, command: string): Promise<CommandResult> {
+function sshExec(identity: SshIdentity, endpoint: string, command: string): Promise<CommandResult> {
 	return new Promise((resolve, reject) => {
 		const started = performance.now();
-		const child = spawn("ssh", [...sshBaseArgs(identity), `user@${ip}`, "bash -s"], {
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		const child = spawn(
+			"ssh",
+			[...sshBaseArgs(identity), ...sshEndpointArgs(endpoint), "bash -s"],
+			{
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
 		const stdoutChunks: Uint8Array[] = [];
 		const stderrChunks: Uint8Array[] = [];
 		child.stdout.on("data", (chunk: Uint8Array) => stdoutChunks.push(chunk));
@@ -284,11 +304,16 @@ function sshExec(identity: SshIdentity, ip: string, command: string): Promise<Co
 }
 
 /** runCommand with an optional stdin payload is not needed — writeFile goes through heredoc-free cat. */
-function sshWrite(identity: SshIdentity, ip: string, path: string, content: string): Promise<void> {
+function sshWrite(
+	identity: SshIdentity,
+	endpoint: string,
+	path: string,
+	content: string,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(
 			"ssh",
-			[...sshBaseArgs(identity), `user@${ip}`, `cat > ${shellQuote(path)}`],
+			[...sshBaseArgs(identity), ...sshEndpointArgs(endpoint), `cat > ${shellQuote(path)}`],
 			{ stdio: ["pipe", "ignore", "pipe"] },
 		);
 		const stderrChunks: Uint8Array[] = [];
@@ -329,18 +354,20 @@ async function stopBox(apiKey: string, sandboxId: string): Promise<void> {
 
 /** A live Box sandbox: runCommand/filesystem over SSH, info/destroy over REST. */
 class BoxSandbox implements SandboxInterface {
-	readonly provider = PROVIDER;
+	readonly provider: string;
 	readonly filesystem: SandboxFileSystem;
 
 	constructor(
 		readonly sandboxId: string,
+		provider: string,
 		private readonly apiKey: string,
 		private readonly identity: SshIdentity,
-		private ip: string,
+		private endpoint: string,
 	) {
+		this.provider = provider;
 		this.filesystem = {
 			readFile: async (path) => {
-				const result = await sshExec(this.identity, this.ip, `cat -- ${shellQuote(path)}`);
+				const result = await sshExec(this.identity, this.endpoint, `cat -- ${shellQuote(path)}`);
 				if (result.exitCode !== 0) {
 					throw new Error(
 						`readFile(${path}) failed with exit ${result.exitCode}: ${result.stderr.slice(0, 200)}`,
@@ -348,12 +375,12 @@ class BoxSandbox implements SandboxInterface {
 				}
 				return result.stdout;
 			},
-			writeFile: (path, content) => sshWrite(this.identity, this.ip, path, content),
+			writeFile: (path, content) => sshWrite(this.identity, this.endpoint, path, content),
 			readdir: async (path) => {
 				// GNU find on the Ubuntu image: name, type char, size — one line per entry.
 				const result = await sshExec(
 					this.identity,
-					this.ip,
+					this.endpoint,
 					`find ${shellQuote(path)} -mindepth 1 -maxdepth 1 -printf '%f\\t%y\\t%s\\n'`,
 				);
 				if (result.exitCode !== 0) {
@@ -374,7 +401,11 @@ class BoxSandbox implements SandboxInterface {
 				return entries;
 			},
 			mkdir: async (path) => {
-				const result = await sshExec(this.identity, this.ip, `mkdir -p -- ${shellQuote(path)}`);
+				const result = await sshExec(
+					this.identity,
+					this.endpoint,
+					`mkdir -p -- ${shellQuote(path)}`,
+				);
 				if (result.exitCode !== 0) {
 					throw new Error(
 						`mkdir(${path}) failed with exit ${result.exitCode}: ${result.stderr.slice(0, 200)}`,
@@ -382,11 +413,11 @@ class BoxSandbox implements SandboxInterface {
 				}
 			},
 			exists: async (path) => {
-				const result = await sshExec(this.identity, this.ip, `test -e ${shellQuote(path)}`);
+				const result = await sshExec(this.identity, this.endpoint, `test -e ${shellQuote(path)}`);
 				return result.exitCode === 0;
 			},
 			remove: async (path) => {
-				const result = await sshExec(this.identity, this.ip, `rm -rf -- ${shellQuote(path)}`);
+				const result = await sshExec(this.identity, this.endpoint, `rm -rf -- ${shellQuote(path)}`);
 				if (result.exitCode !== 0) {
 					throw new Error(
 						`remove(${path}) failed with exit ${result.exitCode}: ${result.stderr.slice(0, 200)}`,
@@ -400,12 +431,12 @@ class BoxSandbox implements SandboxInterface {
 	 *  steps self-background via nohup double-fork with all fds redirected, so the ssh round-trip
 	 *  returns as soon as the launcher exits either way. */
 	async runCommand(command: string, _options?: RunCommandOptions): Promise<CommandResult> {
-		return sshExec(this.identity, this.ip, command);
+		return sshExec(this.identity, this.endpoint, command);
 	}
 
 	async getInfo(): Promise<SandboxInfo> {
 		const box = boxOf(await boxApi(this.apiKey, "GET", `/boxes/${this.sandboxId}`));
-		this.ip = box.ip ?? this.ip;
+		this.endpoint = connectEndpoint(box) ?? this.endpoint;
 		return {
 			id: this.sandboxId,
 			provider: PROVIDER,
@@ -417,12 +448,12 @@ class BoxSandbox implements SandboxInterface {
 						: "running",
 			createdAt: box.createdAt ? new Date(box.createdAt) : new Date(),
 			timeout: 0,
-			metadata: { state: box.state, ip: box.ip },
+			metadata: { state: box.state, ip: box.ip, sshEndpoint: box.sshEndpoint },
 		};
 	}
 
 	async getUrl(options: { port: number; protocol?: string }): Promise<string> {
-		return `${options.protocol ?? "http"}://${this.ip}:${options.port}`;
+		return `${options.protocol ?? "http"}://${this.endpoint}:${options.port}`;
 	}
 
 	/** Teardown = stop (archive) — see {@link stopBox}. */
@@ -435,7 +466,12 @@ class BoxSandbox implements SandboxInterface {
  * A computesdk-compatible provider for Ascii Box. Construction is lazy-credentialed like every other
  * factory (the harness gates on BOX_API_KEY via requiredEnvVars before this is ever called).
  */
-export function asciiBoxCompute(apiKey: string | undefined): DirectProvider {
+export function asciiBoxCompute(options: {
+	apiKey: string | undefined;
+	providerName?: string;
+	machineProvider?: BoxMachineProvider;
+}): DirectProvider {
+	const { apiKey, providerName = PROVIDER, machineProvider = "hetzner" } = options;
 	if (!apiKey) {
 		throw new Error("BOX_API_KEY is required to construct the ascii-box provider");
 	}
@@ -448,6 +484,7 @@ export function asciiBoxCompute(apiKey: string | undefined): DirectProvider {
 				// TTL firing mid-suite would kill the benchmark. noEnv: no account secrets in the sandbox.
 				ttlSeconds: null,
 				noEnv: true,
+				machineProvider,
 			}),
 		);
 
@@ -467,8 +504,9 @@ export function asciiBoxCompute(apiKey: string | undefined): DirectProvider {
 			await delay(READY_POLL_MS);
 			box = boxOf(await boxApi(apiKey, "GET", `/boxes/${created.id}`));
 		}
-		if (!box.ip) {
-			throw new Error(`Box ${box.id} is ${box.state} but has no IPv4 yet`);
+		const endpoint = connectEndpoint(box);
+		if (!endpoint) {
+			throw new Error(`Box ${box.id} is ${box.state} but has no SSH endpoint yet`);
 		}
 
 		// Authorize the run's SSH key, then probe exec until it works: a just-ready box can still be
@@ -478,7 +516,7 @@ export function asciiBoxCompute(apiKey: string | undefined): DirectProvider {
 		for (;;) {
 			try {
 				await boxApi(apiKey, "POST", `/boxes/${box.id}/sshkey`, { key: identity.publicKey });
-				const probe = await sshExec(identity, box.ip, "echo ok");
+				const probe = await sshExec(identity, endpoint, "echo ok");
 				if (probe.exitCode === 0) break;
 				throw new Error(`ssh probe exit ${probe.exitCode}: ${probe.stderr.slice(0, 120)}`);
 			} catch (err) {
@@ -493,18 +531,19 @@ export function asciiBoxCompute(apiKey: string | undefined): DirectProvider {
 			}
 		}
 
-		return new BoxSandbox(box.id, apiKey, identity, box.ip);
+		return new BoxSandbox(box.id, providerName, apiKey, identity, endpoint);
 	};
 
 	return {
-		name: PROVIDER,
+		name: providerName,
 		sandbox: {
 			create: () => createSandbox(),
 			getById: async (sandboxId) => {
 				try {
 					const box = boxOf(await boxApi(apiKey, "GET", `/boxes/${sandboxId}`));
-					if (!box.ip || !READY_STATES.has(box.state)) return null;
-					return new BoxSandbox(box.id, apiKey, identity, box.ip);
+					const endpoint = connectEndpoint(box);
+					if (!endpoint || !READY_STATES.has(box.state)) return null;
+					return new BoxSandbox(box.id, providerName, apiKey, identity, endpoint);
 				} catch (err) {
 					// Only a genuinely missing box is null; auth/network failures must surface.
 					if (err instanceof BoxApiError && err.status === 404) return null;
@@ -516,8 +555,17 @@ export function asciiBoxCompute(apiKey: string | undefined): DirectProvider {
 				const json = await boxApi(apiKey, "GET", "/boxes?limit=100");
 				const boxes = Array.isArray(json.boxes) ? (json.boxes as BoxRecord[]) : [];
 				return boxes
-					.filter((box) => typeof box?.id === "string" && typeof box?.ip === "string")
-					.map((box) => new BoxSandbox(box.id, apiKey, identity, box.ip as string));
+					.filter((box) => typeof box?.id === "string" && connectEndpoint(box))
+					.map(
+						(box) =>
+							new BoxSandbox(
+								box.id,
+								providerName,
+								apiKey,
+								identity,
+								connectEndpoint(box) as string,
+							),
+					);
 			},
 			destroy: async (sandboxId) => {
 				await stopBox(apiKey, sandboxId);

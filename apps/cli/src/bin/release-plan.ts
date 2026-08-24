@@ -61,6 +61,10 @@ function providerArtifact(id: ProviderId): string {
 			return "boots the stock base image (no baked artifact)";
 		case "ascii-box":
 			return "boots the stock platform image (no baked artifact)";
+		case "ascii-box-bare-metal":
+			return "boots the stock bare-metal platform image (no baked artifact)";
+		case "freestyle":
+			return "boots the stock platform image (no baked artifact)";
 	}
 }
 

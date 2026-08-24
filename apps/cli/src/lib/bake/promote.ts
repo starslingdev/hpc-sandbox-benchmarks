@@ -151,6 +151,14 @@ export async function promoteAll(log: Log, force = false): Promise<BakeReport[]>
 				case "ascii-box":
 					log("    ascii-box boots the stock platform image — nothing to promote");
 					break;
+				case "ascii-box-bare-metal":
+					log(
+						"    ascii-box-bare-metal boots the stock bare-metal platform image — nothing to promote",
+					);
+					break;
+				case "freestyle":
+					log("    freestyle boots the stock platform image — nothing to promote");
+					break;
 				case "novita":
 					await bakeNovitaTemplate(config.novitaTemplateVersion, pinnedCandidateImage, (m) =>
 						log(`    ${m}`),

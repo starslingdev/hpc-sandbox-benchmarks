@@ -133,7 +133,8 @@ jobs:
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
           NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-          BOX_API_KEY: ${{ matrix.provider == 'ascii-box' && secrets.BOX_API_KEY || '' }}
+          BOX_API_KEY: ${{ (matrix.provider == 'ascii-box' || matrix.provider == 'ascii-box-bare-metal') && secrets.BOX_API_KEY || '' }}
+          FREESTYLE_API_KEY: ${{ matrix.provider == 'freestyle' && secrets.FREESTYLE_API_KEY || '' }}
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicate "$BENCH_REPLICATE"
 
       - name: Upload Run + raw results

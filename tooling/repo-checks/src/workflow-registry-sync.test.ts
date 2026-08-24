@@ -201,6 +201,8 @@ describe("checkCredentialEnv", () => {
 		// A credential shared by a vendor's isolation variants records every owner, in registry order.
 		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal-gvisor", "modal-vm"]);
 		expect(required.get("DAYTONA_API_KEY")).toEqual(["daytona-vm", "daytona-container"]);
+		expect(required.get("BOX_API_KEY")).toEqual(["ascii-box", "ascii-box-bare-metal"]);
+		expect(required.get("FREESTYLE_API_KEY")).toEqual(["freestyle"]);
 	});
 
 	test("flags a required key dropped from the matrix (reusable) block, naming key and file", () => {

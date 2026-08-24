@@ -133,6 +133,10 @@ dist
 # dataset lives under data/dataset/ and is committed by the promote step, so it is NOT ignored.
 data/raw/
 data/runs/
+# Pre-publish staging for aggregate (promote copies candidates into data/dataset/) and local
+# leaderboard/log output from the mise benchmark leaves — local artifacts, never committed.
+data/dataset-candidates/
+benchmark-results/
 
 # Generated from packages/templates/src/pins.ts by build.sh / the publish workflow (the
 # e2b CLI requires this file on disk; the TypeScript config is its single source of truth).

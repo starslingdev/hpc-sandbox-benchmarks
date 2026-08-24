@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { buildReleasePlan, planOutputs, RELEASE_REQUIRED_PROVIDERS } from "./release-plan.ts";
 
 const base = { sourceRef: "abc123", forceRepublish: false, alreadyPublished: false };
@@ -27,15 +28,7 @@ describe("buildReleasePlan mode + skip", () => {
 describe("buildReleasePlan matrix", () => {
 	test("fans out over every provider in registry order", () => {
 		const plan = buildReleasePlan(base);
-		expect(plan.matrix.include.map((c) => c.provider)).toEqual([
-			"e2b",
-			"daytona-vm",
-			"daytona-container",
-			"blaxel",
-			"modal-gvisor",
-			"modal-vm",
-			"novita",
-		]);
+		expect(plan.matrix.include.map((c) => c.provider)).toEqual(PROVIDERS.map((p) => p.id));
 	});
 
 	test("marks exactly the required providers as gating cells", () => {
@@ -56,7 +49,7 @@ describe("planOutputs", () => {
 		expect(matrixLine).toBeDefined();
 		// The matrix value must be valid, single-line JSON (the fromJSON contract).
 		const parsed = JSON.parse((matrixLine as string).slice("matrix=".length));
-		expect(parsed.include).toHaveLength(7);
+		expect(parsed.include).toHaveLength(PROVIDERS.length);
 		expect((matrixLine as string).includes("\n")).toBe(false);
 	});
 });

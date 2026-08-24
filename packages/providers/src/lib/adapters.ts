@@ -3,10 +3,11 @@
 // computesdk's universal sandbox (runCommand with daemon-backed streaming, filesystem, destroy), so
 // nothing here re-wraps an SDK — these are pure config. Credentials are read from each provider's
 // env vars by its factory.
-import { blaxel } from "@computesdk/blaxel";
-import { daytona } from "@computesdk/daytona";
-import { e2b } from "@computesdk/e2b";
-import { modal } from "@computesdk/modal";
+import { createRequire } from "node:module";
+import type { blaxel as blaxelFactory } from "@computesdk/blaxel";
+import type { daytona as daytonaFactory } from "@computesdk/daytona";
+import type { e2b as e2bFactory } from "@computesdk/e2b";
+import type { modal as modalFactory } from "@computesdk/modal";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import type { CreateSandboxOptions } from "computesdk";
@@ -16,11 +17,31 @@ import type { DaytonaConfig } from "./config.ts";
 import { config } from "./config.ts";
 import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
+import { freestyleCompute } from "./freestyle.ts";
 import { novitaCompute } from "./novita.ts";
 import type { ProviderAdapter } from "./types.ts";
 
 // This project's dedicated Modal app — the namespace all sandbox-benchmarks sandboxes boot under.
 const MODAL_APP_NAME = "sandbox-benchmarks";
+
+const requireProviderSdk = createRequire(import.meta.url);
+
+function e2b(): typeof e2bFactory {
+	return (requireProviderSdk("@computesdk/e2b") as typeof import("@computesdk/e2b")).e2b;
+}
+
+function daytona(): typeof daytonaFactory {
+	return (requireProviderSdk("@computesdk/daytona") as typeof import("@computesdk/daytona"))
+		.daytona;
+}
+
+function blaxel(): typeof blaxelFactory {
+	return (requireProviderSdk("@computesdk/blaxel") as typeof import("@computesdk/blaxel")).blaxel;
+}
+
+function modal(): typeof modalFactory {
+	return (requireProviderSdk("@computesdk/modal") as typeof import("@computesdk/modal")).modal;
+}
 
 /**
  * The Daytona VM and container variants share one adapter shape — the same account API key and the
@@ -37,7 +58,7 @@ const MODAL_APP_NAME = "sandbox-benchmarks";
  */
 function daytonaAdapter(cfg: DaytonaConfig): ProviderAdapter {
 	return {
-		createCompute: () => daytonaClientTarget(daytona({ apiKey: cfg.apiKey }), cfg.target),
+		createCompute: () => daytonaClientTarget(daytona()({ apiKey: cfg.apiKey }), cfg.target),
 		createOptions: {
 			snapshotId: cfg.snapshot,
 			autoStopInterval: 0,
@@ -77,8 +98,8 @@ function modalCreateOptions(experimentalOptions?: Record<string, unknown>): Crea
  *  namespaced/attributable in the Modal dashboard, separate from any other computesdk usage. The two
  *  variants differ in one client flag: modal-gvisor enables scalableSandboxes (the gVisor path);
  *  modal-vm omits it to match the VM-runtime config validated in #221 (VM sandboxes drop it). */
-const modalGvisorCompute = () => modal({ scalableSandboxes: true, appName: MODAL_APP_NAME });
-const modalVmCompute = () => modal({ appName: MODAL_APP_NAME });
+const modalGvisorCompute = () => modal()({ scalableSandboxes: true, appName: MODAL_APP_NAME });
+const modalVmCompute = () => modal()({ appName: MODAL_APP_NAME });
 
 /**
  * Harness adapters, keyed by the schema {@link ProviderId}. The `Record<ProviderId, …>` type is what
@@ -92,7 +113,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	// E2B SDK's root user keeps apt fallbacks, PTS config, and the root-baked registry on one runtime
 	// identity; ComputeSDK does not expose that native command option, so patch this instance.
 	e2b: {
-		createCompute: () => e2bCommandsAsRoot(e2b({})),
+		createCompute: () => e2bCommandsAsRoot(e2b()({})),
 		createOptions: { snapshotId: config.e2bTemplate },
 	},
 	// Both Daytona variants share the account API key (the schema meta owns DAYTONA_API_KEY); they
@@ -112,7 +133,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// pause a synchronous benchmark. No pre-baked toolchain snapshot yet — setup steps run fallbacks.
 		createCompute: () =>
 			blaxelWithVolumeAndKeepAlive(
-				blaxel({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-was-1" }),
+				blaxel()({ image: "blaxel/ts-app:latest", memory: 8192, region: "us-was-1" }),
 			),
 		createOptions: {},
 	},
@@ -141,7 +162,33 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		// exactly) with no auto-stop and no account env. Setup steps install the toolchain on the
 		// stock Ubuntu image (same stock-image path as Blaxel — no baked template). Credentials come
 		// from BOX_API_KEY; read lazily from process.env like the e2b/blaxel factories.
-		createCompute: () => asciiBoxCompute(process.env.BOX_API_KEY),
+		createCompute: () =>
+			asciiBoxCompute({
+				apiKey: process.env.BOX_API_KEY,
+				providerName: "ascii-box",
+				machineProvider: "hetzner",
+			}),
+		createOptions: {},
+	},
+	"ascii-box-bare-metal": {
+		// Same REST+SSH Box adapter, but pin the create payload to Box's bare-metal fleet. Keeping this
+		// as a separate provider id lets committed Hetzner-backed ascii-box runs remain the "before"
+		// baseline while new runs rank bare metal independently.
+		createCompute: () =>
+			asciiBoxCompute({
+				apiKey: process.env.BOX_API_KEY,
+				providerName: "ascii-box-bare-metal",
+				machineProvider: "baremetal",
+			}),
+		createOptions: {},
+	},
+	freestyle: {
+		// Freestyle (freestyle.sh) — a local adapter over the official freestyle-sandboxes SDK (the
+		// @computesdk/freestyle wrapper can't load on this repo's Windows dev host; see freestyle.ts).
+		// vCPU/memory are pinned inside the factory's create call; setup steps install the toolchain
+		// on the stock Ubuntu image (same stock-image path as Blaxel — no baked template).
+		// Credentials come from FREESTYLE_API_KEY; read lazily from process.env like the others.
+		createCompute: () => freestyleCompute(process.env.FREESTYLE_API_KEY),
 		createOptions: {},
 	},
 };

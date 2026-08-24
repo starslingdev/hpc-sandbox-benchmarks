@@ -23,10 +23,12 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		// output against PROVIDERS, so this pin is what makes an accidental registry removal loud.
 		expect(PROVIDERS.map((p) => p.id).sort()).toEqual([
 			"ascii-box",
+			"ascii-box-bare-metal",
 			"blaxel",
 			"daytona-container",
 			"daytona-vm",
 			"e2b",
+			"freestyle",
 			"modal-gvisor",
 			"modal-vm",
 			"novita",
@@ -147,6 +149,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		// a drift here would misrank one against the other, so pin that they share a pricing object.
 		expect(getProvider("modal-vm")?.pricing).toEqual(getProvider("modal-gvisor")?.pricing);
 		expect(getProvider("daytona-container")?.pricing).toEqual(getProvider("daytona-vm")?.pricing);
+		expect(getProvider("ascii-box-bare-metal")?.pricing).toEqual(getProvider("ascii-box")?.pricing);
 	});
 
 	it("returns null when a provider has no vetted rate", () => {

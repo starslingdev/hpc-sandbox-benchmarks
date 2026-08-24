@@ -20,6 +20,7 @@
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
     "computesdk": "catalog:computesdk",
+    "freestyle": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk"
   },
   "devDependencies": {

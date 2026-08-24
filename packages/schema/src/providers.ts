@@ -19,7 +19,9 @@ export type ProviderId =
 	| "modal-vm"
 	| "blaxel"
 	| "novita"
-	| "ascii-box";
+	| "ascii-box"
+	| "ascii-box-bare-metal"
+	| "freestyle";
 
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
@@ -209,6 +211,29 @@ const modalTransport: ProviderTransport = {
 	detachedPoll: true,
 };
 
+/** Box's published billing, shared by its machine-provider variants. */
+const asciiBoxPricing: ProviderPricing = {
+	model: "per_vcpu_hour",
+	// Flat $0.00001/s per box while running ($0.036/hr at the default size), billed per second;
+	// stopped boxes are free. There is no per-vCPU/per-GiB rate card, so the flat rate is
+	// normalized to $0.009/vCPU-hr x 4 vCPU with memory at $0.
+	usdPerVcpuHour: 0.009,
+	notes:
+		"Published flat default-size rate (exact): $0.00001/s machine time per box ($0.036/hr), per-second billing while running, stopped boxes free. Includes dedicated IPv4, 50 GB snapshot storage, 2 TB egress/box/mo. Normalized as $0.009/vCPU-hr + $0/GiB-hr to reproduce the flat rate at the target spec.",
+	sourceUrl: "https://docs.ascii.dev/box/billing",
+};
+
+/** Box's SSH exec transport, shared by its machine-provider variants. */
+const asciiBoxTransport: ProviderTransport = {
+	// Exec runs over SSH (the REST exec endpoint caps at 60s/command, unusable for suite steps). A raw
+	// SSH round-trip has no server-side cap, but a multi-minute step on one TCP connection is one
+	// dropped session away from losing the whole suite, so steps budgeted past 60s take the
+	// detached+poll path.
+	streaming: false,
+	syncCapMs: 60_000,
+	detachedPoll: true,
+};
+
 /**
  * The registry, keyed by {@link ProviderId} — the inspiration is the harness adapter map, which
  * keys the *behavioural* half of a provider the same way. A keyed Record (rather than an array of
@@ -299,8 +324,19 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 				"Blaxel sandboxes (sub-25ms boot claim). CPU is COUPLED to RAM (measured: cores = memory MB / 2048) with no cgroup cpu.max, and the sandbox root is a RAM-overlay tmpfs with no independent disk knob (storageMb/diskPercent are accepted but silently ignored on this plan). The adapter pins memory=8192 -> 8 GiB RAM and 4 vCPU (specMatched=true covers that effective vCPU/memory pair only), and mounts a 40 GiB volume at the PTS data dir so the separate disk gate clears (see blaxel-volume.ts). The target's vCPU is 4 precisely so Blaxel's coupled point lands on-spec — the dimensions stay coupled, so a different target shape would put Blaxel off-spec again.",
 		},
 		pricing: {
-			model: "unknown",
-			notes: "Not yet vetted against a published per-second rate.",
+			model: "per_vcpu_hour",
+			// Sandboxes bill Active CPU by allocated memory only: $0.0000115/GB RAM·s
+			// ($0.0414/GiB·hr), CPU scales automatically with no separate vCPU rate — so
+			// usdPerVcpuHour is 0 and the whole cost sits on the memory arm: 8 GiB ×
+			// $0.0414 = $0.3312/hr at the target spec. The runtime auto-suspends when idle
+			// and suspended time bills nothing (favourable to bursty workloads, irrelevant
+			// to a saturated benchmark loop). The cheaper Batch Jobs rate ($0.000006/GB·s)
+			// is a different product surface, not what these runs use. Snapshot/image
+			// storage ($0.20 and $0.045 per GB·mo) is excluded like all disk rates.
+			usdPerVcpuHour: 0,
+			usdPerGibHour: 0.0414,
+			notes:
+				"Published Active CPU rate (exact): $0.0000115/GB RAM·s, billed per second while the sandbox is active; CPU scales automatically with allocated memory (no per-vCPU charge) and suspended time is free. Normalized as $0.0414/GiB·hr × 8 GiB + $0/vCPU-hr at the target spec.",
 			sourceUrl: "https://blaxel.ai/pricing",
 		},
 		maturity: {
@@ -401,7 +437,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		},
 	},
 	"ascii-box": {
-		displayName: "Ascii Box",
+		displayName: "Ascii Box (Hetzner)",
 		website: "https://box.ascii.dev",
 		// No @computesdk/* wrapper exists for Box; the harness adapter (packages/providers
 		// ascii-box.ts) drives the public REST API (create/get/list/stop/sshkey) directly and execs
@@ -413,17 +449,7 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 			notes:
 				"Each box is a full KVM VM (not a microVM or container share of one): a Hetzner Cloud CX33 instance — 4 SHARED vCPUs, 8 GiB RAM, 75 GB local NVMe (~55 GiB free after the base image), x86_64, EU regions. One fixed machine size: the vCPU/RAM target matches it exactly; disk exceeds the 40 GB target and is recorded as actuals (disk is a workload-capacity gate, not a ranking axis). vCPUs are Hetzner shared cores, so sustained all-core load contends with neighbours — read CPU-bound ranks with that in mind.",
 		},
-		pricing: {
-			model: "per_vcpu_hour",
-			// Flat $0.00001/s per box while running ($0.036/hr at the only size), billed per second;
-			// stopped boxes are free. There is no per-vCPU/per-GiB rate card, so the flat rate is
-			// normalized to $0.009/vCPU-hr × 4 vCPU with memory at $0 — hourlyCostAtTargetSpec lands
-			// exactly on the published $0.036/hr rather than inventing a memory price.
-			usdPerVcpuHour: 0.009,
-			notes:
-				"Published flat rate (exact): $0.00001/s machine time per box ($0.036/hr), per-second billing while running, stopped boxes free. One machine size only (4 shared vCPU / 8 GiB / 75 GB NVMe). Includes dedicated IPv4, 50 GB snapshot storage, 2 TB egress/box/mo. Normalized as $0.009/vCPU-hr + $0/GiB-hr to reproduce the flat rate at the target spec.",
-			sourceUrl: "https://docs.ascii.dev/box/billing",
-		},
+		pricing: asciiBoxPricing,
 		maturity: {
 			status: "beta",
 			notes:
@@ -432,12 +458,61 @@ const REGISTRY: Record<ProviderId, Omit<ProviderMeta, "id">> = {
 		// One fixed machine size; nothing is settable per-create. The vCPU/RAM target lands exactly on
 		// the only size, so specMatched covers the pair without a comparability caveat.
 		specPinning: "fixed",
+		transport: asciiBoxTransport,
+	},
+	"ascii-box-bare-metal": {
+		displayName: "Ascii Box (bare metal)",
+		website: "https://box.ascii.dev",
+		sdkPackage: "none (local REST+SSH adapter)",
+		requiredEnvVars: ["BOX_API_KEY"],
+		isolation: {
+			technology: "bare metal",
+			notes:
+				"Pins Box creation to machineProvider=baremetal, matching `box new --machine-provider baremetal`. This is a first-class variant so new bare-metal CPU results can be compared against the historical Hetzner-backed `ascii-box` baseline without rewriting old runs.",
+		},
+		pricing: asciiBoxPricing,
+		maturity: {
+			status: "beta",
+			notes:
+				"Local REST+SSH adapter (no @computesdk wrapper). Boxes are created with ttlSeconds:null, noEnv:true, and machineProvider=baremetal. Teardown = stop/archive.",
+		},
+		specPinning: "fixed",
+		transport: asciiBoxTransport,
+	},
+	freestyle: {
+		displayName: "Freestyle",
+		website: "https://www.freestyle.sh",
+		sdkPackage: "freestyle (local direct adapter)",
+		requiredEnvVars: ["FREESTYLE_API_KEY"],
+		isolation: {
+			technology: "VM",
+			notes:
+				"Freestyle VMs are full Linux virtual machines with reserved cores — billing is per allocated vCPU whether or not the guest is busy (their pricing docs), so there is no shared-vCPU contention axis like the old Hetzner Box fleet. A paused VM holds no reservation and bills nothing.",
+		},
+		pricing: {
+			model: "per_vcpu_hour",
+			// Compute is metered per second and billed per allocated hour: $0.04032/vCPU-hr +
+			// $0.0129/GiB-hr → 4 × 0.04032 + 8 × 0.0129 = $0.26448/hr at the target spec. The
+			// monthly free-included amounts (200 vCPU-hr, 400 GiB-hr) and the Hobby/Pro usage
+			// credits are plan-level allowances, not rates — the benchmark bills list rates at
+			// the target spec like every other provider. Storage ($0.000086/GiB-hr) is a disk
+			// rate and excluded per the registry rule.
+			usdPerVcpuHour: 0.04032,
+			usdPerGibHour: 0.0129,
+			notes:
+				"Published usage rates (exact): $0.04032/vCPU-hr and $0.0129/GiB-hr, metered per second on allocated resources; a paused VM bills nothing. Monthly free-included amounts (200 vCPU-hr / 400 GiB-hr / 60,000 GiB-hr storage) and the Hobby ($50) / Pro ($500) usage credits are plan-level allowances and deliberately not netted out.",
+			sourceUrl: "https://www.freestyle.sh/pricing",
+		},
+		maturity: {
+			status: "beta",
+			notes:
+				"Local direct adapter over the official `freestyle` SDK (the @computesdk/freestyle wrapper is unusable twice over: its @computesdk/provider chain requires the Linux/macOS-only daemond, and it pins the legacy freestyle-sandboxes SDK whose v1 API host no longer accepts current keys — the live API is v5). Boots the platform default VM, already exactly 4 vCPU / 8 GiB; rootfs is the 16 GB default because per-plan disk ceilings (Free 16 / Hobby 32 / Pro 64 GB) make the 40 GB target un-creatable below Pro — disk is a coverage-gate axis, not part of the compute-match verdict. Teardown = delete.",
+		},
+		specPinning: "settable",
 		transport: {
-			// Exec runs over SSH (the REST exec endpoint caps at 60s/command, unusable for suite
-			// steps). A raw SSH round-trip has no server-side cap, but a multi-minute step on one TCP
-			// connection is one dropped session away from losing the whole suite, so steps budgeted
-			// past 60s take the detached+poll path (nohup double-fork + done-file poll over SSH),
-			// which survives reconnects. No incremental stdout streaming either way.
+			// vm.exec is a buffered await with an undocumented server-side cap, so apply the
+			// conservative 60s policy bound; longer steps take the detached+poll path (nohup +
+			// done-file over vm.fs, which supports everything the poll loop needs).
 			streaming: false,
 			syncCapMs: 60_000,
 			detachedPoll: true,

@@ -136,17 +136,23 @@ export async function collectResults(runner: StepRunner, resultsDir: string): Pr
 function decodeAndExtract(base64: string, resultsDir: string): number {
 	// Decode straight to disk via the "base64" write encoding — avoids a Node-only Buffer in the
 	// cross-runtime package code. A random suffix keeps concurrent collects from colliding.
-	const archive = join(tmpdir(), `bench-results-${process.pid}-${randomUUID()}.tgz`);
+	const archiveName = `bench-results-${process.pid}-${randomUUID()}.tgz`;
+	const archive = join(tmpdir(), archiveName);
 	try {
 		writeFileSync(archive, base64, "base64");
 		const target = resolve(resultsDir);
 		// The tarball holds a top-level benchmark-results/ directory. Extract into a unique staging
 		// dir (not `parent`, which is shared across providers) so concurrent collects can't clobber
 		// each other, then copy its contents into the target (`<provider>`, not `benchmark-results`).
-		const stage = join(tmpdir(), `bench-extract-${process.pid}-${randomUUID()}`);
+		const stageName = `bench-extract-${process.pid}-${randomUUID()}`;
+		const stage = join(tmpdir(), stageName);
 		mkdirSync(stage, { recursive: true });
 		try {
-			execFileSync("tar", ["-xzf", archive, "-C", stage]);
+			// Relative names + cwd: on Windows, a spawned tar gets argv un-translated, and an absolute
+			// `C:\...` breaks it twice over — Git Bash's MSYS GNU tar reads the drive prefix as an
+			// rsh remote host for -f, and resolves the -C dir relative to the wrong cwd. Relative
+			// names under an explicit cwd sidestep both on every tar (GNU and bsdtar alike).
+			execFileSync("tar", ["-xzf", archiveName, "-C", stageName], { cwd: tmpdir() });
 			cpSync(join(stage, "benchmark-results"), target, { recursive: true });
 		} finally {
 			rmSync(stage, { recursive: true, force: true });

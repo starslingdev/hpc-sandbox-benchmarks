@@ -38,7 +38,7 @@ on:
         # validated them. daytona-container is the one registered variant still opt-in (pass it explicitly);
         # `plan-providers` rejects any name that is not in the registry. Listed in registry order — the
         # plan re-sorts to registry order regardless, so the spelling here is cosmetic.
-        default: e2b,daytona-vm,blaxel,modal-gvisor,modal-vm,novita
+        default: e2b,daytona-vm,blaxel,modal-gvisor,modal-vm,novita,ascii-box,ascii-box-bare-metal,freestyle
       suites:
         description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
         required: false

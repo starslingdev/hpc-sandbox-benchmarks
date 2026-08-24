@@ -25,7 +25,7 @@
 // "provider exposes no snapshot operation" skip instead of a misleading failure against the wrong
 // control plane.
 import { createRequire } from "node:module";
-import { e2b } from "@computesdk/e2b";
+import type { e2b as e2bFactory } from "@computesdk/e2b";
 import type { SandboxMethods } from "@computesdk/provider";
 import type { CreateSandboxOptions } from "computesdk";
 import type {
@@ -46,6 +46,10 @@ const requireCjs = createRequire(import.meta.url);
 const { Sandbox: NovitaSandbox, SandboxNotFoundError } = requireCjs(
 	"novita-sandbox",
 ) as typeof import("novita-sandbox");
+
+function e2b(): typeof e2bFactory {
+	return (requireCjs("@computesdk/e2b") as typeof import("@computesdk/e2b")).e2b;
+}
 
 /** Novita's E2B-compatible control-plane domain. REGIONAL, not the bare `sandbox.novita.ai` their
  *  docs open with: the bare domain serves only a legacy slice of the API (template list works; the
@@ -176,7 +180,7 @@ export function novitaCompute(apiKey: string | undefined): DirectProvider {
 		},
 	};
 
-	const compute = e2b({ apiKey });
+	const compute = e2b()({ apiKey });
 	const manager: unknown = compute.sandbox;
 	assertPatchable(manager);
 	manager.methods = { ...manager.methods, ...overrides };
