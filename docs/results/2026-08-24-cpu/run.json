@@ -1,0 +1,1206 @@
+{
+  "schemaVersion": "3",
+  "runId": "local-cpu-comparison-20260824",
+  "sha": "local-cpu-comparison",
+  "generatedAt": "2026-08-24T14:01:58.859Z",
+  "targetSpec": {
+    "vcpus": 4,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "providers": [
+    {
+      "providerId": "ascii-box",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD EPYC-Rome Processor",
+        "hostVcpus": 4,
+        "hostMemoryGb": 8,
+        "os": "Ubuntu 24.04.4 LTS",
+        "kernel": "6.8.0-117-generic",
+        "virtualization": "kvm",
+        "user": "user",
+        "vcpus": 4,
+        "memoryGb": 7.57,
+        "diskGb": 74.8,
+        "detectedIsolation": "vm",
+        "hostCpuModels": ["AMD EPYC-Rome Processor", "Intel Xeon Processor (Skylake, IBRS, no TSX)"]
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of untrained return thunk; SMT disabled + spec_rstack_overflow: Mitigation of SMT disabled + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Chipset",
+              "value": "Intel 82G33/G31/P35/P31 + ICH9"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "82GB QEMU HDD"
+            },
+            {
+              "path": "ci.hardware.Graphics",
+              "value": "Red Hat Virtio 1.0 GPU"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Monitor",
+              "value": "QEMU Monitor"
+            },
+            {
+              "path": "ci.hardware.Motherboard",
+              "value": "KVM Standard PC (Q35 + ICH9 2009) (20171111 BIOS)"
+            },
+            {
+              "path": "ci.hardware.Network",
+              "value": "Red Hat Virtio 1.0 device"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC-Rome (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.Desktop",
+              "value": "Budgie 10.9.1"
+            },
+            {
+              "path": "ci.software.Display Server",
+              "value": "X Server 1.21.1.11"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.8.0-117-generic (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.Screen Resolution",
+              "value": "1280x800"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 10:00:01"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of untrained return thunk; SMT disabled + spec_rstack_overflow: Mitigation of SMT disabled + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Chipset",
+              "value": "Intel 82G33/G31/P35/P31 + ICH9"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "82GB QEMU HDD"
+            },
+            {
+              "path": "ci.hardware.Graphics",
+              "value": "Red Hat Virtio 1.0 GPU"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Monitor",
+              "value": "QEMU Monitor"
+            },
+            {
+              "path": "ci.hardware.Motherboard",
+              "value": "KVM Standard PC (Q35 + ICH9 2009) (20171111 BIOS)"
+            },
+            {
+              "path": "ci.hardware.Network",
+              "value": "Red Hat Virtio 1.0 device"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC-Rome (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.Desktop",
+              "value": "Budgie 10.9.1"
+            },
+            {
+              "path": "ci.software.Display Server",
+              "value": "X Server 1.21.1.11"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.8.0-117-generic (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.Screen Resolution",
+              "value": "1280x800"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 08:49:20"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Unknown: Dependent on hypervisor status + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: KVM: Mitigation of VMX unsupported + l1tf: Mitigation of PTE Inversion + mds: Mitigation of Clear buffers; SMT Host state unknown + meltdown: Mitigation of PTI + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + reg_file_data_sampling: Not affected + retbleed: Mitigation of IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of IBRS; IBPB: conditional; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: SW loop KVM: SW loop + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Chipset",
+              "value": "Intel 82G33/G31/P35/P31 + ICH9"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "82GB QEMU HDD"
+            },
+            {
+              "path": "ci.hardware.Graphics",
+              "value": "Red Hat Virtio 1.0 GPU"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Monitor",
+              "value": "QEMU Monitor"
+            },
+            {
+              "path": "ci.hardware.Motherboard",
+              "value": "KVM Standard PC (Q35 + ICH9 2009) (20171111 BIOS)"
+            },
+            {
+              "path": "ci.hardware.Network",
+              "value": "Red Hat Virtio 1.0 device"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.Desktop",
+              "value": "Budgie 10.9.1"
+            },
+            {
+              "path": "ci.software.Display Server",
+              "value": "X Server 1.21.1.11"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.8.0-117-generic (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.Screen Resolution",
+              "value": "1280x800"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 10:13:04"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ]
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            8.74, 8.88, 8.84, 6.3, 6.9, 6, 6.2, 5.46, 5.73, 6.54, 6.77, 5.9, 5.68, 6.15, 6.76, 5.52,
+            5.93, 6, 6.1, 6.16, 6.24, 6.3, 6.07, 6.26, 6.29, 6.26, 6.17
+          ],
+          "aggregates": {
+            "p50": 6.2,
+            "p95": 8.81,
+            "mean": 6.45,
+            "stdev": 0.9193057581257049,
+            "min": 5.46,
+            "max": 8.88,
+            "n": 27
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [8.74, 8.88, 8.84]
+            },
+            {
+              "index": 1,
+              "samples": [6.3, 6.9, 6, 6.2, 5.46, 5.73, 6.54, 6.77, 5.9, 5.68, 6.15, 6.76]
+            },
+            {
+              "index": 2,
+              "samples": [5.52, 5.93, 6, 6.1, 6.16, 6.24, 6.3, 6.07, 6.26, 6.29, 6.26, 6.17]
+            }
+          ]
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.036],
+          "aggregates": {
+            "p50": 0.036,
+            "p95": 0.036,
+            "mean": 0.036,
+            "stdev": 0,
+            "min": 0.036,
+            "max": 0.036,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": ["cpu-node"],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "ascii-box-bare-metal",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD Ryzen 9 9950X 16-Core Processor",
+        "hostVcpus": 4,
+        "hostMemoryGb": 8,
+        "os": "Ubuntu 24.04.4 LTS",
+        "kernel": "6.8.0-136-generic",
+        "virtualization": "kvm",
+        "user": "user",
+        "vcpus": 4,
+        "memoryGb": 7.76,
+        "diskGb": 66.8,
+        "detectedIsolation": "vm"
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0xb404038"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Chipset",
+              "value": "Intel 82G33/G31/P35/P31 + ICH9"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "67GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Motherboard",
+              "value": "QEMU Ubuntu 24.04 PC (Q35 + ICH9 2009) (1.16.3-debian-1.16.3-2 BIOS)"
+            },
+            {
+              "path": "ci.hardware.Network",
+              "value": "2 x Red Hat Virtio 1.0 device"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD Ryzen 9 9950X 16-Core (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.Desktop",
+              "value": "Budgie 10.9.1"
+            },
+            {
+              "path": "ci.software.Display Server",
+              "value": "X Server 1.21.1.11"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.8.0-136-generic (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 09:31:34"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0xb404038"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Chipset",
+              "value": "Intel 82G33/G31/P35/P31 + ICH9"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "67GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Motherboard",
+              "value": "QEMU Ubuntu 24.04 PC (Q35 + ICH9 2009) (1.16.3-debian-1.16.3-2 BIOS)"
+            },
+            {
+              "path": "ci.hardware.Network",
+              "value": "2 x Red Hat Virtio 1.0 device"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD Ryzen 9 9950X 16-Core (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.Desktop",
+              "value": "Budgie 10.9.1"
+            },
+            {
+              "path": "ci.software.Display Server",
+              "value": "X Server 1.21.1.11"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.8.0-136-generic (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 09:42:10"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0xb404038"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Chipset",
+              "value": "Intel 82G33/G31/P35/P31 + ICH9"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "67GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Motherboard",
+              "value": "QEMU Ubuntu 24.04 PC (Q35 + ICH9 2009) (1.16.3-debian-1.16.3-2 BIOS)"
+            },
+            {
+              "path": "ci.hardware.Network",
+              "value": "2 x Red Hat Virtio 1.0 device"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD Ryzen 9 9950X 16-Core (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.Desktop",
+              "value": "Budgie 10.9.1"
+            },
+            {
+              "path": "ci.software.Display Server",
+              "value": "X Server 1.21.1.11"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.8.0-136-generic (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 09:50:34"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ]
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [25.02, 25.3, 25.78, 28.68, 28.33, 28.63, 22.55, 22.63, 22.99],
+          "aggregates": {
+            "p50": 25.3,
+            "p95": 28.66,
+            "mean": 25.54555555555556,
+            "stdev": 2.536922895512942,
+            "min": 22.55,
+            "max": 28.68,
+            "n": 9
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [25.02, 25.3, 25.78]
+            },
+            {
+              "index": 1,
+              "samples": [28.68, 28.33, 28.63]
+            },
+            {
+              "index": 2,
+              "samples": [22.55, 22.63, 22.99]
+            }
+          ]
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.036],
+          "aggregates": {
+            "p50": 0.036,
+            "p95": 0.036,
+            "mean": 0.036,
+            "stdev": 0,
+            "min": 0.036,
+            "max": 0.036,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": ["cpu-node"],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "blaxel",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-container",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-vm",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "freestyle",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "19/01",
+        "hostVcpus": 4,
+        "hostMemoryGb": 8,
+        "os": "Ubuntu 24.04.4 LTS",
+        "kernel": "6.1.102",
+        "virtualization": "kvm",
+        "user": "root",
+        "vcpus": 4,
+        "memoryGb": 7.76,
+        "diskGb": 31.2,
+        "detectedIsolation": "vm"
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "NVM_CD_FLAGS="
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Mitigation of safe RET no microcode + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsx_async_abort: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "32GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "19/01 (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.102 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 13:29:27"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "NVM_CD_FLAGS="
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Mitigation of safe RET no microcode + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsx_async_abort: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "32GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "19/01 (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.102 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 13:29:40"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "NVM_CD_FLAGS="
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Mitigation of safe RET no microcode + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsx_async_abort: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "32GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "19/01 (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.102 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 13:29:36"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "NVM_CD_FLAGS="
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Mitigation of safe RET no microcode + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsx_async_abort: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "32GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "19/01 (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.102 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 13:37:09"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "NVM_CD_FLAGS="
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Mitigation of safe RET no microcode + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsx_async_abort: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "32GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "19/01 (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.102 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 13:37:05"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ]
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [
+            8.01, 7.78, 7.97, 8.62, 10.27, 9.64, 9.64, 10.28, 9.77, 8.52, 9.23, 9.75, 10.41, 9.81,
+            9.71, 8.43, 9.64, 9.27, 10.43, 10.21, 10.7, 10.27, 9.42, 9.22, 9.6, 9.74, 8.04, 7.88,
+            10.1, 9.68, 8.66, 9.93, 9.31, 8.54, 8.24, 10.11, 9.89, 10.26, 10.24, 8.99, 9.62, 10.53,
+            10.62, 10.78, 9.34, 9.99, 10.22, 9.42, 10, 8.86, 9.64, 9.87, 8.04, 7.95
+          ],
+          "aggregates": {
+            "p50": 9.64,
+            "p95": 10.561499999999999,
+            "mean": 9.464629629629625,
+            "stdev": 0.8352826049002345,
+            "min": 7.78,
+            "max": 10.78,
+            "n": 54
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [8.01, 7.78, 7.97]
+            },
+            {
+              "index": 1,
+              "samples": [
+                8.62, 10.27, 9.64, 9.64, 10.28, 9.77, 8.52, 9.23, 9.75, 10.41, 9.81, 9.71, 8.43,
+                9.64, 9.27
+              ]
+            },
+            {
+              "index": 2,
+              "samples": [10.43, 10.21, 10.7]
+            },
+            {
+              "index": 3,
+              "samples": [
+                10.27, 9.42, 9.22, 9.6, 9.74, 8.04, 7.88, 10.1, 9.68, 8.66, 9.93, 9.31, 8.54, 8.24,
+                10.11
+              ]
+            },
+            {
+              "index": 4,
+              "samples": [9.89, 10.26, 10.24]
+            },
+            {
+              "index": 5,
+              "samples": [
+                8.99, 9.62, 10.53, 10.62, 10.78, 9.34, 9.99, 10.22, 9.42, 10, 8.86, 9.64, 9.87,
+                8.04, 7.95
+              ]
+            }
+          ]
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.26448],
+          "aggregates": {
+            "p50": 0.26448,
+            "p95": 0.26448,
+            "mean": 0.26448,
+            "stdev": 0,
+            "min": 0.26448,
+            "max": 0.26448,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": ["cpu-node"],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-gvisor",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-vm",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "novita",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    }
+  ]
+}

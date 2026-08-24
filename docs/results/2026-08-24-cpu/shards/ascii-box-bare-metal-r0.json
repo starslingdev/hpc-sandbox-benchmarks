@@ -1,0 +1,224 @@
+{
+  "schemaVersion": "3",
+  "runId": "local-cpu-comparison-20260824",
+  "sha": "local-cpu-comparison",
+  "generatedAt": "2026-08-24T10:43:17.515Z",
+  "replicateIndex": 0,
+  "targetSpec": {
+    "vcpus": 4,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "providers": [
+    {
+      "providerId": "ascii-box",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "ascii-box-bare-metal",
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "AMD Ryzen 9 9950X 16-Core Processor",
+        "hostVcpus": 4,
+        "hostMemoryGb": 8,
+        "os": "Ubuntu 24.04.4 LTS",
+        "kernel": "6.8.0-136-generic",
+        "virtualization": "kvm",
+        "user": "user",
+        "vcpus": 4,
+        "memoryGb": 7.76,
+        "diskGb": 66.8,
+        "detectedIsolation": "vm"
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0xb404038"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Chipset",
+              "value": "Intel 82G33/G31/P35/P31 + ICH9"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "67GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Motherboard",
+              "value": "QEMU Ubuntu 24.04 PC (Q35 + ICH9 2009) (1.16.3-debian-1.16.3-2 BIOS)"
+            },
+            {
+              "path": "ci.hardware.Network",
+              "value": "2 x Red Hat Virtio 1.0 device"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD Ryzen 9 9950X 16-Core (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 13.3.0 + Clang 18.1.3 + LLVM 18.1.3"
+            },
+            {
+              "path": "ci.software.Desktop",
+              "value": "Budgie 10.9.1"
+            },
+            {
+              "path": "ci.software.Display Server",
+              "value": "X Server 1.21.1.11"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.8.0-136-generic (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Ubuntu 24.04"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-08-24 09:31:34"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ]
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [25.02, 25.3, 25.78],
+          "aggregates": {
+            "p50": 25.3,
+            "p95": 25.732,
+            "mean": 25.366666666666667,
+            "stdev": 0.3843609414773227,
+            "min": 25.02,
+            "max": 25.78,
+            "n": 3
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml"
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.036],
+          "aggregates": {
+            "p50": 0.036,
+            "p95": 0.036,
+            "mean": 0.036,
+            "stdev": 0,
+            "min": 0.036,
+            "max": 0.036,
+            "n": 1
+          }
+        }
+      ],
+      "suitesCovered": ["cpu-node"],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "blaxel",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-container",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-vm",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-gvisor",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-vm",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "novita",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    }
+  ]
+}

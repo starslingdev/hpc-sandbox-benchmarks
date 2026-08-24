@@ -2,6 +2,7 @@
 
 | Doc | What it covers |
 | --- | --- |
+| [Latest results](./results/2026-08-24-cpu/README.md) | CPU + price-performance tables (2026-08-24), raw shards, reproduce-it commands |
 | [Methodology](./methodology.md) | Target spec, dimensions, economics, host vs effective specs, dataset pipeline |
 | [Leaderboard](../LEADERBOARD.md) | Public provider rankings (generated from the published Run dataset) |
 | [ADRs](./adr/README.md) | Load-bearing architecture decisions |
@@ -11,5 +12,5 @@
 
 ## Historical / design notes
 
-- [PTS catalog and analysis design](./pts-catalog-and-analysis-design.md) — early design notes (historical; prefer ADRs + methodology for current truth)
-- [Evidence: Daytona exec transport](./evidence/daytona-exec-transport.md) — research notes on Daytona exec limits
+- [PTS catalog and analysis design](./pts-catalog-and-analysis-design.md) - early design notes (historical; prefer ADRs + methodology for current truth)
+- [Evidence: Daytona exec transport](./evidence/daytona-exec-transport.md) - research notes on Daytona exec limits
