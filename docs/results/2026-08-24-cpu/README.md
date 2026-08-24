@@ -13,8 +13,8 @@ matters when work fans out across many sandboxes.
 
 | Provider | $/hr | runs/s | per $/hr | × bottom |
 | --- | ---: | ---: | ---: | ---: |
-| Ascii Box (bare metal) | 0.036 | 25.30 | 703 | 56.0× |
-| Ascii Box (Hetzner) | 0.036 | 6.20 | 172 | 13.7× |
+| Ascii Box (bare metal) | 0.036 | 27.67 | 769 | 61.2× |
+| Ascii Box (Hetzner) | 0.036 | 8.88 | 247 | 19.6× |
 | Daytona (VM) | 0.2502 | 18.60 | 74 | 5.9× |
 | Blaxel | 0.3312 | 19.80 | 60 | 4.8× |
 | Novita | 0.2333 | 13.52 | 58 | 4.6× |
@@ -29,17 +29,17 @@ Same test, before price. runs/s, higher is better.
 
 | Provider | p50 | p95 | spread | × bottom |
 | --- | ---: | ---: | --- | ---: |
-| Ascii Box (bare metal) | 25.30 | 28.66 | 22.55–28.68 | 4.1× |
-| Blaxel | 19.80 | 21.44 | 17.37–21.75 | 3.2× |
-| Daytona (VM) | 18.60 | 19.29 | 16.47–19.68 | 3.0× |
-| Modal (VM) | 15.07 | 15.52 | 12.81–15.73 | 2.4× |
-| Novita | 13.52 | 18.64 | 13.05–18.82 | 2.2× |
-| E2B | 11.24 | 12.09 | 10.50–12.17 | 1.8× |
-| Freestyle | 9.64 | 10.56 | 7.78–10.78 | 1.6× |
-| Modal (gVisor) | 9.56 | 10.57 | 8.49–10.62 | 1.5× |
-| Ascii Box (Hetzner) | 6.20 | 8.81 | 5.46–8.88 | 1.0× |
+| Ascii Box (bare metal) | 27.67 | 28.72 | 24.26–28.98 | 3.1× |
+| Blaxel | 19.80 | 21.44 | 17.37–21.75 | 2.2× |
+| Daytona (VM) | 18.60 | 19.29 | 16.47–19.68 | 2.1× |
+| Modal (VM) | 15.07 | 15.52 | 12.81–15.73 | 1.7× |
+| Novita | 13.52 | 18.64 | 13.05–18.82 | 1.5× |
+| E2B | 11.24 | 12.09 | 10.50–12.17 | 1.3× |
+| Freestyle | 9.64 | 10.56 | 7.78–10.78 | 1.1× |
+| Modal (gVisor) | 9.56 | 10.57 | 8.49–10.62 | 1.1× |
+| Ascii Box (Hetzner) | 8.88 | 10.61 | 7.11–10.66 | 1.0× |
 
-The slowest bare-metal trial we recorded (22.55 runs/s) is faster than every other
+The slowest bare-metal trial we recorded (24.26 runs/s) is faster than every other
 provider's p95.
 
 ## How we measured
@@ -57,8 +57,11 @@ provider's p95.
 
 ## What this does not say
 
-- One CPU test at one machine size. Nothing about disk, network, or spawn time.
-- Small samples (9 to 54 trials per provider). Ranking tests and intervals:
+- One CPU test at one machine size. For disk, memory, network, Postgres, and real-world
+  dev workflows, see the full-suite leaderboard linked under Raw data. (Short version:
+  bare metal leads most of those too, but not all. Memory bandwidth and loopback network
+  go to others.)
+- Small samples (10 to 54 trials per provider). Ranking tests and intervals:
   [leaderboard.md](./leaderboard.md).
 - August rows and July rows were measured on different dates. Treat cross-date gaps as
   indicative.
@@ -82,9 +85,11 @@ skips, never as failures. Want your provider or your size tested?
 
 ## Raw data
 
-- Per-machine shards (12 cells): [shards/](./shards/)
-- Aggregated run document: [run.json](./run.json)
-- Ranked tables with full statistics: [leaderboard.md](./leaderboard.md)
+- CPU shards (12 cells): [shards/](./shards/)
+- Full-suite run document (all 9 suites, 61 cells + the July run; bulky per-result host
+  metadata trimmed for size, metrics and gaps intact): [run.json](./run.json)
+- Full-suite leaderboard with statistics (disk, memory, network, pgbench, real-world):
+  [leaderboard.md](./leaderboard.md)
 - July CI run (the non-Box rows): [data/dataset/runs/30019301067.json](../../../data/dataset/runs/30019301067.json)
 - Methodology: [docs/methodology.md](../../methodology.md)
 

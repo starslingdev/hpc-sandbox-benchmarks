@@ -1,8 +1,8 @@
 {
   "schemaVersion": "3",
-  "runId": "local-cpu-comparison-20260824",
-  "sha": "local-cpu-comparison",
-  "generatedAt": "2026-08-24T10:43:17.489Z",
+  "runId": "local-full-comparison-20260824",
+  "sha": "local-full-comparison",
+  "generatedAt": "2026-08-24T16:10:20.078Z",
   "replicateIndex": 1,
   "targetSpec": {
     "vcpus": 4,
@@ -118,7 +118,7 @@
             },
             {
               "path": "ci.timestamp",
-              "value": "2026-08-24 08:49:20"
+              "value": "2026-08-24 16:04:01"
             },
             {
               "path": "ci.user",
@@ -130,15 +130,15 @@
       "metrics": [
         {
           "metricId": "node_web_tooling_runs_per_s",
-          "samples": [6.3, 6.9, 6, 6.2, 5.46, 5.73, 6.54, 6.77, 5.9, 5.68, 6.15, 6.76],
+          "samples": [7.16, 7.12, 7.11],
           "aggregates": {
-            "p50": 6.175000000000001,
-            "p95": 6.8285,
-            "mean": 6.199166666666667,
-            "stdev": 0.4695734686119332,
-            "min": 5.46,
-            "max": 6.9,
-            "n": 12
+            "p50": 7.12,
+            "p95": 7.156,
+            "mean": 7.13,
+            "stdev": 0.02645751311064597,
+            "min": 7.11,
+            "max": 7.16,
+            "n": 3
           },
           "sourceFile": "cpu-node/pts_node-web-tooling.xml"
         },
@@ -198,6 +198,15 @@
     },
     {
       "providerId": "e2b",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "freestyle",
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],

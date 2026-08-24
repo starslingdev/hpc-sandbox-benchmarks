@@ -1,9 +1,9 @@
 {
   "schemaVersion": "3",
-  "runId": "local-cpu-comparison-20260824",
-  "sha": "local-cpu-comparison",
-  "generatedAt": "2026-08-24T10:43:17.493Z",
-  "replicateIndex": 2,
+  "runId": "local-full-comparison-20260824",
+  "sha": "local-full-comparison",
+  "generatedAt": "2026-08-24T16:09:55.578Z",
+  "replicateIndex": 0,
   "targetSpec": {
     "vcpus": 4,
     "memoryGb": 8,
@@ -15,7 +15,7 @@
       "validationStatus": "validated",
       "specMatched": true,
       "observedSpecs": {
-        "cpuModel": "Intel Xeon Processor (Skylake, IBRS, no TSX)",
+        "cpuModel": "AMD EPYC-Rome Processor",
         "hostVcpus": 4,
         "hostMemoryGb": 8,
         "os": "Ubuntu 24.04.4 LTS",
@@ -38,7 +38,7 @@
             },
             {
               "path": "ci.data.cpu-microcode",
-              "value": "0x1"
+              "value": "0x1000065"
             },
             {
               "path": "ci.data.kernel-extra-details",
@@ -46,7 +46,7 @@
             },
             {
               "path": "ci.data.security",
-              "value": "gather_data_sampling: Unknown: Dependent on hypervisor status + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: KVM: Mitigation of VMX unsupported + l1tf: Mitigation of PTE Inversion + mds: Mitigation of Clear buffers; SMT Host state unknown + meltdown: Mitigation of PTI + mmio_stale_data: Vulnerable: Clear buffers attempted no microcode; SMT Host state unknown + reg_file_data_sampling: Not affected + retbleed: Mitigation of IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of IBRS; IBPB: conditional; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: SW loop KVM: SW loop + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of untrained return thunk; SMT disabled + spec_rstack_overflow: Mitigation of SMT disabled + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
             },
             {
               "path": "ci.hardware.Chipset",
@@ -78,7 +78,7 @@
             },
             {
               "path": "ci.hardware.Processor",
-              "value": "Intel Xeon (4 Cores)"
+              "value": "AMD EPYC-Rome (4 Cores)"
             },
             {
               "path": "ci.identifier",
@@ -118,7 +118,7 @@
             },
             {
               "path": "ci.timestamp",
-              "value": "2026-08-24 10:13:04"
+              "value": "2026-08-24 16:03:09"
             },
             {
               "path": "ci.user",
@@ -130,15 +130,15 @@
       "metrics": [
         {
           "metricId": "node_web_tooling_runs_per_s",
-          "samples": [5.52, 5.93, 6, 6.1, 6.16, 6.24, 6.3, 6.07, 6.26, 6.29, 6.26, 6.17],
+          "samples": [8.88, 8.54, 8.97, 8.86],
           "aggregates": {
-            "p50": 6.165,
-            "p95": 6.2945,
-            "mean": 6.108333333333333,
-            "stdev": 0.21966227521246162,
-            "min": 5.52,
-            "max": 6.3,
-            "n": 12
+            "p50": 8.870000000000001,
+            "p95": 8.9565,
+            "mean": 8.8125,
+            "stdev": 0.18786076404259328,
+            "min": 8.54,
+            "max": 8.97,
+            "n": 4
           },
           "sourceFile": "cpu-node/pts_node-web-tooling.xml"
         },
@@ -198,6 +198,15 @@
     },
     {
       "providerId": "e2b",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "freestyle",
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],

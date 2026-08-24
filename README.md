@@ -5,12 +5,12 @@ All raw data and commands are in this repo.
 
 ## Latest result: CPU per dollar (2026-08-24)
 
-**703 runs/s per $/hr for Ascii Box (bare metal). The next provider is at 74.**
+**769 runs/s per $/hr for Ascii Box (bare metal). The next provider is at 74.**
 
 | Provider | runs/s per $/hr |
 | --- | ---: |
-| Ascii Box (bare metal) | 703 |
-| Ascii Box (Hetzner) | 172 |
+| Ascii Box (bare metal) | 769 |
+| Ascii Box (Hetzner) | 247 |
 | Daytona (VM) | 74 |
 | Blaxel | 60 |
 | Novita | 58 |

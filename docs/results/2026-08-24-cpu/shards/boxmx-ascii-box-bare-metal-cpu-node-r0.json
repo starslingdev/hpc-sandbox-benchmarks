@@ -1,8 +1,8 @@
 {
   "schemaVersion": "3",
-  "runId": "local-cpu-comparison-20260824",
-  "sha": "local-cpu-comparison",
-  "generatedAt": "2026-08-24T10:43:17.515Z",
+  "runId": "local-full-comparison-20260824",
+  "sha": "local-full-comparison",
+  "generatedAt": "2026-08-24T14:59:01.984Z",
   "replicateIndex": 0,
   "targetSpec": {
     "vcpus": 4,
@@ -47,7 +47,7 @@
             },
             {
               "path": "ci.data.cpu-microcode",
-              "value": "0xb404038"
+              "value": "0xb404035"
             },
             {
               "path": "ci.data.kernel-extra-details",
@@ -115,7 +115,7 @@
             },
             {
               "path": "ci.timestamp",
-              "value": "2026-08-24 09:31:34"
+              "value": "2026-08-24 14:46:35"
             },
             {
               "path": "ci.user",
@@ -127,15 +127,18 @@
       "metrics": [
         {
           "metricId": "node_web_tooling_runs_per_s",
-          "samples": [25.02, 25.3, 25.78],
+          "samples": [
+            27.61, 24.49, 26.01, 27.86, 27.44, 26.66, 25.8, 24.26, 25.71, 25.53, 25.95, 28.69,
+            28.72, 28.49, 28.98
+          ],
           "aggregates": {
-            "p50": 25.3,
-            "p95": 25.732,
-            "mean": 25.366666666666667,
-            "stdev": 0.3843609414773227,
-            "min": 25.02,
-            "max": 25.78,
-            "n": 3
+            "p50": 26.66,
+            "p95": 28.798,
+            "mean": 26.813333333333333,
+            "stdev": 1.5585829950249535,
+            "min": 24.26,
+            "max": 28.98,
+            "n": 15
           },
           "sourceFile": "cpu-node/pts_node-web-tooling.xml"
         },
@@ -186,6 +189,15 @@
     },
     {
       "providerId": "e2b",
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "freestyle",
       "validationStatus": "pending",
       "observedSpecs": {},
       "metrics": [],

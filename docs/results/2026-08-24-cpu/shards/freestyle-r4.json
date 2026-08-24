@@ -1,7 +1,7 @@
 {
   "schemaVersion": "3",
-  "runId": "local-cpu-comparison-20260824",
-  "sha": "local-cpu-comparison",
+  "runId": "local-full-comparison-20260824",
+  "sha": "local-full-comparison",
   "generatedAt": "2026-08-24T13:41:48.293Z",
   "replicateIndex": 4,
   "targetSpec": {
