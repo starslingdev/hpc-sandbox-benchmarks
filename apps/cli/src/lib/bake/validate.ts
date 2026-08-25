@@ -3,6 +3,8 @@
 // it's unit-testable without the env-backed config.
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 
+export { baseImageUse } from "@sandbox-benchmarks/schema/provider-artifacts";
+
 export interface CandidateRefs {
 	e2bTemplateCandidate: string;
 	/** Candidate LINUX_VM snapshot for daytona-vm. */
@@ -20,42 +22,6 @@ export interface CandidateRefs {
 	daytonaVmTarget?: string;
 	/** daytona-container runner target (us-west-2; undefined → account default). */
 	daytonaContainerTarget?: string;
-}
-
-/**
- * How a provider relates to the shared toolchain BASE image — the classification the scoped release
- * needs, kept beside {@link candidateCreateOptions} because it is the same per-provider knowledge and
- * must stay exhaustive over `ProviderId` in the same way.
- *
- *   • `bakes` — builds its own artifact FROM the base (a template, snapshot, or Runloop Blueprint), so
- *     the artifact's bytes are decided at bake time by whichever base it was handed.
- *   • `boots` — no artifact of its own; it boots the base image by ref at create time.
- *   • `none`  — never references the base at all: blaxel boots a vendor stock image, and
- *     vercel boots its own VCR mirror (staged from the base by the build phase, not by this ref).
- */
-export type BaseImageUse = "bakes" | "boots" | "none";
-
-/** {@link BaseImageUse} for one provider. */
-export function baseImageUse(id: ProviderId): BaseImageUse {
-	switch (id) {
-		case "e2b":
-		case "daytona-vm":
-		case "daytona-container":
-		case "novita":
-		case "runloop":
-			return "bakes";
-		case "modal-gvisor":
-		case "modal-vm":
-		case "microsandbox-local":
-		case "microsandbox-cloud":
-		case "namespace":
-		case "runcloud":
-		case "tama":
-			return "boots";
-		case "blaxel":
-		case "vercel":
-			return "none";
-	}
 }
 
 /** Create-options overrides that point a provider at its candidate artifact for the validate boot. */

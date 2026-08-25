@@ -18,6 +18,13 @@ import type {
 import { normalizeProviderInput } from "./provider-meta.ts";
 import type { PricingComponent, PricingQuantityTerm, ProviderPricing } from "./provider-pricing.ts";
 
+export type { ArtifactPhase, BaseImageUse } from "./provider-artifacts.ts";
+export {
+	bakedArtifactName,
+	baseImageUse,
+	isBakedProviderId,
+	isMirroredProviderId,
+} from "./provider-artifacts.ts";
 export type { ProviderId } from "./provider-ids.ts";
 export { PROVIDER_IDS } from "./provider-ids.ts";
 export type {

@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./driver-schemas": "./src/driver-schemas.ts",
+    "./provider-artifacts": "./src/provider-artifacts.ts",
     "./provider-meta": "./src/provider-meta.ts",
     "./provider-ids": "./src/provider-ids.ts",
     "./provider-parsers": "./src/provider-parsers.ts",

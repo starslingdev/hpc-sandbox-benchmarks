@@ -100,30 +100,6 @@ describe("candidateCreateOptions", () => {
 // resolves the candidate base only when some in-scope provider reads it, and a partial promote demands
 // candidate/published identity only when some in-scope provider BAKES its artifact from the base.
 describe("baseImageUse", () => {
-	it("marks the providers that bake their own artifact from the base", () => {
-		const bakes = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "bakes");
-		expect(bakes).toEqual(["e2b", "daytona-vm", "daytona-container", "novita", "runloop"]);
-	});
-
-	it("marks the providers that boot the base image directly", () => {
-		const boots = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "boots");
-		expect(boots).toEqual([
-			"microsandbox-local",
-			"microsandbox-cloud",
-			"modal-gvisor",
-			"modal-vm",
-			"namespace",
-			"runcloud",
-			"tama",
-		]);
-	});
-
-	// Providers that can validate without the candidate base existing at all.
-	it("marks the providers that never reference the toolchain base", () => {
-		const none = PROVIDERS.map((p) => p.id).filter((id) => baseImageUse(id) === "none");
-		expect(none).toEqual(["blaxel", "vercel"]);
-	});
-
 	// Anything that reads the base ref in candidateCreateOptions must not be classified "none", or the
 	// bake cell would skip resolving a digest that provider then boots.
 	it("agrees with candidateCreateOptions about who reads the base image ref", () => {
