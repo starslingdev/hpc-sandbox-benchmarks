@@ -99,6 +99,8 @@ describe("@sandbox-benchmarks/schema providers", () => {
 	it("deep-freezes the registry and resolves legacy aliases", () => {
 		expect(Object.isFrozen(PROVIDERS)).toBe(true);
 		expect(Object.isFrozen(PROVIDERS[0]?.pricing)).toBe(true);
+		expect(Object.isFrozen(PROVIDERS[0]?.artifact)).toBe(true);
+		expect(Object.isFrozen(PROVIDERS[0]?.inputs)).toBe(true);
 		expect(getProvider("modal")?.id).toBe("modal-gvisor");
 		expect(getProvider("daytona")?.id).toBe("daytona-vm");
 		expect(getProvider("not-a-provider")).toBeUndefined();

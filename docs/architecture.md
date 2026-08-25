@@ -95,6 +95,7 @@ the Run model or builds a document never spawns a browser.
 | `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
 | `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
 | `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
+| `bun run check:provider-registry-drift` | Fails if the correlated provider metadata index drifted from `PROVIDER_IDS`. |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 
@@ -114,7 +115,7 @@ install-time postinstall.
 `.github/workflows/ci.yml` runs the command contract on every pull request and every push to
 `main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
 `bun run lint:shell` → `bun run lint:docker` → `bun run typecheck` → browser-free `bun run test` →
-`bun run check:catalog-drift` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
+`bun run check:catalog-drift` → `bun run check:provider-registry-drift` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
 A second `figures` job runs pinned-Chrome `bun run test:figures` on a hosted `ubuntu-24.04` runner —
 the same image that renders the committed figures, and the one where Chrome can keep its sandbox.
 A separate `ci-lint.yml` lints the workflows themselves (actionlint + zizmor). The browser-free

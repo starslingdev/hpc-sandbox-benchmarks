@@ -407,38 +407,17 @@ jobs:
           persist-credentials: false
       - name: Set up toolchain
         uses: ./.github/actions/setup-toolchain
-      # Namespace has no stored secret: it federates via GitHub's OIDC identity (id-token: write on this
-      # job), logging the `nsc` CLI into the workspace via `nsc auth exchange-github-token` under the
-      # hood. That login lives in the CLI's own local session store, not a discoverable file — so the
-      # next step mints a portable token file from that session for @computesdk/namespace to read.
-      # Only the namespace cell runs it (the job's `if:` already skips the whole bake when the release is
-      # skipped, so no extra guard is needed). Requires a trust relationship (this repo -> the Namespace
-      # tenant) registered once on the Namespace side — continue-on-error so a not-yet-registered trust
-      # relationship (or any transient failure) degrades to the same "missing credentials" skip that a
-      # namespace validate boot with no token already gets (namespace is best-effort, not in --require).
-      - name: Set up Namespace CLI
+      # Namespace has no stored secret: the shared action federates through GitHub OIDC and exposes
+      # the same `namespace.outputs.token-file` contract in every managed lane. Keeping the producer
+      # id/output identical is what lets provider metadata describe this input without lane-specific
+      # generator exceptions. A failed federation still degrades to the normal missing-input skip.
+      - name: Set up Namespace credentials
         if: matrix.provider == 'namespace'
         continue-on-error: true
-        id: nsc-setup
-        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
-      # `nsc token create` mints a scoped, revocable token from the CLI session above and writes it as a
-      # {"bearer_token": "..."} JSON file @computesdk/namespace reads via NSC_TOKEN_FILE. The grant is
-      # the minimal permission set the harness needs against the Compute API's instance resource: create
-      # (CreateInstance), list (ListInstances), get (DescribeInstance), destroy (DestroyInstance), and
-      # exec (RunCommandSync) — found by live trial: a wildcard action is rejected outright ("not allowed
-      # in revokable tokens"), and each wrong verb name is named individually in the CLI's error.
-      # run_attempt is part of the name because run_id is PRESERVED across re-runs: without it a retry
-      # collides with the first attempt's token, and continue-on-error would turn that name clash into a
-      # silent namespace skip — on exactly the re-run where you wanted the re-validation.
-      - name: Mint a portable Namespace token
-        if: matrix.provider == 'namespace' && steps.nsc-setup.outcome == 'success'
-        continue-on-error: true
-        id: nsc-token
-        run: |
-          nsc token create \
-            --name "sandbox-benchmarks-toolchain-bake-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
-            --token_file "${{ runner.temp }}/nsc-token.json"
+        id: namespace
+        uses: ./.github/actions/namespace-token
+        with:
+          token-name: sandbox-benchmarks-toolchain-bake-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Authenticate with Vercel and VCR
         if: matrix.provider == 'vercel'
         continue-on-error: true
@@ -534,7 +513,7 @@ jobs:
           # empty unless THIS is the namespace cell AND the mint succeeded, which the harness reads as
           # the standard missing-credentials skip on every other cell. Best-effort like novita: namespace
           # is not in --require, so a skipped/failed mint skips its validate boot without failing publish.
-          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
           # Microsandbox backends boot the candidate OCI image directly. Local is an explicit runner
           # capability opt-in. Cloud needs only its key; the URL is an optional deployment override.
           MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
@@ -651,38 +630,18 @@ jobs:
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      # Namespace federates via GitHub's OIDC identity (id-token: write on this job), so promote's
-      # re-validation boot can reach the Compute API with no stored secret. Unlike the bake matrix there
-      # is no per-provider cell here (promote is a serial transaction over its providers), so the mint
-      # runs for the whole job — gated only on namespace actually being in scope, so a scoped release
-      # doesn't mint a token it will never use. continue-on-error keeps a not-yet-registered trust
-      # relationship (or any transient failure) from failing the release: namespace is best-effort (not
-      # in --require), so its re-validation simply skips when the token is absent, exactly like a
-      # missing optional secret — and a skipped step leaves `outcome` != 'success', the same path.
-      #
-      # The scope test reads the plan's matrix rather than its `providers` CSV: `contains(array, item)`
-      # is element EQUALITY, while `contains(string, substring)` would also match a future id that
-      # merely contains this one (this registry already splits providers into `-vm`/`-container`/
-      # `-local`/`-cloud` variants, so that is not hypothetical).
-      - name: Set up Namespace CLI
+      # Namespace federates through GitHub OIDC with no stored secret. Promote is a serial transaction,
+      # so the shared action runs once when Namespace is in scope and gives this lane the same
+      # `namespace.outputs.token-file` contract as validation and benchmarks. continue-on-error keeps
+      # Namespace best-effort; the scope test uses matrix element equality because string contains
+      # would also match a future provider id that merely contains `namespace`.
+      - name: Set up Namespace credentials
         if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'namespace')
         continue-on-error: true
-        id: nsc-setup
-        uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
-      # Mint a scoped, revocable token file (grant: the minimal instance verbs the harness needs —
-      # create/list/get/destroy/exec; a wildcard action is rejected in revokable tokens). Named apart
-      # from the bake cell's token so both can coexist within one workflow run, and carrying
-      # run_attempt for the same reason it does there — run_id survives a re-run, so without it the
-      # retry's mint collides and continue-on-error degrades it to a silent skip.
-      - name: Mint a portable Namespace token
-        if: steps.nsc-setup.outcome == 'success'
-        continue-on-error: true
-        id: nsc-token
-        run: |
-          nsc token create \
-            --name "sandbox-benchmarks-toolchain-promote-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --grant '{"resource_type":"instance","resource_id":"*","actions":["create","list","get","destroy","exec"]}' \
-            --token_file "${{ runner.temp }}/nsc-token.json"
+        id: namespace
+        uses: ./.github/actions/namespace-token
+        with:
+          token-name: sandbox-benchmarks-toolchain-promote-${{ github.run_id }}-${{ github.run_attempt }}
       # Same scope gate as the Namespace mint above: a release that isn't promoting vercel has no reason
       # to pull a project OIDC token or log docker into VCR.
       - name: Authenticate with Vercel and VCR
@@ -736,7 +695,7 @@ jobs:
           # Namespace's re-validation boot reads this OIDC-federated token file (see the Namespace CLI
           # steps above). Not a stored secret: empty when the exchange/mint was skipped/failed, which
           # skips namespace's re-validation without failing the promote (namespace is not in --require).
-          NSC_TOKEN_FILE: ${{ steps.nsc-token.outcome == 'success' && format('{0}/nsc-token.json', runner.temp) || '' }}
+          NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
           # The promote transaction re-validates every in-scope provider. Unlike every credential around it, this
           # is a literal rather than a `secrets.*` reference, so it has no missing-value skip path — it
           # is safe only because this job is PINNED to `starsling-ubuntu-24.04-2` (see runs-on above),

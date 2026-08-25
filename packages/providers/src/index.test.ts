@@ -289,6 +289,34 @@ describe("@sandbox-benchmarks/providers", () => {
 		});
 	});
 
+	it("forwards ComputeSDK stream callbacks through the patched E2B command path", async () => {
+		const stdout: string[] = [];
+		const stderr: string[] = [];
+		const sandbox = {
+			commands: {
+				run: async (
+					_command: string,
+					options?: {
+						onStdout?: (chunk: string) => void;
+						onStderr?: (chunk: string) => void;
+					},
+				) => {
+					options?.onStdout?.("live stdout");
+					options?.onStderr?.("live stderr");
+					return { stdout: "live stdout", stderr: "live stderr", exitCode: 0 };
+				},
+			},
+		};
+
+		await runE2bCommandAsRoot(sandbox as never, "echo hi", {
+			onStdout: (chunk) => stdout.push(chunk),
+			onStderr: (chunk) => stderr.push(chunk),
+		});
+
+		expect(stdout).toEqual(["live stdout"]);
+		expect(stderr).toEqual(["live stderr"]);
+	});
+
 	it("translates a native background handle into ComputeSDK's completed launch result", async () => {
 		const calls: Array<{ command: string; options?: Record<string, unknown> }> = [];
 		const sandbox = {

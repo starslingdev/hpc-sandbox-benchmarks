@@ -41,28 +41,32 @@ PTS-catalog changes also have a drift gate:
 ```sh
 bun run --filter @sandbox-benchmarks/schema generate-catalog   # regenerate from vendored profiles
 bun run check:catalog-drift                                    # fail if the committed draft drifted
+bun run check:provider-registry-drift                           # fail if provider metadata assembly drifted
 ```
 
 ## Add a provider
 
-1. **Identity & economics** — add the id to `ProviderId` and a `REGISTRY` entry in
-   [`packages/schema/src/providers.ts`](./packages/schema/src/providers.ts): `displayName`, `website`,
-   `sdkPackage`, `requiredEnvVars`, `isolation`, vetted `pricing` (per-vCPU/per-GiB, normalized to USD),
-   `maturity`, `specPinning`, and the `transport` capability (`streaming`/`syncCapMs`/`detachedPoll`).
-   The `Record<ProviderId, …>` type makes a missing entry a compile error.
+1. **Identity + metadata** — append the id to `PROVIDER_IDS` in
+   [`packages/schema/src/provider-ids.ts`](./packages/schema/src/provider-ids.ts), then add the one
+   hand-authored `packages/schema/src/provider-meta/<id>.ts` module. Declare display/vendor identity,
+   inputs, artifact lifecycle, isolation, vetted pricing, maturity, spec pinning, and transport there.
+   Run `bun run --filter @sandbox-benchmarks/schema generate-provider-registry` and review the
+   generated correlated index. Filename, tuple key, and declared id disagreement is a compile error;
+   malformed descriptor semantics fail the generator's Tier-3 arktype gate. Keep the independent
+   hardcoded provider oracle in `providers.test.ts` current.
 2. **Adapter** — add a matching entry to the adapter map in
    [`packages/providers`](./packages/providers): how to `createCompute()` and the create-time
    `createOptions` (the pinned target spec + toolchain image). The two registries are joined by id, so a
    one-sided provider is a compile error.
-3. **Template** — add a template builder under [`packages/templates`](./packages/templates) so the
-   provider can be baked with the toolchain image.
-4. **Exhaustive consumers** — update the CLI bake map, candidate create-options switch, release-plan
-   artifact switch, provider-id test oracles, the credential environment in
-   [`bench-suite.yml`](./.github/workflows/bench-suite.yml) (the one benchmark cell both dispatch lanes
-   call, so there is a single block to edit), and the `provider` dispatch options in
-   [`bench-smoke.yml`](./.github/workflows/bench-smoke.yml). Provider matrix fan-out, normalization,
-   leaderboard, and economics remain automatic.
-5. Bring it up live with a single-provider branch dispatch before adding it to the default matrix list.
+3. **Artifact implementation** — only when the descriptor's `artifact.kind` requires one, add the
+   provider-specific bake/template implementation. Providers using a stock or shared image do not get
+   no-op bakers.
+4. **Transitional wiring** — until the provider-wiring generator lands, update the remaining CLI bake,
+   release, workflow-input, docs, and dispatch surfaces manually. `bun run
+   check:provider-registry-drift` already gates the metadata assembly; the later wiring generator will
+   replace this temporary exhaustive-consumer step.
+5. Bring the provider up with a single-provider branch dispatch. Adding it to the default benchmark
+   matrix remains a separate promotion decision after live validation.
 
 ## Add a suite
 
