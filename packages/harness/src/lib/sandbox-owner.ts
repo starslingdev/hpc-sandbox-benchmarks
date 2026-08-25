@@ -15,9 +15,22 @@ interface DestroyableSandbox {
 	destroy(): Promise<unknown>;
 }
 
+export interface OwnedOperationOptions {
+	readonly signal?: AbortSignal;
+}
+
+export interface OwnedSandboxOptions {
+	/** Cancellation bridge over the captured original destroy method (never the owner wrapper). */
+	readonly destroy?: (
+		providerDestroy: (options?: OwnedOperationOptions) => Promise<unknown>,
+		options: OwnedOperationOptions,
+	) => Promise<unknown>;
+}
+
 interface OwnedEntry<T extends DestroyableSandbox> {
 	promise: Promise<T>;
-	destroy?: () => Promise<unknown>;
+	destroy?: (options?: OwnedOperationOptions) => Promise<unknown>;
+	abortCreate?: (reason: unknown) => void;
 	sandboxId?: string;
 }
 
@@ -59,14 +72,42 @@ function release(entry: OwnedEntry<DestroyableSandbox>): void {
 	if (owned.size === 0) uninstallProcessHandlers();
 }
 
-async function destroyEntry(entry: OwnedEntry<DestroyableSandbox>): Promise<void> {
+async function destroyEntry(
+	entry: OwnedEntry<DestroyableSandbox>,
+	options: OwnedOperationOptions,
+): Promise<void> {
 	try {
 		await entry.promise;
 	} catch {
-		// A rejected create allocated no handle and removes itself from the registry.
+		// A failed create can still own an allocation when its rollback also failed. Its rejection
+		// installs a retryable cleanup record below; an ordinary rejection has already been released.
+	}
+	await entry.destroy?.(options);
+}
+
+interface FailedCreateCleanup {
+	dispose(): Promise<void>;
+	cleanup?(options?: OwnedOperationOptions): Promise<void>;
+}
+
+function failedCreateCleanup(error: unknown): FailedCreateCleanup | undefined {
+	if ((typeof error !== "object" && typeof error !== "function") || error === null) return;
+	try {
+		const dispose = Reflect.get(error, Symbol.asyncDispose);
+		if (typeof dispose !== "function") return;
+		const cleanup = Reflect.get(error, "cleanup");
+		return {
+			dispose: () => Reflect.apply(dispose, error, []),
+			...(typeof cleanup === "function"
+				? {
+						cleanup: (options?: OwnedOperationOptions) => Reflect.apply(cleanup, error, [options]),
+					}
+				: {}),
+		};
+	} catch {
+		// Inspecting an arbitrary provider error must never replace the create failure itself.
 		return;
 	}
-	await entry.destroy?.();
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
@@ -86,12 +127,25 @@ async function withinDeadline(
 		throw new Error(`Sandbox cleanup timed out${entry.sandboxId ? ` (${entry.sandboxId})` : ""}`);
 	}
 
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	const cancellation = new AbortController();
+	const cancellationReason = new Error(
+		`Sandbox process ownership cleanup requested${entry.sandboxId ? ` (${entry.sandboxId})` : " during creation"}`,
+	);
+	entry.abortCreate?.(cancellationReason);
+	// Reserve a short tail of the existing budget for cancellation-aware runners to kill and reap
+	// their subprocess group before the hard observational deadline fires.
+	const settleGraceMs = Math.min(250, Math.max(1, Math.floor(remainingMs / 4)));
+	let abortTimer: ReturnType<typeof setTimeout> | undefined;
+	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 	try {
+		abortTimer = setTimeout(
+			() => cancellation.abort(cancellationReason),
+			Math.max(0, remainingMs - settleGraceMs),
+		);
 		await Promise.race([
-			destroyEntry(entry),
+			destroyEntry(entry, { signal: cancellation.signal }),
 			new Promise<never>((_resolve, reject) => {
-				timer = setTimeout(
+				deadlineTimer = setTimeout(
 					() =>
 						reject(
 							new Error(
@@ -103,7 +157,8 @@ async function withinDeadline(
 			}),
 		]);
 	} finally {
-		if (timer !== undefined) clearTimeout(timer);
+		if (abortTimer !== undefined) clearTimeout(abortTimer);
+		if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
 	}
 }
 
@@ -202,33 +257,72 @@ function installProcessHandlers(): void {
  * the original SDK object (several SDKs use private fields); only `destroy` is replaced.
  */
 export function createOwnedSandbox<T extends DestroyableSandbox>(
-	create: () => Promise<T>,
+	create: (signal: AbortSignal) => Promise<T>,
+	options: OwnedSandboxOptions = {},
 ): Promise<T> {
 	if (stopping) return Promise.reject(new Error("Sandbox creation refused during shutdown"));
 
 	installProcessHandlers();
 	const entry = {} as OwnedEntry<T>;
+	const createCancellation = new AbortController();
+	entry.abortCreate = (reason) => createCancellation.abort(reason);
 	owned.add(entry as OwnedEntry<DestroyableSandbox>);
 
 	entry.promise = Promise.resolve()
-		.then(create)
+		.then(() => create(createCancellation.signal))
 		.then(
 			(sandbox) => {
 				entry.sandboxId = sandbox.sandboxId;
-				const providerDestroy = sandbox.destroy.bind(sandbox);
-				let destroying: Promise<unknown> | undefined;
-				const destroy = (): Promise<unknown> => {
-					if (destroying !== undefined) return destroying;
-					destroying = providerDestroy().then(
-						(value) => {
-							release(entry as OwnedEntry<DestroyableSandbox>);
-							return value;
-						},
-						(error) => {
-							destroying = undefined;
-							throw error;
-						},
+				const originalDestroy = sandbox.destroy;
+				const providerDestroy = (operationOptions?: OwnedOperationOptions): Promise<unknown> =>
+					Reflect.apply(
+						originalDestroy,
+						sandbox,
+						operationOptions === undefined ? [] : [operationOptions],
 					);
+				let destroying: Promise<unknown> | undefined;
+				let destroyCancellation: AbortController | undefined;
+				let unlinkDestroySignal: (() => void) | undefined;
+				const forwardDestroyCancellation = (signal: AbortSignal | undefined): void => {
+					const controller = destroyCancellation;
+					if (signal === undefined || controller === undefined) return;
+					const abort = () => controller.abort(signal.reason);
+					signal.addEventListener("abort", abort, { once: true });
+					const previous = unlinkDestroySignal;
+					unlinkDestroySignal = () => {
+						previous?.();
+						signal.removeEventListener("abort", abort);
+					};
+					if (signal.aborted) abort();
+				};
+				const destroy = (operationOptions: OwnedOperationOptions = {}): Promise<unknown> => {
+					if (destroying !== undefined) {
+						forwardDestroyCancellation(operationOptions.signal);
+						return destroying;
+					}
+					destroyCancellation = new AbortController();
+					forwardDestroyCancellation(operationOptions.signal);
+					destroying = Promise.resolve()
+						.then(() =>
+							options.destroy === undefined
+								? providerDestroy()
+								: options.destroy(providerDestroy, { signal: destroyCancellation?.signal }),
+						)
+						.then(
+							(value) => {
+								release(entry as OwnedEntry<DestroyableSandbox>);
+								return value;
+							},
+							(error) => {
+								destroying = undefined;
+								throw error;
+							},
+						)
+						.finally(() => {
+							unlinkDestroySignal?.();
+							unlinkDestroySignal = undefined;
+							destroyCancellation = undefined;
+						});
 					return destroying;
 				};
 				entry.destroy = destroy;
@@ -254,7 +348,36 @@ export function createOwnedSandbox<T extends DestroyableSandbox>(
 				}
 			},
 			(error) => {
-				release(entry as OwnedEntry<DestroyableSandbox>);
+				const recoverable = failedCreateCleanup(error);
+				if (recoverable === undefined) {
+					release(entry as OwnedEntry<DestroyableSandbox>);
+				} else {
+					let cleanupInFlight: Promise<unknown> | undefined;
+					entry.destroy = (operationOptions: OwnedOperationOptions = {}) => {
+						if (cleanupInFlight !== undefined) {
+							return recoverable.cleanup === undefined
+								? cleanupInFlight
+								: recoverable.cleanup(operationOptions);
+						}
+						cleanupInFlight = Promise.resolve()
+							.then(() =>
+								recoverable.cleanup === undefined
+									? recoverable.dispose()
+									: recoverable.cleanup(operationOptions),
+							)
+							.then(
+								(value) => {
+									release(entry as OwnedEntry<DestroyableSandbox>);
+									return value;
+								},
+								(caught) => {
+									cleanupInFlight = undefined;
+									throw caught;
+								},
+							);
+						return cleanupInFlight;
+					};
+				}
 				throw error;
 			},
 		);
@@ -292,11 +415,12 @@ export async function withCleanupPreservingPrimaryError<T>(
  * also failed for the bounded exit drain to retry.
  */
 export async function withOwnedSandbox<T extends DestroyableSandbox, R>(
-	create: () => Promise<T>,
+	create: (signal: AbortSignal) => Promise<T>,
 	fn: (sandbox: T) => Promise<R>,
 	label = "sandbox",
+	ownerOptions: OwnedSandboxOptions = {},
 ): Promise<R> {
-	const sandbox = await createOwnedSandbox(create);
+	const sandbox = await createOwnedSandbox(create, ownerOptions);
 	return withCleanupPreservingPrimaryError(
 		() => fn(sandbox),
 		() => sandbox.destroy(),

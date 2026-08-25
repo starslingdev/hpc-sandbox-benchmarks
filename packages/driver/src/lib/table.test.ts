@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DriverError } from "./errors.ts";
+import { DriverError, FailedCreateCleanupError } from "./errors.ts";
 import type { CreateRequest } from "./port.ts";
 import { sandboxRef } from "./port.ts";
 import { okExec } from "./session.fixture.ts";
@@ -19,6 +19,36 @@ const baseTable: MethodTable<string, null> = {
 };
 
 describe("driverFromTable", () => {
+	test("a later owner signal cancels an already-running failed-create cleanup", async () => {
+		let attempts = 0;
+		const failure = new FailedCreateCleanupError(
+			new Error("initial cleanup failed"),
+			new Error("create failed"),
+			{
+				provider: "tama",
+				locator: { kind: "name", value: "bench-cancel" },
+				cleanup: async ({ signal } = {}) => {
+					attempts++;
+					if (attempts > 1) return;
+					await new Promise<never>((_resolve, reject) => {
+						const aborted = () => reject(signal?.reason);
+						if (signal?.aborted) aborted();
+						else signal?.addEventListener("abort", aborted, { once: true });
+					});
+				},
+			},
+		);
+		const first = failure.cleanup();
+		const cancellation = new AbortController();
+		const joined = failure.cleanup({ signal: cancellation.signal });
+		const reason = new Error("shutdown deadline");
+		cancellation.abort(reason);
+		await expect(first).rejects.toBe(reason);
+		await expect(joined).rejects.toBe(reason);
+		await failure.cleanup();
+		expect(attempts).toBe(2);
+	});
+
 	test("assembles a session over the table with the request's tagged artifact", async () => {
 		const driver = driverFromTable(baseTable, async () => null);
 		const session = await driver.create(request);
@@ -27,6 +57,39 @@ describe("driverFromTable", () => {
 		expect(session.native).toBe("h");
 		expect(session.files).toBeUndefined();
 		expect(session.launch).toBeUndefined();
+	});
+
+	test("forwards cooperative cancellation to create, session destroy, and bare-ref destroy", async () => {
+		const createCancellation = new AbortController();
+		const destroyCancellation = new AbortController();
+		const bareCancellation = new AbortController();
+		const observed: AbortSignal[] = [];
+		const driver = driverFromTable(
+			{
+				...baseTable,
+				create: async (_ctx, _request, options) => {
+					if (options?.signal) observed.push(options.signal);
+					return { handle: "h", sandboxRef: sandboxRef("tama", "m-cancel") };
+				},
+				destroy: async (_ctx, _handle, options) => {
+					if (options?.signal) observed.push(options.signal);
+				},
+				destroyById: async (_ctx, _ref, options) => {
+					if (options?.signal) observed.push(options.signal);
+				},
+			},
+			async () => null,
+		);
+		const session = await driver.create(request, { signal: createCancellation.signal });
+		await session.destroy({ signal: destroyCancellation.signal });
+		await driver.destroyById?.(sandboxRef("tama", "m-cancel"), {
+			signal: bareCancellation.signal,
+		});
+		expect(observed).toEqual([
+			createCancellation.signal,
+			destroyCancellation.signal,
+			bareCancellation.signal,
+		]);
 	});
 
 	test("a transient context failure is retried, not memoized forever", async () => {
@@ -65,7 +128,14 @@ describe("driverFromTable", () => {
 		expect(destroyed).toBe(1);
 	});
 
-	test("a mismatch whose orphan teardown ALSO fails preserves the mismatch as SuppressedError", async () => {
+	test("a mismatch whose orphan teardown fails retains retryable process ownership", async () => {
+		let destroys = 0;
+		let initialSignal: AbortSignal | undefined;
+		let retrySignal: AbortSignal | undefined;
+		let noteRetryStarted!: () => void;
+		const retryStarted = new Promise<void>((resolve) => {
+			noteRetryStarted = resolve;
+		});
 		const driver = driverFromTable(
 			{
 				...baseTable,
@@ -74,18 +144,40 @@ describe("driverFromTable", () => {
 					sandboxRef: sandboxRef("tama", "m-2"),
 					artifact: { kind: "image" as const, ref: "im-OTHER" },
 				}),
-				destroy: async () => {
-					throw new Error("teardown exploded");
+				destroy: async (_ctx, _handle, options) => {
+					destroys++;
+					if (destroys === 1) {
+						initialSignal = options?.signal;
+						throw new Error("teardown exploded");
+					}
+					retrySignal = options?.signal;
+					noteRetryStarted();
+					await new Promise<void>((resolve) => {
+						if (options?.signal?.aborted) resolve();
+						else options?.signal?.addEventListener("abort", () => resolve(), { once: true });
+					});
 				},
 			},
 			async () => null,
 		);
+		const createCancellation = new AbortController();
 		const error = (await driver
-			.create(request)
-			.catch((caught: unknown) => caught)) as SuppressedError;
-		expect(error).toBeInstanceOf(SuppressedError);
+			.create(request, { signal: createCancellation.signal })
+			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
 		expect(String(error.error)).toContain("teardown exploded");
 		expect((error.suppressed as DriverError).code).toBe("artifact-mismatch");
+		expect(error.locator).toEqual({ kind: "id", value: "m-2" });
+		expect(initialSignal).toBe(createCancellation.signal);
+		const cancellation = new AbortController();
+		const cleanup = error.cleanup({ signal: cancellation.signal });
+		await retryStarted;
+		const cancellationReason = new Error("shutdown deadline");
+		cancellation.abort(cancellationReason);
+		await cleanup;
+		expect(retrySignal?.aborted).toBe(true);
+		expect(retrySignal?.reason).toBe(cancellationReason);
+		expect(destroys).toBe(2);
 	});
 
 	test("a driver-reported ref that matches is recorded on the session", async () => {
@@ -328,6 +420,41 @@ describe("driverFromTable", () => {
 		expect(await concurrentFailure).toEqual(new Error("transient teardown failure"));
 
 		await session.destroy();
+		await session.destroy();
+		expect(destroys).toBe(2);
+	});
+
+	test("a later concurrent destroy signal cancels the shared provider teardown", async () => {
+		let destroys = 0;
+		let observedSignal: AbortSignal | undefined;
+		const driver = driverFromTable(
+			{
+				...baseTable,
+				destroy: async (_ctx, _handle, options) => {
+					destroys++;
+					observedSignal = options?.signal;
+					if (destroys > 1) return;
+					await new Promise<never>((_resolve, reject) => {
+						const aborted = () => reject(options?.signal?.reason);
+						if (options?.signal?.aborted) aborted();
+						else options?.signal?.addEventListener("abort", aborted, { once: true });
+					});
+				},
+			},
+			async () => null,
+		);
+		const session = await driver.create(request);
+		const first = session.destroy();
+		const cancellation = new AbortController();
+		const joined = session.destroy({ signal: cancellation.signal });
+		const firstFailure = first.catch((caught: unknown) => caught);
+		const joinedFailure = joined.catch((caught: unknown) => caught);
+		const reason = new Error("shutdown deadline");
+		cancellation.abort(reason);
+
+		expect(await firstFailure).toBe(reason);
+		expect(await joinedFailure).toBe(reason);
+		expect(observedSignal?.aborted).toBe(true);
 		await session.destroy();
 		expect(destroys).toBe(2);
 	});

@@ -12,6 +12,40 @@ export interface ReadinessStrategy<T> {
 	poll(): Promise<T | null>;
 	readonly deadlineMs: number;
 	readonly intervalMs: number;
+	readonly signal?: AbortSignal;
+}
+
+function abortReason(signal: AbortSignal): unknown {
+	return signal.reason ?? new Error("Readiness polling aborted");
+}
+
+function subscribeToAbort(signal: AbortSignal | undefined, listener: () => void): () => void {
+	if (signal === undefined) return () => {};
+	signal.addEventListener("abort", listener, { once: true });
+	if (signal.aborted) {
+		signal.removeEventListener("abort", listener);
+		listener();
+		return () => {};
+	}
+	return () => signal.removeEventListener("abort", listener);
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+	if (signal?.aborted) return Promise.reject(abortReason(signal));
+	return new Promise((resolve, reject) => {
+		let unsubscribe = () => {};
+		const timer = setTimeout(done, ms);
+		function done(): void {
+			unsubscribe();
+			resolve();
+		}
+		function aborted(): void {
+			clearTimeout(timer);
+			unsubscribe();
+			if (signal !== undefined) reject(abortReason(signal));
+		}
+		unsubscribe = subscribeToAbort(signal, aborted);
+	});
 }
 
 function timeoutError(strategy: ReadinessStrategy<unknown>): DriverError {
@@ -23,22 +57,36 @@ function timeoutError(strategy: ReadinessStrategy<unknown>): DriverError {
 }
 
 async function pollBefore<T>(strategy: ReadinessStrategy<T>, deadline: number): Promise<T | null> {
+	if (strategy.signal?.aborted) throw abortReason(strategy.signal);
 	const remaining = deadline - Date.now();
 	if (remaining <= 0) throw timeoutError(strategy);
 
 	let timeout: ReturnType<typeof setTimeout> | undefined;
+	let unsubscribeAbort = () => {};
 	try {
-		const ready = await Promise.race([
-			strategy.poll(),
+		const attempts: Array<Promise<T | null>> = [];
+		if (strategy.signal !== undefined)
+			attempts.push(
+				new Promise<never>((_resolve, reject) => {
+					unsubscribeAbort = subscribeToAbort(strategy.signal, () =>
+						reject(abortReason(strategy.signal as AbortSignal)),
+					);
+				}),
+			);
+		// Subscribe before invoking provider code: a synchronous poll implementation may abort.
+		attempts.push(
+			Promise.resolve().then(() => strategy.poll()),
 			new Promise<never>((_resolve, reject) => {
 				timeout = setTimeout(() => reject(timeoutError(strategy)), remaining);
 			}),
-		]);
+		);
+		const ready = await Promise.race(attempts);
 		// A probe can resolve after its budget but before the timer callback gets a turn.
 		if (Date.now() >= deadline) throw timeoutError(strategy);
 		return ready;
 	} finally {
 		if (timeout !== undefined) clearTimeout(timeout);
+		unsubscribeAbort();
 	}
 }
 
@@ -56,6 +104,6 @@ export async function pollUntilReady<T>(strategy: ReadinessStrategy<T>): Promise
 		}
 		const remaining = deadline - Date.now();
 		if (remaining <= 0) throw timeoutError(strategy);
-		await new Promise((resolve) => setTimeout(resolve, Math.min(strategy.intervalMs, remaining)));
+		await abortableDelay(Math.min(strategy.intervalMs, remaining), strategy.signal);
 	}
 }
