@@ -7,7 +7,7 @@
 // bypassed this layer would have to re-implement all four; none do.
 
 import { DriverError } from "./errors.ts";
-import { capExecOutput } from "./output.ts";
+import { capExecOutput, validateMaxOutputBytes } from "./output.ts";
 import type {
 	ControlPlaneProbes,
 	CreateRequest,
@@ -275,11 +275,15 @@ export function driverFromTable<Handle, Ctx>(
 				artifact,
 				native: handle,
 				exec: (command, options?: ExecOptions) =>
-					alive(() =>
-						table
+					alive(() => {
+						// Read the cap before provider code sees the original options object. Readonly is a
+						// compile-time contract; a hostile callback must not mutate away kit-owned enforcement.
+						const maxOutputBytes = options?.maxOutputBytes;
+						validateMaxOutputBytes(maxOutputBytes);
+						return table
 							.exec(resolved, handle, command, options)
-							.then((result) => capExecOutput(result, options?.maxOutputBytes)),
-					),
+							.then((result) => capExecOutput(result, maxOutputBytes));
+					}),
 				async destroy() {
 					if (state === "destroyed") return;
 					if (destroyInFlight !== undefined) return destroyInFlight;

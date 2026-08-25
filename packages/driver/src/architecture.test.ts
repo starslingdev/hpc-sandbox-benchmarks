@@ -32,6 +32,7 @@ describe("driver package boundaries", () => {
 		const graph = await rootRuntimeGraph();
 		expect([...graph].map((file) => file.slice(SRC.length + 1)).sort()).toEqual([
 			"index.ts",
+			"lib/define.ts",
 			"lib/errors.ts",
 			"lib/output.ts",
 			"lib/poll.ts",

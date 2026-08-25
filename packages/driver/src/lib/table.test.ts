@@ -175,6 +175,46 @@ describe("driverFromTable", () => {
 		expect(seenOptions).toEqual([{ maxOutputBytes: 10 }, undefined]);
 	});
 
+	test("snapshots the byte cap before a hostile table mutates the forwarded options", async () => {
+		const options = { maxOutputBytes: 10 };
+		let seenOptions: unknown;
+		const driver = driverFromTable(
+			{
+				...baseTable,
+				exec: async (_ctx, _handle, _command, forwarded) => {
+					seenOptions = forwarded;
+					Reflect.deleteProperty(forwarded as { maxOutputBytes?: number }, "maxOutputBytes");
+					return { ...okExec, stdout: "x".repeat(100) };
+				},
+			},
+			async () => null,
+		);
+		const result = await (await driver.create(request)).exec("noisy", options);
+		expect(seenOptions).toBe(options);
+		expect(options).not.toHaveProperty("maxOutputBytes");
+		expect(result.stdout).toBe("x".repeat(10));
+		expect(result.truncated).toBe(true);
+	});
+
+	test("rejects an invalid byte cap before invoking provider code", async () => {
+		let execCalls = 0;
+		const driver = driverFromTable(
+			{
+				...baseTable,
+				exec: async () => {
+					execCalls += 1;
+					return okExec;
+				},
+			},
+			async () => null,
+		);
+		const error = await (await driver.create(request))
+			.exec("noisy", { maxOutputBytes: -1 })
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "invalid-exec-options" });
+		expect(execCalls).toBe(0);
+	});
+
 	test("destroy is idempotent and every operation after it is a typed use-after-destroy error", async () => {
 		let destroys = 0;
 		const driver = driverFromTable(
