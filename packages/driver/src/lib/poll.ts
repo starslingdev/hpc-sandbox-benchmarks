@@ -3,7 +3,7 @@
 // driver supplies only its poll/select closures; the deadline, the interval, the sleep-clamping,
 // and the typed `readiness-timeout` error live here, so every such driver gets them identically.
 
-import type { ProviderId } from "@sandbox-benchmarks/schema/providers";
+import type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
 import { DriverError } from "./errors.ts";
 
 export interface ReadinessStrategy<T> {

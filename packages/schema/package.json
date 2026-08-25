@@ -5,7 +5,12 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./driver-schemas": "./src/driver-schemas.ts",
+    "./provider-ids": "./src/provider-ids.ts",
+    "./provider-parsers": "./src/provider-parsers.ts",
     "./providers": "./src/providers.ts",
+    "./target-spec": "./src/target-spec.ts",
+    "./target-spec-schema": "./src/target-spec-schema.ts",
     "./toolchain": "./src/toolchain.ts"
   },
   "scripts": {

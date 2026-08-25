@@ -1,232 +1,105 @@
-// The sandbox driver port (ADR-0007 §2): the contract every provider implements and the only
-// provider-facing surface the harness consumes.
-//
-// This module is the kit's SINGLE SOURCE OF TRUTH for the port's data shapes: every parsed or
-// persisted shape is an arktype schema and its static type is INFERRED from it — one
-// declaration yields the runtime validator, the compile-time type, and the error message.
-// Behavioral contracts (sessions, drivers, capabilities) stay plain TypeScript below, because
-// runtime schemas cannot prove asynchronous behavior, idempotency, or handle/context
-// relationships — that is ADR-0008's job.
-//
-// The target spec is deliberately NOT declared here: it is reused from the registry's own
-// `targetSpecSchema` (one spec vocabulary, one unit system — ADR-0007 §9's "never mint a
-// parallel spec shape"). The kit's consumers (harness, CLI, drivers) all already evaluate the
-// schema package in-process, so this reuse adds no new import cost class.
+// The arktype-free sandbox driver port (ADR-0007 §2). This module contains only trusted in-process
+// data and behavioral contracts. Parsing untrusted argv/config/persisted input lives in `./schemas`;
+// provider-specific sandbox-id validation belongs to the selected DriverModule.
 
-import { targetSpecSchema } from "@sandbox-benchmarks/schema";
-import type { ProviderId } from "@sandbox-benchmarks/schema/providers";
-import { regex, type } from "arktype";
-import { DriverError } from "./errors.ts";
+import type {
+	DriverCreateRequest,
+	DriverExecResult,
+	DriverExit,
+	DriverGpuSpec,
+	DriverResolvedArtifact,
+	DriverSandboxObservation,
+	DriverSandboxRefEnvelope,
+} from "@sandbox-benchmarks/schema/driver-schemas";
+import type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
+import type { TargetSpec } from "@sandbox-benchmarks/schema/target-spec";
 
-export type { TargetSpec } from "@sandbox-benchmarks/schema";
-
-type DeepReadonly<T> = T extends (infer U)[]
-	? readonly DeepReadonly<U>[]
-	: T extends object
-		? { readonly [K in keyof T]: DeepReadonly<T[K]> }
-		: T;
+export type { TargetSpec } from "@sandbox-benchmarks/schema/target-spec";
 
 /* ------------------------------ Sandbox identification ------------------------------ */
 
-// Per-provider sandbox id formats, statically parsed by arkregex so the inferred id types are
-// template literals where the pattern allows (`sb-${string}` for Modal), plain-but-validated
-// strings elsewhere. Confidence varies by vendor and is annotated; every format is a behavioral
-// claim ADR-0008's smoke conformance verifies against a live sandbox — a wrong pattern fails in
-// smoke, loudly, before any benchmark runs. Formats without vendor evidence start at the
-// conservative `slugId` and are tightened by conformance evidence, never by guesswork.
-const slugId = regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"); // conservative default
-const modalId = regex("^sb-\\w+$"); // observed Modal sandbox id shape
-const e2bLikeId = regex("^i[a-z0-9]+$"); // observed E2B id shape; novita is E2B-compatible
-const runloopId = regex("^dbx_\\w+$"); // Runloop devbox prefix (bpt_/snp_ siblings observed)
+/** Provider-qualified sandbox identity. The selected driver owns validation of its `id`. */
+export interface SandboxRef<P extends ProviderId = ProviderId> {
+	readonly provider: P;
+	readonly id: string;
+}
 
-/**
- * Sandbox identification: WHICH provider's control plane owns the sandbox, and its id in that
- * provider's own format. One discriminated schema (arktype auto-discriminates on `provider`)
- * is the source of truth for both the runtime validation and the narrowed static types —
- * `SandboxRef<"modal-gvisor">["id"]` is `` `sb-${string}` ``, not `string`.
- */
-export const sandboxRefSchema = type.or(
-	{ provider: "'e2b'", id: e2bLikeId },
-	{ provider: "'daytona-vm'", id: "string.uuid" },
-	{ provider: "'daytona-container'", id: "string.uuid" },
-	{ provider: "'blaxel'", id: slugId },
-	{ provider: "'microsandbox-local'", id: slugId },
-	{ provider: "'microsandbox-cloud'", id: slugId },
-	{ provider: "'modal-gvisor'", id: modalId },
-	{ provider: "'modal-vm'", id: modalId },
-	{ provider: "'novita'", id: e2bLikeId },
-	{ provider: "'runloop'", id: runloopId },
-	{ provider: "'namespace'", id: slugId },
-	// Vercel v2 is name-keyed: its caller-selected `sandbox-benchmarks-<uuid>` name is the id.
-	{ provider: "'vercel'", id: slugId },
-	{ provider: "'runcloud'", id: slugId },
-	{ provider: "'tama'", id: slugId },
-);
-
-type SandboxRefUnion = typeof sandboxRefSchema.infer;
-
-// The schema's provider branches must cover ProviderId exactly — both directions pinned at
-// compile time (type-only; erases entirely), so a provider added to the registry without an id
-// format (or a stray branch) is a type error here, not a runtime surprise.
-type Assert<T extends true> = T;
-type _refCoversRegistry = Assert<
-	[SandboxRefUnion["provider"]] extends [ProviderId]
-		? [ProviderId] extends [SandboxRefUnion["provider"]]
-			? true
-			: false
-		: false
->;
-
-export type SandboxRef<P extends ProviderId = ProviderId> = DeepReadonly<
-	Extract<SandboxRefUnion, { provider: P }>
->;
-
-/** The one blessed constructor: a ref that parses is a ref in that provider's real format. */
+/** Construct a ref from an id already validated by the selected driver module. */
 export function sandboxRef<P extends ProviderId>(provider: P, id: string): SandboxRef<P> {
-	const parsed = sandboxRefSchema({ provider, id });
-	if (parsed instanceof type.errors) {
-		throw new DriverError("invalid-sandbox-ref", `invalid sandbox ref: ${parsed.summary}`, {
-			provider,
-		});
-	}
-	// The schema just proved the branch for `provider`; Extract names what arktype validated.
-	return parsed as SandboxRef<P>;
+	return { provider, id };
 }
 
 /* --------------------------------- Command results --------------------------------- */
 
-/**
- * How a command ended. "Didn't tell us" is representable (`unknown`), so no driver ever forges
- * an exit code (`?? 1`, `?? 127`) — a missing code becomes evidence in the run document instead
- * of a fake failure (ADR-0008: exec MUST report the guest's real exit status).
- */
-export const exitSchema = type.or(
-	{ kind: "'exited'", code: "number.integer" },
-	{ kind: "'signalled'", signal: "string >= 1" },
-	{ kind: "'unknown'", detail: "string" },
-);
-export type Exit = DeepReadonly<typeof exitSchema.infer>;
+/** A missing vendor exit code is evidence, never a fabricated non-zero code. */
+export type Exit =
+	| { readonly kind: "exited"; readonly code: number }
+	| { readonly kind: "signalled"; readonly signal: string }
+	| { readonly kind: "unknown"; readonly detail: string };
 
 export const succeeded = (exit: Exit): boolean => exit.kind === "exited" && exit.code === 0;
 
-export const execResultSchema = type({
-	exit: exitSchema,
-	stdout: "string",
-	stderr: "string",
-	durationMs: "number >= 0",
-	/** True when a per-call {@link ExecOptions.maxOutputBytes} cap cut a stream. */
-	truncated: "boolean",
-});
-export type ExecResult = DeepReadonly<typeof execResultSchema.infer>;
+export interface ExecResult {
+	readonly exit: Exit;
+	readonly stdout: string;
+	readonly stderr: string;
+	readonly durationMs: number;
+	readonly truncated: boolean;
+}
 
 export interface ExecOptions {
-	/**
-	 * Opt-in output cap for probes and queries. Deliberately NEVER a kit-wide default: results
-	 * collection is a multi-MB base64 tar over stdout (`collect.ts`), and a blanket cap would
-	 * turn it into a bounded retry loop that can never succeed (ADR-0007 §9).
-	 */
+	/** Opt-in cap. A kit-wide default would truncate multi-MB result collection. */
 	readonly maxOutputBytes?: number;
 }
 
 /* --------------------------------- Create requests --------------------------------- */
 
-/** Vendor-neutral GPU request; drivers map it to vendor syntax (Modal: "H100!", "A100:2"). */
-export const gpuSpecSchema = type({
-	model: "string >= 1",
-	count: "number.integer > 0",
-});
-export type GpuSpec = DeepReadonly<typeof gpuSpecSchema.infer>;
+export interface GpuSpec {
+	readonly model: string;
+	readonly count: number;
+}
 
-/**
- * The effective boot artifact after the composition root resolves the registry descriptor.
- * `none` is explicit: an empty-string sentinel cannot distinguish a stock vendor image from
- * missing evidence. Every other kind carries the concrete ref the driver is asked to boot.
- */
-export const resolvedArtifactSchema = type.or(
-	{ kind: "'none'" },
-	{ kind: "'image'", ref: "string >= 1" },
-	{ kind: "'baked'", ref: "string >= 1" },
-	{ kind: "'mirror'", ref: "string >= 1" },
-	{ kind: "'built'", ref: "string >= 1" },
-);
-export type ResolvedArtifact = DeepReadonly<typeof resolvedArtifactSchema.infer>;
+export type ResolvedArtifact =
+	| { readonly kind: "none" }
+	| { readonly kind: "image"; readonly ref: string }
+	| { readonly kind: "baked"; readonly ref: string }
+	| { readonly kind: "mirror"; readonly ref: string }
+	| { readonly kind: "built"; readonly ref: string };
 
-/**
- * The request a driver boots. `spec` IS the registry's `targetSpecSchema` (vcpus / memoryGb /
- * diskGb?, registry units — vendor conversions live in exactly one driver-local expression);
- * a driver that cannot express a *present* `diskGb` MUST fail create loudly. A driver that
- * cannot honor a requested `gpu` MUST fail create — never silently benchmark CPU.
- */
-export const createRequestSchema = type({
-	spec: targetSpecSchema,
-	/** The resolved artifact to boot; `none` represents a provider-owned stock image. */
-	artifact: resolvedArtifactSchema,
-	deadlineMs: "number.integer > 0",
-	"gpu?": gpuSpecSchema,
-	"env?": "Record<string, string>",
-}).onDeepUndeclaredKey("reject"); // shallow "+": "reject" misses nested misspellings (§9)
-
-export type CreateRequest = DeepReadonly<typeof createRequestSchema.infer>;
-
-/**
- * Parse once, where CLI/config/persisted input becomes a trusted request — the plan→request
- * seam. Drivers never re-validate: by the time a request reaches a table, it is trusted.
- */
-export function parseCreateRequest(input: unknown): CreateRequest {
-	const parsed = createRequestSchema(input);
-	if (parsed instanceof type.errors) {
-		throw new DriverError("invalid-create-request", `invalid CreateRequest: ${parsed.summary}`);
-	}
-	return parsed;
+export interface CreateRequest {
+	readonly spec: TargetSpec;
+	readonly artifact: ResolvedArtifact;
+	readonly deadlineMs: number;
+	readonly gpu?: GpuSpec;
+	readonly env?: Readonly<Record<string, string>>;
 }
 
 /* ------------------------- Behavioral contracts (plain TS) ------------------------- */
 
-/**
- * A working filesystem API — reads AND writes — or the capability is absent (`undefined`),
- * never a stub that lies (the `UnsupportedFileSystem` incident is why). All-or-nothing: every
- * vendor with a real filesystem API supports both directions, and sessions without it get
- * harness-owned fallbacks for both (shell.ts).
- */
 export interface SandboxFiles {
 	readFile(path: string): Promise<string>;
 	exists(path: string): Promise<boolean>;
 	writeText(path: string, text: string): Promise<void>;
 }
 
-/**
- * A live sandbox. The required surface is exactly what every benchmark step needs: identity,
- * run a shell command, tear down.
- */
 export interface SandboxSession<Handle = unknown> {
 	readonly sandboxRef: SandboxRef;
-	/** Effective artifact; request fallback remains tagged and can be labelled as unverified. */
 	readonly artifact: ResolvedArtifact;
-	/** The vendor's native handle — the JDBC `unwrap()` idea, typed by the driver. */
 	readonly native: Handle;
 	exec(command: string, options?: ExecOptions): Promise<ExecResult>;
-	/** Idempotent and convergent (ADR-0008): MUST NOT resolve while the vendor still runs it. */
 	destroy(): Promise<void>;
 	readonly files?: SandboxFiles;
-	/** Optional. `undefined` ⇒ the harness wraps `exec` in its own nohup double-fork (shell.ts). */
 	launch?(command: string, options?: ExecOptions): Promise<void>;
 }
 
-/** The normalized control-plane state used to prove that destroy converged. */
-export const sandboxObservationSchema = type.or(
-	{ state: "'running'" },
-	{ state: "'terminal'" },
-	{ state: "'absent'" },
-);
-export type SandboxObservation = DeepReadonly<typeof sandboxObservationSchema.infer>;
+export type SandboxObservation =
+	| { readonly state: "running" }
+	| { readonly state: "terminal" }
+	| { readonly state: "absent" };
 
-/** Optional control-plane capabilities. Absent ⇒ the harness records a clean capability gap. */
 export interface ControlPlaneProbes {
-	/** Required when probes are present: verifies per-sandbox lifecycle convergence. */
 	observe(ref: SandboxRef): Promise<SandboxObservation>;
-	/** Optional. Absent ⇒ the provider has no per-sandbox describe probe — never a no-op stub. */
 	describe?(ref: SandboxRef): Promise<unknown>;
-	/** Optional measurement-only enumeration; the value is deliberately opaque to the kit. */
 	list?(): Promise<unknown>;
 }
 
@@ -235,25 +108,48 @@ export interface SnapshotCapability<Handle = unknown> {
 	delete(snapshotId: string): Promise<void>;
 }
 
-/** Everything a provider must supply. One required member; capabilities by presence. */
 export interface SandboxDriver<Handle = unknown> {
 	create(request: CreateRequest): Promise<SandboxSession<Handle>>;
-	/**
-	 * Optional: destroy by ref, no session required — reaper/cleanup lanes. Bound by the same
-	 * clauses as destroy: idempotent, convergent, and destroy-of-missing MUST succeed.
-	 */
 	destroyById?(ref: SandboxRef): Promise<void>;
 	readonly probes?: ControlPlaneProbes;
 	readonly snapshots?: SnapshotCapability<Handle>;
 }
 
-/**
- * Who owns the create attempt's time budget. Replaces the old `createTimeoutMs: null` sentinel
- * with a self-describing union: either the harness races create against a timeout, or the
- * driver owns bounds AND failed-create cleanup — in which case abandoning it mid-teardown would
- * strand a billable sandbox, so the harness awaits it. Committed driver-module data (Tier 1),
- * so it stays plain TypeScript by the parsing doctrine.
- */
 export type CreateBudget =
 	| { readonly owner: "harness"; readonly timeoutMs?: number }
 	| { readonly owner: "driver"; readonly attemptCeilingMs: number };
+
+/* -------------------------- Schema/port exactness guardrail -------------------------- */
+
+type DeepReadonly<T> = T extends readonly (infer Item)[]
+	? readonly DeepReadonly<Item>[]
+	: T extends object
+		? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+		: T;
+type Equal<Left, Right> =
+	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2
+		? (<T>() => T extends Right ? 1 : 2) extends <T>() => T extends Left ? 1 : 2
+			? true
+			: false
+		: false;
+type Assert<T extends true> = T;
+
+// Pins the helper itself: mutual assignability would incorrectly call these equal.
+type _exactnessRejectsOptionalDrift = Assert<
+	Equal<
+		{ readonly required: string },
+		{ readonly required: string; readonly optional?: number }
+	> extends false
+		? true
+		: false
+>;
+
+type _sandboxRefMatches = Assert<Equal<SandboxRef, DeepReadonly<DriverSandboxRefEnvelope>>>;
+type _exitMatches = Assert<Equal<Exit, DeepReadonly<DriverExit>>>;
+type _execMatches = Assert<Equal<ExecResult, DeepReadonly<DriverExecResult>>>;
+type _gpuMatches = Assert<Equal<GpuSpec, DeepReadonly<DriverGpuSpec>>>;
+type _artifactMatches = Assert<Equal<ResolvedArtifact, DeepReadonly<DriverResolvedArtifact>>>;
+type _createMatches = Assert<Equal<CreateRequest, DeepReadonly<DriverCreateRequest>>>;
+type _observationMatches = Assert<
+	Equal<SandboxObservation, DeepReadonly<DriverSandboxObservation>>
+>;

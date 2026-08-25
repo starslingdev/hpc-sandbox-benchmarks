@@ -1,18 +1,24 @@
 // Provider identity & economics — the static facts the comparison surfaces next to results:
 // isolation technology, pricing model, maturity, and whether the SDK can pin a target spec.
-// This is the SINGLE owner of Provider identity (`id`, `requiredEnvVars`); the harness adapter
-// in @sandbox-benchmarks/providers joins against it by id and refuses any one-sided provider.
+// Provider identity itself lives in the dependency-free `provider-ids.ts` leaf; this registry owns
+// the metadata keyed by that identity. The harness adapter joins against it and refuses any
+// one-sided provider.
 //
 // Validation status is deliberately NOT declared here: a provider is "validated" exactly when a
 // committed run carries real metrics for it (computed downstream), "pending" otherwise.
 
 import { type } from "arktype";
-import type { ProviderId } from "./identifiers.ts";
+import type { ProviderId } from "./provider-ids.ts";
 
-export type { ProviderId } from "./identifiers.ts";
+export type { ProviderId } from "./provider-ids.ts";
+export { PROVIDER_IDS } from "./provider-ids.ts";
 
-import type { TargetSpec } from "./run.ts";
-import { targetSpecSchema } from "./run.ts";
+import type { TargetSpec } from "./target-spec.ts";
+import { TARGET_SPEC } from "./target-spec.ts";
+import { targetSpecSchema } from "./target-spec-schema.ts";
+
+export type { TargetSpec } from "./target-spec.ts";
+export { TARGET_SPEC } from "./target-spec.ts";
 
 /**
  * Canonical provider ids — the single vocabulary every registry joins on. Adding an id forces a
@@ -286,8 +292,6 @@ export interface ProviderMeta {
  * they run with actuals recorded and the heavy suites skip there, surfaced as an explicit coverage gap
  * in the leaderboard, never silently dropped.
  */
-export const TARGET_SPEC = { vcpus: 4, memoryGb: 8, diskGb: 40 } as const satisfies TargetSpec;
-
 // Per-vendor pricing/transport, hoisted to one const per vendor ahead of the isolation-variant
 // fan-out later in this stack (Daytona → VM + container; Modal → gVisor + VM). A vendor bills one
 // way and its `@computesdk/*` adapter execs one way regardless of which isolation a sandbox uses, so
