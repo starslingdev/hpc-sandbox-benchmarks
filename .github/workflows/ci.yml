@@ -88,6 +88,11 @@ jobs:
       - name: Provider registry drift
         run: bun run check:provider-registry-drift
 
+      # Provider wiring drift gate — metadata owns provider inputs/runner/pre-auth declarations;
+      # committed workflow, local-env, docs, and setup regions are reviewed generated projections.
+      - name: Provider wiring drift
+        run: bun run check:provider-wiring
+
       # Spelling gate — typos (pinned in mise.toml); misspellings fail the build.
       - name: Spell (typos)
         run: bun run spell

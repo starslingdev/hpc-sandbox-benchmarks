@@ -139,7 +139,9 @@ jobs:
     # the trade for having any local backend at all — so it also declares BENCH_RUNNER_LIFETIME_MINUTES
     # below, and bench-suite refuses a suite that cannot finish inside that window rather than letting
     # the cell be reaped mid-run with no logs and every replicate lost. Keep the three paired.
+    # >>> generated: provider-runner — bun run generate-provider-wiring
     runs-on: ${{ matrix.provider == 'microsandbox-local' && 'starsling-ubuntu-24.04-2' || 'ubuntu-24.04' }}
+    # <<< end generated: provider-runner
     timeout-minutes: 180
     strategy:
       # One provider's failure (a flaky adapter, a dead account) must not cancel the rest of the matrix.
@@ -169,7 +171,9 @@ jobs:
       - name: Set up workspace
         uses: ./.github/actions/setup-workspace
         with:
+          # >>> generated: provider-runner-cache — bun run generate-provider-wiring
           no-cache: ${{ matrix.provider == 'microsandbox-local' && 'true' || 'false' }}
+          # <<< end generated: provider-runner-cache
 
       # Namespace is the one provider with no stored secret: it federates on this job's OIDC identity
       # (id-token: write above) and mints a portable token file from the resulting CLI session — see
@@ -185,7 +189,9 @@ jobs:
       # dispatched provider by name). What it avoids in both is the raw step abort, which would kill the
       # cell with no Run document and no summary to diagnose from.
       - name: Set up Namespace credentials
+        # >>> generated: preauth-namespace-token-bench — bun run generate-provider-wiring
         if: matrix.provider == 'namespace'
+        # <<< end generated: preauth-namespace-token-bench
         continue-on-error: true
         id: namespace
         uses: ./.github/actions/namespace-token
@@ -206,7 +212,9 @@ jobs:
         uses: ./.github/actions/setup-tama
 
       - name: Authenticate with Vercel
+        # >>> generated: preauth-vercel-auth-bench — bun run generate-provider-wiring
         if: matrix.provider == 'vercel'
+        # <<< end generated: preauth-vercel-auth-bench
         continue-on-error: true
         id: vercel-auth
         uses: ./.github/actions/vercel-auth
@@ -250,49 +258,41 @@ jobs:
           # provider so a missing/misnamed secret fails the job by name instead of exiting 0 having
           # benchmarked nothing. See the require_providers input above.
           REQUIRE_PROVIDERS: ${{ inputs.require_providers }}
-          # Scope every provider credential to the cell that actually uses it: a cell receives ONLY
-          # the secret(s) for its own `matrix.provider`, so a compromised adapter or suite can't read
-          # another provider's credential out of the environment. A non-matching provider evaluates to
-          # '', which the config gatekeeper treats as unset (packages/providers/src/lib/config.ts:
-          # empty ⇒ unset), exactly like an unsynced secret — so blanking the others is inert.
-          # Both Daytona isolation variants share the account key; scope it to either cell.
-          DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
-          # Each Daytona variant pins its region via a variant-specific secret so operators can
-          # retarget without editing the workflow: daytona-vm reads DAYTONA_TARGET (us-west-2
-          # default), daytona-container reads DAYTONA_CONTAINER_TARGET (us-west-2 default).
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          # Provider inputs are generated from metadata and scoped to their owning matrix cell.
+          # >>> generated: provider-inputs-bench — bun run generate-provider-wiring
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          # Both Modal variants share the account tokens; scope them to either cell.
-          MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
+          E2B_TEMPLATE: ${{ matrix.provider == 'e2b' && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
+          DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_SNAPSHOT: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_SNAPSHOT: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
-          NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-          RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
-          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
-          # OIDC-federated per-cell token file (see the Namespace step above). Not a stored secret: it is
-          # empty unless THIS cell is the namespace cell AND the mint succeeded (the step only runs when
-          # matrix.provider == 'namespace', and only writes the output once `nsc token create` returned),
-          # which the harness reads as the standard missing-credentials skip on every other cell.
-          NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
-          # @computesdk/vercel reads the short-lived token exported by the auth action.
-          VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
-          # Local is an explicit capability opt-in. Cloud needs only its API key; MSB_API_URL is an
-          # optional override for staging or private deployments. Neither value enters the guest.
           MICROSANDBOX_LOCAL_BENCH: ${{ matrix.provider == 'microsandbox-local' && '1' || '' }}
+          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
+          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
+          MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
+          NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          NOVITA_TEMPLATE: ${{ matrix.provider == 'novita' && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
+          RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
+          RUNLOOP_BLUEPRINT: ${{ matrix.provider == 'runloop' && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
+          NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
+          VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+          VERCEL_TEAM_SLUG: ${{ matrix.provider == 'vercel' && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
+          VERCEL_PROJECT_NAME: ${{ matrix.provider == 'vercel' && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
+          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
+          TAMA_TOKEN: ${{ matrix.provider == 'tama' && secrets.TAMA_TOKEN || '' }}
+          TAMA_CLI: ${{ matrix.provider == 'tama' && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          # <<< end generated: provider-inputs-bench
           # Paired with the microsandbox-local runner route above: that self-hosted label is reaped at
           # 70 minutes regardless of timeout-minutes, which no expression can encode (the workflow gate
           # requires a literal). Declaring it here lets bench-suite reject a suite that cannot finish
           # inside it, before any sandbox is created. Empty on the hosted runner, which outlives the job.
+          # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ matrix.provider == 'microsandbox-local' && '70' || '' }}
-          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_URL || '' }}
-          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
-          # tama ships no SDK: the adapter drives the `tama` CLI, which keeps credentials in its own
-          # profile rather than reading an env var. A fresh runner has no profile, so the adapter adopts
-          # this minted token (`tama tokens create`) on its first control-plane call. The value stays in
-          # the CLI profile and never enters the guest.
-          TAMA_TOKEN: ${{ matrix.provider == 'tama' && secrets.TAMA_TOKEN || '' }}
+          # <<< end generated: provider-runner-lifetime
         run: bun apps/cli/src/bin/bench-suite.ts "$BENCH_PROVIDER" "$BENCH_SUITE" "$GITHUB_RUN_ID" --replicates "$BENCH_REPLICATES"
 
       # Did THIS attempt actually produce shard Runs? The upload below overwrites the cell's artifact,

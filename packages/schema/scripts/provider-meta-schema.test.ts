@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ProviderId } from "../src/provider-ids.ts";
 import { PROVIDER_IDS } from "../src/provider-ids.ts";
 import { REGISTRY } from "../src/provider-meta/index.ts";
-import { validateProviderModules } from "./provider-meta-schema.ts";
+import { assertProviderIdSyntax, validateProviderModules } from "./provider-meta-schema.ts";
 
 const VALID_MODULES = Object.fromEntries(
 	PROVIDER_IDS.map((id) => [id, { id, meta: REGISTRY[id] }]),
@@ -27,16 +27,54 @@ describe("Tier-3 provider metadata schema", () => {
 		).toThrow(/e2b: metadata module declares id tama/);
 	});
 
+	test("rejects provider ids that cannot round-trip through generated YAML and argv", () => {
+		expect(() => assertProviderIdSyntax(["valid-id", "bad # id"])).toThrow(
+			/provider ids must be lowercase kebab-case/,
+		);
+		expect(() => assertProviderIdSyntax(["Uppercase"])).toThrow(/lowercase kebab-case/);
+	});
+
 	test("rejects empty artifact evidence, runner names, and invalid pre-auth policies", () => {
 		expect(() =>
 			validateProviderModules(meta("vercel", { artifact: { kind: "mirror", repository: "" } })),
 		).toThrow(/repository/);
-		expect(() => validateProviderModules(meta("microsandbox-local", { runner: "" }))).toThrow(
-			/runner/,
-		);
+		expect(() =>
+			validateProviderModules(meta("microsandbox-local", { runner: { label: "", noCache: true } })),
+		).toThrow(/label/);
 		expect(() => validateProviderModules(meta("vercel", { preAuth: "custom-auth" }))).toThrow(
 			/preAuth/,
 		);
+	});
+
+	test("rejects a pre-auth credential that is declared optional", () => {
+		// A pre-auth step mints the credential. Declaring its input optional would let a failed
+		// pre-auth pass an empty value to the provider instead of failing the workflow.
+		expect(() =>
+			validateProviderModules(
+				meta("vercel", {
+					inputs: [
+						{
+							name: "VERCEL_OIDC_TOKEN",
+							source: { kind: "step-env", step: "vercel-auth" },
+							required: false,
+						},
+					],
+				}),
+			),
+		).toThrow(/VERCEL_OIDC_TOKEN must be required/);
+		expect(() =>
+			validateProviderModules(
+				meta("namespace", {
+					inputs: [
+						{
+							name: "NSC_TOKEN_FILE",
+							source: { kind: "step-output", step: "namespace", output: "token-file" },
+							required: false,
+						},
+					],
+				}),
+			),
+		).toThrow(/NSC_TOKEN_FILE must be required/);
 	});
 
 	test("rejects malformed, reserved, and same-vendor colliding baked suffixes", () => {
@@ -82,6 +120,125 @@ describe("Tier-3 provider metadata schema", () => {
 				}),
 			),
 		).toThrow(/not both required and defaulted/);
+		expect(() =>
+			validateProviderModules(
+				meta("e2b", {
+					inputs: [{ name: "E2B_API_KEY", source: { kind: "secret" }, ciValue: "fixed" }],
+				}),
+			),
+		).toThrow(/ciValue belongs only to variable sources/);
+	});
+
+	test("rejects input names and emitted values that could corrupt workflow expressions", () => {
+		expect(() => validateProviderModules(meta("e2b", { inputs: ["bad-name"] }))).toThrow(
+			/uppercase environment variable name/,
+		);
+		expect(() =>
+			validateProviderModules(
+				meta("e2b", {
+					inputs: [
+						{
+							name: "E2B_TEMPLATE",
+							source: { kind: "variable" },
+							default: "line one\nline two",
+						},
+					],
+				}),
+			),
+		).toThrow(/single-line string/);
+		expect(() =>
+			validateProviderModules(
+				meta("vercel", {
+					inputs: [
+						{
+							name: "VERCEL_OIDC_TOKEN",
+							source: { kind: "step-env", step: "bad }} || secrets.ESCAPE" },
+						},
+					],
+				}),
+			),
+		).toThrow(/step\/output property name/);
+	});
+
+	test("requires shared input names to use one normalized policy", () => {
+		expect(() =>
+			validateProviderModules(
+				meta("daytona-container", {
+					inputs: [
+						{ name: "DAYTONA_API_KEY", source: { kind: "variable" } },
+						...REGISTRY["daytona-container"].inputs.slice(1),
+					],
+				}),
+			),
+		).toThrow(/shared provider input DAYTONA_API_KEY must use one source/);
+	});
+
+	test("requires step-provided inputs to match the provider's declared pre-auth step", () => {
+		expect(() =>
+			validateProviderModules(
+				meta("vercel", {
+					inputs: [
+						{
+							name: "VERCEL_OIDC_TOKEN",
+							source: { kind: "step-env", step: "namespace" },
+						},
+					],
+				}),
+			),
+		).toThrow(/preAuth vercel-auth must produce VERCEL_OIDC_TOKEN/);
+		expect(() =>
+			validateProviderModules(
+				meta("e2b", {
+					inputs: [
+						{
+							name: "E2B_API_KEY",
+							source: { kind: "step-output", step: "auth", output: "token" },
+						},
+					],
+				}),
+			),
+		).toThrow(/step-provided inputs require a declared preAuth policy/);
+		expect(() =>
+			validateProviderModules(meta("vercel", { inputs: ["VERCEL_OIDC_TOKEN"] })),
+		).toThrow(/preAuth vercel-auth must produce VERCEL_OIDC_TOKEN/);
+		expect(() =>
+			validateProviderModules(
+				meta("namespace", {
+					inputs: [
+						{
+							name: "NSC_TOKEN_FILE",
+							source: { kind: "step-output", step: "namespace", output: "missing" },
+						},
+					],
+				}),
+			),
+		).toThrow(/preAuth namespace-token must produce NSC_TOKEN_FILE.*output token-file/);
+		expect(() =>
+			validateProviderModules(
+				meta("vercel", {
+					inputs: [
+						{
+							name: "ACME_TOKEN",
+							source: { kind: "step-env", step: "vercel-auth" },
+						},
+					],
+				}),
+			),
+		).toThrow(/preAuth vercel-auth must produce VERCEL_OIDC_TOKEN/);
+	});
+
+	test("requires providers sharing a runner label to share its complete policy", () => {
+		expect(() =>
+			validateProviderModules(
+				meta("e2b", {
+					runner: {
+						label: "starsling-ubuntu-24.04-2",
+						noCache: false,
+						lifetimeMinutes: 70,
+					},
+				}),
+			),
+		).toThrow(/shared runner starsling-ubuntu-24.04-2 must use one cache\/lifetime policy/);
 	});
 
 	test("rejects malformed transport and pricing before generation", () => {

@@ -23,6 +23,7 @@ export type ProviderArtifact =
 export type ProviderInputSource =
 	| { readonly kind: "secret" }
 	| { readonly kind: "variable" }
+	| { readonly kind: "step-env"; readonly step: string }
 	| { readonly kind: "step-output"; readonly step: string; readonly output: string };
 
 export interface ProviderInputDescriptor {
@@ -30,6 +31,8 @@ export interface ProviderInputDescriptor {
 	readonly source?: ProviderInputSource;
 	readonly required?: boolean;
 	readonly default?: string;
+	/** Fixed value injected only by generated CI wiring (for runner capability opt-ins). */
+	readonly ciValue?: string;
 }
 
 /** String shorthand means a required secret. */
@@ -40,9 +43,40 @@ export interface NormalizedProviderInput {
 	readonly source: ProviderInputSource;
 	readonly required: boolean;
 	readonly default?: string;
+	readonly ciValue?: string;
 }
 
-export type ProviderPreAuth = "namespace-token" | "vercel-auth";
+/** Supported pre-auth actions and the exact provider input each one produces. */
+export const PROVIDER_PRE_AUTH_CONTRACTS = {
+	"namespace-token": {
+		step: "namespace",
+		input: {
+			name: "NSC_TOKEN_FILE",
+			source: { kind: "step-output", output: "token-file" },
+		},
+	},
+	"vercel-auth": {
+		step: "vercel-auth",
+		input: {
+			name: "VERCEL_OIDC_TOKEN",
+			source: { kind: "step-env" },
+		},
+	},
+} as const;
+
+export type ProviderPreAuth = keyof typeof PROVIDER_PRE_AUTH_CONTRACTS;
+
+export const PROVIDER_PRE_AUTH_POLICIES = Object.freeze(
+	Object.keys(PROVIDER_PRE_AUTH_CONTRACTS) as ProviderPreAuth[],
+);
+
+export interface ProviderRunnerPolicy {
+	readonly label: string;
+	/** setup-bun cache policy for this runner label; explicit so routing cannot drift from setup. */
+	readonly noCache: boolean;
+	/** Hard runner reaping window, when shorter than the Actions job timeout. */
+	readonly lifetimeMinutes?: number;
+}
 
 /** The inert object authored in `provider-meta/<id>.ts`. */
 export interface ProviderMetaSource {
@@ -62,7 +96,7 @@ export interface ProviderMetaSource {
 	readonly specPinning: SpecPinning;
 	readonly transport: ProviderTransport;
 	readonly runtimeIdentity?: ProviderRuntimeIdentity;
-	readonly runner?: string;
+	readonly runner?: ProviderRunnerPolicy;
 	readonly preAuth?: ProviderPreAuth;
 }
 
@@ -91,5 +125,6 @@ export function normalizeProviderInput(input: ProviderInput): NormalizedProvider
 		source: input.source ?? { kind: "secret" },
 		required: input.required ?? input.default === undefined,
 		...(input.default === undefined ? {} : { default: input.default }),
+		...(input.ciValue === undefined ? {} : { ciValue: input.ciValue }),
 	};
 }

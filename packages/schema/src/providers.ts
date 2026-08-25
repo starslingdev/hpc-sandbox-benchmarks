@@ -14,6 +14,7 @@ import type {
 	NormalizedProviderInput,
 	ProviderArtifact,
 	ProviderPreAuth,
+	ProviderRunnerPolicy,
 } from "./provider-meta.ts";
 import { normalizeProviderInput } from "./provider-meta.ts";
 import type { PricingComponent, PricingQuantityTerm, ProviderPricing } from "./provider-pricing.ts";
@@ -43,7 +44,9 @@ export type {
 	ProviderInputDescriptor,
 	ProviderInputSource,
 	ProviderPreAuth,
+	ProviderRunnerPolicy,
 } from "./provider-meta.ts";
+export { PROVIDER_PRE_AUTH_CONTRACTS, PROVIDER_PRE_AUTH_POLICIES } from "./provider-meta.ts";
 export * from "./provider-pricing.ts";
 
 import type { TargetSpec } from "./target-spec.ts";
@@ -150,8 +153,8 @@ export interface ProviderMeta {
 	specPinning: SpecPinning;
 	/** How the provider's exec transport behaves — the harness selects sync vs detached from this. */
 	transport: ProviderTransport;
-	/** Optional GitHub runner required by this provider. */
-	runner?: string;
+	/** Optional GitHub runner route plus its coupled setup-cache and reaping-budget policy. */
+	runner?: ProviderRunnerPolicy;
 	/** Optional CI authentication preparation owned by generated wiring. */
 	preAuth?: ProviderPreAuth;
 	/**
