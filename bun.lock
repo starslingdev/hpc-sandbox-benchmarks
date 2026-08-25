@@ -90,6 +90,7 @@
         "e2b": "catalog:computesdk",
         "microsandbox": "catalog:computesdk",
         "modal": "catalog:computesdk",
+        "nice-grpc": "catalog:computesdk",
         "novita-sandbox": "catalog:computesdk",
       },
       "devDependencies": {
@@ -260,6 +261,7 @@
       "e2b": "2.27.1",
       "microsandbox": "0.6.8",
       "modal": "0.9.0",
+      "nice-grpc": "2.1.16",
       "novita-sandbox": "2.0.6",
     },
     "xml": {

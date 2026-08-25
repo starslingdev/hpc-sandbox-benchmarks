@@ -23,6 +23,7 @@ import type {
 	DriverErrorCode,
 	DriverModule,
 	DriverOperationOptions,
+	ExecOptions,
 	MethodTable,
 	ProviderId,
 	ResolvedArtifact,
@@ -75,10 +76,6 @@ export type ComputeSdkSandboxOf<TCompute extends ComputeSdkLike> = Awaited<
 	ReturnType<TCompute["sandbox"]["create"]>
 >;
 
-export interface ComputeSdkCommandOptions {
-	readonly signal?: AbortSignal;
-}
-
 /**
  * An optional execution projection for wrappers whose universal runCommand surface omits a
  * load-bearing native option (for example E2B's root user). The callback receives the wrapper's
@@ -89,13 +86,15 @@ export interface ComputeSdkCommands<TCompute extends ComputeSdkLike> {
 	exec(
 		sandbox: ComputeSdkSandboxOf<TCompute>,
 		command: string,
-		options: ComputeSdkCommandOptions,
+		options: ExecOptions | undefined,
+		ref: SandboxRef,
 	): Promise<unknown>;
 	/** Resolves only after the provider has returned a genuine background acceptance handle. */
 	launch(
 		sandbox: ComputeSdkSandboxOf<TCompute>,
 		command: string,
-		options: ComputeSdkCommandOptions,
+		options: ExecOptions | undefined,
+		ref: SandboxRef,
 	): Promise<void>;
 }
 
@@ -107,12 +106,14 @@ export interface ComputeSdkLifecycle<TCompute extends ComputeSdkLike> {
 	/**
 	 * Idempotent teardown that must surface transport/auth failures instead of swallowing them.
 	 * `ref` is the bridge-validated canonical identity when validation reached that boundary. When
-	 * it is absent, teardown must use the retained native handle and must not reread a raw wrapper id.
+	 * it is absent, teardown may use the retained native handle or the bridge-snapshotted recovery
+	 * locator, but must never reread a raw wrapper id or wrapper-visible create options.
 	 */
 	destroy(
 		sandbox: ComputeSdkSandboxOf<TCompute>,
 		ref: SandboxRef | undefined,
 		options: DriverOperationOptions,
+		recoveryLocator?: ComputeSdkRecoveryLocator,
 	): Promise<void>;
 }
 
@@ -127,10 +128,14 @@ export interface ComputeSdkCreateRecovery<TCompute extends ComputeSdkLike> {
 	readonly maxAttempts: number;
 	/** Stable owner-visible locator derived from the already-mapped create options. */
 	locator(createOptions: Readonly<Record<string, unknown>>): ComputeSdkRecoveryLocator;
-	/** One bounded observation/removal attempt. The bridge owns the confirmed-absence horizon. */
+	/**
+	 * One bounded observation/removal attempt. The bridge owns the confirmed-absence horizon and
+	 * passes the locator it snapshotted before invoking the wrapper. Cleanup must never reread the
+	 * wrapper-visible create-options object after a create attempt.
+	 */
 	cleanup(
 		compute: TCompute,
-		createOptions: Readonly<Record<string, unknown>>,
+		locator: ComputeSdkRecoveryLocator,
 		options: DriverOperationOptions,
 	): Promise<ComputeSdkCreateRecoveryObservation>;
 	/**
@@ -255,6 +260,7 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 		native: ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>,
 		request: CreateRequest,
 		options: DriverOperationOptions,
+		ref: SandboxRef,
 	) => Promise<ComputeSdkCreatedRequestVerification>;
 	/**
 	 * Ordinary function composition for a provider-specific command projection. Omit this when the
@@ -627,7 +633,7 @@ async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends Compute
 	const result: unknown = await invokeComputeSdkProviderCallbackAsync(
 		provider,
 		"created-request preparation and verification",
-		() => prepareAndVerify(sandbox, native, request, operationOptions ?? {}),
+		() => prepareAndVerify(sandbox, native, request, operationOptions ?? {}, ref),
 		{ code: "create-failed", ref },
 	);
 	if (!isNonArrayObject(result)) {
@@ -864,12 +870,13 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 		sandbox: ComputeSdkSandboxOf<TCompute>,
 		ref: SandboxRef | undefined,
 		operationOptions: DriverOperationOptions = {},
+		recoveryLocator?: ComputeSdkRecoveryLocator,
 	): Promise<unknown> => {
 		if (lifecycle === undefined) return sandbox.destroy();
 		return invokeComputeSdkProviderCallbackAsync(
 			provider,
 			"lifecycle destroy",
-			() => lifecycle.destroy(sandbox, ref, operationOptions),
+			() => lifecycle.destroy(sandbox, ref, operationOptions, recoveryLocator),
 			{ code: "destroy-failed", ...(ref === undefined ? {} : { ref }) },
 		);
 	};
@@ -901,7 +908,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 					reconcileAmbiguousCreate(
 						provider,
 						compute,
-						createOptions,
+						recoveryLocator,
 						createRecovery,
 						cleanupOptions,
 						sensitiveValues,
@@ -1009,11 +1016,30 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 						);
 					}
 					try {
-						await destroySandbox(
-							created,
-							parsedId === undefined ? undefined : sandboxRef(provider, parsedId),
-							cleanupOptions,
-						);
+						if (
+							parsedId === undefined &&
+							createRecovery !== undefined &&
+							recoveryLocator !== undefined
+						) {
+							// A returned handle proves that an allocation existed, but an invalid wrapper id
+							// cannot identify it safely. Reconcile by the preallocated locator so an eventually
+							// consistent first name miss cannot release ownership and leak the allocation.
+							await reconcileAmbiguousCreate(
+								provider,
+								compute,
+								recoveryLocator,
+								createRecovery,
+								cleanupOptions,
+								sensitiveValues,
+							);
+						} else {
+							await destroySandbox(
+								created,
+								parsedId === undefined ? undefined : sandboxRef(provider, parsedId),
+								cleanupOptions,
+								recoveryLocator,
+							);
+						}
 						handleSensitiveValues.delete(created);
 						handleRefIds.delete(created);
 						if (parsedId !== undefined) refSensitiveValues.delete(parsedId);
@@ -1034,31 +1060,36 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 					throw new FailedCreateCleanupError(cleanupError, primary, {
 						provider,
 						locator:
-							parsedId === undefined ? { kind: "native-handle" } : { kind: "id", value: parsedId },
+							parsedId === undefined
+								? (recoveryLocator ?? { kind: "native-handle" })
+								: { kind: "id", value: parsedId },
 						cleanup: retryCleanup,
 					});
 				}
 				throw primary;
 			}
 		},
-		async exec(_compute, sandbox, command) {
+		async exec(_compute, sandbox, command, execOptions) {
 			const started = Date.now();
+			const ref = refFor(sandbox);
 			let result: NormalizedComputeSdkCommandResult;
 			try {
+				let rawResult: unknown;
+				if (commands === undefined) {
+					rawResult = await sandbox.runCommand(command);
+				} else {
+					if (ref === undefined) throw new Error("canonical sandbox identity is unavailable");
+					rawResult = await invokeComputeSdkProviderCallbackAsync(
+						provider,
+						"command exec",
+						() => commands.exec(sandbox, command, execOptions, ref),
+						{ code: "exec-failed", ref },
+					);
+				}
 				result = normalizeCommandResult(
 					provider,
 					"exec",
-					await (commands === undefined
-						? sandbox.runCommand(command)
-						: invokeComputeSdkProviderCallbackAsync(
-								provider,
-								"command exec",
-								() => commands.exec(sandbox, command, {}),
-								{
-									code: "exec-failed",
-									...(refFor(sandbox) === undefined ? {} : { ref: refFor(sandbox) }),
-								},
-							)),
+					rawResult,
 					sensitiveFor(sandbox),
 					refFor(sandbox),
 				);
@@ -1107,13 +1138,15 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			handleRefIds.delete(sandbox);
 			if (refId !== undefined) refSensitiveValues.delete(refId);
 		},
-		async launch(_compute, sandbox, command) {
+		async launch(_compute, sandbox, command, execOptions) {
 			if (commands !== undefined) {
+				const ref = refFor(sandbox);
 				try {
+					if (ref === undefined) throw new Error("canonical sandbox identity is unavailable");
 					await invokeComputeSdkProviderCallbackAsync(
 						provider,
 						"command launch",
-						() => commands.launch(sandbox, command, {}),
+						() => commands.launch(sandbox, command, execOptions, ref),
 						{
 							code: "exec-failed",
 							...(refFor(sandbox) === undefined ? {} : { ref: refFor(sandbox) }),
@@ -1478,7 +1511,7 @@ function locatorExposesSensitiveValue(
 async function reconcileAmbiguousCreate<TCompute extends ComputeSdkLike>(
 	provider: ProviderId,
 	compute: TCompute,
-	createOptions: Readonly<Record<string, unknown>>,
+	locator: ComputeSdkRecoveryLocator,
 	recovery: ComputeSdkCreateRecovery<TCompute>,
 	operationOptions: DriverOperationOptions = {},
 	sensitiveValues: readonly string[],
@@ -1502,7 +1535,7 @@ async function reconcileAmbiguousCreate<TCompute extends ComputeSdkLike>(
 				await invokeComputeSdkProviderCallbackAsync(
 					provider,
 					"failed-create recovery cleanup",
-					() => recovery.cleanup(compute, createOptions, operationOptions),
+					() => recovery.cleanup(compute, locator, operationOptions),
 					{ code: "destroy-failed" },
 				),
 				sensitiveValues,
