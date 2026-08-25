@@ -22,7 +22,22 @@ import type {
 	SnapshotCapability,
 } from "./port.ts";
 
-export interface MethodTable<Handle, Ctx> {
+type SameType<Left, Right> =
+	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2
+		? (<T>() => T extends Right ? 1 : 2) extends <T>() => T extends Left ? 1 : 2
+			? true
+			: false
+		: false;
+
+export type MethodTableCreateResult<Handle, Native = Handle> = {
+	readonly handle: Handle;
+	readonly sandboxRef: SandboxRef;
+	readonly artifact?: ResolvedArtifact;
+} & (SameType<Handle, Native> extends true
+	? { readonly native?: Native }
+	: { readonly native: Native });
+
+export interface MethodTable<Handle, Ctx, Native = Handle> {
 	/** Bounded wait for accepted operations; expiry fails destroy so teardown never races the handle. */
 	readonly operationDrainTimeoutMs?: number;
 	/**
@@ -34,11 +49,7 @@ export interface MethodTable<Handle, Ctx> {
 		ctx: Ctx,
 		request: CreateRequest,
 		options?: DriverOperationOptions,
-	): Promise<{
-		readonly handle: Handle;
-		readonly sandboxRef: SandboxRef;
-		readonly artifact?: ResolvedArtifact;
-	}>;
+	): Promise<MethodTableCreateResult<Handle, Native>>;
 	/** Run a command. Options are forwarded unchanged; the kit still enforces output caps. */
 	exec(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<ExecResult>;
 	destroy(ctx: Ctx, handle: Handle, options?: DriverOperationOptions): Promise<void>;
@@ -56,7 +67,7 @@ export interface MethodTable<Handle, Ctx> {
 		describe?(ctx: Ctx, ref: SandboxRef): Promise<unknown>;
 	};
 	readonly snapshots?: {
-		create(ctx: Ctx, session: SandboxSession<Handle>): Promise<{ readonly snapshotId: string }>;
+		create(ctx: Ctx, session: SandboxSession<Native>): Promise<{ readonly snapshotId: string }>;
 		delete(ctx: Ctx, snapshotId: string): Promise<void>;
 	};
 }
@@ -145,10 +156,10 @@ export class DeferredTeardownError extends DriverError implements AsyncDisposabl
  * brick the driver for the process lifetime; concurrent callers share the in-flight attempt
  * (ADR-0007 §9).
  */
-export function driverFromTable<Handle, Ctx>(
-	table: MethodTable<Handle, Ctx>,
+export function driverFromTable<Handle, Ctx, Native = Handle>(
+	table: MethodTable<Handle, Ctx, Native>,
 	loadCtx: () => Promise<Ctx>,
-): SandboxDriver<Handle> {
+): SandboxDriver<Native> {
 	const operationDrainTimeoutMs = table.operationDrainTimeoutMs ?? 1_000;
 	if (!Number.isSafeInteger(operationDrainTimeoutMs) || operationDrainTimeoutMs <= 0) {
 		throw new DriverError(
@@ -198,6 +209,11 @@ export function driverFromTable<Handle, Ctx>(
 				throw mismatch;
 			}
 			const handle = created.handle;
+			// Presence, not truthiness, selects the explicitly projected native value. `undefined` can be
+			// a wrapper's honest getInstance() result and must not silently turn back into the table handle.
+			const native = (
+				"native" in created ? created.native : (handle as unknown as Native)
+			) as Native;
 			const ref = created.sandboxRef;
 			let state: "alive" | "destroying" | "destroyed" = "alive";
 			let destroyInFlight: Promise<void> | undefined;
@@ -294,10 +310,10 @@ export function driverFromTable<Handle, Ctx>(
 				teardownInFlight = teardown;
 				return teardown;
 			};
-			const session: SandboxSession<Handle> = {
+			const session: SandboxSession<Native> = {
 				sandboxRef: ref,
 				artifact,
-				native: handle,
+				native,
 				exec: (command, options?: ExecOptions) =>
 					alive(() => {
 						// Read the cap before provider code sees the original options object. Readonly is a
@@ -373,10 +389,10 @@ export function driverFromTable<Handle, Ctx>(
 		...(tableSnapshots
 			? {
 					snapshots: {
-						create: async (session: SandboxSession<Handle>) =>
+						create: async (session: SandboxSession<Native>) =>
 							tableSnapshots.create(await ctx(), session),
 						delete: async (snapshotId: string) => tableSnapshots.delete(await ctx(), snapshotId),
-					} satisfies SnapshotCapability<Handle>,
+					} satisfies SnapshotCapability<Native>,
 				}
 			: {}),
 	};

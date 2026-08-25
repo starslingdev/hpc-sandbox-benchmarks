@@ -4,7 +4,10 @@
 // everything a driver author implements. Runtime validation is isolated at `./env` and `./schemas`;
 // importing the core must not evaluate arktype or any schema-package runtime graph.
 
+export type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
+
 export type {
+	ArtifactOf,
 	DriverContext,
 	DriverModule,
 	DriverSpec,
@@ -12,6 +15,7 @@ export type {
 	EnvInputFromInputs,
 	EnvInputOf,
 	EnvOf,
+	ResolvedArtifactOf,
 } from "./lib/define.ts";
 export { defineDriver } from "./lib/define.ts";
 
@@ -50,5 +54,5 @@ export type {
 export { sandboxRef, succeeded } from "./lib/port.ts";
 export { withSessionTeardown } from "./lib/session.ts";
 export { launchDetached, readTextFile, shellQuote, writeTextFile } from "./lib/shell.ts";
-export type { MethodTable } from "./lib/table.ts";
+export type { MethodTable, MethodTableCreateResult } from "./lib/table.ts";
 export { DeferredTeardownError, driverFromTable } from "./lib/table.ts";

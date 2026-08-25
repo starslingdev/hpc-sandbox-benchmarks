@@ -139,7 +139,13 @@ describe("cliDriver", () => {
 		});
 		expect(module_.id).toBe("tama");
 		expect(module_.createBudget).toEqual({ owner: "driver", attemptCeilingMs: 60_000 });
-		expect(typeof module_.driver({ env: { TAMA_TOKEN: "tok" } }).create).toBe("function");
+		expect(
+			typeof module_.driver({
+				env: { TAMA_TOKEN: "tok" },
+				artifact: { kind: "image" },
+				resolvedArtifact: { kind: "image", ref: "ghcr.io/example/toolchain:v1" },
+			}).create,
+		).toBe("function");
 
 		const missingBudget = () =>
 			defineCliDriver(
@@ -1136,8 +1142,10 @@ describe("cliDriver", () => {
 		expect((error.error as DriverError).code).toBe("destroy-failed");
 		expect((error.suppressed as DriverError).code).toBe("vendor-output-unparseable");
 		expect(error.provider).toBe("tama");
-		expect(error.locator.kind).toBe("name");
-		expect(error.locator.value).toMatch(/^bench-/);
+		expect(error.locator).toEqual({
+			kind: "name",
+			value: expect.stringMatching(/^bench-/),
+		});
 
 		await error[Symbol.asyncDispose]();
 		await error[Symbol.asyncDispose]();

@@ -672,13 +672,23 @@ create never releases ownership by itself.
 It keeps all its real value — seven maintained vendor translations — and stops being mandatory:
 
 ```ts
-import { computeSdkDriver } from "./_computesdk.ts";
+import { computeSdkSpec, defineComputeSdkDriver } from "./_computesdk.ts";
 
-export default defineDriver("e2b", {
-  driver: ({ env, resolvedArtifact }) =>
-    computeSdkDriver(e2bCommandsAsRoot(e2b({ apiKey: env.E2B_API_KEY })), {
-      createOptions: { snapshotId: resolvedArtifact.ref },
-      hasWorkingFilesystem: true,   // explicit, because UnsupportedFileSystem lies
+export default defineComputeSdkDriver("e2b", {
+  spec: ({ env, resolvedArtifact }) =>
+    computeSdkSpec(e2bCommandsAsRoot(e2b({ apiKey: env.E2B_API_KEY })), {
+      sandboxId: E2bSandboxId,       // provider-local arktype trust boundary
+      createOptions: {
+        coverage: {
+          spec: { vcpus: "artifact", memoryGb: "artifact", diskGb: "artifact" },
+          artifact: "context",
+          deadlineMs: "harness",
+          gpu: { model: "unsupported", count: "unsupported" },
+          env: "unsupported",
+        },
+        map: () => ({ snapshotId: resolvedArtifact.ref }),
+      },
+      hasWorkingFilesystem: true,    // explicit, because UnsupportedFileSystem lies
     }),
 });
 ```
@@ -815,9 +825,12 @@ must be added to that executable proof rather than being retroactively described
    unregistered id; the regenerated loader won't compile without the file.
 
 Then `bun run generate-provider-wiring` → review one diff touching the loader table, the exports
-map, and the CI regions. A bake module only when `artifact.kind === "baked"` (the cli `Record`
+map, fleet dependency projection, and the CI regions. A bake module only when
+`artifact.kind === "baked"` (the cli `Record`
 demands exactly those); the `bench-matrix.yml` promotion stays a deliberate, separate step.
-`bun run new-provider <id>` (ADR-0006 §9) scaffolds all three edits from one descriptor.
+The final migration slice adds `bun run new-provider <id>` (ADR-0006 §9), which scaffolds all three
+edits and any new root catalog version pin from one descriptor; until that slice lands, the command
+described here is a normative destination rather than an already-available script.
 
 **We accept:**
 
@@ -834,9 +847,10 @@ demands exactly those); the `bench-matrix.yml` promotion stays a deliberate, sep
   contextual typing, shared by convex and elysia. §2's method tables are the pressure valve: a
   table is naturally a named `satisfies MethodTable<…>` const, so the code an author most wants to
   extract and unit-test is exactly the shape that extracts safely.
-- **`createOptions` stays an open passthrough on the bridge.** The `snapshotId`/`templateId`
-  conventions are real ComputeSDK knowledge and remain local to each bridge-backed driver; the
-  registry does not pretend those vendor option names are artifact metadata.
+- **The mapped ComputeSDK options stay open; canonical coverage does not.** The
+  `snapshotId`/`templateId` conventions are real ComputeSDK knowledge and remain local to each
+  bridge-backed driver, while the type-derived `coverage` declaration makes every new target,
+  GPU, environment, artifact, or budget axis a compiler-forced provider review.
 - **Losing `getInfo`/`list` as *typed* members.** Both are pure latency probes today. They move to
   the optional `probes` capability, where an absent probe is a recorded gap rather than a stub.
 - **Default exports in `packages/drivers`.** The one place the repo uses them, accepted so the

@@ -74,3 +74,24 @@ export function parseDriverEnv<P extends ProviderId>(
 	// retain that id-indexed relationship through a mutable shape, so this cast records the proof.
 	return parsed as EnvOf<P>;
 }
+
+/**
+ * Values whose registry source is credential-bearing and must never survive in diagnostics.
+ * Ordinary variables (binary paths, image/template overrides, endpoints) stay observable so
+ * redaction cannot corrupt status text or retry classification. Step-provided values are treated as
+ * sensitive: today those are OIDC/token material or paths to it.
+ */
+export function sensitiveEnvValuesFor<P extends ProviderId>(
+	id: P,
+	env: EnvOf<P>,
+): readonly string[] {
+	const values: string[] = [];
+	const resolved = env as Readonly<Record<string, string | undefined>>;
+	for (const raw of REGISTRY[id].inputs) {
+		const input = normalizeProviderInput(raw);
+		if (input.source.kind === "variable") continue;
+		const value = resolved[input.name];
+		if (value !== undefined && value.length > 0) values.push(value);
+	}
+	return values;
+}

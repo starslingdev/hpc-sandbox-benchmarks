@@ -67,6 +67,36 @@
         "typescript": "catalog:",
       },
     },
+    "packages/drivers": {
+      "name": "@sandbox-benchmarks/drivers",
+      "version": "0.0.0",
+      "dependencies": {
+        "@blaxel/core": "catalog:computesdk",
+        "@computesdk/blaxel": "catalog:computesdk",
+        "@computesdk/daytona": "catalog:computesdk",
+        "@computesdk/e2b": "catalog:computesdk",
+        "@computesdk/modal": "catalog:computesdk",
+        "@computesdk/namespace": "catalog:computesdk",
+        "@computesdk/provider": "catalog:computesdk",
+        "@computesdk/runloop": "catalog:computesdk",
+        "@daytona/api-client": "catalog:computesdk",
+        "@daytona/sdk": "catalog:computesdk",
+        "@run-cloud/sdk": "catalog:computesdk",
+        "@runloop/api-client": "catalog:computesdk",
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "@vercel/sandbox": "catalog:computesdk",
+        "arktype": "catalog:",
+        "computesdk": "catalog:computesdk",
+        "microsandbox": "catalog:computesdk",
+        "modal": "catalog:computesdk",
+        "novita-sandbox": "catalog:computesdk",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/figures": {
       "name": "@sandbox-benchmarks/figures",
       "version": "0.0.0",
@@ -719,6 +749,8 @@
     "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
 
     "@sandbox-benchmarks/driver": ["@sandbox-benchmarks/driver@workspace:packages/driver"],
+
+    "@sandbox-benchmarks/drivers": ["@sandbox-benchmarks/drivers@workspace:packages/drivers"],
 
     "@sandbox-benchmarks/figures": ["@sandbox-benchmarks/figures@workspace:packages/figures"],
 

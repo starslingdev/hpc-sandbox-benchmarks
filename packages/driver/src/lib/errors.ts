@@ -20,6 +20,8 @@ import type { DriverOperationOptions, SandboxRef } from "./port.ts";
  *   - `readiness-timeout` — create was accepted but the sandbox never became ready in budget.
  *   - `vendor-output-unparseable` — the vendor's control-plane output drifted from its schema.
  *   - `exec-failed` — a kit-owned shell fallback failed before it could satisfy its contract.
+ *   - `filesystem-failed` / `probe-failed` / `snapshot-failed` — an explicitly declared optional
+ *     capability failed while talking to the selected provider.
  *   - `invalid-exec-options` — a caller supplied an impossible output-cap value.
  *   - `destroy-failed` — teardown could not converge.
  */
@@ -34,6 +36,9 @@ export type DriverErrorCode =
 	| "readiness-timeout"
 	| "vendor-output-unparseable"
 	| "exec-failed"
+	| "filesystem-failed"
+	| "probe-failed"
+	| "snapshot-failed"
 	| "invalid-exec-options"
 	| "destroy-failed";
 
@@ -46,13 +51,18 @@ export interface DriverErrorFields {
 	readonly cause?: unknown;
 }
 
-/** A stable locator for an allocation whose create failed before a session could be returned. */
+/** A retained recovery locator for an allocation whose create failed before a session returned. */
 export interface FailedCreateRecovery {
 	readonly provider: ProviderId;
-	readonly locator: {
-		readonly kind: "name" | "id";
-		readonly value: string;
-	};
+	readonly locator:
+		| {
+				readonly kind: "name" | "id";
+				readonly value: string;
+		  }
+		| {
+				/** The wrapper returned no stable id, so cleanup retains its native object in-process. */
+				readonly kind: "native-handle";
+		  };
 }
 
 export interface FailedCreateCleanupErrorOptions extends FailedCreateRecovery {
@@ -84,10 +94,14 @@ export class FailedCreateCleanupError extends SuppressedError implements AsyncDi
 		createError: unknown,
 		options: FailedCreateCleanupErrorOptions,
 	) {
+		const locatorLabel =
+			options.locator.kind === "native-handle"
+				? "through its retained native handle"
+				: `by ${options.locator.kind} ${options.locator.value}`;
 		super(
 			cleanupError,
 			createError,
-			`failed to clean up ${options.provider} sandbox by ${options.locator.kind} ${options.locator.value} after create failure`,
+			`failed to clean up ${options.provider} sandbox ${locatorLabel} after create failure`,
 		);
 		this.name = "FailedCreateCleanupError";
 		this.provider = options.provider;
