@@ -7,6 +7,7 @@ import { type } from "arktype";
 import type {
 	ComputeSdkCreateRequestCoverage,
 	ComputeSdkCreateRequestMapper,
+	ComputeSdkDriverModuleSpec,
 	ComputeSdkDriverSpec,
 	ComputeSdkLike,
 	ComputeSdkNativeOf,
@@ -62,7 +63,7 @@ const mappedCoverage = {
 } as const satisfies ComputeSdkCreateRequestCoverage;
 
 const artifactCoverage = {
-	spec: { vcpus: "artifact", memoryGb: "artifact", diskGb: "artifact" },
+	spec: { vcpus: { artifact: 4 }, memoryGb: { artifact: 8 }, diskGb: { artifact: 40 } },
 	artifact: "context",
 	deadlineMs: "harness",
 	gpu: { model: "unsupported", count: "unsupported" },
@@ -74,13 +75,23 @@ const createRequestMapper = (
 	coverage: ComputeSdkCreateRequestCoverage = mappedCoverage,
 ): ComputeSdkCreateRequestMapper => ({ coverage, map });
 
-function expectRedacted(error: unknown, code?: DriverError["code"]): void {
+function expectCredentialSafe(error: unknown, code?: DriverError["code"]): DriverError {
 	const typed = error as DriverError;
 	if (code !== undefined) expect(typed.code).toBe(code);
 	expect(typed.message).not.toContain("test-key");
 	expect(typed.vendorMessage ?? "").not.toContain("test-key");
 	expect(String(typed.cause ?? "")).not.toContain("test-key");
+	return typed;
+}
+
+function expectRedacted(error: unknown, code?: DriverError["code"]): void {
+	const typed = expectCredentialSafe(error, code);
 	expect(`${typed.message} ${typed.vendorMessage ?? ""}`).toContain("[REDACTED]");
+}
+
+function expectOmitted(error: unknown, code?: DriverError["code"]): void {
+	const typed = expectCredentialSafe(error, code);
+	expect(`${typed.message} ${String(typed.cause ?? "")}`).toContain("omitted");
 }
 
 function bridge<TSandbox extends ComputeSdkSandboxLike>(
@@ -261,10 +272,86 @@ describe("computeSdkDriver", () => {
 		void missingTopLevelAxis;
 	});
 
-	test("types and redacts wrapper construction failures before an SDK escapes", () => {
+	test("snapshots joined module policy once and omits hostile getter diagnostics", () => {
+		const { compute } = fakeCompute(baseSandbox);
+		const context = {
+			env: { E2B_API_KEY: "test-key" },
+			artifact: { kind: "baked" },
+			resolvedArtifact: { kind: "baked", ref: "template-1" },
+		} as const;
+		let budgetReads = 0;
+		let specReads = 0;
+		const budget = { owner: "harness" as const, timeoutMs: 45_000 };
+		let specFactory: ComputeSdkDriverModuleSpec<"e2b", typeof compute>["spec"] = () => ({
+			compute,
+			sandboxId: e2bSandboxId,
+			createOptions: createRequestMapper(),
+			hasWorkingFilesystem: false,
+		});
+		const mutableModule = Object.defineProperties(
+			{},
+			{
+				createBudget: {
+					enumerable: true,
+					get: () => {
+						budgetReads += 1;
+						return budget;
+					},
+				},
+				spec: {
+					enumerable: true,
+					get: () => {
+						specReads += 1;
+						return specFactory;
+					},
+				},
+			},
+		) as ComputeSdkDriverModuleSpec<"e2b", typeof compute>;
+		const module_ = defineComputeSdkDriver("e2b", mutableModule);
+		budget.timeoutMs = 1;
+		specFactory = () => {
+			throw new Error("mutated-module-secret");
+		};
+		expect(module_.createBudget).toEqual({ owner: "harness", timeoutMs: 45_000 });
+		expect(Object.isFrozen(module_.createBudget)).toBe(true);
+		expect(typeof module_.driver(context).create).toBe("function");
+		expect({ budgetReads, specReads }).toEqual({ budgetReads: 1, specReads: 1 });
+
+		for (const hostileField of ["createBudget", "spec"] as const) {
+			const secret = `hostile-${hostileField}-secret`;
+			const hostileModule = Object.defineProperties(
+				{},
+				{
+					createBudget: { value: { owner: "harness", timeoutMs: 45_000 }, enumerable: true },
+					spec: { value: specFactory, enumerable: true },
+					[hostileField]: {
+						enumerable: true,
+						get: () => {
+							throw new Error(secret);
+						},
+					},
+				},
+			) as ComputeSdkDriverModuleSpec<"e2b", typeof compute>;
+			let error: unknown;
+			try {
+				defineComputeSdkDriver("e2b", hostileModule);
+			} catch (caught) {
+				error = caught;
+			}
+			expectCredentialSafe(error, "vendor-contract-violation");
+			expect(String((error as Error).message)).not.toContain(secret);
+			expect(String((error as Error & { cause?: unknown }).cause ?? "")).not.toContain(secret);
+		}
+	});
+
+	test("omits arbitrary module-spec diagnostics before an SDK escapes", () => {
+		const secret = "closure-only-computesdk-secret";
 		const module_ = defineComputeSdkDriver<"e2b", ComputeSdkLike>("e2b", {
-			spec: ({ env }): ComputeSdkDriverSpec<ComputeSdkLike> => {
-				throw new Error(`SDK constructor echoed ${env.E2B_API_KEY}`);
+			spec: (): ComputeSdkDriverSpec<ComputeSdkLike> => {
+				const nested = Object.assign(new Error(`nested ${secret}`), { credential: secret });
+				throw Object.assign(new Error(`factory ${secret}`, { cause: nested }), {
+					credential: secret,
+				});
 			},
 		});
 		let error: unknown;
@@ -278,7 +365,39 @@ describe("computeSdkDriver", () => {
 			error = caught;
 		}
 		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
-		expectRedacted(error);
+		expectOmitted(error, "vendor-contract-violation");
+		expect((error as Error).message).not.toContain(secret);
+		expect(String((error as Error).cause)).not.toContain(secret);
+		expect(((error as Error).cause as Error).cause).toBeUndefined();
+	});
+
+	test("snapshots nested recovery policy before an ambiguous create runs", async () => {
+		const secret = "compute-module-secret";
+		let maxAttemptReads = 0;
+		const recovery = new Proxy(
+			{
+				absenceConfirmationMs: 1,
+				maxAttempts: 2,
+				locator: () => ({ kind: "name" as const, value: "attempt-1" }),
+				cleanup: async () => ({ status: "destroyed" as const }),
+			},
+			{
+				get(target, property, receiver) {
+					if (property === "maxAttempts" && maxAttemptReads++ > 0) throw new Error(secret);
+					return Reflect.get(target, property, receiver);
+				},
+			},
+		);
+		const driver = bridge(
+			{
+				sandbox: { create: async () => Promise.reject(new Error("response lost")) },
+			},
+			{ createRecovery: recovery },
+		);
+		const error = (await driver.create(request).catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error.message).not.toContain(secret);
+		expect(maxAttemptReads).toBe(1);
 	});
 
 	test("passes composition-resolved create options without confusing deadline with lifetime", async () => {
@@ -324,6 +443,7 @@ describe("computeSdkDriver", () => {
 	});
 
 	test("preflights create-option mapping before the wrapper can allocate", async () => {
+		const secret = "mapper-closure-secret";
 		let createCalls = 0;
 		const compute: ComputeSdkLike<typeof baseSandbox> = {
 			sandbox: {
@@ -335,13 +455,133 @@ describe("computeSdkDriver", () => {
 		};
 		const error = await bridge(compute, {
 			createOptions: () => {
-				throw new Error("capacity mapping missing");
+				throw Object.assign(new Error(`capacity mapping leaked ${secret}`), {
+					credential: secret,
+				});
 			},
 		})
 			.create({ ...request, gpu: { model: "unsupported", count: 1 } })
 			.catch((caught: unknown) => caught);
 		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
+		expect((error as Error).message).not.toContain(secret);
+		expect(String((error as Error).cause)).not.toContain(secret);
 		expect(createCalls).toBe(0);
+	});
+
+	test("omits post-create hook diagnostics and still tears the accepted handle down", async () => {
+		const secret = "post-allocation-callback-secret";
+		let destroys = 0;
+		const { compute } = fakeCompute({
+			...baseSandbox,
+			destroy: async () => {
+				destroys += 1;
+			},
+		});
+		const error = (await bridge(compute, {
+			prepareAndVerifyCreatedRequest: async () => {
+				const nested = Object.assign(new Error(`nested ${secret}`), { credential: secret });
+				throw Object.assign(new Error(`verification ${secret}`, { cause: nested }), {
+					credential: secret,
+				});
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error.message).not.toContain(secret);
+		expect(String(error.cause)).not.toContain(secret);
+		expect(destroys).toBe(1);
+	});
+
+	test("rolls back when the caller aborts during an uncancellable post-create hook", async () => {
+		let destroys = 0;
+		const cancellation = new AbortController();
+		const { compute } = fakeCompute({
+			...baseSandbox,
+			destroy: async () => {
+				destroys += 1;
+			},
+		});
+		const error = await bridge(compute, {
+			prepareAndVerifyCreatedRequest: async () => {
+				cancellation.abort(new Error("caller stopped waiting"));
+				return { status: "honored" };
+			},
+		})
+			.create(request, { signal: cancellation.signal })
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect((error as Error).message).toContain("was aborted");
+		expect(destroys).toBe(1);
+	});
+
+	test("retains cleanup when post-create abort rollback double-faults", async () => {
+		let destroys = 0;
+		const cancellation = new AbortController();
+		const { compute } = fakeCompute({
+			...baseSandbox,
+			destroy: async () => {
+				destroys += 1;
+				if (destroys === 1) throw new Error("transient cleanup failure");
+			},
+		});
+		const error = (await bridge(compute, {
+			prepareAndVerifyCreatedRequest: async () => {
+				cancellation.abort(new Error("caller stopped waiting"));
+				return { status: "honored" };
+			},
+		})
+			.create(request, { signal: cancellation.signal })
+			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
+		expect(error.locator).toEqual({ kind: "id", value: "i2f3k4abc" });
+		expect(error.suppressed).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error.error).toMatchObject({ code: "destroy-failed", provider: "e2b" });
+		await error.cleanup();
+		expect(destroys).toBe(2);
+	});
+
+	test("post-create hook failure double-fault retains canonical ownership without accessor rereads", async () => {
+		let identityReads = 0;
+		let nativeReads = 0;
+		let destroys = 0;
+		const stableNative = { id: "native" };
+		const sandbox: ComputeSdkSandboxLike = {
+			...baseSandbox,
+			get sandboxId() {
+				identityReads += 1;
+				if (identityReads > 1) throw new Error("identity reread");
+				return "i2f3k4abc";
+			},
+			getInstance: () => {
+				nativeReads += 1;
+				if (nativeReads > 1) throw new Error("native reread");
+				return stableNative;
+			},
+		};
+		const { compute } = fakeCompute(sandbox);
+		const error = (await bridge(compute, {
+			prepareAndVerifyCreatedRequest: async () => {
+				throw new Error("preparation failed");
+			},
+			lifecycle: {
+				destroy: async (_sandbox, ref) => {
+					destroys += 1;
+					expect(ref?.id).toBe("i2f3k4abc");
+					if (destroys === 1) throw new Error("transient cleanup failure");
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
+		expect(error.locator).toEqual({ kind: "id", value: "i2f3k4abc" });
+		expect(error.suppressed).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error.error).toMatchObject({ code: "destroy-failed", provider: "e2b" });
+		await error.cleanup();
+		expect(destroys).toBe(2);
+		expect(identityReads).toBe(1);
+		expect(nativeReads).toBe(1);
 	});
 
 	test("rejects an unsupported canonical axis as terminal input before allocation", async () => {
@@ -364,7 +604,7 @@ describe("computeSdkDriver", () => {
 		expect(createCalls).toBe(0);
 	});
 
-	test("rejects simulated future top-level and GPU axes generically before allocation", async () => {
+	test("rejects unknown runtime coverage axes before allocation", () => {
 		let createCalls = 0;
 		const compute: ComputeSdkLike<typeof baseSandbox> = {
 			sandbox: {
@@ -379,21 +619,89 @@ describe("computeSdkDriver", () => {
 			network: "unsupported",
 			gpu: { ...mappedCoverage.gpu, partition: "unsupported" },
 		} as unknown as ComputeSdkCreateRequestCoverage;
-		const driver = bridge(compute, { requestCoverage: futureCoverage });
-		const networkError = await driver
-			.create({ ...request, network: { egress: false } } as unknown as CreateRequest)
-			.catch((caught: unknown) => caught);
-		expect(networkError).toMatchObject({ code: "invalid-create-request", provider: "e2b" });
-		expect((networkError as Error).message).toContain("request axis network is unsupported");
+		expect(() => bridge(compute, { requestCoverage: futureCoverage })).toThrow(
+			expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }),
+		);
+		expect(createCalls).toBe(0);
+	});
 
-		const gpuError = await driver
-			.create({
-				...request,
-				gpu: { model: "H100", count: 1, partition: "whole" },
-			} as unknown as CreateRequest)
-			.catch((caught: unknown) => caught);
-		expect(gpuError).toMatchObject({ code: "invalid-create-request", provider: "e2b" });
-		expect((gpuError as Error).message).toContain("axis partition");
+	test("rejects enumerable prototype pollution without consulting inherited accessors", () => {
+		const secret = "closure-only-coverage-secret";
+		let poisonedReads = 0;
+		const poisonedPrototype = Object.defineProperty({}, "spec", {
+			get() {
+				poisonedReads += 1;
+				throw new Error(secret);
+			},
+			set() {},
+		});
+		const requestCoverage: Record<string, unknown> = {};
+		Object.defineProperty(requestCoverage, "__proto__", {
+			value: poisonedPrototype,
+			enumerable: true,
+		});
+		for (const [key, value] of Object.entries(artifactCoverage)) {
+			Object.defineProperty(requestCoverage, key, { value, enumerable: true });
+		}
+		let createCalls = 0;
+		let error: unknown;
+		try {
+			bridge(
+				{
+					sandbox: {
+						create: async () => {
+							createCalls++;
+							return baseSandbox;
+						},
+					},
+				},
+				{ requestCoverage: requestCoverage as ComputeSdkCreateRequestCoverage },
+			);
+		} catch (caught) {
+			error = caught;
+		}
+		expectCredentialSafe(error, "vendor-contract-violation");
+		expect(String((error as Error).message)).not.toContain(secret);
+		expect(String((error as Error & { cause?: unknown }).cause ?? "")).not.toContain(secret);
+		expect(poisonedReads).toBe(0);
+		expect(createCalls).toBe(0);
+	});
+
+	test("requires every canonical coverage axis and exact ownership literal before allocation", () => {
+		const malformedCoverages = [
+			{
+				...mappedCoverage,
+				spec: { vcpus: "mapped", diskGb: "mapped" },
+			},
+			{
+				...mappedCoverage,
+				gpu: { model: "mapped" },
+			},
+			{
+				spec: mappedCoverage.spec,
+				artifact: "context",
+				deadlineMs: "harness",
+				gpu: mappedCoverage.gpu,
+			},
+			{ ...mappedCoverage, artifact: "request" },
+			{ ...mappedCoverage, deadlineMs: "driver" },
+		] as unknown as readonly ComputeSdkCreateRequestCoverage[];
+		let createCalls = 0;
+		for (const requestCoverage of malformedCoverages) {
+			expect(() =>
+				bridge(
+					{
+						sandbox: {
+							create: async () => {
+								createCalls += 1;
+								return baseSandbox;
+							},
+						},
+					},
+					{ requestCoverage },
+				),
+			).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }));
+		}
 		expect(createCalls).toBe(0);
 	});
 
@@ -522,7 +830,7 @@ describe("computeSdkDriver", () => {
 			code: "vendor-contract-violation",
 			provider: "e2b",
 		});
-		expectRedacted(error.suppressed);
+		expectOmitted(error.suppressed, "vendor-contract-violation");
 		expectRedacted(error.error, "destroy-failed");
 		await error.cleanup();
 		expect(destroys).toBe(2);
@@ -543,8 +851,37 @@ describe("computeSdkDriver", () => {
 			.create(request)
 			.catch((caught: unknown) => caught);
 		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
-		expectRedacted(error);
+		expectOmitted(error, "vendor-contract-violation");
 		expect(destroys).toBe(1);
+	});
+
+	test("normalizes unreadable ArkType diagnostics and validates successful id outputs", async () => {
+		const secret = "compute-schema-summary-secret";
+		const realErrors = e2bSandboxId("wrong-id");
+		if (!(realErrors instanceof type.errors)) throw new Error("test fixture unexpectedly parsed");
+		const unreadableErrors = new Proxy(realErrors, {
+			get(target, property, receiver) {
+				if (property === "summary") throw new Error(`summary leaked ${secret}`);
+				return Reflect.get(target, property, receiver);
+			},
+		});
+		const unreadableSchema = new Proxy(e2bSandboxId, { apply: () => unreadableErrors });
+		for (const sandboxId of [unreadableSchema, new Proxy(e2bSandboxId, { apply: () => ({}) })]) {
+			let destroys = 0;
+			const { compute } = fakeCompute({
+				...baseSandbox,
+				destroy: async () => {
+					destroys += 1;
+				},
+			});
+			const error = (await bridge(compute, { sandboxId: sandboxId as never })
+				.create(request)
+				.catch((caught: unknown) => caught)) as DriverError;
+			expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
+			expect(error.message).not.toContain(secret);
+			expect(String(error.cause)).not.toContain(secret);
+			expect(destroys).toBe(1);
+		}
 	});
 
 	test("rejects an empty transformed id before constructing a session or stable locator", async () => {
@@ -607,7 +944,7 @@ describe("computeSdkDriver", () => {
 			.create(request)
 			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
 		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expectRedacted(error.suppressed);
+		expectCredentialSafe(error.suppressed, "vendor-contract-violation");
 		expectRedacted(error.error, "destroy-failed");
 		await error.cleanup();
 		expect(destroys).toBe(2);
@@ -662,7 +999,7 @@ describe("computeSdkDriver", () => {
 		});
 		const session = await bridge(compute).create(request);
 		const error = await session.launch?.("task").catch((caught: unknown) => caught);
-		expectRedacted(error, "exec-failed");
+		expectCredentialSafe(error, "vendor-contract-violation");
 		expect(error).toMatchObject({ ref: session.sandboxRef });
 	});
 
@@ -761,7 +1098,7 @@ describe("computeSdkDriver", () => {
 		const { compute } = fakeCompute(sandbox as ComputeSdkSandboxLike);
 		const session = await bridge(compute, { hasWorkingFilesystem: true }).create(request);
 		const error = await session.files?.readFile("/bench/a").catch((caught: unknown) => caught);
-		expectRedacted(error, "vendor-contract-violation");
+		expectCredentialSafe(error, "vendor-contract-violation");
 		expect(error).toMatchObject({ ref: session.sandboxRef });
 	});
 
@@ -804,7 +1141,7 @@ describe("computeSdkDriver", () => {
 			.create(request)
 			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
 		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expectRedacted(error.suppressed, "vendor-contract-violation");
+		expectCredentialSafe(error.suppressed, "vendor-contract-violation");
 		expectRedacted(error.error, "destroy-failed");
 		await error.cleanup();
 		expect(destroys).toBe(2);
@@ -824,6 +1161,36 @@ describe("computeSdkDriver", () => {
 		}).create(request);
 		await session.launch?.("bash task.sh");
 		expect(commands).toEqual([["bash task.sh", true]]);
+	});
+
+	test("a command projection composes over the exact wrapper without mutating its method table", async () => {
+		const projected: Array<[ComputeSdkSandboxLike, string, "exec" | "launch"]> = [];
+		const sandbox = {
+			...baseSandbox,
+			runCommand: async () => {
+				throw new Error("the universal wrapper command must not run");
+			},
+		};
+		const { compute } = fakeCompute(sandbox);
+		const session = await bridge(compute, {
+			commands: {
+				exec: async (sandbox, command) => {
+					projected.push([sandbox, command, "exec"]);
+					return { exitCode: 0, stdout: "root\n", stderr: "" };
+				},
+				launch: async (sandbox, command) => {
+					projected.push([sandbox, command, "launch"]);
+				},
+			},
+		}).create(request);
+
+		expect((await session.exec("id -u")).stdout).toBe("root\n");
+		await session.launch?.("daemon --start");
+		expect(projected.map(([, command, operation]) => [command, operation])).toEqual([
+			["id -u", "exec"],
+			["daemon --start", "launch"],
+		]);
+		expect(projected.every(([projectedSandbox]) => projectedSandbox === sandbox)).toBe(true);
 	});
 
 	test("launch rejects a background command that the wrapper reports as failed", async () => {
@@ -896,6 +1263,47 @@ describe("computeSdkDriver", () => {
 		expect(calls).toEqual(["observe:i2f3k4abc", "snapshot:i2f3k4abc", "delete:snap-1"]);
 	});
 
+	test("normalizes successful probe and snapshot envelopes before they escape", async () => {
+		const secret = "capability-envelope-secret";
+		const { compute } = fakeCompute(baseSandbox);
+		const driver = bridge(compute, {
+			probes: {
+				observe: async () =>
+					new Proxy(
+						{ state: "running" as const },
+						{
+							get() {
+								throw new Error(secret);
+							},
+						},
+					),
+			},
+			snapshots: {
+				create: async () =>
+					new Proxy(
+						{ snapshotId: "snap-1" },
+						{
+							get() {
+								throw new Error(secret);
+							},
+						},
+					),
+				delete: async () => {},
+			},
+		});
+		const session = await driver.create(request);
+		const probeError = await driver.probes
+			?.observe(session.sandboxRef)
+			.catch((caught: unknown) => caught);
+		const snapshotError = await driver.snapshots
+			?.create(session)
+			.catch((caught: unknown) => caught);
+		expectOmitted(probeError, "probe-failed");
+		expectOmitted(snapshotError, "snapshot-failed");
+		expect((probeError as Error).message).not.toContain(secret);
+		expect((snapshotError as Error).message).not.toContain(secret);
+	});
+
 	test("decodes a raw wrapper id once and validates the stable canonical id thereafter", async () => {
 		const { compute } = fakeCompute({ ...baseSandbox, sandboxId: "raw-I2F3K4ABC" });
 		let receivedId = "";
@@ -956,7 +1364,7 @@ describe("computeSdkDriver", () => {
 		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
 		expect(error.message).not.toContain("test-key");
 		expect(String(error.cause ?? "")).not.toContain("test-key");
-		expect(error.message).toContain("[REDACTED]");
+		expect(`${error.message} ${String(error.cause ?? "")}`).toContain("omitted");
 		expect(error.ref).toBeUndefined();
 		expect(observations).toBe(0);
 	});
@@ -1038,6 +1446,34 @@ describe("computeSdkDriver", () => {
 		expectRedacted(await destroySession.destroy().catch((caught: unknown) => caught));
 	});
 
+	test("normalizes hostile wrapper rejections without invoking prototype or message coercion", async () => {
+		const secret = "compute-prototype-secret";
+		const hostile = new Proxy(Object.assign(new Error("placeholder"), { credential: secret }), {
+			getPrototypeOf() {
+				throw new Error(`prototype leaked ${secret}`);
+			},
+			get(target, property, receiver) {
+				if (property === "message") {
+					return {
+						toString() {
+							throw new Error(`message leaked ${secret}`);
+						},
+					};
+				}
+				return Reflect.get(target, property, receiver);
+			},
+		});
+		const error = (await bridge({
+			sandbox: { create: async () => Promise.reject(hostile) },
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error.message).not.toContain(secret);
+		expect(error.vendorMessage ?? "").not.toContain(secret);
+		expect(String(error.cause)).not.toContain(secret);
+	});
+
 	test("types and redacts every projected filesystem, probe, and snapshot failure", async () => {
 		const rejected = (operation: string) =>
 			Promise.reject(new Error(`${operation} echoed test-key`));
@@ -1085,7 +1521,10 @@ describe("computeSdkDriver", () => {
 		const errors = await Promise.all(
 			attempts.map((attempt) => attempt?.catch((caught: unknown) => caught)),
 		);
-		for (const [index, error] of errors.entries()) expectRedacted(error, codes[index]);
+		for (const [index, error] of errors.entries()) {
+			if (index < 3) expectRedacted(error, codes[index]);
+			else expectOmitted(error, codes[index]);
+		}
 	});
 
 	test("does not redact ordinary one-character guest environment values", async () => {
@@ -1192,6 +1631,29 @@ describe("computeSdkDriver", () => {
 		expect((error as Error).message).toContain("non-object sandbox handle");
 	});
 
+	test("a malformed successful create enters marker recovery before ownership is released", async () => {
+		let cleanupCalls = 0;
+		const compute = {
+			sandbox: { create: async () => null },
+		} as unknown as ComputeSdkLike;
+		const error = await bridge(compute, {
+			createOptions: () => ({ attempt: "attempt-malformed" }),
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 2,
+				locator: () => ({ kind: "name", value: "attempt-malformed" }),
+				cleanup: async () => {
+					cleanupCalls += 1;
+					return { status: "destroyed" };
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
+		expect(cleanupCalls).toBe(1);
+	});
+
 	test("an already-aborted create never invokes the wrapper", async () => {
 		let createCalls = 0;
 		const compute: ComputeSdkLike = {
@@ -1291,6 +1753,335 @@ describe("computeSdkDriver", () => {
 		await error[Symbol.asyncDispose]();
 		await error[Symbol.asyncDispose]();
 		expect(destroyCalls).toBe(2);
+	});
+
+	test("a lifecycle projection replaces a wrapper destroy that would swallow teardown failures", async () => {
+		let wrapperDestroys = 0;
+		let projectedDestroys = 0;
+		const sandbox = {
+			...baseSandbox,
+			destroy: async () => {
+				wrapperDestroys += 1;
+			},
+		};
+		const { compute } = fakeCompute(sandbox);
+		const session = await bridge(compute, {
+			lifecycle: {
+				destroy: async (received) => {
+					expect(received).toBe(sandbox);
+					projectedDestroys += 1;
+				},
+			},
+		}).create(request);
+		await session.destroy();
+		expect(projectedDestroys).toBe(1);
+		expect(wrapperDestroys).toBe(0);
+	});
+
+	test("a lifecycle projection receives the canonical id without rereading mutable wrapper identity", async () => {
+		let identityReads = 0;
+		const sandbox: ComputeSdkSandboxLike = {
+			...baseSandbox,
+			get sandboxId() {
+				identityReads += 1;
+				return identityReads === 1 ? "iright" : "iwrong";
+			},
+		};
+		const { compute } = fakeCompute(sandbox);
+		let destroyedRef: string | undefined;
+		const session = await bridge(compute, {
+			lifecycle: {
+				destroy: async (_sandbox, ref) => {
+					destroyedRef = ref?.id;
+				},
+			},
+		}).create(request);
+		await session.destroy();
+		expect(destroyedRef).toBe("iright");
+		expect(identityReads).toBe(1);
+	});
+
+	test("ambiguous create cleanup retains a stable locator and retryable ownership", async () => {
+		let cleanupCalls = 0;
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async () => {
+					throw new Error("response lost after remote acceptance");
+				},
+			},
+		};
+		const error = (await bridge(compute, {
+			createOptions: () => ({ attempt: "attempt-123" }),
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 3,
+				locator: (createOptions) => ({
+					kind: "marker",
+					key: "attempt-id",
+					value: String(createOptions.attempt),
+				}),
+				cleanup: async (_compute, createOptions) => {
+					expect(createOptions.attempt).toBe("attempt-123");
+					cleanupCalls += 1;
+					if (cleanupCalls === 1) throw new Error("control plane unavailable");
+					return { status: "destroyed" };
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
+		expect(error).toMatchObject({
+			provider: "e2b",
+			locator: { kind: "marker", key: "attempt-id", value: "attempt-123" },
+		});
+		expect((error.suppressed as DriverError).code).toBe("create-failed");
+		expect((error.error as DriverError).code).toBe("destroy-failed");
+		await error.cleanup();
+		expect(cleanupCalls).toBe(2);
+	});
+
+	test("a definitive create rejection skips reconciliation and stays a plain create failure", async () => {
+		let cleanupCalls = 0;
+		const rejection = new Error("invalid api key");
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async () => {
+					throw rejection;
+				},
+			},
+		};
+		const error = await bridge(compute, {
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 3,
+				locator: () => ({ kind: "name", value: "attempt-definitive" }),
+				isDefinitive: (caught) => caught === rejection,
+				cleanup: async () => {
+					cleanupCalls += 1;
+					return { status: "destroyed" };
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(error).not.toBeInstanceOf(FailedCreateCleanupError);
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		// A refused request owns nothing; polling for it would only burn the caller's budget.
+		expect(cleanupCalls).toBe(0);
+	});
+
+	test("an unproven create failure still reconciles even when the classifier misbehaves", async () => {
+		for (const isDefinitive of [
+			() => false,
+			() => {
+				throw new Error("classifier exploded");
+			},
+			() => "yes" as unknown as boolean,
+		]) {
+			let cleanupCalls = 0;
+			const compute: ComputeSdkLike = {
+				sandbox: {
+					create: async () => {
+						throw new Error("response lost after remote acceptance");
+					},
+				},
+			};
+			const error = await bridge(compute, {
+				createRecovery: {
+					absenceConfirmationMs: 5,
+					maxAttempts: 3,
+					locator: () => ({ kind: "name", value: "attempt-ambiguous" }),
+					isDefinitive,
+					cleanup: async () => {
+						cleanupCalls += 1;
+						return { status: "destroyed" };
+					},
+				},
+			})
+				.create(request)
+				.catch((caught: unknown) => caught);
+			expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+			// Only an explicit `true` may release recovery; everything else reconciles.
+			expect(cleanupCalls).toBe(1);
+		}
+	});
+
+	test("rejects a malformed keyed recovery marker before allocation", async () => {
+		let createCalls = 0;
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async () => {
+					createCalls += 1;
+					return baseSandbox;
+				},
+			},
+		};
+		const error = await bridge(compute, {
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 2,
+				locator: () => ({ kind: "marker", key: "", value: "attempt-1" }),
+				cleanup: async () => ({ status: "destroyed" }),
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
+		expect((error as Error).message).toContain("readable nonempty name or keyed marker");
+		expect(createCalls).toBe(0);
+	});
+
+	test("rejects credential-bearing recovery marker fields before allocation", async () => {
+		for (const sensitiveField of ["key", "value"] as const) {
+			let createCalls = 0;
+			const compute: ComputeSdkLike = {
+				sandbox: {
+					create: async () => {
+						createCalls += 1;
+						return baseSandbox;
+					},
+				},
+			};
+			const marker = {
+				kind: "marker" as const,
+				key: sensitiveField === "key" ? "attempt-test-key" : "attempt-id",
+				value: sensitiveField === "value" ? "attempt-test-key" : "attempt-1",
+			};
+			const error = await bridge(compute, {
+				createRecovery: {
+					absenceConfirmationMs: 5,
+					maxAttempts: 2,
+					locator: () => marker,
+					cleanup: async () => ({ status: "destroyed" }),
+				},
+			})
+				.create(request)
+				.catch((caught: unknown) => caught);
+			expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
+			expect((error as Error).message).not.toContain("test-key");
+			expect(createCalls).toBe(0);
+		}
+	});
+
+	test("ambiguous create absence needs two horizon-separated observations", async () => {
+		let cleanupCalls = 0;
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async () => {
+					throw new Error("response lost");
+				},
+			},
+		};
+		const started = performance.now();
+		const error = await bridge(compute, {
+			createOptions: () => ({ attempt: "attempt-absent" }),
+			createRecovery: {
+				absenceConfirmationMs: 10,
+				maxAttempts: 3,
+				locator: () => ({ kind: "name", value: "attempt-absent" }),
+				cleanup: async () => {
+					cleanupCalls += 1;
+					return { status: "absent" };
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error).not.toBeInstanceOf(FailedCreateCleanupError);
+		expect(cleanupCalls).toBeGreaterThanOrEqual(2);
+		expect(performance.now() - started).toBeGreaterThanOrEqual(9);
+	});
+
+	test("ambiguous create recovery forwards the caller signal into its first observation", async () => {
+		const cancellation = new AbortController();
+		let receivedSignal: AbortSignal | undefined;
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async () => {
+					throw new Error("response lost");
+				},
+			},
+		};
+		const error = await bridge(compute, {
+			createOptions: () => ({ attempt: "attempt-signal" }),
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 2,
+				locator: () => ({ kind: "name", value: "attempt-signal" }),
+				cleanup: async (_compute, _createOptions, options) => {
+					receivedSignal = options.signal;
+					return { status: "destroyed" };
+				},
+			},
+		})
+			.create(request, { signal: cancellation.signal })
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(receivedSignal).toBe(cancellation.signal);
+	});
+
+	test("contradicted absence cannot extend ambiguous-create recovery forever", async () => {
+		let cleanupCalls = 0;
+		const compute: ComputeSdkLike = {
+			sandbox: {
+				create: async () => {
+					throw new Error("response lost");
+				},
+			},
+		};
+		const error = (await bridge(compute, {
+			createOptions: () => ({ attempt: "attempt-loop" }),
+			createRecovery: {
+				absenceConfirmationMs: 1,
+				maxAttempts: 3,
+				locator: () => ({ kind: "name", value: "attempt-loop" }),
+				cleanup: async () => {
+					cleanupCalls += 1;
+					return { status: "absent", contradictedPriorAbsence: true };
+				},
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
+		expect((error.error as DriverError).code).toBe("destroy-failed");
+		expect(cleanupCalls).toBe(3);
+	});
+
+	test("rejects invalid numeric request coverage and unimplemented runtime verification", () => {
+		const { compute } = fakeCompute(baseSandbox);
+		for (const numericBound of [Number.NaN, Number.POSITIVE_INFINITY, 0]) {
+			const requestCoverage = {
+				...mappedCoverage,
+				spec: { ...mappedCoverage.spec, vcpus: { artifact: numericBound } },
+			} as ComputeSdkCreateRequestCoverage;
+			expect(() => bridge(compute, { requestCoverage })).toThrow(
+				expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }),
+			);
+		}
+		const runtimeCoverage = {
+			...mappedCoverage,
+			spec: { ...mappedCoverage.spec, diskGb: "runtime-verified" },
+		} as const satisfies ComputeSdkCreateRequestCoverage;
+		expect(() => bridge(compute, { requestCoverage: runtimeCoverage })).toThrow(
+			expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }),
+		);
+	});
+
+	test("requires at least two ambiguous-create observations", () => {
+		const { compute } = fakeCompute(baseSandbox);
+		expect(() =>
+			bridge(compute, {
+				createRecovery: {
+					absenceConfirmationMs: 5,
+					maxAttempts: 1,
+					locator: () => ({ kind: "name", value: "attempt-one" }),
+					cleanup: async () => ({ status: "absent" }),
+				},
+			}),
+		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }));
 	});
 
 	test("wrapper rejections use the shared typed error family", async () => {

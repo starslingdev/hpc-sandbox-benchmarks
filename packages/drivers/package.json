@@ -29,6 +29,7 @@
     "@vercel/sandbox": "catalog:computesdk",
     "arktype": "catalog:",
     "computesdk": "catalog:computesdk",
+    "e2b": "catalog:computesdk",
     "microsandbox": "catalog:computesdk",
     "modal": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk"

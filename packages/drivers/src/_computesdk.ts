@@ -75,6 +75,75 @@ export type ComputeSdkSandboxOf<TCompute extends ComputeSdkLike> = Awaited<
 	ReturnType<TCompute["sandbox"]["create"]>
 >;
 
+export interface ComputeSdkCommandOptions {
+	readonly signal?: AbortSignal;
+}
+
+/**
+ * An optional execution projection for wrappers whose universal runCommand surface omits a
+ * load-bearing native option (for example E2B's root user). The callback receives the wrapper's
+ * exact inferred sandbox type. Its result stays unknown until the bridge validates the external
+ * command envelope, so malformed vendor values cannot be blessed by an author-side assertion.
+ */
+export interface ComputeSdkCommands<TCompute extends ComputeSdkLike> {
+	exec(
+		sandbox: ComputeSdkSandboxOf<TCompute>,
+		command: string,
+		options: ComputeSdkCommandOptions,
+	): Promise<unknown>;
+	/** Resolves only after the provider has returned a genuine background acceptance handle. */
+	launch(
+		sandbox: ComputeSdkSandboxOf<TCompute>,
+		command: string,
+		options: ComputeSdkCommandOptions,
+	): Promise<void>;
+}
+
+export type ComputeSdkRecoveryLocator =
+	| { readonly kind: "name"; readonly value: string }
+	| { readonly kind: "marker"; readonly key: string; readonly value: string };
+
+export interface ComputeSdkLifecycle<TCompute extends ComputeSdkLike> {
+	/**
+	 * Idempotent teardown that must surface transport/auth failures instead of swallowing them.
+	 * `ref` is the bridge-validated canonical identity when validation reached that boundary. When
+	 * it is absent, teardown must use the retained native handle and must not reread a raw wrapper id.
+	 */
+	destroy(
+		sandbox: ComputeSdkSandboxOf<TCompute>,
+		ref: SandboxRef | undefined,
+		options: DriverOperationOptions,
+	): Promise<void>;
+}
+
+export type ComputeSdkCreateRecoveryObservation =
+	| { readonly status: "destroyed" }
+	| { readonly status: "absent"; readonly contradictedPriorAbsence?: boolean };
+
+/** Reconcile a create whose remote acceptance is unknown because no wrapper handle was returned. */
+export interface ComputeSdkCreateRecovery<TCompute extends ComputeSdkLike> {
+	readonly absenceConfirmationMs: number;
+	/** Transaction-wide ceiling, including observations that contradict an earlier absence. */
+	readonly maxAttempts: number;
+	/** Stable owner-visible locator derived from the already-mapped create options. */
+	locator(createOptions: Readonly<Record<string, unknown>>): ComputeSdkRecoveryLocator;
+	/** One bounded observation/removal attempt. The bridge owns the confirmed-absence horizon. */
+	cleanup(
+		compute: TCompute,
+		createOptions: Readonly<Record<string, unknown>>,
+		options: DriverOperationOptions,
+	): Promise<ComputeSdkCreateRecoveryObservation>;
+	/**
+	 * True only when this create failure PROVES no allocation can exist — a request the control
+	 * plane refused before it could allocate, such as an authentication or argument rejection.
+	 * Definitive failures skip reconciliation and keep their original create-failed
+	 * classification instead of being reported as a cleanup double fault. Anything unproven —
+	 * transport loss, timeouts, an unrecognized error — must stay ambiguous: one redundant
+	 * lookup is far cheaper than a leaked billable sandbox.
+	 */
+	isDefinitive?(error: unknown): boolean;
+}
+
 type ComputeSdkSandboxIdParser = Type<string> | Type<(In: string) => Out<string>>;
 
 /**
@@ -95,7 +164,12 @@ interface ComputeSdkSandboxIdBoundary {
 	readonly transformed: boolean;
 }
 
-type ComputeSdkTargetAxisDisposition = "mapped" | "artifact" | "unsupported";
+type ComputeSdkTargetAxisDisposition =
+	| "mapped"
+	| "unsupported"
+	| "runtime-verified"
+	| { readonly artifact: number }
+	| { readonly capacityAtLeast: number };
 type ComputeSdkOptionalAxisDisposition = "mapped" | "unsupported";
 
 /**
@@ -123,6 +197,25 @@ export type ComputeSdkCreateRequestCoverage = {
 	>]-?: ComputeSdkOptionalAxisDisposition;
 };
 
+const COMPUTE_SDK_TARGET_COVERAGE_AXES = {
+	vcpus: true,
+	memoryGb: true,
+	diskGb: true,
+} as const satisfies Record<keyof CreateRequest["spec"], true>;
+
+const COMPUTE_SDK_GPU_COVERAGE_AXES = {
+	model: true,
+	count: true,
+} as const satisfies Record<keyof NonNullable<CreateRequest["gpu"]>, true>;
+
+const COMPUTE_SDK_REQUEST_COVERAGE_AXES = {
+	spec: true,
+	artifact: true,
+	deadlineMs: true,
+	gpu: true,
+	env: true,
+} as const satisfies Record<keyof ComputeSdkCreateRequestCoverage, true>;
+
 export interface ComputeSdkCreateRequestMapper {
 	readonly coverage: ComputeSdkCreateRequestCoverage;
 	readonly map: (
@@ -130,6 +223,10 @@ export interface ComputeSdkCreateRequestMapper {
 		unsupported: (detail: string) => never,
 	) => Readonly<Record<string, unknown>>;
 }
+
+export type ComputeSdkCreatedRequestVerification =
+	| { readonly status: "honored" }
+	| { readonly status: "unsupported"; readonly detail: string };
 
 export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 	/** Construct the wrapper lazily from this provider module's exact env/artifact context. */
@@ -147,6 +244,28 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 	 * read ambient process configuration or decide candidate-versus-version lanes.
 	 */
 	readonly createOptions: ComputeSdkCreateRequestMapper;
+	/**
+	 * Establish provider-required post-allocation invariants and prove request axes the create API
+	 * cannot control or report up front. The bridge passes the exact native handle it extracted for
+	 * the session, so preparation never rereads a mutable wrapper accessor. Throwing or returning
+	 * unsupported makes the bridge tear the accepted handle down and retain cleanup on a double fault.
+	 */
+	readonly prepareAndVerifyCreatedRequest?: (
+		sandbox: ComputeSdkSandboxOf<TCompute>,
+		native: ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>,
+		request: CreateRequest,
+		options: DriverOperationOptions,
+	) => Promise<ComputeSdkCreatedRequestVerification>;
+	/**
+	 * Ordinary function composition for a provider-specific command projection. Omit this when the
+	 * wrapper's runCommand is truthful; provide it instead of mutating a wrapper's private method
+	 * table when a native option is required.
+	 */
+	readonly commands?: ComputeSdkCommands<TCompute>;
+	/** Truthful teardown projection for wrappers whose destroy path is lossy or over-tolerant. */
+	readonly lifecycle?: ComputeSdkLifecycle<TCompute>;
+	/** Optional recovery protocol for remotely ambiguous create failures without a returned handle. */
+	readonly createRecovery?: ComputeSdkCreateRecovery<TCompute>;
 	/**
 	 * Whether the wrapper's filesystem actually works. Explicit, because the wrapper cannot be
 	 * asked: UnsupportedFileSystem is truthy and throws. ADR-0008's smoke conformance verifies
@@ -199,27 +318,121 @@ type BoundComputeSdkDriverSpec<TCompute extends ComputeSdkLike> = Omit<
 	readonly sensitiveValues: readonly string[];
 };
 
-/** A private brand lets bridge-authored contract errors survive without trusting vendor codes. */
-class ComputeSdkContractError extends DriverError {}
+/** Private brands let bridge-authored errors survive without invoking hostile `instanceof` traps. */
+const computeSdkContractErrors = new WeakSet<object>();
+const unsupportedComputeSdkRequests = new WeakSet<object>();
+
+class ComputeSdkContractError extends DriverError {
+	constructor(...args: ConstructorParameters<typeof DriverError>) {
+		super(...args);
+		computeSdkContractErrors.add(this);
+	}
+}
+
+function isComputeSdkContractError(value: unknown): value is ComputeSdkContractError {
+	return (
+		(typeof value === "object" || typeof value === "function") &&
+		value !== null &&
+		computeSdkContractErrors.has(value)
+	);
+}
+
+function sanitizedComputeSdkCallbackCause(): Error {
+	return new Error("provider callback failed; original diagnostic omitted to protect credentials");
+}
+
+function providerCallbackFailure(
+	provider: ProviderId,
+	operation: string,
+	options: {
+		readonly code?: Extract<
+			DriverErrorCode,
+			| "vendor-contract-violation"
+			| "create-failed"
+			| "exec-failed"
+			| "destroy-failed"
+			| "probe-failed"
+			| "snapshot-failed"
+		>;
+		readonly ref?: SandboxRef;
+	} = {},
+): DriverError {
+	const code = options.code ?? "vendor-contract-violation";
+	const ErrorType = code === "vendor-contract-violation" ? ComputeSdkContractError : DriverError;
+	return new ErrorType(code, `${provider} ComputeSDK ${operation} callback failed`, {
+		provider,
+		...(options.ref === undefined ? {} : { ref: options.ref }),
+		cause: sanitizedComputeSdkCallbackCause(),
+	});
+}
+
+function invokeComputeSdkProviderCallback<T>(
+	provider: ProviderId,
+	operation: string,
+	callback: () => T,
+	options?: Parameters<typeof providerCallbackFailure>[2],
+): T {
+	try {
+		return callback();
+	} catch {
+		throw providerCallbackFailure(provider, operation, options);
+	}
+}
+
+async function invokeComputeSdkProviderCallbackAsync<T>(
+	provider: ProviderId,
+	operation: string,
+	callback: () => Promise<T>,
+	options?: Parameters<typeof providerCallbackFailure>[2],
+): Promise<T> {
+	try {
+		return await callback();
+	} catch {
+		throw providerCallbackFailure(provider, operation, options);
+	}
+}
+
+function runtimeNumberLabel(value: unknown): string {
+	return typeof value === "number" ? `${value}` : "a non-number value";
+}
+
+function safeThrownMessage(value: unknown): string | undefined {
+	if (typeof value === "string") return value;
+	if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+		return undefined;
+	}
+	try {
+		const message: unknown = Reflect.get(value, "message");
+		return typeof message === "string" ? message : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function isNonArrayObject(value: unknown): value is object {
+	if (typeof value !== "object" || value === null) return false;
+	try {
+		return !Array.isArray(value);
+	} catch {
+		return false;
+	}
+}
 
 function vendorContractFailure(
 	provider: ProviderId,
 	operation: string,
-	caught: unknown,
+	detail: string,
 	sensitiveValues: readonly string[],
 	ref?: SandboxRef,
 ): ComputeSdkContractError {
-	const detail = redactKnownDiagnostic(
-		caught instanceof Error ? caught.message : String(caught),
-		sensitiveValues,
-	);
+	const redacted = redactKnownDiagnostic(detail, sensitiveValues);
 	return new ComputeSdkContractError(
 		"vendor-contract-violation",
-		`computesdk ${operation} violated its wrapper contract: ${detail}`,
+		`computesdk ${operation} violated its wrapper contract: ${redacted}`,
 		{
 			provider,
 			...(ref === undefined ? {} : { ref }),
-			cause: new Error(detail),
+			cause: new Error(redacted),
 		},
 	);
 }
@@ -250,20 +463,32 @@ function wrapperFailure(
 	) {
 		return caught;
 	}
-	if (caught instanceof ComputeSdkContractError) return caught;
+	if (isComputeSdkContractError(caught)) return caught;
 	const redact = (detail: string) => redactKnownDiagnostic(detail, sensitiveValues);
 	if (isDriverError(caught)) {
-		return new DriverError(code, redact(caught.message), {
+		const message = redact(safeThrownMessage(caught) ?? "driver failure diagnostic omitted");
+		let vendorMessage: unknown;
+		let vendorExitCode: unknown;
+		try {
+			vendorMessage = Reflect.get(caught, "vendorMessage");
+			vendorExitCode = Reflect.get(caught, "vendorExitCode");
+		} catch {
+			vendorMessage = undefined;
+			vendorExitCode = undefined;
+		}
+		return new DriverError(code, message, {
 			provider,
 			...(ref ? { ref } : {}),
-			...(caught.vendorMessage === undefined
-				? {}
-				: { vendorMessage: redact(caught.vendorMessage) }),
-			...(caught.vendorExitCode === undefined ? {} : { vendorExitCode: caught.vendorExitCode }),
-			cause: new Error(redact(caught.message)),
+			...(typeof vendorMessage === "string" ? { vendorMessage: redact(vendorMessage) } : {}),
+			...(typeof vendorExitCode === "number" && Number.isSafeInteger(vendorExitCode)
+				? { vendorExitCode }
+				: {}),
+			cause: new Error(message),
 		});
 	}
-	const detail = redact(caught instanceof Error ? caught.message : String(caught));
+	const detail = redact(
+		safeThrownMessage(caught) ?? "original diagnostic omitted to protect credentials",
+	);
 	return new DriverError(code, `computesdk ${operation} failed: ${detail}`, {
 		provider,
 		vendorMessage: detail,
@@ -287,6 +512,267 @@ async function wrapperCapability<T>(
 	}
 }
 
+function invalidComputeSdkCoverage(provider: ProviderId, detail: string): never {
+	throw new DriverError(
+		"vendor-contract-violation",
+		`computesdk request coverage is invalid: ${detail}`,
+		{ provider },
+	);
+}
+
+function requireExactComputeSdkCoverageAxes(
+	provider: ProviderId,
+	label: string,
+	coverage: Readonly<Record<string, unknown>>,
+	expected: Readonly<Record<string, true>>,
+): void {
+	for (const axis of Object.keys(expected)) {
+		if (!Object.hasOwn(coverage, axis)) {
+			invalidComputeSdkCoverage(provider, `${label} is missing canonical axis ${axis}`);
+		}
+	}
+	for (const axis of Object.keys(coverage)) {
+		if (!Object.hasOwn(expected, axis)) {
+			invalidComputeSdkCoverage(provider, `${label} declares unknown axis ${axis}`);
+		}
+	}
+}
+
+function validateComputeSdkCoverage(
+	provider: ProviderId,
+	coverage: ComputeSdkCreateRequestCoverage,
+	hasRuntimeVerifier: boolean,
+): void {
+	requireExactComputeSdkCoverageAxes(
+		provider,
+		"request coverage",
+		coverage as Readonly<Record<string, unknown>>,
+		COMPUTE_SDK_REQUEST_COVERAGE_AXES,
+	);
+	requireExactComputeSdkCoverageAxes(
+		provider,
+		"target coverage",
+		coverage.spec,
+		COMPUTE_SDK_TARGET_COVERAGE_AXES,
+	);
+	requireExactComputeSdkCoverageAxes(
+		provider,
+		"GPU coverage",
+		coverage.gpu,
+		COMPUTE_SDK_GPU_COVERAGE_AXES,
+	);
+	if (coverage.artifact !== "context") {
+		invalidComputeSdkCoverage(provider, "artifact must be owned by the resolved driver context");
+	}
+	if (coverage.deadlineMs !== "harness") {
+		invalidComputeSdkCoverage(provider, "deadlineMs must be owned by the harness");
+	}
+	let needsRuntimeVerifier = false;
+	for (const [axis, disposition] of Object.entries(coverage.spec)) {
+		if (disposition === "mapped" || disposition === "unsupported") continue;
+		if (disposition === "runtime-verified") {
+			needsRuntimeVerifier = true;
+			continue;
+		}
+		if (disposition === null || typeof disposition !== "object" || Array.isArray(disposition)) {
+			invalidComputeSdkCoverage(provider, `target axis ${axis} has an unknown disposition`);
+		}
+		const entries = Object.entries(disposition);
+		if (
+			entries.length !== 1 ||
+			(entries[0]?.[0] !== "artifact" && entries[0]?.[0] !== "capacityAtLeast")
+		) {
+			invalidComputeSdkCoverage(
+				provider,
+				`target axis ${axis} must declare exactly one numeric bound`,
+			);
+		}
+		const value = entries[0]?.[1];
+		if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+			invalidComputeSdkCoverage(
+				provider,
+				`target axis ${axis} numeric bound must be positive and finite, received ${runtimeNumberLabel(value)}`,
+			);
+		}
+	}
+	if (needsRuntimeVerifier && !hasRuntimeVerifier) {
+		invalidComputeSdkCoverage(
+			provider,
+			"a runtime-verified target axis requires prepareAndVerifyCreatedRequest",
+		);
+	}
+	for (const [axis, disposition] of Object.entries(coverage.gpu)) {
+		if (disposition !== "mapped" && disposition !== "unsupported") {
+			invalidComputeSdkCoverage(provider, `GPU axis ${axis} has an unknown disposition`);
+		}
+	}
+	for (const [axis, disposition] of Object.entries(coverage)) {
+		if (axis === "spec" || axis === "gpu" || axis === "artifact" || axis === "deadlineMs") continue;
+		if (disposition !== "mapped" && disposition !== "unsupported") {
+			invalidComputeSdkCoverage(provider, `request axis ${axis} has an unknown disposition`);
+		}
+	}
+}
+
+async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends ComputeSdkLike>(
+	provider: ProviderId,
+	sandbox: ComputeSdkSandboxOf<TCompute>,
+	native: ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>,
+	request: CreateRequest,
+	operationOptions: DriverOperationOptions | undefined,
+	prepareAndVerify: NonNullable<ComputeSdkDriverSpec<TCompute>["prepareAndVerifyCreatedRequest"]>,
+	sensitiveValues: readonly string[],
+	ref: SandboxRef,
+): Promise<void> {
+	const result: unknown = await invokeComputeSdkProviderCallbackAsync(
+		provider,
+		"created-request preparation and verification",
+		() => prepareAndVerify(sandbox, native, request, operationOptions ?? {}),
+		{ code: "create-failed", ref },
+	);
+	if (!isNonArrayObject(result)) {
+		throw vendorContractFailure(
+			provider,
+			"created-request preparation and verification",
+			"post-create hook returned a non-object result",
+			sensitiveValues,
+			ref,
+		);
+	}
+	let status: unknown;
+	let detail: unknown;
+	try {
+		status = Reflect.get(result, "status");
+		detail = Reflect.get(result, "detail");
+	} catch {
+		throw vendorContractFailure(
+			provider,
+			"created-request preparation and verification",
+			"post-create hook returned an unreadable result",
+			sensitiveValues,
+			ref,
+		);
+	}
+	if (status === "honored" && detail === undefined) return;
+	if (status === "unsupported" && typeof detail === "string" && detail.length > 0) {
+		throw new DriverError(
+			"invalid-create-request",
+			`${provider} cannot honor the requested sandbox shape: ${redactKnownDiagnostic(detail, sensitiveValues)}`,
+			{ provider, ref },
+		);
+	}
+	throw vendorContractFailure(
+		provider,
+		"created-request preparation and verification",
+		"post-create hook returned an invalid result",
+		sensitiveValues,
+		ref,
+	);
+}
+
+function snapshotComputeSdkCoverage(value: unknown): ComputeSdkCreateRequestCoverage {
+	if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+		throw new Error("request coverage is not an object");
+	}
+	const defineOwn = (target: Record<string, unknown>, key: string, entry: unknown): void => {
+		Object.defineProperty(target, key, {
+			value: entry,
+			enumerable: true,
+			writable: false,
+			configurable: false,
+		});
+	};
+	const copyRecord = (candidate: unknown, copyDispositions = false): Record<string, unknown> => {
+		if (
+			(typeof candidate !== "object" && typeof candidate !== "function") ||
+			candidate === null ||
+			Array.isArray(candidate)
+		) {
+			throw new Error("request coverage member is not an object");
+		}
+		const copy = Object.create(null) as Record<string, unknown>;
+		for (const [key, entry] of Object.entries(candidate)) {
+			const copied =
+				copyDispositions &&
+				(typeof entry === "object" || typeof entry === "function") &&
+				entry !== null &&
+				!Array.isArray(entry)
+					? copyRecord(entry)
+					: entry;
+			defineOwn(copy, key, copied);
+		}
+		return copy;
+	};
+	const outer = Object.create(null) as Record<string, unknown>;
+	let spec: unknown;
+	let gpu: unknown;
+	let hasSpec = false;
+	let hasGpu = false;
+	for (const [key, entry] of Object.entries(value)) {
+		if (key === "spec") {
+			spec = entry;
+			hasSpec = true;
+		} else if (key === "gpu") {
+			gpu = entry;
+			hasGpu = true;
+		} else {
+			defineOwn(outer, key, entry);
+		}
+	}
+	if (!hasSpec || !hasGpu) throw new Error("request coverage is missing a required member");
+	defineOwn(outer, "spec", copyRecord(spec, true));
+	defineOwn(outer, "gpu", copyRecord(gpu));
+	return outer as unknown as ComputeSdkCreateRequestCoverage;
+}
+
+function normalizeComputeSdkObservation(
+	provider: ProviderId,
+	value: unknown,
+	ref: SandboxRef,
+): SandboxObservation {
+	let state: unknown;
+	try {
+		if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+			throw new Error("non-object observation");
+		}
+		state = Reflect.get(value, "state");
+	} catch {
+		throw providerCallbackFailure(provider, "probe observe result", {
+			code: "probe-failed",
+			ref,
+		});
+	}
+	if (state === "running" || state === "terminal" || state === "absent") return { state };
+	throw providerCallbackFailure(provider, "probe observe result", {
+		code: "probe-failed",
+		ref,
+	});
+}
+
+function normalizeComputeSdkSnapshot(
+	provider: ProviderId,
+	value: unknown,
+	ref: SandboxRef,
+): { readonly snapshotId: string } {
+	let snapshotId: unknown;
+	try {
+		if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+			throw new Error("non-object snapshot result");
+		}
+		snapshotId = Reflect.get(value, "snapshotId");
+	} catch {
+		throw providerCallbackFailure(provider, "snapshot create result", {
+			code: "snapshot-failed",
+			ref,
+		});
+	}
+	if (typeof snapshotId === "string" && snapshotId.length > 0) return { snapshotId };
+	throw providerCallbackFailure(provider, "snapshot create result", {
+		code: "snapshot-failed",
+		ref,
+	});
+}
+
 /** Compile a computesdk provider instance to a method table. */
 function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 	provider: ProviderId,
@@ -297,39 +783,145 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 	ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
 > {
 	const wantsFiles = options.hasWorkingFilesystem;
-	const probes = options.probes;
+	const rawProbes = options.probes;
+	const probes =
+		rawProbes === undefined
+			? undefined
+			: {
+					observe: rawProbes.observe,
+					list: rawProbes.list,
+					describe: rawProbes.describe,
+				};
 	const probeList = probes?.list;
 	const probeDescribe = probes?.describe;
-	const snapshots = options.snapshots;
+	const rawSnapshots = options.snapshots;
+	const snapshots =
+		rawSnapshots === undefined
+			? undefined
+			: { create: rawSnapshots.create, delete: rawSnapshots.delete };
+	const rawCommands = options.commands;
+	const commands =
+		rawCommands === undefined ? undefined : { exec: rawCommands.exec, launch: rawCommands.launch };
+	const rawLifecycle = options.lifecycle;
+	const lifecycle = rawLifecycle === undefined ? undefined : { destroy: rawLifecycle.destroy };
+	const rawCreateRecovery = options.createRecovery;
+	const createRecovery =
+		rawCreateRecovery === undefined
+			? undefined
+			: {
+					absenceConfirmationMs: rawCreateRecovery.absenceConfirmationMs,
+					maxAttempts: rawCreateRecovery.maxAttempts,
+					locator: rawCreateRecovery.locator,
+					cleanup: rawCreateRecovery.cleanup,
+					isDefinitive: rawCreateRecovery.isDefinitive,
+				};
+	const createRequestMapper: ComputeSdkCreateRequestMapper = {
+		coverage: snapshotComputeSdkCoverage(options.createOptions.coverage),
+		map: options.createOptions.map,
+	};
+	const prepareAndVerifyCreatedRequest = options.prepareAndVerifyCreatedRequest;
+	const sensitiveValuesDefault = options.sensitiveValues;
+	const resolvedArtifact = options.resolvedArtifact;
+	validateComputeSdkCoverage(
+		provider,
+		createRequestMapper.coverage,
+		prepareAndVerifyCreatedRequest !== undefined,
+	);
+	if (
+		createRecovery !== undefined &&
+		(!Number.isSafeInteger(createRecovery.absenceConfirmationMs) ||
+			createRecovery.absenceConfirmationMs <= 0)
+	) {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`computesdk createRecovery.absenceConfirmationMs must be a positive safe integer, received ${runtimeNumberLabel(createRecovery.absenceConfirmationMs)}`,
+			{ provider },
+		);
+	}
+	if (
+		createRecovery !== undefined &&
+		(!Number.isSafeInteger(createRecovery.maxAttempts) || createRecovery.maxAttempts < 2)
+	) {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`computesdk createRecovery.maxAttempts must be a safe integer of at least 2, received ${runtimeNumberLabel(createRecovery.maxAttempts)}`,
+			{ provider },
+		);
+	}
 	const sandboxIds = sandboxIdBoundary(options.sandboxId);
 	const handleSensitiveValues = new WeakMap<object, readonly string[]>();
 	const handleRefIds = new WeakMap<object, string>();
 	const refSensitiveValues = new Map<string, readonly string[]>();
 	const sensitiveFor = (sandbox: ComputeSdkSandboxOf<TCompute>): readonly string[] =>
-		handleSensitiveValues.get(sandbox) ?? options.sensitiveValues;
+		handleSensitiveValues.get(sandbox) ?? sensitiveValuesDefault;
 	const sensitiveForRef = (ref: SandboxRef): readonly string[] =>
-		refSensitiveValues.get(ref.id) ?? options.sensitiveValues;
+		refSensitiveValues.get(ref.id) ?? sensitiveValuesDefault;
 	const refFor = (sandbox: ComputeSdkSandboxOf<TCompute>): SandboxRef | undefined => {
 		const id = handleRefIds.get(sandbox);
 		return id === undefined ? undefined : sandboxRef(provider, id);
+	};
+	const destroySandbox = async (
+		sandbox: ComputeSdkSandboxOf<TCompute>,
+		ref: SandboxRef | undefined,
+		operationOptions: DriverOperationOptions = {},
+	): Promise<unknown> => {
+		if (lifecycle === undefined) return sandbox.destroy();
+		return invokeComputeSdkProviderCallbackAsync(
+			provider,
+			"lifecycle destroy",
+			() => lifecycle.destroy(sandbox, ref, operationOptions),
+			{ code: "destroy-failed", ...(ref === undefined ? {} : { ref }) },
+		);
 	};
 	return {
 		async create(compute, request: CreateRequest, operationOptions?: DriverOperationOptions) {
 			if (operationOptions?.signal?.aborted) {
 				throw wrapperAborted(provider, operationOptions.signal.reason);
 			}
-			const sensitiveValues = options.sensitiveValues;
+			const sensitiveValues = sensitiveValuesDefault;
 			const createOptions = mapCreateRequest(
 				provider,
-				options.createOptions,
+				createRequestMapper,
 				request,
 				sensitiveValues,
 			);
+			const recoveryLocator =
+				createRecovery === undefined
+					? undefined
+					: readRecoveryLocator(provider, createRecovery, createOptions, sensitiveValues);
+			const rejectWithRecovery = async (primary: unknown): Promise<never> => {
+				if (
+					isFailedCreateCleanupError(primary) ||
+					createRecovery === undefined ||
+					recoveryLocator === undefined
+				) {
+					throw primary;
+				}
+				const retryCleanup = (cleanupOptions?: DriverOperationOptions) =>
+					reconcileAmbiguousCreate(
+						provider,
+						compute,
+						createOptions,
+						createRecovery,
+						cleanupOptions,
+						sensitiveValues,
+					);
+				try {
+					await retryCleanup(operationOptions);
+				} catch (cleanupError) {
+					throw new FailedCreateCleanupError(cleanupError, primary, {
+						provider,
+						locator: recoveryLocator,
+						cleanup: retryCleanup,
+					});
+				}
+				throw primary;
+			};
 			let created: ComputeSdkSandboxOf<TCompute>;
 			try {
 				created = (await compute.sandbox.create(createOptions)) as ComputeSdkSandboxOf<TCompute>;
 			} catch (caught) {
-				throw wrapperFailure(
+				const primary = wrapperFailure(
 					"create-failed",
 					provider,
 					"create",
@@ -337,12 +929,19 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 					undefined,
 					sensitiveValues,
 				);
+				// A create the control plane refused outright owns nothing to reconcile. Polling for it
+				// would burn the caller's budget and, when the same rejection also fails the lookup,
+				// relabel a plain credential error as a cleanup double fault over a sandbox that never was.
+				if (isDefinitiveCreateRejection(provider, createRecovery, caught)) throw primary;
+				return rejectWithRecovery(primary);
 			}
 			if ((typeof created !== "object" && typeof created !== "function") || created === null) {
-				throw new DriverError(
-					"vendor-contract-violation",
-					"computesdk wrapper returned a non-object sandbox handle",
-					{ provider },
+				return rejectWithRecovery(
+					new DriverError(
+						"vendor-contract-violation",
+						"computesdk wrapper returned a non-object sandbox handle",
+						{ provider },
+					),
 				);
 			}
 			handleSensitiveValues.set(created, sensitiveValues);
@@ -357,7 +956,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 					throw vendorContractFailure(
 						provider,
 						"sandbox identity",
-						new Error("wrapper returned a sandbox without a nonempty string sandboxId"),
+						"wrapper returned a sandbox without a nonempty string sandboxId",
 						sensitiveValues,
 					);
 				}
@@ -369,22 +968,35 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				let native: ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>;
 				try {
 					native = created.getInstance() as ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>;
-				} catch (caught) {
-					const detail = redactKnownDiagnostic(
-						caught instanceof Error ? caught.message : String(caught),
+				} catch {
+					throw vendorContractFailure(
+						provider,
+						"getInstance",
+						"wrapper getInstance threw; original diagnostic omitted to protect credentials",
 						sensitiveValues,
+						ref,
 					);
-					throw new DriverError(
-						"vendor-contract-violation",
-						`computesdk getInstance failed: ${detail}`,
-						{ provider, ref, cause: new Error(detail) },
+				}
+				if (prepareAndVerifyCreatedRequest !== undefined) {
+					await prepareAndVerifyComputeSdkCreatedRequest(
+						provider,
+						created,
+						native,
+						request,
+						operationOptions,
+						prepareAndVerifyCreatedRequest,
+						sensitiveValues,
+						ref,
 					);
+				}
+				if (operationOptions?.signal?.aborted) {
+					throw wrapperAborted(provider, operationOptions.signal.reason);
 				}
 				return {
 					handle: created,
 					native,
 					sandboxRef: ref,
-					artifact: options.resolvedArtifact,
+					artifact: resolvedArtifact,
 				};
 			} catch (primary) {
 				const retryCleanup = async (cleanupOptions?: DriverOperationOptions) => {
@@ -397,7 +1009,11 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 						);
 					}
 					try {
-						await created.destroy();
+						await destroySandbox(
+							created,
+							parsedId === undefined ? undefined : sandboxRef(provider, parsedId),
+							cleanupOptions,
+						);
 						handleSensitiveValues.delete(created);
 						handleRefIds.delete(created);
 						if (parsedId !== undefined) refSensitiveValues.delete(parsedId);
@@ -432,7 +1048,17 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				result = normalizeCommandResult(
 					provider,
 					"exec",
-					await sandbox.runCommand(command),
+					await (commands === undefined
+						? sandbox.runCommand(command)
+						: invokeComputeSdkProviderCallbackAsync(
+								provider,
+								"command exec",
+								() => commands.exec(sandbox, command, {}),
+								{
+									code: "exec-failed",
+									...(refFor(sandbox) === undefined ? {} : { ref: refFor(sandbox) }),
+								},
+							)),
 					sensitiveFor(sandbox),
 					refFor(sandbox),
 				);
@@ -460,18 +1086,19 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			};
 		},
 		async destroy(_compute, sandbox, operationOptions) {
+			const ref = refFor(sandbox);
 			if (operationOptions?.signal?.aborted) {
 				throw wrapperAborted(provider, operationOptions.signal.reason, "destroy", "destroy-failed");
 			}
 			try {
-				await sandbox.destroy();
+				await destroySandbox(sandbox, ref, operationOptions);
 			} catch (caught) {
 				throw wrapperFailure(
 					"destroy-failed",
 					provider,
 					"destroy",
 					caught,
-					undefined,
+					ref,
 					sensitiveFor(sandbox),
 				);
 			}
@@ -481,6 +1108,29 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			if (refId !== undefined) refSensitiveValues.delete(refId);
 		},
 		async launch(_compute, sandbox, command) {
+			if (commands !== undefined) {
+				try {
+					await invokeComputeSdkProviderCallbackAsync(
+						provider,
+						"command launch",
+						() => commands.launch(sandbox, command, {}),
+						{
+							code: "exec-failed",
+							...(refFor(sandbox) === undefined ? {} : { ref: refFor(sandbox) }),
+						},
+					);
+					return;
+				} catch (caught) {
+					throw wrapperFailure(
+						"exec-failed",
+						provider,
+						"background launch",
+						caught,
+						refFor(sandbox),
+						sensitiveFor(sandbox),
+					);
+				}
+			}
 			let result: NormalizedComputeSdkCommandResult;
 			try {
 				result = normalizeCommandResult(
@@ -588,19 +1238,21 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			? {}
 			: {
 					probes: {
-						observe: (compute, ref) => {
+						observe: async (compute, ref) => {
 							const canonical = validateRef(
 								provider,
 								sandboxIds.canonical,
 								ref,
 								sensitiveForRef(ref),
 							);
-							return wrapperCapability(
-								"probe-failed",
+							return normalizeComputeSdkObservation(
 								provider,
-								"probe observe",
-								sensitiveForRef(canonical),
-								() => probes.observe(compute, canonical),
+								await invokeComputeSdkProviderCallbackAsync(
+									provider,
+									"probe observe",
+									() => probes.observe(compute, canonical),
+									{ code: "probe-failed", ref: canonical },
+								),
 								canonical,
 							);
 						},
@@ -608,12 +1260,11 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 							? {}
 							: {
 									list: (compute: TCompute) =>
-										wrapperCapability(
-											"probe-failed",
+										invokeComputeSdkProviderCallbackAsync(
 											provider,
 											"probe list",
-											options.sensitiveValues,
 											() => probeList(compute),
+											{ code: "probe-failed" },
 										),
 								}),
 						...(probeDescribe === undefined
@@ -626,13 +1277,11 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 											ref,
 											sensitiveForRef(ref),
 										);
-										return wrapperCapability(
-											"probe-failed",
+										return invokeComputeSdkProviderCallbackAsync(
 											provider,
 											"probe describe",
-											sensitiveForRef(canonical),
 											() => probeDescribe(compute, canonical),
-											canonical,
+											{ code: "probe-failed", ref: canonical },
 										);
 									},
 								}),
@@ -642,7 +1291,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			? {}
 			: {
 					snapshots: {
-						create: (
+						create: async (
 							compute: TCompute,
 							session: SandboxSession<ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>>,
 						) => {
@@ -652,22 +1301,23 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 								session.sandboxRef,
 								sensitiveForRef(session.sandboxRef),
 							);
-							return wrapperCapability(
-								"snapshot-failed",
+							return normalizeComputeSdkSnapshot(
 								provider,
-								"snapshot create",
-								sensitiveForRef(canonical),
-								() => snapshots.create(compute, { ...session, sandboxRef: canonical }),
+								await invokeComputeSdkProviderCallbackAsync(
+									provider,
+									"snapshot create",
+									() => snapshots.create(compute, { ...session, sandboxRef: canonical }),
+									{ code: "snapshot-failed", ref: canonical },
+								),
 								canonical,
 							);
 						},
 						delete: (compute: TCompute, snapshotId: string) =>
-							wrapperCapability(
-								"snapshot-failed",
+							invokeComputeSdkProviderCallbackAsync(
 								provider,
 								"snapshot delete",
-								options.sensitiveValues,
 								() => snapshots.delete(compute, snapshotId),
+								{ code: "snapshot-failed" },
 							),
 					},
 				}),
@@ -685,8 +1335,23 @@ function mapCreateRequest(
 	try {
 		for (const [axis, disposition] of Object.entries(mapper.coverage.spec)) {
 			const value = request.spec[axis as keyof CreateRequest["spec"]];
-			if (disposition === "unsupported" && value !== undefined) {
+			if (value === undefined) continue;
+			if (disposition === "unsupported") {
 				throw new UnsupportedComputeSdkRequest(`target axis ${axis} is unsupported`);
+			}
+			if (typeof disposition === "object" && "artifact" in disposition) {
+				if (value !== disposition.artifact) {
+					throw new UnsupportedComputeSdkRequest(
+						`target axis ${axis} must equal the artifact-pinned value ${disposition.artifact}`,
+					);
+				}
+			}
+			if (typeof disposition === "object" && "capacityAtLeast" in disposition) {
+				if (value > disposition.capacityAtLeast) {
+					throw new UnsupportedComputeSdkRequest(
+						`target axis ${axis} exceeds the declared capacity ${disposition.capacityAtLeast}`,
+					);
+				}
 			}
 		}
 		if (request.gpu !== undefined) {
@@ -722,28 +1387,19 @@ function mapCreateRequest(
 			throw new UnsupportedComputeSdkRequest(detail);
 		});
 	} catch (caught) {
-		if (caught instanceof UnsupportedComputeSdkRequest) {
+		if (isUnsupportedComputeSdkRequest(caught)) {
+			const detail = redact(
+				safeThrownMessage(caught) ?? "provider supplied no unsupported-request detail",
+			);
 			throw new DriverError(
 				"invalid-create-request",
-				`${provider} cannot honor the requested sandbox shape: ${redact(caught.message)}`,
+				`${provider} cannot honor the requested sandbox shape: ${detail}`,
 				{ provider },
 			);
 		}
-		if (isDriverError(caught) && caught.code === "invalid-create-request") {
-			const detail = redact(caught.message);
-			throw new DriverError("invalid-create-request", detail, {
-				provider,
-				cause: new Error(detail),
-			});
-		}
-		const detail = redact(caught instanceof Error ? caught.message : String(caught));
-		throw new DriverError(
-			"vendor-contract-violation",
-			`${provider} create-request mapper failed: ${detail}`,
-			{ provider, cause: new Error(detail) },
-		);
+		throw providerCallbackFailure(provider, "create-request mapper");
 	}
-	if (mapped === null || typeof mapped !== "object" || Array.isArray(mapped)) {
+	if (!isNonArrayObject(mapped)) {
 		throw new DriverError(
 			"vendor-contract-violation",
 			`${provider} create-request mapper must return an options object`,
@@ -751,6 +1407,208 @@ function mapCreateRequest(
 		);
 	}
 	return mapped;
+}
+
+function readRecoveryLocator<TCompute extends ComputeSdkLike>(
+	provider: ProviderId,
+	recovery: ComputeSdkCreateRecovery<TCompute>,
+	createOptions: Readonly<Record<string, unknown>>,
+	sensitiveValues: readonly string[],
+): ComputeSdkRecoveryLocator {
+	const locator: unknown = invokeComputeSdkProviderCallback(
+		provider,
+		"failed-create recovery locator",
+		() => recovery.locator(createOptions),
+	);
+	try {
+		if ((typeof locator !== "object" && typeof locator !== "function") || locator === null) {
+			throw new Error("invalid locator");
+		}
+		const kind: unknown = Reflect.get(locator, "kind");
+		const value: unknown = Reflect.get(locator, "value");
+		if (typeof value !== "string" || value.length === 0) {
+			throw new Error("invalid locator");
+		}
+		if (locatorExposesSensitiveValue(value, sensitiveValues)) throw new Error("invalid locator");
+		if (kind === "name") return Object.freeze({ kind, value });
+		if (kind === "marker") {
+			const key: unknown = Reflect.get(locator, "key");
+			if (typeof key !== "string" || key.length === 0) throw new Error("invalid locator");
+			if (locatorExposesSensitiveValue(key, sensitiveValues)) throw new Error("invalid locator");
+			return Object.freeze({ kind, key, value });
+		}
+		throw new Error("invalid locator");
+	} catch {
+		throw vendorContractFailure(
+			provider,
+			"failed-create recovery locator",
+			"recovery locator must be a readable nonempty name or keyed marker",
+			sensitiveValues,
+		);
+	}
+}
+
+function isDefinitiveCreateRejection(
+	provider: ProviderId,
+	recovery: { readonly isDefinitive?: ((error: unknown) => boolean) | undefined } | undefined,
+	caught: unknown,
+): boolean {
+	const isDefinitive = recovery?.isDefinitive;
+	if (isDefinitive === undefined) return false;
+	try {
+		// Only an explicit `true` releases recovery. A classifier that throws, or answers with
+		// anything else, has not proven absence — reconcile rather than assume nothing was billed.
+		return (
+			invokeComputeSdkProviderCallback(provider, "failed-create ambiguity classification", () =>
+				isDefinitive.call(recovery, caught),
+			) === true
+		);
+	} catch {
+		return false;
+	}
+}
+
+function locatorExposesSensitiveValue(
+	candidate: string,
+	sensitiveValues: readonly string[],
+): boolean {
+	return sensitiveValues.some((sensitive) => sensitive.length > 0 && candidate.includes(sensitive));
+}
+
+async function reconcileAmbiguousCreate<TCompute extends ComputeSdkLike>(
+	provider: ProviderId,
+	compute: TCompute,
+	createOptions: Readonly<Record<string, unknown>>,
+	recovery: ComputeSdkCreateRecovery<TCompute>,
+	operationOptions: DriverOperationOptions = {},
+	sensitiveValues: readonly string[],
+): Promise<void> {
+	let firstAbsentAt: number | undefined;
+	let attempts = 0;
+	while (attempts < recovery.maxAttempts) {
+		attempts += 1;
+		if (operationOptions.signal?.aborted) {
+			throw wrapperAborted(
+				provider,
+				operationOptions.signal.reason,
+				"failed-create reconciliation",
+				"destroy-failed",
+			);
+		}
+		let observation: ComputeSdkCreateRecoveryObservation;
+		try {
+			observation = normalizeRecoveryObservation(
+				provider,
+				await invokeComputeSdkProviderCallbackAsync(
+					provider,
+					"failed-create recovery cleanup",
+					() => recovery.cleanup(compute, createOptions, operationOptions),
+					{ code: "destroy-failed" },
+				),
+				sensitiveValues,
+			);
+		} catch (caught) {
+			throw wrapperFailure(
+				"destroy-failed",
+				provider,
+				"failed-create reconciliation",
+				caught,
+				undefined,
+				sensitiveValues,
+			);
+		}
+		if (observation.status === "destroyed") return;
+
+		const observedAt = performance.now();
+		if (observation.contradictedPriorAbsence || firstAbsentAt === undefined) {
+			firstAbsentAt = observedAt;
+		}
+		const confirmationAt = firstAbsentAt + recovery.absenceConfirmationMs;
+		if (observedAt >= confirmationAt) return;
+		if (attempts >= recovery.maxAttempts) break;
+		try {
+			await abortableComputeSdkDelay(
+				Math.ceil(confirmationAt - observedAt),
+				operationOptions.signal,
+			);
+		} catch (caught) {
+			throw wrapperAborted(provider, caught, "failed-create reconciliation", "destroy-failed");
+		}
+	}
+	throw new DriverError(
+		"destroy-failed",
+		`computesdk failed-create reconciliation did not converge after ${recovery.maxAttempts} attempts`,
+		{ provider },
+	);
+}
+
+function normalizeRecoveryObservation(
+	provider: ProviderId,
+	value: unknown,
+	sensitiveValues: readonly string[],
+): ComputeSdkCreateRecoveryObservation {
+	if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+		throw vendorContractFailure(
+			provider,
+			"failed-create reconciliation",
+			"cleanup returned a non-object observation",
+			sensitiveValues,
+		);
+	}
+	let status: unknown;
+	let contradictedPriorAbsence: unknown;
+	try {
+		status = Reflect.get(value, "status");
+		contradictedPriorAbsence = Reflect.get(value, "contradictedPriorAbsence");
+	} catch {
+		throw vendorContractFailure(
+			provider,
+			"failed-create reconciliation",
+			"cleanup returned an unreadable observation",
+			sensitiveValues,
+		);
+	}
+	if (status === "destroyed" && contradictedPriorAbsence === undefined) {
+		return { status: "destroyed" };
+	}
+	if (status !== "absent") {
+		throw vendorContractFailure(
+			provider,
+			"failed-create reconciliation",
+			"cleanup returned an invalid observation status",
+			sensitiveValues,
+		);
+	}
+	if (contradictedPriorAbsence !== undefined && typeof contradictedPriorAbsence !== "boolean") {
+		throw vendorContractFailure(
+			provider,
+			"failed-create reconciliation",
+			"cleanup returned an invalid contradictedPriorAbsence flag",
+			sensitiveValues,
+		);
+	}
+	return {
+		status: "absent",
+		...(contradictedPriorAbsence === true ? { contradictedPriorAbsence: true } : {}),
+	};
+}
+
+function abortableComputeSdkDelay(ms: number, signal?: AbortSignal): Promise<void> {
+	if (signal?.aborted) return Promise.reject(signal.reason);
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(done, ms);
+		function done(): void {
+			signal?.removeEventListener("abort", aborted);
+			resolve();
+		}
+		function aborted(): void {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", aborted);
+			reject(signal?.reason);
+		}
+		signal?.addEventListener("abort", aborted, { once: true });
+		if (signal?.aborted) aborted();
+	});
 }
 
 function redactKnownDiagnostic(detail: string, sensitiveValues: readonly string[]): string {
@@ -765,8 +1623,17 @@ function redactKnownDiagnostic(detail: string, sensitiveValues: readonly string[
 class UnsupportedComputeSdkRequest extends Error {
 	constructor(detail: string) {
 		super(detail);
+		unsupportedComputeSdkRequests.add(this);
 		this.name = "UnsupportedComputeSdkRequest";
 	}
+}
+
+function isUnsupportedComputeSdkRequest(value: unknown): value is UnsupportedComputeSdkRequest {
+	return (
+		(typeof value === "object" || typeof value === "function") &&
+		value !== null &&
+		unsupportedComputeSdkRequests.has(value)
+	);
 }
 
 function sandboxIdBoundary(schema: ComputeSdkSandboxIdSchema): ComputeSdkSandboxIdBoundary {
@@ -783,23 +1650,54 @@ function parseSandboxId(
 	boundary: "wrapper" | "canonical",
 ): string {
 	const redact = (detail: string) => redactKnownDiagnostic(detail, sensitiveValues);
-	let parsed: string | type.errors;
+	const parsed: unknown = invokeComputeSdkProviderCallback(
+		provider,
+		`${boundary} sandbox-id validator`,
+		() => schema(value),
+	);
+	let isErrors: boolean;
 	try {
-		parsed = schema(value);
-	} catch (caught) {
-		const detail = redact(caught instanceof Error ? caught.message : String(caught));
-		throw new DriverError(
-			"vendor-contract-violation",
-			`${provider} ${boundary} sandbox-id validator failed: ${detail}`,
-			{ provider, cause: new Error(detail) },
+		isErrors = parsed instanceof type.errors;
+	} catch {
+		throw vendorContractFailure(
+			provider,
+			`${boundary} sandbox-id validator`,
+			"validator returned an unreadable schema result",
+			sensitiveValues,
 		);
 	}
-	if (parsed instanceof type.errors) {
-		const detail = redact(parsed.summary);
+	if (isErrors) {
+		let summary: unknown;
+		try {
+			summary = Reflect.get(parsed as object, "summary");
+		} catch {
+			throw vendorContractFailure(
+				provider,
+				`${boundary} sandbox-id validator`,
+				"validator returned unreadable schema diagnostics",
+				sensitiveValues,
+			);
+		}
+		if (typeof summary !== "string") {
+			throw vendorContractFailure(
+				provider,
+				`${boundary} sandbox-id validator`,
+				"validator returned non-string schema diagnostics",
+				sensitiveValues,
+			);
+		}
+		const detail = redact(summary);
 		throw new DriverError("invalid-sandbox-ref", `${provider} sandbox id ${detail}`, {
 			provider,
 			cause: new Error(detail),
 		});
+	}
+	if (typeof parsed !== "string") {
+		throw new ComputeSdkContractError(
+			"vendor-contract-violation",
+			`${provider} ${boundary} sandbox-id validator returned a non-string canonical id`,
+			{ provider },
+		);
 	}
 	if (parsed.length === 0) {
 		throw new DriverError(
@@ -848,7 +1746,9 @@ function wrapperAborted(
 ): DriverError {
 	return new DriverError(code, `computesdk ${operation} for ${provider} was aborted`, {
 		provider,
-		cause: reason,
+		cause: new Error(
+			reason === undefined ? "operation aborted" : "abort reason omitted to protect credentials",
+		),
 	});
 }
 
@@ -865,19 +1765,31 @@ function normalizeCommandResult(
 	sensitiveValues: readonly string[],
 	ref?: SandboxRef,
 ): NormalizedComputeSdkCommandResult {
-	if (result === null || typeof result !== "object" || Array.isArray(result)) {
+	if (!isNonArrayObject(result)) {
 		throw vendorContractFailure(
 			provider,
 			operation,
-			new Error("wrapper returned a non-object command result"),
+			"wrapper returned a non-object command result",
 			sensitiveValues,
 			ref,
 		);
 	}
-	const candidate = result as Readonly<Record<string, unknown>>;
-	const exitCode = candidate.exitCode;
-	const stdout = candidate.stdout;
-	const stderr = candidate.stderr;
+	let exitCode: unknown;
+	let stdout: unknown;
+	let stderr: unknown;
+	try {
+		exitCode = Reflect.get(result, "exitCode");
+		stdout = Reflect.get(result, "stdout");
+		stderr = Reflect.get(result, "stderr");
+	} catch {
+		throw vendorContractFailure(
+			provider,
+			operation,
+			"wrapper returned an unreadable command result",
+			sensitiveValues,
+			ref,
+		);
+	}
 	if (
 		(exitCode !== undefined &&
 			(typeof exitCode !== "number" ||
@@ -889,7 +1801,7 @@ function normalizeCommandResult(
 		throw vendorContractFailure(
 			provider,
 			operation,
-			new Error("wrapper returned an invalid command-result field"),
+			"wrapper returned an invalid command-result field",
 			sensitiveValues,
 			ref,
 		);
@@ -908,8 +1820,13 @@ function readSandboxId(
 ): unknown {
 	try {
 		return (sandbox as unknown as { readonly sandboxId?: unknown }).sandboxId;
-	} catch (caught) {
-		throw vendorContractFailure(provider, "sandbox identity", caught, sensitiveValues);
+	} catch {
+		throw vendorContractFailure(
+			provider,
+			"sandbox identity",
+			"wrapper returned an unreadable sandboxId",
+			sensitiveValues,
+		);
 	}
 }
 
@@ -928,8 +1845,14 @@ function requireFilesystem<TSandbox extends ComputeSdkSandboxLike>(
 		readFile = filesystem?.readFile;
 		exists = filesystem?.exists;
 		writeFile = filesystem?.writeFile;
-	} catch (caught) {
-		throw vendorContractFailure(provider, "filesystem accessor", caught, sensitiveValues, ref);
+	} catch {
+		throw vendorContractFailure(
+			provider,
+			"filesystem accessor",
+			"wrapper returned an unreadable filesystem",
+			sensitiveValues,
+			ref,
+		);
 	}
 	if (
 		!filesystem ||
@@ -940,7 +1863,7 @@ function requireFilesystem<TSandbox extends ComputeSdkSandboxLike>(
 		throw vendorContractFailure(
 			provider,
 			"filesystem accessor",
-			new Error("wrapper declared a filesystem without every required callable method"),
+			"wrapper declared a filesystem without every required callable method",
 			sensitiveValues,
 			ref,
 		);
@@ -958,19 +1881,70 @@ export function defineComputeSdkDriver<P extends ProviderId, TCompute extends Co
 	id: P,
 	module: ComputeSdkDriverModuleSpec<NoInfer<P>, TCompute>,
 ): DriverModule<P, ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>> {
-	if (module.createBudget?.owner !== undefined && module.createBudget.owner !== "harness") {
+	const normalized = invokeComputeSdkProviderCallback(id, "module normalization", () => {
+		const rawBudget: unknown = Reflect.get(module, "createBudget");
+		const spec: unknown = Reflect.get(module, "spec");
+		if (rawBudget === undefined) return { createBudget: undefined, spec };
+		if (typeof rawBudget !== "object" || rawBudget === null || Array.isArray(rawBudget)) {
+			throw new Error("create budget is not an object");
+		}
+		const createBudget = Object.create(null) as Record<string, unknown>;
+		for (const [key, value] of Object.entries(rawBudget)) {
+			Object.defineProperty(createBudget, key, {
+				value,
+				enumerable: true,
+				writable: false,
+				configurable: false,
+			});
+		}
+		Object.freeze(createBudget);
+		return { createBudget, spec };
+	});
+	if (typeof normalized.spec !== "function") {
+		throw new DriverError("vendor-contract-violation", "ComputeSDK module spec must be callable", {
+			provider: id,
+		});
+	}
+	const specFactory = normalized.spec as ComputeSdkDriverModuleSpec<NoInfer<P>, TCompute>["spec"];
+	const budgetRecord = normalized.createBudget;
+	if (budgetRecord !== undefined) {
+		for (const key of Object.keys(budgetRecord)) {
+			if (key !== "owner" && key !== "timeoutMs") {
+				throw new DriverError(
+					"vendor-contract-violation",
+					`ComputeSDK create budget declares unknown field ${key}`,
+					{ provider: id },
+				);
+			}
+		}
+	}
+	if (budgetRecord !== undefined && budgetRecord.owner !== "harness") {
 		throw new DriverError(
 			"vendor-contract-violation",
 			"ComputeSDK create budgets must be owned by the harness",
 			{ provider: id },
 		);
 	}
+	if (
+		budgetRecord !== undefined &&
+		budgetRecord.timeoutMs !== undefined &&
+		(!Number.isSafeInteger(budgetRecord.timeoutMs) || (budgetRecord.timeoutMs as number) <= 0)
+	) {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`ComputeSDK create budget timeoutMs must be a positive safe integer, received ${runtimeNumberLabel(budgetRecord.timeoutMs)}`,
+			{ provider: id },
+		);
+	}
+	const createBudget = budgetRecord as
+		| Extract<CreateBudget, { readonly owner: "harness" }>
+		| undefined;
 	return defineDriver(id, {
-		...(module.createBudget === undefined ? {} : { createBudget: module.createBudget }),
+		...(createBudget === undefined ? {} : { createBudget }),
 		driver: (context) => {
 			const sensitiveValues = sensitiveEnvValuesFor(id, context.env);
-			try {
-				const { compute, ...spec } = module.spec(context);
+			return invokeComputeSdkProviderCallback(id, "module spec factory", () => {
+				const { compute, ...spec } = specFactory(context);
 				return driverFromTable(
 					computeSdkMethodTable<TCompute>(id, {
 						...spec,
@@ -979,9 +1953,7 @@ export function defineComputeSdkDriver<P extends ProviderId, TCompute extends Co
 					}),
 					() => Promise.resolve(compute),
 				);
-			} catch (caught) {
-				throw vendorContractFailure(id, "driver construction", caught, sensitiveValues);
-			}
+			});
 		},
 	});
 }

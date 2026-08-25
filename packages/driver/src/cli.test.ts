@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type } from "arktype";
 import type {
+	CliArgv,
+	CliCreateRequestCoverage,
+	CliDriverModuleSpec,
 	CliDriverOptions,
 	CliRowsSchema,
 	CliRunOptions,
@@ -37,11 +40,20 @@ const request: CreateRequest = {
 	deadlineMs: 2_000,
 };
 
+const mappedRequestCoverage = {
+	spec: { vcpus: "mapped", memoryGb: "mapped", diskGb: "mapped" },
+	artifact: "context",
+	deadlineMs: "driver",
+	gpu: { model: "mapped", count: "mapped" },
+	env: "mapped",
+} as const satisfies CliCreateRequestCoverage;
+
 function tamaLikeSpec(overrides: Partial<CliSpec<MachineRow>> = {}): CliSpec<MachineRow> {
 	return {
 		binary: "fake-cli",
 		secretFlags: ["--token"],
 		commandTimeoutMs: 1_000,
+		requestCoverage: mappedRequestCoverage,
 		create: (r, name) => [
 			"new",
 			name,
@@ -86,6 +98,7 @@ function fakeVendor(options: { readyAfterPolls?: number } = {}) {
 	const calls: string[][] = [];
 	const machines = new Map<string, MachineRow>();
 	let polls = 0;
+	let reachedReady = false;
 	const run = async (
 		_binary: string,
 		args: readonly string[],
@@ -95,13 +108,16 @@ function fakeVendor(options: { readyAfterPolls?: number } = {}) {
 		const [verb] = args;
 		if (verb === "new") {
 			const name = args[1] ?? "";
+			polls = 0;
+			reachedReady = false;
 			machines.set(name, { id: `m-${machines.size + 1}`, name, status: "booting" });
 			return { stdout: "", stderr: "", code: 0 };
 		}
 		if (verb === "list") {
 			polls += 1;
-			if (polls > (options.readyAfterPolls ?? 1)) {
+			if (!reachedReady && polls > (options.readyAfterPolls ?? 1)) {
 				for (const row of machines.values()) row.status = "ready";
+				reachedReady = true;
 			}
 			return { stdout: JSON.stringify([...machines.values()]), stderr: "", code: 0 };
 		}
@@ -156,6 +172,207 @@ describe("cliDriver", () => {
 		void missingBudget;
 	});
 
+	test("snapshots joined module policy once and omits hostile getter diagnostics", () => {
+		const context = {
+			env: { TAMA_TOKEN: "tok" },
+			artifact: { kind: "image" },
+			resolvedArtifact: { kind: "image", ref: "ghcr.io/example/toolchain:v1" },
+		} as const;
+		let ceilingReads = 0;
+		let specReads = 0;
+		let ceiling = 60_000;
+		let specFactory: CliDriverModuleSpec<"tama", MachineRow>["spec"] = () => tamaLikeSpec();
+		const mutableModule = Object.defineProperties(
+			{},
+			{
+				createAttemptCeilingMs: {
+					enumerable: true,
+					get: () => {
+						ceilingReads += 1;
+						return ceiling;
+					},
+				},
+				spec: {
+					enumerable: true,
+					get: () => {
+						specReads += 1;
+						return specFactory;
+					},
+				},
+			},
+		) as CliDriverModuleSpec<"tama", MachineRow>;
+		const module_ = defineCliDriver("tama", mutableModule);
+		ceiling = 1;
+		specFactory = () => {
+			throw new Error("mutated-module-secret");
+		};
+		expect(module_.createBudget).toEqual({ owner: "driver", attemptCeilingMs: 60_000 });
+		expect(Object.isFrozen(module_.createBudget)).toBe(true);
+		expect(typeof module_.driver(context).create).toBe("function");
+		expect({ ceilingReads, specReads }).toEqual({ ceilingReads: 1, specReads: 1 });
+
+		for (const hostileField of ["createAttemptCeilingMs", "spec"] as const) {
+			const secret = `hostile-${hostileField}-secret`;
+			const hostileModule = Object.defineProperties(
+				{},
+				{
+					createAttemptCeilingMs: { value: 60_000, enumerable: true },
+					spec: { value: () => tamaLikeSpec(), enumerable: true },
+					[hostileField]: {
+						enumerable: true,
+						get: () => {
+							throw new Error(secret);
+						},
+					},
+				},
+			) as CliDriverModuleSpec<"tama", MachineRow>;
+			let error: unknown;
+			try {
+				defineCliDriver("tama", hostileModule);
+			} catch (caught) {
+				error = caught;
+			}
+			expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "tama" });
+			expect(String((error as Error).message)).not.toContain(secret);
+			expect(String((error as Error & { cause?: unknown }).cause ?? "")).not.toContain(secret);
+		}
+	});
+
+	test("snapshots CLI options once and omits hostile getter diagnostics", async () => {
+		const vendor = fakeVendor({ readyAfterPolls: 0 });
+		let runReads = 0;
+		let ceilingReads = 0;
+		const options = Object.defineProperties(
+			{},
+			{
+				run: {
+					enumerable: true,
+					get: () => {
+						runReads += 1;
+						return vendor.run;
+					},
+				},
+				createAttemptCeilingMs: {
+					enumerable: true,
+					get: () => {
+						ceilingReads += 1;
+						return ceilingReads === 1 ? 60_000 : 900_000;
+					},
+				},
+			},
+		) as CliDriverOptions;
+		const driver = cliDriver(tamaLikeSpec(), options);
+		const session = await driver.create(request);
+		await session.destroy();
+		expect({ runReads, ceilingReads }).toEqual({ runReads: 1, ceilingReads: 1 });
+		expect(vendor.machines.size).toBe(0);
+
+		for (const hostileField of ["run", "createAttemptCeilingMs"] as const) {
+			const secret = `hostile-option-${hostileField}-secret`;
+			const hostileOptions = Object.defineProperties(
+				{},
+				{
+					run: { value: vendor.run, enumerable: true },
+					createAttemptCeilingMs: { value: 60_000, enumerable: true },
+					[hostileField]: {
+						enumerable: true,
+						get: () => {
+							throw new Error(secret);
+						},
+					},
+				},
+			) as CliDriverOptions;
+			let error: unknown;
+			try {
+				cliDriver(tamaLikeSpec(), hostileOptions);
+			} catch (caught) {
+				error = caught;
+			}
+			expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "tama" });
+			expect(String((error as Error).message)).not.toContain(secret);
+			expect(String((error as Error & { cause?: unknown }).cause ?? "")).not.toContain(secret);
+		}
+	});
+
+	test("normalizes a throwing module spec factory without retaining nested credentials", () => {
+		const secret = "module-spec-secret";
+		const module_ = defineCliDriver("tama", {
+			createAttemptCeilingMs: 60_000,
+			spec: () => {
+				const nested = Object.assign(new Error(`nested ${secret}`), { credential: secret });
+				throw Object.assign(new Error(`factory ${secret}`, { cause: nested }), {
+					credential: secret,
+				});
+			},
+		});
+		let caught: unknown;
+		try {
+			module_.driver({
+				env: { TAMA_TOKEN: secret },
+				artifact: { kind: "image" },
+				resolvedArtifact: { kind: "image", ref: "ghcr.io/example/toolchain:v1" },
+			});
+		} catch (error) {
+			caught = error;
+		}
+		const driverError = caught as DriverError;
+		expect(driverError).toMatchObject({
+			code: "vendor-contract-violation",
+			provider: "tama",
+		});
+		expect(driverError.message).not.toContain(secret);
+		expect(String(driverError.cause)).not.toContain(secret);
+		expect((driverError.cause as Error).cause).toBeUndefined();
+	});
+
+	test("consumes a returned module spec inside the omission boundary", () => {
+		const secret = "lazy-module-spec-secret";
+		const module_ = defineCliDriver("tama", {
+			createAttemptCeilingMs: 60_000,
+			spec: () =>
+				new Proxy(tamaLikeSpec(), {
+					get(target, property, receiver) {
+						if (property === "ready") throw new Error(`lazy getter leaked ${secret}`);
+						return Reflect.get(target, property, receiver);
+					},
+				}),
+		});
+		let caught: unknown;
+		try {
+			module_.driver({
+				env: { TAMA_TOKEN: secret },
+				artifact: { kind: "image" },
+				resolvedArtifact: { kind: "image", ref: "ghcr.io/example/toolchain:v1" },
+			});
+		} catch (error) {
+			caught = error;
+		}
+		const driverError = caught as DriverError;
+		expect(driverError).toMatchObject({ code: "vendor-contract-violation", provider: "tama" });
+		expect(driverError.message).not.toContain(secret);
+		expect(String(driverError.cause)).not.toContain(secret);
+	});
+
+	test("snapshots nested module policy before runtime operations", async () => {
+		const secret = "runtime-module-secret";
+		let pollIntervalReads = 0;
+		const base = tamaLikeSpec();
+		const ready = new Proxy(base.ready, {
+			get(target, property, receiver) {
+				if (property === "pollIntervalMs" && pollIntervalReads++ > 0) {
+					throw new Error(secret);
+				}
+				return Reflect.get(target, property, receiver);
+			},
+		});
+		const vendor = fakeVendor({ readyAfterPolls: 0 });
+		const driver = cliDriver({ ...base, ready }, { run: vendor.run });
+		const session = await driver.create(request);
+		await session.destroy();
+		expect(pollIntervalReads).toBe(1);
+		expect(vendor.machines.size).toBe(0);
+	});
+
 	test("contextually types a complete inline provider spec without row annotations", () => {
 		const publicRowsSchema: CliRowsSchema<MachineRow> = machineRows;
 		type _rowsInput = Expect<Equal<typeof publicRowsSchema.inferIn, string>>;
@@ -168,6 +385,7 @@ describe("cliDriver", () => {
 					binary: env.TAMA_CLI ?? "tama",
 					secretFlags: ["--token"],
 					commandTimeoutMs: 10_000,
+					requestCoverage: mappedRequestCoverage,
 					create: (_request, name) => ["new", name, "--token", env.TAMA_TOKEN],
 					cleanupCreated: {
 						kind: "command",
@@ -201,6 +419,40 @@ describe("cliDriver", () => {
 			});
 		void uncheckedRows;
 		void uncheckedIdSpec;
+
+		const emptyCommands = () =>
+			defineCliSpec(machineRows, {
+				...tamaLikeSpec(),
+				// @ts-expect-error — a command must retain at least one argv member after the binary
+				create: () => [],
+			});
+		void emptyCommands;
+
+		const incompleteCoverage = {
+			spec: { vcpus: "mapped", memoryGb: "mapped", diskGb: "mapped" },
+			artifact: "context",
+			deadlineMs: "driver",
+			gpu: { model: "unsupported", count: "unsupported" },
+			// @ts-expect-error — adding a CreateRequest field must force every CLI module to decide it
+		} as const satisfies CliCreateRequestCoverage;
+		void incompleteCoverage;
+	});
+
+	test("rejects unknown runtime coverage axes before invoking provider code", () => {
+		let calls = 0;
+		const futureCoverage = {
+			...mappedRequestCoverage,
+			network: "unsupported",
+		} as unknown as CliCreateRequestCoverage;
+		expect(() =>
+			cliDriver(tamaLikeSpec({ requestCoverage: futureCoverage }), {
+				run: async () => {
+					calls += 1;
+					return { stdout: "", stderr: "", code: 0 };
+				},
+			}),
+		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "tama" }));
+		expect(calls).toBe(0);
 	});
 
 	test("expresses Tama's real profile auth and name-to-id failed-create reconciliation", async () => {
@@ -212,6 +464,7 @@ describe("cliDriver", () => {
 			binary: "tama",
 			secretFlags: ["--token"],
 			commandTimeoutMs: 60_000,
+			requestCoverage: mappedRequestCoverage,
 			createCommandTimeoutMs: 20 * 60_000,
 			prepare: {
 				probe: ["list", "--json"],
@@ -820,6 +1073,85 @@ describe("cliDriver", () => {
 		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "tama" }));
 	});
 
+	test("rejects non-positive and non-finite numeric coverage before invoking a CLI", () => {
+		for (const numericBound of [Number.NaN, Number.POSITIVE_INFINITY, 0]) {
+			const requestCoverage = {
+				...mappedRequestCoverage,
+				spec: { ...mappedRequestCoverage.spec, memoryGb: { capacityAtLeast: numericBound } },
+			} as CliCreateRequestCoverage;
+			expect(() => cliDriver(tamaLikeSpec({ requestCoverage }))).toThrow(
+				expect.objectContaining({ code: "vendor-contract-violation", provider: "tama" }),
+			);
+		}
+	});
+
+	test("requires every canonical coverage axis and exact ownership literal before invoking a CLI", () => {
+		const malformedCoverages = [
+			{
+				...mappedRequestCoverage,
+				spec: { vcpus: "mapped", diskGb: "mapped" },
+			},
+			{
+				...mappedRequestCoverage,
+				gpu: { model: "mapped" },
+			},
+			{
+				spec: mappedRequestCoverage.spec,
+				artifact: "context",
+				deadlineMs: "driver",
+				gpu: mappedRequestCoverage.gpu,
+			},
+			{ ...mappedRequestCoverage, artifact: "request" },
+			{ ...mappedRequestCoverage, deadlineMs: "harness" },
+		] as unknown as readonly CliCreateRequestCoverage[];
+		let calls = 0;
+		for (const requestCoverage of malformedCoverages) {
+			expect(() =>
+				cliDriver(tamaLikeSpec({ requestCoverage }), {
+					run: async () => {
+						calls += 1;
+						return { stdout: "", stderr: "", code: 0 };
+					},
+				}),
+			).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "tama" }));
+		}
+		expect(calls).toBe(0);
+	});
+
+	test("rejects enumerable prototype pollution without consulting inherited accessors", () => {
+		const secret = "closure-only-coverage-secret";
+		let poisonedReads = 0;
+		const poisonedPrototype = Object.defineProperty({}, "spec", {
+			get() {
+				if (poisonedReads++ > 0) throw new Error(secret);
+				return mappedRequestCoverage.spec;
+			},
+			set() {},
+		});
+		const requestCoverage: Record<string, unknown> = {};
+		Object.defineProperty(requestCoverage, "__proto__", {
+			value: poisonedPrototype,
+			enumerable: true,
+		});
+		for (const [key, value] of Object.entries(mappedRequestCoverage)) {
+			Object.defineProperty(requestCoverage, key, { value, enumerable: true });
+		}
+		const vendor = fakeVendor({ readyAfterPolls: 0 });
+		let error: unknown;
+		try {
+			cliDriver(tamaLikeSpec({ requestCoverage: requestCoverage as CliCreateRequestCoverage }), {
+				run: vendor.run,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "tama" });
+		expect(String((error as Error).message)).not.toContain(secret);
+		expect(String((error as Error & { cause?: unknown }).cause ?? "")).not.toContain(secret);
+		expect(poisonedReads).toBe(0);
+		expect(vendor.calls).toHaveLength(0);
+	});
+
 	test("preflights failed-create cleanup argv before invoking the vendor", async () => {
 		let calls = 0;
 		const driver = cliDriver(
@@ -844,6 +1176,130 @@ describe("cliDriver", () => {
 		expect(calls).toBe(0);
 	});
 
+	test("rejects an unknown cleanup discriminant before allocation", () => {
+		let calls = 0;
+		expect(() =>
+			cliDriver(
+				tamaLikeSpec({
+					cleanupCreated: {
+						kind: "bogus",
+						absenceConfirmationMs: 5,
+					} as never,
+				}),
+				{
+					run: async () => {
+						calls++;
+						return { stdout: "", stderr: "", code: 0 };
+					},
+				},
+			),
+		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "tama" }));
+		expect(calls).toBe(0);
+	});
+
+	test("rejects empty static and cleanup argv before any allocation can be released", async () => {
+		expect(() =>
+			cliDriver(
+				tamaLikeSpec({
+					ready: { ...tamaLikeSpec().ready, poll: [] as unknown as CliArgv },
+				}),
+			),
+		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "tama" }));
+
+		let calls = 0;
+		const driver = cliDriver(
+			tamaLikeSpec({
+				cleanupCreated: {
+					kind: "command",
+					command: () => [] as unknown as CliArgv,
+					absenceConfirmationMs: 5,
+				},
+			}),
+			{
+				run: async () => {
+					calls += 1;
+					return { stdout: "", stderr: "", code: 0 };
+				},
+			},
+		);
+		const error = await driver.create(request).catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "tama" });
+		expect(calls).toBe(0);
+	});
+
+	test("fails preparation closed unless a completed probe intentionally exits nonzero", async () => {
+		const secret = "prepare-runner-secret";
+		for (const mode of ["reject", "malformed", "unreadable"] as const) {
+			const calls: string[] = [];
+			const error = (await cliDriver(
+				tamaLikeSpec({
+					prepare: {
+						probe: ["list", "--json"],
+						fallback: ["login", "--token", secret],
+					},
+				}),
+				{
+					run: async (_binary, args) => {
+						calls.push(args[0] ?? "");
+						if (mode === "reject") {
+							throw new Proxy(new Error("transport failed"), {
+								getPrototypeOf() {
+									throw new Error(`prototype leaked ${secret}`);
+								},
+							});
+						}
+						if (mode === "unreadable") {
+							return Object.defineProperty({}, "stdout", {
+								get() {
+									throw new Error(`result leaked ${secret}`);
+								},
+							}) as CliRunResult;
+						}
+						return { stdout: "[]", stderr: "" } as unknown as CliRunResult;
+					},
+				},
+			)
+				.create(request)
+				.catch((caught: unknown) => caught)) as DriverError;
+			expect(error).toMatchObject({
+				code: mode === "reject" ? "create-failed" : "vendor-contract-violation",
+				provider: "tama",
+			});
+			expect(error.message).not.toContain(secret);
+			expect(String(error.cause)).not.toContain(secret);
+			expect(calls).toEqual(["list"]);
+		}
+	});
+
+	test("omits callback diagnostics that can contain cleanup-only secrets", async () => {
+		const cleanupSecret = "cleanup-only-secret";
+		let calls = 0;
+		const driver = cliDriver(
+			tamaLikeSpec({
+				create: () => {
+					throw new Error(`builder leaked ${cleanupSecret}`);
+				},
+				cleanupCreated: {
+					kind: "command",
+					command: (name) => ["rm-name", "--token", cleanupSecret, name],
+					absenceConfirmationMs: 5,
+				},
+			}),
+			{
+				run: async () => {
+					calls++;
+					return { stdout: "", stderr: "", code: 0 };
+				},
+			},
+		);
+		const error = (await driver.create(request).catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "tama" });
+		expect(error.message).not.toContain(cleanupSecret);
+		expect(String(error.cause)).not.toContain(cleanupSecret);
+		expect(String(error.cause)).toContain("original diagnostic omitted");
+		expect(calls).toBe(0);
+	});
+
 	test("create polls until ready; the session's native handle IS the parsed row", async () => {
 		const vendor = fakeVendor({ readyAfterPolls: 2 });
 		const driver = cliDriver(tamaLikeSpec(), { run: vendor.run });
@@ -853,8 +1309,349 @@ describe("cliDriver", () => {
 		const result = await session.exec("echo hi");
 		expect(result.exit).toEqual({ kind: "exited", code: 0 });
 		expect(result.stdout).toBe("ran\n");
+		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "running" });
+		const observed = vendor.machines.get(session.native.name);
+		if (observed === undefined) throw new Error("fake vendor lost the created machine");
+		observed.status = "stopped";
+		// This deliberately simple classifier calls every non-ready state pending. Observation must
+		// keep pending allocations live; only the classifier's explicit terminal arm is terminal.
+		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "running" });
 		await session.destroy();
 		expect(vendor.machines.size).toBe(0);
+		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
+	});
+
+	test("rejects malformed readiness classifications during create and observation", async () => {
+		for (const invalid of [undefined, "stopped", { terminal: 42 }, { terminal: " " }]) {
+			const invalidReady = {
+				...tamaLikeSpec().ready,
+				classify: () => invalid as never,
+			};
+			const vendor = fakeVendor({ readyAfterPolls: 0 });
+			const createError = await cliDriver(tamaLikeSpec({ ready: invalidReady }), {
+				run: vendor.run,
+			})
+				.create(request)
+				.catch((caught: unknown) => caught);
+			expect(createError).toMatchObject({
+				code: "vendor-contract-violation",
+				provider: "tama",
+			});
+
+			const observationDriver = cliDriver(tamaLikeSpec({ ready: invalidReady }), {
+				run: async () => ({
+					stdout: JSON.stringify([{ id: "m-1", name: "existing", status: "ready" }]),
+					stderr: "",
+					code: 0,
+				}),
+			});
+			const observationError = await observationDriver.probes
+				?.observe(sandboxRef("tama", "m-1"))
+				.catch((caught: unknown) => caught);
+			expect(observationError).toMatchObject({
+				code: "vendor-contract-violation",
+				provider: "tama",
+				ref: { provider: "tama", id: "m-1" },
+			});
+		}
+	});
+
+	test("redacts secrets from throwing readiness classifiers and terminal getters", async () => {
+		const secret = "s3cret";
+		const failures: Array<() => unknown> = [
+			() => {
+				throw new Error(`classifier echoed ${secret}`);
+			},
+			() =>
+				Object.defineProperty({}, "terminal", {
+					get() {
+						throw new Error(`terminal getter echoed ${secret}`);
+					},
+				}),
+			() => {
+				const malformed = new Error("placeholder");
+				Object.defineProperty(malformed, "message", { value: 42 });
+				throw malformed;
+			},
+		];
+		const expectRedactedContractError = (
+			error: DriverError,
+			ref?: ReturnType<typeof sandboxRef>,
+		) => {
+			expect(error).toMatchObject({
+				code: "vendor-contract-violation",
+				provider: "tama",
+				...(ref === undefined ? {} : { ref }),
+			});
+			expect(error.message).not.toContain(secret);
+			expect(error.vendorMessage).toBeUndefined();
+			expect(String(error.cause)).not.toContain(secret);
+			expect(String(error.cause)).toContain("original diagnostic omitted");
+		};
+
+		for (const fail of failures) {
+			const ready = {
+				...tamaLikeSpec().ready,
+				classify: () => fail() as never,
+			};
+			const spec = tamaLikeSpec({
+				prepare: {
+					probe: ["list", "--json"],
+					fallback: ["login", "--token", secret],
+				},
+				ready,
+			});
+			const vendor = fakeVendor({ readyAfterPolls: 0 });
+			const createError = (await cliDriver(spec, { run: vendor.run })
+				.create(request)
+				.catch((caught: unknown) => caught)) as DriverError;
+			expectRedactedContractError(createError);
+
+			const ref = sandboxRef("tama", "m-1");
+			const observationError = (await cliDriver(spec, {
+				run: async () => ({
+					stdout: JSON.stringify([{ id: "m-1", name: "existing", status: "ready" }]),
+					stderr: "",
+					code: 0,
+				}),
+			})
+				.probes?.observe(ref)
+				.catch((caught: unknown) => caught)) as DriverError;
+			expectRedactedContractError(observationError, ref);
+		}
+	});
+
+	test("normalizes every provider callback boundary without retaining nested secrets", async () => {
+		const secret = "callback-only-secret";
+		const leak = (): never => {
+			const nested = Object.assign(new Error(`nested ${secret}`), { credential: secret });
+			throw Object.assign(new Error(`outer ${secret}`, { cause: nested }), { credential: secret });
+		};
+		const expectSafe = (error: DriverError, ref?: ReturnType<typeof sandboxRef>) => {
+			expect(error).toMatchObject({
+				code: "vendor-contract-violation",
+				provider: "tama",
+				...(ref === undefined ? {} : { ref }),
+			});
+			expect(error.message).not.toContain(secret);
+			expect(error.vendorMessage).toBeUndefined();
+			expect(String(error.cause)).not.toContain(secret);
+			expect((error.cause as Error).cause).toBeUndefined();
+		};
+
+		const throwingRows = new Proxy(machineRows, {
+			apply: () => leak(),
+		});
+		const throwingId = new Proxy(machineId, {
+			apply: () => leak(),
+		});
+		const createCases: CliSpec<MachineRow>[] = [
+			tamaLikeSpec({
+				ready: { ...tamaLikeSpec().ready, select: () => leak() },
+			}),
+			tamaLikeSpec({
+				ready: { ...tamaLikeSpec().ready, parse: throwingRows },
+			}),
+			tamaLikeSpec({
+				sandboxId: { fromRow: (row) => row.id, parse: throwingId },
+			}),
+		];
+		for (const spec of createCases) {
+			const vendor = fakeVendor({ readyAfterPolls: 0 });
+			const error = (await cliDriver(spec, { run: vendor.run })
+				.create(request)
+				.catch((caught: unknown) => caught)) as DriverError;
+			expectSafe(error);
+			// Each failure occurs after allocation; the generated-name rollback must still run.
+			expect(vendor.machines.size).toBe(0);
+		}
+
+		const ref = sandboxRef("tama", "m-1");
+		const observationSpec = tamaLikeSpec({
+			sandboxId: { fromRow: () => leak(), parse: machineId },
+		});
+		const observationError = (await cliDriver(observationSpec, {
+			run: async () => ({
+				stdout: JSON.stringify([{ id: "m-1", name: "existing", status: "ready" }]),
+				stderr: "",
+				code: 0,
+			}),
+		})
+			.probes?.observe(ref)
+			.catch((caught: unknown) => caught)) as DriverError;
+		expectSafe(observationError, ref);
+
+		const execVendor = fakeVendor({ readyAfterPolls: 0 });
+		const execSession = await cliDriver(tamaLikeSpec({ exec: () => leak() }), {
+			run: execVendor.run,
+		}).create(request);
+		const execError = (await execSession
+			.exec("echo hi")
+			.catch((caught: unknown) => caught)) as DriverError;
+		expectSafe(execError);
+		await execSession.destroy();
+
+		const destroyVendor = fakeVendor({ readyAfterPolls: 0 });
+		const destroySession = await cliDriver(tamaLikeSpec({ destroy: () => leak() }), {
+			run: destroyVendor.run,
+		}).create(request);
+		const destroyError = (await destroySession
+			.destroy()
+			.catch((caught: unknown) => caught)) as DriverError;
+		expectSafe(destroyError);
+	});
+
+	test("normalizes schema-result diagnostics and successful output shapes before use", async () => {
+		const secret = "schema-result-secret";
+		const realErrors = machineRows("not json");
+		if (!(realErrors instanceof type.errors)) throw new Error("test fixture unexpectedly parsed");
+		const unreadableErrors = new Proxy(realErrors, {
+			get(target, property, receiver) {
+				if (property === "summary") throw new Error(`summary leaked ${secret}`);
+				return Reflect.get(target, property, receiver);
+			},
+		});
+		const hostileRows = new Proxy(machineRows, {
+			apply: () => unreadableErrors,
+		});
+		const vendor = fakeVendor({ readyAfterPolls: 0 });
+		const schemaError = (await cliDriver(
+			tamaLikeSpec({ ready: { ...tamaLikeSpec().ready, parse: hostileRows } }),
+			{ run: vendor.run },
+		)
+			.create(request)
+			.catch((caught: unknown) => caught)) as DriverError;
+		expect(schemaError).toMatchObject({
+			code: "vendor-contract-violation",
+			provider: "tama",
+		});
+		expect(schemaError.message).not.toContain(secret);
+		expect(String(schemaError.cause)).not.toContain(secret);
+		expect(vendor.machines.size).toBe(0);
+
+		const malformedRows = new Proxy(machineRows, { apply: () => ({}) });
+		const malformedVendor = fakeVendor({ readyAfterPolls: 0 });
+		const shapeError = await cliDriver(
+			tamaLikeSpec({ ready: { ...tamaLikeSpec().ready, parse: malformedRows as never } }),
+			{ run: malformedVendor.run },
+		)
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(shapeError).toMatchObject({
+			code: "vendor-contract-violation",
+			provider: "tama",
+		});
+		expect(malformedVendor.machines.size).toBe(0);
+
+		const malformedId = new Proxy(machineId, { apply: () => ({}) });
+		const idVendor = fakeVendor({ readyAfterPolls: 0 });
+		const idError = await cliDriver(
+			tamaLikeSpec({
+				sandboxId: { fromRow: (row) => row.id, parse: malformedId as never },
+			}),
+			{ run: idVendor.run },
+		)
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(idError).toMatchObject({
+			code: "vendor-contract-violation",
+			provider: "tama",
+		});
+		expect(idVendor.machines.size).toBe(0);
+
+		let findReads = 0;
+		const proxyRows = new Proxy([{ id: "m-1", name: "bench", status: "ready" }], {
+			get(target, property, receiver) {
+				if (property === "find") {
+					findReads++;
+					throw new Error(`find leaked ${secret}`);
+				}
+				return Reflect.get(target, property, receiver);
+			},
+		});
+		const proxyRowsSchema = new Proxy(machineRows, { apply: () => proxyRows });
+		const probeDriver = cliDriver(
+			tamaLikeSpec({ ready: { ...tamaLikeSpec().ready, parse: proxyRowsSchema } }),
+			{
+				run: async () => ({ stdout: "ignored", stderr: "", code: 0 }),
+			},
+		);
+		expect(await probeDriver.probes?.observe(sandboxRef("tama", "m-1"))).toEqual({
+			state: "running",
+		});
+		expect(findReads).toBe(0);
+	});
+
+	test("copies lazy argv inside the callback boundary and keeps a failed destroy retryable", async () => {
+		const secret = "argv-iterator-secret";
+		let hostile = true;
+		const vendor = fakeVendor({ readyAfterPolls: 0 });
+		const driver = cliDriver(
+			tamaLikeSpec({
+				destroy: (id) => {
+					if (!hostile) return ["rm", "-y", id];
+					return new Proxy(["rm", "-y", id], {
+						get(target, property, receiver) {
+							if (property === "0") throw new Error(`argv getter leaked ${secret}`);
+							return Reflect.get(target, property, receiver);
+						},
+					}) as CliArgv;
+				},
+			}),
+			{ run: vendor.run },
+		);
+		const session = await driver.create(request);
+		const error = (await session.destroy().catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "tama" });
+		expect(error.message).not.toContain(secret);
+		expect(String(error.cause)).not.toContain(secret);
+		expect(vendor.machines.size).toBe(1);
+		hostile = false;
+		await session.destroy();
+		expect(vendor.machines.size).toBe(0);
+	});
+
+	test("normalizes hostile runner failures and unreadable result fields", async () => {
+		const secret = "runner-only-secret";
+		const hostileError = () => {
+			const nested = Object.assign(new Error(`nested ${secret}`), { credential: secret });
+			const outer = Object.assign(new Error("placeholder", { cause: nested }), {
+				credential: secret,
+			});
+			Object.defineProperty(outer, "message", {
+				value: {
+					toString() {
+						throw nested;
+					},
+				},
+			});
+			return outer;
+		};
+		for (const mode of ["reject", "unreadable-result"] as const) {
+			const vendor = fakeVendor({ readyAfterPolls: 0 });
+			const session = await cliDriver(tamaLikeSpec(), {
+				run: async (binary, args, options) => {
+					if (args[0] !== "exec") return vendor.run(binary, args, options);
+					if (mode === "reject") throw hostileError();
+					return Object.defineProperty({}, "stdout", {
+						get() {
+							throw hostileError();
+						},
+					}) as CliRunResult;
+				},
+			}).create(request);
+			const error = (await session
+				.exec("echo hi")
+				.catch((caught: unknown) => caught)) as DriverError;
+			expect(error).toMatchObject({
+				code: mode === "reject" ? "exec-failed" : "vendor-contract-violation",
+				provider: "tama",
+			});
+			expect(error.message).not.toContain(secret);
+			expect(error.vendorMessage ?? "").not.toContain(secret);
+			expect(String(error.cause)).not.toContain(secret);
+			await session.destroy();
+		}
 	});
 
 	test("destroy tolerates not-found (idempotent); other failures surface with structured fields", async () => {

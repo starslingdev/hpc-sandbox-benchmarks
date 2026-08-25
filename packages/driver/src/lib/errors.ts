@@ -7,6 +7,13 @@
 import type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
 import type { DriverOperationOptions, SandboxRef } from "./port.ts";
 
+// `instanceof` is not a safe predicate at a public error boundary: a rejected Proxy can trap
+// [[GetPrototypeOf]] and make the predicate itself throw, bypassing normalization. Brand the two
+// errors the kit must recognize instead. WeakSet.has does not invoke user code and preserves the
+// nominal "created by this kit instance" guarantee that a structural code/name check would lose.
+const driverErrors = new WeakSet<object>();
+const failedCreateCleanupErrors = new WeakSet<object>();
+
 /**
  * What went wrong, in terms of what the caller may do next:
  *
@@ -60,14 +67,48 @@ export interface FailedCreateRecovery {
 				readonly value: string;
 		  }
 		| {
+				/** A provider-owned unique allocation marker, such as metadata or an external id. */
+				readonly kind: "marker";
+				readonly key: string;
+				readonly value: string;
+		  }
+		| {
 				/** The wrapper returned no stable id, so cleanup retains its native object in-process. */
 				readonly kind: "native-handle";
+		  }
+		| {
+				/** The source locator was unreadable; only the retained cleanup callback is trustworthy. */
+				readonly kind: "cleanup-callback";
 		  };
 }
 
 export interface FailedCreateCleanupErrorOptions extends FailedCreateRecovery {
 	/** Idempotent, convergent retry for the allocation named by {@link locator}. */
 	readonly cleanup: (options?: DriverOperationOptions) => Promise<void>;
+}
+
+function snapshotRecoveryLocator(locator: unknown): FailedCreateRecovery["locator"] {
+	try {
+		if ((typeof locator !== "object" && typeof locator !== "function") || locator === null) {
+			throw new Error("invalid locator");
+		}
+		const kind: unknown = Reflect.get(locator, "kind");
+		if (kind === "native-handle" || kind === "cleanup-callback") {
+			return Object.freeze({ kind });
+		}
+		const value: unknown = Reflect.get(locator, "value");
+		if (typeof value !== "string" || value.length === 0) throw new Error("invalid locator");
+		if (kind === "name" || kind === "id") return Object.freeze({ kind, value });
+		if (kind === "marker") {
+			const key: unknown = Reflect.get(locator, "key");
+			if (typeof key !== "string" || key.length === 0) throw new Error("invalid locator");
+			return Object.freeze({ kind, key, value });
+		}
+	} catch {
+		// Cleanup ownership is more important than malformed locator diagnostics. The callback remains
+		// retryable even when hostile accessors make the source locator impossible to retain safely.
+	}
+	return Object.freeze({ kind: "cleanup-callback" });
 }
 
 /**
@@ -94,18 +135,24 @@ export class FailedCreateCleanupError extends SuppressedError implements AsyncDi
 		createError: unknown,
 		options: FailedCreateCleanupErrorOptions,
 	) {
+		const locator = snapshotRecoveryLocator(options.locator);
 		const locatorLabel =
-			options.locator.kind === "native-handle"
+			locator.kind === "native-handle"
 				? "through its retained native handle"
-				: `by ${options.locator.kind} ${options.locator.value}`;
+				: locator.kind === "cleanup-callback"
+					? "through its retained cleanup callback"
+					: locator.kind === "marker"
+						? `by marker ${locator.key}=${locator.value}`
+						: `by ${locator.kind} ${locator.value}`;
 		super(
 			cleanupError,
 			createError,
 			`failed to clean up ${options.provider} sandbox ${locatorLabel} after create failure`,
 		);
 		this.name = "FailedCreateCleanupError";
+		failedCreateCleanupErrors.add(this);
 		this.provider = options.provider;
-		this.locator = Object.freeze({ ...options.locator });
+		this.locator = locator;
 		this.#cleanup = options.cleanup;
 	}
 
@@ -156,6 +203,7 @@ export class DriverError extends Error {
 
 	constructor(code: DriverErrorCode, message: string, fields: DriverErrorFields = {}) {
 		super(message, fields.cause !== undefined ? { cause: fields.cause } : undefined);
+		driverErrors.add(this);
 		this.name = "DriverError";
 		this.code = code;
 		this.provider = fields.provider;
@@ -165,7 +213,12 @@ export class DriverError extends Error {
 	}
 }
 
-export const isDriverError = (value: unknown): value is DriverError => value instanceof DriverError;
+export const isDriverError = (value: unknown): value is DriverError =>
+	(typeof value === "object" || typeof value === "function") &&
+	value !== null &&
+	driverErrors.has(value);
 
 export const isFailedCreateCleanupError = (value: unknown): value is FailedCreateCleanupError =>
-	value instanceof FailedCreateCleanupError;
+	(typeof value === "object" || typeof value === "function") &&
+	value !== null &&
+	failedCreateCleanupErrors.has(value);
