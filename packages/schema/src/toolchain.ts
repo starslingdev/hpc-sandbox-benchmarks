@@ -40,6 +40,25 @@ export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
 // a directory mode. Re-bake all providers before the runs that consume v8.
 export const TOOLCHAIN_VERSION = "v8";
 
+/** Public registry repository the shared toolchain image is published to. */
+export const TOOLCHAIN_IMAGE_REPOSITORY = `ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}`;
+
+/** Suffix distinguishing the mutable candidate tag from the immutable version tag. */
+export const TOOLCHAIN_CANDIDATE_SUFFIX = "-candidate";
+
+/**
+ * The toolchain image ref for one artifact phase — the `image`/`built` counterpart to
+ * {@link bakedArtifactName}'s provider-side naming.
+ *
+ * Kept in this dependency-free leaf (ADR-0007's disposition for pure artifact defaults) so the
+ * runtime config gatekeeper and the driver composition root derive the same ref instead of each
+ * rebuilding the repository string.
+ */
+export function toolchainImageRef(phase: "candidate" | "version"): string {
+	const version = `${TOOLCHAIN_IMAGE_REPOSITORY}:${TOOLCHAIN_VERSION}`;
+	return phase === "candidate" ? `${version}${TOOLCHAIN_CANDIDATE_SUFFIX}` : version;
+}
+
 const VCR_NAMESPACE_COMPONENT = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 
 // The Vercel namespace this repository's own CI publishes into. These are DEFAULTS, not constants: a

@@ -19,7 +19,8 @@
     "promote": "./src/bin/promote.ts",
     "stability": "./src/bin/stability.ts",
     "leaderboard": "./src/bin/leaderboard.ts",
-    "reprice-dataset": "./src/bin/reprice-dataset.ts"
+    "reprice-dataset": "./src/bin/reprice-dataset.ts",
+    "driver-check": "./src/bin/driver-check.ts"
   },
   "scripts": {
     "test": "bun test",
@@ -30,6 +31,8 @@
   "dependencies": {
     "@actions/core": "1.11.1",
     "@sandbox-benchmarks/schema": "workspace:*",
+    "@sandbox-benchmarks/driver": "workspace:*",
+    "@sandbox-benchmarks/drivers": "workspace:*",
     "@sandbox-benchmarks/providers": "workspace:*",
     "@sandbox-benchmarks/templates": "workspace:*",
     "@sandbox-benchmarks/harness": "workspace:*",

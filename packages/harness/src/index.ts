@@ -46,6 +46,14 @@ import { createOwnedSandbox, withOwnedSandbox } from "./lib/sandbox-owner.ts";
 import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
 
 export { collectResults } from "./lib/collect.ts";
+// The sandbox shape `StepRunner` drives. Exported so a caller that builds one from a driver session
+// (apps/cli's composition root) can name it without reaching into this package's private lib/.
+export type {
+	CommandResult,
+	RunCommandOptions,
+	SandboxFilesystem,
+	SandboxHandle,
+} from "./lib/execute.ts";
 export { StepRunner } from "./lib/execute.ts";
 // Re-export the lifecycle measurement surface so consumers import it from the package root, never
 // from `src/lib` (the package-boundary rule the other modules follow).

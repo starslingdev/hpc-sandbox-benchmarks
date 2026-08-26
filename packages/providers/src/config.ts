@@ -7,8 +7,8 @@
 // against 17 ms for these two, which carry no arktype at all. The constants are identical either way.
 import { bakedArtifactName, TARGET_SPEC } from "@sandbox-benchmarks/schema/providers";
 import {
-	TOOLCHAIN_IMAGE_NAME,
 	TOOLCHAIN_VERSION,
+	toolchainImageRef,
 	VERCEL_PROJECT_NAME_DEFAULT,
 	VERCEL_TEAM_SLUG_DEFAULT,
 	validateVercelVcrImageRef,
@@ -110,11 +110,10 @@ export interface MicrosandboxCloudCredentials {
 // `promote`; iteration happens against a mutable candidate (`:v1-candidate`, `…-v1-candidate`),
 // reused every build so the public registry never accumulates versions. Bumping TOOLCHAIN_VERSION
 // then yields exactly one new public version per deliberate promote.
-const imageRepo = `ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}`;
-const CANDIDATE_SUFFIX = "-candidate";
-
-const toolchainImageVersion = `${imageRepo}:${TOOLCHAIN_VERSION}`;
-const toolchainImageCandidate = `${toolchainImageVersion}${CANDIDATE_SUFFIX}`;
+// The refs themselves are a toolchain-leaf projection, so the driver composition root and this
+// gatekeeper cannot disagree about where the image lives.
+const toolchainImageVersion = toolchainImageRef("version");
+const toolchainImageCandidate = toolchainImageRef("candidate");
 // Provider-side names are the artifact metadata projection from ADR-0006. Providers live in distinct
 // control-plane namespaces, so the shared canonical name is sufficient; only isolation variants that
 // share a namespace declare a suffix (daytona-container). A new baked provider gets naming for free.

@@ -61,10 +61,39 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
 | `@sandbox-benchmarks/figures`    | schema                                          | `arktype`, fonts (`@fontsource/*`)  |
 | `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
-| `@sandbox-benchmarks/cli` (app)  | schema, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
+| `@sandbox-benchmarks/cli` (app)  | schema, driver, drivers, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
 | `@repo/tsconfig`            | —                                               | —                                   |
 | `@repo/test-utils`          | schema                                          | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
+
+## Driver end-to-end validation (`driver-check`)
+
+`apps/cli/src/lib/driver-run.ts` is the ADR-0007 composition root: it loads a driver module, parses
+that provider's declared env slice, resolves the lane's artifact, and constructs the driver. It also
+holds the two adapters that let a port `SandboxSession` drive today's `StepRunner`; both are
+temporary and disappear when `harness` flips from `providers` to `driver`.
+
+`driver-check` is the local lane that exercises the whole path against a real sandbox:
+
+```sh
+bun apps/cli/src/bin/driver-check.ts --provider e2b
+bun apps/cli/src/bin/driver-check.ts --provider tama --phase candidate --workload-seconds 10
+```
+
+It runs create → readiness → exec (including the exit-7 and split-stream clauses) → a filesystem
+round-trip → a real workload on BOTH transports → destroy → idempotent destroy → control-plane
+convergence, then prints a JSON report. It writes **no Run document**: persisting a driver-path run
+needs the artifact-provenance fields the Run schema does not carry yet, and a v5 document from this
+path would publish a measurement whose artifact attribution cannot be verified.
+
+The durable step is the point of the lane. `--workload-seconds` runs a real command past the
+module's declared `syncCapMs`, which forces `StepRunner` onto the detached transport and proves the
+declared `durable` route actually reaches an observable done-file. Those two values were previously
+asserted by no execution at all.
+
+A provider whose credentials are absent SKIPS with exit 0. A provider that has not migrated yet
+(see `packages/drivers/migration-waivers.json`) is rejected outright rather than silently falling
+back to the legacy adapter.
 
 `results` depends on `schema` and `figures` alone — it must normalize without any provider SDK,
 and it now also builds the leaderboard's chart documents. `@repo/repo-checks` enforces that no
