@@ -332,11 +332,13 @@ Six request/result rules complete the port, each earned in prototyping:
   probes and queries; a capped stream sets `ExecResult.truncated`. There is deliberately **no
   kit-wide default**: results collection is a multi-MB base64 tar over stdout (`collect.ts:49-51`),
   and a blanket cap turns it into a bounded retry loop that can never succeed.
-- **Create failures are typed at the driver boundary.** Drivers translate vendor failures to
-  `SandboxCreateError` with a stable kind (`capacity`, `authentication`, `invalid-request`,
-  `unavailable`, or `unknown`) and optional `retryAfterMs`. The harness retries only `capacity` or
-  explicitly retryable `unavailable` failures. Error-prose regexes may remain private to a legacy
-  bridge, but the registry and harness never classify vendor strings.
+- **Create failures are typed at the driver boundary.** Drivers translate failures to `DriverError`
+  with a stable `DriverErrorCode`. Invalid requests and credentials are terminal; allocation
+  refusals use `create-failed`; broken integration invariants use `vendor-contract-violation`.
+  A `create-failed` error may retain the vendor diagnostic only in its designated `vendorMessage`
+  field so the legacy retry policy can consult registry-owned retry patterns without parsing the
+  formatted exception message. There is no parallel `SandboxCreateError` taxonomy or
+  `retryAfterMs` channel.
 
 A driver **author**, however, writes a *stateless method table* — flat, pure functions over a typed
 native handle, capability-by-presence — and the kit assembles sessions from it:
@@ -430,8 +432,13 @@ export function defineDriver<P extends ProviderId, Handle>(
 
 export interface DriverModule<P extends ProviderId, Handle = unknown> {
   readonly id: P;
-  create(context: DriverContext<P>): SandboxDriver<Handle>;
-  // readiness, execution, createBudget, provenance, costEvidence …
+  readonly provenance: SdkProvenance;
+  readonly createBudget?: CreateBudget;
+  readonly readiness: DriverReadinessPolicy<Handle>;
+  readonly execution: ExecutionPolicy;
+  readonly accelerator?: AcceleratorStrategy;
+  readonly costEvidence?: ProviderCostEvidenceCapability<P>;
+  readonly driver: (context: DriverContext<P>) => SandboxDriver<Handle>;
 }
 
 export interface DriverContext<P extends ProviderId> {
@@ -446,12 +453,56 @@ export interface DriverContext<P extends ProviderId> {
 
 `defineDriver` returns an inert `DriverModule`, not an already-configured global. The module owns
 behavioral policy next to the implementation: integration provenance, create budget, readiness
-strategy, cost-evidence hook, and execution strategy
-`{ syncCapMs: number | null; durable: "native-launch" | "shell-detach" | "none" }`. The exact
-`syncCapMs` is a conservative routing policy, not a claim that smoke must wait that long to prove.
-The unused `transport.streaming` flag is removed until a consumer actually models streaming.
-`native-launch` requires a `launch` table member; `shell-detach` selects the kit fallback; both are
-live-verified by ADR-0008.
+strategy, cost-evidence hook, accelerator observation strategy, and execution strategy. Execution is
+a discriminated union rather than two independently optional claims:
+
+```ts
+type ExecutionPolicy =
+  | { syncCapMs: null; durable: "native-launch" | "shell-detach" | "none" }
+  | { syncCapMs: number; durable: "native-launch" | "shell-detach" };
+```
+
+A finite cap therefore cannot be declared without a durable route to fall back to — the invalid
+`{ durable: "none", syncCapMs: number }` combination is unconstructable rather than a runtime check.
+The exact `syncCapMs` is a conservative routing policy, not a claim that smoke must wait that long
+to prove. The unused `transport.streaming` flag is removed until a consumer actually models
+streaming.
+`native-launch` requires a `launch` table member; helpers reject the declaration before allocation
+when that structure is visible. The common module boundary also verifies the returned session and,
+if the capability is absent, tears the contradictory allocation down before it escapes while
+retaining retryable cleanup ownership on a teardown double fault. `shell-detach` selects the kit
+fallback; both strategies are live-verified by ADR-0008.
+
+The optional accelerator strategy owns guest observation and normalization for the accelerator
+family the module accepts. The shared NVIDIA strategy shells out to `nvidia-smi`; a future AMD, TPU,
+or other driver supplies its own probe command, parser, and normalized model/count matcher. This
+keeps the vendor-neutral `CreateRequest.gpu.model` axis unchanged while giving ADR-0008's
+conformance suite a real observation path per module, instead of hard-coding one vendor's tool into
+the shared gate.
+
+The strategy's concrete port shape keeps the probe mechanics pluggable while giving the shared gate
+one normalized result:
+
+```ts
+interface AcceleratorObservation {
+  readonly model: string;
+  readonly count: number;
+}
+
+interface AcceleratorStrategy {
+  readonly family: string;
+  readonly command: string;
+  readonly parse: (stdout: string) => AcceleratorObservation;
+  readonly matches: (requested: GpuSpec, observed: AcceleratorObservation) => boolean;
+}
+```
+
+The gate executes `command`, rejects a failed or truncated command envelope, and passes only
+successful stdout to `parse`. The strategy never receives credentials or an ambient process
+environment. A module with no strategy must reject a present `CreateRequest.gpu` before allocation
+with the port's typed `invalid-create-request` error; that rejection is the GPU row's supported
+negative result. Returning a session for a GPU request without a strategy is a conformance failure,
+not `unverified`: the suite has no evidence that it is safe to benchmark the allocation as a GPU.
 
 One generic call signature, deliberately not overloads — convex's registration builder documents
 the reason and it held up in our error-message tests: overloads prefix every mistake with a

@@ -53,14 +53,15 @@ ADR-0007's port acquires short CSI-style clauses in its JSDoc:
 - A present `files` capability MUST round-trip both directions: `writeText` then `readFile` returns
   the same bytes, and a file written through `exec` is readable through `files`. If `files` is absent,
   the kit's exec-based read and write fallbacks MUST pass the same round-trip.
-- A `create` request carrying a GPU MUST either provision the requested model/count or fail with a
-  typed `invalid-request`/unsupported error before returning a session; it MUST never benchmark CPU
-  silently.
+- A `create` request carrying a GPU while `module.accelerator` is absent MUST fail before provider
+  allocation is attempted with a `DriverError` whose code is `invalid-create-request`. With a
+  strategy present, the driver MUST either provision the requested model/count or return a typed
+  `DriverError` before exposing a session; it MUST never benchmark CPU silently.
 - When create reports a `ResolvedArtifact`, it MUST match the request; a contradiction MUST tear down
   the orphan and fail. When the vendor cannot report it, smoke MUST match an expected immutable
   fingerprint from inside the guest. Request fallback without either observation is `unverified`.
-- Create failures crossing the port MUST be `SandboxCreateError` values. The harness retries only
-  stable kinds, never vendor error prose.
+- Create failures crossing the port MUST be `DriverError` values using ADR-0007's closed
+  `DriverErrorCode` taxonomy. The harness routes only stable codes, never vendor error prose.
 
 Every clause names an observable caller guarantee. Implementation notes and vendor-specific error
 tables remain in drivers; they are not elevated into universal contract text.
@@ -82,7 +83,7 @@ The conformance inventory is closed and explicit:
 | filesystem | `session.files` presence | native round-trip when present; exec fallback round-trip when absent | fallback is tested, not skipped |
 | control-plane convergence | `driver.probes.observe` | post-destroy observation is `terminal` or `absent` | `unverified` |
 | snapshots | `driver.snapshots` presence | create, identify, delete; cleanup runs on failure | `not-applicable` |
-| GPU | request `gpu` axis (`CreateRequest.gpu?`) | when requested, count/model appears in `nvidia-smi`, or typed rejection | typed rejection is a pass for CPU-only drivers |
+| GPU | request `gpu` axis (`CreateRequest.gpu?`) + `module.accelerator` | when present, the strategy reports normalized model/count in-guest and its matcher confirms both match the requested `gpu.model`/`gpu.count`; when absent, `DriverError("invalid-create-request")` is returned and the provider-allocation call count remains zero | matching values or that pre-allocation rejection pass; either value mismatching, or a returned session without a strategy, is `fail` |
 | readiness | module readiness strategy | declared signal reaches ready within its declared budget | `fail` |
 | secret diagnostics | secret-sourced registry inputs + driver spawn/log sinks | no secret in any observable diagnostic surface | `fail` |
 
@@ -92,12 +93,21 @@ vendor artifact syntax is driver code. `syncCapMs` is treated as a conservative 
 does not sleep for the cap, but it does prove the router and the durable consequence used at that
 boundary.
 
+Two of these rows lean on module-side declarations that ADR-0007 makes structural rather than
+conventional. Execution is a discriminated union, so the `{ durable: "none", syncCapMs: number }`
+combination the durable row excludes is a compile-time or boundary-validation failure — never a
+conformance row asking the suite to exercise an undefined route. The GPU row reads the module's
+accelerator strategy for its guest probe: the shared NVIDIA strategy uses `nvidia-smi`, while each
+future accelerator family supplies its own command, parser, and normalized model/count matcher. The
+gate stays vendor-neutral; only the strategy knows the tool.
+
 This design also drops the old “observed-but-undeclared” promise. A generic port cannot safely
 discover a native filesystem or snapshot API that the driver did not expose, and probing vendor
 internals would make the TCK provider-specific. Presence capabilities cannot underclaim: exposing
-the member is the declaration. A module that declares `native-launch` without a `launch` member is a
-construction/type error; a working but intentionally unexposed vendor feature is simply outside this
-repo's integration contract.
+the member is the declaration. A module that declares `native-launch` without a `launch` member is
+rejected by a helper before allocation when possible; otherwise the common boundary tears down the
+first contradictory session and reports a typed contract violation. A working but intentionally
+unexposed vendor feature is simply outside this repo's integration contract.
 
 ### 3. `@sandbox-benchmarks/driver/conformance`: one suite, any driver
 
