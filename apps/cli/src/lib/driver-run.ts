@@ -10,6 +10,7 @@
 // `packages/harness` still speaks the legacy `SandboxHandle` shape. Both are deliberately thin and
 // both disappear when the harness flips to the port.
 
+import { resolve } from "node:path";
 import type {
 	CreateRequest,
 	DriverModule,
@@ -19,11 +20,24 @@ import type {
 	SandboxSession,
 } from "@sandbox-benchmarks/driver";
 import { launchDetached, readTextFile, succeeded, writeTextFile } from "@sandbox-benchmarks/driver";
-import { parseDriverEnv } from "@sandbox-benchmarks/driver/env";
+import {
+	driverReadinessBudgetMs,
+	verifyDriverReadiness,
+} from "@sandbox-benchmarks/driver/conformance";
+import { missingDriverEnvNames, parseDriverEnv } from "@sandbox-benchmarks/driver/env";
 import type { DriverProviderId } from "@sandbox-benchmarks/drivers";
-import { loadDriverModule } from "@sandbox-benchmarks/drivers";
-import type { SandboxHandle } from "@sandbox-benchmarks/harness";
-import { createOwnedSandbox, releaseOwnedSandbox } from "@sandbox-benchmarks/harness";
+import { DRIVERS, loadDriverModule } from "@sandbox-benchmarks/drivers";
+import type { RunSuiteOptions, SandboxHandle } from "@sandbox-benchmarks/harness";
+import {
+	CREATE_FAILURE_PREFIX,
+	createOwnedSandbox,
+	createSuiteSandboxFromPlan,
+	recordSuiteGap,
+	releaseOwnedSandbox,
+	runSuiteOnSandbox,
+	SUITE_CREATE_ATTEMPT_TIMEOUT_MS,
+	SuiteUsageError,
+} from "@sandbox-benchmarks/harness";
 import type {
 	ArtifactPhase,
 	ProviderArtifact,
@@ -34,6 +48,8 @@ import {
 	bakedArtifactName,
 	isBakedProviderId,
 	REGISTRY,
+	SUITE_NAMES,
+	SUITES,
 	TARGET_SPEC,
 } from "@sandbox-benchmarks/schema";
 import { toolchainImageRef } from "@sandbox-benchmarks/schema/toolchain";
@@ -150,7 +166,7 @@ export function sessionHandle(session: SandboxSession): SandboxHandle {
 			}
 			return commandResult(await session.exec(command));
 		},
-		destroy: () => session.destroy(),
+		destroy: (options?: { readonly signal?: AbortSignal }) => session.destroy(options),
 	};
 	const files = session.files;
 	if (files === undefined) return handle;
@@ -267,6 +283,148 @@ export async function openDriver<P extends DriverProviderId>(
 		resolvedArtifact: artifact,
 	} as Parameters<DriverModule<ProviderId>["driver"]>[0]);
 	return { module, driver, artifact, transport: driverTransport(module.execution) };
+}
+
+function isDriverProviderId(value: string): value is DriverProviderId {
+	return Object.hasOwn(DRIVERS, value);
+}
+
+function createBudgetOf(module: DriverModule<ProviderId>): {
+	readonly timeoutMs: number | null;
+	readonly attemptCeilingMs: number | undefined;
+	readonly requestDeadlineMs: number;
+} {
+	const budget = module.createBudget;
+	if (budget?.owner === "driver") {
+		return {
+			timeoutMs: null,
+			attemptCeilingMs: budget.attemptCeilingMs,
+			requestDeadlineMs: budget.attemptCeilingMs,
+		};
+	}
+	const timeoutMs = budget?.timeoutMs ?? SUITE_CREATE_ATTEMPT_TIMEOUT_MS;
+	return { timeoutMs, attemptCeilingMs: undefined, requestDeadlineMs: timeoutMs };
+}
+
+/**
+ * Run one real benchmark cell through a registered DriverModule.
+ *
+ * This is deliberately an explicit migration path: an unregistered provider is rejected instead of
+ * falling back to packages/providers, while the existing bench-suite path remains unchanged until
+ * the port-native lane has live evidence. The shared harness still owns create retry budgeting,
+ * failure markers, result collection, teardown, and Run v6 artifact evidence.
+ */
+export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
+	const suiteName = SUITE_NAMES.find((name) => name === options.suiteName);
+	if (suiteName === undefined) {
+		throw new SuiteUsageError(
+			`Unknown suite "${options.suiteName}". Known suites: ${SUITE_NAMES.join(", ")}`,
+		);
+	}
+	if (!isDriverProviderId(options.providerName)) {
+		throw new SuiteUsageError(
+			`${options.providerName} has no DriverModule (migrated: ${Object.keys(DRIVERS).join(", ")})`,
+		);
+	}
+
+	const providerName = options.providerName;
+	const resultsDir = resolve(options.resultsDir);
+	const env = options.env ?? process.env;
+	const missing = missingDriverEnvNames(providerName, env);
+	if (missing.length > 0) {
+		const reason = `Missing credentials: ${missing.join(", ")}`;
+		console.log(`SKIPPED ${providerName}/${suiteName}: ${reason}`);
+		recordSuiteGap({
+			resultsDir,
+			providerName,
+			suiteName,
+			outcome: "skipped",
+			reason,
+			cause: { kind: "missing-credentials", variables: [...missing] },
+		});
+		return;
+	}
+
+	let opened: OpenedDriver;
+	try {
+		opened = await openDriver(providerName, { env });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		// This matches the legacy boundary: constructing the selected adapter is part of sandbox create,
+		// and a failure here must leave a raw-tree fact rather than normalize as "never scheduled". Like
+		// the shared create boundary, marker persistence is best-effort: a read-only/full results tree
+		// must not replace the driver-construction error that explains why the cell failed.
+		try {
+			recordSuiteGap({
+				resultsDir,
+				providerName,
+				suiteName,
+				outcome: "failed",
+				reason: `${CREATE_FAILURE_PREFIX}${message}`,
+				cause: { kind: "sandbox-create-failed", detail: message },
+			});
+		} catch (markerError) {
+			console.error(
+				`Could not write the driver-construction gap marker (${
+					markerError instanceof Error ? markerError.message : String(markerError)
+				}); the driver-construction error below is unaffected`,
+			);
+		}
+		throw error;
+	}
+
+	const suite = SUITES[suiteName];
+	const createBudget = createBudgetOf(opened.module);
+	let session: SandboxSession | undefined;
+	const sandbox = await createSuiteSandboxFromPlan(
+		{
+			create: async (signal) => {
+				session = await opened.driver.create(
+					benchmarkCreateRequest(opened.artifact, createBudget.requestDeadlineMs),
+					{ signal },
+				);
+				return sessionHandle(session);
+			},
+			// DriverError deliberately has no retryable bit. Until the registry-owned matcher from
+			// ADR-0007 lands, guessing from error prose here would recreate the legacy drift.
+			isRetryable: () => false,
+			destroy: (destroy, destroyOptions) => destroy(destroyOptions),
+		},
+		{
+			suite,
+			suiteName,
+			providerName,
+			resultsDir,
+			createTimeoutMs: createBudget.timeoutMs,
+			...(createBudget.attemptCeilingMs === undefined
+				? {}
+				: { createAttemptCeilingMs: createBudget.attemptCeilingMs }),
+		},
+	);
+
+	await runSuiteOnSandbox(sandbox, {
+		runId: options.runId,
+		...(options.replicateIndex === undefined ? {} : { replicateIndex: options.replicateIndex }),
+		suite,
+		suiteName,
+		providerName,
+		artifact: opened.artifact,
+		resultsDir,
+		transport: opened.transport,
+		...(opened.module.costEvidence === undefined
+			? {}
+			: { costEvidence: opened.module.costEvidence }),
+		driverReadiness: {
+			timeoutMs: driverReadinessBudgetMs(opened.module),
+			verify: async ({ signal }) => {
+				if (session === undefined) {
+					return { ready: false, detail: "driver create returned no retained session" };
+				}
+				const result = await verifyDriverReadiness(opened.module, session, { signal });
+				return { ready: result.status === "pass", detail: result.detail };
+			},
+		},
+	});
 }
 
 /** The benchmark's pinned target, as a create request. Exported so callers cannot drift from it. */

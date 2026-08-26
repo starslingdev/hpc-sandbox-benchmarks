@@ -17,10 +17,12 @@
 import type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
 import type { DriverContext, DriverModule } from "./lib/define.ts";
 import { DriverError, isDriverError, isFailedCreateCleanupError } from "./lib/errors.ts";
+import type { ReadinessProbeResult } from "./lib/policy.ts";
 import { selectExecutionRoute } from "./lib/policy.ts";
 import type {
 	CreateRequest,
 	DriverOperationOptions,
+	ExecResult,
 	ResolvedArtifact,
 	SandboxDriver,
 	SandboxRef,
@@ -152,6 +154,9 @@ const PROBE_FILE = "/tmp/driver-conformance-probe";
 const DEFAULT_DURABLE_POLL_INTERVAL_MS = 500;
 const READINESS_POLL_INTERVAL_MS = 250;
 const READINESS_ABORT_GRACE_MS = 1_000;
+/** A `create-returns-ready` declaration has no polling budget of its own, but its one verification
+ *  exec still needs a hard ceiling so a broken transport cannot strand conformance or a benchmark. */
+export const CREATE_RETURNS_READY_PROBE_TIMEOUT_MS = 20_000;
 
 /** Distinguishes "the attempt ran out of time" from any value a probe could legitimately return. */
 const TIMED_OUT = Symbol("readiness-attempt-timed-out");
@@ -419,19 +424,98 @@ export interface ReadinessVerification {
 	readonly detail: string;
 }
 
+/** Caller cancellation plus a test-only override for the kit-owned one-shot verification bound. */
+export interface ReadinessVerificationOptions extends DriverOperationOptions {
+	readonly createReturnsReadyTimeoutMs?: number;
+}
+
 const readinessPass = (detail: string): ReadinessVerification => ({ status: "pass", detail });
 const readinessFail = (detail: string): ReadinessVerification => ({ status: "fail", detail });
 
+/** Wall-clock budget the composition root must reserve for the selected module's readiness policy. */
+export function driverReadinessBudgetMs<P extends ProviderId>(
+	module: DriverModule<P, unknown>,
+): number {
+	return module.readiness.startup === "create-returns-ready"
+		? CREATE_RETURNS_READY_PROBE_TIMEOUT_MS
+		: module.readiness.totalBudgetMs;
+}
+
+function abortReason(signal: AbortSignal): unknown {
+	return signal.reason ?? new Error("Driver readiness verification aborted");
+}
+
+/** Forward caller cancellation into an attempt-owned controller without leaking listeners. */
+function forwardAbort(parent: AbortSignal | undefined, child: AbortController): () => void {
+	if (parent === undefined) return () => {};
+	const abort = (): void => child.abort(abortReason(parent));
+	parent.addEventListener("abort", abort, { once: true });
+	if (parent.aborted) abort();
+	return () => parent.removeEventListener("abort", abort);
+}
+
+async function settleCancelledReadinessAttempt(
+	attempt: Promise<unknown>,
+	attemptMs: number,
+	detail: string,
+): Promise<ReadinessVerification | undefined> {
+	const settled = await withAttemptTimeout(
+		attempt.then(
+			() => true,
+			() => true,
+		),
+		READINESS_ABORT_GRACE_MS,
+	);
+	return settled === TIMED_OUT
+		? readinessFail(
+				`${detail} exceeded ${attemptMs}ms and did not settle within ${READINESS_ABORT_GRACE_MS}ms after cancellation`,
+			)
+		: undefined;
+}
+
 /** Drive one module's declared readiness strategy without running any later lifecycle command. */
-export async function verifyDriverReadiness(
-	module: DriverModule<ProviderId, unknown>,
+export async function verifyDriverReadiness<P extends ProviderId>(
+	module: DriverModule<P, unknown>,
 	session: SandboxSession,
+	options: ReadinessVerificationOptions = {},
 ): Promise<ReadinessVerification> {
 	const readiness = module.readiness;
 	if (readiness.startup === "create-returns-ready") {
 		// The declaration says a resolved create is already usable, so a command must work with no
-		// polling of any kind. A driver that needs a grace period fails here, which is the point.
-		const probe = await session.exec("sh -c 'exit 0'");
+		// polling of any kind. A driver that needs a grace period fails here, which is the point. This
+		// is still an accepted driver operation: bound it, cancel it, and confirm settlement before the
+		// caller can begin teardown.
+		const attemptMs = options.createReturnsReadyTimeoutMs ?? CREATE_RETURNS_READY_PROBE_TIMEOUT_MS;
+		if (!Number.isSafeInteger(attemptMs) || attemptMs <= 0) {
+			throw new Error(`create-returns-ready verification timeout must be a positive safe integer`);
+		}
+		const attemptControl = new AbortController();
+		const stopForwarding = forwardAbort(options.signal, attemptControl);
+		const attempt = Promise.resolve().then(() => {
+			if (attemptControl.signal.aborted) throw abortReason(attemptControl.signal);
+			return session.exec("sh -c 'exit 0'", { signal: attemptControl.signal });
+		});
+		let observed: ExecResult | typeof TIMED_OUT;
+		try {
+			observed = await withAttemptTimeout(attempt, attemptMs);
+		} finally {
+			stopForwarding();
+		}
+		if (observed === TIMED_OUT) {
+			attemptControl.abort(
+				new Error(`create-returns-ready verification exceeded its ${attemptMs}ms budget`),
+			);
+			const unsettled = await settleCancelledReadinessAttempt(
+				attempt,
+				attemptMs,
+				"create-returns-ready verification exec",
+			);
+			return (
+				unsettled ??
+				readinessFail(`create-returns-ready verification exec exceeded its ${attemptMs}ms budget`)
+			);
+		}
+		const probe = observed;
 		return probe.exit.kind === "exited" && probe.exit.code === 0
 			? readinessPass("create-returns-ready: exec succeeded with no polling")
 			: readinessFail(
@@ -444,6 +528,7 @@ export async function verifyDriverReadiness(
 	const deadline = performance.now() + readiness.totalBudgetMs;
 	let timedOutAttempts = 0;
 	while (performance.now() < deadline) {
+		if (options.signal?.aborted) throw abortReason(options.signal);
 		const remainingMs = deadline - performance.now();
 		const attemptMs = Math.max(1, Math.min(readiness.attemptTimeoutMs, remainingMs));
 		// The port gives every driver operation a cancellation channel; a suite that abandoned
@@ -451,8 +536,17 @@ export async function verifyDriverReadiness(
 		// total budget against a short per-attempt bound turns that into an unbounded pile of
 		// concurrent requests aimed at the sandbox under test.
 		const attemptControl = new AbortController();
-		const attempt = readiness.probe(session, { signal: attemptControl.signal });
-		const observed = await withAttemptTimeout(attempt, attemptMs);
+		const stopForwarding = forwardAbort(options.signal, attemptControl);
+		const attempt = Promise.resolve().then(() => {
+			if (attemptControl.signal.aborted) throw abortReason(attemptControl.signal);
+			return readiness.probe(session, { signal: attemptControl.signal });
+		});
+		let observed: ReadinessProbeResult | typeof TIMED_OUT;
+		try {
+			observed = await withAttemptTimeout(attempt, attemptMs);
+		} finally {
+			stopForwarding();
+		}
 		if (observed === TIMED_OUT) {
 			// Retry only after the accepted operation has confirmed termination. Aborting a controller
 			// is a request, not evidence that an exec/vendor request stopped; starting a new attempt before
@@ -461,17 +555,13 @@ export async function verifyDriverReadiness(
 				new Error(`readiness attempt exceeded its declared ${attemptMs}ms budget`),
 			);
 			timedOutAttempts += 1;
-			const settled = await withAttemptTimeout(
-				attempt.then(
-					() => true,
-					() => true,
-				),
-				READINESS_ABORT_GRACE_MS,
+			const unsettled = await settleCancelledReadinessAttempt(
+				attempt,
+				attemptMs,
+				`readiness ${readiness.signal} probe`,
 			);
-			if (settled === TIMED_OUT) {
-				return readinessFail(
-					`readiness ${readiness.signal} probe exceeded ${attemptMs}ms and did not settle within ${READINESS_ABORT_GRACE_MS}ms after cancellation; refusing to overlap retries`,
-				);
+			if (unsettled !== undefined) {
+				return readinessFail(`${unsettled.detail}; refusing to overlap retries`);
 			}
 			await Bun.sleep(
 				Math.min(READINESS_POLL_INTERVAL_MS, Math.max(0, deadline - performance.now())),

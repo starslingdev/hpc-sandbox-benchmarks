@@ -75,6 +75,22 @@ export function parseDriverEnv<P extends ProviderId>(
 	return parsed as EnvOf<P>;
 }
 
+/** Required, non-defaulted inputs absent from one ambient environment, in registry order. */
+export function missingDriverEnvNames<P extends ProviderId>(
+	id: P,
+	ambient: Readonly<Record<string, string | undefined>>,
+): readonly string[] {
+	const missing: string[] = [];
+	for (const raw of REGISTRY[id].inputs) {
+		const input = normalizeProviderInput(raw);
+		if (input.required && input.default === undefined) {
+			const value = ambient[input.name];
+			if (value === undefined || value === "") missing.push(input.name);
+		}
+	}
+	return missing;
+}
+
 /**
  * Values whose registry source is credential-bearing and must never survive in diagnostics.
  * Ordinary variables (binary paths, image/template overrides, endpoints) stay observable so

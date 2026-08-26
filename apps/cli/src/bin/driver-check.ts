@@ -7,10 +7,10 @@
 // bin runs the real composition flow (load → parse → resolve → construct), boots a real sandbox,
 // and drives a real workload through the harness's own `StepRunner` on both transports.
 //
-// It deliberately writes NO Run document. Persisting a driver-path run requires the artifact
-// provenance fields the Run schema does not yet carry, and emitting a v5 document from this path
-// would publish a measurement whose artifact attribution is unverifiable. Validation first, schema
-// bump second.
+// It deliberately writes NO Run document. This command is a contract/TCK check rather than a
+// benchmark measurement; the port-native bench-suite lane owns raw result collection and Run v6
+// artifact evidence. Keeping the two lanes separate prevents conformance probes from being published
+// as benchmark samples.
 //
 // Usage:
 //   bun apps/cli/src/bin/driver-check.ts --provider e2b
