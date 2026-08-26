@@ -11,14 +11,17 @@ import {
 	PROVIDER_PRE_AUTH_POLICIES,
 } from "../src/provider-meta.ts";
 import {
+	driverFleetProjection,
 	escapeMarkdownCell,
 	generatedProviderRegions,
+	parseDriverMigrationWaivers,
 	preAuthBindings,
 	providerInputBindings,
 	REPO_ROOT,
 	renderCiSecretTable,
 	renderCiVariableTable,
 	renderDotenvValue,
+	renderDriversIndex,
 	renderDriversPackage,
 	renderDriversProvenance,
 	renderEnvExample,
@@ -216,8 +219,54 @@ describe("provider wiring projections", () => {
 			new Set([
 				...regions.map(({ file }) => file),
 				"packages/drivers/src/_provenance.ts",
+				"packages/drivers/src/index.ts",
 				"packages/drivers/package.json",
 			]),
+		);
+	});
+
+	test("generates one correlated lazy loader from every unwaived registry id", () => {
+		const fleet = driverFleetProjection();
+		expect(fleet.moduleIds).toEqual(["e2b", "modal-gvisor", "modal-vm", "tama"]);
+		expect([...PROVIDER_IDS].filter((id) => fleet.waivers[id] !== undefined)).toEqual([
+			"daytona-vm",
+			"daytona-container",
+			"blaxel",
+			"microsandbox-local",
+			"microsandbox-cloud",
+			"novita",
+			"runloop",
+			"namespace",
+			"vercel",
+			"runcloud",
+		]);
+
+		const source = renderDriversIndex(fleet.moduleIds);
+		const scanned = new Bun.Transpiler({ loader: "ts" }).scan(source);
+		expect(scanned.imports.filter(({ kind }) => kind === "import-statement")).toEqual([]);
+		expect(scanned.imports).toEqual(
+			fleet.moduleIds.map((id) => ({ kind: "dynamic-import", path: `./${id}.ts` })),
+		);
+		for (const id of fleet.moduleIds) {
+			expect(source).toContain(`typeof import("./${id}.ts").default`);
+			expect(source).toContain(`import("./${id}.ts").then((module) => module.default)`);
+		}
+		for (const id of PROVIDER_IDS) {
+			if (fleet.waivers[id] !== undefined) expect(source).not.toContain(`./${id}.ts`);
+		}
+	});
+
+	test("rejects digit-shaped waiver expiries that are not real calendar dates", () => {
+		const waiver = (expires: string) => ({
+			runcloud: { owner: "drivers", reason: "migration pending", expires },
+		});
+		const beforeLeapDay = Date.UTC(2028, 1, 1);
+
+		expect(() => parseDriverMigrationWaivers(waiver("2026-02-31"), beforeLeapDay)).toThrow(
+			/real calendar date/,
+		);
+		expect(parseDriverMigrationWaivers(waiver("2028-02-29"), beforeLeapDay)).toEqual(
+			waiver("2028-02-29"),
 		);
 	});
 
@@ -238,10 +287,19 @@ describe("provider wiring projections", () => {
 		const providerCatalog = record(catalogs.computesdk, "computesdk catalog");
 		const drivers = record(JSON.parse(renderDriversPackage()), "drivers");
 		const dependencies = record(drivers.dependencies, "drivers dependencies");
+		const exports = record(drivers.exports, "drivers exports");
 		for (const name of Object.keys(providerCatalog)) {
 			expect(dependencies[name], name).toBe("catalog:computesdk");
 		}
 		expect(dependencies["@sandbox-benchmarks/driver"]).toBe("workspace:*");
 		expect(dependencies.arktype).toBe("catalog:");
+		expect(exports).toEqual({
+			".": "./src/index.ts",
+			"./e2b": "./src/e2b.ts",
+			"./modal-gvisor": "./src/modal-gvisor.ts",
+			"./modal-vm": "./src/modal-vm.ts",
+			"./tama": "./src/tama.ts",
+			"./package.json": "./package.json",
+		});
 	});
 });

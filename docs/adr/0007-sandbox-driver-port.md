@@ -933,7 +933,12 @@ described here is a normative destination rather than an already-available scrip
 - **A migration touching every adapter.** Fourteen providers move into `packages/drivers`. It is
   mechanical and compiler-checked, but it is not small, and it should land after ADR-0006 rather
   than alongside it. Until the last adapter lands, `computeSdkDriver` keeps unmigrated providers
-  working, so the port and `DirectProvider` coexist during the window.
+  working, so the port and `DirectProvider` coexist during the window. The generated loader exposes
+  `DriverProviderId`, the unwaived subset of `ProviderId`, during that window. Every omitted existing
+  provider requires a committed owner/reason/expiry waiver; a missing module without one, an expired
+  waiver, or a module that lands without removing its waiver fails the wiring gate. After the final
+  waiver is removed, `DriverProviderId` equals `ProviderId` and the loader has exactly the complete
+  shape in §4 without a second handwritten id list.
 - **We own the port.** Today computesdk absorbs upstream vendor churn behind a stable interface.
   Nine providers keep that shelter via the bridge; the five hand-written ones already had no
   shelter, and this ADR only stops them pretending otherwise.

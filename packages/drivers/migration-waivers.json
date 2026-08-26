@@ -1,0 +1,52 @@
+{
+  "daytona-vm": {
+    "owner": "@dbworku",
+    "reason": "The Daytona VM adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "daytona-container": {
+    "owner": "@dbworku",
+    "reason": "The Daytona container adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "blaxel": {
+    "owner": "@dbworku",
+    "reason": "The Blaxel adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "microsandbox-local": {
+    "owner": "@dbworku",
+    "reason": "The Microsandbox local adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "microsandbox-cloud": {
+    "owner": "@dbworku",
+    "reason": "The Microsandbox cloud adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "novita": {
+    "owner": "@dbworku",
+    "reason": "The Novita adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "runloop": {
+    "owner": "@dbworku",
+    "reason": "The Runloop adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "namespace": {
+    "owner": "@dbworku",
+    "reason": "The Namespace adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "vercel": {
+    "owner": "@dbworku",
+    "reason": "The Vercel adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  },
+  "runcloud": {
+    "owner": "@dbworku",
+    "reason": "The run.cloud adapter has not yet migrated from packages/providers to DriverModule.",
+    "expires": "2026-12-31"
+  }
+}
