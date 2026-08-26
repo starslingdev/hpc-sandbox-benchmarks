@@ -68,8 +68,10 @@ export type {
 export { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
 export type { OwnedOperationOptions, OwnedSandboxOptions } from "./lib/sandbox-owner.ts";
 export {
+	cleanupOwnedSandboxes,
 	createOwnedSandbox,
 	exitAfterSandboxCleanup,
+	releaseOwnedSandbox,
 	shutdownOwnedSandboxes,
 	withCleanupPreservingPrimaryError,
 	withOwnedSandbox,

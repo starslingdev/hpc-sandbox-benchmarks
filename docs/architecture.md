@@ -41,7 +41,6 @@ apps/
   cli/          entrypoint with bin commands → every packages/* library
 tooling/        dev-only            — scope @repo/*
   tsconfig/     shared source-first TS configs (config-only)
-  test-utils/   provider conformance suite factory
   repo-checks/  boundary + package-meta invariant tests
 lib/        in-sandbox benchmark runner (bench.sh), realworld PTS runner overlay, isolation probe
 data/       committed benchmark dataset (published run results)
@@ -63,7 +62,6 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
 | `@sandbox-benchmarks/cli` (app)  | schema, driver, drivers, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
 | `@repo/tsconfig`            | —                                               | —                                   |
-| `@repo/test-utils`          | schema                                          | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
 
 ## Driver end-to-end validation (`driver-check`)
@@ -94,6 +92,40 @@ asserted by no execution at all.
 A provider whose credentials are absent SKIPS with exit 0. A provider that has not migrated yet
 (see `packages/drivers/migration-waivers.json`) is rejected outright rather than silently falling
 back to the legacy adapter.
+
+## Driver conformance (`@sandbox-benchmarks/driver/conformance`)
+
+ADR-0008's contract ships with the suite that verifies it. `runConformance({ module, context, tier })`
+drives one driver module through the closed clause inventory and returns a report:
+
+```ts
+import { runConformance, formatConformanceReport } from "@sandbox-benchmarks/driver/conformance";
+
+const report = await runConformance({ module, context, tier: "smoke" });
+console.log(formatConformanceReport(report));
+```
+
+Three properties are load-bearing and easy to lose:
+
+- **The inventory is closed.** Every ADR-0008 §2 row appears in every report. A row the suite could
+  not observe reports `unverified` rather than being omitted, because a missing row reads as green.
+- **`unverified` blocks admission exactly like `fail`.** §5 admits a provider only when every row is
+  `pass` or `not-applicable`. An unobserved claim and a false claim are indistinguishable to a
+  published measurement, so an honest report is frequently *not* admissible — including for a driver
+  that breaks nothing.
+- **Absence is not a skip where the contract defines the absent path.** A session without `files`
+  exercises the kit's exec fallback, which the harness leans on just as hard; a driver without
+  `probes` reports `unverified` for destroy convergence, never a pass.
+
+The suite is verified the way a TCK should be: against deliberately-broken fake drivers, one per
+violation, so each clause is shown to actually *catch* the failure it claims to. A driver that
+fabricates an exit code, resolves `destroy` while the sandbox still runs, advertises a filesystem
+whose reads lie, or returns a session for a GPU it cannot provide each produce a `fail`.
+
+Secret diagnostics is `unverified` unless the caller supplies its spawn/log diagnostic surfaces,
+and the GPU row is `unverified` unless a `gpu` axis is supplied. A fully observed run supplies both
+along with artifact fingerprint and allocation-order evidence; the suite has a regression proving
+that such a conforming report is actually admissible rather than permanently blocked.
 
 `results` depends on `schema` and `figures` alone — it must normalize without any provider SDK,
 and it now also builds the leaderboard's chart documents. `@repo/repo-checks` enforces that no

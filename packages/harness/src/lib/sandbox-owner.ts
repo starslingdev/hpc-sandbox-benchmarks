@@ -32,6 +32,7 @@ interface OwnedEntry<T extends DestroyableSandbox> {
 	destroy?: (options?: OwnedOperationOptions) => Promise<unknown>;
 	abortCreate?: (reason: unknown) => void;
 	sandboxId?: string;
+	handle?: object;
 }
 
 export interface SandboxCleanupOptions {
@@ -44,6 +45,7 @@ export interface SandboxCleanupOptions {
 }
 
 const owned = new Set<OwnedEntry<DestroyableSandbox>>();
+const entriesByHandle = new WeakMap<object, OwnedEntry<DestroyableSandbox>>();
 const signals = ["SIGINT", "SIGTERM"] as const;
 // Bun 1.4 adds a memoryPressure-only Process.off overload that hides EventEmitter.off.
 const processEvents = process as EventEmitter;
@@ -69,7 +71,29 @@ function uninstallProcessHandlers(): void {
 
 function release(entry: OwnedEntry<DestroyableSandbox>): void {
 	owned.delete(entry);
+	if (entry.handle !== undefined) entriesByHandle.delete(entry.handle);
+	entry.handle = undefined;
 	if (owned.size === 0) uninstallProcessHandlers();
+}
+
+function trackHandle<T extends DestroyableSandbox>(entry: OwnedEntry<T>, handle: T): T {
+	entry.handle = handle;
+	entriesByHandle.set(handle, entry as OwnedEntry<DestroyableSandbox>);
+	return handle;
+}
+
+/**
+ * Hand a successfully created sandbox out of process ownership without destroying it.
+ *
+ * This escape hatch is intentionally explicit: ordinary callers should keep the owner registered
+ * until destroy succeeds, while commands such as `driver-check --keep` need to transfer lifecycle
+ * responsibility to the operator before the process exit drain runs.
+ */
+export function releaseOwnedSandbox(sandbox: object): boolean {
+	const entry = entriesByHandle.get(sandbox);
+	if (entry === undefined) return false;
+	release(entry);
+	return true;
 }
 
 async function destroyEntry(
@@ -334,17 +358,20 @@ export function createOwnedSandbox<T extends DestroyableSandbox>(
 						configurable: true,
 						value: destroy,
 					});
-					return sandbox;
+					return trackHandle(entry, sandbox);
 				} catch {
 					// Defensive fallback for an SDK that freezes its handles. Bind methods back to the real
 					// object so JavaScript private fields remain valid through the proxy.
-					return new Proxy(sandbox, {
-						get(target, property) {
-							if (property === "destroy") return destroy;
-							const value = Reflect.get(target, property, target);
-							return typeof value === "function" ? value.bind(target) : value;
-						},
-					});
+					return trackHandle(
+						entry,
+						new Proxy(sandbox, {
+							get(target, property) {
+								if (property === "destroy") return destroy;
+								const value = Reflect.get(target, property, target);
+								return typeof value === "function" ? value.bind(target) : value;
+							},
+						}),
+					);
 				}
 			},
 			(error) => {

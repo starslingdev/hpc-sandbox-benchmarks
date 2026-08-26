@@ -23,6 +23,7 @@ import { parseDriverEnv } from "@sandbox-benchmarks/driver/env";
 import type { DriverProviderId } from "@sandbox-benchmarks/drivers";
 import { loadDriverModule } from "@sandbox-benchmarks/drivers";
 import type { SandboxHandle } from "@sandbox-benchmarks/harness";
+import { createOwnedSandbox, releaseOwnedSandbox } from "@sandbox-benchmarks/harness";
 import type {
 	ArtifactPhase,
 	ProviderArtifact,
@@ -194,6 +195,48 @@ export interface OpenedDriver {
 	readonly driver: SandboxDriver;
 	readonly artifact: ResolvedArtifact;
 	readonly transport: ProviderTransport;
+}
+
+/** A live driver session whose process ownership can be explicitly handed to the operator. */
+export interface OwnedDriverSession extends SandboxSession {
+	/** Stop the process-exit drain from destroying this session. Intended only for `--keep`. */
+	releaseOwnership(): boolean;
+}
+
+/**
+ * Create a port session under the harness's process-level owner.
+ *
+ * Registration happens before provider create starts, so signals and failed-create cleanup records
+ * cannot fall through the validation lane. The returned adapter delegates every method to the raw
+ * session while routing destroy through the owner's idempotent release boundary.
+ */
+export async function createOwnedDriverSession(
+	driver: SandboxDriver,
+	request: CreateRequest,
+): Promise<OwnedDriverSession> {
+	const owned = await createOwnedSandbox(
+		async (signal) => {
+			const session = await driver.create(request, { signal });
+			return {
+				sandboxId: session.sandboxRef.id,
+				session,
+				destroy: (options?: { readonly signal?: AbortSignal }) => session.destroy(options),
+			};
+		},
+		{ destroy: (providerDestroy, options) => providerDestroy(options) },
+	);
+	const session = owned.session;
+	const launch = session.launch?.bind(session);
+	return {
+		sandboxRef: session.sandboxRef,
+		artifact: session.artifact,
+		native: session.native,
+		exec: (command, options) => session.exec(command, options),
+		destroy: (options) => owned.destroy(options),
+		releaseOwnership: () => releaseOwnedSandbox(owned),
+		...(session.files === undefined ? {} : { files: session.files }),
+		...(launch === undefined ? {} : { launch }),
+	};
 }
 
 /**

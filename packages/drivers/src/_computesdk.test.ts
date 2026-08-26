@@ -1276,7 +1276,8 @@ describe("computeSdkDriver", () => {
 			},
 		}).create(request);
 
-		const execOptions = { maxOutputBytes: 4 } as const;
+		const cancellation = new AbortController();
+		const execOptions = { maxOutputBytes: 4, signal: cancellation.signal } as const;
 		expect((await session.exec("id -u", execOptions)).stdout).toBe("root");
 		await session.launch?.("daemon --start", execOptions);
 		expect(

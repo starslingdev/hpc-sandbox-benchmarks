@@ -1,19 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { CapabilityFlags } from "./index.ts";
-import { capabilities, parseRawRun } from "./index.ts";
+import { parseRawRun } from "./index.ts";
 
 describe("@sandbox-benchmarks/schema", () => {
-	it("exposes the capability vocabulary", () => {
-		expect(capabilities).toContain("exec");
-		const flags: CapabilityFlags = {
-			spawn: true,
-			exec: true,
-			filesystem: false,
-			snapshot: false,
-		};
-		expect(flags.exec).toBe(true);
-	});
-
 	it("parses a valid raw run via arktype", () => {
 		const run = parseRawRun({ provider: "e2b", operation: "spawn", durationMs: 12 });
 		expect(run.provider).toBe("e2b");

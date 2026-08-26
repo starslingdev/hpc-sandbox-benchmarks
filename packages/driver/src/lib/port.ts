@@ -50,9 +50,11 @@ export interface ExecResult {
 export interface ExecOptions {
 	/** Opt-in cap. A kit-wide default would truncate multi-MB result collection. */
 	readonly maxOutputBytes?: number;
+	/** Cooperative cancellation. Implementations reject only after accepted work has settled. */
+	readonly signal?: AbortSignal;
 }
 
-/** Cooperative cancellation for process-owned create/destroy operations. */
+/** Cooperative cancellation for process-owned lifecycle operations. */
 export interface DriverOperationOptions {
 	readonly signal?: AbortSignal;
 }

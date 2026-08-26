@@ -81,7 +81,7 @@ describe("package metadata invariants", () => {
 			const isLibraryPackage = member.relPath.startsWith("packages/");
 			const isApp = member.relPath.startsWith("apps/");
 
-			if (isLibraryPackage || member.name === "@repo/test-utils") {
+			if (isLibraryPackage) {
 				it("exposes an exports map", () => {
 					expect(pkg.exports).toBeDefined();
 				});

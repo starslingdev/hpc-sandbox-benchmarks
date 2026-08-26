@@ -331,7 +331,10 @@ Six request/result rules complete the port, each earned in prototyping:
 - **Output limits are per-call and visible.** `ExecOptions.maxOutputBytes` is an opt-in cap for
   probes and queries; a capped stream sets `ExecResult.truncated`. There is deliberately **no
   kit-wide default**: results collection is a multi-MB base64 tar over stdout (`collect.ts:49-51`),
-  and a blanket cap turns it into a bounded retry loop that can never succeed.
+  and a blanket cap turns it into a bounded retry loop that can never succeed. `ExecOptions.signal`
+  is the cooperative cancellation channel used by bounded readiness probes. Implementations reject
+  cancellation only after accepted command work has settled, so a caller can retry without
+  overlapping attempts.
 - **Create failures are typed at the driver boundary.** Drivers translate failures to `DriverError`
   with a stable `DriverErrorCode`. Invalid requests and credentials are terminal; allocation
   refusals use `create-failed`; broken integration invariants use `vendor-contract-violation`.

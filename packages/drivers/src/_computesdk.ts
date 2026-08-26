@@ -59,7 +59,7 @@ export interface ComputeSdkSandboxLike<TNative = unknown> {
 	getInstance(): TNative;
 	runCommand(
 		command: string,
-		options?: { readonly background?: boolean },
+		options?: { readonly background?: boolean; readonly signal?: AbortSignal },
 	): Promise<{ readonly exitCode?: number; readonly stdout?: string; readonly stderr?: string }>;
 	destroy(): Promise<unknown>;
 	readonly filesystem?: {
@@ -1097,7 +1097,10 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			try {
 				let rawResult: unknown;
 				if (commands === undefined) {
-					rawResult = await sandbox.runCommand(command);
+					rawResult = await sandbox.runCommand(command, {
+						background: false,
+						...(execOptions?.signal === undefined ? {} : { signal: execOptions.signal }),
+					});
 				} else {
 					if (ref === undefined) throw new Error("canonical sandbox identity is unavailable");
 					rawResult = await invokeComputeSdkProviderCallbackAsync(
@@ -1190,7 +1193,10 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				result = normalizeCommandResult(
 					provider,
 					"background launch",
-					await sandbox.runCommand(command, { background: true }),
+					await sandbox.runCommand(command, {
+						background: true,
+						...(execOptions?.signal === undefined ? {} : { signal: execOptions.signal }),
+					}),
 					sensitiveFor(sandbox),
 					refFor(sandbox),
 				);

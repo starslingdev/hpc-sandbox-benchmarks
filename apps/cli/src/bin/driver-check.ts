@@ -22,11 +22,18 @@
 
 import type { SandboxSession } from "@sandbox-benchmarks/driver";
 import { isDriverError, readTextFile, succeeded, writeTextFile } from "@sandbox-benchmarks/driver";
+import { verifyDriverReadiness } from "@sandbox-benchmarks/driver/conformance";
 import type { DriverProviderId } from "@sandbox-benchmarks/drivers";
 import { DRIVERS } from "@sandbox-benchmarks/drivers";
 import { exitAfterSandboxCleanup, StepRunner } from "@sandbox-benchmarks/harness";
 import type { ArtifactPhase } from "@sandbox-benchmarks/schema";
-import { benchmarkCreateRequest, openDriver, sessionHandle } from "../lib/driver-run.ts";
+import type { OwnedDriverSession } from "../lib/driver-run.ts";
+import {
+	benchmarkCreateRequest,
+	createOwnedDriverSession,
+	openDriver,
+	sessionHandle,
+} from "../lib/driver-run.ts";
 
 type CheckStatus = "pass" | "fail" | "skip";
 
@@ -314,12 +321,15 @@ async function run(options: Options, log: (message: string) => void): Promise<Ch
 		`  · policy: syncCapMs=${module.execution.syncCapMs} durable=${module.execution.durable} readiness=${module.readiness.startup}`,
 	);
 
-	let session: SandboxSession | undefined;
+	let session: OwnedDriverSession | undefined;
 	const created = await check(
 		checks,
 		"create",
 		async () => {
-			session = await driver.create(benchmarkCreateRequest(artifact, CREATE_DEADLINE_MS));
+			session = await createOwnedDriverSession(
+				driver,
+				benchmarkCreateRequest(artifact, CREATE_DEADLINE_MS),
+			);
 			const effective = session.artifact;
 			return `${session.sandboxRef.provider}/${session.sandboxRef.id}, booted ${effective.kind}${"ref" in effective ? ` ${effective.ref}` : ""}`;
 		},
@@ -330,6 +340,17 @@ async function run(options: Options, log: (message: string) => void): Promise<Ch
 	const live = session;
 
 	try {
+		const ready = await check(
+			checks,
+			"readiness",
+			async () => {
+				const outcome = await verifyDriverReadiness(module, live);
+				if (outcome.status !== "pass") throw new Error(outcome.detail);
+				return outcome.detail;
+			},
+			log,
+		);
+		if (!ready) return checks;
 		const runner = new StepRunner(sessionHandle(live), transport, undefined, {
 			mode: "fixed",
 			times: 1,
@@ -337,7 +358,20 @@ async function run(options: Options, log: (message: string) => void): Promise<Ch
 		await driveSession(live, options, transport.syncCapMs, runner, checks, log);
 	} finally {
 		if (options.keep) {
-			skip(checks, "destroy", `--keep: left ${live.sandboxRef.id} running`, log);
+			const handedOff = await check(
+				checks,
+				"ownership-handoff",
+				async () => {
+					if (!live.releaseOwnership()) throw new Error("session is no longer process-owned");
+					return `operator now owns ${live.sandboxRef.id}`;
+				},
+				log,
+			);
+			if (handedOff) {
+				skip(checks, "destroy", `--keep: left ${live.sandboxRef.id} running`, log);
+			} else {
+				await live.destroy();
+			}
 		} else {
 			await check(
 				checks,

@@ -23,6 +23,28 @@ export type ExecutionPolicy =
 			readonly durable: "native-launch" | "shell-detach";
 	  };
 
+/** Which route the kit selects for one step, given the module's declared execution policy. */
+export type ExecutionRoute = "sync" | "durable";
+
+/**
+ * The kit's routing rule: a step whose budget reaches the declared cap must not run synchronously.
+ *
+ * This is the decision ADR-0008's "sync routing" row verifies, and it lives beside the policy it
+ * reads so the rule and the declaration cannot drift. The comparison is `>=`, not `>`: a step
+ * budgeted for exactly the cap is already at the boundary the cap exists to describe, and rounding
+ * it back to the synchronous path is how a long step ends up on a transport the vendor cuts.
+ *
+ * A `null` cap means the vendor imposes no synchronous ceiling, so every step may run synchronously
+ * regardless of the durable route on offer.
+ */
+export function selectExecutionRoute(
+	execution: ExecutionPolicy,
+	stepBudgetMs: number,
+): ExecutionRoute {
+	if (execution.syncCapMs === null) return "sync";
+	return stepBudgetMs >= execution.syncCapMs ? "durable" : "sync";
+}
+
 /** A normalized accelerator observation, independent of the guest tool that produced it. */
 export interface AcceleratorObservation {
 	readonly model: string;

@@ -9,6 +9,7 @@ import type {
 	CreateRequest,
 	DriverContext,
 	DriverOperationOptions,
+	ExecOptions,
 	SandboxRef,
 } from "@sandbox-benchmarks/driver";
 import { type } from "arktype";
@@ -91,12 +92,14 @@ function foreignCommandExit(
 export async function execE2bCommandAsRoot(
 	sandbox: E2bWrapperSandbox,
 	command: string,
+	options?: ExecOptions,
 ): Promise<unknown> {
 	const native = sandbox.getInstance();
 	try {
 		return await native.commands.run(command, {
 			user: "root",
 			background: false,
+			...(options?.signal === undefined ? {} : { signal: options.signal }),
 		});
 	} catch (caught) {
 		const failure = foreignCommandExit(caught);
@@ -109,10 +112,12 @@ export async function execE2bCommandAsRoot(
 export async function launchE2bCommandAsRoot(
 	sandbox: E2bWrapperSandbox,
 	command: string,
+	options?: ExecOptions,
 ): Promise<void> {
 	const handle = await sandbox.getInstance().commands.run(command, {
 		user: "root",
 		background: true,
+		...(options?.signal === undefined ? {} : { signal: options.signal }),
 	});
 	if (!Number.isSafeInteger(handle.pid) || handle.pid <= 0) {
 		throw new Error("E2B background command returned no positive process id");

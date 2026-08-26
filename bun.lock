@@ -216,18 +216,6 @@
         "typescript": "catalog:",
       },
     },
-    "tooling/test-utils": {
-      "name": "@repo/test-utils",
-      "version": "0.0.0",
-      "dependencies": {
-        "@sandbox-benchmarks/schema": "workspace:*",
-      },
-      "devDependencies": {
-        "@repo/tsconfig": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "tooling/tsconfig": {
       "name": "@repo/tsconfig",
       "version": "0.0.0",
@@ -715,7 +703,6 @@
 
     "@repo/repo-checks": ["@repo/repo-checks@workspace:tooling/repo-checks"],
 
-    "@repo/test-utils": ["@repo/test-utils@workspace:tooling/test-utils"],
 
     "@repo/tsconfig": ["@repo/tsconfig@workspace:tooling/tsconfig"],
 

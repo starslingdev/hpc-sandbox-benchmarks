@@ -10,6 +10,7 @@ import type {
 	CreateRequest,
 	DriverContext,
 	DriverOperationOptions,
+	ExecOptions,
 	SandboxObservation,
 	SandboxRef,
 } from "@sandbox-benchmarks/driver";
@@ -485,12 +486,13 @@ export async function execModalCommand(
 	_sandbox: ModalWrapperSandbox,
 	command: string,
 	ref: SandboxRef,
+	options: ExecOptions = {},
 ): Promise<unknown> {
 	let attached: ModalControlSandbox | undefined;
 	let process: ModalTextProcess;
 	try {
 		process = await runner.run(
-			{},
+			{ signal: options.signal },
 			async (control) => {
 				attached = await control.sandboxes.fromId(ref.id);
 				// Bound attachment and exec-start only; foreground benchmark commands may
@@ -528,10 +530,11 @@ export async function launchModalCommand(
 	_sandbox: ModalWrapperSandbox,
 	command: string,
 	ref: SandboxRef,
+	options: ExecOptions = {},
 ): Promise<void> {
 	let attached: ModalControlSandbox | undefined;
 	const { stderr, exitCode } = await runner.run(
-		{},
+		{ signal: options.signal },
 		async (control) => {
 			attached = await control.sandboxes.fromId(ref.id);
 			try {
@@ -623,9 +626,10 @@ function modalSpec<P extends ModalProviderId>(
 			sandboxId: modalSandboxId(variant),
 			createOptions: modalCreateOptions(variant, resolvedArtifact.ref),
 			commands: {
-				exec: (sandbox, command, _options, ref) => execModalCommand(runner, sandbox, command, ref),
-				launch: (sandbox, command, _options, ref) =>
-					launchModalCommand(runner, sandbox, command, ref),
+				exec: (sandbox, command, options, ref) =>
+					execModalCommand(runner, sandbox, command, ref, options),
+				launch: (sandbox, command, options, ref) =>
+					launchModalCommand(runner, sandbox, command, ref, options),
 			},
 			lifecycle: modalLifecycle(variant, runner),
 			createRecovery: modalCreateRecovery(variant, runner),

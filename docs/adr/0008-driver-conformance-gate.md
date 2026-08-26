@@ -229,6 +229,12 @@ type DriverReadinessPolicy<Handle> =
 module boundary. This is separate from `createBudget`: readiness starts only after create returns a
 session, while the create budget owns allocation and failed-create reconciliation.
 
+Every readiness attempt receives a cooperative cancellation signal. An `exec`-shaped probe forwards
+that signal through `ExecOptions.signal`; CLI and SDK implementations reject only after the accepted
+command has settled. The kit retries a timed-out attempt only after observing that settlement. If a
+probe ignores cancellation, the row fails immediately and the kit tears the sandbox down rather than
+stacking overlapping attempts for the rest of the total budget.
+
 `defineCliDriver` is the intentional composition exception: its `CliSpec.ready` table is polled
 inside `create`, under the driver-owned create-attempt ceiling. The helper therefore derives
 `{ startup: "create-returns-ready" }`; a CLI provider does not repeat that fact in module policy.

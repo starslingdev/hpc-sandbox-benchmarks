@@ -2238,6 +2238,21 @@ describe("cliDriver", () => {
 		expect(uncapped.stdout).toHaveLength(100);
 		expect(uncapped.truncated).toBe(false);
 	});
+
+	test("exec forwards cooperative cancellation to the CLI runner", async () => {
+		const vendor = fakeVendor();
+		let observed: AbortSignal | undefined;
+		const driver = cliDriver(tamaLikeSpec(), {
+			run: async (_binary, args, options) => {
+				if (args[0] === "exec") observed = options.signal;
+				return vendor.run(_binary, args, options);
+			},
+		});
+		const session = await driver.create(request);
+		const cancellation = new AbortController();
+		await session.exec("true", { signal: cancellation.signal });
+		expect(observed).toBe(cancellation.signal);
+	});
 });
 
 describe("redactArgs", () => {

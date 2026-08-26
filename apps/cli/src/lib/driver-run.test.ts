@@ -1,7 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import type { ExecOptions, SandboxSession } from "@sandbox-benchmarks/driver";
+import type {
+	CreateRequest,
+	ExecOptions,
+	SandboxDriver,
+	SandboxSession,
+} from "@sandbox-benchmarks/driver";
+import { cleanupOwnedSandboxes } from "@sandbox-benchmarks/harness";
 import { REGISTRY, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
-import { driverTransport, resolveDriverArtifact, sessionHandle } from "./driver-run.ts";
+import {
+	createOwnedDriverSession,
+	driverTransport,
+	resolveDriverArtifact,
+	sessionHandle,
+} from "./driver-run.ts";
 
 /** A session with only the three required members; `files` and `launch` are deliberately absent. */
 function bareSession(
@@ -27,6 +38,55 @@ const okResult = (stdout = "", stderr = "") => ({
 	stderr,
 	durationMs: 1,
 	truncated: false,
+});
+
+const createRequest: CreateRequest = {
+	spec: { vcpus: 2, memoryGb: 4 },
+	artifact: { kind: "baked", ref: "template" },
+	deadlineMs: 60_000,
+};
+
+describe("createOwnedDriverSession", () => {
+	test("registers before create and releases ownership only after provider destroy", async () => {
+		let createSignal: AbortSignal | undefined;
+		let destroys = 0;
+		const raw = bareSession(async () => okResult(), {
+			destroy: async () => {
+				destroys += 1;
+			},
+		});
+		const driver: SandboxDriver = {
+			create: async (_request, options) => {
+				createSignal = options?.signal;
+				return raw;
+			},
+		};
+		const session = await createOwnedDriverSession(driver, createRequest);
+		expect(createSignal).toBeInstanceOf(AbortSignal);
+		await session.destroy();
+		await session.destroy();
+		expect(destroys).toBe(1);
+	});
+
+	test("can hand a kept session out of process ownership", async () => {
+		let destroys = 0;
+		const driver: SandboxDriver = {
+			create: async () =>
+				bareSession(async () => okResult(), {
+					destroy: async () => {
+						destroys += 1;
+					},
+				}),
+		};
+		const session = await createOwnedDriverSession(driver, createRequest);
+
+		expect(session.releaseOwnership()).toBe(true);
+		expect(session.releaseOwnership()).toBe(false);
+		expect(await cleanupOwnedSandboxes()).toEqual([]);
+		expect(destroys).toBe(0);
+		await session.destroy();
+		expect(destroys).toBe(1);
+	});
 });
 
 describe("resolveDriverArtifact", () => {

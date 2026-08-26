@@ -1684,7 +1684,7 @@ export function cliMethodTable<Row>(
 				throw primary;
 			}
 		},
-		async exec(_ctx, row, command): Promise<ExecResult> {
+		async exec(_ctx, row, command, execOptions): Promise<ExecResult> {
 			const started = Date.now();
 			const id = sandboxIdOf(row);
 			const args = normalizeCliArgv(
@@ -1694,7 +1694,7 @@ export function cliMethodTable<Row>(
 			);
 			let result: CliRunResult;
 			try {
-				result = await call(args);
+				result = await call(args, commandTimeoutMs, execOptions?.signal);
 			} catch (caught) {
 				throw runnerFailed("exec-failed", args, caught);
 			}

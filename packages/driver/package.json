@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./cli": "./src/cli.ts",
+    "./conformance": "./src/conformance.ts",
     "./env": "./src/env.ts",
     "./schemas": "./src/schemas.ts",
     "./package.json": "./package.json"

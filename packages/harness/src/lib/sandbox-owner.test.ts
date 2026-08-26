@@ -2,7 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanupOwnedSandboxes, createOwnedSandbox, withOwnedSandbox } from "./sandbox-owner.ts";
+import {
+	cleanupOwnedSandboxes,
+	createOwnedSandbox,
+	releaseOwnedSandbox,
+	withOwnedSandbox,
+} from "./sandbox-owner.ts";
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;
@@ -38,6 +43,23 @@ describe("sandbox process ownership", () => {
 		await Promise.all([sandbox.destroy(), sandbox.destroy()]);
 		expect(destroys).toBe(1);
 		expect(await cleanupOwnedSandboxes()).toEqual([]);
+	});
+
+	it("explicitly hands a live sandbox out of process ownership", async () => {
+		let destroys = 0;
+		const sandbox = await createOwnedSandbox(async () => ({
+			sandboxId: "sb-handed-off",
+			async destroy() {
+				destroys++;
+			},
+		}));
+
+		expect(releaseOwnedSandbox(sandbox)).toBe(true);
+		expect(releaseOwnedSandbox(sandbox)).toBe(false);
+		expect(await cleanupOwnedSandboxes()).toEqual([]);
+		expect(destroys).toBe(0);
+		await sandbox.destroy();
+		expect(destroys).toBe(1);
 	});
 
 	it("forwards cancellation through the captured original destroy without wrapper recursion", async () => {
