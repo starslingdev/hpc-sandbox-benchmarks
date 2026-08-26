@@ -5,7 +5,12 @@
 // importing the core must not evaluate arktype or any schema-package runtime graph.
 
 export type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
-
+export {
+	matchesNvidiaGpu,
+	normalizeNvidiaModel,
+	nvidiaAccelerator,
+	parseNvidiaSmi,
+} from "./lib/accelerator.ts";
 export type {
 	ArtifactOf,
 	DriverContext,
@@ -31,6 +36,18 @@ export {
 	isDriverError,
 	isFailedCreateCleanupError,
 } from "./lib/errors.ts";
+export type {
+	AcceleratorObservation,
+	AcceleratorStrategy,
+	CostEvidenceCaptureInput,
+	DriverPolicy,
+	DriverReadinessPolicy,
+	ExecutionPolicy,
+	ProviderCostEvidenceCapability,
+	ReadinessProbeResult,
+	ReadinessSignal,
+	SandboxTeardownResult,
+} from "./lib/policy.ts";
 export type { ReadinessStrategy } from "./lib/poll.ts";
 export { pollUntilReady } from "./lib/poll.ts";
 export type {

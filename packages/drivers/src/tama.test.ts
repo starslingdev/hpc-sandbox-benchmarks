@@ -5,8 +5,10 @@ import type { CliRunner } from "@sandbox-benchmarks/driver/cli";
 import { cliMethodTable } from "@sandbox-benchmarks/driver/cli";
 import tamaDriver, {
 	TAMA_CREATE_CEILING_MS,
+	TAMA_EXECUTION,
 	TAMA_MACHINE_NOT_FOUND,
 	TAMA_MACHINES,
+	TAMA_PROVENANCE,
 	TAMA_REQUEST_COVERAGE,
 	TAMA_SANDBOX_ID,
 	tamaSpec,
@@ -38,6 +40,9 @@ describe("Tama proof driver", () => {
 			owner: "driver",
 			attemptCeilingMs: TAMA_CREATE_CEILING_MS,
 		});
+		expect(tamaDriver.provenance).toEqual(TAMA_PROVENANCE);
+		expect(tamaDriver.readiness).toEqual({ startup: "create-returns-ready" });
+		expect(tamaDriver.execution).toEqual(TAMA_EXECUTION);
 
 		const spec = tamaSpec(context);
 		expect(spec.binary).toBe("/opt/tama");

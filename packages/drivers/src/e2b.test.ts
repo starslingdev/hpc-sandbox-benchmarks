@@ -13,6 +13,9 @@ import type { ComputeSdkSandboxOf } from "./_computesdk.ts";
 import e2bDriver, {
 	E2B_ATTEMPT_METADATA_KEY,
 	E2B_CONTROL_PLANE_TIMEOUT_MS,
+	E2B_EXECUTION,
+	E2B_PROVENANCE,
+	E2B_READINESS,
 	E2B_RECOVERY_MAX_ATTEMPTS,
 	E2B_REQUEST_COVERAGE,
 	E2B_SANDBOX_ID,
@@ -42,6 +45,14 @@ const request: CreateRequest = {
 	artifact: context.resolvedArtifact,
 	deadlineMs: 300_000,
 };
+
+describe("E2B module policy", () => {
+	test("declares integration, readiness, and native durable execution", () => {
+		expect(e2bDriver.provenance).toEqual(E2B_PROVENANCE);
+		expect(e2bDriver.readiness).toEqual(E2B_READINESS);
+		expect(e2bDriver.execution).toEqual(E2B_EXECUTION);
+	});
+});
 
 function fakeNativeSandbox(id = "i2f3k4abc", diskCapacityGb = 80): Sandbox {
 	return {

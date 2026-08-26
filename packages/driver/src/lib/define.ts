@@ -4,7 +4,17 @@
 // arktype boundary that evaluates the same descriptor tuple.
 
 import type { ProviderId, ProviderInput, REGISTRY } from "@sandbox-benchmarks/schema/providers";
-import type { CreateBudget, ResolvedArtifact, SandboxDriver } from "./port.ts";
+import { DriverError, FailedCreateCleanupError } from "./errors.ts";
+import type { DriverPolicy } from "./policy.ts";
+import { normalizeDriverPolicy } from "./policy.ts";
+import type {
+	CreateRequest,
+	DriverOperationOptions,
+	ResolvedArtifact,
+	SandboxDriver,
+	SandboxRef,
+	SandboxSession,
+} from "./port.ts";
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {};
 
@@ -95,15 +105,133 @@ export interface DriverContext<P extends ProviderId> {
 	readonly resolvedArtifact: ResolvedArtifactOf<P>;
 }
 
-export interface DriverSpec<P extends ProviderId, Handle = unknown> {
-	/** Who owns the create attempt's budget. Omitted ⇒ the harness races create (the default). */
-	readonly createBudget?: CreateBudget;
+export interface DriverSpec<P extends ProviderId, Handle = unknown>
+	extends DriverPolicy<P, Handle> {
 	readonly driver: (context: DriverContext<P>) => SandboxDriver<Handle>;
 }
 
 export interface DriverModule<P extends ProviderId, Handle = unknown>
 	extends DriverSpec<P, Handle> {
 	readonly id: P;
+}
+
+function driverMember(
+	provider: ProviderId,
+	driver: object,
+	member: "create" | "destroyById" | "probes" | "snapshots",
+): unknown {
+	try {
+		return Reflect.get(driver, member);
+	} catch {
+		throw new DriverError(
+			"vendor-contract-violation",
+			`sandbox driver ${member} could not be read safely`,
+			{ provider },
+		);
+	}
+}
+
+function retainedSessionId(session: SandboxSession): string | undefined {
+	try {
+		const ref: unknown = Reflect.get(session, "sandboxRef");
+		if ((typeof ref !== "object" && typeof ref !== "function") || ref === null) return undefined;
+		const id: unknown = Reflect.get(ref, "id");
+		return typeof id === "string" && id.length > 0 ? id : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function rejectMissingNativeLaunch(
+	provider: ProviderId,
+	session: SandboxSession,
+): Promise<never> {
+	const primary = new DriverError(
+		"vendor-contract-violation",
+		"native-launch execution returned a session without a launch capability",
+		{ provider },
+	);
+	const cleanup = async (options?: DriverOperationOptions): Promise<void> => {
+		const destroy: unknown = Reflect.get(session, "destroy");
+		if (typeof destroy !== "function") {
+			throw new Error("returned session has no callable destroy capability");
+		}
+		await Reflect.apply(destroy, session, [options]);
+	};
+	try {
+		await cleanup();
+	} catch (cleanupError) {
+		const id = retainedSessionId(session);
+		throw new FailedCreateCleanupError(cleanupError, primary, {
+			provider,
+			locator: id === undefined ? { kind: "cleanup-callback" } : { kind: "id", value: id },
+			cleanup,
+		});
+	}
+	throw primary;
+}
+
+/** Apply policy claims at the last common boundary before provider behavior reaches callers. */
+function policyGuardedDriver<P extends ProviderId, Handle>(
+	provider: P,
+	policy: DriverPolicy<P, Handle>,
+	value: unknown,
+): SandboxDriver<Handle> {
+	if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+		throw new DriverError("vendor-contract-violation", "driver factory must return an object", {
+			provider,
+		});
+	}
+	const raw = value;
+	const create = driverMember(provider, raw, "create");
+	if (typeof create !== "function") {
+		throw new DriverError("vendor-contract-violation", "sandbox driver create must be callable", {
+			provider,
+		});
+	}
+	const destroyById = driverMember(provider, raw, "destroyById");
+	if (destroyById !== undefined && typeof destroyById !== "function") {
+		throw new DriverError(
+			"vendor-contract-violation",
+			"sandbox driver destroyById must be callable when present",
+			{ provider },
+		);
+	}
+	const probes = driverMember(provider, raw, "probes") as SandboxDriver<Handle>["probes"];
+	const snapshots = driverMember(provider, raw, "snapshots") as SandboxDriver<Handle>["snapshots"];
+	return Object.freeze({
+		async create(request: CreateRequest, options?: DriverOperationOptions) {
+			if (request.gpu !== undefined && policy.accelerator === undefined) {
+				throw new DriverError(
+					"invalid-create-request",
+					"GPU requests require an accelerator strategy on the selected driver module",
+					{ provider },
+				);
+			}
+			const session = (await Reflect.apply(create, raw, [
+				request,
+				options,
+			])) as SandboxSession<Handle>;
+			if (policy.execution.durable === "native-launch") {
+				let launch: unknown;
+				try {
+					launch = Reflect.get(session, "launch");
+				} catch {
+					launch = undefined;
+				}
+				if (typeof launch !== "function") await rejectMissingNativeLaunch(provider, session);
+			}
+			return session;
+		},
+		...(destroyById === undefined
+			? {}
+			: {
+					destroyById: (ref: SandboxRef, options?: DriverOperationOptions) =>
+						Reflect.apply(destroyById, raw, [ref, options]),
+				}),
+		...(probes === undefined ? {} : { probes }),
+		...(snapshots === undefined ? {} : { snapshots }),
+	});
 }
 
 /**
@@ -121,5 +249,24 @@ export function defineDriver<P extends ProviderId, Handle = unknown>(
 	id: P,
 	spec: DriverSpec<NoInfer<P>, Handle>,
 ): DriverModule<P, Handle> {
-	return { ...spec, id };
+	let driver: unknown;
+	try {
+		driver = Reflect.get(spec, "driver");
+	} catch {
+		throw new DriverError("vendor-contract-violation", "driver factory could not be read safely", {
+			provider: id,
+		});
+	}
+	if (typeof driver !== "function") {
+		throw new DriverError("vendor-contract-violation", "driver factory must be callable", {
+			provider: id,
+		});
+	}
+	const policy = normalizeDriverPolicy(id, spec);
+	const factory = driver as DriverSpec<P, Handle>["driver"];
+	return Object.freeze({
+		...policy,
+		id,
+		driver: (context: DriverContext<P>) => policyGuardedDriver(id, policy, factory(context)),
+	});
 }

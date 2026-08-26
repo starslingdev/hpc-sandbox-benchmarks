@@ -20,6 +20,7 @@ import type {
 	DriverContext,
 	DriverModule,
 	DriverOperationOptions,
+	DriverPolicy,
 	ExecResult,
 	SandboxDriver,
 	SandboxRef,
@@ -512,8 +513,15 @@ export interface CliDriverContext {
 	prepare?: true | CliPreparationInFlight;
 }
 
-/** One joined CLI-provider module; the helper derives the required driver-owned create budget. */
+/** One joined CLI-provider module; the helper derives CLI-owned readiness and create budgeting. */
 export interface CliDriverModuleSpec<P extends ProviderId, Row> {
+	readonly provenance: DriverPolicy<P, Row>["provenance"];
+	/** CLI sessions have no native launch handle; durable work uses the kit's shell fallback. */
+	readonly execution:
+		| { readonly syncCapMs: null; readonly durable: "shell-detach" | "none" }
+		| { readonly syncCapMs: number; readonly durable: "shell-detach" };
+	readonly accelerator?: DriverPolicy<P, Row>["accelerator"];
+	readonly costEvidence?: DriverPolicy<P, Row>["costEvidence"];
 	/** Hard ceiling until success or a retryable failed-create cleanup record is returned. */
 	readonly createAttemptCeilingMs: number;
 	/** Builds the small declarative CLI table from this provider's exact environment slice. */
@@ -1781,6 +1789,10 @@ export function defineCliDriver<P extends ProviderId, Row>(
 	module: CliDriverModuleSpec<NoInfer<P>, Row>,
 ): DriverModule<P, Row> {
 	const normalized = invokeCliProviderCallback(id, "module normalization", () => ({
+		provenance: Reflect.get(module, "provenance") as unknown,
+		execution: Reflect.get(module, "execution") as unknown,
+		accelerator: Reflect.get(module, "accelerator") as unknown,
+		costEvidence: Reflect.get(module, "costEvidence") as unknown,
 		createAttemptCeilingMs: Reflect.get(module, "createAttemptCeilingMs") as unknown,
 		spec: Reflect.get(module, "spec") as unknown,
 	}));
@@ -1804,7 +1816,19 @@ export function defineCliDriver<P extends ProviderId, Row>(
 		attemptCeilingMs: ownedCreateAttemptCeilingMs,
 	});
 	return defineDriver(id, {
+		provenance: normalized.provenance as DriverPolicy<P, Row>["provenance"],
 		createBudget,
+		// A CliSpec's ready table is consumed inside cliDriver.create. Resolving create therefore
+		// proves readiness at the module boundary; there is no second policy fact for authors to
+		// declare or accidentally contradict.
+		readiness: { startup: "create-returns-ready" },
+		execution: normalized.execution as CliDriverModuleSpec<P, Row>["execution"],
+		...(normalized.accelerator === undefined
+			? {}
+			: { accelerator: normalized.accelerator as DriverPolicy<P, Row>["accelerator"] }),
+		...(normalized.costEvidence === undefined
+			? {}
+			: { costEvidence: normalized.costEvidence as DriverPolicy<P, Row>["costEvidence"] }),
 		driver: (context) =>
 			invokeCliProviderCallback(id, "module spec factory", () =>
 				cliDriver(id, specFactory(context), {

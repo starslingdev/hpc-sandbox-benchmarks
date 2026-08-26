@@ -203,6 +203,39 @@ terminal-state behavior. The module instead declares a strategy with three ortho
 - signal: CLI poll+parse+select, exec probe, or typed vendor-state probe; and
 - total budget plus per-attempt timeout.
 
+The module-side shape is one union. A provider whose `create` resolves only when usable declares no
+polling callback; a create-then-poll provider supplies one typed attempt and no loop mechanics:
+
+```ts
+type DriverReadinessPolicy<Handle> =
+  | { startup: "create-returns-ready" }
+  | {
+      startup: "create-then-poll";
+      signal: "cli" | "exec" | "vendor-state";
+      totalBudgetMs: number;
+      attemptTimeoutMs: number;
+      probe(
+        session: SandboxSession<Handle>,
+        options?: DriverOperationOptions,
+      ): Promise<
+        | { status: "ready" }
+        | { status: "pending" }
+        | { status: "terminal"; detail: string }
+      >;
+    };
+```
+
+`attemptTimeoutMs` cannot exceed `totalBudgetMs`; both must be positive safe integers at the
+module boundary. This is separate from `createBudget`: readiness starts only after create returns a
+session, while the create budget owns allocation and failed-create reconciliation.
+
+`defineCliDriver` is the intentional composition exception: its `CliSpec.ready` table is polled
+inside `create`, under the driver-owned create-attempt ceiling. The helper therefore derives
+`{ startup: "create-returns-ready" }`; a CLI provider does not repeat that fact in module policy.
+The harness's existing post-create `waitUntilReady` exec probe remains a legacy suite-liveness
+check until the composition root flips to driver modules. It is not a second interpretation of
+`DriverReadinessPolicy`, and retires when the module readiness strategy becomes the suite boundary.
+
 The kit owns backoff, jitter policy, deadline accounting, terminal-state handling, and cleanup. The
 suite drives every strategy against deterministic fakes and times the live strategy. This keeps the
 provider file declarative without pretending vendors share one readiness signal.

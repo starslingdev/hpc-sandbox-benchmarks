@@ -70,6 +70,20 @@ const artifactCoverage = {
 	env: "unsupported",
 } as const satisfies ComputeSdkCreateRequestCoverage;
 
+const bridgePolicy = {
+	provenance: { packageName: "@computesdk/fake", version: "1.0.0" },
+	readiness: { startup: "create-returns-ready" },
+	execution: { syncCapMs: 60_000, durable: "shell-detach" },
+	// The generic bridge fixture maps GPU request axes, so it must also declare how the shared gate
+	// would observe them. Production providers that reject GPU requests omit this strategy.
+	accelerator: {
+		family: "test",
+		command: "test-gpu-observation",
+		parse: () => ({ model: "test-gpu", count: 1 }),
+		matches: () => true,
+	},
+} as const;
+
 const createRequestMapper = (
 	map: ComputeSdkCreateRequestMapper["map"] = () => ({}),
 	coverage: ComputeSdkCreateRequestCoverage = mappedCoverage,
@@ -105,6 +119,7 @@ function bridge<TSandbox extends ComputeSdkSandboxLike>(
 	} = {},
 ): SandboxDriver<ComputeSdkNativeOf<TSandbox>> {
 	return defineComputeSdkDriver("e2b", {
+		...bridgePolicy,
 		spec: ({ env, artifact, resolvedArtifact }) => {
 			expect(env.E2B_API_KEY).toBe("test-key");
 			expect(artifact).toEqual({ kind: "baked" });
@@ -128,6 +143,7 @@ function bridge<TSandbox extends ComputeSdkSandboxLike>(
 describe("computeSdkDriver", () => {
 	test("infers session.native as the installed wrapper's vendored SDK instance", () => {
 		const module_ = defineComputeSdkDriver("e2b", {
+			...bridgePolicy,
 			spec: ({ env }) => ({
 				compute: e2b({ apiKey: env.E2B_API_KEY }),
 				sandboxId: e2bSandboxId,
@@ -143,6 +159,7 @@ describe("computeSdkDriver", () => {
 
 	test("preserves the installed wrapper type inside capability callbacks", () => {
 		const module_ = defineComputeSdkDriver("e2b", {
+			...bridgePolicy,
 			spec: ({ env }) =>
 				computeSdkSpec(e2b({ apiKey: env.E2B_API_KEY }), {
 					sandboxId: e2bSandboxId,
@@ -157,6 +174,36 @@ describe("computeSdkDriver", () => {
 				}),
 		});
 		expect(module_.id).toBe("e2b");
+	});
+
+	test("rejects native-launch policy before allocation when the provider spec has no launch", () => {
+		let createCalls = 0;
+		const compute = {
+			sandbox: {
+				create: async () => {
+					createCalls += 1;
+					return baseSandbox;
+				},
+			},
+		};
+		const module_ = defineComputeSdkDriver("e2b", {
+			...bridgePolicy,
+			execution: { syncCapMs: 60_000, durable: "native-launch" },
+			spec: () => ({
+				compute,
+				sandboxId: e2bSandboxId,
+				createOptions: createRequestMapper(),
+				hasWorkingFilesystem: false,
+			}),
+		});
+		expect(() =>
+			module_.driver({
+				env: { E2B_API_KEY: "test-key" },
+				artifact: { kind: "baked" },
+				resolvedArtifact: { kind: "baked", ref: "template-1" },
+			}),
+		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }));
+		expect(createCalls).toBe(0);
 	});
 
 	test("keeps the first compute argument authoritative when an extracted spec has excess state", () => {
@@ -175,6 +222,7 @@ describe("computeSdkDriver", () => {
 	test("the joined helper has one provider id and contextually types its exact env slice", () => {
 		const { compute } = fakeCompute(baseSandbox);
 		const module_ = defineComputeSdkDriver("e2b", {
+			...bridgePolicy,
 			createBudget: { owner: "harness", timeoutMs: 45_000 },
 			spec: ({ env, resolvedArtifact }) => ({
 				compute,
@@ -191,6 +239,7 @@ describe("computeSdkDriver", () => {
 
 		const driverOwnedBudget = () =>
 			defineComputeSdkDriver("e2b", {
+				...bridgePolicy,
 				// @ts-expect-error — the wrapper exposes no cancellable hard attempt ceiling
 				createBudget: { owner: "driver", attemptCeilingMs: 45_000 },
 				spec: () => ({
@@ -203,6 +252,7 @@ describe("computeSdkDriver", () => {
 		void driverOwnedBudget;
 		expect(() =>
 			defineComputeSdkDriver("e2b", {
+				...bridgePolicy,
 				createBudget: { owner: "driver", attemptCeilingMs: 45_000 } as never,
 				spec: () => ({
 					compute,
@@ -215,6 +265,7 @@ describe("computeSdkDriver", () => {
 
 		const uncheckedParser = () =>
 			defineComputeSdkDriver("e2b", {
+				...bridgePolicy,
 				spec: () => ({
 					compute,
 					// @ts-expect-error — module-owned ids must cross an arktype trust boundary
@@ -227,6 +278,7 @@ describe("computeSdkDriver", () => {
 
 		const missingRequestMapper = () =>
 			defineComputeSdkDriver("e2b", {
+				...bridgePolicy,
 				// @ts-expect-error — every provider must explicitly validate/map the canonical request
 				spec: () => ({
 					compute,
@@ -291,6 +343,9 @@ describe("computeSdkDriver", () => {
 		const mutableModule = Object.defineProperties(
 			{},
 			{
+				provenance: { value: bridgePolicy.provenance, enumerable: true },
+				readiness: { value: bridgePolicy.readiness, enumerable: true },
+				execution: { value: bridgePolicy.execution, enumerable: true },
 				createBudget: {
 					enumerable: true,
 					get: () => {
@@ -322,6 +377,9 @@ describe("computeSdkDriver", () => {
 			const hostileModule = Object.defineProperties(
 				{},
 				{
+					provenance: { value: bridgePolicy.provenance, enumerable: true },
+					readiness: { value: bridgePolicy.readiness, enumerable: true },
+					execution: { value: bridgePolicy.execution, enumerable: true },
 					createBudget: { value: { owner: "harness", timeoutMs: 45_000 }, enumerable: true },
 					spec: { value: specFactory, enumerable: true },
 					[hostileField]: {
@@ -347,6 +405,7 @@ describe("computeSdkDriver", () => {
 	test("omits arbitrary module-spec diagnostics before an SDK escapes", () => {
 		const secret = "closure-only-computesdk-secret";
 		const module_ = defineComputeSdkDriver<"e2b", ComputeSdkLike>("e2b", {
+			...bridgePolicy,
 			spec: (): ComputeSdkDriverSpec<ComputeSdkLike> => {
 				const nested = Object.assign(new Error(`nested ${secret}`), { credential: secret });
 				throw Object.assign(new Error(`factory ${secret}`, { cause: nested }), {
@@ -714,6 +773,7 @@ describe("computeSdkDriver", () => {
 			},
 		});
 		const module_ = defineComputeSdkDriver("e2b", {
+			...bridgePolicy,
 			spec: ({ resolvedArtifact }) => ({
 				compute,
 				sandboxId: e2bSandboxId,
@@ -747,6 +807,7 @@ describe("computeSdkDriver", () => {
 			},
 		});
 		const module_ = defineComputeSdkDriver("e2b", {
+			...bridgePolicy,
 			spec: ({ resolvedArtifact }) => ({
 				compute,
 				sandboxId: e2bSandboxId,

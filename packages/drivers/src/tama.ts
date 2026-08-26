@@ -7,6 +7,9 @@ import type { DriverContext } from "@sandbox-benchmarks/driver";
 import type { CliCreateRequestCoverage } from "@sandbox-benchmarks/driver/cli";
 import { defineCliDriver, defineCliSpec } from "@sandbox-benchmarks/driver/cli";
 import { type } from "arktype";
+import { TAMA_PROVENANCE } from "./_provenance.ts";
+
+export { TAMA_PROVENANCE };
 
 export const TAMA_MACHINES = type("string.json.parse").to(
 	type({
@@ -26,6 +29,10 @@ export const TAMA_MACHINE_NOT_FOUND =
 
 /** `tama new` includes the cold image pull and owns failed-create reconciliation. */
 export const TAMA_CREATE_CEILING_MS = 25 * 60_000;
+export const TAMA_EXECUTION = Object.freeze({
+	syncCapMs: 60_000,
+	durable: "shell-detach" as const,
+});
 
 export const TAMA_REQUEST_COVERAGE = {
 	spec: {
@@ -95,6 +102,8 @@ export function tamaSpec({ env, resolvedArtifact }: DriverContext<"tama">) {
 }
 
 export default defineCliDriver("tama", {
+	provenance: TAMA_PROVENANCE,
+	execution: TAMA_EXECUTION,
 	createAttemptCeilingMs: TAMA_CREATE_CEILING_MS,
 	spec: tamaSpec,
 });

@@ -23,6 +23,7 @@ import type {
 	DriverErrorCode,
 	DriverModule,
 	DriverOperationOptions,
+	DriverPolicy,
 	ExecOptions,
 	MethodTable,
 	ProviderId,
@@ -309,6 +310,26 @@ export function computeSdkSpec<TCompute extends ComputeSdkLike>(
 
 /** One registry-joined ComputeSDK provider module. The id exists only in defineComputeSdkDriver. */
 export interface ComputeSdkDriverModuleSpec<P extends ProviderId, TCompute extends ComputeSdkLike> {
+	readonly provenance: DriverPolicy<
+		P,
+		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+	>["provenance"];
+	readonly readiness: DriverPolicy<
+		P,
+		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+	>["readiness"];
+	readonly execution: DriverPolicy<
+		P,
+		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+	>["execution"];
+	readonly accelerator?: DriverPolicy<
+		P,
+		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+	>["accelerator"];
+	readonly costEvidence?: DriverPolicy<
+		P,
+		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+	>["costEvidence"];
 	/** ComputeSDK exposes no cancellable hard ceiling, so only the harness may own this budget. */
 	readonly createBudget?: Extract<CreateBudget, { readonly owner: "harness" }>;
 	/** Builds the wrapper binding from exactly this provider's resolved input slice. */
@@ -1915,9 +1936,15 @@ export function defineComputeSdkDriver<P extends ProviderId, TCompute extends Co
 	module: ComputeSdkDriverModuleSpec<NoInfer<P>, TCompute>,
 ): DriverModule<P, ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>> {
 	const normalized = invokeComputeSdkProviderCallback(id, "module normalization", () => {
+		const provenance: unknown = Reflect.get(module, "provenance");
+		const readiness: unknown = Reflect.get(module, "readiness");
+		const execution: unknown = Reflect.get(module, "execution");
+		const accelerator: unknown = Reflect.get(module, "accelerator");
+		const costEvidence: unknown = Reflect.get(module, "costEvidence");
 		const rawBudget: unknown = Reflect.get(module, "createBudget");
 		const spec: unknown = Reflect.get(module, "spec");
-		if (rawBudget === undefined) return { createBudget: undefined, spec };
+		const policy = { provenance, readiness, execution, accelerator, costEvidence };
+		if (rawBudget === undefined) return { ...policy, createBudget: undefined, spec };
 		if (typeof rawBudget !== "object" || rawBudget === null || Array.isArray(rawBudget)) {
 			throw new Error("create budget is not an object");
 		}
@@ -1931,7 +1958,7 @@ export function defineComputeSdkDriver<P extends ProviderId, TCompute extends Co
 			});
 		}
 		Object.freeze(createBudget);
-		return { createBudget, spec };
+		return { ...policy, createBudget, spec };
 	});
 	if (typeof normalized.spec !== "function") {
 		throw new DriverError("vendor-contract-violation", "ComputeSDK module spec must be callable", {
@@ -1972,12 +1999,51 @@ export function defineComputeSdkDriver<P extends ProviderId, TCompute extends Co
 	const createBudget = budgetRecord as
 		| Extract<CreateBudget, { readonly owner: "harness" }>
 		| undefined;
-	return defineDriver(id, {
+	let joined: DriverModule<P, ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>>;
+	joined = defineDriver(id, {
+		provenance: normalized.provenance as DriverPolicy<
+			P,
+			ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+		>["provenance"],
 		...(createBudget === undefined ? {} : { createBudget }),
+		readiness: normalized.readiness as DriverPolicy<
+			P,
+			ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+		>["readiness"],
+		execution: normalized.execution as DriverPolicy<
+			P,
+			ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+		>["execution"],
+		...(normalized.accelerator === undefined
+			? {}
+			: {
+					accelerator: normalized.accelerator as DriverPolicy<
+						P,
+						ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+					>["accelerator"],
+				}),
+		...(normalized.costEvidence === undefined
+			? {}
+			: {
+					costEvidence: normalized.costEvidence as DriverPolicy<
+						P,
+						ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+					>["costEvidence"],
+				}),
 		driver: (context) => {
 			const sensitiveValues = sensitiveEnvValuesFor(id, context.env);
 			return invokeComputeSdkProviderCallback(id, "module spec factory", () => {
 				const { compute, ...spec } = specFactory(context);
+				if (
+					joined.execution.durable === "native-launch" &&
+					typeof spec.commands?.launch !== "function"
+				) {
+					throw new DriverError(
+						"vendor-contract-violation",
+						"native-launch execution requires a ComputeSDK launch command",
+						{ provider: id },
+					);
+				}
 				return driverFromTable(
 					computeSdkMethodTable<TCompute>(id, {
 						...spec,
@@ -1989,4 +2055,5 @@ export function defineComputeSdkDriver<P extends ProviderId, TCompute extends Co
 			});
 		},
 	});
+	return joined;
 }

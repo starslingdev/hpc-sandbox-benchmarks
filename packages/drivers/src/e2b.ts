@@ -23,6 +23,9 @@ import type {
 	ComputeSdkSandboxOf,
 } from "./_computesdk.ts";
 import { computeSdkSpec, defineComputeSdkDriver } from "./_computesdk.ts";
+import { E2B_PROVENANCE } from "./_provenance.ts";
+
+export { E2B_PROVENANCE };
 
 type E2bCompute = ReturnType<typeof e2b>;
 type E2bWrapperSandbox = ComputeSdkSandboxOf<E2bCompute>;
@@ -34,6 +37,11 @@ export const E2B_CONTROL_PLANE_TIMEOUT_MS = 5_000;
 export const E2B_RECOVERY_CONFIRMATION_MS = 2_000;
 export const E2B_RECOVERY_MAX_ATTEMPTS = 4;
 export const E2B_ATTEMPT_METADATA_KEY = "sandbox-benchmarks-attempt";
+export const E2B_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
+export const E2B_EXECUTION = Object.freeze({
+	syncCapMs: 60_000,
+	durable: "native-launch" as const,
+});
 const E2B_RECOVERY_MAX_PAGES = 100;
 const E2B_WRAPPER_DEFINITIVE_CREATE_MESSAGES = new Set([
 	"Missing E2B API key. Provide 'apiKey' in config or set E2B_API_KEY environment variable.",
@@ -389,4 +397,9 @@ export function e2bSpec({ env, resolvedArtifact }: DriverContext<"e2b">) {
 	});
 }
 
-export default defineComputeSdkDriver("e2b", { spec: e2bSpec });
+export default defineComputeSdkDriver("e2b", {
+	provenance: E2B_PROVENANCE,
+	readiness: E2B_READINESS,
+	execution: E2B_EXECUTION,
+	spec: e2bSpec,
+});

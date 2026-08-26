@@ -57,6 +57,11 @@ describe("Modal shared driver factory", () => {
 	it("attaches the shared implementation only through the two literal modules", () => {
 		expect(modalGvisor.id).toBe("modal-gvisor");
 		expect(modalVm.id).toBe("modal-vm");
+		expect(modalGvisor.execution).toEqual({
+			syncCapMs: 30 * 60_000,
+			durable: "shell-detach",
+		});
+		expect(modalVm.execution).toEqual(modalGvisor.execution);
 	});
 
 	it("defers the wrapper's eager app lookup until create and reuses one instance", async () => {
@@ -703,6 +708,9 @@ describe("Modal truthful lifecycle and recovery projections", () => {
 			},
 		};
 		const module = defineComputeSdkDriver("modal-gvisor", {
+			provenance: { packageName: "@computesdk/modal", version: "1.9.3" },
+			readiness: { startup: "create-returns-ready" },
+			execution: { syncCapMs: null, durable: "none" },
 			spec: () => ({
 				compute,
 				sandboxId: modalSandboxId("gvisor"),

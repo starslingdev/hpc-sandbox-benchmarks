@@ -48,6 +48,11 @@ const mappedRequestCoverage = {
 	env: "mapped",
 } as const satisfies CliCreateRequestCoverage;
 
+const joinedPolicy = {
+	provenance: { packageName: "fake-cli", version: "1.0.0" },
+	execution: { syncCapMs: 60_000, durable: "shell-detach" },
+} as const;
+
 function tamaLikeSpec(overrides: Partial<CliSpec<MachineRow>> = {}): CliSpec<MachineRow> {
 	return {
 		binary: "fake-cli",
@@ -147,6 +152,7 @@ function fakeVendor(options: { readyAfterPolls?: number } = {}) {
 describe("cliDriver", () => {
 	test("the joined module derives driver-owned budgeting from the single provider id", () => {
 		const module_ = defineCliDriver("tama", {
+			...joinedPolicy,
 			createAttemptCeilingMs: 60_000,
 			spec: ({ env }) => {
 				expect(env.TAMA_TOKEN).toBe("tok");
@@ -155,6 +161,7 @@ describe("cliDriver", () => {
 		});
 		expect(module_.id).toBe("tama");
 		expect(module_.createBudget).toEqual({ owner: "driver", attemptCeilingMs: 60_000 });
+		expect(module_.readiness).toEqual({ startup: "create-returns-ready" });
 		expect(
 			typeof module_.driver({
 				env: { TAMA_TOKEN: "tok" },
@@ -167,9 +174,36 @@ describe("cliDriver", () => {
 			defineCliDriver(
 				"tama",
 				// @ts-expect-error — every CLI driver must declare its hard create-attempt ceiling
-				{ spec: () => tamaLikeSpec() },
+				{ ...joinedPolicy, spec: () => tamaLikeSpec() },
 			);
 		void missingBudget;
+
+		const nativeLaunch = () =>
+			defineCliDriver("tama", {
+				...joinedPolicy,
+				// @ts-expect-error — CLI modules have no native launch handle
+				execution: { syncCapMs: 60_000, durable: "native-launch" },
+				createAttemptCeilingMs: 60_000,
+				spec: () => tamaLikeSpec(),
+			});
+		void nativeLaunch;
+
+		const duplicateReadinessPolicy = () =>
+			defineCliDriver("tama", {
+				...joinedPolicy,
+				// @ts-expect-error — CliSpec.ready is consumed before create resolves, so the helper
+				// derives module readiness instead of accepting a second declaration.
+				readiness: {
+					startup: "create-then-poll",
+					signal: "cli",
+					totalBudgetMs: 60_000,
+					attemptTimeoutMs: 1_000,
+					probe: async () => ({ status: "ready" }),
+				},
+				createAttemptCeilingMs: 60_000,
+				spec: () => tamaLikeSpec(),
+			});
+		void duplicateReadinessPolicy;
 	});
 
 	test("snapshots joined module policy once and omits hostile getter diagnostics", () => {
@@ -185,6 +219,15 @@ describe("cliDriver", () => {
 		const mutableModule = Object.defineProperties(
 			{},
 			{
+				provenance: { value: joinedPolicy.provenance, enumerable: true },
+				execution: { value: joinedPolicy.execution, enumerable: true },
+				// An out-of-contract readiness property is deliberately never observed.
+				readiness: {
+					enumerable: true,
+					get: () => {
+						throw new Error("duplicate-readiness-secret");
+					},
+				},
 				createAttemptCeilingMs: {
 					enumerable: true,
 					get: () => {
@@ -216,6 +259,8 @@ describe("cliDriver", () => {
 			const hostileModule = Object.defineProperties(
 				{},
 				{
+					provenance: { value: joinedPolicy.provenance, enumerable: true },
+					execution: { value: joinedPolicy.execution, enumerable: true },
 					createAttemptCeilingMs: { value: 60_000, enumerable: true },
 					spec: { value: () => tamaLikeSpec(), enumerable: true },
 					[hostileField]: {
@@ -297,6 +342,7 @@ describe("cliDriver", () => {
 	test("normalizes a throwing module spec factory without retaining nested credentials", () => {
 		const secret = "module-spec-secret";
 		const module_ = defineCliDriver("tama", {
+			...joinedPolicy,
 			createAttemptCeilingMs: 60_000,
 			spec: () => {
 				const nested = Object.assign(new Error(`nested ${secret}`), { credential: secret });
@@ -328,6 +374,7 @@ describe("cliDriver", () => {
 	test("consumes a returned module spec inside the omission boundary", () => {
 		const secret = "lazy-module-spec-secret";
 		const module_ = defineCliDriver("tama", {
+			...joinedPolicy,
 			createAttemptCeilingMs: 60_000,
 			spec: () =>
 				new Proxy(tamaLikeSpec(), {
@@ -379,6 +426,7 @@ describe("cliDriver", () => {
 		type _rowsOutput = Expect<Equal<typeof publicRowsSchema.infer, readonly MachineRow[]>>;
 
 		const module_ = defineCliDriver("tama", {
+			...joinedPolicy,
 			createAttemptCeilingMs: 60_000,
 			spec: ({ env }) =>
 				defineCliSpec(machineRows, {
@@ -1029,6 +1077,7 @@ describe("cliDriver", () => {
 	test("rejects an invalid joined create-attempt ceiling", () => {
 		expect(() =>
 			defineCliDriver("tama", {
+				...joinedPolicy,
 				createAttemptCeilingMs: 0,
 				spec: () => tamaLikeSpec(),
 			}),

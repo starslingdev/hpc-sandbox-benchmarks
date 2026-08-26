@@ -29,6 +29,9 @@ import type {
 	ComputeSdkSandboxOf,
 } from "./_computesdk.ts";
 import { computeSdkSpec, defineComputeSdkDriver } from "./_computesdk.ts";
+import { MODAL_PROVENANCE } from "./_provenance.ts";
+
+export { MODAL_PROVENANCE };
 
 export type ModalProviderId = "modal-gvisor" | "modal-vm";
 export type ModalVariant = "gvisor" | "vm";
@@ -67,6 +70,11 @@ export const MODAL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
 export const MODAL_RECOVERY_CONFIRMATION_MS = 2_000;
 export const MODAL_RECOVERY_MAX_ATTEMPTS = 4;
+export const MODAL_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
+export const MODAL_EXECUTION = Object.freeze({
+	syncCapMs: 30 * 60_000,
+	durable: "shell-detach" as const,
+});
 export const MODAL_V1_SANDBOX_ID = type(/^sb-[A-Za-z0-9]{22}$/);
 export const MODAL_V2_SANDBOX_ID = type(/^sb-[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
 const MODAL_CONTROL_SANDBOX_ID = type(/^sb-(?:[A-Za-z0-9]{22}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/);
@@ -633,5 +641,10 @@ function modalSpec<P extends ModalProviderId>(
 
 /** One provider literal selects both identity and backend; invalid cross-pairs are unrepresentable. */
 export function defineModalDriver<P extends ModalProviderId>(provider: P) {
-	return defineComputeSdkDriver(provider, { spec: (context) => modalSpec(provider, context) });
+	return defineComputeSdkDriver(provider, {
+		provenance: MODAL_PROVENANCE,
+		readiness: MODAL_READINESS,
+		execution: MODAL_EXECUTION,
+		spec: (context) => modalSpec(provider, context),
+	});
 }

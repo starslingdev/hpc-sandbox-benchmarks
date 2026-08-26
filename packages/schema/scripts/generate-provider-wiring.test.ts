@@ -20,6 +20,7 @@ import {
 	renderCiVariableTable,
 	renderDotenvValue,
 	renderDriversPackage,
+	renderDriversProvenance,
 	renderEnvExample,
 	renderPreAuthCondition,
 	renderPreAuthOwnerCondition,
@@ -212,8 +213,19 @@ describe("provider wiring projections", () => {
 		const regions = generatedProviderRegions();
 		expect(new Set(regions.map(({ file, label }) => `${file}:${label}`)).size).toBe(regions.length);
 		expect(new Set(renderProviderWiringFiles().keys())).toEqual(
-			new Set([...regions.map(({ file }) => file), "packages/drivers/package.json"]),
+			new Set([
+				...regions.map(({ file }) => file),
+				"packages/drivers/src/_provenance.ts",
+				"packages/drivers/package.json",
+			]),
 		);
+	});
+
+	test("projects exact driver provenance from its installation pins", () => {
+		const source = renderDriversProvenance();
+		expect(source).toContain("export const E2B_PROVENANCE");
+		expect(source).toContain("export const MODAL_PROVENANCE");
+		expect(source).toContain("export const TAMA_PROVENANCE");
 	});
 
 	test("projects the provider SDK catalog into the fleet manifest", () => {
