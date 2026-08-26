@@ -41,3 +41,13 @@ external authenticity. `providerCostTotal(records, expectedCells)` returns money
 exactly equal the caller's authoritative expected-cell set and every record is unique, observed, and
 same-currency. The result is exact only relative to those supplied cells; missing evidence never
 contributes zero.
+
+## Run v6 artifact evidence
+
+Run v6 requires `artifactEvidence: []` on every provider row. A booted sandbox records its complete
+benchmark cell, sandbox id, exact requested artifact, and how that identity was established. The raw
+transport is the bounded, deterministic `provider-artifact-evidence.json` host-owned file. Canonical
+release artifacts may carry a guest observation from `/toolchain-manifest.json`; the schema derives
+the expected image identity from release constants and rejects a stale or producer-selected expected
+value. Noncanonical overrides remain `request-fallback`. Aggregation preserves one record per cell and
+rejects conflicting records, reused sandbox ids, and mixed v6/older inputs.

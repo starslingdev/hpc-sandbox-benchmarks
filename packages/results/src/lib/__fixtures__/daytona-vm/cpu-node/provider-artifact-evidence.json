@@ -1,0 +1,15 @@
+{
+  "cell": {
+    "runId": "run-test",
+    "providerId": "daytona-vm",
+    "suite": "cpu-node"
+  },
+  "sandboxId": "fixture-sandbox",
+  "provenance": {
+    "source": "request-fallback",
+    "requested": {
+      "kind": "baked",
+      "ref": "sandbox-benchmarks-toolchain-v8"
+    }
+  }
+}

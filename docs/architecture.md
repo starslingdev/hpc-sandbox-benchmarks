@@ -4,7 +4,7 @@ How the repository itself is put together: the workspace, its enforced boundarie
 contract, and the gates that hold them. For how a *measurement* is produced, see
 [methodology](./methodology.md).
 
-## Provider cost evidence (Run v5)
+## Provider sandbox evidence (Run v5 and v6)
 
 The provider adapter owns billing API interaction. After the harness attempts and awaits sandbox
 teardown, its optional hook returns one validated sandbox-scoped observed/missing record. The harness
@@ -14,6 +14,16 @@ Historical v2-v4 documents remain unchanged and cannot carry evidence.
 The sandbox collection archive cannot supply that reserved filename: collection rejects it before
 copying any entry, and only the post-teardown host writer may create it. Schema validation establishes a
 bounded, structurally valid provider-observed record; it does not authenticate the provider response.
+
+Run v6 adds one host-owned `provider-artifact-evidence.json` per benchmark cell. The provider adapter
+records the exact artifact adjacent to the create options that boot it, and the harness writes that
+request fallback before its first sandbox operation. For a canonical release artifact, the harness
+then reads the bounded `/toolchain-manifest.json` from the ready guest and atomically upgrades the
+record to `guest-fingerprint`. The expected image name/version is never supplied by the producer: the
+schema derives it from release constants plus the provider's canonical artifact mapping and rejects a
+stale manifest. Arbitrary overrides remain honest request fallbacks. Collection reserves both evidence
+filenames, normalization binds the record to its run/provider/suite/replicate cell, and aggregation
+rejects conflicts, sandbox reuse, or a mixture of v6 and older shards that could drop attribution.
 
 ## The repository
 
@@ -80,9 +90,9 @@ bun apps/cli/src/bin/driver-check.ts --provider tama --phase candidate --workloa
 
 It runs create → readiness → exec (including the exit-7 and split-stream clauses) → a filesystem
 round-trip → a real workload on BOTH transports → destroy → idempotent destroy → control-plane
-convergence, then prints a JSON report. It writes **no Run document**: persisting a driver-path run
-needs the artifact-provenance fields the Run schema does not carry yet, and a v5 document from this
-path would publish a measurement whose artifact attribution cannot be verified.
+convergence, then prints a JSON conformance report. It writes **no Run document** because it is a
+contract check, not a benchmark measurement; the benchmark harness is the Run v6 artifact-evidence
+producer.
 
 The durable step is the point of the lane. `--workload-seconds` runs a real command past the
 module's declared `syncCapMs`, which forces `StepRunner` onto the detached transport and proves the

@@ -34,7 +34,28 @@ function fixture(
 					measured(),
 					...(Number(schemaVersion) >= 4 ? [{ ...stale(), derived: true as const }] : [stale()]),
 				],
-				...(schemaVersion === "5" ? { costEvidence: [] } : {}),
+				...(Number(schemaVersion) >= 5 ? { costEvidence: [] } : {}),
+				...(schemaVersion === "6"
+					? {
+							artifactEvidence: [
+								{
+									cell: {
+										runId: "v6",
+										providerId: "daytona-vm" as const,
+										suite: "cpu-node" as const,
+									},
+									sandboxId: "sb-1",
+									provenance: {
+										source: "request-fallback" as const,
+										requested: {
+											kind: "baked" as const,
+											ref: "sandbox-benchmarks-toolchain-v8",
+										},
+									},
+								},
+							],
+						}
+					: {}),
 				suitesCovered: ["cpu-node"],
 				gaps: [],
 				uncatalogued: [],
@@ -87,6 +108,14 @@ describe("rederiveRunEconomics", () => {
 		const output = rederiveRunEconomics(input);
 		expect(output.schemaVersion).toBe("5");
 		expect(output.providers[0]?.costEvidence).toEqual(before);
+	});
+
+	it("preserves v6 artifact attribution unchanged while repricing catalog economics", () => {
+		const input = fixture("6");
+		const before = structuredClone(input.providers[0]?.artifactEvidence);
+		const output = rederiveRunEconomics(input);
+		expect(output.schemaVersion).toBe("6");
+		expect(output.providers[0]?.artifactEvidence).toEqual(before);
 	});
 
 	it("prices a historical 2-vCPU Run from its own target spec", () => {

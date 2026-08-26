@@ -3,12 +3,14 @@ import type {
 	GapCause,
 	MetricResult,
 	MissingProviderCostEvidence,
+	ProviderArtifactEvidence,
 	ProviderRun,
 	Run,
 	SuiteName,
 } from "@sandbox-benchmarks/schema";
 import {
 	aggregate,
+	bakedArtifactName,
 	ECONOMICS_METRIC_IDS,
 	getProvider,
 	HARNESS_METRIC_IDS,
@@ -69,7 +71,73 @@ const evidence = (
 	detail: "No public sandbox usage endpoint.",
 });
 
+const artifactEvidence = (
+	replicateIndex: number,
+	sandboxId: string,
+	suite: SuiteName = "cpu-node",
+): ProviderArtifactEvidence => ({
+	cell: { runId: "run-1", providerId: "daytona-vm", suite, replicateIndex },
+	sandboxId,
+	provenance: {
+		source: "request-fallback",
+		requested: { kind: "baked", ref: bakedArtifactName("daytona-vm", "version") },
+	},
+});
+
+function attributedShard(
+	replicateIndex: number,
+	sandboxId: string,
+	overrides: Partial<ProviderRun> = {},
+): Run {
+	const entry = provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
+	entry.costEvidence = [];
+	entry.artifactEvidence = [artifactEvidence(replicateIndex, sandboxId)];
+	Object.assign(entry, overrides);
+	return {
+		...shard([entry], "2026-06-01T00:00:00.000Z", replicateIndex),
+		schemaVersion: "6",
+	};
+}
+
 describe("aggregateRuns", () => {
+	it("retains deterministic cell-bound artifact evidence when every shard is v6", () => {
+		const r1 = attributedShard(1, "sb-1");
+		const r0 = attributedShard(0, "sb-0");
+		const duplicate = attributedShard(0, "sb-0");
+		const merged = aggregateRuns([r1, r0, duplicate]);
+		expect(merged.schemaVersion).toBe("6");
+		expect(merged.providers[0]?.artifactEvidence?.map((record) => record.sandboxId)).toEqual([
+			"sb-0",
+			"sb-1",
+		]);
+	});
+
+	it("rejects conflicting artifact cells, reused sandboxes, and mixed-version attribution", () => {
+		const one = attributedShard(0, "sb-0");
+		const conflicting = attributedShard(0, "sb-0", {
+			artifactEvidence: [
+				{
+					...artifactEvidence(0, "sb-0"),
+					provenance: {
+						source: "request-fallback",
+						requested: { kind: "baked", ref: "different-template" },
+					},
+				},
+			],
+		});
+		expect(() => aggregateRuns([one, conflicting])).toThrow(
+			/conflicting provider artifact evidence/,
+		);
+		const reused = attributedShard(1, "sb-0");
+		expect(() => aggregateRuns([one, reused])).toThrow(/artifact sandbox sb-0 is reused/);
+		expect(() =>
+			aggregateRuns([
+				one,
+				shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [11])])]),
+			]),
+		).toThrow(/cannot mix v6 artifact-attributed shards with older shards/);
+	});
+
 	it("retains deterministic per-sandbox cost evidence and deduplicates identical copies", () => {
 		const r1Provider = provider("modal-gvisor", []);
 		r1Provider.costEvidence = [evidence("cpu-node", 1, "sb-1")];

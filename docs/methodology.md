@@ -151,6 +151,15 @@ all records must be observed, cell-unique, sandbox-unique, and use one currency.
 resource-usage RPC is private and is not called. run.cloud records `not_sandbox_scoped`: its public
 usage API is organization-wide cumulative usage and is not called or delta-attributed to one sandbox.
 
+Run v6 separately retains `artifactEvidence` for every benchmark sandbox cell. The host writes the
+requested provider artifact before probing the sandbox. Canonical release refs are upgraded to
+`guest-fingerprint` only after the running guest reports the expected toolchain manifest; the schema,
+not the producer, derives that expectation from the provider/artifact mapping and release constants.
+Thus matching producer-supplied claims cannot manufacture verification, a stale manifest fails before
+benchmarking, and a noncanonical override remains visible as `request-fallback` rather than being
+silently treated as verified. The record carries run, provider, suite, replicate, and sandbox identity
+through normalization and aggregation.
+
 Allowances remain metadata, never headline discounts: Daytona's first 5 GiB is a **per-sandbox disk
 allowance**, not free memory, and monthly pools cannot establish the intrinsic cost of one sandbox
 hour. Disk rates and allowances are retained where published but excluded from economics because disk

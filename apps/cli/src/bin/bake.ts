@@ -26,7 +26,11 @@ import {
 	nonBakedArtifactAction,
 } from "../lib/bake/provider-artifacts.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
-import { baseImageUse, candidateCreateOptions } from "../lib/bake/validate.ts";
+import {
+	baseImageUse,
+	candidateCreateOptions,
+	candidateResolvedArtifact,
+} from "../lib/bake/validate.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
@@ -222,6 +226,7 @@ if (import.meta.main) {
 			// Boot the just-baked candidate (override the registry adapter's version create-options).
 			const validateConfig: ProviderConfig = {
 				...provider,
+				artifact: candidateResolvedArtifact(provider.name, candidateRefs),
 				createOptions: {
 					...provider.createOptions,
 					...candidateCreateOptions(provider.name, candidateRefs),

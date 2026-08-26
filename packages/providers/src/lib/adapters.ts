@@ -40,6 +40,7 @@ import { vercelCompute } from "./vercel.ts";
  */
 function daytonaAdapter(cfg: DaytonaConfig): ProviderAdapter {
 	return {
+		artifact: { kind: "baked", ref: cfg.snapshot },
 		createCompute: () => daytonaClientTarget(daytona({ apiKey: cfg.apiKey }), cfg.target),
 		createOptions: {
 			snapshotId: cfg.snapshot,
@@ -127,6 +128,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	// E2B SDK's root user keeps apt fallbacks, PTS config, and the root-baked registry on one runtime
 	// identity; ComputeSDK does not expose that native command option, so patch this instance.
 	e2b: {
+		artifact: { kind: "baked", ref: config.e2bTemplate },
 		createCompute: () => e2bCommandsAsRoot(e2b({})),
 		createOptions: { snapshotId: config.e2bTemplate },
 	},
@@ -135,6 +137,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	"daytona-vm": daytonaAdapter(config.daytonaVm),
 	"daytona-container": daytonaAdapter(config.daytonaContainer),
 	blaxel: {
+		artifact: { kind: "none" },
 		// Credentials come from BL_API_KEY/BL_WORKSPACE (the factory's env fallback). Boot the Debian
 		// ts-app image as root (the stock Alpine base-image has no apt — PTS uninstallable). Blaxel
 		// couples CPU to RAM (measured: vCPU ≈ memory_MB / 2048) and exposes no cgroup cpu.max, so
@@ -152,6 +155,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: {},
 	},
 	"microsandbox-local": {
+		artifact: { kind: "image", ref: config.toolchainImage },
 		// Explicit local selection is important: a developer can have MSB_API_* configured globally and
 		// still request a true host-local benchmark without the SDK auto-selecting cloud.
 		createCompute: () =>
@@ -170,6 +174,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createTimeoutMs: MICROSANDBOX_CREATE_TIMEOUT_MS,
 	},
 	"microsandbox-cloud": {
+		artifact: { kind: "image", ref: config.toolchainImage },
 		// The API key remains in the CloudBackend HTTP/WebSocket client. It is never forwarded through
 		// createOptions, metadata, or the benchmark's in-guest environment.
 		createCompute: () =>
@@ -191,16 +196,19 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 	// vm_runtime experimental flag to select Modal's gVisor-free VM runtime and drops scalableSandboxes
 	// to match the VM config validated in #221 (see modalGvisorCompute/modalVmCompute above).
 	"modal-gvisor": {
+		artifact: { kind: "image", ref: config.toolchainImage },
 		createCompute: modalGvisorCompute,
 		createOptions: modalCreateOptions(),
 		costEvidence: modalCostEvidence,
 	},
 	"modal-vm": {
+		artifact: { kind: "image", ref: config.toolchainImage },
 		createCompute: modalVmCompute,
 		createOptions: modalCreateOptions({ vm_runtime: true }),
 		costEvidence: modalCostEvidence,
 	},
 	novita: {
+		artifact: { kind: "baked", ref: config.novitaTemplate },
 		// The e2b wrapper re-pointed at Novita's E2B-compatible control plane (sandbox.novita.ai) —
 		// see novita.ts for exactly what is swapped and why. Boots the pre-baked toolchain template
 		// the bake pipeline creates on Novita via the same e2b CLI (computesdk maps snapshotId → the
@@ -209,6 +217,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: { snapshotId: config.novitaTemplate },
 	},
 	runloop: {
+		artifact: { kind: "baked", ref: config.runloopBlueprint },
 		// Boot the immutable version-scoped Blueprint by name. Runloop resolves that name to its latest
 		// successful build; the release lane owns creation from the shared toolchain image. Per-run launch
 		// parameters retain the benchmark's target sizing and keep-alive override. The API key stays in
@@ -227,6 +236,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		},
 	},
 	namespace: {
+		artifact: { kind: "image", ref: config.toolchainImage },
 		// The token rides the factory's own NSC_TOKEN_FILE env fallback (getAndValidateCredentials) —
 		// CI's OIDC federation (nscloud-setup) lands the token there, not in NSC_TOKEN — never read
 		// here, same as blaxel's BL_API_KEY. virtualCpu/memoryMegabytes are per-instance knobs on this
@@ -243,12 +253,14 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		createOptions: { image: config.toolchainImage },
 	},
 	vercel: {
+		artifact: { kind: "mirror", ref: config.vercelImage },
 		// @computesdk/vercel still targets Sandbox v1. Keep its defineProvider shape, but use the latest
 		// native SDK so the shared VCR image and v2 lifecycle/filesystem APIs remain available.
 		createCompute: () => vercelCompute({ image: config.vercelImage, vcpus: TARGET_SPEC.vcpus }),
 		createOptions: {},
 	},
 	runcloud: {
+		artifact: { kind: "image", ref: config.toolchainImage },
 		// run.cloud boots the OCI image directly and exposes independent CPU, memory, and writable-disk
 		// knobs. Keep both its lifetime and idle-pause window above the longest 155-minute suite so a
 		// detached benchmark is not paused while the harness is polling its done file. create() polls
@@ -273,6 +285,7 @@ export const adapters: Record<ProviderId, ProviderAdapter> = {
 		costEvidence: runcloudCostEvidence,
 	},
 	tama: {
+		artifact: { kind: "image", ref: config.toolchainImage },
 		// tama publishes no SDK, so the adapter drives the `tama` CLI as a subprocess (tama.ts). The
 		// toolchain image is booted by ref — `tama new --image` pulls an arbitrary OCI image, so there is
 		// no provider-side artifact to bake. Disk is deliberately absent: tama exposes no disk knob, and

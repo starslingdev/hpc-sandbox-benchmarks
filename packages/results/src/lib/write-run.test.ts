@@ -1,21 +1,52 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Run } from "@sandbox-benchmarks/schema";
 import { parseRun, parseRunIndex } from "@sandbox-benchmarks/schema";
 import { writeNormalizedRun, writeRunDocument } from "./write-run.ts";
 
-const rawRoot = join(import.meta.dir, "__fixtures__");
+const fixtureRoot = join(import.meta.dir, "__fixtures__");
 const outDir = mkdtempSync(join(tmpdir(), "sandbox-bench-write-run-"));
+const rawRoots: string[] = [];
 
-afterAll(() => rmSync(outDir, { recursive: true, force: true }));
+function rawRootFor(runId: string, replicateIndex?: number): string {
+	const root = mkdtempSync(join(tmpdir(), "sandbox-bench-write-raw-"));
+	rawRoots.push(root);
+	cpSync(join(fixtureRoot, "daytona-vm"), join(root, "daytona-vm"), { recursive: true });
+	writeFileSync(
+		join(root, "daytona-vm", "cpu-node", "provider-artifact-evidence.json"),
+		`${JSON.stringify(
+			{
+				cell: {
+					runId,
+					providerId: "daytona-vm",
+					suite: "cpu-node",
+					...(replicateIndex !== undefined ? { replicateIndex } : {}),
+				},
+				sandboxId: `fixture-${runId}-${replicateIndex ?? "single"}`,
+				provenance: {
+					source: "request-fallback",
+					requested: { kind: "baked", ref: "sandbox-benchmarks-toolchain-v8" },
+				},
+			},
+			null,
+			2,
+		)}\n`,
+	);
+	return root;
+}
+
+afterAll(() => {
+	rmSync(outDir, { recursive: true, force: true });
+	for (const root of rawRoots) rmSync(root, { recursive: true, force: true });
+});
 
 describe("writeNormalizedRun", () => {
 	const outFile = join(outDir, "runs", "run-1.json");
 	const indexFile = join(outDir, "index.json");
 	const run = writeNormalizedRun({
-		rawRoot,
+		rawRoot: rawRootFor("run-1"),
 		runId: "run-1",
 		sha: "abc123",
 		generatedAt: "2026-06-20T00:00:00.000Z",
@@ -44,7 +75,7 @@ describe("writeNormalizedRun", () => {
 		const shardIndex = join(shardDir, "index.json");
 		for (const replicateIndex of [0, 1]) {
 			writeNormalizedRun({
-				rawRoot,
+				rawRoot: rawRootFor("fan-1", replicateIndex),
 				runId: "fan-1",
 				sha: "abc123",
 				generatedAt: `2026-06-20T00:0${replicateIndex}:00.000Z`,
@@ -80,7 +111,7 @@ describe("writeNormalizedRun", () => {
 		const singleIndex = join(singleDir, "index.json");
 		const outFile = join(singleDir, "runs", "solo-1.json");
 		writeNormalizedRun({
-			rawRoot,
+			rawRoot: rawRootFor("solo-1", 3),
 			runId: "solo-1",
 			sha: "abc123",
 			generatedAt: "2026-06-20T00:00:00.000Z",
@@ -101,7 +132,7 @@ describe("writeNormalizedRun", () => {
 		// the one naming that file — keyed on identity alone, the index would keep a second entry
 		// pointing at a document that now holds another sandbox's results.
 		writeNormalizedRun({
-			rawRoot,
+			rawRoot: rawRootFor("solo-1", 4),
 			runId: "solo-1",
 			sha: "abc123",
 			generatedAt: "2026-06-20T00:05:00.000Z",
@@ -126,7 +157,7 @@ describe("writeNormalizedRun", () => {
 		const nestedDir = mkdtempSync(join(tmpdir(), "sandbox-bench-nested-"));
 		expect(() =>
 			writeNormalizedRun({
-				rawRoot,
+				rawRoot: rawRootFor("nested-1"),
 				runId: "nested-1",
 				sha: "abc123",
 				generatedAt: "2026-06-20T00:00:00.000Z",
@@ -145,7 +176,7 @@ describe("writeNormalizedRun", () => {
 		const oddDir = mkdtempSync(join(tmpdir(), "sandbox-bench-odd-"));
 		expect(() =>
 			writeNormalizedRun({
-				rawRoot,
+				rawRoot: rawRootFor("odd-1", 2),
 				runId: "odd-1",
 				sha: "abc123",
 				generatedAt: "2026-06-20T00:00:00.000Z",

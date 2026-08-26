@@ -25,6 +25,8 @@
  * lifecycle timing files (`<name>_ms.txt`, `<name>-exit-code.txt`) land with the lifecycle path.
  */
 import { type } from "arktype";
+import type { ProviderArtifactEvidence } from "./artifact-evidence.ts";
+import { providerArtifactEvidenceSchema } from "./artifact-evidence.ts";
 import type { ProviderCostEvidence } from "./cost-evidence.ts";
 import { providerCostEvidenceSchema } from "./cost-evidence.ts";
 import type { GapCause, GapOutcome, ResultGap } from "./run.ts";
@@ -32,9 +34,52 @@ import { gapCauseSchema, gapOutcomeOfCause, gapOutcomeSchema } from "./run.ts";
 
 const SKIP_SUFFIX = "--skipped.json";
 const FAILURE_SUFFIX = "--failed.json";
+const PROVIDER_ARTIFACT_EVIDENCE_FILE = "provider-artifact-evidence.json";
 const PROVIDER_COST_EVIDENCE_FILE = "provider-cost-evidence.json";
+/** The artifact envelope is small: cell, sandbox id, requested ref, and one manifest identity. */
+export const MAX_PROVIDER_ARTIFACT_EVIDENCE_FILE_BYTES = 16 * 1024;
 /** Pretty-printed envelope ceiling; responseJson itself is capped at 64 KiB. */
 export const MAX_PROVIDER_COST_EVIDENCE_FILE_BYTES = 96 * 1024;
+
+/** Fixed raw filename for one suite sandbox's artifact attribution. */
+export function providerArtifactEvidenceFile(): string {
+	return PROVIDER_ARTIFACT_EVIDENCE_FILE;
+}
+
+export function isProviderArtifactEvidenceFile(filename: string): boolean {
+	return filename === PROVIDER_ARTIFACT_EVIDENCE_FILE;
+}
+
+/** Deterministic, schema-validated bytes written by the host harness. */
+export function providerArtifactEvidenceJson(record: ProviderArtifactEvidence): string {
+	const parsed = providerArtifactEvidenceSchema(record);
+	if (parsed instanceof type.errors)
+		throw new Error(`invalid provider artifact evidence: ${parsed.summary}`);
+	const json = `${JSON.stringify(parsed, null, 2)}\n`;
+	if (new TextEncoder().encode(json).byteLength > MAX_PROVIDER_ARTIFACT_EVIDENCE_FILE_BYTES) {
+		throw new Error("provider artifact evidence file exceeds 16 KiB");
+	}
+	return json;
+}
+
+/** Strict parser: recognized malformed attribution is a normalization error, never absence. */
+export function parseProviderArtifactEvidence(data: unknown): ProviderArtifactEvidence {
+	let value = data;
+	if (typeof data === "string") {
+		if (new TextEncoder().encode(data).byteLength > MAX_PROVIDER_ARTIFACT_EVIDENCE_FILE_BYTES) {
+			throw new Error("provider artifact evidence file exceeds 16 KiB");
+		}
+		try {
+			value = JSON.parse(data);
+		} catch {
+			throw new Error("invalid provider artifact evidence JSON");
+		}
+	}
+	const parsed = providerArtifactEvidenceSchema(value);
+	if (parsed instanceof type.errors)
+		throw new Error(`invalid provider artifact evidence: ${parsed.summary}`);
+	return parsed;
+}
 
 /** Fixed raw filename for one suite sandbox's provider cost evidence. */
 export function providerCostEvidenceFile(): string {

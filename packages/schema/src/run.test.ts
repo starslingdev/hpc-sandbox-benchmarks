@@ -42,7 +42,7 @@ describe("Run schema", () => {
 		expect(run.providers[0]?.validationStatus).toBe("validated");
 	});
 
-	it("accepts every published schemaVersion from v2 through v5", () => {
+	it("accepts every published schemaVersion from v2 through v6", () => {
 		for (const schemaVersion of ["2", "3", "4"] as const) {
 			expect(parseRun({ ...validRun, schemaVersion }).schemaVersion).toBe(schemaVersion);
 		}
@@ -52,6 +52,170 @@ describe("Run schema", () => {
 			(provider as Record<string, unknown>).costEvidence = [];
 		}
 		expect(parseRun(v5).schemaVersion).toBe("5");
+
+		const v6 = structuredClone(v5);
+		v6.schemaVersion = "6";
+		for (const provider of v6.providers) {
+			(provider as Record<string, unknown>).artifactEvidence = [
+				{
+					cell: { runId: "run-1", providerId: "daytona-vm", suite: "cpu-node" },
+					sandboxId: "isandbox",
+					provenance: {
+						source: "request-fallback",
+						requested: { kind: "baked", ref: "toolchain-v8" },
+					},
+				},
+			];
+		}
+		expect(parseRun(v6).schemaVersion).toBe("6");
+	});
+
+	it("gates artifact evidence at v6 in both directions", () => {
+		const evidence = {
+			cell: { runId: "run-1", providerId: "daytona-vm", suite: "cpu-node" },
+			sandboxId: "isandbox",
+			provenance: {
+				source: "request-fallback",
+				requested: { kind: "baked", ref: "toolchain-v8" },
+			},
+		};
+
+		// Writing the field without bumping the version is rejected here, rather than reaching a
+		// v6-gated consumer that would read the attribution as if the producer had declared it.
+		const early = structuredClone(validRun);
+		for (const provider of early.providers) {
+			(provider as Record<string, unknown>).artifactEvidence = [evidence];
+		}
+		expect(() => parseRun(early)).toThrow(/v6 Run when a ProviderRun carries artifactEvidence/);
+
+		// And a v6 Run cannot omit the attribution that is the whole point of the version.
+		const missing = structuredClone(validRun);
+		missing.schemaVersion = "6";
+		for (const provider of missing.providers) {
+			(provider as Record<string, unknown>).costEvidence = [];
+		}
+		expect(() => parseRun(missing)).toThrow(/v6 ProviderRun with an artifactEvidence array/);
+
+		const valid = structuredClone(missing);
+		for (const provider of valid.providers) {
+			(provider as Record<string, unknown>).artifactEvidence = [evidence];
+		}
+		const parsed = parseRun(valid);
+		expect(parsed.providers[0]?.artifactEvidence?.[0]?.provenance.source).toBe("request-fallback");
+	});
+
+	it("will not let a measured v6 provider claim it never booted", () => {
+		// An empty array asserts "this provider booted nothing". A row carrying Metrics measured that
+		// inside a sandbox, so the two cannot both be true — and an unattributed measurement is the
+		// exact gap v6 exists to close.
+		const unattributed = structuredClone(validRun);
+		unattributed.schemaVersion = "6";
+		for (const provider of unattributed.providers) {
+			(provider as Record<string, unknown>).costEvidence = [];
+			(provider as Record<string, unknown>).artifactEvidence = [];
+		}
+		expect(() => parseRun(unattributed)).toThrow(/metrics carry artifact attribution/);
+
+		// A row that measured nothing may still legitimately carry an empty array.
+		const noMetrics = structuredClone(unattributed);
+		for (const provider of noMetrics.providers) {
+			(provider as Record<string, unknown>).metrics = [];
+			(provider as Record<string, unknown>).validationStatus = "pending";
+		}
+		expect(parseRun(noMetrics).schemaVersion).toBe("6");
+	});
+
+	it("rejects a persisted driver report that contradicts its request", () => {
+		// ADR-0007 makes a differing report a create-time contradiction that tears down the orphan, so
+		// a Run carrying the disagreement would mean that teardown never happened.
+		const contradiction = structuredClone(validRun);
+		contradiction.schemaVersion = "6";
+		for (const provider of contradiction.providers) {
+			(provider as Record<string, unknown>).costEvidence = [];
+			(provider as Record<string, unknown>).artifactEvidence = [
+				{
+					cell: { runId: "run-1", providerId: "daytona-vm", suite: "cpu-node" },
+					sandboxId: "isandbox",
+					provenance: {
+						source: "driver-reported",
+						requested: { kind: "baked", ref: "toolchain-v8" },
+						reported: { kind: "baked", ref: "toolchain-v7" },
+					},
+				},
+			];
+		}
+		expect(() => parseRun(contradiction)).toThrow(/ref matches the request/);
+	});
+
+	it("keeps artifact attribution joined to one unambiguous benchmark cell", () => {
+		const attributed = structuredClone(validRun);
+		attributed.schemaVersion = "6";
+		const provider = attributed.providers[0] as Record<string, unknown>;
+		provider.costEvidence = [];
+		provider.artifactEvidence = [
+			{
+				cell: { runId: "run-1", providerId: "daytona-vm", suite: "cpu-node" },
+				sandboxId: "sb-1",
+				provenance: {
+					source: "request-fallback",
+					requested: { kind: "baked", ref: "sandbox-benchmarks-toolchain-v8" },
+				},
+			},
+		];
+		expect(parseRun(attributed).schemaVersion).toBe("6");
+
+		const wrongParent = structuredClone(attributed);
+		const wrongEvidence = (
+			(wrongParent.providers[0] as Record<string, unknown>).artifactEvidence as Array<
+				Record<string, unknown>
+			>
+		)[0];
+		if (wrongEvidence)
+			wrongEvidence.cell = { runId: "other", providerId: "daytona-vm", suite: "cpu-node" };
+		expect(() => parseRun(wrongParent)).toThrow(/match its parent Run/);
+
+		const wrongShard = structuredClone(attributed);
+		(wrongShard as Record<string, unknown>).replicateIndex = 1;
+		expect(() => parseRun(wrongShard)).toThrow(/replicateIndex matches the Run/);
+
+		const duplicateCell = structuredClone(attributed);
+		const records = (duplicateCell.providers[0] as Record<string, unknown>)
+			.artifactEvidence as Array<Record<string, unknown>>;
+		records.push({ ...structuredClone(records[0]), sandboxId: "sb-2" });
+		expect(() => parseRun(duplicateCell)).toThrow(/at most one artifact attribution/);
+
+		const reusedSandbox = structuredClone(attributed);
+		const reusedRecords = (reusedSandbox.providers[0] as Record<string, unknown>)
+			.artifactEvidence as Array<Record<string, unknown>>;
+		reusedRecords.push({
+			...structuredClone(reusedRecords[0]),
+			cell: { runId: "run-1", providerId: "daytona-vm", suite: "system" },
+		});
+		expect(() => parseRun(reusedSandbox)).toThrow(/sandbox id used by exactly one benchmark cell/);
+
+		const sameArtifact = structuredClone(attributed);
+		const sameRecords = (sameArtifact.providers[0] as Record<string, unknown>)
+			.artifactEvidence as Array<Record<string, unknown>>;
+		sameRecords.push({
+			cell: { runId: "run-1", providerId: "daytona-vm", suite: "system" },
+			sandboxId: "sb-2",
+			provenance: {
+				source: "request-fallback",
+				// Deliberately reverse the JSON key order; identity is semantic, not byte-order-sensitive.
+				requested: { ref: "sandbox-benchmarks-toolchain-v8", kind: "baked" },
+			},
+		});
+		expect(parseRun(sameArtifact).providers[0]?.artifactEvidence).toHaveLength(2);
+
+		const mixedArtifact = structuredClone(sameArtifact);
+		const mixedRecords = (mixedArtifact.providers[0] as Record<string, unknown>)
+			.artifactEvidence as Array<Record<string, unknown>>;
+		const second = mixedRecords[1] as Record<string, unknown>;
+		second.provenance = {
+			source: "request-fallback",
+			requested: { kind: "baked", ref: "different-template" },
+		};
+		expect(() => parseRun(mixedArtifact)).toThrow(/one effective artifact across every sandbox/);
 	});
 
 	it("gates cost evidence at v5 and checks its parent cell identity", () => {

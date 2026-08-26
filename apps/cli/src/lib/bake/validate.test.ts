@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import type { CandidateRefs } from "./validate.ts";
-import { baseImageUse, candidateCreateOptions } from "./validate.ts";
+import { baseImageUse, candidateCreateOptions, candidateResolvedArtifact } from "./validate.ts";
 
 const refs: CandidateRefs = {
 	e2bTemplateCandidate: "tc-v1-candidate",
@@ -17,6 +17,16 @@ const refs: CandidateRefs = {
 };
 
 describe("candidateCreateOptions", () => {
+	it("keeps every candidate's recorded artifact adjacent to its actual boot override", () => {
+		for (const provider of PROVIDERS) {
+			const artifact = candidateResolvedArtifact(provider.id, refs);
+			expect(artifact.kind).toBe(provider.artifact.kind);
+			if (artifact.kind !== "none") {
+				expect(JSON.stringify(candidateCreateOptions(provider.id, refs))).toContain(artifact.ref);
+			}
+		}
+	});
+
 	it("points e2b at the candidate template via snapshotId", () => {
 		expect(candidateCreateOptions("e2b", refs)).toEqual({ snapshotId: "tc-v1-candidate" });
 	});

@@ -13,7 +13,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
 import { harnessGapMarkerJson } from "@sandbox-benchmarks/schema";
-import { collectResults, writeGapMarker, writeProviderCostEvidence } from "./collect.ts";
+import {
+	collectResults,
+	writeGapMarker,
+	writeProviderArtifactEvidence,
+	writeProviderCostEvidence,
+} from "./collect.ts";
 import type { SandboxHandle } from "./execute.ts";
 import { MIN, StepRunner } from "./execute.ts";
 
@@ -106,6 +111,19 @@ describe("collectResults", () => {
 			/reserved host-owned file provider-cost-evidence\.json/,
 		);
 		expect(existsSync(join(resultsDir, "provider-cost-evidence.json"))).toBe(false);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(false);
+	});
+
+	it("rejects forged sandbox artifact evidence before it can replace host attribution", async () => {
+		const resultsDir = join(work, "forged-artifact-evidence");
+		const forged = payloadSandbox({
+			"pts_node-web-tooling.xml": "<xml/>",
+			"provider-artifact-evidence.json": '{"provenance":{"source":"guest-fingerprint"}}',
+		});
+		await expect(collectResults(new StepRunner(forged, UNCAPPED), resultsDir)).rejects.toThrow(
+			/reserved host-owned file provider-artifact-evidence\.json/,
+		);
+		expect(existsSync(join(resultsDir, "provider-artifact-evidence.json"))).toBe(false);
 		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(false);
 	});
 
@@ -278,6 +296,25 @@ describe("collectResults", () => {
 });
 
 describe("writeGapMarker", () => {
+	it("atomically writes validated provider artifact evidence bytes", () => {
+		const dir = join(work, "artifact-evidence");
+		writeProviderArtifactEvidence(dir, {
+			cell: { runId: "run-1", providerId: "e2b", suite: "cpu-node" },
+			sandboxId: "sb-1",
+			provenance: {
+				source: "request-fallback",
+				requested: { kind: "baked", ref: "sandbox-benchmarks-toolchain-v8" },
+			},
+		});
+		const path = join(dir, "provider-artifact-evidence.json");
+		expect(readFileSync(path, "utf8").endsWith("\n")).toBe(true);
+		expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
+			cell: { runId: "run-1", providerId: "e2b", suite: "cpu-node" },
+			provenance: { source: "request-fallback" },
+		});
+		expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+	});
+
 	it("atomically writes validated provider cost evidence bytes", () => {
 		const dir = join(work, "cost-evidence");
 		writeProviderCostEvidence(dir, {

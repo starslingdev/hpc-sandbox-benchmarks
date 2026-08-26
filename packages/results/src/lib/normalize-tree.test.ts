@@ -107,7 +107,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		expect(run.observedSpecs.vcpus).toBe(4);
 	});
 
-	it("strictly ingests suite-scoped provider cost evidence into a v5 Run", () => {
+	it("strictly ingests suite-scoped cost and artifact evidence into a v6 Run", () => {
 		const suiteDir = join(providerDir, "cpu-node");
 		mkdirSync(suiteDir);
 		const evidence = {
@@ -120,17 +120,33 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			detail: "Organization totals cannot be attributed to one sandbox.",
 		} as const;
 		writeFileSync(join(suiteDir, "provider-cost-evidence.json"), JSON.stringify(evidence));
+		const artifactEvidence = {
+			cell: { runId: "run-cost", providerId: "daytona-vm", suite: "cpu-node" },
+			sandboxId: "sb-1",
+			provenance: {
+				source: "request-fallback",
+				requested: { kind: "baked", ref: "sandbox-benchmarks-toolchain-v8" },
+			},
+		} as const;
+		writeFileSync(
+			join(suiteDir, "provider-artifact-evidence.json"),
+			JSON.stringify(artifactEvidence),
+		);
 		const run = normalizeResultsTree({
 			rawRoot: root,
 			runId: "run-cost",
 			sha: "abc",
 			generatedAt: "2026-08-08T00:00:00.000Z",
 		});
-		expect(run.schemaVersion).toBe("5");
+		expect(run.schemaVersion).toBe("6");
 		expect(
 			run.providers.find((provider) => provider.providerId === "daytona-vm")?.costEvidence,
 		).toEqual([evidence]);
+		expect(
+			run.providers.find((provider) => provider.providerId === "daytona-vm")?.artifactEvidence,
+		).toEqual([artifactEvidence]);
 		expect(run.providers.every((provider) => Array.isArray(provider.costEvidence))).toBe(true);
+		expect(run.providers.every((provider) => Array.isArray(provider.artifactEvidence))).toBe(true);
 	});
 
 	it("fails normalization on malformed recognized evidence", () => {
@@ -170,7 +186,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			const created = spawnSync("mkfifo", [evidencePath]);
 			if (created.status !== 0) return;
 			expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(
-				/provider cost evidence path is not a regular file/,
+				/evidence path is not a regular file/,
 			);
 		},
 	);

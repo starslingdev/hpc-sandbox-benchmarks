@@ -11,7 +11,7 @@ import type { SmokeOutcome } from "../smoke-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../smoke-run.ts";
 import type { Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
-import { candidateCreateOptions } from "./validate.ts";
+import { candidateCreateOptions, candidateResolvedArtifact } from "./validate.ts";
 
 /** Validate every provider's candidate artifact (boot + smoke), sharing the skip-vs-fail contract. A
  *  provider with no creds skips; one that boots and fails its smoke is `failed`. Never throws.
@@ -28,6 +28,7 @@ export function validateCandidates(
 			// Boot the candidate artifact (override the registry adapter's version create-options).
 			const validateConfig: ProviderConfig = {
 				...provider,
+				artifact: candidateResolvedArtifact(provider.name, refs),
 				createOptions: {
 					...provider.createOptions,
 					...candidateCreateOptions(provider.name, refs),

@@ -21,6 +21,7 @@ import type {
 	MetricReplicate,
 	MetricResult,
 	ObservedSpecs,
+	ProviderArtifactEvidence,
 	ProviderCostEvidence,
 	ProviderRun,
 	ResultGap,
@@ -146,6 +147,7 @@ function mergeProvider(
 	providerId: string,
 	entries: readonly ReplicateSlice[],
 	targetSpec: TargetSpec,
+	emitArtifactEvidence: boolean,
 ): ProviderRun {
 	// Group measured metrics by id, then by the replicate that produced them, carrying that sandbox's
 	// mixture ids in the SAME record. A metric id recurring across replicate shards is R distinct
@@ -178,6 +180,8 @@ function mergeProvider(
 	const hostMetadataInputs: HostMetadataRecordInput[] = [];
 	const evidenceByCell = new Map<string, ProviderCostEvidence>();
 	const sandboxCells = new Map<string, string>();
+	const artifactByCell = new Map<string, ProviderArtifactEvidence>();
+	const artifactSandboxCells = new Map<string, string>();
 
 	// ONE pass over the slices. The mixture ids are two sha256 hashes per slice, and a real run merges
 	// ~470 slices per provider (the normalizer's placeholder rows included), so deriving them once here
@@ -214,6 +218,27 @@ function mergeProvider(
 				}
 				sandboxCells.set(sandboxId, key);
 			}
+		}
+		for (const record of slice.artifactEvidence ?? []) {
+			const key = providerCostCellKey(record);
+			const existing = artifactByCell.get(key);
+			if (existing !== undefined) {
+				if (
+					canonicalJsonString(existing, PROVIDER_EVIDENCE_JSON_LIMITS) !==
+					canonicalJsonString(record, PROVIDER_EVIDENCE_JSON_LIMITS)
+				) {
+					throw new Error(`aggregateRuns: conflicting provider artifact evidence for cell ${key}`);
+				}
+			} else {
+				artifactByCell.set(key, record);
+			}
+			const priorCell = artifactSandboxCells.get(record.sandboxId);
+			if (priorCell !== undefined && priorCell !== key) {
+				throw new Error(
+					`aggregateRuns: provider artifact sandbox ${record.sandboxId} is reused across cells`,
+				);
+			}
+			artifactSandboxCells.set(record.sandboxId, key);
 		}
 		for (const suite of slice.suitesCovered) suitesCovered.add(suite);
 
@@ -296,6 +321,13 @@ function mergeProvider(
 		if (replicate !== 0) return replicate;
 		return (a.subject.sandboxId ?? "").localeCompare(b.subject.sandboxId ?? "", "en");
 	});
+	const artifactEvidence = [...artifactByCell.values()].sort((a, b) => {
+		const suite = a.cell.suite.localeCompare(b.cell.suite, "en");
+		if (suite !== 0) return suite;
+		const replicate = (a.cell.replicateIndex ?? -1) - (b.cell.replicateIndex ?? -1);
+		if (replicate !== 0) return replicate;
+		return a.sandboxId.localeCompare(b.sandboxId, "en");
+	});
 
 	const metrics = [...measured.values()];
 	// Re-derive economics from the FULL merged measured set so $/lifecycle sums every suite's timings,
@@ -317,6 +349,7 @@ function mergeProvider(
 	return {
 		providerId,
 		costEvidence,
+		...(emitArtifactEvidence ? { artifactEvidence } : {}),
 		validationStatus: metrics.length > 0 ? "validated" : "pending",
 		...(specMatched !== undefined ? { specMatched } : {}),
 		observedSpecs,
@@ -341,6 +374,10 @@ export function aggregateRuns(runs: readonly Run[]): Run {
 	}
 	const first = runs[0];
 	if (!first) throw new Error("aggregateRuns requires at least one shard Run");
+	const emitArtifactEvidence = runs.every((run) => Number(run.schemaVersion) >= 6);
+	if (!emitArtifactEvidence && runs.some((run) => Number(run.schemaVersion) >= 6)) {
+		throw new Error("aggregateRuns: cannot mix v6 artifact-attributed shards with older shards");
+	}
 	for (const run of runs) {
 		if (run.runId !== first.runId || run.sha !== first.sha) {
 			throw new Error(
@@ -375,6 +412,7 @@ export function aggregateRuns(runs: readonly Run[]): Run {
 					.map((slice) => ({ slice, replicateIndex: run.replicateIndex ?? 0 })),
 			),
 			first.targetSpec,
+			emitArtifactEvidence,
 		),
 	);
 
@@ -385,12 +423,13 @@ export function aggregateRuns(runs: readonly Run[]): Run {
 	const sourceRunUrl = runs.find((run) => run.sourceRunUrl !== undefined)?.sourceRunUrl;
 
 	// The merged Run spans every replicate, so it carries no single `replicateIndex` — that lived on the
-	// shards. Emit v5: this layer also retains every sandbox's provider cost evidence.
+	// shards. Emit v6 only when every shard carries artifact attribution; historical all-pre-v6
+	// inputs continue to aggregate as v5 without fabricating evidence.
 	// one that can emit `observedMixtures`, join each replicate to the mixture its sandbox reported, and
 	// fold the host records. v2/v3 shards read in above validate unchanged, and the v4 document still
 	// carries the v3 replicate fold (version floors compare numerically in runSchema).
 	return parseRun({
-		schemaVersion: "5",
+		schemaVersion: emitArtifactEvidence ? "6" : "5",
 		runId: first.runId,
 		sha: first.sha,
 		generatedAt,

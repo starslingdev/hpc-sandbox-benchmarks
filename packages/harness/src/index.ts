@@ -14,6 +14,8 @@ import {
 	sanitizeProviderResponse,
 } from "@sandbox-benchmarks/providers";
 import type {
+	GuestFingerprint,
+	ProviderArtifactEvidence,
 	ProviderCostCell,
 	ProviderCostEvidence,
 	ProviderTransport,
@@ -26,6 +28,7 @@ import type {
 import {
 	canonicalJsonEqual,
 	canonicalJsonString,
+	expectedToolchainFingerprint,
 	HARNESS_METRIC_IDS,
 	isPtsResultFile,
 	PROVIDER_EVIDENCE_JSON_LIMITS,
@@ -33,7 +36,13 @@ import {
 	SUITE_NAMES,
 	SUITES,
 } from "@sandbox-benchmarks/schema";
-import { collectResults, writeGapMarker, writeProviderCostEvidence } from "./lib/collect.ts";
+import type { DriverResolvedArtifact } from "@sandbox-benchmarks/schema/driver-schemas";
+import {
+	collectResults,
+	writeGapMarker,
+	writeProviderArtifactEvidence,
+	writeProviderCostEvidence,
+} from "./lib/collect.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 import { MIN, resolvePtsPassPolicy, StepRunner, withTimeout } from "./lib/execute.ts";
 import { gapCauseOf } from "./lib/gap-cause.ts";
@@ -287,6 +296,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		suite,
 		suiteName: knownSuiteName,
 		providerName: config.name,
+		artifact: config.artifact,
 		resultsDir,
 		transport: config.transport,
 		costEvidence: config.costEvidence,
@@ -504,6 +514,8 @@ export interface SuiteRunContext {
 	suite: Suite;
 	suiteName: SuiteName;
 	providerName: ProviderConfig["name"];
+	/** Exact create input the adjacent provider adapter booted. */
+	artifact: DriverResolvedArtifact;
 	resultsDir: string;
 	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
 	transport: ProviderTransport;
@@ -516,6 +528,29 @@ export interface SuiteRunContext {
 function sanitizeHookResponseJson(value: unknown): string {
 	if (typeof value !== "string") throw new Error("provider responseJson must be a JSON string");
 	return sanitizeProviderResponse(JSON.parse(value));
+}
+
+/** Parse only the two release-owned identity fields from the bounded in-guest manifest. */
+function manifestFingerprint(data: string): GuestFingerprint {
+	let value: unknown;
+	try {
+		value = JSON.parse(data);
+	} catch {
+		throw new Error("Toolchain manifest is not valid JSON");
+	}
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error("Toolchain manifest must be an object");
+	}
+	const imageName = Object.getOwnPropertyDescriptor(value, "image_name")?.value;
+	const imageVersion = Object.getOwnPropertyDescriptor(value, "image_version")?.value;
+	if (typeof imageName !== "string" || typeof imageVersion !== "string") {
+		throw new Error("Toolchain manifest is missing string image_name/image_version fields");
+	}
+	return {
+		authority: "toolchain-manifest-v1",
+		imageName,
+		imageVersion,
+	};
 }
 
 /**
@@ -537,6 +572,24 @@ export async function runSuiteOnSandbox(
 	let evidencePersistenceError: unknown;
 	let suiteSkipped = false;
 	try {
+		if (sandboxId === undefined) {
+			throw new Error("Sandbox id is unavailable; artifact attribution cannot be persisted");
+		}
+		const artifactCell: ProviderCostCell = {
+			runId: ctx.runId,
+			providerId: providerName,
+			suite: suiteName,
+			...(ctx.replicateIndex !== undefined ? { replicateIndex: ctx.replicateIndex } : {}),
+		};
+		const fallbackEvidence: ProviderArtifactEvidence = {
+			cell: artifactCell,
+			sandboxId,
+			provenance: { source: "request-fallback", requested: ctx.artifact },
+		};
+		// Persist the honest floor before the first sandbox operation. If readiness or fingerprinting
+		// fails, the raw tree still says what was requested without upgrading it to an observation.
+		writeProviderArtifactEvidence(resultsDir, fallbackEvidence);
+
 		// Resolve the PTS pass policy from the suite's own default (converge on cpu-node + memory; a fixed
 		// count on every other suite) and the BENCH_PTS_PASSES override. Constructed inside the
 		// try so a bad policy (buildPreamble rejects a fixed k < 1) is still torn down by the finally below;
@@ -552,6 +605,26 @@ export async function runSuiteOnSandbox(
 		// nothing to do with disk. Pre-baked providers answer the first probe and pay one round-trip.
 		const readiness = await waitUntilReady(sandbox, ctx.readiness ?? SUITE_READINESS);
 		if (!readiness.ready) throw new Error(neverReadyReason(readiness.attempts));
+		const expectedFingerprint = expectedToolchainFingerprint(providerName, ctx.artifact);
+		if (expectedFingerprint !== undefined) {
+			const captured = await runner.run(
+				"capture artifact fingerprint",
+				'test "$(wc -c < /toolchain-manifest.json)" -le 16384 && cat /toolchain-manifest.json',
+				MIN,
+			);
+			const fingerprint = manifestFingerprint(captured.stdout ?? "");
+			// The raw writer validates this observation against the release-owned provider/artifact mapping.
+			// A stale manifest fails before any benchmark number can be attributed to the wrong toolchain.
+			writeProviderArtifactEvidence(resultsDir, {
+				cell: artifactCell,
+				sandboxId,
+				provenance: {
+					source: "guest-fingerprint",
+					requested: ctx.artifact,
+					fingerprint,
+				},
+			});
+		}
 		if (suite.minDiskGb) {
 			// Measure free space where the disk-heavy suites actually write, not the sandbox root. The
 			// heavy PTS data (realworld clones/builds, pgbench cluster, fio test files, installed-tests)

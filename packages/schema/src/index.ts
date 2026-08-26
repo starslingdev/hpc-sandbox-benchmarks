@@ -5,6 +5,8 @@ import { rawRunSchema } from "./lib/internal.ts";
 
 // Pure analysis over retained Samples: the Aggregates distribution and how it's computed.
 export * from "./analysis.ts";
+// Sandbox-attributed artifact provenance: which toolchain booted, and what established that.
+export * from "./artifact-evidence.ts";
 // Bounded canonical JSON shared by evidence producers and deterministic consumers.
 export * from "./canonical-json.ts";
 // The Metric Catalog — the registry of rankable Metrics, plus lookup helpers.

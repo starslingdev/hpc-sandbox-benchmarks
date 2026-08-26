@@ -8,6 +8,7 @@ import type {
 	ProviderTransport,
 	SdkProvenance,
 } from "@sandbox-benchmarks/schema";
+import type { DriverResolvedArtifact } from "@sandbox-benchmarks/schema/driver-schemas";
 import type { CreateSandboxOptions, ExplicitComputeConfig } from "computesdk";
 
 /**
@@ -45,6 +46,8 @@ export interface ProviderCostEvidenceCapability {
  * streaming, filesystem, destroy), so there is deliberately nothing here that re-implements them.
  */
 export interface ProviderAdapter {
+	/** Exact artifact the adjacent create policy boots; persisted as the request-side attribution. */
+	artifact: DriverResolvedArtifact;
 	/** Construct the computesdk provider for this vendor (a @computesdk/* factory call). Lazy so the
 	 *  registry can be imported without credentials. */
 	createCompute: () => DirectProvider;

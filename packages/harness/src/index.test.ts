@@ -5,7 +5,12 @@ import { join } from "node:path";
 import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
 import { markRetryableCreate } from "@sandbox-benchmarks/providers";
 import type { ProviderCostEvidence, Suite } from "@sandbox-benchmarks/schema";
-import { parseGapMarker, sandboxFailureMarkerFile } from "@sandbox-benchmarks/schema";
+import {
+	bakedArtifactName,
+	parseGapMarker,
+	parseProviderArtifactEvidence,
+	sandboxFailureMarkerFile,
+} from "@sandbox-benchmarks/schema";
 import type { SuiteRunContext } from "./index.ts";
 import {
 	benchmarkLifecycle,
@@ -33,6 +38,7 @@ const fixtureTransport = { streaming: false, syncCapMs: 60_000, detachedPoll: tr
 // test free of any real SDK while staying fully typed.
 const config: ProviderConfig = {
 	name: "e2b",
+	artifact: { kind: "baked", ref: "test-template" },
 	requiredEnvVars: [],
 	transport: fixtureTransport,
 	createCompute: () => {
@@ -70,6 +76,7 @@ function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): P
 	} as unknown as DirectProvider;
 	return {
 		name: "e2b",
+		artifact: { kind: "baked", ref: "test-template" },
 		requiredEnvVars: [],
 		transport: fixtureTransport,
 		createCompute: () => compute,
@@ -135,6 +142,7 @@ describe("@sandbox-benchmarks/harness", () => {
 	// modal-named config.
 	const credsCfg: ProviderConfig = {
 		name: "modal-gvisor",
+		artifact: { kind: "image", ref: "test-image" },
 		requiredEnvVars: ["A", "B"],
 		transport: { streaming: false, syncCapMs: null, detachedPoll: true },
 		createCompute: () => {
@@ -201,6 +209,7 @@ describe("@sandbox-benchmarks/harness", () => {
 		}
 		return {
 			name: "e2b",
+			artifact: { kind: "baked", ref: "test-template" },
 			requiredEnvVars: [],
 			transport: fixtureTransport,
 			createCompute: () => compute as unknown as DirectProvider,
@@ -317,6 +326,8 @@ function makeSandbox(opts: {
 	benchmarkFails?: boolean;
 	collectFails?: boolean;
 	collectFiles?: Record<string, string>;
+	/** Contents returned for the release-owned manifest probe. */
+	manifest?: string;
 	/** Never answer the readiness probe — a sandbox whose image never finishes pulling. */
 	neverReady?: boolean;
 	destroyed: { hit: boolean };
@@ -324,6 +335,11 @@ function makeSandbox(opts: {
 	// Results of detached steps, keyed by their /tmp/<tag> so the cat-polls can read them back.
 	const detached = new Map<string, { exit: number; out: string }>();
 	const resultFor = (command: string): CommandResult => {
+		if (command.includes("/toolchain-manifest.json")) {
+			return opts.manifest === undefined
+				? { exitCode: 1, stderr: "manifest missing" }
+				: { exitCode: 0, stdout: opts.manifest };
+		}
 		if (command.includes("df -Pk")) return { exitCode: 0, stdout: opts.freeKb ?? "999999999" };
 		if (command.includes("base64")) {
 			if (opts.collectFails) return { exitCode: 1, stderr: "collect boom" };
@@ -384,6 +400,7 @@ const suite = (overrides: Partial<Suite>): Suite => ({
 
 const ctx = (s: Suite, resultsDir: string): SuiteRunContext => ({
 	runId: "run-test-1",
+	artifact: { kind: "baked", ref: "test-template" },
 	suite: s,
 	suiteName: "cpu-node",
 	providerName: "daytona-vm",
@@ -748,6 +765,85 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 });
 
 describe("runSuiteOnSandbox (orchestration + teardown)", () => {
+	it("persists the honest requested-artifact fallback before touching the sandbox", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		await expect(
+			runSuiteOnSandbox(makeSandbox({ destroyed, neverReady: true }), {
+				...ctx(suite({}), resultsDir),
+				readiness: {
+					maxAttempts: 1,
+					retryDelayMs: 0,
+					probeTimeoutMs: 5,
+					delay: () => Promise.resolve(),
+				},
+			}),
+		).rejects.toThrow(/never ready/);
+		const evidence = parseProviderArtifactEvidence(
+			readFileSync(join(resultsDir, "provider-artifact-evidence.json"), "utf8"),
+		);
+		expect(evidence).toEqual({
+			cell: { runId: "run-test-1", providerId: "daytona-vm", suite: "cpu-node" },
+			sandboxId: "sb-test-1",
+			provenance: {
+				source: "request-fallback",
+				requested: { kind: "baked", ref: "test-template" },
+			},
+		});
+		expect(destroyed.hit).toBe(true);
+	});
+
+	it("upgrades a canonical release artifact only after the guest manifest matches", async () => {
+		const resultsDir = freshDir();
+		const artifact = { kind: "baked", ref: bakedArtifactName("daytona-vm", "version") } as const;
+		await runSuiteOnSandbox(
+			makeSandbox({
+				destroyed: { hit: false },
+				manifest: JSON.stringify({
+					image_name: "sandbox-benchmarks-toolchain",
+					image_version: "v8",
+				}),
+			}),
+			{ ...ctx(suite({}), resultsDir), artifact },
+		);
+		const evidence = parseProviderArtifactEvidence(
+			readFileSync(join(resultsDir, "provider-artifact-evidence.json"), "utf8"),
+		);
+		expect(evidence.provenance).toEqual({
+			source: "guest-fingerprint",
+			requested: artifact,
+			fingerprint: {
+				authority: "toolchain-manifest-v1",
+				imageName: "sandbox-benchmarks-toolchain",
+				imageVersion: "v8",
+			},
+		});
+	});
+
+	it("fails before benchmarking when a canonical artifact carries a stale guest manifest", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const artifact = { kind: "baked", ref: bakedArtifactName("daytona-vm", "version") } as const;
+		await expect(
+			runSuiteOnSandbox(
+				makeSandbox({
+					destroyed,
+					manifest: JSON.stringify({
+						image_name: "sandbox-benchmarks-toolchain",
+						image_version: "v7",
+					}),
+				}),
+				{ ...ctx(suite({}), resultsDir), artifact },
+			),
+		).rejects.toThrow(/matching sandbox-benchmarks-toolchain@v8/);
+		const evidence = parseProviderArtifactEvidence(
+			readFileSync(join(resultsDir, "provider-artifact-evidence.json"), "utf8"),
+		);
+		expect(evidence.provenance.source).toBe("request-fallback");
+		expect(destroyed.hit).toBe(true);
+		expect(existsSync(join(resultsDir, "pts_node-web-tooling.xml"))).toBe(false);
+	});
+
 	it("captures and persists provider evidence strictly after confirmed teardown", async () => {
 		const resultsDir = freshDir();
 		const destroyed = { hit: false };
@@ -761,6 +857,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await runSuiteOnSandbox(sandbox, {
 			...ctx(suite({ minDiskGb: 50 }), resultsDir),
 			providerName: "modal-gvisor",
+			artifact: { kind: "image", ref: "test-image" },
 			costEvidence: {
 				sdk: { packageName: "modal", version: "0.7.6" },
 				captureAfterTeardown: async (input) => {
@@ -794,6 +891,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			await runSuiteOnSandbox(sandbox, {
 				...ctx(suite({ minDiskGb: 50 }), resultsDir),
 				providerName: "modal-gvisor",
+				artifact: { kind: "image", ref: "test-image" },
 				costEvidence: {
 					sdk: { packageName: "modal", version: "0.7.6" },
 					captureAfterTeardown: async (input) => ({
@@ -833,6 +931,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
 			...ctx(suite({ minDiskGb: 50 }), resultsDir),
 			providerName: "modal-gvisor",
+			artifact: { kind: "image", ref: "test-image" },
 			costEvidence: {
 				sdk: { packageName: "modal", version: "0.7.6" },
 				captureAfterTeardown: async () => {
@@ -856,6 +955,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
 			...ctx(suite({ minDiskGb: 50 }), resultsDir),
 			providerName: "modal-gvisor",
+			artifact: { kind: "image", ref: "test-image" },
 			costEvidence: {
 				sdk: { packageName: "modal", version: "0.7.6" },
 				captureAfterTeardown: async (input) => ({
@@ -915,6 +1015,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			await runSuiteOnSandbox(makeSandbox({ destroyed: { hit: false }, freeKb: "1" }), {
 				...ctx(suite({ minDiskGb: 50 }), resultsDir),
 				providerName: "modal-gvisor",
+				artifact: { kind: "image", ref: "test-image" },
 				costEvidence: {
 					sdk: { packageName: "modal", version: "0.7.6" },
 					captureAfterTeardown: async (input) => {

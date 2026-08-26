@@ -37,6 +37,25 @@ describe("@sandbox-benchmarks/providers", () => {
 		}
 	});
 
+	it("carries the exact boot artifact beside each legacy create policy", () => {
+		expect(providers.length).toBe(PROVIDERS.length);
+		for (let i = 0; i < providers.length; i++) {
+			expect(providers[i]?.artifact.kind).toBe(PROVIDERS[i]?.artifact.kind);
+		}
+		expect(providers.find((provider) => provider.name === "e2b")?.artifact).toEqual({
+			kind: "baked",
+			ref: config.e2bTemplate,
+		});
+		expect(providers.find((provider) => provider.name === "namespace")?.artifact).toEqual({
+			kind: "image",
+			ref: config.toolchainImage,
+		});
+		expect(providers.find((provider) => provider.name === "vercel")?.artifact).toEqual({
+			kind: "mirror",
+			ref: config.vercelImage,
+		});
+	});
+
 	it("pins both Modal variants' create-time spec from the shared TARGET_SPEC", () => {
 		const gvisor = providers.find((p) => p.name === "modal-gvisor");
 		const vm = providers.find((p) => p.name === "modal-vm");

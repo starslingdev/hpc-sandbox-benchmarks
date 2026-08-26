@@ -9,11 +9,18 @@ import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:
 import { cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { GapCause, GapOutcome, ProviderCostEvidence } from "@sandbox-benchmarks/schema";
+import type {
+	GapCause,
+	GapOutcome,
+	ProviderArtifactEvidence,
+	ProviderCostEvidence,
+} from "@sandbox-benchmarks/schema";
 import {
 	harnessGapMarkerJson,
 	isGapMarkerFile,
 	isPtsResultFile,
+	providerArtifactEvidenceFile,
+	providerArtifactEvidenceJson,
 	providerCostEvidenceFile,
 	providerCostEvidenceJson,
 	sandboxGapMarkerFile,
@@ -30,17 +37,33 @@ const RESULTS_END = "__BENCH_RESULTS_TGZ_END__";
  *  re-running the whole step is safe and beats throwing finished results away. */
 const COLLECT_MAX_ATTEMPTS = 3;
 
-/** Validate and atomically persist the one provider cost record owned by this suite sandbox. */
-export function writeProviderCostEvidence(resultsDir: string, record: ProviderCostEvidence): void {
+function writeHostEvidence(resultsDir: string, filename: string, contents: string): void {
 	mkdirSync(resultsDir, { recursive: true });
-	const target = join(resultsDir, providerCostEvidenceFile());
+	const target = join(resultsDir, filename);
 	const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
 	try {
-		writeFileSync(temporary, providerCostEvidenceJson(record));
+		writeFileSync(temporary, contents);
 		renameSync(temporary, target);
 	} finally {
 		rmSync(temporary, { force: true });
 	}
+}
+
+/** Validate and atomically persist the artifact attribution owned by this suite sandbox. */
+export function writeProviderArtifactEvidence(
+	resultsDir: string,
+	record: ProviderArtifactEvidence,
+): void {
+	writeHostEvidence(
+		resultsDir,
+		providerArtifactEvidenceFile(),
+		providerArtifactEvidenceJson(record),
+	);
+}
+
+/** Validate and atomically persist the one provider cost record owned by this suite sandbox. */
+export function writeProviderCostEvidence(resultsDir: string, record: ProviderCostEvidence): void {
+	writeHostEvidence(resultsDir, providerCostEvidenceFile(), providerCostEvidenceJson(record));
 }
 
 /** The in-sandbox collect command: emit a marker-bounded, newline-stripped base64 tar of
@@ -216,9 +239,12 @@ async function decodeAndExtract(base64: string, resultsDir: string): Promise<num
 /** Evidence is host-owned provenance. A sandbox may not forge it into its collected archive. */
 function assertNoReservedEvidenceFile(directory: string): void {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		if (entry.name === providerCostEvidenceFile()) {
+		if (
+			entry.name === providerCostEvidenceFile() ||
+			entry.name === providerArtifactEvidenceFile()
+		) {
 			throw new ReservedCollectedFileError(
-				`Collected sandbox results contain reserved host-owned file ${providerCostEvidenceFile()}`,
+				`Collected sandbox results contain reserved host-owned file ${entry.name}`,
 			);
 		}
 		if (entry.isSymbolicLink()) {

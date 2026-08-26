@@ -9,7 +9,8 @@
  */
 import { type } from "arktype";
 import { aggregatesSchema } from "./analysis.ts";
-import { providerCostEvidenceSchema } from "./cost-evidence.ts";
+import { effectiveArtifact, providerArtifactEvidenceSchema } from "./artifact-evidence.ts";
+import { providerCostCellKey, providerCostEvidenceSchema } from "./cost-evidence.ts";
 import { runIdSchema } from "./identifiers.ts";
 import { directionSchema } from "./metrics.ts";
 import type { TargetSpec } from "./target-spec.ts";
@@ -658,6 +659,16 @@ export const providerRunSchema = type({
 	providerId: "string",
 	/** Sandbox-scoped provider cost evidence (required by the Run v5 gate below). */
 	"costEvidence?": providerCostEvidenceSchema.array(),
+	/**
+	 * Sandbox-scoped artifact attribution — which toolchain each sandbox actually booted, and what
+	 * established that (required by the Run v6 gate below).
+	 *
+	 * An array, like `costEvidence`, because a ProviderRun can span replicate sandboxes and each
+	 * boots its own artifact. Empty means the provider never booted anything (a skip), which is a
+	 * different fact from a provider that booted something nobody observed — that one records a
+	 * `request-fallback` entry.
+	 */
+	"artifactEvidence?": providerArtifactEvidenceSchema.array(),
 	validationStatus: validationStatusSchema,
 	// Whether observed specs honored the pinned target spec; absent when probes saw too little to judge.
 	"specMatched?": "boolean",
@@ -773,7 +784,8 @@ export type ProviderRun = typeof providerRunSchema.infer;
  * gap, no uncatalogued straggler, no observed-spec reading, no host-metadata record. This is exactly
  * the shape the normalizer emits for an absent raw directory — a registered provider the run never
  * dispatched (or whose every cell was lost before reporting anything). It is deliberately stricter
- * than "no metrics": a straggler, a spec probe, or a host record IS participation evidence, and a
+ * than "no metrics": a straggler, a spec probe, a host record, or an artifact attribution IS
+ * participation evidence, and a
  * provider that reported any of them belongs in the coverage derivation, not in the absent list.
  * Consumers (the leaderboard's coverage derivation, the CLI status logs) use it to keep the pending
  * dataset row first-class while not accusing a never-dispatched provider of per-suite holes.
@@ -788,7 +800,10 @@ export function providerReportedNothing(p: ProviderRun): boolean {
 		p.uncatalogued.length === 0 &&
 		Object.keys(p.observedSpecs).length === 0 &&
 		(p.hostMetadata?.length ?? 0) === 0 &&
-		(p.costEvidence?.length ?? 0) === 0
+		(p.costEvidence?.length ?? 0) === 0 &&
+		// A booted sandbox leaves an attribution even when it produced nothing else; counting it here
+		// keeps a provider that booted and then failed out of the never-dispatched list.
+		(p.artifactEvidence?.length ?? 0) === 0
 	);
 }
 
@@ -805,7 +820,7 @@ export function providerStatusText(p: ProviderRun): string {
 /**
  * A full benchmark Run: every provider measured against one pinned target spec at one SHA.
  *
- * `schemaVersion` accepts `"2"` through `"5"`. v1's `skips: { suite, reason }[]` could not say
+ * `schemaVersion` accepts `"2"` through `"6"`. v1's `skips: { suite, reason }[]` could not say
  * whether a benchmark was deliberately not run or had crashed, and carried no positive record of what
  * DID run — so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the
  * document. v2 replaced it with {@link resultGapSchema} + {@link ProviderRun.suitesCovered}. v3 adds
@@ -830,11 +845,18 @@ export function providerStatusText(p: ProviderRun): string {
  * historical versions cannot carry one, so absence in an older Run remains absence rather than a
  * fabricated zero or backfill.
  *
+ * v6 adds the sandbox-scoped ARTIFACT attribution beside it. The benchmark's headline claim names a
+ * toolchain, but until v6 the document retained no cell-bound artifact evidence at all. Each entry
+ * records the exact request and how the effective artifact was established
+ * ({@link ProviderArtifactEvidence}), so a reader can tell a control-plane confirmation or an in-guest
+ * fingerprint from an unobserved request fallback. Historical Runs cannot carry it, so their silence
+ * stays silence rather than being backfilled into a claim nobody made.
+ *
  * Every version validates here — already-published Runs are read unchanged, and the parser never
  * migrates them in place.
  */
 export const runSchema = type({
-	schemaVersion: "'2' | '3' | '4' | '5'",
+	schemaVersion: "'2' | '3' | '4' | '5' | '6'",
 	runId: runIdSchema,
 	sha: "string",
 	// ISO-8601 timestamp the Run was generated at — validated so the RunIndex sort key can't be a
@@ -907,6 +929,29 @@ export const runSchema = type({
 		if (version >= 5 && provider.costEvidence === undefined) {
 			return ctx.mustBe("a v5 ProviderRun with a costEvidence array");
 		}
+		// v6 gates artifactEvidence exactly as v5 gates costEvidence: forbidden below its floor so a
+		// producer that writes the field without bumping the version is rejected here rather than read
+		// by a v6-gated consumer, and required at the floor so a v6 Run cannot omit the attribution
+		// that is the whole point of the version.
+		if (version < 6 && provider.artifactEvidence !== undefined) {
+			return ctx.mustBe("a v6 Run when a ProviderRun carries artifactEvidence");
+		}
+		if (version >= 6 && provider.artifactEvidence === undefined) {
+			return ctx.mustBe("a v6 ProviderRun with an artifactEvidence array");
+		}
+		// Presence alone was not enough: the array's own doc says empty means "never booted", and
+		// nothing held a producer to it. A Metric is a measurement taken inside a sandbox, so a v6 row
+		// carrying metrics and no attribution is exactly the unattributed measurement this version
+		// exists to make impossible — the empty array stays legal only for a row that measured nothing.
+		if (
+			version >= 6 &&
+			provider.metrics.length > 0 &&
+			(provider.artifactEvidence?.length ?? 0) === 0
+		) {
+			return ctx.mustBe(
+				"a v6 ProviderRun whose metrics carry artifact attribution (an empty artifactEvidence array claims the provider never booted)",
+			);
+		}
 		for (const evidence of provider.costEvidence ?? []) {
 			if (evidence.cell.runId !== run.runId || evidence.cell.providerId !== provider.providerId) {
 				return ctx.mustBe("cost evidence whose runId and providerId match its parent Run");
@@ -914,6 +959,36 @@ export const runSchema = type({
 			if (run.replicateIndex !== undefined && evidence.cell.replicateIndex !== run.replicateIndex) {
 				return ctx.mustBe("shard cost evidence whose replicateIndex matches the Run");
 			}
+		}
+		const artifactCells = new Set<string>();
+		const artifactSandboxes = new Set<string>();
+		let effectiveArtifactKey: string | undefined;
+		for (const evidence of provider.artifactEvidence ?? []) {
+			if (evidence.cell.runId !== run.runId || evidence.cell.providerId !== provider.providerId) {
+				return ctx.mustBe("artifact evidence whose runId and providerId match its parent Run");
+			}
+			if (run.replicateIndex !== undefined && evidence.cell.replicateIndex !== run.replicateIndex) {
+				return ctx.mustBe("shard artifact evidence whose replicateIndex matches the Run");
+			}
+			const cellKey = providerCostCellKey(evidence);
+			if (artifactCells.has(cellKey)) {
+				return ctx.mustBe("at most one artifact attribution for each benchmark cell");
+			}
+			artifactCells.add(cellKey);
+			if (artifactSandboxes.has(evidence.sandboxId)) {
+				return ctx.mustBe("an artifact sandbox id used by exactly one benchmark cell");
+			}
+			artifactSandboxes.add(evidence.sandboxId);
+			const artifact = effectiveArtifact(evidence.provenance);
+			// A tuple fixes comparison order even when an input JSON object listed `ref` before `kind`.
+			const currentArtifactKey = JSON.stringify([
+				artifact.kind,
+				"ref" in artifact ? artifact.ref : null,
+			]);
+			if (effectiveArtifactKey !== undefined && currentArtifactKey !== effectiveArtifactKey) {
+				return ctx.mustBe("one effective artifact across every sandbox of a provider Run");
+			}
+			effectiveArtifactKey = currentArtifactKey;
 		}
 	}
 	// `replicateIndex` marks a per-replicate SHARD (one sandbox, not yet folded); `MetricResult.replicates`

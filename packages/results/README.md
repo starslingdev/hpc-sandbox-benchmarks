@@ -1,9 +1,10 @@
 # @sandbox-benchmarks/results
 
-Normalization reads each suite's fixed provider cost-evidence file separately from PTS extraction and
-emits Run v5. Aggregation retains one deterministic record per sandbox cell, rejects conflicts and
-sandbox reuse, and never converts provider cost into a benchmark metric. This package remains
-provider-SDK-free: provider calls and response sanitization happen upstream in the providers package.
+Normalization reads each suite's fixed cost- and artifact-evidence files separately from PTS
+extraction and emits Run v6. Aggregation retains deterministic records per sandbox cell, rejects
+conflicts and sandbox reuse, and rejects a v6/older shard mixture rather than dropping attribution.
+Historical all-pre-v6 inputs still aggregate as Run v5. This package remains provider-SDK-free:
+provider calls and response sanitization happen upstream in the providers package.
 
 **Role:** normalize a raw benchmark results tree (`data/raw/<runId>/<provider>/`) into validated `Run`
 documents for reporting/promotion.
