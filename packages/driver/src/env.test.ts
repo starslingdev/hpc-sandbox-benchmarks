@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { envSchemaFor, parseDriverEnv, sensitiveEnvValuesFor } from "./env.ts";
+import {
+	envSchemaFor,
+	missingDriverEnvNames,
+	parseDriverEnv,
+	sensitiveEnvValuesFor,
+} from "./env.ts";
 import { DriverError } from "./lib/errors.ts";
 
 type Equal<X, Y> =
@@ -56,6 +61,18 @@ describe("parseDriverEnv", () => {
 				DAYTONA_SNAPSHOT: "",
 			}),
 		).toEqual({ DAYTONA_API_KEY: "key", DAYTONA_TARGET: "eu-west-1" });
+	});
+
+	test("reports only missing required, non-defaulted inputs in registry order", () => {
+		expect(missingDriverEnvNames("blaxel", { BL_API_KEY: "key" })).toEqual(["BL_WORKSPACE"]);
+		expect(missingDriverEnvNames("daytona-vm", {})).toEqual(["DAYTONA_API_KEY"]);
+		expect(
+			missingDriverEnvNames("daytona-vm", {
+				DAYTONA_API_KEY: "key",
+				DAYTONA_TARGET: "",
+				DAYTONA_SNAPSHOT: "",
+			}),
+		).toEqual([]);
 	});
 
 	test("the direct schema deletes foreign provider secrets and resolves defaults", () => {

@@ -6,6 +6,7 @@ import {
 	formatConformanceReport,
 	runConformance,
 	selectExecutionRoute,
+	verifyDriverReadiness,
 } from "./conformance.ts";
 import type { DriverModule } from "./lib/define.ts";
 import { DriverError } from "./lib/errors.ts";
@@ -714,6 +715,42 @@ describe("readiness", () => {
 			exitFor: (command) => (command.includes("exit 0") ? { kind: "exited", code: 1 } : undefined),
 		});
 		expect(statusOf(report.clauses, "readiness")).toBe("fail");
+	});
+
+	test("bounds and reaps the create-returns-ready verification exec", async () => {
+		let cancellationObserved = false;
+		let settled = false;
+		const session: SandboxSession = {
+			sandboxRef: { provider: "e2b", id: "isandbox" },
+			artifact: BAKED,
+			native: undefined,
+			exec: (_command, options) =>
+				new Promise<ExecResult>((_resolve, reject) => {
+					const signal = options?.signal;
+					if (signal === undefined) throw new Error("verification exec received no signal");
+					signal.addEventListener(
+						"abort",
+						() => {
+							cancellationObserved = true;
+							queueMicrotask(() => {
+								settled = true;
+								reject(signal.reason);
+							});
+						},
+						{ once: true },
+					);
+				}),
+			destroy: async () => {},
+		};
+
+		const outcome = await verifyDriverReadiness(fakeModule(), session, {
+			createReturnsReadyTimeoutMs: 10,
+		});
+
+		expect(outcome.status).toBe("fail");
+		expect(outcome.detail).toContain("exceeded its 10ms budget");
+		expect(cancellationObserved).toBe(true);
+		expect(settled).toBe(true);
 	});
 
 	test("a create-then-poll signal must reach ready inside its declared budget", async () => {

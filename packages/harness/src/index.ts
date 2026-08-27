@@ -14,6 +14,7 @@ import {
 	sanitizeProviderResponse,
 } from "@sandbox-benchmarks/providers";
 import type {
+	GapCause,
 	GuestFingerprint,
 	ProviderArtifactEvidence,
 	ProviderCostCell,
@@ -51,6 +52,7 @@ import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
 import type { WaitUntilReadyOptions } from "./lib/readiness.ts";
 import { neverReadyReason, waitUntilReady } from "./lib/readiness.ts";
+import type { OwnedSandboxOptions } from "./lib/sandbox-owner.ts";
 import { createOwnedSandbox, withOwnedSandbox } from "./lib/sandbox-owner.ts";
 import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
 
@@ -209,6 +211,25 @@ export async function benchmarkLifecycle(
 /** An unknown provider or suite is a usage error, distinct from an operational failure mid-run. */
 export class SuiteUsageError extends Error {}
 
+/** Persist one suite-scoped gap at the same boundary used by the legacy and driver create paths. */
+export function recordSuiteGap(options: {
+	readonly resultsDir: string;
+	readonly providerName: string;
+	readonly suiteName: string;
+	readonly outcome: "skipped" | "failed";
+	readonly reason: string;
+	readonly cause?: GapCause;
+}): void {
+	writeGapMarker(
+		resolve(options.resultsDir),
+		options.providerName,
+		options.suiteName,
+		options.outcome,
+		options.reason,
+		options.cause,
+	);
+}
+
 export interface RunSuiteOptions {
 	/** Run identity carried into sandbox-scoped provider cost evidence. */
 	runId: RunId;
@@ -325,7 +346,7 @@ const CREATE_RETRY_DELAY_MS = 2 * MIN;
  *  absorbed by a readiness probe afterwards; one that boots the image inline needs its own budget via
  *  {@link ProviderConfig.createTimeoutMs}, or `null` when its adapter owns readiness + cleanup and its
  *  create promise must never be abandoned. */
-const CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
+export const SUITE_CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
 
 /**
  * Prefix on a creation-failure gap marker's reason. The single source of truth for BOTH sides of the
@@ -344,7 +365,7 @@ export interface CreateSuiteSandboxContext {
 	resultsDir: string;
 	/** The provider's pinned create-time options; the suite's lifetime is layered on top. */
 	createOptions?: SandboxCreateOptions;
-	/** Per-attempt create timeout, ms. Defaults to {@link CREATE_ATTEMPT_TIMEOUT_MS}; set per provider
+	/** Per-attempt create timeout, ms. Defaults to {@link SUITE_CREATE_ATTEMPT_TIMEOUT_MS}; set per provider
 	 *  (see {@link ProviderConfig.createTimeoutMs}) for adapters whose `create` boots the image inline,
 	 *  or `null` when the adapter owns readiness + failed-allocation cleanup and abandoning its promise
 	 *  would terminate that cleanup. Injectable so both paths are exercisable in tests. */
@@ -380,17 +401,26 @@ export interface CreateSuiteSandboxContext {
  * only while the budget can still cover the backoff PLUS that attempt's worst case, so the failure
  * marker lands inside the budget rather than one attempt past it.
  *
- * `computeFactory` (not a pre-built compute) so adapter construction lives INSIDE the marker path — a
- * computesdk provider can throw before `sandbox.create`, and that throw must be recorded too. The
- * factory is cheap and idempotent, so re-invoking it per capacity retry is harmless.
+ * The plan owns one attempt and is invoked again for each capacity retry. Both the legacy provider
+ * wrapper and the DriverModule path use this boundary, so timeout ownership, late-handle teardown,
+ * retry budgeting, and failure-marker semantics cannot drift between the two transports.
  */
-export async function createSuiteSandbox(
-	computeFactory: () => SuiteSandboxCompute,
+export interface SuiteSandboxCreatePlan {
+	/** Create one harness-shaped sandbox. The process owner supplies cooperative cancellation. */
+	readonly create: (signal: AbortSignal) => Promise<SandboxHandle>;
+	/** Whether the rejected attempt is safe to retry after the shared backoff. */
+	readonly isRetryable: (error: unknown) => boolean;
+	/** Optional cancellation bridge for the handle's captured destroy operation. */
+	readonly destroy?: OwnedSandboxOptions["destroy"];
+}
+
+export async function createSuiteSandboxFromPlan(
+	plan: SuiteSandboxCreatePlan,
 	ctx: CreateSuiteSandboxContext,
 ): Promise<SandboxHandle> {
-	const { suite, suiteName, providerName, resultsDir, createOptions } = ctx;
+	const { suiteName, providerName, resultsDir } = ctx;
 	const createTimeoutMs =
-		ctx.createTimeoutMs === undefined ? CREATE_ATTEMPT_TIMEOUT_MS : ctx.createTimeoutMs;
+		ctx.createTimeoutMs === undefined ? SUITE_CREATE_ATTEMPT_TIMEOUT_MS : ctx.createTimeoutMs;
 	const retryDelayMs = ctx.retryDelayMs ?? CREATE_RETRY_DELAY_MS;
 	// What one more attempt can cost, so the loop only starts an attempt the budget can still absorb.
 	// When the harness races the create, its own timeout IS that ceiling; when the adapter owns the
@@ -442,13 +472,9 @@ export async function createSuiteSandbox(
 		// a pending promise whose late handle must still be destroyed (see the catch).
 		let createPromise: Promise<SandboxHandle> | undefined;
 		try {
-			const compute = computeFactory();
-			createPromise = createOwnedSandbox(() =>
-				compute.sandbox.create({
-					...createOptions,
-					// Ask for a sandbox lifetime covering setup + the suite, where supported.
-					timeout: suite.timeoutMinutes * MIN,
-				}),
+			createPromise = createOwnedSandbox(
+				plan.create,
+				plan.destroy === undefined ? {} : { destroy: plan.destroy },
 			);
 			return createTimeoutMs === null
 				? await createPromise
@@ -466,13 +492,10 @@ export async function createSuiteSandbox(
 				);
 			}
 			const message = err instanceof Error ? err.message : String(err);
-			// An adapter that KNOWS its create failure is transient and allocated nothing says so explicitly;
-			// the message match is the fallback for providers that only express capacity limits in prose. The
-			// explicit mark covers a control plane that expresses saturation by stalling, whose timeout message
-			// matches none of these words — the shape that hard-failed every runcloud cell of run
-			// 30960125032 in seconds instead of letting the cells queue.
-			const retryable =
-				isRetryableCreateError(err) || /quota|rate.?limit|too many|capacity|429/i.test(message);
+			// Classification belongs to the selected plan. The legacy wrapper below preserves its explicit
+			// marker plus narrow prose fallback; a DriverModule plan can instead require typed policy without
+			// inheriting any legacy vendor-message guesses.
+			const retryable = plan.isRetryable(err);
 			// The budget bounds the CELL, not just the sleeps: an attempt is only started when the backoff
 			// AND the attempt's own worst case still fit inside it. Checking the delay alone let a provider
 			// whose attempts run long (run.cloud's adapter-owned readiness wait) begin one final attempt at
@@ -491,6 +514,32 @@ export async function createSuiteSandbox(
 			if (!fitsInBudget(0)) giveUp(err, message);
 		}
 	}
+}
+
+/** Legacy ProviderConfig create path, expressed as one shared suite-create plan. */
+export function createSuiteSandbox(
+	computeFactory: () => SuiteSandboxCompute,
+	ctx: CreateSuiteSandboxContext,
+): Promise<SandboxHandle> {
+	return createSuiteSandboxFromPlan(
+		{
+			create: () => {
+				const compute = computeFactory();
+				return compute.sandbox.create({
+					...ctx.createOptions,
+					// Ask for a sandbox lifetime covering setup + the suite, where supported.
+					timeout: ctx.suite.timeoutMinutes * MIN,
+				});
+			},
+			isRetryable: (error) => {
+				const message = error instanceof Error ? error.message : String(error);
+				return (
+					isRetryableCreateError(error) || /quota|rate.?limit|too many|capacity|429/i.test(message)
+				);
+			},
+		},
+		ctx,
+	);
 }
 
 /**
@@ -520,9 +569,63 @@ export interface SuiteRunContext {
 	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
 	transport: ProviderTransport;
 	costEvidence?: ProviderCostEvidenceCapability;
+	/** Port-native readiness plan supplied by the selected DriverModule composition root. When
+	 *  present, the harness enforces its policy budget and does not run the legacy generic exec poll. */
+	driverReadiness?: SuiteDriverReadinessPlan;
 	/** Readiness budget override. Defaults to {@link SUITE_READINESS}; tests inject a fast one so a
 	 *  never-ready case doesn't really sleep out the live budget. */
 	readiness?: WaitUntilReadyOptions;
+}
+
+/** A selected DriverModule readiness strategy plus its policy-owned wall-clock budget. */
+export interface SuiteDriverReadinessPlan {
+	readonly timeoutMs: number;
+	readonly verify: (options: {
+		readonly signal: AbortSignal;
+	}) => Promise<{ readonly ready: boolean; readonly detail: string }>;
+}
+
+const DRIVER_READINESS_ABORT_GRACE_MS = 1_000;
+
+/** Bound one module-native readiness run, propagate cancellation, and let the accepted operation
+ *  settle before the suite can enter teardown. */
+async function verifySuiteDriverReadiness(
+	plan: SuiteDriverReadinessPlan,
+): Promise<{ readonly ready: boolean; readonly detail: string }> {
+	if (!Number.isSafeInteger(plan.timeoutMs) || plan.timeoutMs <= 0) {
+		throw new Error("Driver readiness timeout must be a positive safe integer");
+	}
+	const control = new AbortController();
+	const timeoutError = new Error(
+		`Driver readiness verification exceeded its ${plan.timeoutMs}ms policy budget`,
+	);
+	const started = performance.now();
+	const verification = Promise.resolve().then(() => plan.verify({ signal: control.signal }));
+	try {
+		const result = await withTimeout(verification, plan.timeoutMs, () => timeoutError);
+		// Timer callbacks can be delayed behind a late result on a busy event loop. The elapsed clock,
+		// not Promise.race ordering, decides whether the policy budget was honored.
+		if (performance.now() - started >= plan.timeoutMs) throw timeoutError;
+		return result;
+	} catch (error) {
+		if (error !== timeoutError) throw error;
+		control.abort(timeoutError);
+		try {
+			await withTimeout(
+				verification.then(
+					() => undefined,
+					() => undefined,
+				),
+				DRIVER_READINESS_ABORT_GRACE_MS,
+				`Driver readiness verification did not settle within ${DRIVER_READINESS_ABORT_GRACE_MS}ms after cancellation`,
+			);
+		} catch {
+			throw new Error(
+				`Driver readiness verification exceeded its ${plan.timeoutMs}ms policy budget and did not settle within ${DRIVER_READINESS_ABORT_GRACE_MS}ms after cancellation`,
+			);
+		}
+		throw timeoutError;
+	}
 }
 
 function sanitizeHookResponseJson(value: unknown): string {
@@ -603,8 +706,15 @@ export async function runSuiteOnSandbox(
 		// hangs instead of erroring. Without this gate the pull is charged to whatever step happens to run
 		// first, which reports the pull as that step's timeout — a 60s "check free disk" failure that had
 		// nothing to do with disk. Pre-baked providers answer the first probe and pay one round-trip.
-		const readiness = await waitUntilReady(sandbox, ctx.readiness ?? SUITE_READINESS);
-		if (!readiness.ready) throw new Error(neverReadyReason(readiness.attempts));
+		if (ctx.driverReadiness === undefined) {
+			const readiness = await waitUntilReady(sandbox, ctx.readiness ?? SUITE_READINESS);
+			if (!readiness.ready) throw new Error(neverReadyReason(readiness.attempts));
+		} else {
+			const readiness = await verifySuiteDriverReadiness(ctx.driverReadiness);
+			if (!readiness.ready) {
+				throw new Error(`Driver readiness verification failed: ${readiness.detail}`);
+			}
+		}
 		const expectedFingerprint = expectedToolchainFingerprint(providerName, ctx.artifact);
 		if (expectedFingerprint !== undefined) {
 			const captured = await runner.run(

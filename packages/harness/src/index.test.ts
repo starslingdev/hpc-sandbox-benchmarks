@@ -15,6 +15,7 @@ import type { SuiteRunContext } from "./index.ts";
 import {
 	benchmarkLifecycle,
 	createSuiteSandbox,
+	createSuiteSandboxFromPlan,
 	hasRequiredCreds,
 	missingCreds,
 	requiredProviders,
@@ -567,6 +568,25 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		expect(attempts).toBe(2);
 	});
 
+	it("does not leak the legacy message matcher into an explicit create plan", async () => {
+		const resultsDir = freshDir();
+		let attempts = 0;
+		await expect(
+			createSuiteSandboxFromPlan(
+				{
+					create: async () => {
+						attempts++;
+						throw new Error("429 Too Many Requests");
+					},
+					isRetryable: () => false,
+				},
+				createCtx(resultsDir, { retryDelayMs: 1 }),
+			),
+		).rejects.toThrow("429 Too Many Requests");
+		expect(attempts).toBe(1);
+		expect(existsSync(join(resultsDir, MARKER))).toBe(true);
+	});
+
 	it("writes a FAILED marker once the retry budget is spent", async () => {
 		const resultsDir = freshDir();
 		let attempts = 0;
@@ -1097,6 +1117,45 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			outcome: "failed",
 			reason: expect.stringMatching(/never ready/),
 		});
+	});
+
+	it("cancels and settles DriverModule readiness before tearing the sandbox down", async () => {
+		const resultsDir = freshDir();
+		const destroyed = { hit: false };
+		const events: string[] = [];
+		const base = makeSandbox({ destroyed });
+		const sandbox: SandboxHandle = {
+			...base,
+			async destroy() {
+				events.push("destroy");
+				return base.destroy();
+			},
+		};
+
+		await expect(
+			runSuiteOnSandbox(sandbox, {
+				...ctx(suite({}), resultsDir),
+				driverReadiness: {
+					timeoutMs: 10,
+					verify: ({ signal }) =>
+						new Promise((_resolve, reject) => {
+							signal.addEventListener(
+								"abort",
+								() => {
+									events.push("abort");
+									queueMicrotask(() => {
+										events.push("settled");
+										reject(signal.reason);
+									});
+								},
+								{ once: true },
+							);
+						}),
+				},
+			}),
+		).rejects.toThrow(/exceeded its 10ms policy budget/);
+		expect(events).toEqual(["abort", "settled", "destroy"]);
+		expect(destroyed.hit).toBe(true);
 	});
 
 	it("tears the sandbox down when an invalid ptsTimesToRun (k < 1) fails preamble construction", async () => {
