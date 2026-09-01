@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
+import type { PtsWarmPlan } from "./pts-warm.ts";
 import { planPtsWarm, resolveWarmSuites, suiteWarmKind } from "./pts-warm.ts";
 import { suiteMetricSummaryRows, suiteTaskSummaryRows } from "./suite-summary.ts";
 import {
@@ -262,6 +263,8 @@ describe("warmHintsFromScript", () => {
 	});
 });
 
+const targetIds = (plan: PtsWarmPlan): string[] => plan.targets.map((target) => target.id);
+
 describe("planPtsWarm / resolveWarmSuites", () => {
 	it("classifies suite warm kinds and presets", () => {
 		expect(suiteWarmKind("disk")).toBe("synthetic");
@@ -301,31 +304,38 @@ describe("planPtsWarm / resolveWarmSuites", () => {
 	it("plans a single suite (network) without pulling unrelated profiles", async () => {
 		const plan = await planPtsWarm(root, { suites: ["network"] });
 		expect(plan.suites).toEqual(["network"]);
-		expect(plan.targets).toContain("pts/iperf-1.2.0");
-		expect(plan.targets).toContain("local/iperf-wan-1.0.0");
-		expect(plan.targets).not.toContain("pts/fio-2.1.0");
-		expect(plan.targets).not.toContain("pts/stream-1.3.4");
+		// iperf's leaf re-stages the vendored override (which rm -rf's the installed tree), so
+		// installing it here would be thrown away: it is seeded, not warmed.
+		expect(plan.restagedByLeaf).toEqual(["iperf-1.2.0"]);
+		expect(targetIds(plan)).toEqual(["local/iperf-wan-1.0.0"]);
+		expect(plan.seeds.map((seed) => seed.filename)).toEqual(["iperf-3.14.tar.gz"]);
 		expect(plan.localInstalls).toEqual([{ name: "iperf-wan-1.0.0", overlays: [] }]);
-		expect(plan.vendoredProfiles).toEqual(["iperf-1.2.0"]);
-		expect(plan.cflagsOverride).toBeUndefined();
 	});
 
 	it("plans synthetic targets/seeds from the suite registry without hard-coded profile lists", async () => {
 		const plan = await planPtsWarm(root, { suites: ["synthetic"] });
 		expect(plan.suites).toEqual(["cpu-node", "system", "pgbench", "memory", "disk", "network"]);
-		expect(plan.targets).toContain("pts/fio-2.1.0");
-		expect(plan.targets).toContain("pts/iperf-1.2.0");
-		expect(plan.targets).toContain("pts/pgbench-1.15.0");
-		expect(plan.targets).toContain("local/hardlink-1.0.0");
-		expect(plan.targets).toContain("local/iperf-wan-1.0.0");
-		expect(plan.targets).toContain("pts/stream-1.3.4");
-		expect(plan.targets).not.toContain("pts/fast-cli-1.0.0");
+		const ids = targetIds(plan);
+		expect(ids).toContain("pts/fio-2.1.0");
+		expect(ids).toContain("pts/pgbench-1.15.0");
+		expect(ids).toContain("local/hardlink-1.0.0");
+		expect(ids).toContain("local/iperf-wan-1.0.0");
+		expect(ids).toContain("pts/stream-1.3.4");
+		expect(ids).not.toContain("pts/fast-cli-1.0.0");
+		expect(ids).not.toContain("pts/iperf-1.2.0");
+		expect(plan.restagedByLeaf).toEqual(["iperf-1.2.0"]);
 		expect(plan.localInstalls).toEqual([
 			{ name: "hardlink-1.0.0", overlays: [] },
 			{ name: "iperf-wan-1.0.0", overlays: [] },
 		]);
-		expect(plan.vendoredProfiles).toEqual(["iperf-1.2.0"]);
-		expect(plan.cflagsOverride?.native).toBe("-O3 -march=native -DSTREAM_ARRAY_SIZE=150000000");
+		// STREAM's flags stay on STREAM. Handing them to the shared batch would rebuild the vendored
+		// iperf/fio with -march=native, which their install.sh repairs exist to prevent.
+		const withFlags = plan.targets.filter((target) => target.cflagsOverride !== undefined);
+		expect(withFlags.map((target) => target.id)).toEqual(["pts/stream-1.3.4"]);
+		expect(withFlags[0]?.cflagsOverride).toEqual({
+			native: "-O3 -march=native -DSTREAM_ARRAY_SIZE=150000000",
+			gvisor: "-O3 -march=x86-64-v3 -DSTREAM_ARRAY_SIZE=150000000",
+		});
 		const fio = plan.seeds.find((s) => s.filename === "fio-3.36.tar.gz");
 		expect(fio?.sha256).toBe("0a07354876ca4d23518f8aa88682f23866455bbd2ff2d0f055d6e4b72f156553");
 		const iperf = plan.seeds.find((s) => s.filename === "iperf-3.14.tar.gz");
@@ -339,9 +349,9 @@ describe("planPtsWarm / resolveWarmSuites", () => {
 			"realworld-better-auth",
 			"realworld-openclaw",
 		]);
-		expect(plan.targets).toContain("local/realworld-mastra-1.0.0");
-		expect(plan.targets).toContain("local/realworld-better-auth-1.0.0");
-		expect(plan.targets).toContain("local/realworld-openclaw-1.0.0");
+		expect(targetIds(plan)).toContain("local/realworld-mastra-1.0.0");
+		expect(targetIds(plan)).toContain("local/realworld-better-auth-1.0.0");
+		expect(targetIds(plan)).toContain("local/realworld-openclaw-1.0.0");
 		expect(plan.localInstalls).toEqual([
 			{
 				name: "realworld-better-auth-1.0.0",

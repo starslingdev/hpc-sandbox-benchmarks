@@ -77,17 +77,39 @@ export interface LocalProfileInstall {
 	overlays: string[];
 }
 
+/** One profile to install, carrying the compile env its own leaf pins — never a neighbour's. */
+export interface WarmTarget {
+	/** `pts/<name>` or `local/<name>`, as PTS names it. */
+	id: string;
+	/**
+	 * `CFLAGS_OVERRIDE` the leaf that pins this profile exports, per ISA branch.
+	 *
+	 * Per target, not per plan: `CFLAGS_OVERRIDE` is read by every profile's `install.sh`, and the
+	 * vendored iperf install.sh explicitly lets a caller's value win over its deliberately generic
+	 * `-O3`. One batch-install carrying STREAM's `-march=native` would therefore rebuild iperf as a
+	 * native binary — the exact thing that profile's repair exists to prevent, and a SIGILL waiting
+	 * for the first host with a narrower ISA than the one that warmed the snapshot.
+	 */
+	cflagsOverride?: { native: string; gvisor: string };
+}
+
 /** Everything a warm run needs, planned before it touches PTS. */
 export interface PtsWarmPlan {
 	/** Resolved suites, in registry order. */
 	suites: SuiteName[];
-	/** `pts/<name>` and `local/<name>` ids to batch-install. */
-	targets: string[];
+	/** Profiles this warm installs and then verifies. */
+	targets: WarmTarget[];
 	localInstalls: LocalProfileInstall[];
-	vendoredProfiles: string[];
+	/**
+	 * `pts/<name>` profiles a leaf re-stages with `install_vendored_pts_profile` at run time.
+	 *
+	 * Installing these here is wasted work: that helper unconditionally `rm -rf`s the installed tree
+	 * so `run_pts_benchmark` rebuilds the vendored override, which is the whole point of the
+	 * override. Their source tarball still gets seeded, and the download cache does survive the
+	 * discard — so the warm buys the download for them, never the build.
+	 */
+	restagedByLeaf: string[];
 	seeds: DownloadSeed[];
-	/** `CFLAGS_OVERRIDE` a leaf pins for its own compile, per ISA branch (STREAM). */
-	cflagsOverride?: { native: string; gvisor: string };
 }
 
 /**
@@ -147,11 +169,10 @@ export async function planPtsWarm(
 ): Promise<PtsWarmPlan> {
 	const suites = resolveWarmSuites(options.suites ?? []);
 
-	const targets = new Set<string>();
+	const targets = new Map<string, WarmTarget>();
 	const localNames = new Set<string>();
-	const vendoredProfiles = new Set<string>();
+	const restagedByLeaf = new Set<string>();
 	const seedsByFile = new Map<string, DownloadSeed>();
-	let cflagsOverride: PtsWarmPlan["cflagsOverride"];
 
 	let realworldOverlays: string[] = [];
 	try {
@@ -164,40 +185,49 @@ export async function planPtsWarm(
 	for (const suite of suites) {
 		const plan = await describeSuiteTasks(suite, root);
 		for (const task of plan.tasks) {
-			for (const profile of task.ptsProfile
+			const ids = task.ptsProfile
 				.split(",")
 				.map((s) => s.trim())
-				.filter(Boolean)) {
-				targets.add(profile);
-			}
+				.filter(Boolean);
 			const script = readTaskScript(root, task.file);
-			if (!script) continue;
-			const hints = warmHintsFromScript(script);
+			const hints = script ? warmHintsFromScript(script) : undefined;
+			for (const id of ids) {
+				// The flags belong to the leaf that pins this profile, so they reach this profile's
+				// install.sh and no other. A second leaf pinning the same profile with different flags
+				// would be a genuine ambiguity, so refuse rather than let install order decide.
+				const existing = targets.get(id);
+				const cflagsOverride = hints?.cflagsOverride;
+				if (existing?.cflagsOverride && cflagsOverride) {
+					if (existing.cflagsOverride.native !== cflagsOverride.native) {
+						throw new Error(
+							`leaves pin conflicting CFLAGS_OVERRIDE for ${id}: ` +
+								`${existing.cflagsOverride.native} vs ${cflagsOverride.native}`,
+						);
+					}
+					continue;
+				}
+				targets.set(id, { id, ...(cflagsOverride ? { cflagsOverride } : {}) });
+			}
+			if (!hints) continue;
 			for (const name of hints.localProfiles) localNames.add(name);
-			for (const name of hints.vendoredProfiles) vendoredProfiles.add(name);
+			for (const name of hints.vendoredProfiles) restagedByLeaf.add(name);
 			for (const seed of hints.seeds) {
 				// First leaf wins; later duplicates (iperf localhost + wan) are identical.
 				if (!seedsByFile.has(seed.filename)) seedsByFile.set(seed.filename, seed);
 			}
-			// One leaf (STREAM) pins compile flags today. A second one pinning different flags would
-			// need a per-target env rather than one batch-install, so refuse rather than pick a winner.
-			if (hints.cflagsOverride) {
-				if (cflagsOverride && cflagsOverride.native !== hints.cflagsOverride.native) {
-					throw new Error(
-						`two leaves pin conflicting CFLAGS_OVERRIDE (${cflagsOverride.native} vs ` +
-							`${hints.cflagsOverride.native}); batch-install can only carry one`,
-					);
-				}
-				cflagsOverride = hints.cflagsOverride;
-			}
 		}
 	}
 
-	for (const target of targets) {
-		if (target.startsWith("local/")) {
-			localNames.add(target.slice("local/".length));
-		}
-		const dir = profileDirForTarget(root, target);
+	// A profile the leaf re-stages is seeded but never installed here (see PtsWarmPlan.restagedByLeaf).
+	for (const name of restagedByLeaf) targets.delete(`pts/${name}`);
+
+	for (const id of targets.keys()) {
+		if (id.startsWith("local/")) localNames.add(id.slice("local/".length));
+	}
+	// Seeds attach to every profile the plan knows of, restaged ones included: the download cache is
+	// the one thing a leaf's re-stage does not discard, so seeding it is the warm those profiles get.
+	for (const id of [...targets.keys(), ...[...restagedByLeaf].map((name) => `pts/${name}`)]) {
+		const dir = profileDirForTarget(root, id);
 		if (!dir) continue;
 		const hostSeedPath = join(dir, "host-seed.json");
 		if (!existsSync(hostSeedPath)) continue;
@@ -212,11 +242,10 @@ export async function planPtsWarm(
 
 	return {
 		suites,
-		targets: [...targets].sort(),
+		targets: [...targets.values()].sort((a, b) => a.id.localeCompare(b.id)),
 		localInstalls,
-		vendoredProfiles: [...vendoredProfiles].sort(),
+		restagedByLeaf: [...restagedByLeaf].sort(),
 		seeds: [...seedsByFile.values()].sort((a, b) => a.filename.localeCompare(b.filename)),
-		...(cflagsOverride ? { cflagsOverride } : {}),
 	};
 }
 

@@ -23,6 +23,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { SUITES } from "@sandbox-benchmarks/schema";
 import { logInfo } from "../lib/actions-log.ts";
+import type { WarmTarget } from "../lib/pts-warm.ts";
 import { formatWarmSuiteCatalog, planPtsWarm } from "../lib/pts-warm.ts";
 import {
 	batchInstall,
@@ -30,7 +31,7 @@ import {
 	ensurePts,
 	hostIsGvisor,
 	installLocalPtsProfile,
-	installVendoredPtsProfile,
+	installPayloadProblem,
 	listInstalledTests,
 	seedPtsDownloadCache,
 } from "../lib/pts-warm-bench.ts";
@@ -130,8 +131,8 @@ async function main(options: Options): Promise<void> {
 	}
 	logInfo(
 		`warm suites=${plan.suites.join(",")} targets=${plan.targets.length} ` +
-			`local=${plan.localInstalls.length} vendored=${plan.vendoredProfiles.length} ` +
-			`seeds=${plan.seeds.length}`,
+			`local=${plan.localInstalls.length} seeds=${plan.seeds.length} ` +
+			`restaged-by-leaf=${plan.restagedByLeaf.length}`,
 	);
 
 	await ensurePts(REPO_ROOT);
@@ -146,53 +147,72 @@ async function main(options: Options): Promise<void> {
 		logInfo(`seed download-cache: ${seed.filename}`);
 		await seedPtsDownloadCache(REPO_ROOT, seed.filename, seed.sha256, seed.urls);
 	}
+	for (const name of plan.restagedByLeaf) {
+		logInfo(`seed only, install left to the leaf's re-stage: pts/${name}`);
+	}
 
 	for (const install of plan.localInstalls) {
 		logInfo(`stage local profile: ${install.name}`);
 		await installLocalPtsProfile(REPO_ROOT, install.name, install.overlays);
 	}
 
-	let installed = await listInstalledTests(REPO_ROOT);
-	for (const name of plan.vendoredProfiles) {
-		// install_vendored_pts_profile discards the installed tree so the override gets built. Skipping
-		// an already-installed one keeps a re-run cheap; the leaf re-stages on every run regardless, so
-		// a stale override cannot survive into a measurement.
-		if (installed.has(`pts/${name}`)) logInfo(`already installed: pts/${name}`);
-		else await installVendoredPtsProfile(REPO_ROOT, name);
-	}
-
-	const env: Record<string, string> = {};
-	if (plan.cflagsOverride) {
-		env.CFLAGS_OVERRIDE = hostIsGvisor() ? plan.cflagsOverride.gvisor : plan.cflagsOverride.native;
-		logInfo(`CFLAGS_OVERRIDE=${env.CFLAGS_OVERRIDE}`);
-	}
-
-	installed = await listInstalledTests(REPO_ROOT);
-	const toInstall: string[] = [];
+	const installed = await listInstalledTests(REPO_ROOT);
+	const pending: WarmTarget[] = [];
 	for (const target of plan.targets) {
-		if (installed.has(target)) {
-			logInfo(`already installed: ${target}`);
+		if (installed.has(target.id)) {
+			logInfo(`already installed: ${target.id}`);
 			continue;
 		}
-		await discardInstallTree(REPO_ROOT, target);
-		toInstall.push(target);
+		await discardInstallTree(REPO_ROOT, target.id);
+		pending.push(target);
 	}
-	if (toInstall.length === 0) logInfo("all planned profiles already installed");
-	else await batchInstall(REPO_ROOT, toInstall, env);
 
-	// PTS's batch-install exits 0 for a profile that failed to build, so the plan is verified against
-	// what PTS now reports rather than against the installer's exit code.
-	installed = await listInstalledTests(REPO_ROOT);
-	const failed = plan.targets.filter((target) => !installed.has(target));
-	if (failed.length > 0) throw new Error(`warm incomplete — missing: ${failed.join(" ")}`);
+	if (pending.length === 0) {
+		logInfo("all planned profiles already installed");
+	} else {
+		// One batch per distinct compile env. CFLAGS_OVERRIDE reaches every install.sh in a batch, so
+		// profiles that pin nothing must not inherit a neighbour's flags (see WarmTarget.cflagsOverride).
+		const gvisor = hostIsGvisor();
+		const batches = new Map<string, string[]>();
+		for (const target of pending) {
+			const cflags = target.cflagsOverride
+				? gvisor
+					? target.cflagsOverride.gvisor
+					: target.cflagsOverride.native
+				: "";
+			const batch = batches.get(cflags);
+			if (batch) batch.push(target.id);
+			else batches.set(cflags, [target.id]);
+		}
+		for (const [cflags, ids] of batches) {
+			if (cflags) logInfo(`CFLAGS_OVERRIDE=${cflags} for ${ids.join(" ")}`);
+			await batchInstall(REPO_ROOT, ids, cflags ? { CFLAGS_OVERRIDE: cflags } : {});
+		}
+	}
+
+	// PTS's batch-install exits 0 for a profile that failed to build, and marks a profile installed
+	// on nothing more than the launcher its install.sh wrote — so registration is checked AND the
+	// tree is probed for the failure log and the payload (see installPayloadProblem).
+	const afterInstall = await listInstalledTests(REPO_ROOT);
+	const failed: string[] = [];
+	for (const target of plan.targets) {
+		if (!afterInstall.has(target.id)) {
+			failed.push(`${target.id} (not installed)`);
+			continue;
+		}
+		const problem = await installPayloadProblem(REPO_ROOT, target.id);
+		if (problem) failed.push(`${target.id} (${problem})`);
+	}
+	if (failed.length > 0) throw new Error(`warm incomplete — ${failed.join(", ")}`);
 
 	const stamp = stampPath(plan.suites);
 	mkdirSync(dirname(stamp), { recursive: true });
 	writeFileSync(
 		stamp,
-		`${new Date().toISOString()}\nsuites=${plan.suites.join(",")}\ntargets=${plan.targets.join(" ")}\n`,
+		`${new Date().toISOString()}\nsuites=${plan.suites.join(",")}\n` +
+			`targets=${plan.targets.map((target) => target.id).join(" ")}\n`,
 	);
-	logInfo(`warm complete: ${plan.targets.join(" ")}`);
+	logInfo(`warm complete: ${plan.targets.map((target) => target.id).join(" ")}`);
 	logInfo(`stamp: ${stamp}`);
 	for (const suite of plan.suites) {
 		for (const command of SUITES[suite].commands) logInfo(`  ${command}`);

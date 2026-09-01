@@ -53,14 +53,18 @@ async function runBenchHelper(
 }
 
 /** `source lib/bench.sh`, then run one line of bash against its helpers. */
-async function runBenchScript(root: string, line: string): Promise<SpawnResult> {
+async function runBenchScript(
+	root: string,
+	line: string,
+	opts: { capture?: boolean } = {},
+): Promise<SpawnResult> {
 	const script = [
 		`cd ${shellQuote(root)}`,
 		`export REPO_ROOT=${shellQuote(root)}`,
 		"source lib/bench.sh",
 		line,
 	].join(" && ");
-	return spawnCmd(["bash", "-c", script], { cwd: root, inherit: true });
+	return spawnCmd(["bash", "-c", script], { cwd: root, inherit: !opts.capture });
 }
 
 export async function ensurePts(root: string): Promise<void> {
@@ -94,11 +98,6 @@ export async function installLocalPtsProfile(
 ): Promise<void> {
 	const { code } = await runBenchHelper(root, "install_local_pts_profile", [name, ...overlays]);
 	if (code !== 0) throw new Error(`install_local_pts_profile ${name} failed (exit ${code})`);
-}
-
-export async function installVendoredPtsProfile(root: string, name: string): Promise<void> {
-	const { code } = await runBenchHelper(root, "install_vendored_pts_profile", [name]);
-	if (code !== 0) throw new Error(`install_vendored_pts_profile ${name} failed (exit ${code})`);
 }
 
 /** Profile ids PTS reports as installed (`pts/fio-2.1.0`, `local/hardlink-1.0.0`, …). */
@@ -149,6 +148,67 @@ export async function discardInstallTree(root: string, target: string): Promise<
 		throw new Error(`refusing to discard unsafe install target: ${target}`);
 	}
 	await runBenchScript(root, `pts_init && rm -rf "$(pts_install_root)/${ns}/${name}"`);
+}
+
+/**
+ * Extra payload probes for profiles whose `install.sh` can report success without producing one.
+ *
+ * PTS marks a profile installed by the launcher its `install.sh` writes, so `list-installed-tests`
+ * is install BOOKKEEPING, not evidence of a build. pgbench's upstream `install.sh` is plain `sh`
+ * with no `set -e`, and writes that launcher even when configure/make failed — the shape of the
+ * 2026-07 ICU/pkg-config half-install, where the count probe passed and the benchmark then had no
+ * `pg_/` payload to run. `pgbenchPayloadSmokeCheck` in packages/templates/src/smoke.ts is the bake's
+ * probe for the same profile; this is the host-side one, against the install root bench.sh reports.
+ *
+ * Keyed by profile-name prefix so a version bump keeps the probe. Deliberately a short list of known
+ * lying installers rather than a heuristic: a profile whose launcher legitimately drives a system
+ * binary (hardlink → stress-ng) has no payload of its own to find.
+ */
+const PAYLOAD_PROBES: ReadonlyArray<{ prefix: string; relativePath: string }> = [
+	{ prefix: "pgbench-", relativePath: "pg_/bin/pgbench" },
+];
+
+/**
+ * Why `target` is not usably installed, or undefined when it is.
+ *
+ * Checks what PTS's own bookkeeping cannot: an `install-failed.log` beside the tree (written when
+ * an installer exits non-zero, which PTS itself survives), and the built payload for the profiles
+ * above.
+ */
+export async function installPayloadProblem(
+	root: string,
+	target: string,
+): Promise<string | undefined> {
+	const slash = target.indexOf("/");
+	if (slash <= 0) return undefined;
+	const ns = target.slice(0, slash);
+	const name = target.slice(slash + 1);
+	if (!SAFE_PATH_SEGMENT.test(ns) || !SAFE_PATH_SEGMENT.test(name)) {
+		throw new Error(`refusing to probe unsafe install target: ${target}`);
+	}
+	const dir = `"$(pts_install_root)/${ns}/${name}"`;
+	const checks = [
+		// pts_init writes core.pt2so, which is how pts_user_dir picks the data dir PTS itself uses.
+		"pts_init",
+		`[ -e ${dir}/install-failed.log ] && echo "PROBLEM:PTS recorded install-failed.log"`,
+	];
+	const probe = PAYLOAD_PROBES.find((entry) => name.startsWith(entry.prefix));
+	if (probe) {
+		checks.push(
+			`[ -x ${dir}/${probe.relativePath} ] || echo "PROBLEM:no built payload at ${probe.relativePath}"`,
+		);
+	}
+	// One brace group so the whole probe is a single command in runBenchScript's `&&` chain — a
+	// failed `source lib/bench.sh` must not fall through to a probe that then reports "no problem".
+	const { stdout } = await runBenchScript(root, `{ ${checks.join("; ")}; } || true`, {
+		capture: true,
+	});
+	// Prefixed lines only: pts_init and friends write to the same stdout.
+	const problems = stdout
+		.split("\n")
+		.filter((line) => line.startsWith("PROBLEM:"))
+		.map((line) => line.slice("PROBLEM:".length));
+	return problems.length > 0 ? problems.join("; ") : undefined;
 }
 
 /**

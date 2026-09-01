@@ -44,15 +44,29 @@ bun run warm:pts -- --dry-plan --suite network           # print the plan, insta
 ```
 
 The warmer **plans** targets from `SUITES` + leaf mining — there is no hard-coded profile list, so a
-leaf that pins a new profile is warmed with no edit to the bin. It stages local/vendored profiles and
+leaf that pins a new profile is warmed with no edit to the bin. It stages local profiles and
 `seed_pts_download_cache` hints through `lib/bench.sh`, loads `host-seed.json` beside a profile when
 its leaf plants no seed (fio's Ubuntu mirrors — OpenBenchmarking's `brick.kernel.dk` is often down),
-applies the `CFLAGS_OVERRIDE` the STREAM leaf pins, and writes
-`~/.cache/sandbox-benchmarks/pts-warm-<suites>.stamp`. Subsequent `mise run benchmark:…` calls then
-skip download/compile for warmed profiles. Re-run only if the stamp is missing or a suite leaf starts
-writing `--skipped.json` / reinstalling profiles. Legacy `benchmark:network:all` leaves (fast-cli,
-network-loopback) are **not** in the `network` suite plan; they install on first manual run.
-`synthetic` includes **pgbench** (heavy); name suites explicitly when snapshot time matters.
+and writes `~/.cache/sandbox-benchmarks/pts-warm-<suites>.stamp`. Subsequent `mise run benchmark:…`
+calls then skip download/compile for warmed profiles. Re-run only if the stamp is missing or a suite
+leaf starts writing `--skipped.json` / reinstalling profiles. Legacy `benchmark:network:all` leaves
+(fast-cli, network-loopback) are **not** in the `network` suite plan; they install on first manual
+run. `synthetic` includes **pgbench** (heavy); name suites explicitly when snapshot time matters.
+
+Two things `--dry-plan` makes explicit, both of which the leaves dictate:
+
+- **`restagedByLeaf`** — a profile whose leaf calls `install_vendored_pts_profile` (iperf) has its
+  installed tree `rm -rf`'d at run time so the vendored override gets rebuilt. Warming its build
+  would be thrown away, so the warmer only seeds its source tarball; the download cache is what
+  survives the re-stage. The build stays in the benchmark run, by design of the override.
+- **Per-target `cflagsOverride`** — `CFLAGS_OVERRIDE` reaches every `install.sh` in a batch, and the
+  vendored iperf/STREAM installers let a caller's value win. The warmer therefore runs one
+  `batch-install` per distinct compile env, so STREAM's `-march=native` pin never rebuilds a
+  neighbouring profile as a native binary.
+
+Verification is not registration alone: PTS marks a profile installed on the launcher its
+`install.sh` writes, which a half-install (the 2026-07 pgbench one) also produces. The warmer checks
+for `install-failed.log` and, for pgbench, the built `pg_/bin/pgbench` payload.
 
 - Verify PTS: `phoronix-test-suite version` (expect `Phoronix Test Suite v10.8.4`).
 - Verify warm: `phoronix-test-suite list-installed-tests` should list the planned profiles
