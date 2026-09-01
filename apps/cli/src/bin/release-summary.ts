@@ -11,7 +11,7 @@ import {
 	isFailure,
 	renderCell,
 } from "../lib/actions-log.ts";
-import { blockingReports, isBlockingId, nonBlockingFailures } from "../lib/bake/gates.ts";
+import { blockingReports, isBlockingReport, nonBlockingFailures } from "../lib/bake/gates.ts";
 import type { BakeReport } from "../lib/bake/types.ts";
 
 // Re-export pure helpers so existing unit tests keep importing from this bin path.
@@ -90,15 +90,27 @@ export function readReports(json: string | undefined): BakeReport[] {
 	try {
 		const parsed = JSON.parse(json) as { reports?: unknown };
 		if (!Array.isArray(parsed.reports)) return [];
-		return parsed.reports.filter((report): report is BakeReport => {
-			if (typeof report !== "object" || report === null) return false;
+		return parsed.reports.flatMap((report): BakeReport[] => {
+			if (typeof report !== "object" || report === null) return [];
 			const candidate = report as Partial<BakeReport>;
-			return (
-				typeof candidate.provider === "string" &&
-				(candidate.status === "ok" ||
-					candidate.status === "skipped" ||
-					candidate.status === "failed")
-			);
+			if (
+				typeof candidate.provider !== "string" ||
+				(candidate.status !== "ok" &&
+					candidate.status !== "skipped" &&
+					candidate.status !== "failed")
+			) {
+				return [];
+			}
+			return [
+				{
+					provider: candidate.provider,
+					status: candidate.status,
+					...(typeof candidate.reason === "string" ? { reason: candidate.reason } : {}),
+					...(typeof candidate.durationMs === "number" && Number.isFinite(candidate.durationMs)
+						? { durationMs: candidate.durationMs }
+						: {}),
+				},
+			];
 		});
 	} catch {
 		return [];
@@ -137,15 +149,16 @@ function providerReportRows(
 		{ data: "Reason", header: true },
 	];
 	const rows: SummaryRow[] = reports.map((report) => {
-		const policy = isBlockingId(report.provider, required) ? "yes" : "best-effort";
+		const policy =
+			report.status === "ok" ? "—" : isBlockingReport(report, required) ? "yes" : "best-effort";
 		const duration =
-			report.durationMs !== undefined ? `${(report.durationMs / 1000).toFixed(1)}s` : "";
+			report.durationMs !== undefined ? `${(report.durationMs / 1000).toFixed(1)}s` : "—";
 		return [
 			renderCell(report.provider, "code"),
 			renderCell(report.status, "plain"),
-			renderCell(report.status === "ok" ? "" : policy, "plain"),
+			renderCell(policy, "plain"),
 			renderCell(duration, "plain"),
-			renderCell(report.reason ?? "", "plain"),
+			renderCell(report.reason || "—", "plain"),
 		];
 	});
 	return [header, ...rows];

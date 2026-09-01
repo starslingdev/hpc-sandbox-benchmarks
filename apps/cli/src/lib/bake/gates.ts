@@ -9,12 +9,14 @@
 //   • A failed report for a real provider blocks IFF that provider is `required`. Non-required
 //     ("best-effort") providers — daytona-container, modal-vm, novita, blaxel until a committed run
 //     proves them — are recorded and warned, but must never fail a release whose required set passed.
+//   • A required provider that SKIPS also blocks: a release cannot claim a required integration passed
+//     when missing credentials or another prerequisite prevented it from running.
 //   • Locally (nothing required) any failure blocks, as a safety net for a hand-run bake/promote.
 //
 // This is deliberately NOT `reports.some(r => r.status === "failed")`: that blunt check is what made
 // run 29896891577's promote job go red AFTER it had already published :v5 — a non-required
 // daytona-container failure was counted as fatal even though the release intentionally shipped without
-// it. Gate on `hasBlockingFailure` instead, everywhere the exit code is decided.
+// it. Gate on the helpers below instead, everywhere the exit code is decided.
 import { PROVIDER_IDS } from "@sandbox-benchmarks/schema/providers";
 
 /** Registered provider ids. A failed report whose provider is NOT one of these is a synthetic sentinel
@@ -23,6 +25,12 @@ const REGISTERED_PROVIDER_IDS: ReadonlySet<string> = new Set(PROVIDER_IDS);
 
 /** Synthetic id used for promotion's release-plumbing outcomes (including the image commit point). */
 export const IMAGE_REPORT = "image";
+
+/** Required ids that are not registered providers. Keep this check separate from per-cell scoping so
+ * a typo cannot disappear merely because the current matrix cell runs a different provider. */
+export function unknownProviderIds(ids: readonly string[]): string[] {
+	return [...new Set(ids.filter((id) => !REGISTERED_PROVIDER_IDS.has(id)))];
+}
 
 /** The minimal report shape the gate reads — structural so both a bake/promote {@link
  *  import("./types.ts").BakeReport} and a raw provider-run fit without coupling. */

@@ -6,6 +6,7 @@ import {
 	isBlockingId,
 	isBlockingReport,
 	nonBlockingFailures,
+	unknownProviderIds,
 } from "./gates.ts";
 
 const REQUIRED = ["e2b", "daytona-vm", "modal-gvisor"];
@@ -108,5 +109,11 @@ describe("isBlockingId (status-independent labelling for the summary)", () => {
 		expect(isBlockingId("daytona-vm", REQUIRED)).toBe(true);
 		expect(isBlockingId("image", REQUIRED)).toBe(true);
 		expect(isBlockingId("daytona-container", REQUIRED)).toBe(false);
+	});
+});
+
+describe("unknownProviderIds", () => {
+	test("returns unique unknown ids without filtering valid required providers", () => {
+		expect(unknownProviderIds(["e2b", "typo", "daytona-vm", "typo"])).toEqual(["typo"]);
 	});
 });

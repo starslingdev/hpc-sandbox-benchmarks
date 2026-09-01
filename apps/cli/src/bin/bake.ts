@@ -20,7 +20,12 @@ import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { logWarning } from "../lib/actions-log.ts";
-import { blockingFailures, blockingReports, nonBlockingFailures } from "../lib/bake/gates.ts";
+import {
+	blockingFailures,
+	blockingReports,
+	nonBlockingFailures,
+	unknownProviderIds,
+} from "../lib/bake/gates.ts";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { effectivePromotionRequirements, promoteAll } from "../lib/bake/promote.ts";
 import {
@@ -142,6 +147,12 @@ if (import.meta.main) {
 		log(`error: ${err instanceof Error ? err.message : String(err)}`);
 		await exitAfterSandboxCleanup(2);
 	}
+	const configuredRequired = requiredProviders();
+	const unknownRequired = unknownProviderIds(configuredRequired);
+	if (unknownRequired.length > 0) {
+		log(`error: unknown required provider(s): ${unknownRequired.join(", ")}`);
+		await exitAfterSandboxCleanup(2);
+	}
 
 	// Promote is the release step: publish the already-validated candidate as the public version.
 	if (process.argv.includes("--promote")) {
@@ -176,7 +187,7 @@ if (import.meta.main) {
 			},
 			reports: promoted.reports,
 		});
-		const required = effectivePromotionRequirements(requiredProviders(), only);
+		const required = effectivePromotionRequirements(configuredRequired, only);
 		warnNonBlocking(promoted.reports, required, "promote");
 		if (!promoted.ok) {
 			const blocking = blockingReports(promoted.reports, required);
@@ -298,7 +309,7 @@ if (import.meta.main) {
 		reports,
 	});
 
-	const required = requiredProviders();
+	const required = configuredRequired;
 	warnNonBlocking(reports, required, "pass bake/verify");
 
 	// A required failure blocks; a best-effort failure warns and exits zero. With no explicit required

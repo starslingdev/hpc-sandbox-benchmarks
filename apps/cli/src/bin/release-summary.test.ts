@@ -200,6 +200,18 @@ describe("readReports", () => {
 			readReports(JSON.stringify({ reports: [{ provider: "e2b" }, { status: "ok" }] })),
 		).toEqual([]);
 	});
+
+	test("drops malformed optional fields instead of letting rendering throw", () => {
+		expect(
+			readReports(
+				JSON.stringify({
+					reports: [
+						{ provider: "e2b", status: "failed", reason: { nested: true }, durationMs: "slow" },
+					],
+				}),
+			),
+		).toEqual([{ provider: "e2b", status: "failed" }]);
+	});
 });
 
 describe("readReportFile", () => {
