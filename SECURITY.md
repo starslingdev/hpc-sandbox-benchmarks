@@ -27,3 +27,6 @@ expose credentials, allow remote code execution in CI, or leak provider API keys
 - We do not use `pull_request_target`.
 - Third-party Actions are SHA-pinned; installs use `--ignore-scripts` / Bun's empty
   `trustedDependencies` posture.
+- Hugging Face models and datasets we download are pinned to full commit SHAs, never to a branch or
+  tag, and the GPU asset preparation refuses a mutable pin at runtime. See
+  [docs/gpu-benchmark-methodology.md](./docs/gpu-benchmark-methodology.md).

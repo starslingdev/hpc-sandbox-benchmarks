@@ -7,7 +7,8 @@ separate from the CPU sandbox leaderboard because its hardware, cost, and metric
 
 - PTS profile: `local/vllm-speed-bench-1.0.0`
 - Model: `Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8` at a pinned Hugging Face revision
-- Dataset: NVIDIA SPEED-Bench `qualitative` / `coding`, prepared from a pinned source revision
+- Dataset: NVIDIA SPEED-Bench `qualitative` / `coding` at a pinned dataset revision, prepared by a
+  checksum-pinned upstream script
 - Server: vLLM 0.26.0 on Python 3.13 and its resolved PyTorch CUDA 13 wheel stack
 - Image: digest-pinned `nvidia/cuda:13.3.1-devel-ubuntu24.04`
 - Sandbox: one RTX PRO 6000, 8 vCPU, 96 GiB RAM, gVisor runtime
@@ -24,6 +25,19 @@ Model weights and the prepared SPEED-Bench dataset live in a named Modal Volume.
 job populates the Volume incrementally, writes a manifest containing every immutable source revision,
 and commits it before a GPU is allocated. Benchmark sandboxes mount it read-only with Hugging Face and
 Transformers offline modes enabled.
+
+Every Hugging Face download this repository issues is pinned to a full commit SHA — the model
+weights, and the SPEED-Bench dataset itself, whose upstream preparation script otherwise reads the
+default branch. Branch and tag names resolve at download time, so they could serve different weights
+or different prompts on any run (CWE-494). The preparation script refuses to download anything pinned
+to a mutable reference, verifies the cached model snapshot is the pinned commit, and re-derives the
+dataset whenever the manifest on the Volume records different pins than the ones in force.
+
+The prepared rows also cite external sources that the upstream script fetches. At the pinned dataset
+revision the coding rows cite only commit-pinned ones, and the category filter runs before that
+resolution — so no unpinned fetch is reachable, but that is a property of the pinned revision's
+contents rather than a guarantee of the upstream script. Re-check it when refreshing the dataset pin,
+alongside the coding-row count.
 
 Blackwell kernel preparation is a separate idempotent GPU job. It starts the exact production server,
 warms its compilation caches, verifies CUDA-graph capture, writes a configuration-keyed manifest, and

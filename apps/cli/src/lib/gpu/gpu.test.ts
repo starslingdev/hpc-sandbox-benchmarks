@@ -9,6 +9,7 @@ import {
 	MODEL_CACHE_ENV,
 	MODEL_OFFLINE_ENV,
 	PYTHON_ENVIRONMENT_COMMAND,
+	readSource,
 	VLLM_IMAGE_COMMANDS,
 } from "./config.ts";
 import { cudaGraphEvidenceFromLog } from "./cuda-graphs.ts";
@@ -123,6 +124,9 @@ describe("parseGpuArgs", () => {
 });
 
 describe("fixed workload", () => {
+	const script = readSource("apps/cli/src/lib/gpu/prepare-models.py");
+	const assets = modelAssetConfig();
+
 	test("pins the profile and asset preparation from one config", () => {
 		const profileDirectory = new URL(
 			"../../../../../packages/schema/src/pts-profiles/local/vllm-speed-bench-1.0.0/",
@@ -137,14 +141,32 @@ describe("fixed workload", () => {
 		expect(profile).toContain("Qualification (1 prompt x 16 output tokens)");
 		expect(profile).toContain("Full (80 prompts x 1024 output tokens)");
 
-		const script = readFileSync(new URL("prepare-models.py", import.meta.url), "utf8");
-		const assets = modelAssetConfig();
 		expect(assets.model).toEqual(model);
-		expect(assets.speedBench.prepare.revision).toHaveLength(40);
 		expect(assets.speedBench.prepare.url).toContain(assets.speedBench.prepare.revision);
-		expect(script).toContain("filter insertion anchor changed");
-		expect(script).toContain('"prepareTransform": category_filter.strip()');
+		expect(script).toContain("insertion anchor changed");
+		expect(script).toContain('"prepareTransforms": [');
 		expect(script).toContain('"contentSha256": dataset_sha256');
+	});
+
+	test("pins every Hugging Face download to an immutable commit", () => {
+		// A branch or tag resolves at download time, so anything but a full commit SHA lets the model
+		// weights or the benchmark prompts change between runs (bandit B615 / CWE-494).
+		const commit = /^[0-9a-f]{40}$/;
+		expect(assets.model.revision).toMatch(commit);
+		expect(assets.speedBench.prepare.revision).toMatch(commit);
+		expect(assets.speedBench.dataset.repoId).toBe("nvidia/SPEED-Bench");
+		expect(assets.speedBench.dataset.revision).toMatch(commit);
+
+		// Both pins are enforced sandbox-side too: the script is staged into the model-cache sandbox
+		// and run against this config, so it must reject a config that pins anything mutable rather
+		// than trust its caller.
+		expect(script.match(/_revision = pinned_revision\(/g)).toHaveLength(2);
+		// Upstream's own load is unpinned; the staged copy is rewritten to the pinned commit.
+		expect(script).toContain('revision="{dataset_revision}")');
+		const downloads = script.match(/snapshot_download\([^)]*\)/g) ?? [];
+		expect(downloads).toHaveLength(3);
+		for (const call of downloads) expect(call).toContain("revision=model_revision");
+		expect(script).toContain("root.name != model_revision");
 	});
 
 	test("keeps GPU consumers offline and the process runner fail-safe", () => {

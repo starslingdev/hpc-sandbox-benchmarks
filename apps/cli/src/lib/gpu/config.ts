@@ -56,6 +56,16 @@ export const GPU_BENCHMARK = {
 				/<Name>Full \([^<]+<\/Name>\s*<Value>[^<]*--num-prompts ([0-9]+)/,
 				"full run --num-prompts",
 			),
+			// The dataset repository itself, pinned to an immutable commit. `prepare` below only pins
+			// the upstream *script*, which loads the dataset from its default branch — a branch can
+			// serve different rows on every run, so prepare-models.py rewrites that call to this
+			// commit before executing it (CWE-494). Refreshing this pin re-derives the dataset: keep
+			// `codingSamples` (the profile's --num-prompts) in step with the revision's coding rows,
+			// and re-check that those rows still cite only commit-pinned external sources.
+			dataset: {
+				repoId: "nvidia/SPEED-Bench",
+				revision: "487aa718444e816458d1a0a52bfce7a454285cf4",
+			},
 			prepare: {
 				revision: "e06c9b900177be3f60d6a3f99135bb5de9af9bed",
 				url: "https://raw.githubusercontent.com/NVIDIA-NeMo/Skills/e06c9b900177be3f60d6a3f99135bb5de9af9bed/nemo_skills/dataset/speed-bench/prepare.py",
