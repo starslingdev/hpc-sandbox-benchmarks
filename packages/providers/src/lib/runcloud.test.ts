@@ -105,6 +105,65 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(destroyed).toEqual(["sb-test"]);
 	});
 
+	// run.cloud rebuilds the image into an ext4 rootfs per sandbox, and that build corrupts
+	// non-deterministically under a concurrent burst (matrix run 33712242440: the same pinned image
+	// failed `mkfs.ext4` at a different path on each of 26 boots). The sandbox is destroyed before the
+	// error escapes, so re-issuing is safe — and it is the difference between a lost cell and a retry
+	// that lands on a healthy host.
+	it.each([
+		"interrupted",
+		"failed",
+		"destroying",
+	] as const)("marks a host-side boot failure (%s) retryable once the allocation is confirmed gone", async (state) => {
+		const destroyed: string[] = [];
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => nativeSandbox(state),
+			destroy: async (id) => {
+				destroyed.push(id);
+			},
+		});
+
+		const error = await runcloudCompute({ client })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain(`entered terminal state "${state}"`);
+		expect(destroyed).toEqual(["sb-test"]);
+		expect(isRetryableCreateError(error)).toBe(true);
+	});
+
+	it("leaves a clean stop unmarked — it says nothing about the host giving up", async () => {
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => nativeSandbox("stopped"),
+			destroy: async () => {},
+		});
+
+		const error = await runcloudCompute({ client })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		expect((error as Error).message).toContain('entered terminal state "stopped"');
+		expect(isRetryableCreateError(error)).toBe(false);
+	});
+
+	it("leaves a boot failure unmarked when cleanup could not confirm the allocation is gone", async () => {
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => nativeSandbox("interrupted"),
+			destroy: async () => {
+				throw new Error("destroy unavailable");
+			},
+		});
+
+		const error = await runcloudCompute({ client, cleanupRetryMs: 0 })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		// Retrying a create whose predecessor may still be billable is the leak this guard prevents.
+		expect(isRetryableCreateError(error)).toBe(false);
+		expect((error as Error).message).toContain("manual cleanup may be required");
+	});
+
 	it("destroys the allocation when a readiness poll throws", async () => {
 		const destroyed: string[] = [];
 		const client = nativeClient({

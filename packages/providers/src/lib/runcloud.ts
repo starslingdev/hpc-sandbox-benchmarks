@@ -195,6 +195,34 @@ function isTerminalBootFailure(state: Sandbox["state"]): boolean {
 }
 
 /**
+ * The subset of {@link isTerminalBootFailure} states that mean the HOST gave up on this sandbox — as
+ * opposed to `stopped`, which is a clean stop and says nothing about the host.
+ *
+ * These are worth re-issuing the create for, because run.cloud rebuilds the image into an ext4 rootfs
+ * per sandbox (`hostd POST /host/images/build`) and that build corrupts non-deterministically under a
+ * concurrent burst: across the 27 failed boots of matrix run 33712242440 the SAME image failed at a
+ * DIFFERENT path every time — `symlink "bin"`, `X11`, `libLLVM.so.19.1`, `etc`, `miniconda3` — with
+ * `mkfs.ext4 … Directory block checksum does not match`, alongside two host-level `boot failed on 3
+ * host(s)` variants. A fixed image failing at a random offset is a host-side race, not a bad artifact,
+ * and a fresh create lands on a fresh build. Replicates of the same cell that retried succeeded.
+ */
+function isRetryableBootFailure(state: Sandbox["state"]): boolean {
+	return ["failed", "interrupted", "destroyed", "destroying"].includes(state);
+}
+
+/** A readiness wait that ended in a terminal state, carrying the state so create() can decide whether
+ *  re-issuing is worthwhile once it has confirmed the allocation is gone. */
+class BootFailureError extends Error {
+	constructor(
+		readonly sandboxId: string,
+		readonly state: Sandbox["state"],
+	) {
+		super(`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting`);
+		this.name = "BootFailureError";
+	}
+}
+
+/**
  * Poll until the sandbox can accept execs. Returns the freshest record so callers don't keep a
  * stale `building_image` handle from the original create response.
  */
@@ -216,11 +244,7 @@ async function waitUntilRunning(
 			options,
 		);
 		if (last.state === "running") return last;
-		if (isTerminalBootFailure(last.state)) {
-			throw new Error(
-				`run.cloud sandbox ${sandboxId} entered terminal state "${last.state}" while booting`,
-			);
-		}
+		if (isTerminalBootFailure(last.state)) throw new BootFailureError(sandboxId, last.state);
 		await wait(pollMs);
 	}
 	throw new Error(
@@ -504,7 +528,16 @@ export function sandboxMethods(
 							`could not be destroyed after retries (${errorMessage(destroyError)}); manual cleanup may be required`,
 					);
 				}
-				throw error;
+				// Cleanup returned, so the allocation is confirmed gone — the second half of what
+				// markRetryableCreate asserts. A host-side boot failure is therefore both transient and
+				// safe to re-issue, and the harness's capacity budget is the right place to absorb it:
+				// without this mark a corrupted image build is a permanent cell failure, which cost
+				// 32 of run 33712242440's 54 runcloud replicates while ~50 minutes of budget went unspent.
+				// A readiness TIMEOUT stays unmarked — it never proved the host had given up, so it must
+				// surface promptly rather than spend an hour looking like capacity.
+				throw error instanceof BootFailureError && isRetryableBootFailure(error.state)
+					? markRetryableCreate(error)
+					: error;
 			}
 		},
 
