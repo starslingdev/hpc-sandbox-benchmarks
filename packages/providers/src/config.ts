@@ -44,7 +44,17 @@ const envSchema = type({
 	"VERCEL_PROJECT_NAME?": "string >= 1",
 });
 
-const ENV_KEYS = [
+/**
+ * The keys forwarded into {@link envSchema}, and — for every OPTIONAL provider VARIABLE — the list
+ * that decides whether CI's empty-string export is absorbed here or reaches business logic raw.
+ *
+ * Exported for the drift test in index.test.ts, which is the guard this list has to earn: `TAMA_CLI`
+ * was declared in the schema registry but missing from here, so the adapter read it straight off
+ * process.env, `??` accepted CI's `""`, and every tama cell of matrix run 33712242440 died in
+ * spawn(""). The registry is the source of truth for which variables exist; this list only has to
+ * cover them.
+ */
+export const ENV_KEYS = [
 	"BENCH_TOOLCHAIN_IMAGE",
 	"E2B_TEMPLATE",
 	"DAYTONA_API_KEY",
