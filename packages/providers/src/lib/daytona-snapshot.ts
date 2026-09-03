@@ -15,6 +15,7 @@
 import type { SandboxMethods } from "@computesdk/provider";
 import { Daytona } from "@daytonaio/sdk";
 import type { DaytonaConfig } from "../config.ts";
+import { patchableManager } from "./patch-manager.ts";
 import { markRetryableCreate } from "./retryable-create.ts";
 import type { DirectProvider } from "./types.ts";
 
@@ -26,20 +27,21 @@ type DaytonaSandboxMethods = SandboxMethods<unknown, unknown>;
 const INACTIVE_SNAPSHOT = /snapshot\s+\S+\s+is\s+inactive/i;
 
 /**
- * In-flight activations, keyed by the snapshot the cell boots and the region it lives in.
+ * In-flight activations, keyed by snapshot name.
  *
- * A cell drives R replicates from ONE process (12 for a realworld suite), so without this every
- * replicate would fire its own activation for the same snapshot in the same second. The entry is
- * dropped once settled rather than cached: a failed activation must be retryable on the next attempt,
- * and a snapshot that reports inactive again after a successful one is telling us something the cache
- * would hide.
+ * A cell drives R replicates from ONE process (12 for a realworld suite) and builds a fresh wrapper
+ * per create attempt, so without this every replicate fires its own activation for the same snapshot
+ * in the same second — hence module scope, not a closure variable. The entry is dropped once settled
+ * rather than cached: a failed activation must be retryable on the next attempt, and a snapshot that
+ * reports inactive again after a successful one is telling us something a cache would hide. The name
+ * alone is a sufficient key — both Daytona variants share one region and take their snapshot names
+ * from `bakedArtifactName`, which already distinguishes them.
  */
 const activating = new Map<string, Promise<void>>();
 
-/** Ask Daytona to reactivate the snapshot, at most once per (region, snapshot) at a time. */
+/** Ask Daytona to reactivate the snapshot, at most once per snapshot at a time. */
 function activateOnce(cfg: DaytonaConfig): Promise<void> {
-	const key = `${cfg.target ?? ""}:${cfg.snapshot}`;
-	const inFlight = activating.get(key);
+	const inFlight = activating.get(cfg.snapshot);
 	if (inFlight) return inFlight;
 	const started = (async () => {
 		// Explicit target, not the DAYTONA_TARGET pin daytonaClientTarget uses: this client is ours and
@@ -48,11 +50,11 @@ function activateOnce(cfg: DaytonaConfig): Promise<void> {
 		const snapshot = await daytona.snapshot.get(cfg.snapshot);
 		if (snapshot.state === "active") return;
 		await daytona.snapshot.activate(snapshot);
-	})().finally(() => {
-		activating.delete(key);
-	});
-	activating.set(key, started);
-	return started;
+	})();
+	// set BEFORE chaining the cleanup: a `.finally` that ran first would delete an entry that was
+	// never published, stranding the next one and silencing activation for the rest of the process.
+	activating.set(cfg.snapshot, started);
+	return started.finally(() => activating.delete(cfg.snapshot));
 }
 
 /**
@@ -66,15 +68,11 @@ export function daytonaActivateSnapshot(
 	provider: DirectProvider,
 	cfg: DaytonaConfig,
 ): DirectProvider {
-	const manager = provider.sandbox as unknown as {
-		methods?: Record<string, unknown> & Pick<DaytonaSandboxMethods, "create">;
-	};
-	if (typeof manager.methods?.create !== "function") {
-		throw new Error(
-			"@computesdk/daytona provider internals changed shape (sandbox manager has no patchable " +
-				"create method); revisit the snapshot-activation adapter against the upgraded wrapper",
-		);
-	}
+	const manager = patchableManager<Pick<DaytonaSandboxMethods, "create">>(provider, {
+		pkg: "daytona",
+		adapter: "snapshot-activation",
+		methods: ["create"],
+	});
 	const { create } = manager.methods;
 	const activatingCreate: DaytonaSandboxMethods["create"] = async (config, options) => {
 		try {

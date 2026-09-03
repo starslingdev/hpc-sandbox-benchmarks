@@ -89,39 +89,25 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(destroyCalls).toBe(0);
 	});
 
-	it("destroys the allocation when readiness enters a terminal state", async () => {
-		const destroyed: string[] = [];
-		const client = nativeClient({
+	/** A client whose create is accepted and whose readiness then lands in `state`. */
+	const bootingTo = (state: SandboxState, destroy: NativeClient["destroy"] = async () => {}) =>
+		nativeClient({
 			create: async () => nativeSandbox("building_image"),
-			get: async () => nativeSandbox("failed"),
-			destroy: async (id) => {
-				destroyed.push(id);
-			},
+			get: async () => nativeSandbox(state),
+			destroy,
 		});
 
-		await expect(runcloudCompute({ client }).sandbox.create()).rejects.toThrow(
-			'entered terminal state "failed"',
-		);
-		expect(destroyed).toEqual(["sb-test"]);
-	});
-
-	// run.cloud rebuilds the image into an ext4 rootfs per sandbox, and that build corrupts
-	// non-deterministically under a concurrent burst (matrix run 33712242440: the same pinned image
-	// failed `mkfs.ext4` at a different path on each of 26 boots). The sandbox is destroyed before the
-	// error escapes, so re-issuing is safe — and it is the difference between a lost cell and a retry
-	// that lands on a healthy host.
+	// See isRetryableBootFailure in runcloud.ts for why a host-side boot failure is worth re-issuing.
+	// What matters here is the guard on it: the sandbox must be destroyed before the error escapes, or
+	// the mark would claim "nothing was allocated" for a create that left one running.
 	it.each([
 		"interrupted",
 		"failed",
 		"destroying",
 	] as const)("marks a host-side boot failure (%s) retryable once the allocation is confirmed gone", async (state) => {
 		const destroyed: string[] = [];
-		const client = nativeClient({
-			create: async () => nativeSandbox("building_image"),
-			get: async () => nativeSandbox(state),
-			destroy: async (id) => {
-				destroyed.push(id);
-			},
+		const client = bootingTo(state, async (id) => {
+			destroyed.push(id);
 		});
 
 		const error = await runcloudCompute({ client })
@@ -134,13 +120,7 @@ describe("run.cloud ComputeSDK adapter", () => {
 	});
 
 	it("leaves a clean stop unmarked — it says nothing about the host giving up", async () => {
-		const client = nativeClient({
-			create: async () => nativeSandbox("building_image"),
-			get: async () => nativeSandbox("stopped"),
-			destroy: async () => {},
-		});
-
-		const error = await runcloudCompute({ client })
+		const error = await runcloudCompute({ client: bootingTo("stopped") })
 			.sandbox.create()
 			.catch((e: unknown) => e);
 		expect((error as Error).message).toContain('entered terminal state "stopped"');
@@ -148,12 +128,8 @@ describe("run.cloud ComputeSDK adapter", () => {
 	});
 
 	it("leaves a boot failure unmarked when cleanup could not confirm the allocation is gone", async () => {
-		const client = nativeClient({
-			create: async () => nativeSandbox("building_image"),
-			get: async () => nativeSandbox("interrupted"),
-			destroy: async () => {
-				throw new Error("destroy unavailable");
-			},
+		const client = bootingTo("interrupted", async () => {
+			throw new Error("destroy unavailable");
 		});
 
 		const error = await runcloudCompute({ client, cleanupRetryMs: 0 })

@@ -2,7 +2,7 @@
 // through the REAL SDK with the axios transport stubbed — the same seam daytona-target.test.ts uses —
 // so the test proves the snapshot API is actually reached, and proves it stays best-effort when that
 // call fails, which is the state the stub leaves it in.
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import type { SandboxMethods } from "@computesdk/provider";
 import { Daytona } from "@daytonaio/sdk";
 import type { DaytonaConfig } from "../config.ts";
@@ -36,13 +36,13 @@ function stubAxios() {
 const sdkClass = Daytona as unknown as { createAxiosInstance: () => unknown };
 const stockAxiosFactory = sdkClass.createAxiosInstance;
 
+type DaytonaCreate = SandboxMethods<unknown, unknown>["create"];
+
 /**
  * A minimal stand-in for the wrapper's sandbox manager. It mirrors the one structural fact the patch
  * depends on: the public `create` dispatches through `methods.create` on every call, which is why
  * replacing the table takes effect at all. Only `create` is patched, so only `create` has to exist.
  */
-type DaytonaCreate = SandboxMethods<unknown, unknown>["create"];
-
 function fakeProvider(create: DaytonaCreate): DirectProvider {
 	const manager = {
 		methods: { create },
@@ -61,19 +61,20 @@ describe("daytonaActivateSnapshot", () => {
 	beforeEach(() => {
 		captured.length = 0;
 	});
-	afterEach(() => {
-		captured.length = 0;
-	});
 
-	it("marks an inactive-snapshot create retryable so the harness re-issues it", async () => {
-		const provider = daytonaActivateSnapshot(
+	/** A provider whose create fails the way the control plane failed every daytona-vm replicate. */
+	const inactiveProvider = () =>
+		daytonaActivateSnapshot(
 			fakeProvider(async () => {
 				throw new Error(INACTIVE);
 			}),
 			CFG,
 		);
 
-		const error = await provider.sandbox.create().catch((e: unknown) => e);
+	it("marks an inactive-snapshot create retryable so the harness re-issues it", async () => {
+		const error = await inactiveProvider()
+			.sandbox.create()
+			.catch((e: unknown) => e);
 		expect((error as Error).message).toBe(INACTIVE);
 		// Without the mark this is a permanent cell failure: the harness's classifier matches only
 		// quota/rate-limit/capacity wording, and "is inactive" is none of those.
@@ -81,14 +82,9 @@ describe("daytonaActivateSnapshot", () => {
 	});
 
 	it("reaches the snapshot API for the configured snapshot", async () => {
-		const provider = daytonaActivateSnapshot(
-			fakeProvider(async () => {
-				throw new Error(INACTIVE);
-			}),
-			CFG,
-		);
-
-		await provider.sandbox.create().catch(() => undefined);
+		await inactiveProvider()
+			.sandbox.create()
+			.catch(() => undefined);
 		expect(captured.some((url) => url.includes(CFG.snapshot))).toBe(true);
 	});
 

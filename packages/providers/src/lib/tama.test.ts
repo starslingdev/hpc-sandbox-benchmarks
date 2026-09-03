@@ -228,11 +228,8 @@ console.log(JSON.stringify({ tamaCli: config.tamaCli }));`;
 
 	/** Load config in a clean subprocess. `null` unsets the key rather than blanking it. */
 	async function resolveBinary(value: string | null): Promise<string | undefined> {
-		const env: Record<string, string> = {};
-		for (const [key, ambient] of Object.entries(process.env)) {
-			// Drop the ambient key so a developer who exports it can't decide these cases.
-			if (ambient !== undefined && key !== "TAMA_CLI") env[key] = ambient;
-		}
+		// Drop the ambient key so a developer who exports it can't decide these cases.
+		const { TAMA_CLI: _ambient, ...env } = process.env;
 		if (value !== null) env.TAMA_CLI = value;
 		const proc = Bun.spawn(["bun", "-e", PROBE], { env, stdout: "pipe", stderr: "pipe" });
 		const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);

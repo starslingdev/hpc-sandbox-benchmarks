@@ -189,32 +189,32 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Terminal states that mean boot failed and we should stop waiting. */
-function isTerminalBootFailure(state: Sandbox["state"]): boolean {
-	return ["failed", "interrupted", "destroyed", "destroying", "stopped"].includes(state);
-}
-
 /**
- * The subset of {@link isTerminalBootFailure} states that mean the HOST gave up on this sandbox — as
- * opposed to `stopped`, which is a clean stop and says nothing about the host.
- *
- * These are worth re-issuing the create for, because run.cloud rebuilds the image into an ext4 rootfs
- * per sandbox (`hostd POST /host/images/build`) and that build corrupts non-deterministically under a
- * concurrent burst: across the 27 failed boots of matrix run 33712242440 the SAME image failed at a
- * DIFFERENT path every time — `symlink "bin"`, `X11`, `libLLVM.so.19.1`, `etc`, `miniconda3` — with
- * `mkfs.ext4 … Directory block checksum does not match`, alongside two host-level `boot failed on 3
- * host(s)` variants. A fixed image failing at a random offset is a host-side race, not a bad artifact,
- * and a fresh create lands on a fresh build. Replicates of the same cell that retried succeeded.
+ * Terminal boot states that mean the HOST gave up on this sandbox, so re-issuing the create is worth
+ * it: run.cloud rebuilds the image into an ext4 rootfs per sandbox (`hostd POST /host/images/build`)
+ * and that build corrupts non-deterministically under a concurrent burst. Across the 27 failed boots
+ * of matrix run 33712242440 the SAME pinned image failed at a DIFFERENT path every time — `symlink
+ * "bin"`, `X11`, `libLLVM.so.19.1`, `etc`, `miniconda3` — with `mkfs.ext4 … Directory block checksum
+ * does not match`, alongside two host-level `boot failed on 3 host(s)` variants. A fixed image
+ * failing at a random offset is a host-side race, not a bad artifact, and a fresh create lands on a
+ * fresh build; replicates of the same cell that retried succeeded.
  */
 function isRetryableBootFailure(state: Sandbox["state"]): boolean {
 	return ["failed", "interrupted", "destroyed", "destroying"].includes(state);
+}
+
+/** Terminal states that mean boot failed and we should stop waiting. `stopped` is the one that is
+ *  NOT worth re-issuing — a clean stop says nothing about the host having given up. Derived so a
+ *  future terminal state cannot be added to one list and silently forgotten in the other. */
+function isTerminalBootFailure(state: Sandbox["state"]): boolean {
+	return state === "stopped" || isRetryableBootFailure(state);
 }
 
 /** A readiness wait that ended in a terminal state, carrying the state so create() can decide whether
  *  re-issuing is worthwhile once it has confirmed the allocation is gone. */
 class BootFailureError extends Error {
 	constructor(
-		readonly sandboxId: string,
+		sandboxId: string,
 		readonly state: Sandbox["state"],
 	) {
 		super(`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting`);
@@ -529,12 +529,9 @@ export function sandboxMethods(
 					);
 				}
 				// Cleanup returned, so the allocation is confirmed gone — the second half of what
-				// markRetryableCreate asserts. A host-side boot failure is therefore both transient and
-				// safe to re-issue, and the harness's capacity budget is the right place to absorb it:
-				// without this mark a corrupted image build is a permanent cell failure, which cost
-				// 32 of run 33712242440's 54 runcloud replicates while ~50 minutes of budget went unspent.
-				// A readiness TIMEOUT stays unmarked — it never proved the host had given up, so it must
-				// surface promptly rather than spend an hour looking like capacity.
+				// markRetryableCreate asserts, and the half a message-matching classifier could never
+				// establish. A readiness TIMEOUT stays unmarked: it never proved the host had given up,
+				// so it must surface promptly rather than spend an hour looking like capacity.
 				throw error instanceof BootFailureError && isRetryableBootFailure(error.state)
 					? markRetryableCreate(error)
 					: error;

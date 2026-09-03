@@ -33,8 +33,6 @@ const envSchema = type({
 	"NOVITA_API_KEY?": "string >= 1",
 	"NOVITA_TEMPLATE?": "string >= 1",
 	"RUNLOOP_BLUEPRINT?": "string >= 1",
-	// tama publishes no SDK: the adapter SPAWNS this binary. An empty value here would spawn ""
-	// (ERR_INVALID_ARG_VALUE), which is exactly what the empty-is-unset rule below exists to prevent.
 	"TAMA_CLI?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
 	"MSB_API_KEY?": "string >= 1",

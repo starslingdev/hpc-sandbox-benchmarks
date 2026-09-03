@@ -42,8 +42,6 @@ import { vercelCompute } from "./vercel.ts";
 function daytonaAdapter(cfg: DaytonaConfig): ProviderAdapter {
 	return {
 		artifact: { kind: "baked", ref: cfg.snapshot },
-		// Snapshot activation wraps the region-pinned create, not the other way round: the inner layer
-		// is what the control plane rejects, and the activation client carries its own explicit target.
 		createCompute: () =>
 			daytonaActivateSnapshot(
 				daytonaClientTarget(daytona({ apiKey: cfg.apiKey }), cfg.target),

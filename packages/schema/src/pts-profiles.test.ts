@@ -52,6 +52,14 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 			const profile = parseProfile("local", dir, testXml, resultsXml);
 			const env = parseEnvFile(readFileSync(join(base, "target.env"), "utf8"));
 
+			// `<Value>` is optional in the schema (iperf's TCP entry); realworld Task entries always
+			// carry one, and a missing value maps to "" here so the key-set equality still fails loudly.
+			const taskValues = new Set(
+				profile.settings
+					.find((option) => option.DisplayName === "Task")
+					?.Menu?.Entry.map((e) => e.Value ?? "") ?? [],
+			);
+
 			it("declares a single Task option with no duplicate Values", () => {
 				const taskOptions = profile.settings.filter((option) => option.DisplayName === "Task");
 				expect(taskOptions).toHaveLength(1);
@@ -61,58 +69,29 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 			});
 
 			it("has a TASK_CMD_<value> key for every Task Entry Value, and no orphaned key", () => {
-				const values = new Set(
-					profile.settings
-						.find((option) => option.DisplayName === "Task")
-						// `<Value>` is optional in the schema (iperf's TCP entry); realworld Task entries always
-						// carry one, and a missing value maps to "" here so the key-set equality still fails loudly.
-						?.Menu?.Entry.map((e) => e.Value ?? "") ?? [],
-				);
 				const taskCmdKeys = new Set(
 					Object.keys(env)
 						.filter((key) => key.startsWith("TASK_CMD_"))
 						.map((key) => key.slice("TASK_CMD_".length)),
 				);
-				expect(taskCmdKeys).toEqual(values);
+				expect(taskCmdKeys).toEqual(taskValues);
 			});
 
 			it("stays data-only: no per-profile install.sh (the shared lib/pts/realworld/ copy is overlaid)", () => {
 				expect(existsSync(join(base, "install.sh"))).toBe(false);
 			});
 
-			it("anchors every TASK_PREP_<value> to a declared Task Value (no orphaned prep)", () => {
-				// TASK_PREP_<value> runs unmeasured before the timed TASK_CMD_<value> (realworld-runner.sh);
-				// a prep keyed to a renamed/removed Value would silently stop running.
-				const values = new Set(
-					profile.settings
-						.find((option) => option.DisplayName === "Task")
-						// `<Value>` is optional in the schema (iperf's TCP entry); realworld Task entries always
-						// carry one, and a missing value maps to "" here so the key-set equality still fails loudly.
-						?.Menu?.Entry.map((e) => e.Value ?? "") ?? [],
-				);
-				const prepKeys = Object.keys(env)
-					.filter((key) => key.startsWith("TASK_PREP_"))
-					.map((key) => key.slice("TASK_PREP_".length));
-				for (const key of prepKeys) {
-					expect(values).toContain(key);
-				}
-			});
-
-			it("anchors every TASK_REQUIRES_MEM_CAP_<value> to a declared Task Value", () => {
-				// The flag makes realworld-runner.sh REFUSE the task on a sandbox that exposes no
-				// enforceable cgroup memory cap, rather than let it exhaust the guest and take the whole
-				// sandbox down. A key naming a renamed/removed Value would silently stop guarding — and
-				// the symptom is a lost replicate on some other provider months later, not a red test.
-				const values = new Set(
-					profile.settings
-						.find((option) => option.DisplayName === "Task")
-						?.Menu?.Entry.map((e) => e.Value ?? "") ?? [],
-				);
-				const capKeys = Object.keys(env)
-					.filter((key) => key.startsWith("TASK_REQUIRES_MEM_CAP_"))
-					.map((key) => key.slice("TASK_REQUIRES_MEM_CAP_".length));
-				for (const key of capKeys) {
-					expect(values).toContain(key);
+			// Both keys tune how realworld-runner.sh treats one Task Value: TASK_PREP_ runs unmeasured
+			// before the timed command, TASK_REQUIRES_MEM_CAP_ refuses the task on a sandbox with no
+			// enforceable cgroup memory cap instead of letting it take the whole sandbox down. Either one
+			// keyed to a renamed or removed Value silently stops doing its job, and the symptom surfaces
+			// as a slow build or a lost replicate months later rather than as a red test.
+			it.each([
+				"TASK_PREP_",
+				"TASK_REQUIRES_MEM_CAP_",
+			])("anchors every %s<value> to a declared Task Value", (prefix) => {
+				for (const key of Object.keys(env).filter((k) => k.startsWith(prefix))) {
+					expect(taskValues).toContain(key.slice(prefix.length));
 				}
 			});
 
