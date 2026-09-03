@@ -33,6 +33,9 @@ const envSchema = type({
 	"NOVITA_API_KEY?": "string >= 1",
 	"NOVITA_TEMPLATE?": "string >= 1",
 	"RUNLOOP_BLUEPRINT?": "string >= 1",
+	// tama publishes no SDK: the adapter SPAWNS this binary. An empty value here would spawn ""
+	// (ERR_INVALID_ARG_VALUE), which is exactly what the empty-is-unset rule below exists to prevent.
+	"TAMA_CLI?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
 	"MSB_API_KEY?": "string >= 1",
 	"VERCEL_CANDIDATE_IMAGE?": "string >= 1",
@@ -54,6 +57,7 @@ const ENV_KEYS = [
 	"NOVITA_API_KEY",
 	"NOVITA_TEMPLATE",
 	"RUNLOOP_BLUEPRINT",
+	"TAMA_CLI",
 	"MSB_API_URL",
 	"MSB_API_KEY",
 	"VERCEL_CANDIDATE_IMAGE",
@@ -203,6 +207,12 @@ export const config = {
 	runloopBlueprintVersion,
 	/** Mutable candidate Runloop Blueprint name the bake creates while iterating. */
 	runloopBlueprintCandidate,
+	/** The `tama` binary the CLI-driven adapter spawns for every control-plane call; `TAMA_CLI`
+	 *  override, else the name resolved from PATH (what `.github/actions/setup-tama` installs).
+	 *  Resolved HERE rather than at the spawn site so the empty-is-unset rule above covers it — CI
+	 *  materializes the unconfigured override as `TAMA_CLI=""`, and spawning that is a TypeError, not
+	 *  a fallback to the default. */
+	tamaCli: env.TAMA_CLI ?? "tama",
 	/** Microsandbox Cloud connection. The provider gate requires the key before construction, while
 	 * the URL stays optional so the SDK can use its production default. */
 	microsandboxCloud: {
