@@ -98,6 +98,24 @@ describe("realworld profiles: Task Option <-> target.env consistency", () => {
 				}
 			});
 
+			it("anchors every TASK_REQUIRES_MEM_CAP_<value> to a declared Task Value", () => {
+				// The flag makes realworld-runner.sh REFUSE the task on a sandbox that exposes no
+				// enforceable cgroup memory cap, rather than let it exhaust the guest and take the whole
+				// sandbox down. A key naming a renamed/removed Value would silently stop guarding — and
+				// the symptom is a lost replicate on some other provider months later, not a red test.
+				const values = new Set(
+					profile.settings
+						.find((option) => option.DisplayName === "Task")
+						?.Menu?.Entry.map((e) => e.Value ?? "") ?? [],
+				);
+				const capKeys = Object.keys(env)
+					.filter((key) => key.startsWith("TASK_REQUIRES_MEM_CAP_"))
+					.map((key) => key.slice("TASK_REQUIRES_MEM_CAP_".length));
+				for (const key of capKeys) {
+					expect(values).toContain(key);
+				}
+			});
+
 			it("declares REPO_URL, PIN_SHA and NODE_VERSION", () => {
 				expect(env.REPO_URL).toBeTruthy();
 				expect(env.PIN_SHA).toMatch(/^[0-9a-f]{40}$/);

@@ -111,11 +111,59 @@ if [ -n "$cap_bytes" ] && [ -f /sys/fs/cgroup/cgroup.controllers ] &&
 	grep -qw memory /sys/fs/cgroup/cgroup.controllers 2>/dev/null; then
 	# Idempotent on a real root cgroup (root is exempt from the no-internal-processes rule, and
 	# systemd guests already have it enabled); fails EBUSY on a namespaced root that still holds
-	# processes, which the fallback below tolerates.
+	# processes, which the migration below now recovers.
 	# 2>/dev/null must come FIRST: redirections apply left to right, so a failed open of the
 	# target (ro cgroup fs on container providers) would otherwise print shell noise into every
 	# task log before the stderr redirect takes effect.
-	echo +memory 2>/dev/null > /sys/fs/cgroup/cgroup.subtree_control || true
+	if ! echo +memory 2>/dev/null > /sys/fs/cgroup/cgroup.subtree_control; then
+		# EBUSY on a cgroup-NAMESPACE root: cgroup v2 forbids enabling a controller for children
+		# while the cgroup still holds processes of its own, and only the TRUE root is exempt. A
+		# sandbox handed a delegated subtree as its `/` is not exempt, so `memory` can never reach a
+		# child and the cap is silently abandoned. Probed live on Vercel (kernel 6.18.40): cgroup2
+		# mounted rw, `memory` present in cgroup.controllers, subtree_control EMPTY, 4 processes in
+		# the namespace root, `echo +memory` → EBUSY, child mkdir fine but no memory.max in it. That
+		# is the whole reason 4 of 12 openclaw replicates lost their sandbox in run 33712242440
+		# instead of merely failing the out-of-spec task.
+		#
+		# The standard remedy, and what every container runtime does: park the existing processes in
+		# a leaf so the root holds none, then enable the controller. Only the sandbox's own agent
+		# processes move, into an UNCAPPED sibling — they keep the headroom the cap reserves for
+		# them, which is the whole point of leaving them out of bench-task. Everything is guarded:
+		# any failure leaves BENCH_CG empty and falls through to the oom_score_adj path exactly as
+		# before, and the join probe below still has to pass before the cap is advertised.
+		cg_leaf="/sys/fs/cgroup/bench-init"
+		if mkdir "$cg_leaf" 2>/dev/null || [ -d "$cg_leaf" ]; then
+			# ORDER IS LOAD-BEARING, and both halves were established by probing a live Vercel sandbox.
+			#
+			# (1) THIS shell moves first. cgroup membership is inherited, so until the runner itself
+			#     leaves, every command it forks is born back into the root and the root never empties
+			#     — the migration chases its own children forever.
+			# (2) Then converge, re-reading the file each pass. cgroup.procs is a LIVE view, not a
+			#     snapshot: moving an entry out from under a streaming read shifts the remainder and
+			#     the read skips pids. Measured on Vercel, a single `while read` pass moved 2 of 5 and
+			#     left 3 behind; snapshot-then-move needed 2 passes to reach empty. Bounded at 5 so a
+			#     process that genuinely cannot be moved costs a few passes, not the job.
+			#
+			# Every write stays best-effort — a pid that exits mid-migration is normal, and the retry
+			# of subtree_control below is the only verdict that matters.
+			echo $$ 2>/dev/null > "$cg_leaf/cgroup.procs" || true
+			cg_pass=0
+			while [ "$cg_pass" -lt 5 ]; do
+				cg_pass=$((cg_pass + 1))
+				cg_left="$(cat /sys/fs/cgroup/cgroup.procs 2>/dev/null || true)"
+				[ -n "$cg_left" ] || break
+				for cg_pid in $cg_left; do
+					echo "$cg_pid" 2>/dev/null > "$cg_leaf/cgroup.procs" || true
+				done
+			done
+			if echo +memory 2>/dev/null > /sys/fs/cgroup/cgroup.subtree_control; then
+				echo "bench-cgroup: emptied the cgroup-namespace root in ${cg_pass} pass(es) to enable" \
+					"the memory controller" >&2
+			else
+				rmdir "$cg_leaf" 2>/dev/null || true
+			fi
+		fi
+	fi
 	bench_cg="/sys/fs/cgroup/bench-task-$$"
 	# memory.swap.max=0 only where the knob exists (load-bearing for measurement fidelity when the
 	# guest has swap: an uncapped-swap task would thrash instead of OOM-ing).
@@ -230,6 +278,28 @@ wipe_tool_caches() {
 			find "$cache_dir" -mindepth 1 -maxdepth 1 ! -name turbo -exec rm -rf {} +
 		done
 }
+
+# A task a profile marks TASK_REQUIRES_MEM_CAP_<task>=1 is one KNOWN to exceed the target spec's
+# RAM (openclaw's lint_oxlint is the case this exists for). Where the cap engaged, running it is
+# the point: the cgroup OOM-kills that task ALONE, PTS records a missing sample for it, and the
+# suite's other options still post theirs — a metric-scoped gap, which is the declared keep+warn
+# contract. Where the cap could NOT engage, the same command instead drives the whole guest out
+# of memory and takes the sandbox with it, losing every other metric in the run: 9 of 12
+# replicates on modal-gvisor and 4 of 12 on Vercel in run 33712242440, against zero on every
+# provider whose forensics show `bench-cgroup: capped at …`.
+#
+# So refuse it instead. The outcome for THIS metric is identical either way (attempted, no value
+# recorded); what changes is that the seven healthy metrics beside it survive. gVisor cannot be
+# rescued by the migration above — its /sys/fs/cgroup is a read-only tmpfs with no v2 controller
+# file at all (probed live on modal-gvisor, kernel 4.19.0-gvisor) — so this is the only
+# containment available there.
+eval "requires_cap=\"\${TASK_REQUIRES_MEM_CAP_${TASK}:-}\""
+if [ -n "$requires_cap" ] && [ -z "${BENCH_CG:-}" ]; then
+	echo "task '${TASK}' requires an enforceable memory cap and this sandbox exposes none" >&2
+	echo "(see the bench-cgroup line above); refusing to run it uncontained, because doing so" >&2
+	echo "takes the whole sandbox down and loses every other metric in this run." >&2
+	exit 1
+fi
 
 case "$TASK" in
 git_clone)
