@@ -14,6 +14,7 @@ import type { DaytonaConfig } from "../config.ts";
 import { config } from "../config.ts";
 import { blaxelWithVolumeAndKeepAlive } from "./blaxel-volume.ts";
 import { MODAL_APP_NAME, modalCostEvidence, runcloudCostEvidence } from "./cost-evidence.ts";
+import { daytonaActivateSnapshot } from "./daytona-snapshot.ts";
 import { daytonaClientTarget } from "./daytona-target.ts";
 import { e2bCommandsAsRoot } from "./e2b-root.ts";
 import { microsandboxCloudCompute, microsandboxLocalCompute } from "./microsandbox.ts";
@@ -41,7 +42,11 @@ import { vercelCompute } from "./vercel.ts";
 function daytonaAdapter(cfg: DaytonaConfig): ProviderAdapter {
 	return {
 		artifact: { kind: "baked", ref: cfg.snapshot },
-		createCompute: () => daytonaClientTarget(daytona({ apiKey: cfg.apiKey }), cfg.target),
+		createCompute: () =>
+			daytonaActivateSnapshot(
+				daytonaClientTarget(daytona({ apiKey: cfg.apiKey }), cfg.target),
+				cfg,
+			),
 		createOptions: {
 			snapshotId: cfg.snapshot,
 			autoStopInterval: 0,

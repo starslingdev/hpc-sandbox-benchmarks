@@ -189,9 +189,37 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Terminal states that mean boot failed and we should stop waiting. */
+/**
+ * Terminal boot states that mean the HOST gave up on this sandbox, so re-issuing the create is worth
+ * it: run.cloud rebuilds the image into an ext4 rootfs per sandbox (`hostd POST /host/images/build`)
+ * and that build corrupts non-deterministically under a concurrent burst. Across the 27 failed boots
+ * of matrix run 33712242440 the SAME pinned image failed at a DIFFERENT path every time — `symlink
+ * "bin"`, `X11`, `libLLVM.so.19.1`, `etc`, `miniconda3` — with `mkfs.ext4 … Directory block checksum
+ * does not match`, alongside two host-level `boot failed on 3 host(s)` variants. A fixed image
+ * failing at a random offset is a host-side race, not a bad artifact, and a fresh create lands on a
+ * fresh build; replicates of the same cell that retried succeeded.
+ */
+function isRetryableBootFailure(state: Sandbox["state"]): boolean {
+	return ["failed", "interrupted", "destroyed", "destroying"].includes(state);
+}
+
+/** Terminal states that mean boot failed and we should stop waiting. `stopped` is the one that is
+ *  NOT worth re-issuing — a clean stop says nothing about the host having given up. Derived so a
+ *  future terminal state cannot be added to one list and silently forgotten in the other. */
 function isTerminalBootFailure(state: Sandbox["state"]): boolean {
-	return ["failed", "interrupted", "destroyed", "destroying", "stopped"].includes(state);
+	return state === "stopped" || isRetryableBootFailure(state);
+}
+
+/** A readiness wait that ended in a terminal state, carrying the state so create() can decide whether
+ *  re-issuing is worthwhile once it has confirmed the allocation is gone. */
+class BootFailureError extends Error {
+	constructor(
+		sandboxId: string,
+		readonly state: Sandbox["state"],
+	) {
+		super(`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting`);
+		this.name = "BootFailureError";
+	}
 }
 
 /**
@@ -216,11 +244,7 @@ async function waitUntilRunning(
 			options,
 		);
 		if (last.state === "running") return last;
-		if (isTerminalBootFailure(last.state)) {
-			throw new Error(
-				`run.cloud sandbox ${sandboxId} entered terminal state "${last.state}" while booting`,
-			);
-		}
+		if (isTerminalBootFailure(last.state)) throw new BootFailureError(sandboxId, last.state);
 		await wait(pollMs);
 	}
 	throw new Error(
@@ -284,6 +308,31 @@ async function cleanupFailedCreate(
 		}
 	}
 	throw lastError;
+}
+
+/**
+ * Has the control plane confirmed this sandbox is gone, or committed to removing it?
+ *
+ * `destroying` counts: the control plane owns the teardown from there, and it is the same bar
+ * cleanupFailedCreate accepts when a destroy response is lost. A read that cannot answer returns
+ * false — the caller's job is then to NOT claim the allocation is released, not to guess.
+ */
+async function teardownConfirmed(
+	native: RuncloudSandboxClient,
+	sandboxId: string,
+	options: RuncloudComputeOptions,
+): Promise<boolean> {
+	try {
+		const current = await boundedNativeCall(
+			`confirm teardown for sandbox ${sandboxId}`,
+			() => native.get(sandboxId),
+			options,
+		);
+		return current.state === "destroying" || current.state === "destroyed";
+	} catch (error) {
+		// 404 is the strongest confirmation there is: the control plane has forgotten it entirely.
+		return isNotFound(error);
+	}
 }
 
 /**
@@ -504,7 +553,18 @@ export function sandboxMethods(
 							`could not be destroyed after retries (${errorMessage(destroyError)}); manual cleanup may be required`,
 					);
 				}
-				throw error;
+				// markRetryableCreate asserts NOTHING IS ALLOCATED — the half a message-matching classifier
+				// could never establish — so earn it rather than infer it from cleanup returning. A
+				// resolved destroy is a request accepted, not a teardown finished: measured against the
+				// live API, `destroy` returns in ~800ms while the sandbox sits in `destroying` for a
+				// further ~4s. Ask the control plane instead, and leave the error unmarked when it will
+				// not say: an adapter that merely failed to find out must not claim it is safe to retry.
+				// A readiness TIMEOUT is never marked either — it proved nothing about the host.
+				const retryable =
+					error instanceof BootFailureError &&
+					isRetryableBootFailure(error.state) &&
+					(await teardownConfirmed(sdk, created.id, adapterOptions));
+				throw retryable ? markRetryableCreate(error) : error;
 			}
 		},
 

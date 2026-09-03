@@ -18,6 +18,7 @@ import type {
 	SandboxMethods,
 } from "@computesdk/provider";
 import { defineProvider } from "@computesdk/provider";
+import { config } from "../config.ts";
 import { markRetryableCreate } from "./retryable-create.ts";
 
 const PROVIDER = "tama";
@@ -252,7 +253,7 @@ function mapStatus(status: string): SandboxInfo["status"] {
 }
 
 export function createTamaClient(options: TamaComputeOptions) {
-	const binary = options.binary ?? process.env.TAMA_CLI ?? "tama";
+	const binary = options.binary ?? config.tamaCli;
 	const invoke = options.cli ?? ((args, invokeOptions) => spawnCli(binary, args, invokeOptions));
 	const wait = options.sleep ?? sleep;
 	const now = options.now ?? Date.now;

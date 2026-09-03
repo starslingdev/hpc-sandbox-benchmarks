@@ -33,6 +33,7 @@ const envSchema = type({
 	"NOVITA_API_KEY?": "string >= 1",
 	"NOVITA_TEMPLATE?": "string >= 1",
 	"RUNLOOP_BLUEPRINT?": "string >= 1",
+	"TAMA_CLI?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
 	"MSB_API_KEY?": "string >= 1",
 	"VERCEL_CANDIDATE_IMAGE?": "string >= 1",
@@ -43,7 +44,17 @@ const envSchema = type({
 	"VERCEL_PROJECT_NAME?": "string >= 1",
 });
 
-const ENV_KEYS = [
+/**
+ * The keys forwarded into {@link envSchema}, and — for every OPTIONAL provider VARIABLE — the list
+ * that decides whether CI's empty-string export is absorbed here or reaches business logic raw.
+ *
+ * Exported for the drift test in index.test.ts, which is the guard this list has to earn: `TAMA_CLI`
+ * was declared in the schema registry but missing from here, so the adapter read it straight off
+ * process.env, `??` accepted CI's `""`, and every tama cell of matrix run 33712242440 died in
+ * spawn(""). The registry is the source of truth for which variables exist; this list only has to
+ * cover them.
+ */
+export const ENV_KEYS = [
 	"BENCH_TOOLCHAIN_IMAGE",
 	"E2B_TEMPLATE",
 	"DAYTONA_API_KEY",
@@ -54,6 +65,7 @@ const ENV_KEYS = [
 	"NOVITA_API_KEY",
 	"NOVITA_TEMPLATE",
 	"RUNLOOP_BLUEPRINT",
+	"TAMA_CLI",
 	"MSB_API_URL",
 	"MSB_API_KEY",
 	"VERCEL_CANDIDATE_IMAGE",
@@ -203,6 +215,12 @@ export const config = {
 	runloopBlueprintVersion,
 	/** Mutable candidate Runloop Blueprint name the bake creates while iterating. */
 	runloopBlueprintCandidate,
+	/** The `tama` binary the CLI-driven adapter spawns for every control-plane call; `TAMA_CLI`
+	 *  override, else the name resolved from PATH (what `.github/actions/setup-tama` installs).
+	 *  Resolved HERE rather than at the spawn site so the empty-is-unset rule above covers it — CI
+	 *  materializes the unconfigured override as `TAMA_CLI=""`, and spawning that is a TypeError, not
+	 *  a fallback to the default. */
+	tamaCli: env.TAMA_CLI ?? "tama",
 	/** Microsandbox Cloud connection. The provider gate requires the key before construction, while
 	 * the URL stays optional so the SDK can use its production default. */
 	microsandboxCloud: {

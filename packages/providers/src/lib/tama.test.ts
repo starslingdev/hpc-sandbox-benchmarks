@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
 import type { CliInvokeOptions, CliResult, TamaComputeOptions, TamaMachine } from "./tama.ts";
 import {
 	execCommandLine,
@@ -212,5 +213,38 @@ describe("tama CLI adapter", () => {
 		// It is the retry loop's reservation against a 60-minute budget: an attempt plus a 2-minute
 		// backoff has to still fit, or the cell could never retry a transient capacity failure.
 		expect(TAMA_CREATE_CEILING_MS + 2 * 60_000).toBeLessThan(60 * 60_000);
+	});
+});
+
+// `config` freezes the binary at module load, so these run the resolution in a FRESH subprocess per
+// case — the same shape as the VCR namespace probes next door, and the only way to reproduce what CI
+// actually does: `TAMA_CLI: ${{ … || '' }}` exports the key SET AND EMPTY when no override is
+// configured. A `??` fallback accepts that empty string, and `spawn("")` is a TypeError thrown before
+// the first control-plane call — every tama cell of matrix run 33712242440 died there.
+describe.concurrent("tama binary resolution", () => {
+	const CONFIG_PATH = join(import.meta.dir, "..", "config.ts");
+	const PROBE = `const { config } = await import(${JSON.stringify(CONFIG_PATH)});
+console.log(JSON.stringify({ tamaCli: config.tamaCli }));`;
+
+	/** Load config in a clean subprocess. `null` unsets the key rather than blanking it. */
+	async function resolveBinary(value: string | null): Promise<string | undefined> {
+		// Drop the ambient key so a developer who exports it can't decide these cases.
+		const { TAMA_CLI: _ambient, ...env } = process.env;
+		if (value !== null) env.TAMA_CLI = value;
+		const proc = Bun.spawn(["bun", "-e", PROBE], { env, stdout: "pipe", stderr: "pipe" });
+		const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+		return exitCode === 0 ? (JSON.parse(stdout) as { tamaCli: string }).tamaCli : undefined;
+	}
+
+	it("falls back to the PATH-resolved name when the override is unset", async () => {
+		expect(await resolveBinary(null)).toBe("tama");
+	});
+
+	it("treats a set-but-empty override as unset rather than spawning nothing", async () => {
+		expect(await resolveBinary("")).toBe("tama");
+	});
+
+	it("honors an explicit override", async () => {
+		expect(await resolveBinary("/opt/tama/bin/tama")).toBe("/opt/tama/bin/tama");
 	});
 });

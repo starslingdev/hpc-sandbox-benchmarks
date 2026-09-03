@@ -12,6 +12,7 @@
 // already-constructed sandbox (runCommand/getInfo/getUrl, filesystem.*) build no client and stay stock.
 
 import type { SandboxMethods } from "@computesdk/provider";
+import { patchableManager } from "./patch-manager.ts";
 import type { DirectProvider } from "./types.ts";
 
 type DaytonaSandboxMethods = SandboxMethods<unknown, unknown>;
@@ -27,25 +28,6 @@ function createTarget(options: unknown): string | undefined {
 	if (typeof options !== "object" || options === null || !("target" in options)) return undefined;
 	const value = (options as { target?: unknown }).target;
 	return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-interface PatchableManager {
-	methods: Record<string, unknown> &
-		Pick<DaytonaSandboxMethods, "create" | "getById" | "list" | "destroy">;
-}
-
-function patchableManager(provider: DirectProvider): PatchableManager {
-	const manager = provider.sandbox as unknown as { methods?: Record<string, unknown> };
-	const missing = CLIENT_TARGETED_METHODS.filter(
-		(name) => typeof manager.methods?.[name] !== "function",
-	);
-	if (missing.length > 0) {
-		throw new Error(
-			"@computesdk/daytona provider internals changed shape (sandbox manager has no patchable " +
-				`${missing.join("/")} method); revisit the client-target adapter against the upgraded wrapper`,
-		);
-	}
-	return manager as PatchableManager;
 }
 
 /** Run `stock` with DAYTONA_TARGET pinned to `effectiveTarget` when set, restoring the prior env value
@@ -76,7 +58,9 @@ export function daytonaClientTarget(
 	provider: DirectProvider,
 	target: string | undefined,
 ): DirectProvider {
-	const manager = patchableManager(provider);
+	const manager = patchableManager<
+		Pick<DaytonaSandboxMethods, (typeof CLIENT_TARGETED_METHODS)[number]>
+	>(provider, { pkg: "daytona", adapter: "client-target", methods: CLIENT_TARGETED_METHODS });
 	const { create, getById, list, destroy } = manager.methods;
 
 	// Candidate validation layers its target onto createOptions. Although the native SDK ignores

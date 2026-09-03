@@ -89,20 +89,82 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(destroyCalls).toBe(0);
 	});
 
-	it("destroys the allocation when readiness enters a terminal state", async () => {
-		const destroyed: string[] = [];
-		const client = nativeClient({
+	/**
+	 * A client whose create is accepted and whose readiness then lands in `state`. Its `get` reports
+	 * `destroyed` once `destroy` has been called, because the real control plane does: the adapter
+	 * confirms teardown there before it will claim a failed create is safe to re-issue.
+	 */
+	const bootingTo = (state: SandboxState, destroy: NativeClient["destroy"] = async () => {}) => {
+		let torndown = false;
+		return nativeClient({
 			create: async () => nativeSandbox("building_image"),
-			get: async () => nativeSandbox("failed"),
+			get: async () => nativeSandbox(torndown ? "destroyed" : state),
 			destroy: async (id) => {
-				destroyed.push(id);
+				// AFTER the inner destroy resolves: one that throws has not established anything.
+				await destroy(id);
+				torndown = true;
 			},
 		});
+	};
 
-		await expect(runcloudCompute({ client }).sandbox.create()).rejects.toThrow(
-			'entered terminal state "failed"',
-		);
+	// See isRetryableBootFailure in runcloud.ts for why a host-side boot failure is worth re-issuing.
+	// What matters here is the guard on it: the sandbox must be destroyed before the error escapes, or
+	// the mark would claim "nothing was allocated" for a create that left one running.
+	it.each([
+		"interrupted",
+		"failed",
+		"destroying",
+	] as const)("marks a host-side boot failure (%s) retryable once the allocation is confirmed gone", async (state) => {
+		const destroyed: string[] = [];
+		const client = bootingTo(state, async (id) => {
+			destroyed.push(id);
+		});
+
+		const error = await runcloudCompute({ client })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain(`entered terminal state "${state}"`);
 		expect(destroyed).toEqual(["sb-test"]);
+		expect(isRetryableCreateError(error)).toBe(true);
+	});
+
+	it("leaves a boot failure unmarked when teardown cannot be confirmed", async () => {
+		// `destroy` resolving is a request accepted, not a microVM removed (~800ms vs ~4s against the
+		// live API). A control plane that will not say the sandbox is going away has not established
+		// the "nothing is allocated" half of the mark, so the error must surface as itself.
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => nativeSandbox("interrupted"),
+			destroy: async () => {},
+		});
+
+		const error = await runcloudCompute({ client })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		expect((error as Error).message).toContain('entered terminal state "interrupted"');
+		expect(isRetryableCreateError(error)).toBe(false);
+	});
+
+	it("leaves a clean stop unmarked — it says nothing about the host giving up", async () => {
+		const error = await runcloudCompute({ client: bootingTo("stopped") })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		expect((error as Error).message).toContain('entered terminal state "stopped"');
+		expect(isRetryableCreateError(error)).toBe(false);
+	});
+
+	it("leaves a boot failure unmarked when cleanup could not confirm the allocation is gone", async () => {
+		const client = bootingTo("interrupted", async () => {
+			throw new Error("destroy unavailable");
+		});
+
+		const error = await runcloudCompute({ client, cleanupRetryMs: 0 })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		// Retrying a create whose predecessor may still be billable is the leak this guard prevents.
+		expect(isRetryableCreateError(error)).toBe(false);
+		expect((error as Error).message).toContain("manual cleanup may be required");
 	});
 
 	it("destroys the allocation when a readiness poll throws", async () => {
