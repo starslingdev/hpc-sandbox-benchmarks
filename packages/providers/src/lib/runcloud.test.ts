@@ -89,13 +89,23 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect(destroyCalls).toBe(0);
 	});
 
-	/** A client whose create is accepted and whose readiness then lands in `state`. */
-	const bootingTo = (state: SandboxState, destroy: NativeClient["destroy"] = async () => {}) =>
-		nativeClient({
+	/**
+	 * A client whose create is accepted and whose readiness then lands in `state`. Its `get` reports
+	 * `destroyed` once `destroy` has been called, because the real control plane does: the adapter
+	 * confirms teardown there before it will claim a failed create is safe to re-issue.
+	 */
+	const bootingTo = (state: SandboxState, destroy: NativeClient["destroy"] = async () => {}) => {
+		let torndown = false;
+		return nativeClient({
 			create: async () => nativeSandbox("building_image"),
-			get: async () => nativeSandbox(state),
-			destroy,
+			get: async () => nativeSandbox(torndown ? "destroyed" : state),
+			destroy: async (id) => {
+				// AFTER the inner destroy resolves: one that throws has not established anything.
+				await destroy(id);
+				torndown = true;
+			},
 		});
+	};
 
 	// See isRetryableBootFailure in runcloud.ts for why a host-side boot failure is worth re-issuing.
 	// What matters here is the guard on it: the sandbox must be destroyed before the error escapes, or
@@ -117,6 +127,23 @@ describe("run.cloud ComputeSDK adapter", () => {
 		expect((error as Error).message).toContain(`entered terminal state "${state}"`);
 		expect(destroyed).toEqual(["sb-test"]);
 		expect(isRetryableCreateError(error)).toBe(true);
+	});
+
+	it("leaves a boot failure unmarked when teardown cannot be confirmed", async () => {
+		// `destroy` resolving is a request accepted, not a microVM removed (~800ms vs ~4s against the
+		// live API). A control plane that will not say the sandbox is going away has not established
+		// the "nothing is allocated" half of the mark, so the error must surface as itself.
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => nativeSandbox("interrupted"),
+			destroy: async () => {},
+		});
+
+		const error = await runcloudCompute({ client })
+			.sandbox.create()
+			.catch((e: unknown) => e);
+		expect((error as Error).message).toContain('entered terminal state "interrupted"');
+		expect(isRetryableCreateError(error)).toBe(false);
 	});
 
 	it("leaves a clean stop unmarked — it says nothing about the host giving up", async () => {

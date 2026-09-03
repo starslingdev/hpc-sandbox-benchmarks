@@ -27,21 +27,26 @@ type DaytonaSandboxMethods = SandboxMethods<unknown, unknown>;
 const INACTIVE_SNAPSHOT = /snapshot\s+\S+\s+is\s+inactive/i;
 
 /**
- * In-flight activations, keyed by snapshot name.
+ * In-flight activations, keyed by the region and snapshot the activation is actually scoped to.
  *
  * A cell drives R replicates from ONE process (12 for a realworld suite) and builds a fresh wrapper
  * per create attempt, so without this every replicate fires its own activation for the same snapshot
  * in the same second — hence module scope, not a closure variable. The entry is dropped once settled
  * rather than cached: a failed activation must be retryable on the next attempt, and a snapshot that
- * reports inactive again after a successful one is telling us something a cache would hide. The name
- * alone is a sufficient key — both Daytona variants share one region and take their snapshot names
- * from `bakedArtifactName`, which already distinguishes them.
+ * reports inactive again after a successful one is telling us something a cache would hide.
+ *
+ * The region belongs in the key even though today's two variants both default to us-west-2:
+ * DAYTONA_TARGET and DAYTONA_CONTAINER_TARGET are independent overrides, so a shared key would let
+ * one region's activation satisfy the other's wait and cost that cell a retry before it activated
+ * its own. The API key does NOT belong there — both variants read the same DAYTONA_API_KEY by
+ * construction, so it can never discriminate, and a credential makes a poor map key.
  */
 const activating = new Map<string, Promise<void>>();
 
-/** Ask Daytona to reactivate the snapshot, at most once per snapshot at a time. */
+/** Ask Daytona to reactivate the snapshot, at most once per (region, snapshot) at a time. */
 function activateOnce(cfg: DaytonaConfig): Promise<void> {
-	const inFlight = activating.get(cfg.snapshot);
+	const key = `${cfg.target ?? ""}:${cfg.snapshot}`;
+	const inFlight = activating.get(key);
 	if (inFlight) return inFlight;
 	const started = (async () => {
 		// Explicit target, not the DAYTONA_TARGET pin daytonaClientTarget uses: this client is ours and
@@ -53,8 +58,8 @@ function activateOnce(cfg: DaytonaConfig): Promise<void> {
 	})();
 	// set BEFORE chaining the cleanup: a `.finally` that ran first would delete an entry that was
 	// never published, stranding the next one and silencing activation for the rest of the process.
-	activating.set(cfg.snapshot, started);
-	return started.finally(() => activating.delete(cfg.snapshot));
+	activating.set(key, started);
+	return started.finally(() => activating.delete(key));
 }
 
 /**

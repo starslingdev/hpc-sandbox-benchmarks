@@ -311,6 +311,31 @@ async function cleanupFailedCreate(
 }
 
 /**
+ * Has the control plane confirmed this sandbox is gone, or committed to removing it?
+ *
+ * `destroying` counts: the control plane owns the teardown from there, and it is the same bar
+ * cleanupFailedCreate accepts when a destroy response is lost. A read that cannot answer returns
+ * false — the caller's job is then to NOT claim the allocation is released, not to guess.
+ */
+async function teardownConfirmed(
+	native: RuncloudSandboxClient,
+	sandboxId: string,
+	options: RuncloudComputeOptions,
+): Promise<boolean> {
+	try {
+		const current = await boundedNativeCall(
+			`confirm teardown for sandbox ${sandboxId}`,
+			() => native.get(sandboxId),
+			options,
+		);
+		return current.state === "destroying" || current.state === "destroyed";
+	} catch (error) {
+		// 404 is the strongest confirmation there is: the control plane has forgotten it entirely.
+		return isNotFound(error);
+	}
+}
+
+/**
  * Resolve what a failed create actually DID, by querying the control plane for the caller-owned name
  * stamped on the request. This is a read: unlike replaying the create POST it cannot allocate a second
  * sandbox, it needs no cooperation from an overloaded create endpoint, and it answers the only question
@@ -528,13 +553,18 @@ export function sandboxMethods(
 							`could not be destroyed after retries (${errorMessage(destroyError)}); manual cleanup may be required`,
 					);
 				}
-				// Cleanup returned, so the allocation is confirmed gone — the second half of what
-				// markRetryableCreate asserts, and the half a message-matching classifier could never
-				// establish. A readiness TIMEOUT stays unmarked: it never proved the host had given up,
-				// so it must surface promptly rather than spend an hour looking like capacity.
-				throw error instanceof BootFailureError && isRetryableBootFailure(error.state)
-					? markRetryableCreate(error)
-					: error;
+				// markRetryableCreate asserts NOTHING IS ALLOCATED — the half a message-matching classifier
+				// could never establish — so earn it rather than infer it from cleanup returning. A
+				// resolved destroy is a request accepted, not a teardown finished: measured against the
+				// live API, `destroy` returns in ~800ms while the sandbox sits in `destroying` for a
+				// further ~4s. Ask the control plane instead, and leave the error unmarked when it will
+				// not say: an adapter that merely failed to find out must not claim it is safe to retry.
+				// A readiness TIMEOUT is never marked either — it proved nothing about the host.
+				const retryable =
+					error instanceof BootFailureError &&
+					isRetryableBootFailure(error.state) &&
+					(await teardownConfirmed(sdk, created.id, adapterOptions));
+				throw retryable ? markRetryableCreate(error) : error;
 			}
 		},
 
