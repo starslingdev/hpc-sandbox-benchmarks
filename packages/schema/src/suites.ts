@@ -325,6 +325,14 @@ export const SUITES = {
 } as const satisfies Record<string, Suite>;
 
 /** A registered suite name. */
+
+/** CPU matrix waves: synthetic suites finish before realworld suites start. */
+export type BenchmarkWave = "synthetic" | "realworld";
+
+export function benchmarkWave(suite: string): BenchmarkWave {
+	return suite.startsWith("realworld-") ? "realworld" : "synthetic";
+}
+
 export type SuiteName = keyof typeof SUITES;
 
 /** The known suite names. */
@@ -346,6 +354,14 @@ export const suiteNameSchema = type.enumerated(...SUITE_NAMES);
  * prevent.
  */
 export const WORKFLOW_TIMEOUT_MARGIN_MINUTES = 15;
+
+/**
+ * Hard ceiling for one experiment batch job: every planned batch's `budgetMinutes` and the workflow
+ * job `timeout-minutes` / `BENCH_CELL_BUDGET_MINUTES` must stay at or under this value. Owned next to
+ * {@link WORKFLOW_TIMEOUT_MARGIN_MINUTES} so planner chunking, plan verification, and the workflow
+ * drift gate share one number.
+ */
+export const BENCH_JOB_CEILING_MINUTES = 330;
 
 /**
  * The comma-padded token for one suite, e.g. `cpu-node` → `,cpu-node,`. GitHub Actions `if:`

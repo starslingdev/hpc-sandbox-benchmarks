@@ -13,7 +13,7 @@ import { workflowAxes, workflowExperiment } from "../lib/workflow-experiment.ts"
 
 if (import.meta.main) {
 	try {
-		const [command, account, round] = process.argv.slice(2);
+		const [command, account, wave] = process.argv.slice(2);
 		const id = process.env.BENCH_EXPERIMENT_ID ?? process.env.GITHUB_RUN_ID;
 		if (!id) throw new Error("experiment id is required");
 		const store = githubExperimentStore(id);
@@ -29,12 +29,10 @@ if (import.meta.main) {
 		if (command !== "collect" && plan.sha !== process.env.GITHUB_SHA)
 			throw new Error("checkout revision differs from frozen experiment");
 		if (command === "plan" || command === "axes") {
-			const axis = workflowAxes(plan, account, round);
+			const axis = workflowAxes(plan, account, wave);
 			if (!process.env.GITHUB_OUTPUT) throw new Error("workflow output file is required");
 			appendFileSync(process.env.GITHUB_OUTPUT, `axis=${JSON.stringify(axis)}\n`);
 		} else if (command === "execute") {
-			if (process.env.BENCH_CELL_BUDGET_MINUTES !== "180")
-				throw new Error("worker must preserve the 180-minute job ceiling");
 			const batchId = process.env.BENCH_BATCH_ID;
 			if (!batchId) throw new Error("batch id is required");
 			const batch = plan.batches.find((entry) => entry.id === batchId);
@@ -46,6 +44,12 @@ if (import.meta.main) {
 				)
 			)
 				throw new Error("worker provider differs from frozen batch");
+			const cellBudget = Number(process.env.BENCH_CELL_BUDGET_MINUTES);
+			if (cellBudget < batch.budgetMinutes)
+				throw new Error(
+					`BENCH_CELL_BUDGET_MINUTES ${cellBudget} is below batch ${batchId} budgetMinutes ${batch.budgetMinutes}`,
+				);
+
 			const attempts = await executeExperimentBatch({
 				plan,
 				batchId,
@@ -67,7 +71,7 @@ if (import.meta.main) {
 			);
 		} else
 			throw new Error(
-				"usage: workflow-experiment plan | axes [account] [round] | execute | collect",
+				"usage: workflow-experiment plan | axes [account] [wave] | execute | collect",
 			);
 	} catch (error) {
 		console.error(describeDriverFailure(error, diagnosticSecretsFromEnv(process.env)));

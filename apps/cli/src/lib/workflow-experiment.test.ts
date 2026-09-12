@@ -10,12 +10,17 @@ const env = {
 test("workflow planning preserves samples and defaults shared accounts to one sandbox", () => {
 	const plan = workflowExperiment(env, "2026-09-10");
 	expect(plan.cells).toHaveLength(45);
-	expect(plan.batches).toHaveLength(45);
+	// sandboxes=1 chunks each provider×wave group to the job ceiling.
+	expect(plan.batches).toHaveLength(24);
 	expect(workflowAxes(plan)).toEqual(["daytona", "tama"]);
 	expect(plan.accounts.every((account) => account.sandboxes === 1)).toBe(true);
-	const daytona = plan.rounds.find((round) => round.quotaDomain === "daytona");
-	expect(daytona).toBeDefined();
-	expect(workflowAxes(plan, "daytona", daytona?.id)).toHaveLength(30);
+	expect(workflowAxes(plan, "daytona")).toEqual(["synthetic", "realworld"]);
+	expect(workflowAxes(plan, "daytona", "synthetic")).toEqual([
+		{ batch: "batch-0", provider: "daytona-vm", suite: "system", wave: "synthetic" },
+		{ batch: "batch-1", provider: "daytona-vm", suite: "system", wave: "synthetic" },
+		{ batch: "batch-2", provider: "daytona-container", suite: "system", wave: "synthetic" },
+		{ batch: "batch-3", provider: "daytona-container", suite: "system", wave: "synthetic" },
+	]);
 	expect(
 		plan.cells.filter((cell) => cell.suite === "realworld-mastra").map((cell) => cell.replicate),
 	).toEqual([
@@ -35,16 +40,19 @@ test("convergence and implicit per-cell quota overrides fail admission", () => {
 		"retired",
 	);
 });
-test("large account cohorts partition into bounded collection rounds", () => {
+test("large account cohorts stay in one rolling batch under collection rounds", () => {
 	const plan = workflowExperiment(
 		{ ...env, BENCH_PROVIDERS: "tama", BENCH_SUITES: "system", BENCH_REPLICAS: "257" },
 		"2026-09-10",
 	);
-	expect(plan.rounds.map((round) => round.batches.length)).toEqual([64, 64, 64, 64, 1]);
+	expect(plan.batches).toHaveLength(129);
+	expect(plan.batches.flatMap((batch) => batch.cells)).toHaveLength(257);
+	expect(plan.batches.every((batch) => batch.maxConcurrency === 1)).toBe(true);
+	expect(plan.rounds.map((round) => round.batches.length)).toEqual([64, 64, 1]);
 	expect(plan.cells.at(-1)?.replicate).toBe(256);
 });
 
-test("full provider plans overlap suites under the account cap without adding replicas", () => {
+test("full provider plans separate synthetic and realworld under the account cap", () => {
 	const plan = workflowExperiment(
 		{
 			...env,
@@ -55,7 +63,11 @@ test("full provider plans overlap suites under the account cap without adding re
 		"2026-09-10",
 	);
 	expect(plan.cells).toHaveLength(54);
-	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([30, 24]);
+	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([18, 36]);
+	expect(plan.batches.map((batch) => batch.wave)).toEqual(["synthetic", "realworld"]);
+	expect(plan.batches.every((batch) => batch.maxConcurrency === 30)).toBe(true);
+	expect(plan.batches.map((batch) => batch.budgetMinutes)).toEqual([145, 300]);
+	expect(plan.batches.every((batch) => batch.budgetMinutes <= 330)).toBe(true);
 	for (const suite of new Set(plan.cells.map((cell) => cell.suite))) {
 		const cells = plan.cells.filter((cell) => cell.suite === suite);
 		const realworld = suite.startsWith("realworld-");
@@ -64,8 +76,10 @@ test("full provider plans overlap suites under the account cap without adding re
 		);
 		expect(cells.every((cell) => cell.passes === (realworld ? 1 : 2))).toBe(true);
 	}
-	expect(workflowAxes(plan, "e2b", plan.rounds[0]?.id)).toEqual([
-		{ batch: "batch-0", provider: "e2b", suite: "mixed" },
-		{ batch: "batch-1", provider: "e2b", suite: "mixed" },
+	expect(workflowAxes(plan, "e2b", "synthetic")).toEqual([
+		{ batch: "batch-0", provider: "e2b", suite: "synthetic", wave: "synthetic" },
+	]);
+	expect(workflowAxes(plan, "e2b", "realworld")).toEqual([
+		{ batch: "batch-1", provider: "e2b", suite: "realworld", wave: "realworld" },
 	]);
 });

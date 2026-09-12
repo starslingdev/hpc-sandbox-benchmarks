@@ -20,6 +20,7 @@ import { SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import {
 	CELL_BUDGET_ENV_KEY,
 	checkCellBudgetEnv,
+	checkJobCeiling,
 	checkLaneDelegates,
 	checkSuiteInput,
 	checkWorkflowTimeouts,
@@ -57,7 +58,7 @@ describe("parsers against the real workflow files", () => {
 	});
 
 	test("the live-run job reserves host margin beyond the longest suite", () => {
-		expect(jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW)).toBe(180);
+		expect(jobTimeoutMinutes(suiteWf, SUITE_JOB, SUITE_WORKFLOW)).toBe(330);
 	});
 
 	test("dispatchInput throws on a missing input instead of passing vacuously", () => {
@@ -110,7 +111,7 @@ describe("checkCellBudgetEnv", () => {
 	// Dropping the key disables the fan-out budget guard entirely — a capped cell would then be
 	// cancelled three hours in with every shard lost, which is what the guard exists to prevent.
 	test("flags a missing budget key", () => {
-		const errors = checkCellBudgetEnv({}, 180, SUITE_WORKFLOW);
+		const errors = checkCellBudgetEnv({}, 330, SUITE_WORKFLOW);
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toContain(CELL_BUDGET_ENV_KEY);
 	});
@@ -258,23 +259,22 @@ test("production workflows preserve planned account batching and strict promotio
 	expect(runCheck()).toEqual([]);
 });
 
-test("the integrated workflow gate rejects parallel rounds, serialised batches, detached plan axes and legacy promotion", async () => {
+test("the integrated workflow gate rejects parallel waves, serialised batches, detached plan axes and legacy promotion", async () => {
 	const { checkExperimentNesting } = await import("./lib/workflow-nesting.ts");
 	const docs = Object.fromEntries(
 		[
 			"bench-matrix.yml",
 			"bench-smoke.yml",
 			"bench-account.yml",
-			"bench-round.yml",
 			"bench-suite.yml",
 			"commit-dataset.yml",
 		].map((file) => [file, readWorkflow(`.github/workflows/${file}`)]),
 	);
 	const source = JSON.stringify(docs);
 	for (const [before, after] of [
-		// Rounds serialised (bench-account.yml is the only remaining max-parallel: 1).
-		['"max-parallel":1', '"max-parallel":2'],
-		// A round's batches created together: reintroducing max-parallel there is one approval per batch.
+		// Realworld must wait for synthetic; dropping that edge reintroduces mixed-label collision.
+		['"needs":["plan","wave-synthetic"]', '"needs":["plan"]'],
+		// A wave's batches created together: reintroducing max-parallel is one approval per batch.
 		[
 			'"fail-fast":false,"matrix":{"include":',
 			'"fail-fast":false,"max-parallel":1,"matrix":{"include":',
@@ -288,4 +288,15 @@ test("the integrated workflow gate rejects parallel rounds, serialised batches, 
 			checkExperimentNesting(JSON.parse(source.replace(before, after))).length,
 		).toBeGreaterThan(0);
 	}
+});
+
+describe("checkJobCeiling", () => {
+	test("accepts the shared job ceiling", () => {
+		expect(checkJobCeiling(330, SUITE_WORKFLOW)).toEqual([]);
+	});
+	test("rejects a drifted job timeout", () => {
+		const errors = checkJobCeiling(180, SUITE_WORKFLOW);
+		expect(errors[0]).toContain("180");
+		expect(errors[0]).toContain("330");
+	});
 });

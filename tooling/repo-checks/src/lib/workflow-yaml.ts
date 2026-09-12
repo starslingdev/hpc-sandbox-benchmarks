@@ -3,7 +3,10 @@
 // owns one concern.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { WORKFLOW_TIMEOUT_MARGIN_MINUTES } from "@sandbox-benchmarks/schema";
+import {
+	BENCH_JOB_CEILING_MINUTES,
+	WORKFLOW_TIMEOUT_MARGIN_MINUTES,
+} from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { findRepoRoot } from "./workspace.ts";
 
@@ -19,7 +22,7 @@ export const SUITE_JOB = "bench";
 /** Host-side checkout/teardown/normalization/upload allowance beyond the sandbox lifetime. Re-exported
  *  from the schema, which owns it — `bench-suite`'s fan-out budget guard adds the SAME margin, and the
  *  two must not drift (see the constant's own note). */
-export { WORKFLOW_TIMEOUT_MARGIN_MINUTES };
+export { BENCH_JOB_CEILING_MINUTES, WORKFLOW_TIMEOUT_MARGIN_MINUTES };
 
 // Single source of truth: this schema drives BOTH the runtime parse (coercions live in the morphs)
 // and the exported DispatchInput type (inferred below) — there is no hand-written interface or

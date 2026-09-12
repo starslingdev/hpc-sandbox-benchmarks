@@ -1,6 +1,10 @@
 import { evidenceDigest, verifyExperimentPlan } from "@sandbox-benchmarks/results";
 import type { ExperimentCell, ExperimentPlan } from "@sandbox-benchmarks/schema";
-import { experimentCellSchema } from "@sandbox-benchmarks/schema";
+import {
+	BENCH_JOB_CEILING_MINUTES,
+	benchmarkWave,
+	experimentCellSchema,
+} from "@sandbox-benchmarks/schema";
 
 export interface AccountCapacity {
 	sandboxes: number;
@@ -43,10 +47,23 @@ export function planExperiment(
 	policy: Readonly<Record<string, AccountCapacity>> = {},
 ): ExperimentPlan {
 	const cells = request.cells.map((cell) => experimentCellSchema.assert(structuredClone(cell)));
-	const batches: ExperimentPlan["batches"] = [];
-	for (const cell of cells) {
-		if (cell.metrics.every((metric) => cell.exclusions.some((entry) => entry.metricId === metric)))
-			continue;
+	const eligible = cells.filter(
+		(cell) =>
+			!cell.metrics.every((metric) => cell.exclusions.some((entry) => entry.metricId === metric)),
+	);
+	const ordered = [...eligible].sort((left, right) => {
+		const rank = (suite: string) => (benchmarkWave(suite) === "synthetic" ? 0 : 1);
+		return rank(left.suite) - rank(right.suite);
+	});
+	type Prepared = {
+		cell: ExperimentCell;
+		cap: number;
+		budget: number;
+		wave: ReturnType<typeof benchmarkWave>;
+		identity: string;
+	};
+	const prepared: Prepared[] = [];
+	for (const cell of ordered) {
 		const capacity = policy[cell.quotaDomain] ?? { sandboxes: 1 };
 		if (
 			!Number.isSafeInteger(capacity.sandboxes) ||
@@ -64,40 +81,63 @@ export function planExperiment(
 			cell.gpu ? Math.floor((capacity.gpus ?? 0) / cell.gpu.count) : Infinity,
 		);
 		if (cap < 1) throw new Error(`target exceeds account capacity: ${cell.id}`);
-		const budgetMinutes = cell.startupMinutes + cell.workloadMinutes + cell.finishMinutes + 15;
-		if (budgetMinutes > 180) throw new Error(`replicate cannot fit a 180-minute job: ${cell.id}`);
-		// A batch is one simultaneous wave of compatible allocations. Never hide serial waves in a job.
-		const previous = batches.at(-1);
-		const first = cells.find((entry) => entry.id === previous?.cells[0]);
-		if (
-			previous &&
-			first &&
-			previous.quotaDomain === cell.quotaDomain &&
-			previous.cells.length < cap &&
-			first.provider === cell.provider &&
-			allocationIdentity(first) === allocationIdentity(cell)
-		) {
-			previous.cells.push(cell.id);
-			previous.budgetMinutes = Math.max(previous.budgetMinutes, budgetMinutes);
-		} else {
+		const budget = cell.startupMinutes + cell.workloadMinutes + cell.finishMinutes + 15;
+		if (budget > BENCH_JOB_CEILING_MINUTES)
+			throw new Error(`replicate cannot fit a ${BENCH_JOB_CEILING_MINUTES}-minute job: ${cell.id}`);
+		prepared.push({
+			cell,
+			cap,
+			budget,
+			wave: benchmarkWave(cell.suite),
+			identity: allocationIdentity(cell),
+		});
+	}
+	// Group by (quotaDomain, provider, wave, allocationIdentity), preserving plan order.
+	const groups: Prepared[][] = [];
+	const groupIndex = new Map<string, number>();
+	for (const entry of prepared) {
+		const key = `${entry.cell.quotaDomain}\0${entry.cell.provider}\0${entry.wave}\0${entry.identity}`;
+		let index = groupIndex.get(key);
+		if (index === undefined) {
+			index = groups.length;
+			groupIndex.set(key, index);
+			groups.push([]);
+		}
+		groups[index]?.push(entry);
+	}
+	const batches: ExperimentPlan["batches"] = [];
+	for (const group of groups) {
+		const first = group[0];
+		if (!first) continue;
+		const budget = Math.max(...group.map((entry) => entry.budget));
+		const affordable = Math.max(1, Math.floor(BENCH_JOB_CEILING_MINUTES / budget));
+		const size = Math.min(group.length, first.cap * affordable);
+		for (let offset = 0; offset < group.length; offset += size) {
+			const chunk = group.slice(offset, offset + size);
 			batches.push({
 				id: `batch-${batches.length}`,
-				quotaDomain: cell.quotaDomain,
-				cells: [cell.id],
-				maxConcurrency: cap,
-				budgetMinutes,
+				quotaDomain: first.cell.quotaDomain,
+				wave: first.wave,
+				cells: chunk.map((entry) => entry.cell.id),
+				maxConcurrency: first.cap,
+				budgetMinutes: Math.ceil(chunk.length / first.cap) * budget,
 			});
 		}
 	}
 	const rounds: ExperimentPlan["rounds"] = [];
 	for (const quotaDomain of new Set(cells.map((cell) => cell.quotaDomain))) {
-		const domainBatches = batches.filter((batch) => batch.quotaDomain === quotaDomain);
-		for (let offset = 0; offset < domainBatches.length; offset += ROUND_BATCH_LIMIT)
-			rounds.push({
-				id: `round-${rounds.length}`,
-				quotaDomain,
-				batches: domainBatches.slice(offset, offset + ROUND_BATCH_LIMIT).map((batch) => batch.id),
-			});
+		for (const wave of ["synthetic", "realworld"] as const) {
+			const domainBatches = batches.filter(
+				(batch) => batch.quotaDomain === quotaDomain && batch.wave === wave,
+			);
+			for (let offset = 0; offset < domainBatches.length; offset += ROUND_BATCH_LIMIT)
+				rounds.push({
+					id: `round-${rounds.length}`,
+					quotaDomain,
+					wave,
+					batches: domainBatches.slice(offset, offset + ROUND_BATCH_LIMIT).map((batch) => batch.id),
+				});
+		}
 	}
 	const accounts = [...new Set(cells.map((cell) => cell.quotaDomain))].map((quotaDomain) => ({
 		quotaDomain,

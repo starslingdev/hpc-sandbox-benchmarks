@@ -8,6 +8,8 @@ import type {
 } from "@sandbox-benchmarks/schema";
 import {
 	artifactVerified,
+	BENCH_JOB_CEILING_MINUTES,
+	benchmarkWave,
 	canonicalJsonString,
 	cleanupReceiptSchema,
 	effectiveArtifact,
@@ -74,8 +76,8 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 		if (
 			!account ||
 			batch.maxConcurrency > account.sandboxes ||
-			batch.cells.length > batch.maxConcurrency ||
-			batch.budgetMinutes > 180
+			batch.cells.length < 1 ||
+			batch.budgetMinutes > BENCH_JOB_CEILING_MINUTES
 		) {
 			throw new Error(`invalid account batch capacity: ${batch.id}`);
 		}
@@ -95,15 +97,23 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 		}
 		const members = batch.cells.map((id) => cells.get(id)).filter((cell) => cell !== undefined);
 		if (
-			members.reduce((sum, cell) => sum + (cell.gpu?.count ?? 0), 0) > (account.gpus ?? 0) ||
-			members.reduce((sum, cell) => sum + cell.target.vcpus, 0) > (account.vcpus ?? Infinity) ||
-			members.reduce((sum, cell) => sum + cell.target.memoryGb, 0) >
-				(account.memoryGb ?? Infinity) ||
-			members.some(
-				(cell) =>
-					cell.startupMinutes + cell.workloadMinutes + cell.finishMinutes + 15 >
-					batch.budgetMinutes,
-			)
+			batch.wave !== undefined &&
+			members.some((cell) => benchmarkWave(cell.suite) !== batch.wave)
+		)
+			throw new Error(`batch mixes synthetic and realworld work: ${batch.id}`);
+		// Rolling admission runs at most maxConcurrency cells at once; capacity is checked against
+		// that window, not the full batch length.
+		const sample = members[0];
+		const memberBudgets = members.map(
+			(cell) => cell.startupMinutes + cell.workloadMinutes + cell.finishMinutes + 15,
+		);
+		const maxMemberBudget = Math.max(0, ...memberBudgets);
+		if (
+			!sample ||
+			(sample.gpu?.count ?? 0) * batch.maxConcurrency > (account.gpus ?? 0) ||
+			sample.target.vcpus * batch.maxConcurrency > (account.vcpus ?? Infinity) ||
+			sample.target.memoryGb * batch.maxConcurrency > (account.memoryGb ?? Infinity) ||
+			Math.ceil(members.length / batch.maxConcurrency) * maxMemberBudget > batch.budgetMinutes
 		) {
 			throw new Error(`batch exceeds resource or time budget: ${batch.id}`);
 		}
@@ -118,7 +128,12 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 		roundIds.add(round.id);
 		for (const id of round.batches) {
 			const batch = plan.batches.find((entry) => entry.id === id);
-			if (!batch || batch.quotaDomain !== round.quotaDomain || scheduled.has(id))
+			if (
+				!batch ||
+				batch.quotaDomain !== round.quotaDomain ||
+				(batch.wave !== undefined && round.wave !== undefined && batch.wave !== round.wave) ||
+				scheduled.has(id)
+			)
 				throw new Error(`invalid round assignment: ${id}`);
 			scheduled.add(id);
 		}

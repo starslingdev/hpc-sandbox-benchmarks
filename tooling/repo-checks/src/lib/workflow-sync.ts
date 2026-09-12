@@ -35,6 +35,7 @@ import { PROVIDERS, SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
 import { checkExperimentNesting, checkLaneDelegates } from "./workflow-nesting.ts";
 import type { DispatchInput } from "./workflow-yaml.ts";
 import {
+	BENCH_JOB_CEILING_MINUTES,
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
@@ -51,6 +52,7 @@ import { findRepoRoot } from "./workspace.ts";
 export { checkExperimentNesting, checkLaneDelegates } from "./workflow-nesting.ts";
 export type { DispatchInput } from "./workflow-yaml.ts";
 export {
+	BENCH_JOB_CEILING_MINUTES,
 	dispatchInput,
 	jobTimeoutMinutes,
 	MATRIX_WORKFLOW,
@@ -192,6 +194,17 @@ export function checkCellBudgetEnv(
  * The whole gate against the real workflow files under `root` — the single owner of which files feed
  * the gate, used by the real-file test in workflow-registry-sync.test.ts.
  */
+
+/** Invariant: the suite job timeout equals the shared experiment job ceiling. */
+export function checkJobCeiling(timeout: number, file: string): string[] {
+	if (timeout !== BENCH_JOB_CEILING_MINUTES) {
+		return [
+			`${file}: job timeout-minutes ${timeout} must equal BENCH_JOB_CEILING_MINUTES (${BENCH_JOB_CEILING_MINUTES})`,
+		];
+	}
+	return [];
+}
+
 export function runCheck(root: string = findRepoRoot()): string[] {
 	const smoke = readWorkflow(SMOKE_WORKFLOW, root);
 	const matrix = readWorkflow(MATRIX_WORKFLOW, root);
@@ -211,13 +224,13 @@ export function runCheck(root: string = findRepoRoot()): string[] {
 		...checkLaneDelegates(matrix, MATRIX_WORKFLOW, credentialKeys),
 		...checkWorkflowTimeouts({ [SUITE_WORKFLOW]: suiteTimeout }),
 		...checkCellBudgetEnv(suiteEnv, suiteTimeout, SUITE_WORKFLOW),
+		...checkJobCeiling(suiteTimeout, SUITE_WORKFLOW),
 		...checkExperimentNesting(
 			Object.fromEntries(
 				[
 					"bench-matrix.yml",
 					"bench-smoke.yml",
 					"bench-account.yml",
-					"bench-round.yml",
 					"bench-suite.yml",
 					"commit-dataset.yml",
 				].map((file) => [file, readWorkflow(`.github/workflows/${file}`, root)]),

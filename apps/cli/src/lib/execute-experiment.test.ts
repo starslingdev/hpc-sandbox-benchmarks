@@ -11,7 +11,11 @@ import { recoverAccount } from "./account-journal.ts";
 import { recoverAllocatedIntent } from "./allocated-intent-recovery.ts";
 import type { OpenedDriver } from "./driver-run.ts";
 import { resolveDriverArtifact } from "./driver-run.ts";
-import { batchIsComplete, executeExperimentBatch } from "./execute-experiment.ts";
+import {
+	batchIsComplete,
+	cellStartupDeadline,
+	executeExperimentBatch,
+} from "./execute-experiment.ts";
 import { readExperimentAttempt } from "./experiment-artifacts.ts";
 import { workflowExperiment } from "./workflow-experiment.ts";
 
@@ -397,4 +401,17 @@ test("operator recovery reclaims the leaked sandbox and readmits the account", a
 	);
 	// The original attempts stay failed; recovery never makes them publishable.
 	expect(attempts.every((attempt) => attempt.outcome === "failed")).toBe(true);
+});
+
+test("cellStartupDeadline is bounded by cell startup and by remaining batch budget", () => {
+	const cell = {
+		startupMinutes: 40,
+		workloadMinutes: 80,
+		finishMinutes: 15,
+	};
+	const takenAt = 1_000_000;
+	expect(cellStartupDeadline(cell, takenAt, takenAt + 330 * 60_000)).toBe(takenAt + 40 * 60_000);
+	expect(cellStartupDeadline(cell, takenAt, takenAt + 100 * 60_000)).toBe(
+		takenAt + 100 * 60_000 - (80 + 15) * 60_000,
+	);
 });

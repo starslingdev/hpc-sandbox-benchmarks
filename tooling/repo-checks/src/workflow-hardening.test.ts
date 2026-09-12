@@ -253,7 +253,7 @@ describe("Namespace token authentication", () => {
 			join(findRepoRoot(), ".github/actions/namespace-token/action.yml"),
 			"utf8",
 		);
-		expect(action).toContain("--expires_in 4h");
+		expect(action).toContain("--expires_in 6h");
 		expect(action).not.toContain("--no_expiry");
 	});
 });

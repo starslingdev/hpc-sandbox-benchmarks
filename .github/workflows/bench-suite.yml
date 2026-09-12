@@ -34,7 +34,7 @@ jobs:
     # >>> generated: provider-runner — bun run generate-provider-wiring
     runs-on: ${{ 'ubuntu-24.04' }}
     # <<< end generated: provider-runner
-    timeout-minutes: 180
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix:
@@ -100,7 +100,7 @@ jobs:
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_PROVIDER: ${{ matrix.provider }}
           BENCH_SUITE: ${{ inputs.suite }}
-          BENCH_CELL_BUDGET_MINUTES: '180'
+          BENCH_CELL_BUDGET_MINUTES: '330'
           BENCH_BATCH_ID: ${{ inputs.batch_id }}
           GH_TOKEN: ${{ github.token }}
           # >>> generated: provider-inputs-bench — bun run generate-provider-wiring
