@@ -13,6 +13,7 @@ export type {
 } from "./lib/experiment.ts";
 export {
 	aggregateExperiment,
+	describeCoverageShortfall,
 	evaluateExperiment,
 	evidenceDigest,
 	verifyExperimentPlan,

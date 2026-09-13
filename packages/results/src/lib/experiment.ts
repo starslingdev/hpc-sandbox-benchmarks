@@ -193,6 +193,44 @@ export interface CoverageReport {
 }
 
 /**
+ * Name what fell short in a coverage report, so a non-zero exit never lands without saying which
+ * cells were incomplete. `failed` and `cancelled` cells come first (a provider actually refused the
+ * work, the actionable case) ahead of `missing` ones, which are usually a whole wave that never ran
+ * and would otherwise bury the rest. Beyond `limit` cells the remainder is tallied rather than
+ * listed — a skipped realworld wave is hundreds of cells and must not flood a job log.
+ */
+export function describeCoverageShortfall(report: CoverageReport, limit = 20): string[] {
+	const rank = { failed: 0, cancelled: 1, missing: 2 } as const;
+	const short = report.cells
+		.filter((cell) => cell.status in rank)
+		.sort(
+			(a, b) =>
+				rank[a.status as keyof typeof rank] - rank[b.status as keyof typeof rank] ||
+				a.id.localeCompare(b.id),
+		);
+	const tally = new Map<string, number>();
+	for (const cell of report.cells) tally.set(cell.status, (tally.get(cell.status) ?? 0) + 1);
+	const lines = [
+		`coverage: ${[...tally]
+			.sort()
+			.map(([status, count]) => `${status}=${count}`)
+			.join(" ")}`,
+		...report.conflicts.map((conflict) => `conflict: ${conflict}`),
+		...short.slice(0, limit).map((cell) => {
+			// Which metrics fell short only diagnoses a cell that RAN: a `missing` cell was never
+			// attempted, so listing its whole metric set is noise that hides the failures above it.
+			const missing =
+				cell.status !== "missing" && cell.missingMetrics.length > 0
+					? ` missing=${cell.missingMetrics.join(",")}`
+					: "";
+			return `${cell.status}: ${cell.id}${missing}`;
+		}),
+	];
+	if (short.length > limit) lines.push(`… and ${short.length - limit} more incomplete cell(s)`);
+	return lines;
+}
+
+/**
  * The harness logs one entry per ATTEMPT of a step (retried setup steps, re-collected results), so
  * a step is judged by its final attempt: an earlier failure that a later attempt superseded is
  * evidence of a retry, not of a failed run. Keyed by phase + label because the same label can name

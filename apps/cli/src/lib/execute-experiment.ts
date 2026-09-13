@@ -5,6 +5,7 @@ import type { SandboxDriver, SandboxRef } from "@sandbox-benchmarks/driver";
 import { describeDriverFailure, isFailedCreateCleanupError } from "@sandbox-benchmarks/driver";
 import { diagnosticSecretsFromEnv } from "@sandbox-benchmarks/driver/env";
 import { executeSuite } from "@sandbox-benchmarks/harness";
+import type { CoverageReport } from "@sandbox-benchmarks/results";
 import {
 	evaluateExperiment,
 	evidenceDigest,
@@ -366,19 +367,32 @@ export async function executeExperimentBatch(
 	return results.flatMap((result) => (result?.status === "fulfilled" ? [result.value] : []));
 }
 
+/** This batch's own coverage: the frozen report narrowed to the cells this batch attempted, so a
+ *  batch is judged by its own cells and never by a sibling batch's gaps. Carries the per-cell detail
+ *  the worker must print before failing — `batchIsComplete` is just its verdict. */
+export function batchCoverage(
+	plan: ExperimentPlan,
+	root: string,
+	attempts: readonly ExperimentAttempt[],
+): CoverageReport {
+	const report = evaluateExperiment(
+		plan,
+		attempts.map((attempt) => readExperimentAttempt(join(root, attempt.id))),
+	);
+	const cells = report.cells.filter((cell) =>
+		attempts.some((attempt) => attempt.cellId === cell.id),
+	);
+	return {
+		...report,
+		cells,
+		complete: report.conflicts.length === 0 && cells.every((cell) => cell.status === "complete"),
+	};
+}
+
 export function batchIsComplete(
 	plan: ExperimentPlan,
 	root: string,
 	attempts: readonly ExperimentAttempt[],
 ): boolean {
-	const report = evaluateExperiment(
-		plan,
-		attempts.map((attempt) => readExperimentAttempt(join(root, attempt.id))),
-	);
-	return (
-		report.conflicts.length === 0 &&
-		report.cells
-			.filter((cell) => attempts.some((attempt) => attempt.cellId === cell.id))
-			.every((cell) => cell.status === "complete")
-	);
+	return batchCoverage(plan, root, attempts).complete;
 }

@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { aggregateExperiment, writeRunDocument } from "@sandbox-benchmarks/results";
+import {
+	aggregateExperiment,
+	describeCoverageShortfall,
+	writeRunDocument,
+} from "@sandbox-benchmarks/results";
 import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-artifacts.ts";
 
 if (import.meta.main) {
@@ -19,7 +23,10 @@ if (import.meta.main) {
 	writeFileSync(join(output, "coverage.json"), `${JSON.stringify(coverage, null, 2)}\n`);
 	if (!run) {
 		console.error(
-			"Experiment is incomplete; retained attempt artifacts and coverage report are diagnostic evidence.",
+			[
+				"Experiment is incomplete; retained attempt artifacts and coverage report are diagnostic evidence.",
+				...describeCoverageShortfall(coverage),
+			].join("\n"),
 		);
 		process.exitCode = 1;
 	} else {

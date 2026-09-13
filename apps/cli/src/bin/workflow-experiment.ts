@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { describeDriverFailure } from "@sandbox-benchmarks/driver";
 import { diagnosticSecretsFromEnv } from "@sandbox-benchmarks/driver/env";
 import { exitAfterSandboxCleanup } from "@sandbox-benchmarks/harness";
-import { batchIsComplete, executeExperimentBatch } from "../lib/execute-experiment.ts";
+import { describeCoverageShortfall } from "@sandbox-benchmarks/results";
+import { batchCoverage, executeExperimentBatch } from "../lib/execute-experiment.ts";
 import { writeImmutableJson } from "../lib/experiment-artifacts.ts";
 import { githubExperimentStore } from "../lib/experiment-store.ts";
 import { downloadExperimentAttempts, downloadExperimentPlan } from "../lib/experiment-transfer.ts";
@@ -59,9 +60,14 @@ if (import.meta.main) {
 				store,
 				journal: githubAccountJournal(githubGitRequest()),
 			});
-			await exitAfterSandboxCleanup(
-				batchIsComplete(plan, join(root, "attempts"), attempts) ? 0 : 1,
-			);
+			// An incomplete batch must say which cells fell short: this exit is the only signal the
+			// job gives, and a bare code sends the reader to another job's coverage artifact.
+			const coverage = batchCoverage(plan, join(root, "attempts"), attempts);
+			if (!coverage.complete)
+				console.error(
+					[`batch ${batchId} is incomplete`, ...describeCoverageShortfall(coverage)].join("\n"),
+				);
+			await exitAfterSandboxCleanup(coverage.complete ? 0 : 1);
 		} else if (command === "collect") {
 			await downloadExperimentAttempts(
 				store,
