@@ -101,6 +101,11 @@ jobs:
   wave-realworld:
     name: realworld / ${{ matrix.account }}
     needs: [plan, wave-synthetic]
+    # `needs` orders the waves; it must not also gate them. Accounts are independent (fail-fast is
+    # off), so without this one account's shortfall skips realworld for EVERY account and discards
+    # the whole wave over a single provider's cells. Publication is gated on coverage, not on this.
+    if: >
+      !cancelled() && needs.plan.result == 'success'
     permissions:
       contents: write
       actions: read
