@@ -64,4 +64,7 @@ raw evidence, provenance, fixed trial counts or resolved cleanup. See
 In CI the same opt-in is the `allow_partial` input of the `commit-dataset` workflow (backfill a
 run with **Actions → Commit dataset → Run workflow**, or `scripts/backfill-dataset.sh <run-id>
 --allow-partial`); it sets the flag on both commands, so promotion re-verifies the candidate under
-the policy it was built with. The matrix's automatic publish stays strict.
+the policy it was built with. The CPU benchmark workflow enables its visible `allow_partial` input
+by default and forwards it to publication. Disable that input to require complete coverage.
+Standalone backfills and CLI commands remain strict by default. See
+[ADR-0013](../../docs/adr/0013-cpu-partial-publication-default.md).

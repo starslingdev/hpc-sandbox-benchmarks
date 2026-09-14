@@ -176,6 +176,20 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 		"worker must validate its queue and credential scope against the frozen batch",
 	);
 	const publish = job("bench-matrix.yml", "publish");
+	const cpu = asRecord(docs["bench-matrix.yml"], "CPU workflow");
+	const dispatch = asRecord(asRecord(cpu.on, "CPU triggers").workflow_dispatch, "CPU dispatch");
+	const partial = asRecord(
+		asRecord(dispatch.inputs, "CPU inputs").allow_partial ?? {},
+		"CPU partial input",
+	);
+	expect(
+		partial.type === "boolean" && partial.default === true,
+		"CPU publication must default to verified partial results with a boolean strict opt-out",
+	);
+	expect(
+		asRecord(publish.with, "CPU publication").allow_partial === "${{ inputs.allow_partial }}",
+		"CPU publication must forward allow_partial unchanged so false preserves strict completeness",
+	);
 	expect(
 		Array.isArray(publish.needs) &&
 			publish.needs.includes("wave-synthetic") &&

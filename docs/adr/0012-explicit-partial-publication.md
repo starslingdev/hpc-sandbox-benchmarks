@@ -4,6 +4,9 @@ status: accepted
 
 # Explicit publication of incomplete experiments
 
+The CPU workflow default is refined by [ADR-0013](./0013-cpu-partial-publication-default.md).
+The CLI and standalone backfill defaults and all verification requirements remain unchanged.
+
 ## Context
 
 CPU experiment 34781421576 completed with 349 complete and 299 incomplete planned cells.

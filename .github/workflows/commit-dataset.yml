@@ -18,9 +18,9 @@ name: Commit dataset
 # publish the verified measurements of a fully collected but incomplete experiment as a Run v8 with
 # `experiment.partial` — it passes the CLI's `--allow-partial` to BOTH aggregate and promote, which
 # each recompute coverage from the frozen plan and original attempts. It never bypasses raw
-# evidence, provenance, fixed trial counts or resolved cleanup. The matrix's automatic publish keeps
-# the strict default; the usual path for a run whose cells failed is to backfill it here with
-# allow_partial=true once the shortfall has been read from the run's coverage artifact.
+# evidence, provenance, fixed trial counts or resolved cleanup. The CPU matrix passes its visible
+# allow_partial input (enabled by default, ADR-0013). Standalone backfills and callers that omit
+# the input remain strict; backfill an incomplete run here with allow_partial=true.
 #
 # Environment `privileged` lives on the job here (the dataset release surface, `contents: write`); a
 # `uses:` caller can't declare it, so the approval gate is enforced at this layer for both entry points.

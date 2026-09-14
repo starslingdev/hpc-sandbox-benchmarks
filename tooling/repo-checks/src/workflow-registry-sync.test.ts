@@ -255,7 +255,7 @@ describe("checkLaneDelegates", () => {
 	});
 });
 
-test("production workflows preserve planned account batching and strict promotion", () => {
+test("production workflows preserve planned account batching and verified publication policy", () => {
 	expect(runCheck()).toEqual([]);
 });
 
@@ -272,6 +272,9 @@ test("the integrated workflow gate rejects parallel waves, serialised batches, d
 	);
 	const source = JSON.stringify(docs);
 	for (const [before, after] of [
+		['"type":"boolean","default":true', '"type":"boolean","default":false'],
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: GitHub expression under test
+		['"allow_partial":"${{ inputs.allow_partial }}"', '"allow_partial":true'],
 		// Realworld must wait for synthetic; dropping that edge reintroduces mixed-label collision.
 		['"needs":["plan","wave-synthetic"]', '"needs":["plan"]'],
 		// A wave's batches created together: reintroducing max-parallel is one approval per batch.

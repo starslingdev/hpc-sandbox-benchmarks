@@ -23,6 +23,11 @@ on:
         required: false
         type: string
         default: ''
+      allow_partial:
+        description: 'Publish verified measurements even when some cells are incomplete, with all shortfalls recorded and the Run labeled partial. Disable to require complete coverage.'
+        required: false
+        type: boolean
+        default: true
       allow_branch:
         description: 'Allow benchmark cells on a non-main ref (publish remains main-only).'
         required: false
@@ -121,7 +126,7 @@ jobs:
     secrets: inherit
 
   publish:
-    name: Commit complete experiment
+    name: Commit verified experiment results
     needs: [plan, wave-synthetic, wave-realworld]
     if: >
       !cancelled() && needs.plan.result == 'success' &&
@@ -134,3 +139,4 @@ jobs:
     uses: ./.github/workflows/commit-dataset.yml
     with:
       run_id: ${{ github.run_id }}
+      allow_partial: ${{ inputs.allow_partial }}
