@@ -6,6 +6,8 @@ status: accepted
 
 The CPU workflow default is refined by [ADR-0013](./0013-cpu-partial-publication-default.md).
 The CLI and standalone backfill defaults and all verification requirements remain unchanged.
+Later cleanup evidence may resolve the ownership gate under
+[ADR-0014](./0014-post-run-cleanup-recovery.md); recovered attempts still contribute no measurements.
 
 ## Context
 

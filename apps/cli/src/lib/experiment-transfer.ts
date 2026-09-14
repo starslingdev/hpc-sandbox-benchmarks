@@ -1,5 +1,6 @@
-import { lstatSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { verifyCleanupRecovery } from "@sandbox-benchmarks/results";
 import type { ExperimentPlan } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import type { AccountJournal } from "./account-journal.ts";
@@ -89,6 +90,7 @@ export async function downloadExperimentAttempts(
 		return records;
 	});
 	const terminals = new Map<string, ReturnType<typeof readExperimentAttempt>>();
+	const directories = new Map<string, string>();
 	let next = 0;
 	let active = 0;
 	let peakDownloads = 0;
@@ -104,6 +106,8 @@ export async function downloadExperimentAttempts(
 				try {
 					const directory = join(root, String(artifact.id));
 					await store.download(artifact, directory);
+					if (existsSync(join(directory, "cleanup-recovery.json")))
+						throw new Error("original attempts cannot supply later cleanup recovery evidence");
 					const verifyStarted = performance.now();
 					const attempt = readExperimentAttempt(directory);
 					verificationMs += performance.now() - verifyStarted;
@@ -116,6 +120,7 @@ export async function downloadExperimentAttempts(
 					)
 						throw new Error("attempt artifact provenance conflict");
 					terminals.set(evidence.id, attempt);
+					directories.set(evidence.id, directory);
 				} catch (error) {
 					// Stop new work but await every active extraction before rejecting. Callers can then
 					// inspect/remove the partial collection without late writers recreating its files.
@@ -146,6 +151,45 @@ export async function downloadExperimentAttempts(
 	for (const history of histories) {
 		if (history.status !== "fulfilled") continue;
 		const { account, records } = history.value;
+		for (const attempt of terminals.values()) {
+			const owned = records.filter((record) => record.attempt === attempt.evidence.id);
+			const releases = owned.filter((record) => record.kind === "released");
+			if (releases.length > 1) throw new Error("conflicting cleanup recovery releases");
+			const release = releases[0];
+			const recovery =
+				release?.outcome === "absent"
+					? release.recovery
+					: release?.outcome === "reconciled" && release.evidence.kind === "post-run-cleanup"
+						? release.evidence
+						: undefined;
+			if (!recovery) continue;
+			verifyCleanupRecovery(plan, { ...attempt, cleanupRecovery: recovery });
+			const cell = plan.cells.find((cell) => cell.id === attempt.evidence.cellId);
+			const intent = owned.find((record) => record.kind === "intent");
+			const allocation = owned.find((record) => record.kind === "allocated");
+			if (
+				!cell ||
+				cell.quotaDomain !== account.quotaDomain ||
+				!intent ||
+				owned.some(
+					(r) =>
+						r.account !== cell.quotaDomain || r.cellId !== cell.id || r.planDigest !== plan.digest,
+				) ||
+				(release?.outcome === "absent"
+					? owned.length !== 3 ||
+						!allocation ||
+						allocation.ref.id !== release.ref.id ||
+						allocation.ref.provider !== release.ref.provider ||
+						recovery.observation.kind !== "sandbox" ||
+						recovery.observation.sandboxId !== release.ref.id ||
+						recovery.observation.provider !== release.ref.provider
+					: owned.length !== 2 || allocation || recovery.observation.kind !== "modal-app")
+			)
+				throw new Error("cleanup recovery lacks matching durable ownership and release");
+			const directory = directories.get(attempt.evidence.id);
+			if (!directory) throw new Error("cleanup recovery attempt directory missing");
+			writeImmutableJson(join(directory, "cleanup-recovery.json"), recovery);
+		}
 		for (const attempt of terminals.values()) {
 			const cell = plan.cells.find((cell) => cell.id === attempt.evidence.cellId);
 			if (cell?.quotaDomain !== account.quotaDomain || attempt.evidence.outcome !== "completed")

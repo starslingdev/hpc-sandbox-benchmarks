@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
 	closeSync,
+	existsSync,
 	fsyncSync,
 	linkSync,
 	lstatSync,
@@ -19,6 +20,7 @@ import {
 } from "@sandbox-benchmarks/results";
 import {
 	cleanupReceiptSchema,
+	cleanupRecoverySchema,
 	executionReceiptSchema,
 	experimentAttemptSchema,
 	parseRun,
@@ -76,6 +78,13 @@ export function readExperimentAttempt(directory: string): AttemptWithRun {
 	}
 	return {
 		evidence,
+		...(existsSync(join(directory, "cleanup-recovery.json"))
+			? {
+					cleanupRecovery: cleanupRecoverySchema.assert(
+						JSON.parse(readFileSync(join(directory, "cleanup-recovery.json"), "utf8")),
+					),
+				}
+			: {}),
 		...(run ? { run } : {}),
 		...(run && evidence.rawDigest
 			? { ptsTrials: readPtsTrialEvidence(join(directory, "raw"), run) }

@@ -20,6 +20,7 @@ import type {
 } from "@sandbox-benchmarks/schema";
 import {
 	aggregate,
+	cleanupRecoverySchema,
 	experimentAttemptSchema,
 	parseRun,
 	parseRunIndex,
@@ -609,3 +610,63 @@ test("partial aggregation retains proven metrics from incomplete suites and reje
 	first.evidence.planDigest = `sha256:${"b".repeat(64)}`;
 	expect(aggregateExperiment(plan, attempts, { allowPartial: true }).run).toBeUndefined();
 });
+
+test("later cleanup evidence unblocks partial promotion without restoring failed measurements", () => {
+	const f = fixture("cleanup-recovery");
+	const id = "e2b-cpu-node-r0";
+	const directory = join(f.attemptsRoot, id);
+	const evidenceFile = join(directory, "attempt.json");
+	const evidence = experimentAttemptSchema.assert({
+		...JSON.parse(readFileSync(evidenceFile, "utf8")),
+		outcome: "failed",
+		cleanup: "unresolved",
+		completion: "unknown",
+	});
+	writeFileSync(evidenceFile, JSON.stringify(evidence));
+	const original = readFileSync(evidenceFile, "utf8");
+	const recovery = cleanupRecoverySchema.assert({
+		kind: "post-run-cleanup",
+		attemptId: id,
+		cellId: id,
+		planDigest: evidence.planDigest,
+		attemptDigest: evidenceDigest(evidence),
+		workflowRun: f.runId,
+		sourceSha: sha,
+		confirmedAt: "2026-09-14T00:00:00Z",
+		operator: "test",
+		observation: {
+			kind: "sandbox",
+			provider: "e2b",
+			sandboxId: `sandbox-${id}`,
+			state: "terminal",
+		},
+	});
+	const args = [f.planFile, f.attemptsRoot, f.candidate, "--allow-partial"];
+	expect(invoke("aggregate-experiment", args).exitCode).toBe(1);
+	const recoveryFile = join(directory, "cleanup-recovery.json");
+	writeImmutableJson(recoveryFile, recovery);
+	expect(invoke("aggregate-experiment", args).exitCode).toBe(0);
+	const candidate = join(f.candidate, "runs", `${f.runId}.json`);
+	const run = parseRun(JSON.parse(readFileSync(candidate, "utf8")));
+	expect(run.experiment?.cleanupRecoveries).toEqual([recovery]);
+	expect(run.experiment?.partial?.cells.find((c) => c.id === id)).toMatchObject({
+		status: "failed",
+		retainedMetrics: [],
+	});
+	const promote = [candidate, f.dataset, f.planFile, f.attemptsRoot, "--allow-partial"];
+	expect(invoke("promote", promote).exitCode).toBe(0);
+	expect(readFileSync(evidenceFile, "utf8")).toBe(original);
+	// Neither a different sandbox nor an unbound attestation may release the gate.
+	for (const changed of [
+		{ ...recovery, attemptDigest: `sha256:${"b".repeat(64)}` },
+		{ ...recovery, observation: { ...recovery.observation, sandboxId: "other" } },
+		{ ...recovery, sourceSha: "b".repeat(40) },
+		{ ...recovery, planDigest: `sha256:${"b".repeat(64)}` },
+	]) {
+		writeFileSync(recoveryFile, JSON.stringify(changed));
+		expect(invoke("aggregate-experiment", args).exitCode).toBe(1);
+		expect(invoke("promote", promote).exitCode).toBe(1);
+	}
+	rmSync(recoveryFile);
+	expect(invoke("promote", promote).exitCode).toBe(1);
+}, 20_000);

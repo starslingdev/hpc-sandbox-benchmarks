@@ -28,6 +28,7 @@
     "workflow-experiment": "./src/bin/workflow-experiment.ts",
     "recover-completed-create": "./src/bin/recover-completed-create.ts",
     "recover-allocated-intent": "./src/bin/recover-allocated-intent.ts",
+    "recover-experiment-cleanup": "./src/bin/recover-experiment-cleanup.ts",
     "audit-account-journals": "./src/bin/audit-account-journals.ts"
   },
   "scripts": {

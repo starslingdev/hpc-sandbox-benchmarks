@@ -10,6 +10,7 @@
 import { type } from "arktype";
 import { aggregatesSchema } from "./analysis.ts";
 import { effectiveArtifact, providerArtifactEvidenceSchema } from "./artifact-evidence.ts";
+import { cleanupRecoverySchema } from "./cleanup-recovery.ts";
 import { providerCostCellKey, providerCostEvidenceSchema } from "./cost-evidence.ts";
 import { runIdSchema } from "./identifiers.ts";
 import { directionSchema } from "./metrics.ts";
@@ -890,6 +891,7 @@ export const runSchema = type({
 		planDigest: /^sha256:[a-f0-9]{64}$/,
 		"cohortDigest?": /^sha256:[a-f0-9]{64}$/,
 		attemptIds: "string[] >= 1",
+		"cleanupRecoveries?": cleanupRecoverySchema.array().atLeastLength(1),
 		"partial?": {
 			status: "'partial'",
 			planned: "number.integer >= 1",
@@ -929,6 +931,25 @@ export const runSchema = type({
 		return ctx.mustBe("experiment linkage exactly on Run v7 or newer");
 	}
 	const partial = run.experiment?.partial;
+	const recoveries = run.experiment?.cleanupRecoveries;
+	if (recoveries) {
+		if (
+			!partial ||
+			new Set(recoveries.map((r) => r.attemptId)).size !== recoveries.length ||
+			recoveries.some((r) => {
+				const cell = partial.cells.find((c) => c.attemptId === r.attemptId);
+				return (
+					r.planDigest !== run.experiment?.planDigest ||
+					r.workflowRun !== run.runId ||
+					r.sourceSha !== run.sha ||
+					cell?.id !== r.cellId ||
+					cell.status !== "failed" ||
+					cell.retainedMetrics.length !== 0
+				);
+			})
+		)
+			return ctx.mustBe("cleanup recoveries linked to failed partial cells without measurements");
+	}
 	if ((version === 8) !== (partial !== undefined)) {
 		return ctx.mustBe("explicit partial coverage exactly on Run v8");
 	}

@@ -11,6 +11,7 @@ export * from "./artifact-evidence.ts";
 export * from "./canonical-json.ts";
 // The Metric Catalog — the registry of rankable Metrics, plus lookup helpers.
 export * from "./catalog.ts";
+export * from "./cleanup-recovery.ts";
 // Sandbox-attributed provider cost evidence and complete-total semantics.
 export * from "./cost-evidence.ts";
 // The derived economics Dimension ($/run): its MetricDefs, the pricing-driven derivation, and the

@@ -1,5 +1,5 @@
 import type { ProviderId, SandboxDriver, SandboxRef } from "@sandbox-benchmarks/driver";
-import { providerIdSchema } from "@sandbox-benchmarks/schema";
+import { cleanupRecoverySchema, providerIdSchema } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 
 const identity = type(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/);
@@ -14,9 +14,13 @@ const base = {
 export const accountRecordSchema = type.or(
 	type({ ...base, kind: "'intent'" }).onUndeclaredKey("reject"),
 	type({ ...base, kind: "'allocated'", ref: refSchema }).onUndeclaredKey("reject"),
-	type({ ...base, kind: "'released'", outcome: "'absent'", ref: refSchema }).onUndeclaredKey(
-		"reject",
-	),
+	type({
+		...base,
+		kind: "'released'",
+		outcome: "'absent'",
+		ref: refSchema,
+		"recovery?": cleanupRecoverySchema,
+	}).onUndeclaredKey("reject"),
 	type({ ...base, kind: "'released'", outcome: "'not-allocated'" }).onUndeclaredKey("reject"),
 	type({
 		...base,
@@ -30,6 +34,12 @@ export const accountRecordSchema = type.or(
 			confirmedAt: "string.date.iso",
 			operator: identity,
 		},
+	}).onUndeclaredKey("reject"),
+	type({
+		...base,
+		kind: "'released'",
+		outcome: "'reconciled'",
+		evidence: cleanupRecoverySchema,
 	}).onUndeclaredKey("reject"),
 );
 export type AccountRecord = typeof accountRecordSchema.infer;

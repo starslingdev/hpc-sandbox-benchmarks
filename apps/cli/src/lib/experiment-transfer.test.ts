@@ -133,6 +133,24 @@ function writeTerminal(artifact: StoredArtifact, directory: string) {
 	});
 }
 
+test("original artifacts cannot smuggle a later cleanup recovery into publication", async () => {
+	await expect(
+		downloadExperimentAttempts(
+			{
+				...store,
+				list: async () => [terminalArtifact(1)],
+				download: async (artifact, directory) => {
+					writeTerminal(artifact, directory);
+					writeImmutableJson(join(directory, "cleanup-recovery.json"), {});
+				},
+			},
+			{ read: async () => [], append: async () => {} },
+			plan,
+			join(root, "injected-recovery"),
+		),
+	).rejects.toThrow("original attempts cannot supply");
+});
+
 test("collection fills a bounded download pool while reading account journals", async () => {
 	const artifacts = Array.from({ length: 80 }, (_, i) => terminalArtifact(i + 1));
 	let active = 0;

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
 	CleanupReceipt,
+	CleanupRecovery,
 	ExecutionReceipt,
 	ExperimentAttempt,
 	ExperimentPlan,
@@ -12,12 +13,14 @@ import {
 	benchmarkWave,
 	canonicalJsonString,
 	cleanupReceiptSchema,
+	cleanupRecoverySchema,
 	effectiveArtifact,
 	executionReceiptSchema,
 	experimentAttemptSchema,
 	experimentPlanSchema,
 	getMetric,
 	getProvider,
+	MODAL_CREATED_REQUEST_REVISION,
 	parseRun,
 	providerReportedNothing,
 } from "@sandbox-benchmarks/schema";
@@ -179,6 +182,7 @@ export interface AttemptWithRun {
 	run?: Run;
 	execution?: ExecutionReceipt;
 	cleanup?: CleanupReceipt;
+	cleanupRecovery?: CleanupRecovery;
 	/** When present, raw verification takes precedence over a shard's declared sample origin. */
 	ptsTrials?: PtsTrialEvidence[];
 }
@@ -498,6 +502,21 @@ export function aggregateExperiment(
 	options: { allowPartial?: boolean } = {},
 ): ExperimentAggregation {
 	const coverage = evaluateExperiment(plan, attempts);
+	for (const attempt of attempts) {
+		if (attempt.cleanupRecovery) verifyCleanupRecovery(plan, attempt);
+		const observation = attempt.cleanupRecovery?.observation;
+		if (
+			observation?.kind === "modal-app" &&
+			!attempts.some(
+				(anchor) =>
+					anchor.evidence.planDigest === plan.digest &&
+					anchor.evidence.sha === plan.sha &&
+					anchor.execution?.provider === "modal-gvisor" &&
+					anchor.execution.sandboxId === observation.anchorSandboxId,
+			)
+		)
+			throw new Error("Modal cleanup recovery anchor is missing from original experiment evidence");
+	}
 	const partial = !coverage.complete && options.allowPartial === true;
 	if (!coverage.complete && !partial) return { coverage };
 	// Partial publication relaxes metric completeness only. Missing evidence, conflicting provenance
@@ -510,7 +529,7 @@ export function aggregateExperiment(
 				(attempt) =>
 					(!attempt.run && !isUnallocatedFailureWithoutRun(attempt)) ||
 					!attempt.evidence.rawDigest ||
-					attempt.evidence.cleanup === "unresolved",
+					(attempt.evidence.cleanup === "unresolved" && !attempt.cleanupRecovery),
 			) ||
 			!coverage.cells.some((cell) => (cell.retainedMetrics?.length ?? 0) > 0))
 	)
@@ -620,6 +639,13 @@ export function aggregateExperiment(
 			planDigest: plan.digest,
 			cohortDigest: evidenceDigest(cohorts),
 			attemptIds: selectedIds,
+			...(attempts.some((attempt) => attempt.cleanupRecovery)
+				? {
+						cleanupRecoveries: attempts
+							.flatMap((attempt) => (attempt.cleanupRecovery ? [attempt.cleanupRecovery] : []))
+							.toSorted((a, b) => a.attemptId.localeCompare(b.attemptId)),
+					}
+				: {}),
 			...(partial
 				? {
 						partial: {
@@ -649,4 +675,49 @@ export function aggregateExperiment(
 		},
 	});
 	return { coverage, run };
+}
+
+/** Only releases the partial-publication cleanup gate; evaluateExperiment remains unchanged. */
+export function verifyCleanupRecovery(plan: ExperimentPlan, attempt: AttemptWithRun): void {
+	const recovery = cleanupRecoverySchema.assert(attempt.cleanupRecovery);
+	const evidence = attempt.evidence;
+	const cell = plan.cells.find((cell) => cell.id === evidence.cellId);
+	if (
+		!cell ||
+		evidence.outcome !== "failed" ||
+		evidence.cleanup !== "unresolved" ||
+		!evidence.rawDigest ||
+		!evidence.runDigest ||
+		!attempt.run ||
+		recovery.attemptId !== evidence.id ||
+		recovery.cellId !== evidence.cellId ||
+		recovery.planDigest !== plan.digest ||
+		recovery.planDigest !== evidence.planDigest ||
+		recovery.attemptDigest !== evidenceDigest(evidence) ||
+		recovery.workflowRun !== plan.id ||
+		recovery.workflowRun !== evidence.workflowRun ||
+		recovery.sourceSha !== plan.sha ||
+		recovery.sourceSha !== evidence.sha ||
+		Date.parse(recovery.confirmedAt) < Date.parse(`${plan.createdOn}T00:00:00Z`)
+	)
+		throw new Error("cleanup recovery does not bind the original failed attempt");
+	if (recovery.observation.kind === "sandbox") {
+		if (
+			recovery.observation.provider !== cell.provider ||
+			attempt.execution?.sandboxId !== recovery.observation.sandboxId ||
+			attempt.execution?.provider !== cell.provider
+		)
+			throw new Error("cleanup recovery sandbox differs from original execution");
+	} else if (
+		cell.provider !== "modal-gvisor" ||
+		cell.quotaDomain !== "modal" ||
+		evidence.sha !== MODAL_CREATED_REQUEST_REVISION ||
+		evidence.measurementStarted ||
+		attempt.execution ||
+		attempt.cleanup ||
+		!evidence.diagnostic?.endsWith(
+			"modal-gvisor ComputeSDK created-request preparation and verification callback failed; cleanup failed: modal-gvisor ComputeSDK lifecycle destroy callback failed",
+		)
+	)
+		throw new Error("cleanup recovery is not the reviewed Modal post-create failure");
 }

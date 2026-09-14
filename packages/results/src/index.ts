@@ -16,6 +16,7 @@ export {
 	describeCoverageShortfall,
 	evaluateExperiment,
 	evidenceDigest,
+	verifyCleanupRecovery,
 	verifyExperimentPlan,
 } from "./lib/experiment.ts";
 // The dataset↔figures seam: the registries the figure model is built from, the figure list the

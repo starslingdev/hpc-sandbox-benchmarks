@@ -68,3 +68,17 @@ the policy it was built with. The CPU benchmark workflow enables its visible `al
 by default and forwards it to publication. Disable that input to require complete coverage.
 Standalone backfills and CLI commands remain strict by default. See
 [ADR-0013](../../docs/adr/0013-cpu-partial-publication-default.md).
+
+### Post-run cleanup recovery
+
+When an otherwise retained experiment is blocked by unresolved cleanup, stop local account writers
+and use `recover-experiment-cleanup --exclusive-account <plan.json> <attempts-root>
+<original-attempt-directory>` with provider credentials, `GITHUB_REPOSITORY`, journal-write `GH_TOKEN`
+and `GITHUB_ACTOR`. The command requires a completed source workflow and checks workflow quiescence
+before observation and release. It confirms exact sandbox removal, or applies the narrowly reviewed
+Modal App clearance described in [ADR-0014](../../docs/adr/0014-post-run-cleanup-recovery.md).
+
+The protected journal retains the later attestation. Fresh `workflow-experiment collect` downloads
+the immutable attempts and attaches the matching recovery record separately. Re-run the existing
+partial backfill after recovery: both aggregate and promote re-verify it, and the Run records recovery
+under `experiment.cleanupRecoveries`. Failed cells remain failed and supply no numerical results.

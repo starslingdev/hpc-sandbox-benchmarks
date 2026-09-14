@@ -8,6 +8,8 @@ The inventory admission condition is refined by
 [ADR-0011](./0011-inventory-admission-scope.md). Explicit partial publication is refined by
 [ADR-0012](./0012-explicit-partial-publication.md). All other requirements remain.
 
+Later cleanup attestations are refined by [ADR-0014](./0014-post-run-cleanup-recovery.md).
+
 ## Decision
 
 An experiment plan owns the expected provider, suite, replicate, metric, revision, artifact, resource,
