@@ -18,6 +18,11 @@ Two kinds of chart, in one style — the same frame, faces, geometry and provide
 - **Pipeline charts**, one per chartable realworld suite: a stacked bar per environment, one
   segment per task in execution order, each chart scaled to its own slowest pipeline so the
   slowest environment fills the track. These lead `LEADERBOARD.md`'s `realworld` section.
+- **Comparison charts**, one per realworld suite chartable in two runs (the `compare-figures`
+  bin): each environment as a pair of stacked pipeline bars — the older run's faded over the
+  newer run's, each chipped with its month — on one scale, with the change in the summed medians
+  beside the newer total. Bars sum only the tasks both runs exercised. This is what shows a
+  whole distribution moving when the order did not.
 - **Metric charts**, one per ranked synthetic metric (cpu, disk, memory, network, system,
   economics): a bar per environment, best first, with the 95% interval as a whisker over it and
   the board's shared-rank badge on every environment it could not separate. Each scales to its
@@ -45,6 +50,8 @@ derivation over a Run (tables, coverage, economics) is its jurisdiction, not thi
 |---|---|
 | `src/phases.ts` | The pipeline phase vocabulary: id, printed label and ramp colour defined ONCE per phase, ordered by execution. Colour order = execution order holds by construction. |
 | `src/model.ts` | Run + registries → `RealworldFigureModel`. Which suites are chartable is decided here (≥2 environments completing every exercised task), and nowhere else. |
+| `src/comparison-model.ts` | Two runs' realworld models paired up: per suite, the tasks both runs exercised, each environment's bar in each run summed over those tasks, and who completed the suite in neither. |
+| `src/chart/comparison-model.ts` / `comparison-html.ts` | The comparison view-model (newer-run order, one scale across both runs, per-run fastest badge, signed delta, faded older bars) and its template. |
 | `src/metric-model.ts` | The metric figure model's TYPES only. Its rows arrive **already ranked** from `packages/results`' board — the median across sandboxes, the cluster bootstrap and the rank with its ties are the board's derivation, and the chart must show the table's numbers, not a second opinion. |
 | `src/chart/model.ts` | The pipeline view-model. **Every decision the picture makes** — sort order, badge, the chart's scale, disclosure rows — as plain data a unit test can assert on. The bulk of the tests. |
 | `src/chart/metric-model.ts` | The metric view-model: best-first bars, one badge per row the board ranked first, the chart's own scale, the whisker cut at the edge and disclosed. |

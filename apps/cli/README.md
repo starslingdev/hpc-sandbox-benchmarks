@@ -16,6 +16,11 @@
 - `aggregate` — merge shard Runs into one candidate.
 - `promote` — promote normalized results to the published dataset. Used by the `commit-dataset` workflow.
 - `leaderboard` — render a Run as Markdown (`LEADERBOARD.md`); used by the `update-leaderboard` workflow.
+- `compare-figures <runA.json> <runB.json> <out-directory>` — draw two committed runs' realworld
+  suites side by side: one chart per suite both runs chart, each environment as a pair of bars
+  (the older run's faded, both chipped with their month) with the change in the summed medians
+  printed beside the newer one. Bars sum only the tasks both runs exercised. The output directory
+  is yours, never `docs/figures/` (that is the leaderboard's, gated to what `LEADERBOARD.md` links).
 - `reprice-dataset <dataset-directory>` — maintenance-only rewrite of derived economics in every
   canonical Run referenced by an existing dataset index. It validates and reprices all Runs before
   writes begin, then atomically replaces each Run file individually. It preserves schema

@@ -11,15 +11,21 @@
  * copy.
  */
 import type {
+	ComparisonFigureModel,
+	ComparisonRunIdentity,
+	ComparisonSuite,
 	MetricFigure,
 	MetricFigureModel,
 	PipelineSuite,
 	RealworldFigureModel,
 } from "@sandbox-benchmarks/figures";
 import {
+	buildComparisonChartModel,
+	buildComparisonFigureModel,
 	buildMetricChartModel,
 	buildPipelineChartModel,
 	buildRealworldFigureModel,
+	comparisonChartHtml,
 	FIGURE_WIDTH,
 	metricChartHtml,
 	pipelineChartHtml,
@@ -298,4 +304,111 @@ export function renderLeaderboardFigureHtml(
 		html: metricChartHtml(buildMetricChartModel(metric, model, metricFigureNote(metric))),
 	}));
 	return [...suites, ...metrics];
+}
+
+/**
+ * Row-chip labels for two runs: the month when the months differ, the day when they do not,
+ * the run id when even the days coincide. Short and DISTINCT is the contract — a chip is what
+ * tells the two bars of a row apart, and two chips reading `Sep 2026` would tell nothing.
+ */
+export function comparisonRunLabels(
+	older: Pick<Run, "runId" | "generatedAt">,
+	newer: Pick<Run, "runId" | "generatedAt">,
+): [string, string] {
+	const month = (iso: string) =>
+		new Date(iso).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+	const day = (iso: string) =>
+		new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+	if (month(older.generatedAt) !== month(newer.generatedAt)) {
+		return [month(older.generatedAt), month(newer.generatedAt)];
+	}
+	if (day(older.generatedAt) !== day(newer.generatedAt)) {
+		return [day(older.generatedAt), day(newer.generatedAt)];
+	}
+	return [`run ${older.runId}`, `run ${newer.runId}`];
+}
+
+/** The file one suite's comparison chart is written to, relative to the output directory the
+ *  caller names: the suite and both run ids, so the file says what it compares. */
+export function comparisonFigureFile(suiteId: string, olderId: string, newerId: string): string {
+	return `${suiteId}-${olderId}-vs-${newerId}.webp`;
+}
+
+/**
+ * The paragraph under a comparison chart: what each bar is, which run is which, what the
+ * delta measures, and which tasks were left out of both bars because only one run exercised
+ * them — the one thing that would otherwise make a longer pipeline read as a slowdown.
+ */
+export function comparisonFigureNote(suite: ComparisonSuite, model: ComparisonFigureModel): string {
+	const excluded = [...suite.excludedTasks.beforeOnly, ...suite.excludedTasks.afterOnly];
+	const scope =
+		excluded.length === 0
+			? `over every task both runs exercised`
+			: `over the ${suite.tasks.length} task${suite.tasks.length === 1 ? "" : "s"} both runs exercised — ` +
+				`**${excluded.join("**, **")}** ran in only one of them and ${excluded.length === 1 ? "is" : "are"} left out of both bars`;
+	return (
+		`Each row is one environment in two runs: the lighter bar is ${model.before.label} ` +
+		`(run ${model.before.id}), the darker ${model.after.label} (run ${model.after.id}). ` +
+		`Each bar sums the per-task medians ${scope}; the percentage is the change in that sum, ` +
+		`negative meaning faster. Both runs share this chart's scale.`
+	);
+}
+
+/** One comparison chart, ready to rasterise, with where it goes and what it compares. */
+export interface RenderedComparisonFigureHtml {
+	readonly suiteId: string;
+	readonly suiteName: string;
+	/** Relative to the output directory the caller chooses. */
+	readonly file: string;
+	readonly width: number;
+	/** Environments charted in the newer run, in the older run, and in neither. */
+	readonly charted: { readonly older: number; readonly newer: number };
+	readonly incomplete: number;
+	readonly html: string;
+}
+
+/**
+ * Render the comparison charts for two runs — one per realworld suite chartable in BOTH — to
+ * HTML. The runs may be given in either order; the older (by `generatedAt`) is the reference.
+ * Pure and browser-free, like the leaderboard renderers; the `compare-figures` bin rasterises.
+ */
+export function renderComparisonFigureHtml(
+	a: Run,
+	b: Run,
+): {
+	readonly older: ComparisonRunIdentity;
+	readonly newer: ComparisonRunIdentity;
+	readonly figures: RenderedComparisonFigureHtml[];
+} {
+	if (a.runId === b.runId) throw new Error(`cannot compare run ${a.runId} with itself`);
+	const [older, newer] = a.generatedAt <= b.generatedAt ? [a, b] : [b, a];
+	const [olderLabel, newerLabel] = comparisonRunLabels(older, newer);
+	const identity = (run: Run, label: string): ComparisonRunIdentity => ({
+		id: run.runId,
+		label,
+		generatedAt: run.generatedAt,
+	});
+	const model = buildComparisonFigureModel({
+		before: { run: identity(older, olderLabel), model: benchmarkDataOf(older) },
+		after: { run: identity(newer, newerLabel), model: benchmarkDataOf(newer) },
+		metrics: METRIC_CATALOG,
+	});
+	return {
+		older: model.before,
+		newer: model.after,
+		figures: model.suites.map((suite) => ({
+			suiteId: suite.id,
+			suiteName: suite.name,
+			file: comparisonFigureFile(suite.id, model.before.id, model.after.id),
+			width: FIGURE_WIDTH,
+			charted: {
+				older: suite.rows.filter((row) => row.before !== null).length,
+				newer: suite.rows.filter((row) => row.after !== null).length,
+			},
+			incomplete: suite.incomplete.length,
+			html: comparisonChartHtml(
+				buildComparisonChartModel(suite, model, comparisonFigureNote(suite, model)),
+			),
+		})),
+	};
 }

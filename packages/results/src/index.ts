@@ -24,6 +24,9 @@ export {
 // Public because the CLI renders through these and the artifact gate re-derives through them.
 export {
 	benchmarkDataOf,
+	comparisonFigureFile,
+	comparisonFigureNote,
+	comparisonRunLabels,
 	FIGURE_DEVICE_SCALE,
 	LEADERBOARD_FIGURE_DIR,
 	leaderboardFigures,
@@ -31,7 +34,9 @@ export {
 	metricFigureFile,
 	metricFigureModelOf,
 	metricFigureNote,
+	type RenderedComparisonFigureHtml,
 	type RenderedLeaderboardFigureHtml,
+	renderComparisonFigureHtml,
 	renderLeaderboardFigureHtml,
 	suiteFigureFile,
 	suiteFigureNote,

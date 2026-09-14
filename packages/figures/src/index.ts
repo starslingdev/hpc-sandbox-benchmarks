@@ -17,6 +17,9 @@
  *   metric-model.ts The metric figure model — one ranked bar chart per synthetic metric. Its
  *                   rows arrive already ranked from `packages/results`' board, so the chart
  *                   and the table under it cannot disagree.
+ *   comparison-model.ts
+ *                   Two runs' realworld models paired up: each environment's pipeline in
+ *                   both runs, over the tasks both exercised, for the comparison charts.
  *   chart/          the view-model (every decision the picture makes, as plain data a unit
  *                   test can assert on) and the HTML template that marks it up. Pure string
  *                   building; fonts come from pinned npm packages, inlined as data: URIs.
@@ -31,6 +34,13 @@
  * half is a leaf with one job.
  */
 
+export { comparisonChartHtml } from "./chart/comparison-html.ts";
+export {
+	buildComparisonChartModel,
+	type ComparisonChartBar,
+	type ComparisonChartModel,
+	type ComparisonChartRow,
+} from "./chart/comparison-model.ts";
 export { FIGURE_WIDTH, pipelineChartHtml } from "./chart/html.ts";
 export { metricChartHtml } from "./chart/metric-html.ts";
 export {
@@ -46,6 +56,15 @@ export {
 	type ChartSegment,
 	type PipelineChartModel,
 } from "./chart/model.ts";
+export {
+	buildComparisonFigureModel,
+	type ComparisonBar,
+	type ComparisonFigureModel,
+	type ComparisonModelInput,
+	type ComparisonRow,
+	type ComparisonRunIdentity,
+	type ComparisonSuite,
+} from "./comparison-model.ts";
 export type { MetricFigure, MetricFigureModel, MetricFigureRow } from "./metric-model.ts";
 export {
 	type BarSegment,

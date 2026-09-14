@@ -7,12 +7,15 @@ import type { MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema"
 import { aggregate, SUITES } from "@sandbox-benchmarks/schema";
 import {
 	benchmarkDataOf,
+	comparisonFigureFile,
+	comparisonRunLabels,
 	LEADERBOARD_FIGURE_DIR,
 	leaderboardFigures,
 	leaderboardMetricFigures,
 	metricFigureFile,
 	metricFigureModelOf,
 	metricFigureNote,
+	renderComparisonFigureHtml,
 	renderLeaderboardFigureHtml,
 	suiteFigureFile,
 	suiteFigureNote,
@@ -404,5 +407,73 @@ describe("metricFigureNote", () => {
 		expect(note).toContain("one retained value");
 		expect(note).toContain("no interval is drawn");
 		expect(note).not.toContain("median");
+	});
+});
+
+describe("comparison figures", () => {
+	const at = (runId: string, generatedAt: string, providers: ProviderRun[]): Run => ({
+		...run(providers),
+		runId,
+		generatedAt,
+	});
+	const TEST = SUITES["realworld-mastra"].metrics[2] as string;
+	const older = () =>
+		at("111", "2026-08-14T00:00:00.000Z", [
+			provider("daytona-vm", [metric(CLONE, [2, 2]), metric(INSTALL, [40, 40])]),
+			provider("modal-vm", [metric(CLONE, [4, 4]), metric(INSTALL, [60, 60])]),
+		]);
+	const newer = () =>
+		at("222", "2026-09-14T00:00:00.000Z", [
+			provider("daytona-vm", [
+				metric(CLONE, [1, 1]),
+				metric(INSTALL, [30, 30]),
+				metric(TEST, [500]),
+			]),
+			provider("modal-vm", [metric(CLONE, [4, 4]), metric(INSTALL, [66, 66]), metric(TEST, [500])]),
+		]);
+
+	it("labels rows by month, by day when the months coincide, by run id when the days do", () => {
+		expect(comparisonRunLabels(older(), newer())).toEqual(["Aug 2026", "Sep 2026"]);
+		expect(
+			comparisonRunLabels(
+				{ runId: "1", generatedAt: "2026-09-03T01:00:00Z" },
+				{ runId: "2", generatedAt: "2026-09-14T01:00:00Z" },
+			),
+		).toEqual(["Sep 3", "Sep 14"]);
+		expect(
+			comparisonRunLabels(
+				{ runId: "1", generatedAt: "2026-09-14T00:12:00Z" },
+				{ runId: "2", generatedAt: "2026-09-14T05:26:00Z" },
+			),
+		).toEqual(["run 1", "run 2"]);
+	});
+
+	it("names the file after the suite and both runs, older first", () => {
+		expect(comparisonFigureFile("realworld-mastra", "111", "222")).toBe(
+			"realworld-mastra-111-vs-222.webp",
+		);
+	});
+
+	it("orders the runs by date whichever way they are given, and compares shared tasks only", () => {
+		const forward = renderComparisonFigureHtml(older(), newer());
+		const backward = renderComparisonFigureHtml(newer(), older());
+		expect(forward.older.id).toBe("111");
+		expect(backward.older.id).toBe("111");
+		expect(forward.figures.map(({ html }) => html)).toEqual(
+			backward.figures.map(({ html }) => html),
+		);
+		const [figure] = forward.figures;
+		expect(figure?.file).toBe("realworld-mastra-111-vs-222.webp");
+		expect(figure?.charted).toEqual({ older: 2, newer: 2 });
+		// The newer run's extra task is excluded from both bars and named in the caption.
+		expect(figure?.html).toContain("ran in only one of them");
+		expect(figure?.html).toContain("<title>Mastra</title>");
+		// Daytona: 42 s → 31 s; Modal: 64 s → 70 s.
+		expect(figure?.html).toContain(`<span class="delta faster">-26.2%</span>`);
+		expect(figure?.html).toContain(`<span class="delta slower">+9.4%</span>`);
+	});
+
+	it("refuses to compare a run with itself", () => {
+		expect(() => renderComparisonFigureHtml(older(), older())).toThrow(/with itself/);
 	});
 });

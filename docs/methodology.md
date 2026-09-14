@@ -112,6 +112,19 @@ maintainer can use for a pinned local render), rasterises every chart twice, and
 mismatch. A raster cannot be reviewed as a diff —
 which is exactly why the per-task tables stay one click below the charts as the auditable receipts.
 
+### Comparing two runs
+
+Two leaderboard renders of the same suite cannot show that everything got faster: when the
+order is unchanged and the whole distribution shifted, the two pictures look alike with different
+numbers on them. `bun apps/cli/src/bin/compare-figures.ts <runA.json> <runB.json> <out-dir>`
+draws both runs in one chart per realworld suite: each environment is a pair of stacked bars — the
+older run's faded above the newer run's, each chipped with its month — on one scale, with the
+signed change in the summed medians beside the newer total. Two rules keep it honest: the bars
+sum only the tasks **both** runs exercised (a task only one run ran is excluded from both bars
+and named in the caption, so a longer pipeline never reads as a slowdown), and an environment
+charted in only one run keeps its row with the other side disclosed. The output directory is
+the caller's — `docs/figures/` is the leaderboard's and gated to exactly what it links.
+
 ### The metric charts
 
 Every synthetic metric the board ranks for at least two environments is also drawn, in the same

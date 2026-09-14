@@ -19,6 +19,7 @@
     "promote": "./src/bin/promote.ts",
     "stability": "./src/bin/stability.ts",
     "leaderboard": "./src/bin/leaderboard.ts",
+    "compare-figures": "./src/bin/compare-figures.ts",
     "reprice-dataset": "./src/bin/reprice-dataset.ts",
     "driver-check": "./src/bin/driver-check.ts",
     "plan-experiment": "./src/bin/plan-experiment.ts",
