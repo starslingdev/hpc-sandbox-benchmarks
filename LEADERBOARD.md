@@ -31,6 +31,11 @@ whole pipeline on one environment and each segment a task. Its per-task rankings
 intervals and trial counts every bar is built from — are still here, one triangle down: the charts
 are what the section is FOR, and the tables are how you check them.
 
+**Every synthetic metric is charted too.** Each dimension shows its headline metric's ranked bar
+chart above the triangle, and every other metric's chart sits beside its table inside. Bars are
+the same medians the tables print, best first, with the 95% interval as a whisker; each chart
+scales to its own largest value, so lengths compare within a chart and never across two.
+
 ## Providers in this run
 
 Each provider's isolation technology — the **declared** technology is authoritative; **detected**
@@ -506,6 +511,8 @@ _Namespace and Daytona (VM) share the top on this metric (lower is better)._
 
 ## cpu
 
+<img src="docs/figures/node_web_tooling_runs_per_s.webp" width="960" alt="Node.js web tooling: 12 environments ranked best-first, with 95% intervals">
+
 <details>
 <summary><strong>1 synthetic metric</strong> · headline: Node.js web tooling</summary>
 
@@ -543,6 +550,8 @@ IOPS · higher is better
 
 _Namespace leads · ~1.2× Blaxel on median (higher is better)._
 
+<img src="docs/figures/fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio rand read 4KB, buffered (IOPS): 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | fio rand read 4KB, buffered (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Namespace | 66200 | 66200 – 69800 | 3 | 6 | — |
@@ -563,6 +572,8 @@ _Namespace leads · ~1.2× Blaxel on median (higher is better)._
 MB/s · higher is better
 
 _Namespace leads · ~1.2× Blaxel on median (higher is better)._
+
+<img src="docs/figures/fio_type_random_read_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio rand read 4KB, buffered (MB/s): 12 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio rand read 4KB, buffered (MB/s) (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -585,6 +596,8 @@ IOPS · higher is better
 
 _Blaxel leads · ~1.2× Novita on median (higher is better)._
 
+<img src="docs/figures/fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio rand write 4KB, buffered (IOPS): 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | fio rand write 4KB, buffered (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Blaxel | 302500 | 294000 – 316000 | 3 | 6 | — |
@@ -605,6 +618,8 @@ _Blaxel leads · ~1.2× Novita on median (higher is better)._
 MB/s · higher is better
 
 _Blaxel leads · ~1.2× Novita on median (higher is better)._
+
+<img src="docs/figures/fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio rand write 4KB, buffered (MB/s): 12 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio rand write 4KB, buffered (MB/s) (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -627,6 +642,8 @@ IOPS · higher is better
 
 _Modal (gVisor) leads · ~2.0× Daytona (VM) on median (higher is better)._
 
+<img src="docs/figures/fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio seq read 1MB, buffered (IOPS): 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | fio seq read 1MB, buffered (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Modal (gVisor) | 22250 | 18500 – 22750 | 3 | 6 | — |
@@ -647,6 +664,8 @@ _Modal (gVisor) leads · ~2.0× Daytona (VM) on median (higher is better)._
 MB/s · higher is better
 
 _Modal (gVisor) leads · ~2.0× Daytona (VM) on median (higher is better)._
+
+<img src="docs/figures/fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio seq read 1MB, buffered (MB/s): 12 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio seq read 1MB, buffered (MB/s) (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -669,6 +688,8 @@ IOPS · higher is better
 
 _Daytona (VM) leads · ~1.2× Namespace on median (higher is better)._
 
+<img src="docs/figures/fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio seq write 1MB, buffered (IOPS): 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | fio seq write 1MB, buffered (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Daytona (VM) | 4990 | 4884 – 5429 | 3 | 6 | — |
@@ -689,6 +710,8 @@ _Daytona (VM) leads · ~1.2× Namespace on median (higher is better)._
 MB/s · higher is better
 
 _Daytona (VM) leads · ~1.2× Namespace on median (higher is better)._
+
+<img src="docs/figures/fio_type_sequential_write_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio seq write 1MB, buffered (MB/s): 12 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio seq write 1MB, buffered (MB/s) (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -711,6 +734,8 @@ bogo ops/s · higher is better
 
 _Daytona (VM) leads · ~1.3× Blaxel on median (higher is better)._
 
+<img src="docs/figures/hardlink_bogo_ops_per_s.webp" width="960" alt="Hardlink throughput: 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | Hardlink throughput (bogo ops/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Daytona (VM) | 25.34 | 25.23 – 25.98 | 3 | 6 | — |
@@ -729,6 +754,8 @@ _Daytona (VM) leads · ~1.3× Blaxel on median (higher is better)._
 </details>
 
 ## memory
+
+<img src="docs/figures/stream_type_triad.webp" width="960" alt="STREAM Triad: 12 environments ranked best-first, with 95% intervals">
 
 <details>
 <summary><strong>4 synthetic metrics</strong> · headline: STREAM Triad</summary>
@@ -760,6 +787,8 @@ MB/s · higher is better
 
 _Daytona (VM) leads · ~1.7× tama on median (higher is better)._
 
+<img src="docs/figures/stream_type_add.webp" width="960" alt="STREAM Add: 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | STREAM Add (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Daytona (VM) | 177700 | 171400 – 179400 | 3 | 6 | — |
@@ -780,6 +809,8 @@ _Daytona (VM) leads · ~1.7× tama on median (higher is better)._
 MB/s · higher is better
 
 _Daytona (VM) leads · ~1.4× tama on median (higher is better)._
+
+<img src="docs/figures/stream_type_copy.webp" width="960" alt="STREAM Copy: 12 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | STREAM Copy (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -802,6 +833,8 @@ MB/s · higher is better
 
 _Daytona (VM) leads · ~1.6× tama on median (higher is better)._
 
+<img src="docs/figures/stream_type_scale.webp" width="960" alt="STREAM Scale: 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | STREAM Scale (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Daytona (VM) | 169400 | 162500 – 171000 | 3 | 6 | — |
@@ -820,6 +853,8 @@ _Daytona (VM) leads · ~1.6× tama on median (higher is better)._
 </details>
 
 ## network
+
+<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1.webp" width="960" alt="iperf3 loopback TCP, 1 stream: 11 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 <details>
 <summary><strong>5 synthetic metrics</strong> · headline: iperf3 loopback TCP, 1 stream</summary>
@@ -850,6 +885,8 @@ Mbits/sec · higher is better
 
 _Novita leads · ~1.4× Blaxel on median (higher is better)._
 
+<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10.webp" width="960" alt="iperf3 loopback TCP, 10 streams: 11 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+
 | Rank | Provider | iperf3 loopback TCP, 10 streams (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Novita | 157020 | 139488 – 161400 | 3 | 6 | — |
@@ -869,6 +906,8 @@ _Novita leads · ~1.4× Blaxel on median (higher is better)._
 Mbits/sec · higher is better
 
 _Modal (VM) leads on median (higher is better); see notes for how ranks are decided._
+
+<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1.webp" width="960" alt="iperf3 loopback UDP, 10G objective: 11 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | iperf3 loopback UDP, 10G objective (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -890,6 +929,8 @@ Mbits/sec · higher is better
 
 _Vercel Sandbox leads · ~1.3× Modal (gVisor) on median (higher is better)._
 
+<img src="docs/figures/iperf_wan_direction_download.webp" width="960" alt="iperf3 WAN download: 11 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+
 | Rank | Provider | iperf3 WAN download (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Vercel Sandbox | 9569 | 6640 – 10240 | 3 | 6 | — |
@@ -910,6 +951,8 @@ Mbits/sec · higher is better
 
 _Modal (VM) leads · ~1.3× Daytona (VM) on median (higher is better)._
 
+<img src="docs/figures/iperf_wan_direction_upload.webp" width="960" alt="iperf3 WAN upload: 11 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+
 | Rank | Provider | iperf3 WAN upload (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Modal (VM) | 5771 | 4516 – 6231 | 3 | 6 | — |
@@ -927,6 +970,8 @@ _Modal (VM) leads · ~1.3× Daytona (VM) on median (higher is better)._
 </details>
 
 ## system
+
+<img src="docs/figures/pybench_milliseconds.webp" width="960" alt="PyBench: 12 environments ranked best-first, with 95% intervals">
 
 <details>
 <summary><strong>7 synthetic metrics</strong> · headline: PyBench</summary>
@@ -958,6 +1003,8 @@ Seconds · lower is better
 
 _Namespace leads on median (lower is better); see notes for how ranks are decided._
 
+<img src="docs/figures/git_seconds.webp" width="960" alt="Git common operations: 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | Git common operations (Seconds) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Namespace | 35.22 | 31.21 – 35.86 | 3 | 6 | — |
@@ -978,6 +1025,8 @@ _Namespace leads on median (lower is better); see notes for how ranks are decide
 TPS · higher is better
 
 _Blaxel leads on median (higher is better); see notes for how ranks are decided._
+
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_only.webp" width="960" alt="pgbench RO (s100, 50c): 12 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | pgbench RO (s100, 50c) (TPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1000,6 +1049,8 @@ ms · lower is better
 
 _Blaxel leads on median (lower is better); see notes for how ranks are decided._
 
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency.webp" width="960" alt="pgbench RO latency (s100, 50c): 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | pgbench RO latency (s100, 50c) (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Blaxel | 0.1545 | 0.1505 – 0.1565 | 3 | 6 | — |
@@ -1020,6 +1071,8 @@ _Blaxel leads on median (lower is better); see notes for how ranks are decided._
 TPS · higher is better
 
 _Novita leads · ~1.1× Namespace on median (higher is better)._
+
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_write.webp" width="960" alt="pgbench RW (s100, 50c): 12 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | pgbench RW (s100, 50c) (TPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1042,6 +1095,8 @@ ms · lower is better
 
 _Novita leads · Namespace is ~1.1× higher (lower is better)._
 
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency.webp" width="960" alt="pgbench RW latency (s100, 50c): 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | pgbench RW latency (s100, 50c) (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Novita | 1.766 | 1.675 – 1.786 | 3 | 6 | — |
@@ -1063,6 +1118,8 @@ Seconds · lower is better
 
 _Daytona (VM) leads · Blaxel is ~1.2× higher (lower is better)._
 
+<img src="docs/figures/sqlite_speedtest_seconds.webp" width="960" alt="SQLite Speedtest: 12 environments ranked best-first, with 95% intervals">
+
 | Rank | Provider | SQLite Speedtest (Seconds) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Daytona (VM) | 31.05 | 30.89 – 32.85 | 3 | 6 | — |
@@ -1081,6 +1138,8 @@ _Daytona (VM) leads · Blaxel is ~1.2× higher (lower is better)._
 </details>
 
 ## economics
+
+<img src="docs/figures/usd_per_hour.webp" width="960" alt="Hourly cost: 5 environments ranked best-first, with 95% intervals">
 
 ### Hourly cost _(headline)_
 
