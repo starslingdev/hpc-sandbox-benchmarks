@@ -31,7 +31,7 @@ terms belong in `packages/schema/CONTEXT.md` and other contexts refer to them.
 | `packages/templates/` | Toolchain images and provider template builders, pinned tools, manifests, and build recipes. |
 | `packages/harness/` | Sandbox ownership, lifecycle timing, readiness, suite execution, transport selection, raw collection, and host-owned evidence persistence. |
 | `packages/results/` | Raw extraction and normalization, shard aggregation, host attribution, economics derivation, Run writing, comparison, and leaderboard output. |
-| `packages/figures/` | Chart-specific models, pipeline phases, chartability, shared scales, HTML documents, and rasterization. |
+| `packages/figures/` | Chart-specific models, pipeline phases, chartability, per-chart scales, HTML documents, and rasterization. |
 | `apps/cli/` | Command composition: planning, provider selection, environment and artifact resolution, replicates, benchmark execution, release lanes, and dataset publication. |
 | `tooling/repo-checks/` | Repository invariants: package boundaries, metadata, generated-file alignment, dataset integrity, and workflow checks. |
 

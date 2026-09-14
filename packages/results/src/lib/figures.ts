@@ -71,17 +71,17 @@ export const FIGURE_DEVICE_SCALE = 2;
  * registry says what was REQUESTED, and a lost replicate shard makes the retained count smaller
  * without changing the request. A range is printed when the tasks disagree, because they can.
  *
- * `chartCount` is how many charts the run draws IN TOTAL — a property of the run, not of this
- * suite — because the caption's shared-scale sentence is a claim about the other charts, and a
- * hand-counted "all three" was wrong the day the run charted two.
+ * It also says the scale is this chart's own. The charts once shared one time scale across the
+ * run, and the caption claimed it; now that each scales to its own slowest pipeline, a reader
+ * comparing two charts must be told to read the totals rather than the lengths.
  */
-export function suiteFigureNote(suite: PipelineSuite, chartCount: number): string {
+export function suiteFigureNote(suite: PipelineSuite): string {
 	const counts = suite.bars.flatMap((bar) => bar.segments.map((segment) => segment.n));
 	const low = Math.min(...counts);
 	const high = Math.max(...counts);
 	const trials = low === high ? `${low}` : `${low}–${high}`;
 	const plural = low === 1 && high === 1 ? "trial" : "trials";
-	const scale = chartCount > 1 ? " All charts share one time scale." : "";
+	const scale = " The scale is this chart's own: compare bars within it, totals across charts.";
 	// Missing measurements must be disclosed. The current catalog can also name tasks added
 	// after a historical run, so absence alone does not establish a failed or skipped execution.
 	const dropped =
@@ -289,9 +289,7 @@ export function renderLeaderboardFigureHtml(
 	const suites = data.suites.map((suite, index) => ({
 		// Indexed, not looked up: both lists are the same map over `data.suites`.
 		figure: figures[index] as LeaderboardFigure,
-		html: pipelineChartHtml(
-			buildPipelineChartModel(suite, data, suiteFigureNote(suite, data.suites.length)),
-		),
+		html: pipelineChartHtml(buildPipelineChartModel(suite, data, suiteFigureNote(suite))),
 	}));
 	const model = metricFigureModelOf(run, board);
 	const metricFigures = leaderboardMetricFigures(model);

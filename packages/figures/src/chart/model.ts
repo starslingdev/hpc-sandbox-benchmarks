@@ -8,10 +8,12 @@
  * plain data a unit test can assert on — the template below it only turns these fields into
  * markup, and the browser only rasterises what the template says:
  *
- *  - **Bars share ONE time scale across all charts** (`pipelineScaleMaxS`): a bar's
- *    `scaleFraction` is its total over the slowest charted total in the RUN, not in the
- *    suite. Scaling each chart to its own maximum would make three unrelated pictures out
- *    of one comparison.
+ *  - **Each chart scales to its own slowest pipeline**: a bar's `scaleFraction` is its total
+ *    over the slowest charted total in THIS suite, so the slowest bar always fills the track.
+ *    The charts once shared one time scale across the run, which made a fast suite's whole
+ *    comparison a cluster of slivers at the left of an empty track (Better-Auth at a quarter
+ *    of Mastra's width); the comparison a chart exists to draw is between ITS environments,
+ *    and the printed totals are what carry a suite against another.
  *  - **Segment order is the suite's real execution order**, one segment per task, coloured
  *    on the ordinal ramp by the phase's position IN THIS SUITE — later here is darker here,
  *    so "color order = execution order" is true by construction (a fixed phase→colour map
@@ -49,8 +51,8 @@ export interface ChartBar {
 	readonly isolation?: FigureIsolation;
 	/** Formatted total, e.g. `61.9 s` — the sum of the segments' medians. */
 	readonly total: string;
-	/** This bar's length as a fraction of the SHARED scale (the run's slowest charted
-	 *  total), so a second is the same length in every chart drawn from the same run. */
+	/** This bar's length as a fraction of THIS chart's scale — its suite's slowest charted
+	 *  total — so the slowest environment fills the track and every other is read against it. */
 	readonly scaleFraction: number;
 	/** True on every bar whose total equals the suite's best — the page's badge rule. */
 	readonly fastest: boolean;
@@ -115,23 +117,17 @@ function providerPresentation(provider: FigureProvider): {
 	};
 }
 
-/** Shared x-scale across the pipeline charts: the slowest charted total in the run — and 0,
- *  not `Math.max()`'s -Infinity, for a model with nothing charted: a caller sizing an axis or
- *  printing the scale must never see a sentinel that renders as "-Infinity". */
-export function pipelineScaleMaxSOf(model: RealworldFigureModel): number {
-	const totals = model.suites.flatMap((s) => s.bars.map((b) => b.totalS));
-	return totals.length === 0 ? 0 : Math.max(...totals);
-}
-
 export function buildPipelineChartModel(
 	suite: PipelineSuite,
 	model: RealworldFigureModel,
 	suiteNote: string,
 ): PipelineChartModel {
 	const providerById = new Map(model.providers.map((p) => [p.id, p]));
-	const pipelineScaleMaxS = pipelineScaleMaxSOf(model);
 	const bars = [...suite.bars].sort((a, b) => a.totalS - b.totalS);
 	const bestTotal = bars[0]?.totalS ?? 0;
+	// This chart's own scale: its slowest bar — and 0, not `Math.max()`'s -Infinity, for a suite
+	// with nothing charted, so nothing downstream ever sees a sentinel that renders as "-Infinity".
+	const scaleMaxS = bars.length === 0 ? 0 : Math.max(...bars.map((bar) => bar.totalS));
 	// THIS suite's phases, in THIS suite's execution order (first occurrence over its own
 	// tasks) — never a run-wide order, which another suite's sorting could have set and which
 	// would print an execution order this suite does not have.
@@ -167,7 +163,7 @@ export function buildPipelineChartModel(
 		bars: bars.map((bar) => ({
 			...providerPresentation(requireProvider(providerById, bar.provider)),
 			total: formatSeconds(bar.totalS),
-			scaleFraction: pipelineScaleMaxS > 0 ? bar.totalS / pipelineScaleMaxS : 0,
+			scaleFraction: scaleMaxS > 0 ? bar.totalS / scaleMaxS : 0,
 			fastest: bar.totalS === bestTotal,
 			segments: bar.segments.map((segment) => ({
 				task: segment.id,

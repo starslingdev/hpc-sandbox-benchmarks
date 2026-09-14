@@ -45,7 +45,6 @@ export {
 	type ChartIncompleteRow,
 	type ChartSegment,
 	type PipelineChartModel,
-	pipelineScaleMaxSOf,
 } from "./chart/model.ts";
 export type { MetricFigure, MetricFigureModel, MetricFigureRow } from "./metric-model.ts";
 export {

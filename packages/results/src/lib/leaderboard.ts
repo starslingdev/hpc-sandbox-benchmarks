@@ -910,10 +910,12 @@ function figureSection(figures: readonly LeaderboardFigure[]): string[] {
 	// How many charts there are is a property of the RUN (the ingest drops uncharted suites, and
 	// a new suite lands upstream without touching this file), so the prose must never hand-count
 	// them — "the three charts" was wrong the day a suite dropped to one completing environment.
+	// The scale sentence is a claim about reading ACROSS charts, so it is stated only when there
+	// is more than one to read across.
 	const scaleClaim =
 		figures.length === 1
-			? "" //  one chart still uses the shared scale, but there is no cross-chart claim to state.
-			: " The charts share one time scale, so a second is the same length in all of them.";
+			? ""
+			: " Each chart scales to its own slowest pipeline, so compare bar lengths within a chart and the printed totals across charts.";
 	const lines: string[] = [
 		"What a developer or a CI job actually waits on: each bar is one environment's whole pipeline",
 		`for that repo, segmented by task in execution order.${scaleClaim}`,

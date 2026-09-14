@@ -16,13 +16,12 @@ impure step, behind its own entry point so importing anything else never spawns 
 Two kinds of chart, in one style — the same frame, faces, geometry and provider column:
 
 - **Pipeline charts**, one per chartable realworld suite: a stacked bar per environment, one
-  segment per task in execution order, every chart from the same run on a single shared time
-  scale so a second is the same length in every one of them. These lead `LEADERBOARD.md`'s
-  `realworld` section.
+  segment per task in execution order, each chart scaled to its own slowest pipeline so the
+  slowest environment fills the track. These lead `LEADERBOARD.md`'s `realworld` section.
 - **Metric charts**, one per ranked synthetic metric (cpu, disk, memory, network, system,
   economics): a bar per environment, best first, with the 95% interval as a whisker over it and
   the board's shared-rank badge on every environment it could not separate. Each scales to its
-  own largest value — the units differ, so there is no shared scale to keep. The dimension's
+  own largest value. The dimension's
   headline chart sits above its section's collapse; the rest sit beside their tables inside it.
 
 ## Seams
@@ -47,7 +46,7 @@ derivation over a Run (tables, coverage, economics) is its jurisdiction, not thi
 | `src/phases.ts` | The pipeline phase vocabulary: id, printed label and ramp colour defined ONCE per phase, ordered by execution. Colour order = execution order holds by construction. |
 | `src/model.ts` | Run + registries → `RealworldFigureModel`. Which suites are chartable is decided here (≥2 environments completing every exercised task), and nowhere else. |
 | `src/metric-model.ts` | The metric figure model's TYPES only. Its rows arrive **already ranked** from `packages/results`' board — the median across sandboxes, the cluster bootstrap and the rank with its ties are the board's derivation, and the chart must show the table's numbers, not a second opinion. |
-| `src/chart/model.ts` | The pipeline view-model. **Every decision the picture makes** — sort order, badge, shared scale, disclosure rows — as plain data a unit test can assert on. The bulk of the tests. |
+| `src/chart/model.ts` | The pipeline view-model. **Every decision the picture makes** — sort order, badge, the chart's scale, disclosure rows — as plain data a unit test can assert on. The bulk of the tests. |
 | `src/chart/metric-model.ts` | The metric view-model: best-first bars, one badge per row the board ranked first, the chart's own scale, the whisker cut at the edge and disclosed. |
 | `src/chart/template.ts` | What both templates share: canvas geometry, faces, escaping guards, the base stylesheet and the document frame (title + wordmark, eyebrow, note, rows, legend). |
 | `src/chart/html.ts` / `metric-html.ts` | The templates. Dumb on purpose: they know widths and styles, and their only arithmetic is geometric — `scaleFraction × TRACK_WIDTH` for a bar, `lo`/`hi × TRACK_WIDTH` for a whisker, and the header's wordmark sizing over the ratios `wordmark.ts` exports. |
@@ -87,8 +86,8 @@ Asserting `bars[0].fastest === true` is a unit test; asserting on a raster is no
   glyph is still a brand glyph. Nothing carries a full Unicode face — `assertCovered` throws on
   a character no embedded face can draw, because the alternative is Chrome silently reaching for
   an installed font and the figure quietly becoming a function of the machine that rendered it.
-- **`TRACK_WIDTH` is the shared scale — for the pipeline charts.** A bar's drawn length is its
-  total over the run's slowest charted total, times one constant. Scale a pipeline chart to its
-  own maximum and the figures stop being one comparison. The metric charts are the deliberate
-  exception: each is its own unit, so each scales to its own largest value, and its caption
-  says so.
+- **Every chart scales to its own maximum.** A pipeline bar's drawn length is its total over
+  its SUITE's slowest charted total, times `TRACK_WIDTH`; a metric bar's is its value over that
+  chart's scale. The slowest (or largest) always fills the track, and both captions say the
+  scale is the chart's own. The pipeline charts once shared one run-wide time scale, which left
+  a fast suite cramped into slivers — read totals across charts, not lengths.

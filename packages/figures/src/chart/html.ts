@@ -7,11 +7,11 @@
  * inspectable on its own: render it, open it, read it.
  *
  * The template is deliberately dumb. Every decision the picture makes — sort order, badge,
- * colours, disclosure rows, the shared scale — arrives already made in the
+ * colours, disclosure rows, the chart's scale — arrives already made in the
  * {@link PipelineChartModel}; this file only knows how wide things are and what they look
  * like. The arithmetic it does own is geometric, never editorial. The track: a bar's drawn
- * length is `scaleFraction × TRACK_WIDTH` with TRACK_WIDTH constant across every chart, which
- * is the whole mechanism behind "a second is the same length in all of them". Within a bar the
+ * length is `scaleFraction × TRACK_WIDTH`, so the suite's slowest pipeline fills the track
+ * and every other bar is read against it. Within a bar the
  * browser distributes the track by `flex-grow: share`, which reproduces the page's
  * gap-then-proportion layout without any of the width bookkeeping the satori renderer
  * needed — flexbox with `gap` IS that algorithm. The frame around the bars — header, eyebrow,

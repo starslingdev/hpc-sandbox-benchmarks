@@ -65,7 +65,7 @@ _Not present in this run: Daytona (container) — registered providers that repo
 ## realworld
 
 What a developer or a CI job actually waits on: each bar is one environment's whole pipeline
-for that repo, segmented by task in execution order. The charts share one time scale, so a second is the same length in all of them.
+for that repo, segmented by task in execution order. Each chart scales to its own slowest pipeline, so compare bar lengths within a chart and the printed totals across charts.
 
 <img src="docs/figures/realworld-better-auth.webp" width="960" alt="Better-Auth: 10 pipeline tasks across 12 environments, stacked by task and sorted fastest-first">
 

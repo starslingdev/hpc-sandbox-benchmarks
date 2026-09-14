@@ -47,12 +47,28 @@ describe("buildPipelineChartModel", () => {
 		});
 	});
 
-	it("scales every bar against the run's slowest charted total", () => {
-		// Beta (400 s) is the run's slowest bar, so it IS the scale; Alpha (100 s) is a
-		// quarter of it. This ratio — not a per-chart maximum — is what makes a second the
-		// same length in every figure.
+	it("scales every bar against THIS suite's slowest charted total", () => {
+		// Beta (400 s) is the suite's slowest bar, so it IS the scale and fills the track; Alpha
+		// (100 s) is a quarter of it.
 		expect(model.bars[1]?.scaleFraction).toBe(1);
 		expect(model.bars[0]?.scaleFraction).toBe(0.25);
+	});
+
+	it("does not let another suite's slower pipeline set this chart's scale", () => {
+		// A run whose other suite is four times slower must not shrink this chart to a quarter of
+		// the track — that cramped a fast suite's whole comparison into slivers at the left edge.
+		const slowElsewhere = {
+			...FIXTURE,
+			suites: [
+				suite,
+				{
+					...suite,
+					id: "realworld-slow",
+					bars: suite.bars.map((bar) => ({ ...bar, totalS: bar.totalS * 4 })),
+				},
+			],
+		};
+		expect(buildPipelineChartModel(suite, slowElsewhere, "n").bars[1]?.scaleFraction).toBe(1);
 	});
 
 	it("splits a bar into per-task shares that sum to the bar", () => {
@@ -110,8 +126,7 @@ describe("buildPipelineChartModel", () => {
 		};
 		const zeroed = buildPipelineChartModel({ ...suite, bars: [zeroBar] }, FIXTURE, "n");
 		expect(zeroed.bars[0]?.segments[0]?.share).toBe(0);
-		// The shared scale still comes from the whole run's bars (the fixture's slowest is
-		// 400 s), so the zero bar is 0 of it — and a run whose bars are ALL zero yields 0,
+		// The one bar IS the chart, and it is zero: the scale is 0 and the fraction must be 0,
 		// not NaN.
 		expect(zeroed.bars[0]?.scaleFraction).toBe(0);
 	});

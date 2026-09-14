@@ -208,12 +208,12 @@ describe("suiteFigureNote", () => {
 			[12, 12],
 		];
 		const withDropped = { ...suite(rows), droppedTasks: ["test core"] };
-		expect(suiteFigureNote(withDropped, 3)).toContain(
+		expect(suiteFigureNote(withDropped)).toContain(
 			"Tasks without recorded measurements in this run are excluded from all bars: **test core**.",
 		);
-		expect(suiteFigureNote(withDropped, 3)).not.toContain("failed");
-		expect(suiteFigureNote(withDropped, 3)).not.toContain("skipped");
-		expect(suiteFigureNote(suite(rows), 3)).not.toContain("excluded from all bars");
+		expect(suiteFigureNote(withDropped)).not.toContain("failed");
+		expect(suiteFigureNote(withDropped)).not.toContain("skipped");
+		expect(suiteFigureNote(suite(rows))).not.toContain("excluded from all bars");
 	});
 
 	it("prints one trial count when every task agrees", () => {
@@ -223,7 +223,6 @@ describe("suiteFigureNote", () => {
 					[12, 12],
 					[12, 12],
 				]),
-				3,
 			),
 		).toContain("median over 12 retained trials");
 	});
@@ -237,7 +236,6 @@ describe("suiteFigureNote", () => {
 					[12, 9],
 					[12, 12],
 				]),
-				3,
 			),
 		).toContain("median over 9–12 retained trials");
 	});
@@ -250,21 +248,21 @@ describe("suiteFigureNote", () => {
 				[12, 12],
 				[12, 12],
 			]),
-			3,
 		);
 		expect(note).toContain("the bar is their sum");
 		expect(note).toContain("not the timing of any single run");
 	});
 
-	it("claims a shared time scale only when there is more than one chart to share it", () => {
-		// The count is the RUN's, not the suite's — "all three charts" hand-counted in prose was
-		// wrong the day a suite dropped to one completing environment.
+	it("says the scale is this chart's own, so a reader compares totals across charts", () => {
+		// The charts once shared one time scale and the caption claimed it; each now scales to
+		// its own slowest pipeline, and the caption must say so or a reader will read one chart's
+		// bar length against another's.
 		const rows: number[][] = [
 			[12, 12],
 			[12, 12],
 		];
-		expect(suiteFigureNote(suite(rows), 3)).toContain("All charts share one time scale.");
-		expect(suiteFigureNote(suite(rows), 1)).not.toContain("share one time scale");
+		expect(suiteFigureNote(suite(rows))).toContain("The scale is this chart's own");
+		expect(suiteFigureNote(suite(rows))).not.toContain("share one time scale");
 	});
 });
 

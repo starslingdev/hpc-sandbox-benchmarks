@@ -421,7 +421,7 @@ test("all six revised OpenClaw tasks publish and produce a complete two-provider
 		{ provider: "e2b", totalS: 213, n: [2, 2, 2, 2, 2, 2] },
 		{ provider: "novita", totalS: 273, n: [2, 2, 2, 2, 2, 2] },
 	]);
-	const chart = buildPipelineChartModel(suite, data, suiteFigureNote(suite, 1));
+	const chart = buildPipelineChartModel(suite, data, suiteFigureNote(suite));
 	expect(chart.summary).toBe("6 tasks · git clone → cold install → lint → typecheck → test");
 	expect(chart.legend.map((entry) => entry.label)).toEqual([
 		"git clone",

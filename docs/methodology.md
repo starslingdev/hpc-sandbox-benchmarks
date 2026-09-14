@@ -81,9 +81,13 @@ Four properties are load-bearing, and each one is a claim the picture would othe
   bar the segments must add up to the bar — that is what stacking means — so the total is arithmetic
   over the same p50s the tables below print, and no single execution ever took exactly that long. The
   caption under every chart says so.
-- **All charts share one time scale.** A second is the same length in every one of them, so the
-  repos can be read against each other. Scaling each chart to its own maximum would make unrelated
-  pictures out of one comparison.
+- **Each chart scales to its own slowest pipeline.** The slowest environment fills the track and
+  every other bar is read against it, so a fast suite is never a cluster of slivers at the left of
+  an empty track because a slower suite set the scale. The cost is that a second is NOT the same
+  length in two charts — so compare bar lengths within a chart and the printed totals across
+  charts, and the caption under every chart says so. (The charts once shared one run-wide time
+  scale; Better-Auth at a quarter of Mastra's width was unreadable, and the comparison a chart
+  exists to draw is between its own environments.)
 - **An environment is charted only if it completed EVERY task the suite exercised.** Summing the tasks a
   provider did run and drawing it beside providers that ran them all would show a fast bar for an
   environment that skipped the work — the same "a gap is not a zero" rule the tables follow.

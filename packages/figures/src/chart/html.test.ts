@@ -80,9 +80,10 @@ describe("pipelineChartHtml", () => {
 		expect(() => pipelineChartHtml(poisoned)).toThrow(/not a finite non-negative number/);
 	});
 
-	it("draws the shared scale as track widths against one constant", () => {
-		// Beta is the run's slowest bar (scaleFraction 1) → the full 648 px track; Alpha is
-		// a quarter of it. The constant is the same in every chart, which is the claim.
+	it("draws the chart's scale as track widths against one constant", () => {
+		// Beta is the suite's slowest bar (scaleFraction 1) → the full 648 px track; Alpha is
+		// a quarter of it. The slowest bar always fills the track: no chart is left cramped at
+		// the left of an empty one.
 		expect(html).toContain("width: 648.00px");
 		expect(html).toContain("width: 162.00px");
 	});
