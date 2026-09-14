@@ -84,13 +84,23 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    when a matrix run's dataset commit fails (or was never reached) a maintainer can re-run it standalone:
    **Actions → Commit dataset → Run workflow**, passing the original run's id — or, from a
    gh-authenticated clone, `scripts/backfill-dataset.sh <run-id>` (a thin `gh workflow run` wrapper that
-   also warns if the run's shard artifacts have already expired). It re-downloads that run's `bench-*`
-   shard artifacts by run-id (needs `actions: read`), re-aggregates, and opens the same lint-gated
-   dataset PR — no re-benching. This only works while that run's shard artifacts are still within the
-   repo's artifact-retention window. Dispatch is still gated by Environment `privileged` (main-only,
-   required reviewer), so it is effectively maintainer-only. (`workflow_dispatch` is only offered for the
-   copy of the workflow on the default branch, so `commit-dataset.yml` must be merged to `main` before
-   it can be dispatched.)
+   also warns if the run's experiment artifacts have already expired). It re-downloads that run's
+   frozen experiment plan and attempt artifacts by run-id (needs `actions: read`), re-aggregates, and
+   opens the same lint-gated dataset PR — no re-benching. This only works while that run's artifacts
+   are still within the repo's artifact-retention window. Dispatch is still gated by Environment
+   `privileged` (main-only, required reviewer), so it is effectively maintainer-only.
+   (`workflow_dispatch` is only offered for the copy of the workflow on the default branch, so
+   `commit-dataset.yml` must be merged to `main` before it can be dispatched.)
+
+   **A run whose cells failed** fails at the Aggregate step by design (strict completeness,
+   ADR-0010) — the matrix's own publish job and a plain backfill both refuse it, and its
+   `experiment-coverage-<run-id>-attempt-<n>` artifact names every incomplete cell. To publish the
+   verified measurements anyway, backfill with the `allow_partial` input checked (or
+   `scripts/backfill-dataset.sh <run-id> --allow-partial`): the job passes the CLI's
+   `--allow-partial` to both aggregate and promote and commits a Run v8 marked
+   `experiment.partial` with every planned cell and its shortfall retained (ADR-0012). The PR and
+   squash commit are titled `(partial)`. A partial dataset is evidence, not a readiness
+   certification — re-run the matrix at the corrected revision for a complete comparison.
 
 7. **Updating the public leaderboard (github-actions bot, path-fenced).** `LEADERBOARD.md` is regenerated
    separately from the dataset commit, on a deliberate maintainer action: **Actions → Update

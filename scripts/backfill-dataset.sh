@@ -11,8 +11,10 @@
 # Environment `privileged` (main-only + required reviewer), so it parks for maintainer approval — being
 # a codeowner is necessary but the environment's reviewer still has to approve the run.
 #
-# Usage: scripts/backfill-dataset.sh <run-id>
-#   <run-id>   The Bench matrix run id whose experiment plan and attempt artifacts to aggregate + commit.
+# Usage: scripts/backfill-dataset.sh <run-id> [--allow-partial]
+#   <run-id>          The Bench matrix run id whose experiment plan and attempt artifacts to aggregate + commit.
+#   --allow-partial   Publish an incomplete experiment as an explicitly partial Run (ADR-0012). Without
+#                     it the workflow keeps strict completeness and refuses a run with failed cells.
 set -euo pipefail
 
 # commit-dataset.yml only runs on main (its job `if:` pins to refs/heads/main), and workflow_dispatch is
@@ -22,12 +24,24 @@ REF="main"
 REPO="starslingdev/hpc-sandbox-benchmarks"
 
 usage() {
-  echo "Usage: scripts/backfill-dataset.sh <run-id>" >&2
-  echo "  Dispatch ${WORKFLOW} on ${REF} to backfill the dataset from a previous run's shard artifacts." >&2
+  echo "Usage: scripts/backfill-dataset.sh <run-id> [--allow-partial]" >&2
+  echo "  Dispatch ${WORKFLOW} on ${REF} to backfill the dataset from a previous run's experiment artifacts." >&2
+  echo "  --allow-partial publishes an incomplete experiment as an explicitly partial Run (ADR-0012)." >&2
   exit 2
 }
 
-RUN_ID="${1:-}"
+RUN_ID=""
+ALLOW_PARTIAL="false"
+for arg in "$@"; do
+  case "$arg" in
+    --allow-partial) ALLOW_PARTIAL="true" ;;
+    -*) echo "unknown option '${arg}'" >&2; usage ;;
+    *)
+      [ -z "$RUN_ID" ] || usage
+      RUN_ID="$arg"
+      ;;
+  esac
+done
 [ -n "$RUN_ID" ] || usage
 # A GitHub run id is all digits; reject anything else before spending an API call (and so a stray flag
 # or path can't be sent as the run id).
@@ -61,8 +75,13 @@ elif [ "$artifact_count" -eq 0 ]; then
   echo "    Continuing anyway — dispatch the workflow to see its own diagnosis." >&2
 fi
 
-echo "Dispatching ${WORKFLOW} on ${REF} of ${REPO} to backfill run ${RUN_ID}…"
-gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$REF" -f "run_id=${RUN_ID}"
+if [ "$ALLOW_PARTIAL" = "true" ]; then
+  echo "Dispatching ${WORKFLOW} on ${REF} of ${REPO} to backfill run ${RUN_ID} as an explicitly PARTIAL Run…"
+else
+  echo "Dispatching ${WORKFLOW} on ${REF} of ${REPO} to backfill run ${RUN_ID}…"
+fi
+gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$REF" \
+  -f "run_id=${RUN_ID}" -f "allow_partial=${ALLOW_PARTIAL}"
 
 echo
 echo "Dispatched. The run is gated by Environment 'privileged' — it waits for a required reviewer to"

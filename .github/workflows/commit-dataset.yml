@@ -9,9 +9,18 @@ name: Commit dataset
 # Two entry points:
 #   - workflow_call: bench-matrix.yml invokes it at the end of a matrix run (run_id = that run).
 #   - workflow_dispatch: a maintainer re-runs it standalone to BACKFILL a run whose commit failed —
-#     pass the old run's id, and its still-retained bench-* shard artifacts are re-aggregated and
-#     committed. (Artifacts expire on the repo's retention window, so backfill only works while the
-#     shards still exist.)
+#     pass the old run's id, and its still-retained experiment plan + attempt artifacts are
+#     re-aggregated and committed. (Artifacts expire on the repo's retention window, so backfill only
+#     works while the attempts still exist.)
+#
+# Strict completeness is the default: an experiment with any incomplete cell fails at Aggregate and
+# nothing is promoted (ADR-0010). `allow_partial` is the operator's explicit opt-in (ADR-0012) to
+# publish the verified measurements of a fully collected but incomplete experiment as a Run v8 with
+# `experiment.partial` — it passes the CLI's `--allow-partial` to BOTH aggregate and promote, which
+# each recompute coverage from the frozen plan and original attempts. It never bypasses raw
+# evidence, provenance, fixed trial counts or resolved cleanup. The matrix's automatic publish keeps
+# the strict default; the usual path for a run whose cells failed is to backfill it here with
+# allow_partial=true once the shortfall has been read from the run's coverage artifact.
 #
 # Environment `privileged` lives on the job here (the dataset release surface, `contents: write`); a
 # `uses:` caller can't declare it, so the approval gate is enforced at this layer for both entry points.
@@ -19,15 +28,25 @@ on:
   workflow_call:
     inputs:
       run_id:
-        description: 'Bench matrix run id whose shard artifacts to aggregate + commit.'
+        description: 'Bench matrix run id whose experiment plan + attempt artifacts to aggregate + commit.'
         required: true
         type: string
+      allow_partial:
+        description: 'Publish an incomplete experiment as an explicitly partial Run (ADR-0012). Default: strict completeness.'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'Previous Bench matrix run id to backfill the dataset from (its bench-* shard artifacts must still be retained).'
+        description: 'Previous Bench matrix run id to backfill the dataset from (its experiment plan + attempt artifacts must still be retained).'
         required: true
         type: string
+      allow_partial:
+        description: 'Publish an incomplete experiment as an explicitly partial Run (ADR-0012): keeps every verified measurement, records each failed cell under experiment.partial, and labels the leaderboard partial. Leave off for strict completeness.'
+        required: false
+        type: boolean
+        default: false
 
 # Least privilege at the top level; the commit job elevates for exactly what it needs.
 permissions:
@@ -62,9 +81,13 @@ jobs:
       pull-requests: write
       actions: read
     # The target run id (this run for the matrix call, an older run for a backfill) reaches the shell
-    # only through the environment, never interpolated into a `run:` command.
+    # only through the environment, never interpolated into a `run:` command. The partial opt-in is
+    # folded to the exact CLI flag (or empty) here, once, so aggregate and promote can never disagree
+    # about it: promote re-verifies the candidate against the plan + attempts under the same policy
+    # the candidate was built with, and a flag on only one side would fail that verification.
     env:
       RUN_ID: ${{ inputs.run_id }}
+      ALLOW_PARTIAL_FLAG: ${{ inputs.allow_partial && '--allow-partial' || '' }}
     steps:
       # Unlike the read-only bench jobs, this one commits + `git push`es the promoted dataset, so it
       # keeps the default persisted job token (contents: write above authorizes it). Don't add
@@ -80,13 +103,16 @@ jobs:
           BENCH_EXPERIMENT_ID: ${{ inputs.run_id }}
         run: bun apps/cli/src/bin/workflow-experiment.ts collect
 
+      # `${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"}` expands to the one flag when set and to nothing
+      # (not an empty argument) when the default strict policy applies.
       - name: Aggregate
         id: aggregate
         run: |
-          bun apps/cli/src/bin/aggregate-experiment.ts experiment/manifest/plan.json experiment/attempts data/candidate
+          bun apps/cli/src/bin/aggregate-experiment.ts experiment/manifest/plan.json experiment/attempts data/candidate ${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"}
 
       # Always retain coverage.json when aggregation writes it, including incomplete experiments.
-      # Promotion below still requires a complete Run; this artifact is diagnostic only.
+      # Promotion below still requires a complete Run unless allow_partial was set; this artifact is
+      # diagnostic only, and it is what a maintainer reads before deciding to backfill partially.
       - name: Upload coverage report
         if: always() && hashFiles('data/candidate/coverage.json') != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -98,7 +124,7 @@ jobs:
       - name: Promote
         if: success()
         run: |
-          bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset experiment/manifest/plan.json experiment/attempts
+          bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset experiment/manifest/plan.json experiment/attempts ${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"}
 
       # Canonicalize the promoted dataset to Biome's format before the gate + commit. The promote
       # writer emits `JSON.stringify(run, null, 2)` (every array element on its own line), but Biome's
@@ -148,13 +174,16 @@ jobs:
             exit 0
           fi
           branch="dataset/publish-${RUN_ID}"
+          # Say in the commit/PR title when the Run was published under the partial policy, so the
+          # dataset history is honest at a glance (the Run itself carries experiment.partial).
+          title="chore(dataset): commit run ${RUN_ID}${ALLOW_PARTIAL_FLAG:+ (partial)}"
           # Always (re)build the bot branch from the freshly promoted dataset and force-push FIRST, so a
           # re-run (retried matrix run, or a re-dispatched backfill) refreshes an already-open PR rather
           # than leaving it stale if the aggregated content changed since it was opened. `-C` resets the
           # local branch to this run's HEAD; `--force` overwrites the bot-owned remote branch (a no-op when
           # the content is unchanged).
           git switch -C "$branch"
-          git commit -m "chore(dataset): commit run ${RUN_ID}"
+          git commit -m "$title"
           git push -u --force origin "$branch"
           # Pin the exact commit this run validated: the merge below passes it via --match-head-commit,
           # so a concurrent push that swaps the branch head between now and the merge fails the merge
@@ -170,8 +199,8 @@ jobs:
             if ! gh pr create \
               --base main \
               --head "$branch" \
-              --title "chore(dataset): commit run ${RUN_ID}" \
-              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}). Biome was pre-flighted green on the promoted content; the workflow merges this PR directly right after opening it (data/dataset/ is unowned, so no review rules apply — if this PR is still open, that merge failed and a maintainer must finish it). The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
+              --title "$title" \
+              --body "Automated dataset commit for run [\`${RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID})${ALLOW_PARTIAL_FLAG:+ — published as an explicitly PARTIAL Run (allow_partial, ADR-0012): only verified measurements are retained and every incomplete cell is recorded under experiment.partial}. Biome was pre-flighted green on the promoted content; the workflow merges this PR directly right after opening it (data/dataset/ is unowned, so no review rules apply — if this PR is still open, that merge failed and a maintainer must finish it). The public LEADERBOARD.md is regenerated separately via the Update leaderboard workflow."; then
               echo "::error::gh pr create failed — branch '$branch' was pushed but no PR was opened." \
                 "This is almost always the repo's 'Allow GitHub Actions to create and approve pull" \
                 "requests' setting being off (Settings → Actions → General → Workflow permissions)." \

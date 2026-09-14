@@ -205,5 +205,25 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 			promotion.run.includes("data/dataset experiment/manifest/plan.json experiment/attempts"),
 		"promotion must verify the original plan and whole attempts only after a complete aggregate",
 	);
+	// Explicit partial publication (ADR-0012) is one job-level opt-in folded to the CLI flag once, and
+	// the SAME expansion on both commands: promote recomputes coverage under the policy the candidate
+	// was built with, so a flag on one side only would either refuse a partial candidate or, worse,
+	// verify a partial candidate against a strict recompute. A literal `--allow-partial` on either
+	// command would silently make partial the default.
+	const partialFlag = '${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"}';
+	expect(
+		asRecord(commitJob.env, "commit-dataset.yml").ALLOW_PARTIAL_FLAG ===
+			"${{ inputs.allow_partial && '--allow-partial' || '' }}",
+		"partial publication must be an explicit allow_partial input folded to the CLI flag at the job level",
+	);
+	expect(
+		typeof aggregate?.run === "string" &&
+			typeof promotion?.run === "string" &&
+			aggregate.run.includes(partialFlag) &&
+			promotion.run.includes(partialFlag) &&
+			!aggregate.run.includes("--allow-partial") &&
+			!promotion.run.includes("--allow-partial"),
+		"aggregate and promote must apply the same allow_partial opt-in and never hardcode --allow-partial",
+	);
 	return errors;
 }

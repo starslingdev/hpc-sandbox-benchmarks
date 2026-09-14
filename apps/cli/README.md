@@ -55,3 +55,8 @@ Run v8 preserves every planned cell and its shortfalls under `experiment.partial
 partial and makes the leaderboard show an incomplete-results banner. The option does not bypass
 raw evidence, provenance, fixed trial counts or resolved cleanup. See
 [ADR-0012](../../docs/adr/0012-explicit-partial-publication.md).
+
+In CI the same opt-in is the `allow_partial` input of the `commit-dataset` workflow (backfill a
+run with **Actions → Commit dataset → Run workflow**, or `scripts/backfill-dataset.sh <run-id>
+--allow-partial`); it sets the flag on both commands, so promotion re-verifies the candidate under
+the policy it was built with. The matrix's automatic publish stays strict.

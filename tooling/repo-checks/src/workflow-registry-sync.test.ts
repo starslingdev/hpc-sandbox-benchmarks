@@ -282,6 +282,18 @@ test("the integrated workflow gate rejects parallel waves, serialised batches, d
 		["fromJSON(needs.plan.outputs.accounts)", "fromJSON(needs.plan.outputs.suites)"],
 		["data/dataset experiment/manifest/plan.json experiment/attempts", "data/dataset"],
 		["workflow-experiment.ts execute", "bench-suite.ts"],
+		// Partial publication is an explicit opt-in applied to BOTH aggregate and promote; hardcoding
+		// the flag on one command or dropping it from the other must fail.
+		[
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansion under test
+			'data/candidate ${ALLOW_PARTIAL_FLAG:+\\"$ALLOW_PARTIAL_FLAG\\"}',
+			"data/candidate --allow-partial",
+		],
+		[
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansion under test
+			'experiment/attempts ${ALLOW_PARTIAL_FLAG:+\\"$ALLOW_PARTIAL_FLAG\\"}\\n',
+			"experiment/attempts\\n",
+		],
 	] as const) {
 		expect(source).toContain(before);
 		expect(
