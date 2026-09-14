@@ -473,6 +473,20 @@ export interface ExperimentAggregation {
 	run?: Run;
 }
 
+/** A stopped admission never enters the harness, so its terminal receipt has no shard Run. */
+function isUnallocatedFailureWithoutRun(attempt: AttemptWithRun): boolean {
+	return (
+		attempt.run === undefined &&
+		attempt.evidence.runDigest === undefined &&
+		attempt.evidence.outcome === "failed" &&
+		!attempt.evidence.measurementStarted &&
+		attempt.evidence.completion !== "known-success" &&
+		attempt.evidence.cleanup === "not-allocated" &&
+		attempt.execution === undefined &&
+		attempt.cleanup === undefined
+	);
+}
+
 /**
  * Only this path creates a Run with verified experiment linkage. It evaluates coverage itself (a
  * caller-supplied report could not be trusted) and hands that report back, so a caller that must
@@ -493,7 +507,10 @@ export function aggregateExperiment(
 		(coverage.conflicts.length > 0 ||
 			coverage.cells.some((cell) => cell.status === "missing") ||
 			attempts.some(
-				({ evidence, run }) => !run || !evidence.rawDigest || evidence.cleanup === "unresolved",
+				(attempt) =>
+					(!attempt.run && !isUnallocatedFailureWithoutRun(attempt)) ||
+					!attempt.evidence.rawDigest ||
+					attempt.evidence.cleanup === "unresolved",
 			) ||
 			!coverage.cells.some((cell) => (cell.retainedMetrics?.length ?? 0) > 0))
 	)
@@ -502,9 +519,11 @@ export function aggregateExperiment(
 		? coverage.cells.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : []))
 		: coverage.selectedAttempts;
 	const selected = new Set(selectedIds);
-	const runs = attempts
+	const selectedAttempts = attempts
 		.filter(({ evidence }) => selected.has(evidence.id))
-		.toSorted((a, b) => a.evidence.cellId.localeCompare(b.evidence.cellId))
+		.toSorted((a, b) => a.evidence.cellId.localeCompare(b.evidence.cellId));
+	const runs = selectedAttempts
+		.filter((attempt) => !(partial && isUnallocatedFailureWithoutRun(attempt)))
 		.map(({ run, evidence }) => {
 			if (!run || Number(run.schemaVersion) < 6)
 				throw new Error("experiment publication requires artifact-attributed shards");
@@ -549,6 +568,34 @@ export function aggregateExperiment(
 			};
 		});
 	const merged = aggregateRuns(runs);
+	// Preserve failures that never produced a Run in the published coverage and provider gaps,
+	// without fabricating a historical shard or contributing any numerical observations.
+	for (const attempt of selectedAttempts.filter(isUnallocatedFailureWithoutRun)) {
+		const cell = plan.cells.find((entry) => entry.id === attempt.evidence.cellId);
+		if (!cell) throw new Error(`attempt cell missing from plan: ${attempt.evidence.cellId}`);
+		let provider = merged.providers.find((entry) => entry.providerId === cell.provider);
+		if (!provider) {
+			provider = {
+				providerId: cell.provider,
+				validationStatus: "pending",
+				observedSpecs: {},
+				metrics: [],
+				suitesCovered: [],
+				gaps: [],
+				uncatalogued: [],
+				costEvidence: [],
+				artifactEvidence: [],
+			};
+			merged.providers.push(provider);
+		}
+		provider.gaps.push({
+			scope: "suite",
+			id: cell.suite,
+			outcome: "failed",
+			reason: `${cell.id}: ${attempt.evidence.diagnostic ?? "Admission failed before allocation; no measurements were produced."}`,
+		});
+	}
+	merged.providers.sort((a, b) => a.providerId.localeCompare(b.providerId));
 	const cohorts = [
 		...new Map(
 			plan.cells.map((cell) => [

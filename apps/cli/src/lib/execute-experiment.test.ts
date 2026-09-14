@@ -1,10 +1,11 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { ExecResult, ProviderId, SandboxSession } from "@sandbox-benchmarks/driver";
 import { loadDriverModule } from "@sandbox-benchmarks/drivers";
-import { evaluateExperiment } from "@sandbox-benchmarks/results";
+import { aggregateExperiment, evaluateExperiment } from "@sandbox-benchmarks/results";
+import { parseRun } from "@sandbox-benchmarks/schema";
 import { TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema/toolchain";
 import type { AccountRecord } from "./account-journal.ts";
 import { recoverAccount } from "./account-journal.ts";
@@ -16,7 +17,7 @@ import {
 	cellStartupDeadline,
 	executeExperimentBatch,
 } from "./execute-experiment.ts";
-import { readExperimentAttempt } from "./experiment-artifacts.ts";
+import { readExperimentAttempt, writeImmutableJson } from "./experiment-artifacts.ts";
 import { workflowExperiment } from "./workflow-experiment.ts";
 
 const root = mkdtempSync(join(tmpdir(), "experiment-integration-"));
@@ -346,10 +347,8 @@ test("a vendor concurrent limit stops refill while accepted peers finish and rel
 		await upload(name, path);
 		if (readExperimentAttempt(path).evidence.cellId.endsWith("-r1")) rejectionRecorded.resolve();
 	};
-	const attempts = await executeExperimentBatch({
-		...f.options,
-		plan: rollingPlan("rolling-capacity", 3, 2),
-	});
+	const frozenPlan = rollingPlan("rolling-capacity", 3, 2);
+	const attempts = await executeExperimentBatch({ ...f.options, plan: frozenPlan });
 	expect(creates).toBe(2);
 	expect(attempts).toHaveLength(3);
 	expect(attempts[0]?.outcome).toBe("completed");
@@ -360,9 +359,76 @@ test("a vendor concurrent limit stops refill while accepted peers finish and rel
 	]);
 	expect(attempts[2]?.measurementStarted).toBe(false);
 	expect(attempts[2]?.diagnostic).toContain("reconcile BENCH_ACCOUNT_CAPACITY");
+	expect(attempts[2]?.runDigest).toBeUndefined();
 	expect(f.records.filter((record) => record.kind === "intent")).toHaveLength(2);
 	expect(f.records.filter((record) => record.kind === "released")).toHaveLength(2);
 	expect(f.present.size).toBe(0);
+	// The queued cell never entered runReplicate and has no Run. Partial publication must retain
+	// its terminal failure without inventing a shard or discarding the successful peer's samples.
+	const planFile = join(root, "capacity-publication-plan.json");
+	writeImmutableJson(planFile, frozenPlan);
+	const candidate = join(root, "capacity-candidate");
+	const dataset = join(root, "capacity-dataset");
+	const invoke = (bin: string, args: string[]) =>
+		Bun.spawnSync([process.execPath, resolve(import.meta.dir, "../bin", `${bin}.ts`), ...args], {
+			env: { ...process.env, GITHUB_ACTIONS: "false" },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+	expect(invoke("aggregate-experiment", [planFile, f.options.root, candidate]).exitCode).toBe(1);
+	const aggregated = invoke("aggregate-experiment", [
+		planFile,
+		f.options.root,
+		candidate,
+		"--allow-partial",
+	]);
+	expect(aggregated.stderr.toString()).toBe("");
+	expect(aggregated.exitCode).toBe(0);
+	const candidateRun = join(candidate, "runs", `${frozenPlan.id}.json`);
+	const promoted = invoke("promote", [
+		candidateRun,
+		dataset,
+		planFile,
+		f.options.root,
+		"--allow-partial",
+	]);
+	expect(promoted.exitCode).toBe(0);
+	const run = parseRun(
+		JSON.parse(readFileSync(join(dataset, "runs", `${frozenPlan.id}.json`), "utf8")),
+	);
+	expect(run.experiment?.partial).toMatchObject({ planned: 3, complete: 1, incomplete: 2 });
+	expect(run.experiment?.attemptIds).toHaveLength(3);
+	expect(
+		run.providers
+			.find((provider) => provider.providerId === "tama")
+			?.gaps.some((gap) => gap.reason.includes("reconcile BENCH_ACCOUNT_CAPACITY")),
+	).toBe(true);
+	const originalAttempts = attempts.map((attempt) =>
+		readExperimentAttempt(join(f.options.root, attempt.id)),
+	);
+	for (const invalidate of [
+		(attempt: (typeof originalAttempts)[number]) => {
+			attempt.evidence.measurementStarted = true;
+		},
+		(attempt: (typeof originalAttempts)[number]) => {
+			attempt.evidence.cleanup = "confirmed";
+		},
+		(attempt: (typeof originalAttempts)[number]) => {
+			attempt.evidence.completion = "known-success";
+		},
+		(attempt: (typeof originalAttempts)[number]) => {
+			attempt.evidence.runDigest = `sha256:${"a".repeat(64)}`;
+		},
+		(attempt: (typeof originalAttempts)[number]) => {
+			Reflect.deleteProperty(attempt.evidence, "rawDigest");
+		},
+	]) {
+		const changed = structuredClone(originalAttempts);
+		const noRun = changed.find((attempt) => !attempt.run);
+		if (!noRun) throw new Error("missing preallocation failure fixture");
+		invalidate(noRun);
+		expect(aggregateExperiment(frozenPlan, changed, { allowPartial: true }).run).toBeUndefined();
+	}
 });
 
 test("a journal failure blocks peer refill before the failed allocation finishes cleanup", async () => {

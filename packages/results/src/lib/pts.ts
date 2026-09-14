@@ -44,13 +44,23 @@ export function versionlessTest(identifier: string): string {
  * schema edge, pts-schema.ts) — a malformed token threw in `parsePtsComposite`, so nothing is
  * silently dropped here. The harness normally writes one `<Entry>`, but PTS may preserve an empty
  * entry before a later measured one; use the first entry that actually carries a value so that shape
- * is not misclassified as an all-passes failure. `[]` when every entry is empty (`Value` undefined,
+ * is not misclassified as an all-passes failure. No measurement when every entry is empty (`Value` undefined,
  * pts-schema.ts) — no measurement, not an error.
  */
-export function resultSamples(result: PtsResult): number[] {
+export function resultMeasurement(result: PtsResult) {
 	const entry = result.Data.Entry.find((candidate) => candidate.Value !== undefined);
-	if (!entry || entry.Value === undefined) return [];
-	return entry.RawString && entry.RawString.length > 0 ? entry.RawString : [entry.Value];
+	if (!entry || entry.Value === undefined) return undefined;
+	const source = entry.RawString?.length ? ("raw-string" as const) : ("aggregate-value" as const);
+	return {
+		entry: { ...entry, Value: entry.Value },
+		source,
+		samples: source === "raw-string" ? (entry.RawString ?? []) : [entry.Value],
+	};
+}
+
+/** Samples and their source entry share one selection policy across normalization and verification. */
+export function resultSamples(result: PtsResult): number[] {
+	return resultMeasurement(result)?.samples ?? [];
 }
 
 /**
@@ -60,7 +70,12 @@ export function resultSamples(result: PtsResult): number[] {
  * silently dropping a `null`.
  */
 export type PtsMapping =
-	| { kind: "matched"; def: MetricDef; samples: number[] }
+	| {
+			kind: "matched";
+			def: MetricDef;
+			samples: number[];
+			measurement: ReturnType<typeof resultMeasurement>;
+	  }
 	| { kind: "uncatalogued"; test: string; description: string; scale: string };
 
 /**
@@ -125,12 +140,13 @@ export function buildPtsIndex(catalog: readonly MetricDef[]): (result: PtsResult
 			byTestDescriptionScale.get(ptsKey(test, description, result.Scale)) ??
 			byTestDescription.get(ptsKey(test, description)) ??
 			byTestWildcard.get(ptsKey(test));
-		return def
-			? { kind: "matched", def, samples: resultSamples(result) }
-			: // `scale` rides along: scale-pinned twins share a description, so (test, description)
-				// alone no longer identifies a straggler — two twins whose `<Scale>` matched no pin
-				// would collapse onto one id downstream, silently dropping one measurement.
-				{ kind: "uncatalogued", test, description, scale: result.Scale };
+		if (def) {
+			const measurement = resultMeasurement(result);
+			return { kind: "matched", def, samples: measurement?.samples ?? [], measurement };
+		}
+		// Scale-pinned twins share a description. Keep scale so distinct unmatched measurements
+		// cannot collapse onto one straggler downstream.
+		return { kind: "uncatalogued", test, description, scale: result.Scale };
 	};
 }
 

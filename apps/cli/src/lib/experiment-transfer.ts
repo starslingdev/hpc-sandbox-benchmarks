@@ -1,6 +1,7 @@
 import { lstatSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExperimentPlan } from "@sandbox-benchmarks/schema";
+import { type } from "arktype";
 import type { AccountJournal } from "./account-journal.ts";
 import {
 	readExperimentAttempt,
@@ -10,13 +11,20 @@ import {
 import type { ExperimentStore } from "./experiment-store.ts";
 
 export const DEFAULT_ARTIFACT_DOWNLOAD_CONCURRENCY = 32;
+const downloadConcurrencySchema = type("number.integer >= 1").atMost(64);
+const downloadConcurrencyEnvSchema = type(/^\d+$/)
+	.pipe((raw) => Number(raw))
+	.to(downloadConcurrencySchema);
 
 export function artifactDownloadConcurrency(env: NodeJS.ProcessEnv = process.env): number {
 	const raw = env.BENCH_ARTIFACT_DOWNLOAD_CONCURRENCY?.trim();
 	if (!raw) return DEFAULT_ARTIFACT_DOWNLOAD_CONCURRENCY;
-	if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 64)
-		throw new Error("BENCH_ARTIFACT_DOWNLOAD_CONCURRENCY must be an integer from 1 to 64");
-	return Number(raw);
+	const parsed = downloadConcurrencyEnvSchema(raw);
+	if (parsed instanceof type.errors)
+		throw new Error("BENCH_ARTIFACT_DOWNLOAD_CONCURRENCY must be an integer from 1 to 64", {
+			cause: parsed,
+		});
+	return parsed;
 }
 
 export interface CollectionSummary {
@@ -59,9 +67,9 @@ export async function downloadExperimentAttempts(
 	options: { concurrency?: number } = {},
 ): Promise<CollectionSummary> {
 	const started = performance.now();
-	const concurrency = options.concurrency ?? DEFAULT_ARTIFACT_DOWNLOAD_CONCURRENCY;
-	if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 64)
-		throw new Error("artifact download concurrency must be an integer from 1 to 64");
+	const concurrency = downloadConcurrencySchema.assert(
+		options.concurrency ?? DEFAULT_ARTIFACT_DOWNLOAD_CONCURRENCY,
+	);
 	prepareDownloadDirectory(root);
 	const artifacts = await store.list({ prefix: `experiment-attempt-${plan.id}-` });
 	if (new Set(artifacts.map((artifact) => artifact.id)).size !== artifacts.length)
