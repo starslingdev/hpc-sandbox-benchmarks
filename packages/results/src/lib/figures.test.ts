@@ -9,10 +9,15 @@ import {
 	benchmarkDataOf,
 	LEADERBOARD_FIGURE_DIR,
 	leaderboardFigures,
+	leaderboardMetricFigures,
+	metricFigureFile,
+	metricFigureModelOf,
+	metricFigureNote,
 	renderLeaderboardFigureHtml,
 	suiteFigureFile,
 	suiteFigureNote,
 } from "./figures.ts";
+import { buildLeaderboard } from "./leaderboard.ts";
 
 /** The suite's canonical task order, widened off the `as const` tuple so the fixtures below can
  *  take the first one or two without restating their ids. */
@@ -159,7 +164,9 @@ describe("renderLeaderboardFigureHtml", () => {
 
 	it("returns one self-contained document per chartable suite, paired with its figure", () => {
 		const rendered = renderLeaderboardFigureHtml(chartableRun());
-		expect(rendered.map(({ figure }) => figure.suiteId)).toEqual(["realworld-mastra"]);
+		expect(
+			rendered.map(({ figure }) => ("suiteId" in figure ? figure.suiteId : figure.metricId)),
+		).toEqual(["realworld-mastra"]);
 		const html = rendered[0]?.html as string;
 		// The document must carry everything the screenshot needs: the chart, the caption, the
 		// faces. A reference to anything outside the string would make the WebP depend on the
@@ -258,5 +265,146 @@ describe("suiteFigureNote", () => {
 		];
 		expect(suiteFigureNote(suite(rows), 3)).toContain("All charts share one time scale.");
 		expect(suiteFigureNote(suite(rows), 1)).not.toContain("share one time scale");
+	});
+});
+
+describe("metric figures", () => {
+	const CPU = "node_web_tooling_runs_per_s";
+	const STREAM = "stream_type_triad";
+	/** Two environments ranked on a cpu metric and one on a memory metric; one provider with a
+	 *  gap marker for the cpu suite and no cpu result. */
+	function rankedRun(): Run {
+		return run([
+			provider("daytona-vm", [metric(CPU, [10, 12, 11]), metric(STREAM, [100, 110])], {
+				suitesCovered: ["cpu-node", "memory"],
+			}),
+			provider("modal-vm", [metric(CPU, [5, 6, 7])], { suitesCovered: ["cpu-node"] }),
+			provider("e2b", [metric(INSTALL, [30, 32])], {
+				suitesCovered: ["realworld-mastra"],
+				gaps: [
+					{
+						scope: "suite",
+						id: "cpu-node",
+						outcome: "failed",
+						reason: "PTS ran but every trial failed",
+					},
+				],
+			}),
+		]);
+	}
+	const modelOf = (r: Run) => metricFigureModelOf(r, buildLeaderboard(r));
+
+	it("names the file after the metric id, under the figure directory", () => {
+		expect(metricFigureFile(STREAM)).toBe(`${LEADERBOARD_FIGURE_DIR}/${STREAM}.webp`);
+	});
+
+	it("charts every synthetic metric with at least two ranked environments, never a realworld task", () => {
+		const model = modelOf(rankedRun());
+		expect(model.metrics.map((entry) => entry.id)).toEqual([CPU]);
+		expect(leaderboardMetricFigures(model)).toEqual([
+			{
+				metricId: CPU,
+				label: "Node.js web tooling",
+				dimension: "cpu",
+				headline: true,
+				file: `${LEADERBOARD_FIGURE_DIR}/${CPU}.webp`,
+				width: 960,
+				charted: 2,
+				unmeasured: 1,
+			},
+		]);
+	});
+
+	it("takes its rows from the board, already ranked, with the board's own values", () => {
+		const r = rankedRun();
+		const board = buildLeaderboard(r);
+		const figure = metricFigureModelOf(r, board).metrics[0];
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.metrics[0]?.rows ?? [];
+		expect(figure?.rows.map((row) => row.provider)).toEqual(rows.map((row) => row.providerId));
+		expect(figure?.rows.map((row) => [row.value, row.rank, row.n])).toEqual(
+			rows.map((row) => [row.value, row.rank, row.n]),
+		);
+	});
+
+	it("discloses a validated environment without a result, with the run's gap marker when it has one", () => {
+		const figure = modelOf(rankedRun()).metrics[0];
+		expect(figure?.unmeasured).toEqual([
+			{ provider: "e2b", outcome: "failed", reason: "PTS ran but every trial failed" },
+		]);
+	});
+
+	it("lists no unmeasured environment for a derived metric — a missing price is not a gap", () => {
+		const priced = run([
+			provider("daytona-vm", [metric("usd_per_hour", [0.3])], { suitesCovered: [] }),
+			provider("modal-vm", [metric("usd_per_hour", [0.5])], { suitesCovered: [] }),
+			provider("e2b", [metric(INSTALL, [30, 32])]),
+		]);
+		const figure = modelOf(priced).metrics.find((entry) => entry.id === "usd_per_hour");
+		expect(figure?.derived).toBe(true);
+		expect(figure?.unmeasured).toEqual([]);
+		expect(metricFigureNote(figure as NonNullable<typeof figure>)).toContain(
+			"only environments with a published price are charted",
+		);
+	});
+
+	it("renders the metric charts after the suite charts, each paired with its figure", () => {
+		const r = rankedRun();
+		const rendered = renderLeaderboardFigureHtml(r, buildLeaderboard(r));
+		expect(rendered.map(({ figure }) => figure.file)).toEqual([
+			`${LEADERBOARD_FIGURE_DIR}/${CPU}.webp`,
+		]);
+		expect(rendered[0]?.html).toContain("<title>Node.js web tooling</title>");
+		expect(rendered[0]?.html).toContain(`<span class="badge">best</span>`);
+	});
+});
+
+describe("metricFigureNote", () => {
+	const figure = (rows: { n: number; sandboxes: number; lo: number; hi: number }[]) => ({
+		id: "m",
+		label: "M",
+		dimension: "cpu",
+		unit: "u",
+		direction: "HIB" as const,
+		headline: false,
+		derived: false,
+		rows: rows.map((row, index) => ({ provider: `p${index}`, value: 1, rank: 1, ...row })),
+		unmeasured: [],
+	});
+
+	it("says the bar is a median across sandboxes and the whisker its interval", () => {
+		const note = metricFigureNote(
+			figure([
+				{ n: 6, sandboxes: 3, lo: 0.9, hi: 1.1 },
+				{ n: 6, sandboxes: 3, lo: 0.8, hi: 1.2 },
+			]),
+		);
+		expect(note).toContain(
+			"median across 3 sandboxes (one machine, one vote) of 6 retained trials",
+		);
+		expect(note).toContain("95% cluster-bootstrap interval");
+		expect(note).toContain("The scale is this metric's own");
+	});
+
+	it("prints ranges when the rows disagree, rather than one row's count as if it were the chart's", () => {
+		const note = metricFigureNote(
+			figure([
+				{ n: 6, sandboxes: 3, lo: 0.9, hi: 1.1 },
+				{ n: 4, sandboxes: 2, lo: 0.8, hi: 1.2 },
+			]),
+		);
+		expect(note).toContain("across 2–3 sandboxes");
+		expect(note).toContain("of 4–6 retained trials");
+	});
+
+	it("describes single observations without claiming a median or an interval", () => {
+		const note = metricFigureNote(
+			figure([
+				{ n: 1, sandboxes: 1, lo: 1, hi: 1 },
+				{ n: 1, sandboxes: 1, lo: 1, hi: 1 },
+			]),
+		);
+		expect(note).toContain("one retained value");
+		expect(note).toContain("no interval is drawn");
+		expect(note).not.toContain("median");
 	});
 });

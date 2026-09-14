@@ -565,7 +565,9 @@ test("real aggregate and promote commands require intact original evidence", () 
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
-});
+	// Five CLI processes spawned in sequence: under a full parallel workspace run this is a
+	// load-sensitive test, and Bun's 5 s default killed the last spawn with no stderr to assert on.
+}, 20_000);
 
 test("large experiments retain every cell in explicit collection rounds", () => {
 	const result = plan(257);

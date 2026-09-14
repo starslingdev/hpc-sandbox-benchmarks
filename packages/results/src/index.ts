@@ -27,6 +27,10 @@ export {
 	FIGURE_DEVICE_SCALE,
 	LEADERBOARD_FIGURE_DIR,
 	leaderboardFigures,
+	leaderboardMetricFigures,
+	metricFigureFile,
+	metricFigureModelOf,
+	metricFigureNote,
 	type RenderedLeaderboardFigureHtml,
 	renderLeaderboardFigureHtml,
 	suiteFigureFile,
@@ -53,6 +57,7 @@ export {
 	// cannot write the function that builds it.
 	type LeaderboardFigure,
 	type LeaderboardMetric,
+	type LeaderboardMetricFigure,
 	type LeaderboardRow,
 	type ProviderRosterEntry,
 	REPO_URL,

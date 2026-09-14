@@ -299,11 +299,15 @@ test("normalized PTS trials publish through candidate, dataset index and leaderb
 			[2, "raw-string"],
 		]);
 	}
-	const output = join(f.directory, "LEADERBOARD.md");
-	const rendered = invoke("leaderboard", [publishedFile, output]);
+	// stdout, not an output file: with a file the bin rasterises every chart through headless
+	// Chrome, and this published run ranks two environments on one metric — enough for a metric
+	// chart — so a file render would make this test's verdict depend on the machine's browser.
+	// The Markdown is the same document either way; only the pixels are skipped.
+	const rendered = invoke("leaderboard", [publishedFile]);
 	expect(rendered.exitCode).toBe(0);
-	const markdown = readFileSync(output, "utf8");
+	const markdown = rendered.stdout.toString();
 	expect(markdown).toContain(f.runId);
+	expect(markdown).toContain("docs/figures/node_web_tooling_runs_per_s.webp");
 	expect(markdown).toContain("E2B");
 	expect(markdown).toContain("Novita");
 	expect(markdown).toContain("Node");

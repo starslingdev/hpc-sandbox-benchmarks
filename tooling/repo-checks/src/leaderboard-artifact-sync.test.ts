@@ -14,7 +14,7 @@ import { join } from "node:path";
 // screenshotHtml spawns Chrome — and webpDimensions is the pure header parse the captures
 // themselves are verified with.
 import { webpDimensions } from "@sandbox-benchmarks/figures/screenshot";
-import type { LeaderboardFigure } from "@sandbox-benchmarks/results";
+import type { LeaderboardFigure, LeaderboardMetricFigure } from "@sandbox-benchmarks/results";
 import {
 	benchmarkDataOf,
 	buildLeaderboard,
@@ -24,6 +24,8 @@ import {
 	LEADERBOARD_DIMENSION_ORDER,
 	LEADERBOARD_FIGURE_DIR,
 	leaderboardFigures,
+	leaderboardMetricFigures,
+	metricFigureModelOf,
 	REPO_URL,
 	renderLeaderboardFigureHtml,
 	renderLeaderboardMarkdown,
@@ -467,6 +469,24 @@ function committedBoard(): ReturnType<typeof buildLeaderboard> {
 	return sharedBoard;
 }
 
+/**
+ * The metric charts the Markdown must link — one ranked bar chart per charted synthetic metric.
+ * Re-derived from the committed Run AND the shared board, exactly as the bin derives them (the
+ * rows are the board's, which is what keeps chart and table one derivation), never parsed back
+ * out of the document. Browser-free, like {@link loadCommittedRun}'s suite list.
+ */
+function committedMetricFigures(): LeaderboardMetricFigure[] {
+	return leaderboardMetricFigures(metricFigureModelOf(loadCommittedRun().run, committedBoard()));
+}
+
+/** Every figure the document links, suites first: the union the image and directory gates hold. */
+function committedFigureFiles(): string[] {
+	return [
+		...loadCommittedRun().figures.map((figure) => figure.file),
+		...committedMetricFigures().map((figure) => figure.file),
+	];
+}
+
 // This gate renders the WHOLE committed board — up to twice, for the determinism check — and both the
 // renderer and this file's independent audit run a seeded 10 000-resample bootstrap per provider/Metric.
 // That is legitimately slow and scales with the dataset: the replicate fan-out took one run from ~400 to
@@ -628,13 +648,62 @@ describe("LEADERBOARD.md leads with the real-world workflows", () => {
 			// empty one is a section that vanishes. Name the suite at minimum.
 			expect(image.alt, `${figure.suiteId} alt text`).toContain(figure.suiteName);
 		}
-		// And the whole document embeds no image the figure list does not name — in either syntax —
+		// And the whole document embeds no image the figure lists do not name — in either syntax —
 		// so a hand-added screenshot cannot ride along unrendered and unregenerated.
 		const everyImage = [
 			...[...committed.matchAll(/^!\[[^\]]*\]\(([^)]+)\)$/gm)].map((match) => match[1] as string),
 			...[...committed.matchAll(/<img src="([^"]+)"/gm)].map((match) => match[1] as string),
 		];
-		expect(everyImage.sort()).toEqual(figures.map((figure) => figure.file).sort());
+		expect(everyImage.sort()).toEqual(committedFigureFiles().sort());
+	});
+
+	it("charts every synthetic metric: the headline above its dimension's collapse, the rest beside their tables", () => {
+		// The synthetic sections are drawn too, and the layout is the claim: one chart per ranked
+		// metric, the dimension's headline visible without expanding anything, and every other chart
+		// inside the triangle immediately after the `###` heading of the table it depicts — so a
+		// chart can never sit under the wrong table, and no metric with a comparison goes undrawn.
+		const { committed } = loadCommittedRun();
+		const metricFigures = committedMetricFigures();
+		expect(metricFigures.length).toBeGreaterThan(0);
+		const sections = dimensionSections(committed);
+		const image = (line: string) => line.match(/^<img src="([^"]+)" width="(\d+)" alt="([^"]*)">$/);
+		for (const [dimension, body] of sections) {
+			if (dimension === FIGURE_DIMENSION) continue;
+			const expected = metricFigures.filter((figure) => figure.dimension === dimension);
+			// The headline chart leads the section: above the collapse where the dimension has one
+			// (the synthetics), and above the first table where it does not (economics renders in
+			// the open, so its boundary is its first `###` heading).
+			const collapseAt = body.indexOf("<details>");
+			const boundary =
+				collapseAt >= 0 ? collapseAt : body.findIndex((line) => line.startsWith("### "));
+			const images = body.flatMap((line, index) => {
+				const match = image(line);
+				return match
+					? [{ index, src: match[1] as string, width: Number(match[2]), alt: match[3] as string }]
+					: [];
+			});
+			// Exactly this dimension's charts, and every one of them, in the board's metric order.
+			expect(
+				images.map(({ src }) => src),
+				`${dimension} charts`,
+			).toEqual(expected.map((figure) => figure.file));
+			for (const figure of expected) {
+				const embedded = images.find(({ src }) => src === figure.file);
+				if (!embedded) throw new Error(`${figure.file} not embedded`);
+				expect(embedded.width, `${figure.metricId} width`).toBe(figure.width);
+				expect(embedded.alt, `${figure.metricId} alt text`).toContain(figure.label);
+				if (figure.headline) {
+					expect(embedded.index, `${figure.metricId} leads the section`).toBeLessThan(boundary);
+				} else {
+					expect(embedded.index, `${figure.metricId} beside its table`).toBeGreaterThan(boundary);
+					// Directly under its own table's heading block: heading, blank, unit line, blank,
+					// takeaway, blank, then the chart — before the table's header row.
+					const heading = body.findIndex((line) => line.startsWith(`### ${figure.label}`));
+					expect(heading, `${figure.metricId} heading`).toBeGreaterThan(-1);
+					expect(embedded.index).toBe(heading + 6);
+				}
+			}
+		}
 	});
 });
 
@@ -658,7 +727,7 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 
 	it("is byte-identical to a fresh render of the Run it names", () => {
 		const { committed, runId, figures } = loadCommittedRun();
-		const rendered = renderLeaderboardMarkdown(committedBoard(), figures);
+		const rendered = renderLeaderboardMarkdown(committedBoard(), figures, committedMetricFigures());
 		if (committed !== rendered) {
 			// Name the remedy in the failure, rather than leaving whoever hits this to work it out.
 			throw new Error(
@@ -678,7 +747,7 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		// happen (a render aborted between write and commit; a hand-swapped screenshot; a chart
 		// rasterised at 1×) that would otherwise surface only on the published page.
 		const { runId, figures } = loadCommittedRun();
-		for (const figure of figures) {
+		for (const figure of [...figures, ...committedMetricFigures()]) {
 			const path = join(ROOT, ...figure.file.split("/"));
 			let bytes: Uint8Array;
 			try {
@@ -710,13 +779,12 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		// Dotfiles are the one exception: Finder writes `.DS_Store` into any directory a macOS
 		// contributor so much as opens (it is gitignored), and a hidden file failing the artifact
 		// gate on an unrelated branch would be a machine-shape failure, not a repo state.
-		const { figures } = loadCommittedRun();
 		const dir = join(ROOT, ...LEADERBOARD_FIGURE_DIR.split("/"));
 		const onDisk = readdirSync(dir)
 			.filter((entry) => !entry.startsWith("."))
 			.map((entry) => `${LEADERBOARD_FIGURE_DIR}/${entry}`)
 			.sort();
-		expect(onDisk).toEqual(figures.map((figure) => figure.file).sort());
+		expect(onDisk).toEqual(committedFigureFiles().sort());
 	});
 
 	it("renders the same chart HTML twice, so a figure regeneration is reviewable", () => {
@@ -726,9 +794,11 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		// reviews as noise. (The CLI holds the other half of this line: it rasterises every chart
 		// twice and fails on a byte mismatch, catching nondeterminism that only shows up in paint.)
 		const { run } = loadCommittedRun();
-		const first = renderLeaderboardFigureHtml(run);
-		const second = renderLeaderboardFigureHtml(run);
+		const first = renderLeaderboardFigureHtml(run, committedBoard());
+		const second = renderLeaderboardFigureHtml(run, committedBoard());
 		expect(first.map(({ html }) => html)).toEqual(second.map(({ html }) => html));
+		// Every chart the document links has a document to be rendered from, and nothing else does.
+		expect(first.map(({ figure }) => figure.file)).toEqual(committedFigureFiles());
 	});
 
 	it("renders the same bytes twice, so this gate can't flake on an unseeded bootstrap", () => {
@@ -741,9 +811,13 @@ describe("LEADERBOARD.md stays in sync with the renderer", () => {
 		// read two independently parsed Runs, a `buildLeaderboard` that mutated its input after reading it
 		// would still render identical bytes and slip through. Snapshot the Run and diff it afterwards.
 		const before = JSON.stringify(run);
-		const rendered = renderLeaderboardMarkdown(buildLeaderboard(run), figures);
+		const fresh = buildLeaderboard(run);
+		const metricFigures = leaderboardMetricFigures(metricFigureModelOf(run, fresh));
+		const rendered = renderLeaderboardMarkdown(fresh, figures, metricFigures);
 		expect(JSON.stringify(run), "buildLeaderboard mutated the Run it was given").toBe(before);
-		expect(renderLeaderboardMarkdown(committedBoard(), figures)).toBe(rendered);
+		expect(renderLeaderboardMarkdown(committedBoard(), figures, committedMetricFigures())).toBe(
+			rendered,
+		);
 	});
 
 	it("renders one row for every provider/Metric record in the source Run", () => {

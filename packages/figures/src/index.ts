@@ -14,6 +14,9 @@
  *   model.ts        Run + registries → RealworldFigureModel: exactly the three fields the
  *                   charts consume (suites, providers, phaseOrder). Every other derivation
  *                   over a Run belongs to `packages/results`.
+ *   metric-model.ts The metric figure model — one ranked bar chart per synthetic metric. Its
+ *                   rows arrive already ranked from `packages/results`' board, so the chart
+ *                   and the table under it cannot disagree.
  *   chart/          the view-model (every decision the picture makes, as plain data a unit
  *                   test can assert on) and the HTML template that marks it up. Pure string
  *                   building; fonts come from pinned npm packages, inlined as data: URIs.
@@ -29,6 +32,13 @@
  */
 
 export { FIGURE_WIDTH, pipelineChartHtml } from "./chart/html.ts";
+export { metricChartHtml } from "./chart/metric-html.ts";
+export {
+	buildMetricChartModel,
+	METRIC_BAR_COLOR,
+	type MetricChartBar,
+	type MetricChartModel,
+} from "./chart/metric-model.ts";
 export {
 	buildPipelineChartModel,
 	type ChartBar,
@@ -37,6 +47,7 @@ export {
 	type PipelineChartModel,
 	pipelineScaleMaxSOf,
 } from "./chart/model.ts";
+export type { MetricFigure, MetricFigureModel, MetricFigureRow } from "./metric-model.ts";
 export {
 	type BarSegment,
 	buildRealworldFigureModel,

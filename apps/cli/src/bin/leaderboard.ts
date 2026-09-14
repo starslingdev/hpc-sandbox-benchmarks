@@ -83,12 +83,18 @@ if (import.meta.main) {
 	// nobody asked a pipe for. The links are still rendered, which is what makes the piped output
 	// the same document.
 	const figureDir = outFile ? dirname(outFile) : ".";
-	const { figures, written } = await withGroup("Render suite figures", async () => {
-		const result = await writeLeaderboardFigures(run, figureDir, { dryRun: !outFile });
+	const { figures, metricFigures, written } = await withGroup("Render figures", async () => {
+		const result = await writeLeaderboardFigures(run, board, figureDir, { dryRun: !outFile });
 		for (const figure of result.figures) {
 			logInfo(
 				`${figure.suiteId}: ${figure.tasks} tasks × ${figure.charted} environments` +
 					`${figure.incomplete > 0 ? ` (+${figure.incomplete} incomplete)` : ""} → ${figure.file}`,
+			);
+		}
+		for (const figure of result.metricFigures) {
+			logInfo(
+				`${figure.metricId}: ${figure.charted} environments` +
+					`${figure.unmeasured > 0 ? ` (+${figure.unmeasured} unmeasured)` : ""} → ${figure.file}`,
 			);
 		}
 		// A pruned chart is a TRACKED file this render deleted (the run no longer draws it) —
@@ -97,7 +103,7 @@ if (import.meta.main) {
 		return result;
 	});
 
-	const markdown = renderLeaderboardMarkdown(board, figures);
+	const markdown = renderLeaderboardMarkdown(board, figures, metricFigures);
 
 	if (outFile) {
 		// Bun.write creates the destination's directory by default.

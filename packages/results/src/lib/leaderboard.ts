@@ -133,6 +133,30 @@ export interface LeaderboardFigure {
 	readonly tasks: number;
 }
 
+/**
+ * One rendered metric chart the Markdown embeds — a ranked bar chart for one synthetic metric,
+ * the counterpart of {@link LeaderboardFigure} for the dimensions the pipeline charts do not
+ * draw. Same contract: the renderer links exactly the list it is handed, and the list is what
+ * was actually rendered.
+ */
+export interface LeaderboardMetricFigure {
+	/** The catalog id, e.g. `stream_type_triad`. */
+	readonly metricId: string;
+	/** The catalog label for the alt text, e.g. `STREAM Triad`. */
+	readonly label: string;
+	/** The dimension whose section embeds it. */
+	readonly dimension: string;
+	/** Whether it is the dimension's headline — the one chart that sits above the collapse. */
+	readonly headline: boolean;
+	/** Path the Markdown links, relative to the directory holding it. */
+	readonly file: string;
+	/** Display width in CSS px, as for a suite figure. */
+	readonly width: number;
+	/** Environments charted, and validated environments disclosed as having no result. */
+	readonly charted: number;
+	readonly unmeasured: number;
+}
+
 /** One provider's standing on one Metric. */
 export interface LeaderboardRow {
 	providerId: string;
@@ -911,6 +935,19 @@ function figureSection(figures: readonly LeaderboardFigure[]): string[] {
 	return lines;
 }
 
+/**
+ * The `<img>` line for one metric chart. The alt text names the metric, the size of the
+ * comparison and the disclosure count — what a reader with the image unavailable gets instead.
+ */
+function metricFigureImage(figure: LeaderboardMetricFigure): string {
+	const environments = `${figure.charted} environment${figure.charted === 1 ? "" : "s"}`;
+	const disclosed = figure.unmeasured === 0 ? "" : `, ${figure.unmeasured} disclosed as unmeasured`;
+	const alt = escapeAttribute(
+		`${figure.label}: ${environments} ranked best-first${disclosed}, with 95% intervals`,
+	);
+	return `<img src="${escapeAttribute(figure.file)}" width="${figure.width}" alt="${alt}">`;
+}
+
 /** HTML attribute escaping for the `<img>` tags above: `Bun.escapeHTML` covers the full set
  *  (`& < > " '`), so an attribute cannot break out of its quotes no matter what a future
  *  suite is named. (The sibling `escapeHtml` above stays hand-rolled on purpose — it escapes
@@ -1088,7 +1125,11 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 export function renderLeaderboardMarkdown(
 	board: Leaderboard,
 	figures: readonly LeaderboardFigure[],
+	metricFigures: readonly LeaderboardMetricFigure[] = [],
 ): string {
+	// Each synthetic dimension embeds its own charts: the headline's above the collapse, the rest
+	// beside their tables. Keyed once here so the loop below can ask per dimension and per metric.
+	const metricFigureById = new Map(metricFigures.map((figure) => [figure.metricId, figure]));
 	// Render the board's OWN target, not the global constant, so the header can never claim the pinned
 	// spec while the comparability warnings below report another one.
 	const spec = formatSpec(board.targetSpec);
@@ -1174,6 +1215,15 @@ export function renderLeaderboardMarkdown(
 			"",
 		);
 	}
+	if (metricFigures.length > 0) {
+		lines.push(
+			"**Every synthetic metric is charted too.** Each dimension shows its headline metric's ranked bar",
+			"chart above the triangle, and every other metric's chart sits beside its table inside. Bars are",
+			"the same medians the tables print, best first, with the 95% interval as a whisker; each chart",
+			"scales to its own largest value, so lengths compare within a chart and never across two.",
+			"",
+		);
+	}
 	lines.push(...rosterSection(board.roster));
 	if (board.absentProviders.length > 0) {
 		// One line, not per-suite `missing` rows: the Run does not record the dispatch plan
@@ -1201,6 +1251,12 @@ export function renderLeaderboardMarkdown(
 		// The figure dimension puts its charts ABOVE the collapse, so the section reads as three
 		// pictures with the receipts folded underneath.
 		if (dimension === FIGURE_DIMENSION) lines.push(...figureSection(figures));
+		// A synthetic dimension leads with its headline chart, above the collapse, for the same reason
+		// the figure dimension leads with its pipelines: the picture is what the section is for.
+		const headlineFigure = metrics
+			.map(({ metric }) => metricFigureById.get(metric.id))
+			.find((figure) => figure?.headline === true);
+		if (headlineFigure) lines.push(metricFigureImage(headlineFigure), "");
 		// A synthetic dimension collapses its TABLES, never its heading: the heading stays in the rendered
 		// document outline so the board still discloses which hardware axes were measured — collapsing it
 		// too would make a measured dimension indistinguishable from one that never ran.
@@ -1220,6 +1276,13 @@ export function renderLeaderboardMarkdown(
 			const notes = metricRows.map(rowNote);
 			const hasNotes = notes.some((note) => note !== "");
 			const headline = metric.headline ? " _(headline)_" : "";
+			// The metric's own chart, beside its table — except the headline's, already shown above
+			// the collapse: the same image twice in one section would be noise, not disclosure.
+			const metricFigure = metricFigureById.get(metric.id);
+			const chartLines =
+				metricFigure && metricFigure !== headlineFigure
+					? [metricFigureImage(metricFigure), ""]
+					: [];
 			lines.push(
 				`### ${metric.label}${headline}`,
 				"",
@@ -1227,6 +1290,7 @@ export function renderLeaderboardMarkdown(
 				"",
 				`_${metricTakeaway(dimension, metric, metricRows)}_`,
 				"",
+				...chartLines,
 				// Sandboxes BEFORE trials, and both labelled. The unit of replication is the machine, and a
 				// single `n` column silently mixed the two: n=12 meant twelve machines, n=70 meant three.
 				hasNotes

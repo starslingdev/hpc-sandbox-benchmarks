@@ -1,4 +1,4 @@
-// Write the leaderboard's suite charts next to the Markdown.
+// Write the leaderboard's charts next to the Markdown.
 //
 // The derivation and the chart documents are `@sandbox-benchmarks/results`
 // (`renderLeaderboardFigureHtml`), which builds strings and never writes — so the artifact gate
@@ -7,19 +7,27 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { screenshotHtml } from "@sandbox-benchmarks/figures/screenshot";
-import type { LeaderboardFigure } from "@sandbox-benchmarks/results";
+import type {
+	Leaderboard,
+	LeaderboardFigure,
+	LeaderboardMetricFigure,
+} from "@sandbox-benchmarks/results";
 import {
 	benchmarkDataOf,
 	FIGURE_DEVICE_SCALE,
 	LEADERBOARD_FIGURE_DIR,
 	leaderboardFigures,
+	leaderboardMetricFigures,
+	metricFigureModelOf,
 	renderLeaderboardFigureHtml,
 } from "@sandbox-benchmarks/results";
 import type { Run } from "@sandbox-benchmarks/schema";
 
 export interface WrittenFigures {
-	/** What the Markdown must link, in the order it links them. */
+	/** The suite (pipeline) charts the Markdown must link, in the order it links them. */
 	readonly figures: LeaderboardFigure[];
+	/** The metric charts the Markdown must link, one per charted synthetic metric. */
+	readonly metricFigures: LeaderboardMetricFigure[];
 	/** Paths written, relative to `markdownDir` — the same strings the Markdown links, so the
 	 *  release job's path allowlist and the document cannot disagree about what this produced. */
 	readonly written: string[];
@@ -32,30 +40,40 @@ export interface WrittenFigures {
 /**
  * Render the charts for `run` and write them relative to `markdownDir`.
  *
+ * `board` is the leaderboard the bin already built: the metric charts are drawn from its rows,
+ * and building a second one would double the most expensive step of the render for nothing.
+ *
  * Paths are resolved against the Markdown's own directory, so a render into a scratch directory
  * produces a self-contained document exactly as the repo-root render does.
  *
  * Every chart is rasterised TWICE and the bytes compared. Chrome's output is not promised to be
  * stable across machines, but it must be stable across two runs on this one — a mismatch means
  * something nondeterministic leaked into the figure (an animation, a timestamp, a race), and the
- * committed WebP would differ on every regeneration for no reviewable reason. Three charts,
- * sub-second each; cheap enough to hold unconditionally rather than only in the release job.
+ * committed WebP would differ on every regeneration for no reviewable reason. Sub-second each;
+ * cheap enough to hold unconditionally rather than only in the release job.
  *
  * `dryRun` renders no pixels — and no documents: printing to stdout has no file for a relative
  * image path to resolve against, so spawning a browser (or building megabytes of font-inlined
- * HTML nobody will rasterise) would be pure side effect. The figure LIST is derived without
+ * HTML nobody will rasterise) would be pure side effect. The figure LISTS are derived without
  * either, and the links are still rendered, which keeps the piped output the same document.
  */
 export async function writeLeaderboardFigures(
 	run: Run,
+	board: Leaderboard,
 	markdownDir: string,
 	options: { readonly dryRun?: boolean } = {},
 ): Promise<WrittenFigures> {
 	if (options.dryRun === true) {
-		return { figures: leaderboardFigures(benchmarkDataOf(run)), written: [], pruned: [] };
+		return {
+			figures: leaderboardFigures(benchmarkDataOf(run)),
+			metricFigures: leaderboardMetricFigures(metricFigureModelOf(run, board)),
+			written: [],
+			pruned: [],
+		};
 	}
-	const rendered = renderLeaderboardFigureHtml(run);
-	const figures = rendered.map(({ figure }) => figure);
+	const rendered = renderLeaderboardFigureHtml(run, board);
+	const figures = rendered.flatMap(({ figure }) => ("suiteId" in figure ? [figure] : []));
+	const metricFigures = rendered.flatMap(({ figure }) => ("metricId" in figure ? [figure] : []));
 
 	const written: string[] = [];
 	for (const { figure, html } of rendered) {
@@ -65,7 +83,7 @@ export async function writeLeaderboardFigures(
 		const again = await shoot();
 		if (!Bun.deepEquals(webp, again)) {
 			throw new Error(
-				`${figure.suiteId}: two renders of the same HTML produced different images — ` +
+				`${figure.file}: two renders of the same HTML produced different images — ` +
 					`something nondeterministic leaked into the chart document`,
 			);
 		}
@@ -73,20 +91,18 @@ export async function writeLeaderboardFigures(
 		await Bun.write(join(markdownDir, figure.file), webp);
 		written.push(figure.file);
 	}
-	const pruned = prune(
-		join(markdownDir, LEADERBOARD_FIGURE_DIR),
-		new Set(figures.map((f) => f.file)),
-	);
-	return { figures, written, pruned };
+	const pruned = prune(join(markdownDir, LEADERBOARD_FIGURE_DIR), new Set(written));
+	return { figures, metricFigures, written, pruned };
 }
 
 /**
  * Remove figures in the figure directory that this render did not produce, returning what went.
  *
  * Without it, a suite that stops being chartable — retired upstream, or dropped to one completing
- * environment — leaves its old chart committed and unlinked: an image of a comparison that is no
- * longer part of the leaderboard, sitting in the repo looking current, and invisible to the
- * freshness gate because that gate only checks the figures the document links.
+ * environment — or a metric the run no longer ranks leaves its old chart committed and unlinked:
+ * an image of a comparison that is no longer part of the leaderboard, sitting in the repo looking
+ * current, and invisible to the freshness gate because that gate only checks the figures the
+ * document links.
  *
  * This CAN delete a tracked file from the working tree — that is its job — and rendering from an
  * OLDER run that charts fewer suites will do exactly that. Which is why the deletions are

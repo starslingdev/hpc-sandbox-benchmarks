@@ -10,16 +10,24 @@
  * gate re-implementing it, and a gate that re-implements what it checks is checking its own
  * copy.
  */
-import type { PipelineSuite, RealworldFigureModel } from "@sandbox-benchmarks/figures";
+import type {
+	MetricFigure,
+	MetricFigureModel,
+	PipelineSuite,
+	RealworldFigureModel,
+} from "@sandbox-benchmarks/figures";
 import {
+	buildMetricChartModel,
 	buildPipelineChartModel,
 	buildRealworldFigureModel,
 	FIGURE_WIDTH,
+	metricChartHtml,
 	pipelineChartHtml,
 } from "@sandbox-benchmarks/figures";
 import type { Run } from "@sandbox-benchmarks/schema";
 import { METRIC_CATALOG, PROVIDERS, SUITES } from "@sandbox-benchmarks/schema";
-import type { LeaderboardFigure } from "./leaderboard.ts";
+import type { Leaderboard, LeaderboardFigure, LeaderboardMetricFigure } from "./leaderboard.ts";
+import { buildLeaderboard, FIGURE_DIMENSION } from "./leaderboard.ts";
 
 /**
  * Where the rendered leaderboard figures are written, relative to the directory holding the
@@ -32,6 +40,14 @@ export const LEADERBOARD_FIGURE_DIR = "docs/figures";
 /** The file one suite's chart is written to, and the path the Markdown links. */
 export function suiteFigureFile(suiteId: string): string {
 	return `${LEADERBOARD_FIGURE_DIR}/${suiteId}.webp`;
+}
+
+/** The file one metric's chart is written to, and the path the Markdown links. Named by the
+ *  catalog id — the one stable, unique identity a metric has — so a relabelled metric keeps its
+ *  file and two metrics can never collide on a prettier name. Suite ids are hyphenated and
+ *  metric ids underscored, so the two kinds share the directory without ever sharing a name. */
+export function metricFigureFile(metricId: string): string {
+	return `${LEADERBOARD_FIGURE_DIR}/${metricId}.webp`;
 }
 
 /**
@@ -114,32 +130,174 @@ export function leaderboardFigures(data: RealworldFigureModel): LeaderboardFigur
 	}));
 }
 
+/**
+ * The wording the leaderboard's coverage table uses for a provider that reported nothing for a
+ * metric with no gap marker to explain it — restated on the chart's disclosure row so the two
+ * surfaces describe one hole in one voice.
+ */
+const UNMARKED_ABSENCE = "No result and no marker: the metric never reported for this provider.";
+
+/**
+ * Derive the metric figure model: one ranked bar chart per synthetic metric the board ranked,
+ * with the board's own rows.
+ *
+ * The rows come from the BOARD, not from the Run: the median across sandboxes, its cluster
+ * bootstrap and the rank (with ties) are `buildLeaderboard`'s derivation, and the chart must
+ * show exactly the numbers in the table beneath it. The figure package therefore takes them
+ * already ranked (see its `metric-model.ts`), and this seam is where the board is turned into
+ * that input. The realworld dimension is excluded — its metrics are the segments of the
+ * pipeline charts, drawn once already as a whole pipeline per environment.
+ *
+ * A metric with one ranked environment is not charted: a chart of one bar is not a comparison,
+ * exactly as a suite one environment completed is not.
+ */
+export function metricFigureModelOf(run: Run, board: Leaderboard): MetricFigureModel {
+	const providers = benchmarkDataOf(run).providers;
+	const validated = new Set(providers.map((provider) => provider.id));
+	const suiteOf = new Map<string, string>();
+	for (const [suiteId, suite] of Object.entries(SUITES)) {
+		for (const metricId of suite.metrics) suiteOf.set(metricId, suiteId);
+	}
+	const metrics: MetricFigure[] = board.dimensions
+		.filter((dimension) => dimension.dimension !== FIGURE_DIMENSION)
+		.flatMap((dimension) =>
+			dimension.metrics
+				.filter(({ rows }) => rows.length >= 2)
+				.map(({ metric, rows }) => {
+					const ranked = new Set(rows.map((row) => row.providerId));
+					const suiteId = suiteOf.get(metric.id);
+					return {
+						id: metric.id,
+						label: metric.label,
+						dimension: dimension.dimension,
+						unit: metric.unit,
+						direction: metric.direction,
+						headline: metric.headline,
+						derived: metric.derived === true,
+						// The board's rows are the run's providers; a validated provider the chart cannot
+						// name has no row to draw, so a pending placeholder never reaches the chart either.
+						rows: rows
+							.filter((row) => validated.has(row.providerId))
+							.map((row) => ({
+								provider: row.providerId,
+								value: row.value,
+								lo: row.interval.resamples === 0 ? row.value : row.interval.lo,
+								hi: row.interval.resamples === 0 ? row.value : row.interval.hi,
+								rank: row.rank,
+								n: row.n,
+								sandboxes: row.sandboxes ?? 1,
+							})),
+						// A derived metric (a price) has no coverage to fall short of: an environment with
+						// no published price is not a gap, and the board's coverage table does not list
+						// it as one either — so the chart lists nothing.
+						unmeasured: (metric.derived === true ? [] : run.providers)
+							.filter((p) => validated.has(p.providerId) && !ranked.has(p.providerId))
+							.map((p) => {
+								const gap = p.gaps.find(
+									(g) =>
+										(g.scope === "suite" && g.id === suiteId) ||
+										(g.scope !== "suite" && g.id === metric.id),
+								);
+								return {
+									provider: p.providerId,
+									outcome: gap?.outcome ?? "missing",
+									reason: gap?.reason ?? UNMARKED_ABSENCE,
+								};
+							}),
+					};
+				}),
+		);
+	return { metrics, providers };
+}
+
+/** The metric figures the Markdown links, in the board's dimension and metric order. */
+export function leaderboardMetricFigures(model: MetricFigureModel): LeaderboardMetricFigure[] {
+	return model.metrics.map((metric) => ({
+		metricId: metric.id,
+		label: metric.label,
+		dimension: metric.dimension,
+		headline: metric.headline,
+		file: metricFigureFile(metric.id),
+		width: FIGURE_WIDTH,
+		charted: metric.rows.length,
+		unmeasured: metric.unmeasured.length,
+	}));
+}
+
+/**
+ * The paragraph under a metric chart's title: what the bar is (a median across sandboxes, one
+ * machine one vote — not a pooled median of trials), what the whisker is, and that the scale is
+ * this chart's own. Counts are read off the rows, as ranges when they disagree, for the same
+ * reason the suite note reads them off its segments: the registry says what was requested, and
+ * the retained count is what the run actually has.
+ */
+export function metricFigureNote(figure: MetricFigure): string {
+	const range = (values: number[]): string => {
+		const low = Math.min(...values);
+		const high = Math.max(...values);
+		return low === high ? `${low}` : `${low}–${high}`;
+	};
+	const sandboxes = range(figure.rows.map((row) => row.sandboxes));
+	const trials = range(figure.rows.map((row) => row.n));
+	const anyInterval = figure.rows.some((row) => row.lo !== row.hi);
+	const singleTrial = trials === "1";
+	const interval = anyInterval
+		? " The whisker is the 95% cluster-bootstrap interval of that median; environments whose intervals the test cannot separate share a rank and a badge."
+		: singleTrial
+			? " One observation per environment, so no interval is drawn."
+			: "";
+	const bar = singleTrial
+		? `Each bar is the environment's one retained value`
+		: `Each bar is the median across ${sandboxes} sandbox${sandboxes === "1" ? "" : "es"} (one machine, one vote) of ${trials} retained trials`;
+	const derived = figure.derived
+		? " Derived from published pricing, not measured: only environments with a published price are charted."
+		: "";
+	return `${bar}.${interval}${derived} The scale is this metric's own, not shared with other charts.`;
+}
+
 /** One chart, ready to be rasterised — or compared, which is why the HTML travels with the
  *  figure the Markdown will link. */
 export interface RenderedLeaderboardFigureHtml {
-	/** What the Markdown links it as — the same value the renderer is handed. */
-	readonly figure: LeaderboardFigure;
+	/** What the Markdown links it as — the same value the renderer is handed. A suite chart
+	 *  (stacked pipeline) or a metric chart (ranked bars); `file` and `width` are common. */
+	readonly figure: LeaderboardFigure | LeaderboardMetricFigure;
 	/** The complete, self-contained chart document. Deterministic: same run, same code, same
 	 *  string — the pixels Chrome makes of it are not, which is why gates hold onto THIS. */
 	readonly html: string;
 }
 
 /**
- * Render every chartable suite in `run` to HTML.
+ * Render every chartable suite in `run`, then every chartable synthetic metric, to HTML.
  *
  * Pure and browser-free — rasterising the documents is the CLI's job
- * (`@sandbox-benchmarks/figures/screenshot`). One map over `data.suites` produces the figure
+ * (`@sandbox-benchmarks/figures/screenshot`). One map over each model's list produces the figure
  * and its document TOGETHER, so the Markdown cannot link an image this function did not
- * produce — there is no second derivation to disagree with.
+ * produce — there is no second derivation to disagree with. Suites come first, so the first
+ * entries are the pipeline charts that lead the document.
+ *
+ * `board` is the leaderboard the metric charts are drawn from. It defaults to a fresh build,
+ * but building one is the most expensive thing in this package (a seeded 10 000-resample
+ * bootstrap per row), so a caller that already has the board — the CLI, the artifact gate —
+ * passes it in rather than paying twice.
  */
-export function renderLeaderboardFigureHtml(run: Run): RenderedLeaderboardFigureHtml[] {
+export function renderLeaderboardFigureHtml(
+	run: Run,
+	board: Leaderboard = buildLeaderboard(run),
+): RenderedLeaderboardFigureHtml[] {
 	const data = benchmarkDataOf(run);
 	const figures = leaderboardFigures(data);
-	return data.suites.map((suite, index) => ({
+	const suites = data.suites.map((suite, index) => ({
 		// Indexed, not looked up: both lists are the same map over `data.suites`.
 		figure: figures[index] as LeaderboardFigure,
 		html: pipelineChartHtml(
 			buildPipelineChartModel(suite, data, suiteFigureNote(suite, data.suites.length)),
 		),
 	}));
+	const model = metricFigureModelOf(run, board);
+	const metricFigures = leaderboardMetricFigures(model);
+	const metrics = model.metrics.map((metric, index) => ({
+		figure: metricFigures[index] as LeaderboardMetricFigure,
+		html: metricChartHtml(buildMetricChartModel(metric, model, metricFigureNote(metric))),
+	}));
+	return [...suites, ...metrics];
 }

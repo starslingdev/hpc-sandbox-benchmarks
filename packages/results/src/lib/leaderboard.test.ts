@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
 import { aggregate, ECONOMICS_METRIC_IDS } from "@sandbox-benchmarks/schema";
-import type { Leaderboard, LeaderboardFigure } from "./leaderboard.ts";
+import type { Leaderboard, LeaderboardFigure, LeaderboardMetricFigure } from "./leaderboard.ts";
 import {
 	buildLeaderboard,
 	DATASET_RUNS_DIR,
@@ -1424,5 +1424,89 @@ describe("the figure dimension: charts above, receipts below", () => {
 		expect(md).not.toContain("is drawn, not tabulated");
 		expect(md).not.toContain("![");
 		expect(md).not.toContain("<img");
+	});
+});
+
+describe("the metric charts: headline above the collapse, the rest beside their tables", () => {
+	const CPU = "node_web_tooling_runs_per_s";
+	const TRIAD = "stream_type_triad";
+	const ADD = "stream_type_add";
+	const board = () =>
+		buildLeaderboard(
+			run([
+				provider("daytona-vm", [
+					metric(CPU, [10, 11]),
+					metric(TRIAD, [100, 110]),
+					metric(ADD, [90, 95]),
+				]),
+				provider("modal-vm", [metric(CPU, [5, 6]), metric(TRIAD, [80, 85]), metric(ADD, [70, 75])]),
+			]),
+		);
+	const chart = (over: Partial<LeaderboardMetricFigure>): LeaderboardMetricFigure => ({
+		metricId: CPU,
+		label: "Node.js web tooling",
+		dimension: "cpu",
+		headline: true,
+		file: `docs/figures/${CPU}.webp`,
+		width: 960,
+		charted: 2,
+		unmeasured: 0,
+		...over,
+	});
+	const charts = () => [
+		chart({}),
+		chart({
+			metricId: TRIAD,
+			label: "STREAM Triad",
+			dimension: "memory",
+			file: `docs/figures/${TRIAD}.webp`,
+		}),
+		chart({
+			metricId: ADD,
+			label: "STREAM Add",
+			dimension: "memory",
+			headline: false,
+			file: `docs/figures/${ADD}.webp`,
+		}),
+	];
+	/** One `## <dimension>` section's lines, up to the next `## `. */
+	const section = (md: string, dimension: string): string[] => {
+		const body = md.slice(md.indexOf(`## ${dimension}\n`) + 1);
+		const end = body.indexOf("\n## ");
+		return (end >= 0 ? body.slice(0, end) : body).split("\n");
+	};
+
+	it("puts the headline chart above the collapse and every other chart under its own heading", () => {
+		const md = renderLeaderboardMarkdown(board(), [], charts());
+		const memory = section(md, "memory");
+		const collapse = memory.indexOf("<details>");
+		const triad = memory.findIndex((line) => line.includes(`src="docs/figures/${TRIAD}.webp"`));
+		const add = memory.findIndex((line) => line.includes(`src="docs/figures/${ADD}.webp"`));
+		const addHeading = memory.findIndex((line) => line.startsWith("### STREAM Add"));
+		expect(triad).toBeGreaterThan(-1);
+		expect(triad).toBeLessThan(collapse);
+		expect(add).toBeGreaterThan(addHeading);
+		// Heading, blank, unit line, blank, takeaway, blank, then the chart — before the table.
+		expect(add).toBe(addHeading + 6);
+		expect(memory[add + 2]?.startsWith("| Rank |")).toBe(true);
+	});
+
+	it("embeds each chart exactly once, at its logical width, with the claim in the alt text", () => {
+		const md = renderLeaderboardMarkdown(board(), [], charts());
+		expect(md.match(new RegExp(`src="docs/figures/${TRIAD}.webp"`, "g"))?.length).toBe(1);
+		expect(md).toContain(
+			`<img src="docs/figures/${CPU}.webp" width="960" alt="Node.js web tooling: 2 environments ranked best-first, with 95% intervals">`,
+		);
+		expect(renderLeaderboardMarkdown(board(), [], [chart({ unmeasured: 1 })])).toContain(
+			"2 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals",
+		);
+	});
+
+	it("explains the metric charts in the preamble only when there are any", () => {
+		expect(renderLeaderboardMarkdown(board(), [], charts())).toContain(
+			"**Every synthetic metric is charted too.**",
+		);
+		expect(renderLeaderboardMarkdown(board(), [], [])).not.toContain("charted too");
+		expect(renderLeaderboardMarkdown(board(), [], [])).not.toContain("<img");
 	});
 });

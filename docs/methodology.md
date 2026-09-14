@@ -51,9 +51,12 @@ order and the emphasis are editorial, and they follow this document's argument:
   *can* do; the real-world suites say what a developer or a CI job actually waits on, which is the
   question the benchmark exists to answer. That section opens with one stacked chart per repo — see
   [The realworld charts](#the-realworld-charts) — and folds its per-task tables behind a `<details>`.
-- **The synthetic microbenchmarks collapse.** `cpu`, `disk`, `memory`, `network` and `system` each load
-  one hardware axis in isolation, so their tables render inside a collapsed `<details>`. The `##`
-  heading stays outside it: a measured axis must never look like one that never ran.
+- **The synthetic microbenchmarks collapse — but each is charted too.** `cpu`, `disk`, `memory`,
+  `network` and `system` each load one hardware axis in isolation, so their tables render inside a
+  collapsed `<details>`. The `##` heading stays outside it: a measured axis must never look like one
+  that never ran. Above the collapse sits the dimension's headline metric as a ranked bar chart, and
+  every other ranked metric's chart sits beside its table inside — see
+  [The metric charts](#the-metric-charts).
 - **Everything else stays expanded.** `lifecycle` and `control-plane` are harness-measured timings of
   the provider's own API — a spawn a user waits on, not a synthetic load — and `economics` is the
   provider's published price. None is a microbenchmark, so none is hidden.
@@ -104,6 +107,32 @@ which provisions the browser build its lockfile pins via `scripts/pin-chrome.sh`
 maintainer can use for a pinned local render), rasterises every chart twice, and fails on a byte
 mismatch. A raster cannot be reviewed as a diff —
 which is exactly why the per-task tables stay one click below the charts as the auditable receipts.
+
+### The metric charts
+
+Every synthetic metric the board ranks for at least two environments is also drawn, in the same
+style as the realworld charts, as one ranked bar chart per metric:
+
+- **The bars are the table's numbers.** Each bar is the metric's median across sandboxes — the
+  value in the table beneath it — and the whisker over it is the table's 95% cluster-bootstrap
+  interval. The chart is built from the board's rows, not from a second derivation, so chart and
+  table cannot disagree.
+- **Best first, and every environment ranked first wears the badge.** The board shares a rank
+  between environments its test could not separate; a statistical tie at the top is two badges,
+  because the chart must not invent a winner the statistics did not find.
+- **Each chart scales to its own maximum.** The units differ from metric to metric, so unlike the
+  realworld charts there is no shared scale to keep, and the caption says so. The scale is the
+  widest interval bound, capped at 15% past the largest value: one very wide interval (a bound 93×
+  its median has been published) would otherwise shrink every bar to a sliver. A whisker past the
+  cap is cut at the chart edge, and the legend discloses the cut.
+- **Environments with no result are listed under the bars** with the outcome and reason the run
+  recorded, exactly as the realworld charts disclose an incomplete pipeline. A derived metric
+  (a published price) lists none: an environment without a price is not a coverage gap.
+
+The metric charts go through the same document → Chrome → WebP pipeline as the realworld charts,
+are written to the same directory, and are gated by the same artifact test: the figure list is
+re-derived from the Run and the board, the document must link exactly that set, and every committed
+WebP must have the promised geometry.
 
 Metrics come from three sources:
 
