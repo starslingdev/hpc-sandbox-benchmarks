@@ -17,6 +17,15 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 WORK_DIR="${SCRIPT_DIR}/work"
 
+# PTS 10.8.4 supplies the installed profile directory as HOME, including its trailing slash.
+# Node's homedir() preserves that slash while path.join() removes it: the pinned Mastra tests
+# consequently construct "~.mastra-..." instead of "~/.mastra-...". Canonicalize the same existing
+# directory before any task or prep runs. The parent PTS wrapper keeps its original environment
+# and still writes test-exit-status into that same directory.
+# shellcheck disable=SC1007
+canonical_home="$(CDPATH= cd -- "${HOME:?HOME must name an existing directory}" && pwd -P)"
+export HOME="$canonical_home"
+
 # Fixed env, never ambient-HOME-dependent, so PTS's env quirks (it runs tests under varying HOME
 # handling) can't leak cache state across runs or providers.
 export XDG_CACHE_HOME="${SCRIPT_DIR}/.cache"

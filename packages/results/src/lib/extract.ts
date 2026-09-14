@@ -5,7 +5,12 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ObservedSpecs, ResultGap, UncataloguedResult } from "@sandbox-benchmarks/schema";
+import type {
+	MetricResult,
+	ObservedSpecs,
+	ResultGap,
+	UncataloguedResult,
+} from "@sandbox-benchmarks/schema";
 import { isGapMarkerFile, isPtsResultFile, parseGapMarker } from "@sandbox-benchmarks/schema";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 import { parseSystemHost } from "./system-specs.ts";
@@ -19,6 +24,7 @@ export interface SampleContribution {
 	appVersion?: string;
 	/** The exact PTS option Arguments that produced these Samples, when non-empty. */
 	arguments?: string;
+	ptsSampleSource?: MetricResult["ptsSampleSource"];
 }
 
 /** A catalogued Metric that was attempted but produced no measurement (every pass errored). */
@@ -136,6 +142,7 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 						out.contributions.push({
 							metricId: mapped.def.id,
 							samples: mapped.samples,
+							ptsSampleSource: measuredEntry.RawString?.length ? "raw-string" : "aggregate-value",
 							sourceFile: filename,
 							...(result.AppVersion ? { appVersion: result.AppVersion } : {}),
 							...(result.Arguments ? { arguments: result.Arguments } : {}),

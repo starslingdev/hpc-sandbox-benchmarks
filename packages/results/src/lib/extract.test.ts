@@ -15,6 +15,7 @@ describe("extractProviderDir", () => {
 			{
 				metricId: "node_web_tooling_runs_per_s",
 				samples: [16.19, 16.3, 16.08],
+				ptsSampleSource: "raw-string",
 				sourceFile: "pts_node-web-tooling.xml",
 			},
 		]);
@@ -45,6 +46,7 @@ describe("extractProviderDir", () => {
 			{
 				metricId: "node_web_tooling_runs_per_s",
 				samples: [16.19, 16.3, 16.08],
+				ptsSampleSource: "raw-string",
 				sourceFile: "pts_node-web-tooling.xml",
 				appVersion: "1.0.1",
 				arguments: "Run: default",
@@ -58,6 +60,7 @@ describe("extractProviderDir", () => {
 			{
 				metricId: "node_web_tooling_runs_per_s",
 				samples: [20.5],
+				ptsSampleSource: "raw-string",
 				sourceFile: "pts_node-web-tooling.xml",
 				arguments: "ok",
 			},
@@ -191,6 +194,7 @@ describe("extractProviderDir", () => {
 				{
 					metricId: "pybench_milliseconds",
 					samples: [474, 476],
+					ptsSampleSource: "raw-string",
 					sourceFile: "pts_pybench.xml",
 				},
 			]);
@@ -214,6 +218,7 @@ describe("extractProviderDir", () => {
 				{
 					metricId: "pybench_milliseconds",
 					samples: [475],
+					ptsSampleSource: "aggregate-value",
 					sourceFile: "pts_z-contaminated.xml",
 				},
 			]);

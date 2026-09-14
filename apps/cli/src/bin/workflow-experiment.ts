@@ -8,11 +8,16 @@ import { describeCoverageShortfall } from "@sandbox-benchmarks/results";
 import { batchCoverage, executeExperimentBatch } from "../lib/execute-experiment.ts";
 import { writeImmutableJson } from "../lib/experiment-artifacts.ts";
 import { githubExperimentStore } from "../lib/experiment-store.ts";
-import { downloadExperimentAttempts, downloadExperimentPlan } from "../lib/experiment-transfer.ts";
+import {
+	artifactDownloadConcurrency,
+	downloadExperimentAttempts,
+	downloadExperimentPlan,
+} from "../lib/experiment-transfer.ts";
 import { githubAccountJournal, githubGitRequest } from "../lib/github-account-journal.ts";
-import { workflowAxes, workflowExperiment } from "../lib/workflow-experiment.ts";
+import { workflowAxes, workflowBatch, workflowExperiment } from "../lib/workflow-experiment.ts";
 
 if (import.meta.main) {
+	const commandStarted = performance.now();
 	try {
 		const [command, account, wave] = process.argv.slice(2);
 		const id = process.env.BENCH_EXPERIMENT_ID ?? process.env.GITHUB_RUN_ID;
@@ -36,15 +41,12 @@ if (import.meta.main) {
 		} else if (command === "execute") {
 			const batchId = process.env.BENCH_BATCH_ID;
 			if (!batchId) throw new Error("batch id is required");
-			const batch = plan.batches.find((entry) => entry.id === batchId);
-			if (
-				!batch ||
-				batch.cells.some(
-					(id) =>
-						plan.cells.find((cell) => cell.id === id)?.provider !== process.env.BENCH_PROVIDER,
-				)
-			)
-				throw new Error("worker provider differs from frozen batch");
+			const batch = workflowBatch(
+				plan,
+				batchId,
+				process.env.BENCH_ACCOUNT,
+				process.env.BENCH_BATCH_PROVIDERS,
+			);
 			const cellBudget = Number(process.env.BENCH_CELL_BUDGET_MINUTES);
 			if (cellBudget < batch.budgetMinutes)
 				throw new Error(
@@ -69,11 +71,15 @@ if (import.meta.main) {
 				);
 			await exitAfterSandboxCleanup(coverage.complete ? 0 : 1);
 		} else if (command === "collect") {
-			await downloadExperimentAttempts(
+			const summary = await downloadExperimentAttempts(
 				store,
 				githubAccountJournal(githubGitRequest()),
 				plan,
 				join(root, "attempts"),
+				{ concurrency: artifactDownloadConcurrency() },
+			);
+			console.log(
+				`experiment collection: ${JSON.stringify({ ...summary, collectCommandMs: performance.now() - commandStarted })}`,
 			);
 		} else
 			throw new Error(

@@ -2,6 +2,7 @@ import { evidenceDigest } from "@sandbox-benchmarks/results";
 import type { ExperimentCell, ExperimentPlan } from "@sandbox-benchmarks/schema";
 import {
 	accountCapacityPolicySchema,
+	providerIdSchema,
 	quotaDomain,
 	SUITES,
 	TARGET_SPEC,
@@ -12,8 +13,33 @@ import {
 	vercelVcrImageRefs,
 } from "@sandbox-benchmarks/schema/toolchain";
 import { resolveDriverArtifact } from "./driver-run.ts";
-import { planExperiment } from "./experiment-plan.ts";
+import { planExperiment, ROUND_BATCH_LIMIT } from "./experiment-plan.ts";
 import { planReplicateMap, selectProviders, selectSuites } from "./matrix.ts";
+
+const workerProvidersSchema = providerIdSchema.array().atLeastLength(1);
+
+/** The credential scope and Actions account queue must match every cell in the frozen batch. */
+export function workflowBatch(
+	plan: ExperimentPlan,
+	id: string,
+	account: string | undefined,
+	providersJson: string | undefined,
+) {
+	const providers = workerProvidersSchema.assert(JSON.parse(providersJson ?? "[]"));
+	const batch = plan.batches.find((entry) => entry.id === id);
+	const expected = new Set(
+		plan.cells.filter((cell) => batch?.cells.includes(cell.id)).map((cell) => cell.provider),
+	);
+	if (
+		!batch ||
+		batch.quotaDomain !== account ||
+		providers.length !== expected.size ||
+		new Set(providers).size !== expected.size ||
+		providers.some((provider) => !expected.has(provider))
+	)
+		throw new Error("worker account or providers differ from frozen batch");
+	return batch;
+}
 
 /** Resolve declarations without credentials. Workers must independently match these identities. */
 export function workflowExperiment(env: NodeJS.ProcessEnv, createdOn: string): ExperimentPlan {
@@ -75,7 +101,11 @@ export function workflowExperiment(env: NodeJS.ProcessEnv, createdOn: string): E
 	}
 	const plan = planExperiment({ id, sha, createdOn, cells }, capacity);
 	workflowAxes(plan);
-	for (const account of plan.accounts) workflowAxes(plan, account.quotaDomain);
+	for (const account of plan.accounts) {
+		workflowAxes(plan, account.quotaDomain);
+		for (const wave of ["synthetic", "realworld"] as const)
+			workflowAxes(plan, account.quotaDomain, wave);
+	}
 	return plan;
 }
 
@@ -102,7 +132,12 @@ export function workflowAxes(plan: ExperimentPlan, account?: string, wave?: stri
 		(batch) => batch.quotaDomain === account && batch.wave === wave,
 	);
 	if (selected.length === 0) return [];
-	if (selected.length > 256) throw new Error("wave requires explicit batch collection partitions");
+	// The reusable account workflow releases this whole axis at once; planner rounds do not add
+	// another sequential scheduling layer. Refuse overflow before freezing an unexecutable plan.
+	if (selected.length > ROUND_BATCH_LIMIT)
+		throw new Error(
+			`account ${account} ${wave} wave exceeds ${ROUND_BATCH_LIMIT} queued batches; partition the experiment`,
+		);
 	return selected.map((batch) => {
 		const cell = plan.cells.find((entry) => entry.id === batch.cells[0]);
 		if (!cell || batch.quotaDomain !== quotaDomain(cell.provider))
@@ -112,7 +147,13 @@ export function workflowAxes(plan: ExperimentPlan, account?: string, wave?: stri
 		);
 		return {
 			batch: batch.id,
-			provider: cell.provider,
+			providers: [
+				...new Set(
+					plan.cells
+						.filter((entry) => batch.cells.includes(entry.id))
+						.map((entry) => entry.provider),
+				),
+			],
 			suite: suites.size === 1 ? [...suites][0] : batch.wave,
 			wave: batch.wave,
 		};

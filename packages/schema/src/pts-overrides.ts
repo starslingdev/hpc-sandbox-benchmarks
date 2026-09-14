@@ -178,9 +178,9 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	realworld_openclaw_task_git_clone: { dimension: "realworld", label: "OpenClaw: git clone" },
 	realworld_openclaw_task_cold_install: { dimension: "realworld", label: "OpenClaw: cold install" },
 	realworld_openclaw_task_lint_oxlint: { dimension: "realworld", label: "OpenClaw: lint (Oxlint)" },
-	realworld_openclaw_task_lint_extensions: {
+	realworld_openclaw_task_lint_extensions_all: {
 		dimension: "realworld",
-		label: "OpenClaw: lint (extension channels)",
+		label: "OpenClaw: lint (all extensions)",
 	},
 	realworld_openclaw_task_typecheck: {
 		dimension: "realworld",

@@ -31,6 +31,8 @@ export_artifacts() {
 }
 trap 'export_artifacts' EXIT
 
+node --test /repo/lib/pts/realworld/openclaw-lint.test.mjs
+
 echo "=== [selftest] install PTS + php ==="
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -50,6 +52,7 @@ cd "$FIXTURE"
 cp "$SELFTEST_SRC/fixture-package.json" package.json
 mkdir -p scripts
 cp "$SELFTEST_SRC/fixture-hang.mjs" scripts/hang.mjs
+cp "$SELFTEST_SRC/fixture-home.mjs" scripts/home.mjs
 printf 'node_modules/\ndist/\n' > .gitignore
 pnpm install --silent
 git init -q .
@@ -73,14 +76,12 @@ sed -e "s|@PIN_SHA@|${PIN_SHA}|g" -e "s|@FIXTURE@|${FIXTURE}|g" "$SELFTEST_SRC/t
 cp /repo/packages/schema/src/pts-profiles/local/realworld-mastra-1.0.0/results-definition.xml \
 	"$PROFILE/results-definition.xml"
 
-echo "=== [selftest] cgroup v2 init-leaf dance ==="
-# The runner's memory-cap path needs +memory enabled in this container's cgroup subtree. Two
-# blockers, handled in order: (1) the mount may be read-only (Docker Desktop; native-Linux Docker
-# with a private cgroupns mounts it rw) — remounted below; (2) the no-internal-processes rule:
-# enabling +memory in the namespaced root's subtree_control fails EBUSY while processes sit in
-# that root (--privileged does NOT fix this). Move every root-cgroup process into an init leaf
-# first, then enable. Hard-fail when impossible: this selftest is a local dev tool, and silently
-# skipping the containment assertion would make it worthless.
+echo "=== [selftest] writable cgroup v2 mount ==="
+# Docker Desktop mounts cgroup2 read-only; the container's SYS_ADMIN capability permits the
+# remount below. Leave controller enablement and process migration to the production runner:
+# duplicating that setup here hid its namespace-root recovery path and a streaming cgroup.procs
+# read missed live entries under Docker --init. The assertions below require the real cap to
+# engage, admit the fixture and actually OOM-kill it; a silent fallback cannot pass.
 if [ ! -f /sys/fs/cgroup/cgroup.controllers ]; then
 	echo "FAIL: /sys/fs/cgroup is not cgroup v2 — the selftest needs Docker with cgroup v2 (default on modern Linux and Docker Desktop)" >&2
 	exit 1
@@ -95,13 +96,7 @@ if ! mkdir -p /sys/fs/cgroup/init 2>/dev/null; then
 	}
 	mkdir -p /sys/fs/cgroup/init
 fi
-while read -r pid; do
-	echo "$pid" > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || true # tolerate per-PID races
-done < /sys/fs/cgroup/cgroup.procs
-echo +memory > /sys/fs/cgroup/cgroup.subtree_control || {
-	echo "FAIL: could not enable the memory controller in the container's cgroup root" >&2
-	exit 1
-}
+rmdir /sys/fs/cgroup/init
 
 echo "=== [selftest] run the production path ==="
 export REPO_ROOT="$WORK"

@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
-<!--Phoronix Test Suite local profile: openclaw/openclaw's own CI tasks (ENG-138), timed per phase.-->
+<!--Phoronix Test Suite local profile: pinned OpenClaw developer workloads (ENG-138), timed per phase.-->
 <PhoronixTestSuite>
   <TestInformation>
     <Title>OpenClaw CI Tasks</Title>
     <AppVersion>623534400684eca7c451cf587189fae714f2abe2</AppVersion>
-    <Description>Runs the CI tasks openclaw/openclaw's own pipeline runs -- clone, cold install (its exact CI invocation), lint (Oxlint), extension-channel lint (type-aware Oxlint), typecheck (tsgo), test-tree typecheck (tsgo) -- against a pinned main-HEAD checkout, timing each phase per sandbox provider.</Description>
+    <Description>Runs pinned OpenClaw developer workloads -- clone, cold install (its exact CI invocation), full and all-extension type-aware Oxlint in bounded batches preserving upstream file selection and rules, typecheck (tsgo), and test-tree typecheck (tsgo) -- timing each phase per sandbox provider.</Description>
     <ResultScale>Seconds</ResultScale>
     <Proportion>LIB</Proportion>
     <Executable>realworld-run</Executable>
@@ -40,8 +40,8 @@
           <Value>lint_oxlint</Value>
         </Entry>
         <Entry>
-          <Name>Lint Extensions</Name>
-          <Value>lint_extensions</Value>
+          <Name>Lint Extensions All</Name>
+          <Value>lint_extensions_all</Value>
         </Entry>
         <Entry>
           <Name>Typecheck</Name>

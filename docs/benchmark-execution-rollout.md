@@ -6,18 +6,21 @@ This is an implementation status record, not a claim that the live fleet meets t
 
 - Schema 1 experiment plans and attempt receipts; schema 7 Run linkage with historical Run readers.
 - Pure `planExperiment`: unchanged logical replicate identities, default capacity one, CPU/RAM/GPU
-  limits, phase budgets plus one 15-minute host margin, 180-minute batch ceiling, collection rounds
+  limits, phase budgets plus one 15-minute host margin, 330-minute batch ceiling, collection rounds
   of at most 64 batches, and uniform reviewed exclusions. Retries default to zero. A round is the
   approval unit: its batch jobs are created together (the account concurrency queue, not
-  `max-parallel`, serialises them), so one `privileged` approval releases a whole round, and 64 keeps
-  a released round under the 100 pending jobs a `queue: max` group holds before cancelling overflow.
+  `max-parallel`, serialises them). The workflow releases a whole account wave and rejects more than
+  64 batches in either wave before dispatch, keeping it under the 100 pending jobs a `queue: max`
+  group holds before cancelling overflow. Pure offline plans can retain multiple collection rounds;
+  a workflow request that needs them must be explicitly partitioned.
 - Pure coverage evaluation and deterministic whole-attempt aggregation. Missing work, bad provenance,
   conflicting attempts, unapproved retries, missing metrics and unknown cleanup block completeness.
 - File-boundary verification of normalized and raw digests; atomic, no-overwrite JSON publication.
 - Account concurrency groups shared by benchmark/smoke, toolchain validation, and Modal GPU jobs,
-  with `queue: max` and no cancellation of running work. The per-cell group expression is generated
-  from each provider's registry `quotaDomain` (`bun run generate-provider-wiring`), the same lookup
-  that names the plan's batches and the journal branch.
+  with `queue: max` and no cancellation of running work. The CPU worker binds its group directly to
+  the frozen batch's account, verifies the complete provider list before admission, and schedules
+  compatible variants in one pool. The bake lane resolves that same account through the provider
+  registry (`bun run generate-provider-wiring`); both use the domain naming the journal branch.
 - Required-provider admission in the shared benchmark workflow. A failed Namespace credential setup
   can still reach normalization, but cannot produce a green all-skipped provider job.
 - Separate workflow-attempt artifact names, unconditional diagnostic upload, and upload paths limited
@@ -57,20 +60,35 @@ This is an implementation status record, not a claim that the live fleet meets t
 
 ## Integrated execution
 
-Matrix and smoke now freeze one immutable plan and dispatch account → collection round → batch.
+Matrix and smoke freeze one immutable plan. Matrix releases two waves: synthetic, then real-world.
+Real-world jobs can run after a synthetic failure; completeness still requires every planned cell.
+Within each wave, jobs dispatch by account and bounded batch.
 Every allocating worker verifies the plan and source revision, reconciles its account once, and runs
-one bounded wave through the existing harness and normalizer. Different suites with compatible
-provider allocations share a wave up to the account's sandbox and resource caps. Each cell retains
-its suite, replica index, pass count, and phase deadlines; the batch reserves the longest member's
-budget. Collection rounds proceed sequentially, and the account concurrency group serializes batches;
-independent accounts can proceed together.
+one rolling pool through the existing harness and normalizer. Different suites and provider variants
+with compatible resource requirements share that pool up to the account's sandbox and resource caps.
+Each cell retains its provider, suite, artifact, replica index, pass count, and phase deadlines.
+The batch budget reserves enough groups of the longest member's budget to finish every cell.
+The account concurrency group serializes batches; independent accounts can proceed together.
 
 Bounded publication uses each suite's fixed pass default (two unless the suite declares another
 count). An explicit fixed-pass override changes every selected suite's workload identity; explicit
-convergence remains inadmissible. With a 30-sandbox cap, all nine suites use 54 sandboxes per provider
-in waves of 30 and 24, preserving three replicas per synthetic suite and twelve per real-world suite.
-These are peak wave sizes, not a promise of 30 continuously occupied slots: the next batch waits for
-all current members and cleanup to finish. Scheduling changes apply only to newly frozen plans.
+convergence remains inadmissible. All nine suites use 54 sandboxes per provider: 18 synthetic cells
+(three replicas per suite) and 36 real-world cells (twelve replicas per suite). With an account cap of
+75, Modal VM and gVisor share one 36-cell synthetic batch and one 72-cell real-world batch, so both
+variants can run every cell concurrently. Smaller caps refill the pool as allocations finish and
+their release records are persisted. Unresolved cleanup, a journal failure, or a typed vendor
+concurrent-limit rejection stops new admissions; already admitted peers still finish and release
+their own allocations. A rejected capacity declaration must be reconciled before a fresh experiment;
+the worker does not silently lower its frozen policy or replay creates. Scheduling changes apply
+only to newly frozen plans.
+
+For PTS measurements, completeness requires positive measured trials matching the frozen count
+exactly. `RawString` proves individual samples. PTS 10.8.4 omits that string for a single trial equal
+to the final value; publication accepts that case only when the original XML's `test-run-times`
+metadata proves exactly one successful execution. A headline `Value` alone is insufficient.
+The normalizer records sample origin, and publication independently checks the original
+digest-verified XML, including historical shards that predate the origin field. Missing, partial,
+extra, substituted, or unproven aggregate evidence blocks publication without rewriting the attempt.
 
 Each attempt uploads independently. The CLI performs those uploads (and the plan's) through
 `@actions/artifact`, which needs the run-scoped artifact runtime GitHub injects only into action
@@ -118,7 +136,11 @@ uncoordinated legacy writers or direct development credentials.
 Publication remains gated on complete evidence and live admission. No provider canary or workload
 baseline result has been inferred from offline tests.
 
-## Remaining rollout work
+## Initial rollout checkpoints
+
+This checklist records the initial rollout state. For the current scheduling, workload and
+publication fixes, verified live evidence, and outstanding validation, see the
+[2026-09-13 CPU fixes report](./cpu-benchmark-fixes-2026-09-13.md).
 
 1. Provision protected account journals for the remaining accounts and run each account's integrated
    privileged canary. Done for `tama` on 2026-09-10: branch `benchmark-account-journal-tama` seeded

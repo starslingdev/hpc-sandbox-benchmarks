@@ -66,14 +66,13 @@ export function suiteFigureNote(suite: PipelineSuite, chartCount: number): strin
 	const trials = low === high ? `${low}` : `${low}–${high}`;
 	const plural = low === 1 && high === 1 ? "trial" : "trials";
 	const scale = chartCount > 1 ? " All charts share one time scale." : "";
-	// A declared task NO environment completed is dropped from every bar — which is exactly
-	// why the caption must say so: without this sentence a universally-failed task simply
-	// vanishes and the chart presents a failed suite as a completed comparison.
+	// Missing measurements must be disclosed. The current catalog can also name tasks added
+	// after a historical run, so absence alone does not establish a failed or skipped execution.
 	const dropped =
 		suite.droppedTasks.length === 0
 			? ""
-			: ` **${suite.droppedTasks.join("**, **")}** failed or was skipped in every ` +
-				`environment and is excluded from all bars.`;
+			: ` Tasks without recorded measurements in this run are excluded from all bars: ` +
+				`**${suite.droppedTasks.join("**, **")}**.`;
 	return (
 		`Each segment is that task's median over ${trials} retained ${plural}; the bar is their sum, ` +
 		`so it is the cost of the pipeline and not the timing of any single run.${dropped}${scale}`

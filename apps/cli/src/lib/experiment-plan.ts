@@ -22,14 +22,13 @@ export interface AccountCapacity {
  */
 export const ROUND_BATCH_LIMIT = 64;
 
-// Suite workloads retain their own identities and deadlines inside a concurrent wave.
+// Cells retain their own provider/artifact identities and deadlines. Only requirements affecting
+// the shared resource window belong here; a different Modal isolation type does not own more quota.
 function allocationIdentity(cell: ExperimentCell): string {
 	return evidenceDigest({
-		provider: cell.provider,
 		quotaDomain: cell.quotaDomain,
 		target: cell.target,
 		gpu: cell.gpu ?? null,
-		artifactIdentity: cell.artifactIdentity,
 		environmentRevision: cell.environmentRevision,
 		startupMinutes: cell.startupMinutes,
 	});
@@ -92,11 +91,11 @@ export function planExperiment(
 			identity: allocationIdentity(cell),
 		});
 	}
-	// Group by (quotaDomain, provider, wave, allocationIdentity), preserving plan order.
+	// One owner schedules compatible provider variants within the same account and wave.
 	const groups: Prepared[][] = [];
 	const groupIndex = new Map<string, number>();
 	for (const entry of prepared) {
-		const key = `${entry.cell.quotaDomain}\0${entry.cell.provider}\0${entry.wave}\0${entry.identity}`;
+		const key = `${entry.cell.quotaDomain}\0${entry.wave}\0${entry.identity}`;
 		let index = groupIndex.get(key);
 		if (index === undefined) {
 			index = groups.length;

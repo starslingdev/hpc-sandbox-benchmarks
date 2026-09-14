@@ -72,6 +72,7 @@ export {
 // cross-provider Metric Catalog). Normal benchmark normalization should keep using normalizeResultsTree.
 export { parsePtsComposite, resultSamples } from "./lib/pts.ts";
 export type { PtsComposite, PtsResult } from "./lib/pts-schema.ts";
+export { type PtsTrialEvidence, readPtsTrialEvidence } from "./lib/pts-trial-evidence.ts";
 export { rederiveRunEconomics } from "./lib/reprice.ts";
 export {
 	type CompareRunsOptions,

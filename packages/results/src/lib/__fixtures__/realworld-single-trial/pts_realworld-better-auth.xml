@@ -1,0 +1,200 @@
+<?xml version="1.0"?>
+<!--Phoronix Test Suite v10.8.4-->
+<PhoronixTestSuite>
+  <Generated>
+    <Title>benchmark-pts-realworld-better-auth</Title>
+    <LastModified>2026-09-13 21:48:29</LastModified>
+    <TestClient>Phoronix Test Suite v10.8.4</TestClient>
+    <Description>KVM testing on Debian GNU/Linux 13 via the Phoronix Test Suite.</Description>
+  </Generated>
+  <System>
+    <Identifier>ci</Identifier>
+    <Hardware>Processor: AMD EPYC (4 Cores), Memory: 8GB, Disk: 40GB</Hardware>
+    <Software>OS: Debian GNU/Linux 13, Kernel: 6.1.176 (x86_64), Compiler: GCC 14.2.0, File-System: ext4, System Layer: KVM</Software>
+    <User>root</User>
+    <TimeStamp>2026-09-13 21:41:04</TimeStamp>
+    <TestClientVersion>10.8.4</TestClientVersion>
+    <Notes></Notes>
+    <JSON>{"cpu-microcode":"0x1000065","kernel-extra-details":"Transparent Huge Pages: madvise","security":"gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Mitigation of safe RET + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy\/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced \/ Automatic IBRS; IBPB: conditional; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Mitigation of Clear buffers + tsx_async_abort: Not affected + vmscape: Not affected"}</JSON>
+  </System>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>git_clone</Arguments>
+    <Description>Task: Git Clone</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>2.081</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"4.89"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>cold_install</Arguments>
+    <Description>Task: Cold Install</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>12.163</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"15.73"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>build</Arguments>
+    <Description>Task: Build</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>66.603</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"138.61"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_biome</Arguments>
+    <Description>Task: Lint Biome</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>3.091</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"7.15"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_deps</Arguments>
+    <Description>Task: Lint Deps Knip</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>11.256</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"22.69"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_format</Arguments>
+    <Description>Task: Lint Format</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>2.869</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"6.68"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_spell</Arguments>
+    <Description>Task: Lint Spell</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>7.395</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"15.38"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_types</Arguments>
+    <Description>Task: Lint Types</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>34.118</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"35.63"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>lint_packages</Arguments>
+    <Description>Task: Lint Packages</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>2.59</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"4.07"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+  <Result>
+    <Identifier>local/realworld-better-auth-1.0.0</Identifier>
+    <Title>Better-Auth CI Tasks</Title>
+    <AppVersion>6f3ba45639579da152b69e8e5342e02f28288670</AppVersion>
+    <Arguments>typecheck</Arguments>
+    <Description>Task: Typecheck</Description>
+    <Scale>Seconds</Scale>
+    <Proportion>LIB</Proportion>
+    <DisplayFormat>BAR_GRAPH</DisplayFormat>
+    <Data>
+      <Entry>
+        <Identifier>ci</Identifier>
+        <Value>47.947</Value>
+        <RawString></RawString>
+        <JSON>{"test-run-times":"96.90"}</JSON>
+      </Entry>
+    </Data>
+  </Result>
+</PhoronixTestSuite>

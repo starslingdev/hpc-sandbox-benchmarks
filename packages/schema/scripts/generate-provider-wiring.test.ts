@@ -141,6 +141,23 @@ describe("provider wiring projections", () => {
 		);
 	});
 
+	test("a shared batch scopes credentials to every frozen provider without creating separate owners", () => {
+		const batch = renderWorkflowInputs("batch", "");
+		expect(batch).toContain(
+			"(contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_ID",
+		);
+		expect(batch).toContain(
+			"contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET",
+		);
+		expect(batch).not.toContain("matrix.provider");
+		expect(renderAccountConcurrencyGroup("", "batch")).toBe(
+			`group: benchmark-account-\${{ inputs.account }}`,
+		);
+		expect(renderPreAuthCondition("namespace-token", "batch", "")).toBe(
+			"if: contains(fromJSON(inputs.providers), 'namespace')",
+		);
+	});
+
 	test("projects all user-facing local, secret, and variable documentation", () => {
 		const local = renderEnvExample();
 		const secrets = renderCiSecretTable();
@@ -193,7 +210,7 @@ describe("provider wiring projections", () => {
 
 	test("requires exact owner-aware pre-auth steps in benchmark, bake, and promote", () => {
 		const lanes = [
-			{ file: ".github/workflows/bench-suite.yml", job: "bench", lane: "matrix" as const },
+			{ file: ".github/workflows/bench-suite.yml", job: "bench", lane: "batch" as const },
 			{ file: ".github/workflows/toolchain-image.yml", job: "bake", lane: "matrix" as const },
 			{
 				file: ".github/workflows/toolchain-image.yml",

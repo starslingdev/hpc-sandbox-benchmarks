@@ -12,7 +12,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { AttemptWithRun } from "@sandbox-benchmarks/results";
-import { evidenceDigest, verifyExperimentPlan } from "@sandbox-benchmarks/results";
+import {
+	evidenceDigest,
+	readPtsTrialEvidence,
+	verifyExperimentPlan,
+} from "@sandbox-benchmarks/results";
 import {
 	cleanupReceiptSchema,
 	executionReceiptSchema,
@@ -73,6 +77,9 @@ export function readExperimentAttempt(directory: string): AttemptWithRun {
 	return {
 		evidence,
 		...(run ? { run } : {}),
+		...(run && evidence.rawDigest
+			? { ptsTrials: readPtsTrialEvidence(join(directory, "raw"), run) }
+			: {}),
 		...(evidence.rawDigest ? readAttemptReceipts(join(directory, "raw")) : {}),
 	};
 }

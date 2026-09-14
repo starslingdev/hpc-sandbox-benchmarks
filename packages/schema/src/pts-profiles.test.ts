@@ -40,6 +40,15 @@ function parseEnvFile(text: string): Record<string, string> {
 describe("realworld profiles: Task Option <-> target.env consistency", () => {
 	const dirs = realworldProfileDirs();
 
+	it("rejects empty lint work and preserves the exact selected file union while batching", () => {
+		const result = Bun.spawnSync([
+			process.execPath,
+			"test",
+			join(import.meta.dir, "../../../lib/pts/realworld/openclaw-lint.test.mjs"),
+		]);
+		expect(result.exitCode, result.stderr.toString()).toBe(0);
+	});
+
 	it("finds at least one realworld profile (the gate isn't silently vacuous)", () => {
 		expect(dirs.length).toBeGreaterThan(0);
 	});

@@ -36,6 +36,17 @@ const validRun = {
 };
 
 describe("Run schema", () => {
+	it("retains historical unknown sample origin but rejects aggregate Value as multiple PTS trials", () => {
+		const historical = parseRun(structuredClone(validRun));
+		const metric = historical.providers[0]?.metrics[0];
+		if (!metric) throw new Error("fixture has no metric");
+		expect(metric.ptsSampleSource).toBeUndefined();
+		metric.ptsSampleSource = "raw-string";
+		expect(parseRun(historical).providers[0]?.metrics[0]?.ptsSampleSource).toBe("raw-string");
+		metric.ptsSampleSource = "aggregate-value";
+		expect(() => parseRun(historical)).toThrow("one aggregate Value sample");
+	});
+
 	it("accepts a well-formed Run and infers through to the nested aggregates", () => {
 		const run = parseRun(validRun);
 		expect(run.providers[0]?.metrics[0]?.aggregates.n).toBe(3);

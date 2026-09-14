@@ -145,8 +145,22 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 				"${{ fromJSON(needs.plan.outputs.axis) }}",
 			"bench-account.yml: axis must come from frozen plan",
 		);
+		const inputs = asRecord(caller.with, "bench-account.yml");
+		expect(
+			inputs.account === "${{ inputs.account }}" &&
+				inputs.providers === "${{ toJSON(matrix.providers) }}",
+			"bench-account.yml: preserve the frozen account and complete batch provider list",
+		);
 	}
 	const worker = job("bench-suite.yml", "bench");
+	expect(
+		worker.strategy === undefined,
+		"worker must own one shared account pool, not fan out variants",
+	);
+	expect(
+		asRecord(worker.concurrency, "worker").group === "benchmark-account-${{ inputs.account }}",
+		"worker must exclude other allocating jobs in the same frozen account",
+	);
 	const step = stepByName(worker, RUN_STEP, "bench-suite.yml");
 	expect(
 		step?.run === "bun apps/cli/src/bin/workflow-experiment.ts execute",
@@ -155,6 +169,11 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 	expect(
 		asRecord(step?.env, "worker").BENCH_BATCH_ID === "${{ inputs.batch_id }}",
 		"worker must bind batch identity",
+	);
+	expect(
+		asRecord(step?.env, "worker").BENCH_ACCOUNT === "${{ inputs.account }}" &&
+			asRecord(step?.env, "worker").BENCH_BATCH_PROVIDERS === "${{ inputs.providers }}",
+		"worker must validate its queue and credential scope against the frozen batch",
 	);
 	const publish = job("bench-matrix.yml", "publish");
 	expect(

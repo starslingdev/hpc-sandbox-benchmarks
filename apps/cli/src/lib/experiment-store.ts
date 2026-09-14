@@ -10,6 +10,7 @@ const artifactPage = type({
 		name: "string",
 		expired: "boolean",
 		workflow_run: { id: "number.integer > 0" },
+		"size_in_bytes?": "number.integer >= 0",
 	}).array(),
 });
 const workflowRunId = type(/^[1-9][0-9]*$/);

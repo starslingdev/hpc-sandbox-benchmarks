@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExecResult, SandboxSession } from "@sandbox-benchmarks/driver";
+import type { ExecResult, ProviderId, SandboxSession } from "@sandbox-benchmarks/driver";
 import { loadDriverModule } from "@sandbox-benchmarks/drivers";
 import { evaluateExperiment } from "@sandbox-benchmarks/results";
 import { TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema/toolchain";
@@ -40,6 +40,20 @@ const ok = (stdout = "", code = 0): ExecResult => ({
 	durationMs: 1,
 	truncated: false,
 });
+
+function rollingPlan(id: string, replicas = 2, capacity = 1) {
+	return workflowExperiment(
+		{
+			GITHUB_RUN_ID: id,
+			GITHUB_SHA: plan.sha,
+			BENCH_PROVIDERS: "tama",
+			BENCH_SUITES: "cpu-node",
+			BENCH_REPLICAS: String(replicas),
+			BENCH_ACCOUNT_CAPACITY: JSON.stringify({ tama: { sandboxes: capacity } }),
+		},
+		"2026-09-13",
+	);
+}
 async function fixture(name: string, failCleanup = false) {
 	const directory = join(root, name);
 	mkdirSync(directory, { recursive: true });
@@ -52,7 +66,10 @@ async function fixture(name: string, failCleanup = false) {
 				"../../../../packages/results/src/lib/__fixtures__/daytona-vm/pts_node-web-tooling.xml",
 				import.meta.url,
 			),
-		),
+			"utf8",
+		)
+			.replace("16.19:16.3:16.08", "16.19:16.3")
+			.replace("<Value>16.19</Value>", "<Value>16.245</Value>"),
 	);
 	const tar = Bun.spawnSync(["tar", "-czf", "-", "benchmark-results"], { cwd: payloadRoot });
 	if (tar.exitCode !== 0) throw new Error("fixture archive failed");
@@ -172,6 +189,345 @@ test("cleanup failure retains account ownership and blocks publication", async (
 	).toBe(true);
 	expect(f.records.filter((record) => record.kind === "released")).toHaveLength(0);
 	expect(batchIsComplete(plan, f.options.root, attempts)).toBe(false);
+});
+
+test("rolling admission stops after uncertain cleanup and preserves every pending cell", async () => {
+	const f = await fixture("rolling-cleanup", true);
+	const constrained = rollingPlan("rolling-cleanup");
+	expect(constrained.batches[0]?.cells).toHaveLength(2);
+	const attempts = await executeExperimentBatch({ ...f.options, plan: constrained });
+	expect(f.peak()).toBe(1);
+	expect(f.events.filter((event) => event === "create")).toHaveLength(1);
+	expect(attempts).toHaveLength(2);
+	expect(attempts.map((attempt) => attempt.cleanup)).toEqual(["unresolved", "not-allocated"]);
+	expect(attempts[1]?.diagnostic).toContain("admission stopped");
+	expect(f.records.filter((record) => record.kind === "intent")).toHaveLength(1);
+});
+
+test("ambiguous creates and unacknowledged releases stop rolling admission", async () => {
+	const { DriverError, FailedCreateCleanupError } = await import("@sandbox-benchmarks/driver");
+	for (const kind of ["create", "release"] as const) {
+		const f = await fixture(`rolling-${kind}`);
+		const constrained = rollingPlan(`rolling-${kind}`);
+		let creates = 0;
+		const open = f.options.open;
+		f.options.open = async () => {
+			const opened = await open();
+			return {
+				...opened,
+				driver: {
+					...opened.driver,
+					create: async (request, options) => {
+						creates += 1;
+						if (kind === "create")
+							throw new FailedCreateCleanupError(
+								new Error("cleanup unknown"),
+								new DriverError("create-failed", "boot interrupted", { provider: "tama" }),
+								{
+									provider: "tama",
+									locator: { kind: "name", value: "bench-unknown" },
+									cleanup: async () => {
+										throw new Error("cleanup unknown");
+									},
+								},
+							);
+						return opened.driver.create(request, options);
+					},
+				},
+			};
+		};
+		const append = f.options.journal.append;
+		f.options.journal.append = async (record) => {
+			if (kind === "release" && record.kind === "released")
+				throw new Error("release not acknowledged");
+			await append(record);
+		};
+		const attempts = await executeExperimentBatch({ ...f.options, plan: constrained });
+		expect(creates).toBe(1);
+		expect(attempts).toHaveLength(2);
+		expect(attempts[1]?.cleanup).toBe("not-allocated");
+		expect(attempts[1]?.diagnostic).toContain("admission stopped");
+		expect(f.records.filter((record) => record.kind === "intent")).toHaveLength(1);
+	}
+});
+
+test("successful cleanup refills slots and a stopped account still releases healthy peers", async () => {
+	const clean = await fixture("rolling-success");
+	const successful = await executeExperimentBatch({
+		...clean.options,
+		plan: rollingPlan("rolling-success"),
+	});
+	expect(successful.every((attempt) => attempt.outcome === "completed")).toBe(true);
+	expect(clean.peak()).toBe(1);
+	expect(clean.events.filter((event) => event === "create")).toHaveLength(2);
+	expect(clean.present.size).toBe(0);
+
+	const f = await fixture("rolling-peer");
+	const firstFinished = Promise.withResolvers<void>();
+	const open = f.options.open;
+	f.options.open = async () => {
+		const opened = await open();
+		return {
+			...opened,
+			driver: {
+				...opened.driver,
+				create: async (request, options) => {
+					const session = await opened.driver.create(request, options);
+					const first = session.sandboxRef.id === "sandbox-1";
+					return {
+						...session,
+						exec: async (command, options) => {
+							if (!first && command.includes("mise run benchmark:cpu:node"))
+								await firstFinished.promise;
+							return session.exec(command, options);
+						},
+						destroy: async (options) => {
+							if (first) throw new Error("cleanup uncertain");
+							await session.destroy(options);
+						},
+					};
+				},
+			},
+		};
+	};
+	const upload = f.options.store.upload;
+	f.options.store.upload = async (name, path) => {
+		await upload(name, path);
+		if (readExperimentAttempt(path).evidence.cellId.endsWith("-r0")) firstFinished.resolve();
+	};
+	const attempts = await executeExperimentBatch({
+		...f.options,
+		plan: rollingPlan("rolling-peer", 3, 2),
+	});
+	expect(attempts.map((attempt) => attempt.cleanup)).toEqual([
+		"unresolved",
+		"confirmed",
+		"not-allocated",
+	]);
+	expect(attempts[1]?.outcome).toBe("completed");
+	expect(f.events.filter((event) => event === "create")).toHaveLength(2);
+	expect(f.records.filter((record) => record.kind === "released")).toHaveLength(1);
+	expect(f.present.size).toBe(1);
+});
+
+test("a vendor concurrent limit stops refill while accepted peers finish and release", async () => {
+	const { DriverError } = await import("@sandbox-benchmarks/driver");
+	const f = await fixture("rolling-capacity");
+	const rejectionRecorded = Promise.withResolvers<void>();
+	const open = f.options.open;
+	let creates = 0;
+	f.options.open = async () => {
+		const opened = await open();
+		return {
+			...opened,
+			driver: {
+				...opened.driver,
+				create: async (request, options) => {
+					if (++creates > 1)
+						throw new DriverError("create-failed", "vendor refused allocation", {
+							provider: "tama",
+							vendorHttpStatus: 429,
+							vendorMessage: "concurrent sandbox resource limit reached",
+						});
+					const session = await opened.driver.create(request, options);
+					return {
+						...session,
+						exec: async (command, options) => {
+							if (command.includes("mise run benchmark:cpu:node")) await rejectionRecorded.promise;
+							return session.exec(command, options);
+						},
+					};
+				},
+			},
+		};
+	};
+	const upload = f.options.store.upload;
+	f.options.store.upload = async (name, path) => {
+		await upload(name, path);
+		if (readExperimentAttempt(path).evidence.cellId.endsWith("-r1")) rejectionRecorded.resolve();
+	};
+	const attempts = await executeExperimentBatch({
+		...f.options,
+		plan: rollingPlan("rolling-capacity", 3, 2),
+	});
+	expect(creates).toBe(2);
+	expect(attempts).toHaveLength(3);
+	expect(attempts[0]?.outcome).toBe("completed");
+	expect(attempts.map((attempt) => attempt.cleanup)).toEqual([
+		"confirmed",
+		"not-allocated",
+		"not-allocated",
+	]);
+	expect(attempts[2]?.measurementStarted).toBe(false);
+	expect(attempts[2]?.diagnostic).toContain("reconcile BENCH_ACCOUNT_CAPACITY");
+	expect(f.records.filter((record) => record.kind === "intent")).toHaveLength(2);
+	expect(f.records.filter((record) => record.kind === "released")).toHaveLength(2);
+	expect(f.present.size).toBe(0);
+});
+
+test("a journal failure blocks peer refill before the failed allocation finishes cleanup", async () => {
+	const f = await fixture("journal-failure-during-cleanup");
+	const cleanupEntered = Promise.withResolvers<void>();
+	const finishCleanup = Promise.withResolvers<void>();
+	const open = f.options.open;
+	f.options.open = async () => {
+		const opened = await open();
+		return {
+			...opened,
+			driver: {
+				...opened.driver,
+				create: async (request, options) => {
+					const session = await opened.driver.create(request, options);
+					const first = session.sandboxRef.id === "sandbox-1";
+					return {
+						...session,
+						exec: async (command, options) => {
+							if (!first) await cleanupEntered.promise;
+							return session.exec(command, options);
+						},
+						destroy: async (options) => {
+							if (first) {
+								cleanupEntered.resolve();
+								await finishCleanup.promise;
+							}
+							await session.destroy(options);
+						},
+					};
+				},
+			},
+		};
+	};
+	const append = f.options.journal.append;
+	f.options.journal.append = async (record) => {
+		if (record.kind === "allocated" && record.ref.id === "sandbox-1")
+			throw new Error("allocation journal unavailable");
+		await append(record);
+	};
+	const upload = f.options.store.upload;
+	f.options.store.upload = async (name, path) => {
+		await upload(name, path);
+		if (readExperimentAttempt(path).evidence.cellId.endsWith("-r2")) finishCleanup.resolve();
+	};
+	try {
+		const attempts = await executeExperimentBatch({
+			...f.options,
+			plan: rollingPlan("journal-failure-during-cleanup", 3, 2),
+		});
+		expect(f.events.filter((event) => event === "create")).toHaveLength(2);
+		expect(attempts.map((attempt) => attempt.cleanup)).toEqual([
+			"unresolved",
+			"confirmed",
+			"not-allocated",
+		]);
+		expect(attempts[1]?.outcome).toBe("completed");
+		expect(attempts[2]?.diagnostic).toContain("admission stopped");
+		expect(f.records.filter((record) => record.kind === "intent")).toHaveLength(2);
+		expect(f.present.size).toBe(0);
+	} finally {
+		finishCleanup.resolve();
+	}
+});
+
+test("a cell waiting for its intent cannot create after a peer disproves capacity", async () => {
+	const { DriverError } = await import("@sandbox-benchmarks/driver");
+	const f = await fixture("quota-during-intent");
+	const rejected = Promise.withResolvers<void>();
+	const open = f.options.open;
+	let creates = 0;
+	f.options.open = async () => {
+		const opened = await open();
+		return {
+			...opened,
+			driver: {
+				...opened.driver,
+				create: async () => {
+					creates += 1;
+					throw new DriverError("create-failed", "quota refused", {
+						provider: "tama",
+						vendorHttpStatus: 429,
+						vendorMessage: "concurrent sandbox resource limit reached",
+					});
+				},
+			},
+		};
+	};
+	const append = f.options.journal.append;
+	f.options.journal.append = async (record) => {
+		if (record.kind === "intent" && record.cellId.endsWith("-r1")) await rejected.promise;
+		await append(record);
+	};
+	const upload = f.options.store.upload;
+	f.options.store.upload = async (name, path) => {
+		await upload(name, path);
+		if (readExperimentAttempt(path).evidence.cellId.endsWith("-r0")) rejected.resolve();
+	};
+	try {
+		const attempts = await executeExperimentBatch(f.options);
+		expect(creates).toBe(1);
+		expect(attempts).toHaveLength(2);
+		expect(attempts.every((attempt) => attempt.cleanup === "not-allocated")).toBe(true);
+		expect(attempts[1]?.measurementStarted).toBe(false);
+		expect(attempts[1]?.diagnostic).toContain("reconcile BENCH_ACCOUNT_CAPACITY");
+		expect(f.records.filter((record) => record.kind === "released")).toHaveLength(2);
+	} finally {
+		rejected.resolve();
+	}
+});
+
+test("Modal variants execute simultaneously through one account journal and pool", async () => {
+	const f = await fixture("modal-pool");
+	const mixed = workflowExperiment(
+		{
+			GITHUB_RUN_ID: "modal-pool",
+			GITHUB_SHA: plan.sha,
+			BENCH_PROVIDERS: "modal-gvisor,modal-vm",
+			BENCH_SUITES: "cpu-node",
+			BENCH_REPLICAS: "1",
+			BENCH_ACCOUNT_CAPACITY: '{"modal":{"sandboxes":2}}',
+		},
+		"2026-09-13",
+	);
+	const entered = new Set<ProviderId>();
+	const gate = Promise.withResolvers<void>();
+	const opened = await f.options.open();
+	const attempts = await executeExperimentBatch({
+		...f.options,
+		plan: mixed,
+		open: async (provider) => {
+			const module = await loadDriverModule(provider === "modal-vm" ? "modal-vm" : "modal-gvisor");
+			const artifact = resolveDriverArtifact(provider);
+			return {
+				...opened,
+				artifact,
+				module: { ...opened.module, id: provider, provenance: module.provenance },
+				driver: {
+					...opened.driver,
+					create: async (request, options) => {
+						const session = await opened.driver.create(request, options);
+						return {
+							...session,
+							artifact,
+							sandboxRef: { ...session.sandboxRef, provider },
+							exec: async (command, options) => {
+								if (command.includes("mise run benchmark:cpu:node")) {
+									entered.add(provider);
+									if (entered.size === 2) gate.resolve();
+									await gate.promise;
+								}
+								return session.exec(command, options);
+							},
+						};
+					},
+				},
+			};
+		},
+	});
+	expect(entered).toEqual(new Set(["modal-gvisor", "modal-vm"]));
+	expect(f.peak()).toBe(2);
+	expect(f.present.size).toBe(0);
+	expect(f.records.filter((record) => record.kind === "released")).toHaveLength(2);
+	expect(attempts.every((attempt) => attempt.outcome === "completed")).toBe(true);
+	expect(batchIsComplete(mixed, f.options.root, attempts)).toBe(true);
 });
 
 test("missing inventory fails each planned replicate without creating", async () => {

@@ -85,6 +85,9 @@ function mergeMetricReplicates(byReplicate: Map<number, ReplicateContribution>):
 		return {
 			index,
 			samples: [...contribution.metric.samples],
+			...(contribution.metric.ptsSampleSource !== undefined
+				? { ptsSampleSource: contribution.metric.ptsSampleSource }
+				: {}),
 			// The join to observedMixtures: which machine and network produced THIS cluster. Spread so a
 			// category the sandbox disclosed nothing for stays absent rather than becoming a dangling key.
 			...contribution.ids,
@@ -95,8 +98,9 @@ function mergeMetricReplicates(byReplicate: Map<number, ReplicateContribution>):
 	// MetricResult field) is carried from the lowest-index replicate without re-listing the schema here,
 	// then override the pooled fields. A shard's `first` never carries `replicates`, so this is byte-
 	// identical to the old field-by-field build today and stays correct if MetricResult gains a field.
+	const { ptsSampleSource: _ptsSampleSource, ...provenance } = first;
 	return {
-		...first,
+		...provenance,
 		samples: pooled,
 		aggregates: aggregate(pooled),
 		replicates,

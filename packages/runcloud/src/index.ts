@@ -1,8 +1,8 @@
 // run.cloud is a native SDK module. Four vendor facts shape everything below, each reproduced live:
 // create returns as soon as the control plane accepts the sandbox while the OCI pull/boot continues
-// asynchronously (`building_image`, exec 4409 until `running`); an overloaded create STALLS rather
-// than answering 429 (matrix run 30960125032); an ambiguous create leaks a sandbox that never
-// auto-pauses; and the API keeps `destroyed` tombstones in every listing. So every control-plane
+// asynchronously (`building_image`, exec 4409 until `running`); overload can stall a create (matrix
+// run 30960125032) or explicitly refuse quota with 429 (run 34781421576); an ambiguous create leaks
+// a sandbox that never auto-pauses; and the API keeps `destroyed` tombstones in every listing. Every control-plane
 // call is individually bounded, the create name is a recovery handle chosen before the request, a
 // lost response is reconciled by READING (never by replaying the create), readiness is owned here,
 // and nothing is ever reported as gone until the control plane has said so.
@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { CreateSandboxOptions, Sandbox } from "@run-cloud/sdk";
 import { Client, RunCloudError } from "@run-cloud/sdk";
 import type { CreateRequest, DriverContext, SandboxObservation } from "@sandbox-benchmarks/driver";
+import { DriverError, isDriverError } from "@sandbox-benchmarks/driver";
 import type {
 	ComputeSdkCreatedRequestVerification,
 	ComputeSdkCreateRequestCoverage,
@@ -106,6 +107,13 @@ const inventoryRows = type({
 	state: "string",
 	"name?": "string | null",
 }).array();
+const inventoryPage = type({ items: inventoryRows, nextCursor: "string >= 1 | null" });
+type InventoryPageReader = (cursor?: string, signal?: AbortSignal) => Promise<unknown>;
+// A live 566-row account takes about 100 seconds at the API's default 50 rows per page.
+// Request its supported 200-row maximum and allow several minutes for the whole scan.
+const INVENTORY_TIMEOUT_MS = 5 * 60_000;
+const INVENTORY_PAGE_SIZE = 200;
+const INVENTORY_MAX_PAGES = 1_000;
 
 type RuncloudSandboxClient = Pick<
 	Client["sandboxes"],
@@ -115,6 +123,9 @@ type RuncloudSandboxClient = Pick<
 /** Test seams; production keeps the defaults and constructs the SDK client from the registry env. */
 export interface RuncloudSpecOptions {
 	readonly client?: RuncloudSandboxClient;
+	readonly inventoryPage?: InventoryPageReader;
+	readonly inventoryTimeoutMs?: number;
+	readonly fetch?: typeof fetch;
 	readonly readyPollMs?: number;
 	readonly readyTimeoutMs?: number;
 	readonly cleanupAttempts?: number;
@@ -133,6 +144,7 @@ interface Timing {
 	readonly cleanupAttempts: number;
 	readonly cleanupRetryMs: number;
 	readonly controlPlaneTimeoutMs: number;
+	readonly inventoryTimeoutMs: number;
 	readonly reconcileAttempts: number;
 	readonly reconcileRetryMs: number;
 	readonly sleep: (ms: number) => Promise<void>;
@@ -141,6 +153,7 @@ interface Timing {
 
 function timingOf(options: RuncloudSpecOptions): Timing {
 	return {
+		inventoryTimeoutMs: Math.max(1, Math.floor(options.inventoryTimeoutMs ?? INVENTORY_TIMEOUT_MS)),
 		readyPollMs: options.readyPollMs ?? RUNCLOUD_READY_POLL_MS,
 		readyTimeoutMs: options.readyTimeoutMs ?? RUNCLOUD_READY_TIMEOUT_MS,
 		cleanupAttempts: Math.max(1, Math.floor(options.cleanupAttempts ?? RUNCLOUD_CLEANUP_ATTEMPTS)),
@@ -217,19 +230,21 @@ function isNotFound(error: unknown): boolean {
 	return error instanceof RunCloudError && error.status === 404;
 }
 
+function runcloudCreateHttpStatus(error: unknown): number | undefined {
+	if (error instanceof RunCloudError) return error.status;
+	if (isDriverError(error) && error.provider === "runcloud" && error.code === "create-failed")
+		return error.vendorHttpStatus;
+	return undefined;
+}
+
 /**
  * A non-timeout 4xx is a definitive rejection: the create endpoint itself said no allocation was
  * accepted. 409 is excluded because a conflict asserts the OPPOSITE of absence — something already
  * exists under this request's identity — so it gets the full reconciliation window.
  */
 export function isRuncloudDefinitiveCreateRejection(error: unknown): boolean {
-	return (
-		error instanceof RunCloudError &&
-		error.status >= 400 &&
-		error.status < 500 &&
-		error.status !== 408 &&
-		error.status !== 409
-	);
+	const status = runcloudCreateHttpStatus(error);
+	return status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 409;
 }
 
 /** Terminal boot states where the HOST gave up, so re-issuing the create is worth it. */
@@ -538,12 +553,68 @@ export function runcloudObservation(state: string): SandboxObservation {
 	return { state: "running" };
 }
 
-function controlPlaneFetch(timeoutMs: number): typeof fetch {
+function controlPlaneFetch(
+	timeoutMs: number,
+	signal?: AbortSignal,
+	fetchImpl: typeof fetch = fetch,
+): typeof fetch {
 	return Object.assign(
 		(...args: Parameters<typeof fetch>) =>
-			fetch(args[0], { ...args[1], signal: AbortSignal.timeout(timeoutMs) }),
+			fetchImpl(args[0], {
+				...args[1],
+				signal: AbortSignal.any([
+					AbortSignal.timeout(timeoutMs),
+					...(signal ? [signal] : []),
+					...(args[1]?.signal ? [args[1].signal] : []),
+				]),
+			}),
 		{ preconnect: fetch.preconnect },
 	);
+}
+
+/** The SDK drops nextCursor from its array return. Whole-account admission must read every page,
+ * including old stopped allocations hidden behind newer destroyed tombstones. Never return a
+ * partial inventory after a failed, malformed, repeated, or over-budget page. */
+async function completeInventory(
+	readPage: InventoryPageReader,
+	timing: Timing,
+	signal?: AbortSignal,
+): Promise<typeof inventoryRows.infer> {
+	const deadline = timing.now() + timing.inventoryTimeoutMs;
+	const inventorySignal = AbortSignal.any([
+		AbortSignal.timeout(timing.inventoryTimeoutMs),
+		...(signal ? [signal] : []),
+	]);
+	const rows: typeof inventoryRows.infer = [];
+	const cursors = new Set<string>();
+	const ids = new Set<string>();
+	let cursor: string | undefined;
+	for (let index = 0; index < INVENTORY_MAX_PAGES; index++) {
+		const remaining = deadline - timing.now();
+		if (remaining <= 0)
+			throw new RuncloudCallTimeoutError("list sandbox inventory", timing.inventoryTimeoutMs);
+		const page = inventoryPage.assert(
+			await bounded(
+				"list sandbox inventory page",
+				() => readPage(cursor, inventorySignal),
+				{ ...timing, controlPlaneTimeoutMs: Math.min(remaining, timing.controlPlaneTimeoutMs) },
+				inventorySignal,
+			),
+		);
+		inventorySignal.throwIfAborted();
+		if (timing.now() >= deadline)
+			throw new RuncloudCallTimeoutError("list sandbox inventory", timing.inventoryTimeoutMs);
+		for (const row of page.items) {
+			if (ids.has(row.id)) throw new Error("run.cloud inventory returned a duplicate sandbox id");
+			ids.add(row.id);
+			rows.push(row);
+		}
+		if (page.nextCursor === null) return rows;
+		if (cursors.has(page.nextCursor)) throw new Error("run.cloud inventory repeated a page cursor");
+		cursors.add(page.nextCursor);
+		cursor = page.nextCursor;
+	}
+	throw new Error("run.cloud inventory exceeded its page limit before reaching the end");
 }
 
 export function runcloudSpec(
@@ -552,19 +623,45 @@ export function runcloudSpec(
 ) {
 	const timing = timingOf(options);
 	let cached: RuncloudSandboxClient | undefined;
+	let nativeClient: Client | undefined;
+	const api = (): Client =>
+		(nativeClient ??= new Client({
+			apiKey: env.RUN_CLOUD_API_KEY,
+			fetch: controlPlaneFetch(timing.controlPlaneTimeoutMs, undefined, options.fetch),
+		}));
 	// Lazy: importing the fleet must never construct a vendor client or need credentials.
 	const sdk = (): RuncloudSandboxClient => {
-		cached ??=
-			options.client ??
-			new Client({
-				apiKey: env.RUN_CLOUD_API_KEY,
-				fetch: controlPlaneFetch(timing.controlPlaneTimeoutMs),
-			}).sandboxes;
+		cached ??= options.client ?? api().sandboxes;
 		return cached;
 	};
+	const readInventoryPage: InventoryPageReader =
+		options.inventoryPage ??
+		(options.client
+			? async () => ({ items: await sdk().list(), nextCursor: null })
+			: (cursor, signal) =>
+					new Client({
+						apiKey: env.RUN_CLOUD_API_KEY,
+						fetch: controlPlaneFetch(timing.controlPlaneTimeoutMs, signal, options.fetch),
+					}).request(
+						"GET",
+						`/run-cloud/sandboxes?limit=${INVENTORY_PAGE_SIZE}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
+					));
 	const compute = nativeSdkCompute(
-		(createOptions: RuncloudCreateOptions, operation) =>
-			allocate(sdk(), createOptions, timing, operation.signal),
+		async (createOptions: RuncloudCreateOptions, operation) => {
+			try {
+				return await allocate(sdk(), createOptions, timing, operation.signal);
+			} catch (error) {
+				if (!(error instanceof RunCloudError)) throw error;
+				// The generic bridge deliberately does not infer vendor metadata. Preserve this SDK's
+				// typed status so account admission can distinguish quota refusal from other failures.
+				throw new DriverError("create-failed", error.message, {
+					provider: "runcloud",
+					vendorHttpStatus: error.status,
+					vendorMessage: error.detail,
+					cause: error,
+				});
+			}
+		},
 		(native) => ({
 			sandboxId: native.id,
 			runCommand: (command, commandOptions) =>
@@ -607,7 +704,7 @@ export function runcloudSpec(
 				(error instanceof RuncloudBootFailureError && error.teardownConfirmed),
 			isRetryableCreate: (error) =>
 				(error instanceof RuncloudCallTimeoutError && error.operation === "create") ||
-				(error instanceof RunCloudError && error.status === 429) ||
+				runcloudCreateHttpStatus(error) === 429 ||
 				(error instanceof RuncloudBootFailureError && error.hostGaveUp && error.teardownConfirmed),
 			cleanup: async (_compute, locator, operation) => {
 				const matches = await liveSandboxesNamed(sdk(), locator.value, timing, operation.signal);
@@ -642,15 +739,13 @@ export function runcloudSpec(
 			},
 			describe: (_compute, ref) =>
 				bounded(`get sandbox ${ref.id}`, () => sdk().get(ref.id), timing),
+			// This is the single-request control-plane latency probe; account admission uses the
+			// complete paginated inventory below.
 			list: () => bounded("list sandboxes", () => sdk().list(), timing),
 		},
 		inventory: {
 			list: async (_compute, operation) => {
-				// No pagination exists on this API: the array is the vendor's whole answer, and only a
-				// non-array (or unreadable rows) is a contract violation rather than an empty account.
-				const rows = inventoryRows.assert(
-					await bounded("list sandboxes", () => sdk().list(), timing, operation.signal),
-				);
+				const rows = await completeInventory(readInventoryPage, timing, operation.signal);
 				const owned: string[] = [];
 				let foreignCount = 0;
 				for (const row of rows) {

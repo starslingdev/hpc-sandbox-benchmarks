@@ -23,6 +23,11 @@ export { targetSpecSchema } from "./target-spec-schema.ts";
 export const validationStatusSchema = type("'validated' | 'pending'");
 export type ValidationStatus = typeof validationStatusSchema.infer;
 
+/** PTS sample storage provenance. Value alone does not establish trial count; original execution
+ * metadata may independently prove a single trial when PTS omits RawString because raw equals final.
+ * Omitted on historical results and on measurements produced outside PTS. */
+const ptsSampleSourceSchema = type("'raw-string' | 'aggregate-value'");
+
 /**
  * One replicate sandbox's contribution to a Metric: the raw per-pass Samples that one (provider, suite)
  * replicate produced, tagged with its {@link index}. Present only on a Metric merged from ≥2 replicate
@@ -34,6 +39,7 @@ export const metricReplicateSchema = type({
 	index: "number.integer >= 0",
 	// This replicate's retained per-pass Samples (>= 1, all finite — enforced by the parent narrow).
 	samples: "number[] >= 1",
+	"ptsSampleSource?": ptsSampleSourceSchema,
 	/**
 	 * WHICH machine and network these Samples were measured on: keys into the provider's
 	 * {@link ObservedMixtures}. Absent when that sandbox's probes disclosed nothing for the category.
@@ -67,6 +73,9 @@ export const metricResultSchema = type({
 	// was measured under, so a profile/option bump can't silently shift numbers across Runs.
 	"appVersion?": "string",
 	"arguments?": "string",
+	// Sample origin is evidence, never inferred from array length or an attempt's requested passes.
+	// With multiple sandboxes it moves to each replicate, because origins can differ between shards.
+	"ptsSampleSource?": ptsSampleSourceSchema,
 	// The per-replicate breakdown, set only when the aggregate merged ≥2 replicate sandboxes for this
 	// Metric. `samples` above is the pooled union (the ranking median is unchanged); `replicates` keeps
 	// the clusters distinct so render-time inference can resample the between-sandbox level. Absent at
@@ -111,6 +120,12 @@ export const metricResultSchema = type({
 	if (metric.aggregates.n !== metric.samples.length) {
 		return ctx.mustBe("a MetricResult whose aggregates.n equals samples.length");
 	}
+	if (metric.ptsSampleSource === "aggregate-value" && metric.samples.length !== 1) {
+		return ctx.mustBe("one aggregate Value sample when PTS trial samples are unavailable");
+	}
+	if (metric.ptsSampleSource !== undefined && (metric.derived || metric.replicates)) {
+		return ctx.mustBe("PTS sample origin on a measured metric or on its individual replicates");
+	}
 	// A derived Metric is computed from the merged measured set as a single value, so it has no
 	// per-sandbox clusters to break out — a replicate breakdown on one would claim a between-machine
 	// spread that was never measured.
@@ -144,6 +159,9 @@ export const metricResultSchema = type({
 			indices.add(replicate.index);
 			if (!replicate.samples.every((s) => Number.isFinite(s))) {
 				return ctx.mustBe("a MetricResult whose replicate samples are all finite");
+			}
+			if (replicate.ptsSampleSource === "aggregate-value" && replicate.samples.length !== 1) {
+				return ctx.mustBe("one aggregate Value sample per PTS aggregate-only replicate");
 			}
 			pooled.push(...replicate.samples);
 		}

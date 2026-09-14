@@ -131,6 +131,14 @@ export async function executeExperimentBatch(
 	} catch (error) {
 		admissionFailure = error;
 	}
+	// Stop refill if ownership is uncertain or the vendor disproves the declared capacity.
+	// Already admitted peers finish and persist their own cleanup/release evidence.
+	let refillFailure: Error | undefined;
+	const stopRefill = (cell: ExperimentCell) => {
+		refillFailure ??= new Error(
+			`account ${batch.quotaDomain} admission stopped after ${cell.id}: allocation ownership or journal release remains unresolved`,
+		);
+	};
 	const runCell = async (cell: (typeof cells)[number]) => {
 		const id = `${cell.id}-a${options.workflowAttempt}-${randomUUID()}`;
 		const directory = join(options.root, id);
@@ -148,7 +156,18 @@ export async function executeExperimentBatch(
 		let createRejectedCleanly = false;
 		let allocated: SandboxRef | undefined;
 		let allocationRecorded = false;
-		let failure = admissionFailure;
+		let failure: unknown = admissionFailure ?? refillFailure;
+		let journalFailed = false;
+		const append = async (record: AccountRecord, signal?: AbortSignal) => {
+			try {
+				if (signal) await withinSignal(signal, () => options.journal.append(record));
+				else await options.journal.append(record);
+			} catch (error) {
+				journalFailed = true;
+				stopRefill(cell);
+				throw error;
+			}
+		};
 		const takenAt = Date.now();
 		const startupDeadline = cellStartupDeadline(cell, takenAt, batchDeadline);
 		const startupSignal = AbortSignal.timeout(Math.max(1, startupDeadline - Date.now()));
@@ -173,10 +192,13 @@ export async function executeExperimentBatch(
 				throw new Error("resolved execution inputs differ from frozen plan");
 			if (Date.now() >= startupDeadline)
 				throw new Error("startup deadline exceeded before allocation");
-			await withinSignal(startupSignal, () => options.journal.append(intent));
+			await append(intent, startupSignal);
 			const driver: SandboxDriver = {
 				...opened.driver,
 				async create(request, createOptions) {
+					// Intent persistence can yield while a peer stops this account. Recheck at the
+					// allocation boundary, before issuing a request that has not yet been admitted.
+					if (refillFailure) throw refillFailure;
 					createOptions?.signal?.throwIfAborted();
 					if (Date.now() >= startupDeadline)
 						throw new Error("startup deadline exceeded before create");
@@ -185,8 +207,9 @@ export async function executeExperimentBatch(
 						// Drivers throw FailedCreateCleanupError only when cleanup could not prove
 						// absence. Any other create failure has already reconciled or never allocated.
 						createRejectedCleanly = !isFailedCreateCleanupError(error);
+						if (!createRejectedCleanly) stopRefill(cell);
 						if (isConcurrentSandboxAdmissionError(error)) {
-							throw new Error(
+							const capacityFailure = new Error(
 								concurrentSandboxAdmissionDetail(error, {
 									quotaDomain: batch.quotaDomain,
 									declaredSandboxes: account.sandboxes,
@@ -194,6 +217,8 @@ export async function executeExperimentBatch(
 								}),
 								{ cause: error },
 							);
+							refillFailure ??= capacityFailure;
+							throw capacityFailure;
 						}
 						throw error;
 					});
@@ -207,10 +232,11 @@ export async function executeExperimentBatch(
 						// Preserve vendor identity for operator recovery even if the durable append fails.
 						// This artifact is evidence only; it never substitutes for journal admission.
 						writeImmutableJson(join(raw, "allocation.json"), allocation);
-						await withinSignal(startupSignal, () => options.journal.append(allocation));
+						await append(allocation, startupSignal);
 						allocationRecorded = true;
 					} catch (error) {
 						// The harness has not received this session yet. Retain the original journal failure.
+						stopRefill(cell);
 						try {
 							const signal = AbortSignal.timeout(15_000);
 							await withinSignal(signal, () => session.destroy({ signal }));
@@ -271,7 +297,7 @@ export async function executeExperimentBatch(
 					: "not-allocated";
 		try {
 			if (allocationRecorded && allocated && cleanup === "confirmed")
-				await options.journal.append({
+				await append({
 					...intent,
 					kind: "released",
 					outcome: "absent",
@@ -285,11 +311,13 @@ export async function executeExperimentBatch(
 			) {
 				const records = await options.journal.read(cell.quotaDomain);
 				if (records.some((entry) => entry.kind === "intent" && entry.attempt === id))
-					await options.journal.append({ ...intent, kind: "released", outcome: "not-allocated" });
+					await append({ ...intent, kind: "released", outcome: "not-allocated" });
 			}
 		} catch (error) {
+			journalFailed = true;
 			failure ??= error;
 		}
+		if (cleanup === "unresolved" || journalFailed) stopRefill(cell);
 		const diagnostic =
 			failure === undefined
 				? undefined

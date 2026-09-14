@@ -100,6 +100,31 @@ function attributedShard(
 }
 
 describe("aggregateRuns", () => {
+	it("preserves PTS sample origin separately for each sandbox and never invents missing origin", () => {
+		const raw = {
+			...metric("node_web_tooling_runs_per_s", [10, 20]),
+			ptsSampleSource: "raw-string" as const,
+		};
+		const headline = {
+			...metric("node_web_tooling_runs_per_s", [15]),
+			ptsSampleSource: "aggregate-value" as const,
+		};
+		const unknown = metric("node_web_tooling_runs_per_s", [12]);
+		const merged = aggregateRuns(
+			[raw, headline, unknown].map((entry, index) =>
+				shard([provider("daytona-vm", [entry])], undefined, index),
+			),
+		);
+		const entry = merged.providers[0]?.metrics.find((value) => value.metricId === raw.metricId);
+		expect(entry?.ptsSampleSource).toBeUndefined();
+		expect(entry?.replicates?.map((replicate) => replicate.ptsSampleSource)).toEqual([
+			"raw-string",
+			"aggregate-value",
+			undefined,
+		]);
+		expect(entry?.samples).toEqual([10, 20, 15, 12]);
+	});
+
 	it("retains deterministic cell-bound artifact evidence when every shard is v6", () => {
 		const r1 = attributedShard(1, "sb-1");
 		const r0 = attributedShard(0, "sb-0");

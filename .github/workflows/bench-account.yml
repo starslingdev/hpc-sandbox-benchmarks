@@ -52,7 +52,8 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.axis) }}
     uses: ./.github/workflows/bench-suite.yml
     with:
-      providers: ${{ toJSON(fromJSON(format('["{0}"]', matrix.provider))) }}
+      account: ${{ inputs.account }}
+      providers: ${{ toJSON(matrix.providers) }}
       suite: ${{ matrix.suite }}
       batch_id: ${{ matrix.batch }}
     secrets: inherit

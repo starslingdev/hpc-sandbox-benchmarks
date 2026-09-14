@@ -1097,7 +1097,8 @@ run_realworld_pts() {
 
 	install_local_pts_profile "$profile" \
 		"${REPO_ROOT}/lib/pts/realworld/install.sh" \
-		"${REPO_ROOT}/lib/pts/realworld/realworld-runner.sh"
+		"${REPO_ROOT}/lib/pts/realworld/realworld-runner.sh" \
+		"${REPO_ROOT}/lib/pts/realworld/openclaw-lint.mjs"
 
 	run_pts_benchmark "local/${profile}" "$prefix"
 }

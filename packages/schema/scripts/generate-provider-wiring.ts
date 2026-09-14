@@ -40,7 +40,7 @@ export interface QuotaDomainBinding {
 	readonly owners: readonly ProviderId[];
 }
 
-export type WiringLane = "matrix" | "release-scope";
+export type WiringLane = "matrix" | "batch" | "release-scope";
 
 export interface DriverMigrationWaiver {
 	readonly owner: string;
@@ -161,7 +161,9 @@ function ownerCondition(owners: readonly ProviderId[], lane: WiringLane): string
 	const clauses = owners.map((id) =>
 		lane === "matrix"
 			? `matrix.provider == ${ghaString(id)}`
-			: `contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, ${ghaString(id)})`,
+			: lane === "batch"
+				? `contains(fromJSON(inputs.providers), ${ghaString(id)})`
+				: `contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, ${ghaString(id)})`,
 	);
 	return clauses.length === 1 ? (clauses[0] ?? "false") : `(${clauses.join(" || ")})`;
 }
@@ -223,20 +225,19 @@ export function renderSmokeProviderOptions(indent = "          "): string {
 	return PROVIDER_IDS.map((id) => `${indent}- ${ghaString(id)}`).join("\n");
 }
 
-export function renderRunnerSelection(): string {
+export function renderRunnerSelection(lane: WiringLane = "matrix"): string {
 	const routed = PROVIDER_IDS.filter((id) => providerMeta(id).runner !== undefined);
 	const clauses = routed.map(
-		(id) =>
-			`matrix.provider == ${ghaString(id)} && ${ghaString(providerMeta(id).runner?.label ?? "")}`,
+		(id) => `${ownerCondition([id], lane)} && ${ghaString(providerMeta(id).runner?.label ?? "")}`,
 	);
 	return `    runs-on: \${{ ${[...clauses, ghaString("ubuntu-24.04")].join(" || ")} }}`;
 }
 
-export function renderRunnerNoCache(indent = "          "): string {
+export function renderRunnerNoCache(indent = "          ", lane: WiringLane = "matrix"): string {
 	const owners = runnerBindings()
 		.filter(({ policy }) => policy.noCache)
 		.flatMap(({ owners: policyOwners }) => policyOwners);
-	const condition = owners.length === 0 ? "false" : ownerCondition(owners, "matrix");
+	const condition = owners.length === 0 ? "false" : ownerCondition(owners, lane);
 	return `${indent}no-cache: \${{ ${condition} && 'true' || 'false' }}`;
 }
 
@@ -245,7 +246,12 @@ export function renderRunnerNoCache(indent = "          "): string {
  * Providers whose domain is their own id fall through to `matrix.provider`; only shared domains
  * need a clause, so the expression stays readable in the workflow.
  */
-export function renderAccountConcurrencyGroup(indent = "      "): string {
+export function renderAccountConcurrencyGroup(
+	indent = "      ",
+	lane: WiringLane = "matrix",
+): string {
+	// The batch worker checks this frozen domain and the complete provider list before admission.
+	if (lane === "batch") return `${indent}group: benchmark-account-\${{ inputs.account }}`;
 	const clauses = quotaDomainBindings().flatMap(({ domain, owners }) =>
 		owners.length === 1 && owners[0] === domain
 			? []
@@ -254,11 +260,11 @@ export function renderAccountConcurrencyGroup(indent = "      "): string {
 	return `${indent}group: benchmark-account-\${{ ${[...clauses, "matrix.provider"].join(" || ")} }}`;
 }
 
-export function renderRunnerLifetime(indent = "          "): string {
+export function renderRunnerLifetime(indent = "          ", lane: WiringLane = "matrix"): string {
 	const clauses = runnerBindings().flatMap(({ policy, owners }) =>
 		policy.lifetimeMinutes === undefined
 			? []
-			: [`${ownerCondition(owners, "matrix")} && ${ghaString(String(policy.lifetimeMinutes))}`],
+			: [`${ownerCondition(owners, lane)} && ${ghaString(String(policy.lifetimeMinutes))}`],
 	);
 	return `${indent}BENCH_RUNNER_LIFETIME_MINUTES: \${{ ${[...clauses, "''"].join(" || ")} }}`;
 }
@@ -349,7 +355,7 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 		{
 			file: ".github/workflows/bench-suite.yml",
 			label: `preauth-${preAuth}-bench`,
-			body: renderPreAuthCondition(preAuth, "matrix"),
+			body: renderPreAuthCondition(preAuth, "batch"),
 		},
 		{
 			file: ".github/workflows/toolchain-image.yml",
@@ -371,7 +377,7 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 		{
 			file: ".github/workflows/bench-suite.yml",
 			label: "provider-account-group-bench",
-			body: renderAccountConcurrencyGroup(),
+			body: renderAccountConcurrencyGroup("      ", "batch"),
 		},
 		{
 			file: ".github/workflows/toolchain-image.yml",
@@ -381,23 +387,23 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 		{
 			file: ".github/workflows/bench-suite.yml",
 			label: "provider-runner",
-			body: renderRunnerSelection(),
+			body: renderRunnerSelection("batch"),
 		},
 		{
 			file: ".github/workflows/bench-suite.yml",
 			label: "provider-runner-cache",
-			body: renderRunnerNoCache(),
+			body: renderRunnerNoCache("          ", "batch"),
 		},
 		{
 			file: ".github/workflows/bench-suite.yml",
 			label: "provider-runner-lifetime",
-			body: renderRunnerLifetime(),
+			body: renderRunnerLifetime("          ", "batch"),
 		},
 		...preAuthRegions,
 		{
 			file: ".github/workflows/bench-suite.yml",
 			label: "provider-inputs-bench",
-			body: renderWorkflowInputs("matrix"),
+			body: renderWorkflowInputs("batch"),
 		},
 		{
 			file: ".github/workflows/toolchain-image.yml",

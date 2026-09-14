@@ -49,6 +49,9 @@ const ptsEntry = type({
 	Value: entryValue,
 	// Per-pass samples, parsed string → validated number[] here (see {@link sampleList}).
 	"RawString?": sampleList,
+	// PTS records one execution duration per attempted trial in JSON's test-run-times field.
+	// Retain the original text; malformed optional metadata must not discard measured results.
+	"JSON?": "string",
 });
 
 /** One `<Result>`: a single test profile's measurement (each Result maps to exactly one Metric). */

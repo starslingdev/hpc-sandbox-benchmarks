@@ -1572,7 +1572,9 @@ export function cliMethodTable<Row>(
 					handle: row,
 					sandboxRef: sandboxRef(provider, sandboxIdOf(row, attemptArgs)),
 				};
-			} catch (primary) {
+			} catch (caughtCreate) {
+				let primary = caughtCreate;
+				let provisioningDiagnosticCaptured = false;
 				// A CLI can submit the allocation and still exit nonzero during a client-side
 				// post-check. Reconcile by the generated name after every failed create outcome;
 				// not-found tolerance makes this safe when nothing was allocated.
@@ -1638,6 +1640,37 @@ export function cliMethodTable<Row>(
 							args: readyPoll,
 							diagnosticArgs: attemptArgs,
 						};
+					}
+					// A nonzero create can hide the provisioning reason behind a generic CLI error.
+					// Retain the provider's terminal detail before deleting its only control-plane row.
+					// Diagnostics cannot prevent cleanup or grant a retry to an otherwise terminal create.
+					if (
+						!provisioningDiagnosticCaptured &&
+						isDriverError(primary) &&
+						primary.code === "create-failed" &&
+						primary.vendorExitCode !== undefined
+					) {
+						try {
+							const status = normalizeCliReadinessStatus(
+								provider,
+								providerCallback("failed-create diagnostic classifier", () => ready.classify(row)),
+								(detail) => redactKnownDiagnostic(detail, attemptArgs),
+							);
+							if (status !== "ready" && status !== "pending") {
+								provisioningDiagnosticCaptured = true;
+								primary = new DriverError(primary.code, primary.message, {
+									provider,
+									vendorExitCode: primary.vendorExitCode,
+									vendorMessage: [primary.vendorMessage, `provisioning: ${status.terminal}`]
+										.filter(Boolean)
+										.join("; "),
+									retryable: primary.retryable,
+									cause: primary,
+								});
+							}
+						} catch {
+							// This optional diagnostic must not strand the already located allocation.
+						}
 					}
 					// A positive name lookup contradicts every older absence observation. If the
 					// following id-addressed delete reports not-found, it starts a fresh horizon.
@@ -1772,8 +1805,9 @@ export function cliMethodTable<Row>(
 				if (isDriverError(primary) && primary.code === "create-failed") {
 					if (retryableReadiness) markRetryableDriverCreate(primary);
 					try {
+						const classifiedFailure = primary;
 						const retryable = providerCallback("retryable-create classifier", () =>
-							isRetryableCreate?.(primary),
+							isRetryableCreate?.(classifiedFailure),
 						);
 						if (retryable === true) markRetryableDriverCreate(primary);
 					} catch {

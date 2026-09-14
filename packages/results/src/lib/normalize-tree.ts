@@ -604,10 +604,7 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 	// landed in both pts_git.xml and pts_compress_zstd.xml). Pooling the samples would inflate n and
 	// distort the stddev, so drop the later copy and warn — louder when the samples diverge, which
 	// signals genuine result-name contamination rather than a benign rewrite.
-	const merged = new Map<
-		string,
-		{ samples: number[]; sourceFile: string; appVersion?: string; arguments?: string }
-	>();
+	const merged = new Map<string, SampleContribution>();
 	for (const contribution of contributions) {
 		const existing = merged.get(contribution.metricId);
 		if (existing) {
@@ -622,10 +619,8 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 			continue;
 		}
 		merged.set(contribution.metricId, {
+			...contribution,
 			samples: [...contribution.samples],
-			sourceFile: contribution.sourceFile,
-			appVersion: contribution.appVersion,
-			arguments: contribution.arguments,
 		});
 	}
 	const metrics: MetricResult[] = [...merged.entries()]
@@ -633,11 +628,12 @@ export function normalizeProviderDir(rawRoot: string, providerId: string): Provi
 		// longer emits empty-sample contributions, but guard here too so a zero-sample metric is
 		// dropped rather than throwing out of aggregate() before parseRun's try/catch can frame it.
 		.filter(([, { samples }]) => samples.length > 0)
-		.map(([metricId, { samples, sourceFile, appVersion, arguments: args }]) => ({
+		.map(([metricId, { samples, sourceFile, appVersion, arguments: args, ptsSampleSource }]) => ({
 			metricId,
 			samples,
 			aggregates: aggregate(samples),
 			sourceFile,
+			...(ptsSampleSource !== undefined ? { ptsSampleSource } : {}),
 			...(appVersion !== undefined ? { appVersion } : {}),
 			...(args !== undefined ? { arguments: args } : {}),
 		}))

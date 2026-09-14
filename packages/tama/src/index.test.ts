@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
-import { DriverError, driverFromTable } from "@sandbox-benchmarks/driver";
+import { DriverError, driverFromTable, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import type { CliRunner } from "@sandbox-benchmarks/driver/cli";
 import { cliMethodTable } from "@sandbox-benchmarks/driver/cli";
 import tamaDriver, {
@@ -152,6 +152,54 @@ describe("Tama proof driver", () => {
 			expect(error).toMatchObject({ code: "invalid-create-request", provider: "tama" });
 		}
 		expect(calls).toEqual([]);
+	});
+
+	test("retains the terminal provisioning detail before failed-create cleanup deletes it", async () => {
+		let name = "";
+		let destroyed = false;
+		const run: CliRunner = async (_binary, args) => {
+			if (args[0] === "login") return { stdout: "", stderr: "", code: 0 };
+			if (args[0] === "new") {
+				name = args[1] ?? "";
+				return { stdout: "", stderr: "failed to provision; inspect it in the console", code: 1 };
+			}
+			if (args[0] === "rm") {
+				destroyed = true;
+				return { stdout: "", stderr: "", code: 0 };
+			}
+			return {
+				stdout: JSON.stringify(
+					destroyed || name === ""
+						? []
+						: [
+								{
+									...readyMachine,
+									name,
+									status: "failed",
+									status_detail: `image pull denied ${context.env.TAMA_TOKEN}`,
+								},
+							],
+				),
+				stderr: "",
+				code: 0,
+			};
+		};
+		const driver = driverFromTable(
+			cliMethodTable("tama", tamaSpec(context), {
+				run,
+				createAttemptCeilingMs: TAMA_CREATE_CEILING_MS,
+			}),
+			async () => ({}),
+		);
+		const error = await driver.create(request).catch((caught: unknown) => caught);
+		expect(destroyed).toBe(true);
+		expect(error).toMatchObject({ code: "create-failed", provider: "tama", vendorExitCode: 1 });
+		expect(error).toBeInstanceOf(DriverError);
+		if (!(error instanceof DriverError)) throw new Error("expected DriverError");
+		expect(error.vendorMessage).toContain("image pull denied");
+		expect(error.vendorMessage).toContain("failed to provision");
+		expect(error.vendorMessage).not.toContain(context.env.TAMA_TOKEN);
+		expect(isRetryableDriverCreate(error)).toBe(false);
 	});
 
 	test("the compiled CLI table owns create, observation, and idempotent destroy", async () => {

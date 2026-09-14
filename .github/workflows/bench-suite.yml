@@ -1,10 +1,14 @@
-name: Benchmark suite (reusable)
+name: Benchmark account batch (reusable)
 
 on:
   workflow_call:
     inputs:
+      account:
+        description: 'Frozen account quota domain; one owner schedules all variants in this batch.'
+        required: true
+        type: string
       providers:
-        description: 'JSON array of provider ids to fan out over (the plan job selected provider list).'
+        description: 'JSON array of provider ids owned by this frozen batch, executed in one account pool.'
         required: true
         type: string
       suite:
@@ -25,20 +29,16 @@ jobs:
   bench:
     concurrency:
       # >>> generated: provider-account-group-bench — bun run generate-provider-wiring
-      group: benchmark-account-${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}
+      group: benchmark-account-${{ inputs.account }}
       # <<< end generated: provider-account-group-bench
       cancel-in-progress: false
       queue: max
-    name: ${{ matrix.provider }}
+    name: ${{ join(fromJSON(inputs.providers), ' + ') }}
     environment: privileged
     # >>> generated: provider-runner — bun run generate-provider-wiring
     runs-on: ${{ 'ubuntu-24.04' }}
     # <<< end generated: provider-runner
     timeout-minutes: 330
-    strategy:
-      fail-fast: false
-      matrix:
-        provider: ${{ fromJSON(inputs.providers) }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,7 +60,7 @@ jobs:
 
       - name: Set up Namespace credentials
         # >>> generated: preauth-namespace-token-bench — bun run generate-provider-wiring
-        if: matrix.provider == 'namespace'
+        if: contains(fromJSON(inputs.providers), 'namespace')
         # <<< end generated: preauth-namespace-token-bench
         id: namespace
         uses: ./.github/actions/namespace-token
@@ -70,7 +70,7 @@ jobs:
           token-name: sandbox-benchmarks-${{ inputs.suite }}-${{ inputs.batch_id }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Require Namespace credentials
-        if: matrix.provider == 'namespace'
+        if: contains(fromJSON(inputs.providers), 'namespace')
         env:
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
         run: |
@@ -80,12 +80,12 @@ jobs:
           fi
 
       - name: Set up the tama CLI
-        if: matrix.provider == 'tama'
+        if: contains(fromJSON(inputs.providers), 'tama')
         uses: ./.github/actions/setup-tama
 
       - name: Authenticate with Vercel
         # >>> generated: preauth-vercel-auth-bench — bun run generate-provider-wiring
-        if: matrix.provider == 'vercel'
+        if: contains(fromJSON(inputs.providers), 'vercel')
         # <<< end generated: preauth-vercel-auth-bench
         id: vercel-auth
         uses: ./.github/actions/vercel-auth
@@ -98,36 +98,37 @@ jobs:
         env:
           BENCH_REPO_REF: ${{ github.sha }}
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BENCH_PROVIDER: ${{ matrix.provider }}
+          BENCH_ACCOUNT: ${{ inputs.account }}
+          BENCH_BATCH_PROVIDERS: ${{ inputs.providers }}
           BENCH_SUITE: ${{ inputs.suite }}
           BENCH_CELL_BUDGET_MINUTES: '330'
           BENCH_BATCH_ID: ${{ inputs.batch_id }}
           GH_TOKEN: ${{ github.token }}
           # >>> generated: provider-inputs-bench — bun run generate-provider-wiring
-          E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-          E2B_TEMPLATE: ${{ matrix.provider == 'e2b' && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
-          DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
-          DAYTONA_SNAPSHOT: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
-          DAYTONA_CONTAINER_SNAPSHOT: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
-          BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
-          BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
-          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
-          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
-          MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
-          NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
-          NOVITA_TEMPLATE: ${{ matrix.provider == 'novita' && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
-          RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
-          RUNLOOP_BLUEPRINT: ${{ matrix.provider == 'runloop' && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
+          E2B_API_KEY: ${{ contains(fromJSON(inputs.providers), 'e2b') && secrets.E2B_API_KEY || '' }}
+          E2B_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
+          DAYTONA_API_KEY: ${{ (contains(fromJSON(inputs.providers), 'daytona-vm') || contains(fromJSON(inputs.providers), 'daytona-container')) && secrets.DAYTONA_API_KEY || '' }}
+          DAYTONA_TARGET: ${{ contains(fromJSON(inputs.providers), 'daytona-vm') && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_SNAPSHOT: ${{ contains(fromJSON(inputs.providers), 'daytona-vm') && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_SNAPSHOT: ${{ contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
+          BL_API_KEY: ${{ contains(fromJSON(inputs.providers), 'blaxel') && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ contains(fromJSON(inputs.providers), 'blaxel') && secrets.BL_WORKSPACE || '' }}
+          MSB_API_KEY: ${{ contains(fromJSON(inputs.providers), 'microsandbox-cloud') && secrets.MSB_API_KEY || '' }}
+          MSB_API_URL: ${{ contains(fromJSON(inputs.providers), 'microsandbox-cloud') && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
+          MODAL_TOKEN_ID: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_SECRET || '' }}
+          NOVITA_API_KEY: ${{ contains(fromJSON(inputs.providers), 'novita') && secrets.NOVITA_API_KEY || '' }}
+          NOVITA_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'novita') && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
+          RUNLOOP_API_KEY: ${{ contains(fromJSON(inputs.providers), 'runloop') && secrets.RUNLOOP_API_KEY || '' }}
+          RUNLOOP_BLUEPRINT: ${{ contains(fromJSON(inputs.providers), 'runloop') && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
-          VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
-          VERCEL_TEAM_SLUG: ${{ matrix.provider == 'vercel' && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
-          VERCEL_PROJECT_NAME: ${{ matrix.provider == 'vercel' && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
-          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
-          TAMA_TOKEN: ${{ matrix.provider == 'tama' && secrets.TAMA_TOKEN || '' }}
-          TAMA_CLI: ${{ matrix.provider == 'tama' && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          VERCEL_OIDC_TOKEN: ${{ contains(fromJSON(inputs.providers), 'vercel') && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+          VERCEL_TEAM_SLUG: ${{ contains(fromJSON(inputs.providers), 'vercel') && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
+          VERCEL_PROJECT_NAME: ${{ contains(fromJSON(inputs.providers), 'vercel') && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
+          RUN_CLOUD_API_KEY: ${{ contains(fromJSON(inputs.providers), 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
+          TAMA_TOKEN: ${{ contains(fromJSON(inputs.providers), 'tama') && secrets.TAMA_TOKEN || '' }}
+          TAMA_CLI: ${{ contains(fromJSON(inputs.providers), 'tama') && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
           # <<< end generated: provider-inputs-bench
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}
@@ -138,6 +139,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: diagnostic-${{ inputs.batch_id }}-${{ matrix.provider }}-attempt-${{ github.run_attempt }}-${{ github.run_id }}
+          name: diagnostic-${{ inputs.batch_id }}-${{ inputs.account }}-attempt-${{ github.run_attempt }}-${{ github.run_id }}
           path: experiment/attempts/
           if-no-files-found: error

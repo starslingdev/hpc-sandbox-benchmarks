@@ -7,10 +7,11 @@ import {
 	aggregateExperiment,
 	evaluateExperiment,
 	evidenceDigest,
+	readPtsTrialEvidence,
 	verifyExperimentPlan,
 } from "@sandbox-benchmarks/results";
 import type { ExperimentCell, Run } from "@sandbox-benchmarks/schema";
-import { aggregate, parseRun } from "@sandbox-benchmarks/schema";
+import { aggregate, getMetric, parseRun } from "@sandbox-benchmarks/schema";
 import { rawTreeDigest, writeImmutableJson } from "./experiment-artifacts.ts";
 import { planExperiment, ROUND_BATCH_LIMIT } from "./experiment-plan.ts";
 
@@ -71,6 +72,8 @@ function successful(): AttemptWithRun {
 				metrics: cell().metrics.map((metricId) => ({
 					metricId,
 					samples: [1, 2],
+					ptsSampleSource: "raw-string" as const,
+					sourceFile: "memory/pts_stream.xml",
 					aggregates: aggregate([1, 2]),
 				})),
 				suitesCovered: ["memory"],
@@ -127,6 +130,128 @@ function successful(): AttemptWithRun {
 		},
 	};
 }
+
+test("fixed-pass completeness rejects fewer successful PTS trials than the frozen plan", () => {
+	const attempt = successful();
+	const metric = attempt.run?.providers[0]?.metrics[0];
+	if (!metric) throw new Error("fixture has no metric");
+	metric.samples = [1];
+	metric.aggregates = aggregate(metric.samples);
+	attempt.evidence.runDigest = evidenceDigest(attempt.run);
+	const result = aggregateExperiment(plan(), [attempt]);
+	expect(result.coverage.complete).toBe(false);
+	expect(result.coverage.cells[0]?.missingMetrics).toEqual(["stream_type_copy"]);
+	expect(result.run).toBeUndefined();
+});
+
+test("fixed-pass evidence distinguishes a Value aggregate, unknown origin and extra trials", () => {
+	for (const origin of ["aggregate-value", undefined, "raw-string"] as const) {
+		const attempt = successful();
+		const metric = attempt.run?.providers[0]?.metrics[0];
+		if (!metric) throw new Error("fixture has no metric");
+		metric.samples = origin === "raw-string" ? [1, 2, 3] : origin === undefined ? [1, 2] : [1];
+		metric.aggregates = aggregate(metric.samples);
+		if (origin === undefined) Reflect.deleteProperty(metric, "ptsSampleSource");
+		else metric.ptsSampleSource = origin;
+		attempt.evidence.runDigest = evidenceDigest(attempt.run);
+		const report = evaluateExperiment(plan(), [attempt]);
+		expect(report.complete).toBe(false);
+		expect(report.cells[0]?.passShortfalls).toEqual([
+			{
+				providerId: "e2b",
+				metricId: metric.metricId,
+				expected: 2,
+				source: origin ?? "unverified",
+				...(origin === "raw-string" ? { observed: 3 } : {}),
+			},
+		]);
+	}
+});
+
+test("a retired OpenClaw catalog metric cannot bypass the frozen trial contract", () => {
+	const retiredMetric = "realworld_openclaw_task_lint_extensions";
+	expect(getMetric(retiredMetric)).toBeUndefined();
+	const directory = mkdtempSync(join(tmpdir(), "retired-pts-evidence-"));
+	try {
+		const retired = {
+			...cell(),
+			id: "e2b-realworld-openclaw-r0",
+			suite: "realworld-openclaw" as const,
+			workloadRevision: "openclaw-original-pin",
+			metrics: [retiredMetric],
+		};
+		const planned = planExperiment({
+			id: "experiment-1",
+			sha,
+			createdOn: "2026-09-10",
+			cells: [retired],
+		});
+		mkdirSync(join(directory, "e2b", retired.suite), { recursive: true });
+		for (const samples of [[53.307], [53.307, 52.1]]) {
+			const attempt = successful();
+			const provider = attempt.run?.providers[0];
+			const artifact = provider?.artifactEvidence?.[0];
+			if (!attempt.run || !provider || !artifact || !attempt.execution)
+				throw new Error("fixture lacks receipts");
+			artifact.cell.suite = retired.suite;
+			provider.suitesCovered = [retired.suite];
+			provider.metrics = [
+				{
+					metricId: retiredMetric,
+					samples,
+					aggregates: aggregate(samples),
+					sourceFile: `${retired.suite}/pts_realworld-openclaw.xml`,
+				},
+			];
+			attempt.execution.suite = retired.suite;
+			attempt.evidence.cellId = retired.id;
+			attempt.evidence.workloadRevision = retired.workloadRevision;
+			attempt.evidence.planDigest = planned.digest;
+			attempt.evidence.runDigest = evidenceDigest(attempt.run);
+			writeFileSync(
+				join(directory, "e2b", retired.suite, "pts_realworld-openclaw.xml"),
+				`<PhoronixTestSuite><Result>
+<Identifier>local/realworld-openclaw-1.0.0</Identifier><Title>OpenClaw</Title><Description>Task: Lint Extensions</Description>
+<Scale>Seconds</Scale><Proportion>LIB</Proportion><Data><Entry><Value>53.307</Value><RawString>${samples.join(":")}</RawString></Entry></Data>
+</Result></PhoronixTestSuite>`,
+			);
+			attempt.ptsTrials = readPtsTrialEvidence(directory, attempt.run);
+			const evaluated = evaluateExperiment(planned, [attempt]);
+			expect(evaluated.complete).toBe(false);
+			expect(evaluated.cells[0]?.missingMetrics).toEqual([retiredMetric]);
+			expect(evaluated.cells[0]?.passShortfalls?.[0]?.source).toBe("unverified");
+			// A declared origin also cannot replace a missing measurement contract in the pure evaluator.
+			const measured = provider.metrics[0];
+			if (!measured) throw new Error("fixture lacks a metric");
+			measured.ptsSampleSource = "raw-string";
+			Reflect.deleteProperty(attempt, "ptsTrials");
+			attempt.evidence.runDigest = evidenceDigest(attempt.run);
+			expect(evaluateExperiment(planned, [attempt]).complete).toBe(false);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("PTS fixed passes do not constrain independently sampled harness metrics", () => {
+	const attempt = successful();
+	const entry = attempt.run?.providers[0];
+	if (!entry) throw new Error("fixture has no provider");
+	entry.metrics.push({
+		metricId: "lifecycle_spawn_ms",
+		samples: [123],
+		aggregates: aggregate([123]),
+	});
+	const planned = planExperiment({
+		id: "experiment-1",
+		sha,
+		createdOn: "2026-09-10",
+		cells: [{ ...cell(), metrics: [...cell().metrics, "lifecycle_spawn_ms"] }],
+	});
+	attempt.evidence.planDigest = planned.digest;
+	attempt.evidence.runDigest = evidenceDigest(attempt.run);
+	expect(evaluateExperiment(planned, [attempt]).complete).toBe(true);
+});
 
 test("normalizer placeholder rows are allowed but foreign provider observations are not", () => {
 	const attempt = successful();
@@ -378,6 +503,18 @@ test("real aggregate and promote commands require intact original evidence", () 
 		const attempt = successful();
 		const directory = join(root, "attempts", attempt.evidence.id);
 		mkdirSync(join(directory, "raw"), { recursive: true });
+		mkdirSync(join(directory, "raw", "e2b", "memory"), { recursive: true });
+		writeFileSync(
+			join(directory, "raw", "e2b", "memory", "pts_stream.xml"),
+			`<PhoronixTestSuite>${["Copy", "Scale"]
+				.map(
+					(kind) => `<Result>
+<Identifier>pts/stream-1.3.4</Identifier><Title>STREAM</Title><Description>Type: ${kind}</Description>
+<Scale>MB/s</Scale><Proportion>HIB</Proportion><Data><Entry><Value>1.5</Value><RawString>1:2</RawString></Entry></Data>
+</Result>`,
+				)
+				.join("")}</PhoronixTestSuite>`,
+		);
 		writeFileSync(join(directory, "raw", "result.xml"), "<result>fixture</result>");
 		writeImmutableJson(join(directory, "raw", "execution-execution-1.json"), attempt.execution);
 		writeImmutableJson(join(directory, "raw", "cleanup-execution-1.json"), attempt.cleanup);
@@ -574,12 +711,8 @@ test("mixed synthetic suites share a rolling batch with the longest member budge
 	expect(result.batches.map((batch) => batch.budgetMinutes)).toEqual([210]);
 });
 
-test("different allocation requirements stay in separate waves", () => {
-	for (const change of [
-		{ artifactIdentity: "other" },
-		{ environmentRevision: "other" },
-		{ startupMinutes: 30 },
-	]) {
+test("different allocation requirements stay in separate account batches", () => {
+	for (const change of [{ environmentRevision: "other" }, { startupMinutes: 30 }]) {
 		const cells = [
 			cell(),
 			{ ...cell(), id: "e2b-system-r0", suite: "system", workloadRevision: "system-v1", ...change },

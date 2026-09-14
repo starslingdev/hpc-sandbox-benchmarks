@@ -512,16 +512,21 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 		expect(isRetryableDriverCreate(unansweredError)).toBe(false);
 	});
 
-	it("keeps a 429 retryable through the typed status alone", async () => {
+	it("preserves a concurrent quota refusal's HTTP status for account admission", async () => {
 		const client = nativeClient({
 			create: async () => {
-				throw new RunCloudError(429, "too many sandboxes");
+				throw new RunCloudError(429, "concurrent sandbox resource limit reached");
 			},
 		});
 		const error = await driver(client)
 			.create(request)
 			.catch((caught: unknown) => caught);
-		expect(error).toMatchObject({ code: "create-failed" });
+		expect(error).toMatchObject({
+			code: "create-failed",
+			provider: "runcloud",
+			vendorHttpStatus: 429,
+			vendorMessage: "concurrent sandbox resource limit reached",
+		});
 		expect(isRetryableDriverCreate(error)).toBe(true);
 	});
 
@@ -589,6 +594,181 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 });
 
 describe("run.cloud commands, lifecycle, and account inventory", () => {
+	it("enumerates the raw SDK envelope with encoded cursors and a separate total scan budget", async () => {
+		let now = 0;
+		const urls: URL[] = [];
+		const fetchImpl: typeof fetch = Object.assign(
+			async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+				urls.push(new URL(String(input)));
+				expect(init?.method).toBe("GET");
+				now += 20_000;
+				return Response.json(
+					urls.length === 1
+						? { items: [{ id: "gone", state: "destroyed" }], nextCursor: "older+/=?&" }
+						: {
+								items: [
+									{
+										id: "old-owned",
+										state: "stopped",
+										name: `${RUNCLOUD_RECOVERY_NAME_PREFIX}-old`,
+									},
+								],
+								nextCursor: null,
+							},
+				);
+			},
+			{ preconnect: fetch.preconnect },
+		);
+		const d = driverFromComputeSpec(
+			"runcloud",
+			runcloudSpec(context, { fetch: fetchImpl, now: () => now }),
+			context.resolvedArtifact,
+			[context.env.RUN_CLOUD_API_KEY],
+		);
+		expect(await d.inventory?.list()).toEqual({
+			owned: [sandboxRef("runcloud", "old-owned")],
+			foreignCount: 0,
+		});
+		expect(urls.map((url) => url.pathname)).toEqual([
+			"/run-cloud/sandboxes",
+			"/run-cloud/sandboxes",
+		]);
+		expect(urls.map((url) => url.searchParams.get("limit"))).toEqual(["200", "200"]);
+		expect(urls.map((url) => url.searchParams.get("cursor"))).toEqual([null, "older+/=?&"]);
+	});
+
+	it("aborts the in-flight inventory HTTP request when admission is cancelled", async () => {
+		const controller = new AbortController();
+		let entered!: () => void;
+		const started = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		let socketAborted = false;
+		const fetchImpl: typeof fetch = Object.assign(
+			async (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+				new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener(
+						"abort",
+						() => {
+							socketAborted = true;
+							reject(init.signal?.reason);
+						},
+						{ once: true },
+					);
+					entered();
+				}),
+			{ preconnect: fetch.preconnect },
+		);
+		const d = driverFromComputeSpec(
+			"runcloud",
+			runcloudSpec(context, { fetch: fetchImpl }),
+			context.resolvedArtifact,
+			[context.env.RUN_CLOUD_API_KEY],
+		);
+		const result = d.inventory
+			?.list({ signal: controller.signal })
+			.catch((error: unknown) => error);
+		await started;
+		controller.abort(new Error("cancel admission"));
+		expect(await result).toMatchObject({ code: "probe-failed" });
+		expect(socketAborted).toBe(true);
+	});
+
+	it("finds an older owned sandbox beyond pages of destroyed tombstones", async () => {
+		const tombstones = Array.from({ length: 50 }, (_, i) =>
+			nativeSandbox("destroyed", {
+				id: `gone-${i}`,
+				name: `${RUNCLOUD_RECOVERY_NAME_PREFIX}-${i}`,
+			}),
+		);
+		const cursors: (string | undefined)[] = [];
+		const client = nativeClient({ list: async () => tombstones });
+		const d = driver(client, {
+			inventoryPage: async (cursor) => {
+				cursors.push(cursor);
+				return cursor === undefined
+					? { items: tombstones, nextCursor: "older" }
+					: {
+							items: [
+								nativeSandbox("stopped", {
+									id: "old-owned",
+									name: `${RUNCLOUD_RECOVERY_NAME_PREFIX}-old`,
+								}),
+								nativeSandbox("paused", { id: "foreign", name: "dev-box" }),
+							],
+							nextCursor: null,
+						};
+			},
+		});
+		expect(await d.inventory?.list()).toEqual({
+			owned: [sandboxRef("runcloud", "old-owned")],
+			foreignCount: 1,
+		});
+		expect(cursors).toEqual([undefined, "older"]);
+	});
+
+	it("fails account inventory closed when a later page fails or cannot prove completion", async () => {
+		const owned = nativeSandbox("stopped", {
+			id: "old-owned",
+			name: `${RUNCLOUD_RECOVERY_NAME_PREFIX}-old`,
+		});
+		for (const nextPage of [
+			async () => {
+				throw new RunCloudError(503, "inventory unavailable");
+			},
+			async () => ({ items: [], nextCursor: "older" }),
+			async () => ({ items: [], nextCursor: "" }),
+			async () => ({ items: [] }),
+			async () => ({ items: [owned], nextCursor: null }),
+		]) {
+			let pages = 0;
+			const d = driver(nativeClient(), {
+				inventoryPage: async (cursor) => {
+					pages++;
+					return cursor === undefined ? { items: [owned], nextCursor: "older" } : nextPage();
+				},
+			});
+			await expect(d.inventory?.list()).rejects.toMatchObject({
+				code: "probe-failed",
+				provider: "runcloud",
+			});
+			expect(pages).toBe(2);
+		}
+	});
+
+	it("uses one deadline for the entire inventory rather than resetting it for every page", async () => {
+		let now = 0;
+		let pages = 0;
+		const d = driver(nativeClient(), {
+			controlPlaneTimeoutMs: 100,
+			inventoryTimeoutMs: 100,
+			now: () => now,
+			inventoryPage: async () => {
+				pages++;
+				now += 100;
+				return { items: [], nextCursor: "older" };
+			},
+		});
+		await expect(d.inventory?.list()).rejects.toMatchObject({ code: "probe-failed" });
+		expect(pages).toBe(1);
+	});
+
+	it("stops paginated inventory on cancellation before requesting another page", async () => {
+		const controller = new AbortController();
+		let pages = 0;
+		const d = driver(nativeClient(), {
+			inventoryPage: async () => {
+				pages++;
+				controller.abort(new Error("stop inventory"));
+				return { items: [], nextCursor: "older" };
+			},
+		});
+		await expect(d.inventory?.list({ signal: controller.signal })).rejects.toMatchObject({
+			code: "probe-failed",
+		});
+		expect(pages).toBe(1);
+	});
+
 	it("passes commands straight to the native exec and preserves non-zero exits", async () => {
 		const execCalls: Array<{ command: string; options: NativeExecOptions }> = [];
 		const client = nativeClient({

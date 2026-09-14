@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { workflowAxes, workflowExperiment } from "./workflow-experiment.ts";
+import { workflowAxes, workflowBatch, workflowExperiment } from "./workflow-experiment.ts";
 
 const env = {
 	GITHUB_RUN_ID: "123",
@@ -10,16 +10,20 @@ const env = {
 test("workflow planning preserves samples and defaults shared accounts to one sandbox", () => {
 	const plan = workflowExperiment(env, "2026-09-10");
 	expect(plan.cells).toHaveLength(45);
-	// sandboxes=1 chunks each provider×wave group to the job ceiling.
-	expect(plan.batches).toHaveLength(24);
+	// sandboxes=1 chunks compatible account-wave work to the job ceiling, across variants.
+	expect(plan.batches).toHaveLength(23);
 	expect(workflowAxes(plan)).toEqual(["daytona", "tama"]);
 	expect(plan.accounts.every((account) => account.sandboxes === 1)).toBe(true);
 	expect(workflowAxes(plan, "daytona")).toEqual(["synthetic", "realworld"]);
 	expect(workflowAxes(plan, "daytona", "synthetic")).toEqual([
-		{ batch: "batch-0", provider: "daytona-vm", suite: "system", wave: "synthetic" },
-		{ batch: "batch-1", provider: "daytona-vm", suite: "system", wave: "synthetic" },
-		{ batch: "batch-2", provider: "daytona-container", suite: "system", wave: "synthetic" },
-		{ batch: "batch-3", provider: "daytona-container", suite: "system", wave: "synthetic" },
+		{ batch: "batch-0", providers: ["daytona-vm"], suite: "system", wave: "synthetic" },
+		{
+			batch: "batch-1",
+			providers: ["daytona-vm", "daytona-container"],
+			suite: "system",
+			wave: "synthetic",
+		},
+		{ batch: "batch-2", providers: ["daytona-container"], suite: "system", wave: "synthetic" },
 	]);
 	expect(
 		plan.cells.filter((cell) => cell.suite === "realworld-mastra").map((cell) => cell.replicate),
@@ -40,16 +44,31 @@ test("convergence and implicit per-cell quota overrides fail admission", () => {
 		"retired",
 	);
 });
-test("large account cohorts stay in one rolling batch under collection rounds", () => {
+test("workflow waves retain cells within the released queue limit and reject overflow at planning", () => {
 	const plan = workflowExperiment(
-		{ ...env, BENCH_PROVIDERS: "tama", BENCH_SUITES: "system", BENCH_REPLICAS: "257" },
+		{ ...env, BENCH_PROVIDERS: "tama", BENCH_SUITES: "system", BENCH_REPLICAS: "128" },
 		"2026-09-10",
 	);
-	expect(plan.batches).toHaveLength(129);
-	expect(plan.batches.flatMap((batch) => batch.cells)).toHaveLength(257);
+	expect(plan.batches).toHaveLength(64);
+	expect(plan.batches.flatMap((batch) => batch.cells)).toHaveLength(128);
 	expect(plan.batches.every((batch) => batch.maxConcurrency === 1)).toBe(true);
-	expect(plan.rounds.map((round) => round.batches.length)).toEqual([64, 64, 1]);
-	expect(plan.cells.at(-1)?.replicate).toBe(256);
+	expect(plan.rounds.map((round) => round.batches.length)).toEqual([64]);
+	expect(plan.cells.at(-1)?.replicate).toBe(127);
+	for (const replicas of ["129", "257"]) {
+		expect(() =>
+			workflowExperiment(
+				{ ...env, BENCH_PROVIDERS: "tama", BENCH_SUITES: "system", BENCH_REPLICAS: replicas },
+				"2026-09-10",
+			),
+		).toThrow("partition the experiment");
+	}
+	// Wave ordering permits each wave's full queue budget, even when the account total is larger.
+	const twoWaves = workflowExperiment(
+		{ ...env, BENCH_PROVIDERS: "tama", BENCH_REPLICAS: "128" },
+		"2026-09-10",
+	);
+	expect(twoWaves.batches).toHaveLength(128);
+	expect(twoWaves.rounds.map((round) => round.batches.length)).toEqual([64, 64]);
 });
 
 test("full provider plans separate synthetic and realworld under the account cap", () => {
@@ -77,9 +96,37 @@ test("full provider plans separate synthetic and realworld under the account cap
 		expect(cells.every((cell) => cell.passes === (realworld ? 1 : 2))).toBe(true);
 	}
 	expect(workflowAxes(plan, "e2b", "synthetic")).toEqual([
-		{ batch: "batch-0", provider: "e2b", suite: "synthetic", wave: "synthetic" },
+		{ batch: "batch-0", providers: ["e2b"], suite: "synthetic", wave: "synthetic" },
 	]);
 	expect(workflowAxes(plan, "e2b", "realworld")).toEqual([
-		{ batch: "batch-1", provider: "e2b", suite: "realworld", wave: "realworld" },
+		{ batch: "batch-1", providers: ["e2b"], suite: "realworld", wave: "realworld" },
 	]);
+});
+
+test("Modal variants share one owner and fill both waves together at account capacity 75", () => {
+	const plan = workflowExperiment(
+		{
+			...env,
+			BENCH_PROVIDERS: "modal-gvisor,modal-vm",
+			BENCH_SUITES: "",
+			BENCH_ACCOUNT_CAPACITY: '{"modal":{"sandboxes":75}}',
+		},
+		"2026-09-13",
+	);
+	expect(plan.cells).toHaveLength(108);
+	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([36, 72]);
+	expect(plan.batches.map((batch) => batch.budgetMinutes)).toEqual([145, 150]);
+	for (const batch of plan.batches) {
+		expect(batch.maxConcurrency).toBe(75);
+		expect(
+			new Set(batch.cells.map((id) => plan.cells.find((cell) => cell.id === id)?.provider)),
+		).toEqual(new Set(["modal-gvisor", "modal-vm"]));
+		expect(workflowBatch(plan, batch.id, "modal", '["modal-vm","modal-gvisor"]')).toBe(batch);
+		for (const providers of ['["modal-vm"]', '["modal-vm","tama"]', '["modal-vm","modal-vm"]']) {
+			expect(() => workflowBatch(plan, batch.id, "modal", providers)).toThrow("frozen batch");
+		}
+		expect(() => workflowBatch(plan, batch.id, "tama", '["modal-vm","modal-gvisor"]')).toThrow(
+			"frozen batch",
+		);
+	}
 });

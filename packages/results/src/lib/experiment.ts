@@ -16,11 +16,13 @@ import {
 	executionReceiptSchema,
 	experimentAttemptSchema,
 	experimentPlanSchema,
+	getMetric,
 	getProvider,
 	parseRun,
 	providerReportedNothing,
 } from "@sandbox-benchmarks/schema";
 import { aggregateRuns } from "./aggregate.ts";
+import type { PtsTrialEvidence } from "./pts-trial-evidence.ts";
 
 export function evidenceDigest(value: unknown): string {
 	// Full experiment/Run envelopes are larger than individual vendor response diagnostics.
@@ -177,6 +179,8 @@ export interface AttemptWithRun {
 	run?: Run;
 	execution?: ExecutionReceipt;
 	cleanup?: CleanupReceipt;
+	/** When present, raw verification takes precedence over a shard's declared sample origin. */
+	ptsTrials?: PtsTrialEvidence[];
 }
 
 export interface CoverageReport {
@@ -188,6 +192,7 @@ export interface CoverageReport {
 		status: "complete" | "missing" | "failed" | "cancelled" | "excluded";
 		missingMetrics: string[];
 		excludedMetrics: string[];
+		passShortfalls?: Array<PtsTrialEvidence & { expected: number }>;
 	}>;
 	conflicts: string[];
 }
@@ -223,7 +228,10 @@ export function describeCoverageShortfall(report: CoverageReport, limit = 20): s
 				cell.status !== "missing" && cell.missingMetrics.length > 0
 					? ` missing=${cell.missingMetrics.join(",")}`
 					: "";
-			return `${cell.status}: ${cell.id}${missing}`;
+			const passes = cell.passShortfalls?.length
+				? ` passes=${cell.passShortfalls.map((entry) => `${entry.metricId}:${entry.observed ?? "unknown"}/${entry.expected}(${entry.source})`).join(",")}`
+				: "";
+			return `${cell.status}: ${cell.id}${missing}${passes}`;
 		}),
 	];
 	if (short.length > limit) lines.push(`… and ${short.length - limit} more incomplete cell(s)`);
@@ -338,12 +346,44 @@ export function evaluateExperiment(
 		// Declared metrics need real samples — an empty samples array (or non-positive values) is a
 		// shortfall, not coverage. Frozen CPU run 34672199543 finished PTS exit 0 for mastra/openclaw
 		// while Test Core / Shrinkwrap / Test Unit Fast produced no positive samples.
+		const passShortfalls = (provider?.metrics ?? [])
+			.filter((metric) => {
+				const definition = getMetric(metric.metricId);
+				// Only a known non-PTS definition establishes an independent sampling contract.
+				// Retiring a catalog entry cannot turn a frozen PTS metric into a harness timing.
+				return eligible.includes(metric.metricId) && (!definition || definition.pts !== undefined);
+			})
+			.map((metric): PtsTrialEvidence & { expected: number } => ({
+				providerId: cell.provider,
+				metricId: metric.metricId,
+				expected: cell.passes,
+				...(!getMetric(metric.metricId)
+					? { source: "unverified" as const }
+					: selected?.ptsTrials !== undefined
+						? (selected.ptsTrials.find(
+								(entry) => entry.providerId === cell.provider && entry.metricId === metric.metricId,
+							) ?? { source: "unverified" as const })
+						: {
+								source: metric.ptsSampleSource ?? "unverified",
+								...(metric.ptsSampleSource === "raw-string"
+									? { observed: metric.samples.length }
+									: {}),
+							}),
+			}))
+			.filter((entry) =>
+				entry.source === "single-trial-value"
+					? entry.observed !== 1 || entry.expected !== 1
+					: entry.source !== "raw-string" || entry.observed !== entry.expected,
+			);
 		const measured = new Set(
 			(provider?.metrics ?? [])
 				.filter(
 					(metric) =>
 						metric.samples.length > 0 &&
-						metric.samples.every((sample) => Number.isFinite(sample) && sample > 0),
+						metric.samples.every((sample) => Number.isFinite(sample) && sample > 0) &&
+						// PTS Value alone has unknown trial count; verified one-execution metadata can
+						// prove one trial. Harness timings have their own sampling contract.
+						!passShortfalls.some((entry) => entry.metricId === metric.metricId),
 				)
 				.map((metric) => metric.metricId),
 		);
@@ -401,7 +441,13 @@ export function evaluateExperiment(
 				: evidence?.outcome === "cancelled"
 					? "cancelled"
 					: "failed";
-		report.cells.push({ id: cell.id, status, missingMetrics, excludedMetrics });
+		report.cells.push({
+			id: cell.id,
+			status,
+			missingMetrics,
+			excludedMetrics,
+			...(passShortfalls.length ? { passShortfalls } : {}),
+		});
 		if (status === "complete" && evidence) report.selectedAttempts.push(evidence.id);
 	}
 	report.complete =

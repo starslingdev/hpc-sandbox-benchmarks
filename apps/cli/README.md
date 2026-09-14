@@ -29,3 +29,14 @@
 imports the CLI.
 
 Run a bin directly during development: `bun apps/cli/src/bin/plan-matrix.ts`.
+
+`workflow-experiment collect` downloads immutable attempt artifacts with 32 concurrent workers and
+reads independent account journals alongside those downloads. Set `BENCH_ARTIFACT_DOWNLOAD_CONCURRENCY`
+to an integer from 1 to 64 for transfer diagnostics; this setting does not alter sandbox capacity,
+the frozen plan, or publication eligibility. The default leaves room for journal requests below
+[GitHub's shared concurrent-request limit](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+Collection rejects duplicate destinations, validates original Run/raw digests and provenance, and
+waits for all active extractions before reporting a download failure. Its final JSON timing line
+reports artifact bytes, inventory, downloads plus verification, synchronous verification, journal reads,
+peak download concurrency, and the whole collect command duration. Journal and download durations
+overlap; do not add them when interpreting total wall time.

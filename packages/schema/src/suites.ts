@@ -310,14 +310,13 @@ export const SUITES = {
 		ptsTimesToRun: 1,
 		defaultReplicas: 12,
 		dimensions: ["realworld"],
-		// Declared metrics must be ones that can post real samples under the 4vCPU/8GiB target.
-		// Frozen run 34672199543: shrinkwrap_check and test_unit_fast posted 0 samples (always red
-		// at this pin); lint_oxlint rarely samples but did post Values, so it stays declared.
+		// Type-aware lint preserves upstream's file sets in bounded sequential batches. The
+		// all-extension task has a new identity: its predecessor selected no channel files.
 		metrics: [
 			"realworld_openclaw_task_git_clone",
 			"realworld_openclaw_task_cold_install",
 			"realworld_openclaw_task_lint_oxlint",
-			"realworld_openclaw_task_lint_extensions",
+			"realworld_openclaw_task_lint_extensions_all",
 			"realworld_openclaw_task_typecheck",
 			"realworld_openclaw_task_test_types",
 		],

@@ -195,15 +195,17 @@ describe("suiteFigureNote", () => {
 		incomplete: [],
 	});
 
-	it("discloses declared tasks no environment completed, named in bold", () => {
+	it("discloses missing measurements without inventing an execution outcome", () => {
 		const rows: number[][] = [
 			[12, 12],
 			[12, 12],
 		];
 		const withDropped = { ...suite(rows), droppedTasks: ["test core"] };
 		expect(suiteFigureNote(withDropped, 3)).toContain(
-			"**test core** failed or was skipped in every environment and is excluded from all bars.",
+			"Tasks without recorded measurements in this run are excluded from all bars: **test core**.",
 		);
+		expect(suiteFigureNote(withDropped, 3)).not.toContain("failed");
+		expect(suiteFigureNote(withDropped, 3)).not.toContain("skipped");
 		expect(suiteFigureNote(suite(rows), 3)).not.toContain("excluded from all bars");
 	});
 

@@ -18,13 +18,15 @@ SRC_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 # wrapper name is a fixed constant -- no versionless-dir derivation.
 EXE_NAME="realworld-run"
 
-if [ ! -f "${SRC_DIR}/target.env" ] || [ ! -f "${SRC_DIR}/realworld-runner.sh" ]; then
-	echo "ERROR: target.env or realworld-runner.sh missing next to install.sh (${SRC_DIR})" >&2
+if [ ! -f "${SRC_DIR}/target.env" ] || [ ! -f "${SRC_DIR}/realworld-runner.sh" ] || [ ! -f "${SRC_DIR}/openclaw-lint.mjs" ]; then
+	echo "ERROR: target.env, realworld-runner.sh or openclaw-lint.mjs missing next to install.sh (${SRC_DIR})" >&2
 	echo 1 > ~/install-exit-status
 	exit 1
 fi
 cp "${SRC_DIR}/target.env" .
 cp "${SRC_DIR}/realworld-runner.sh" .
+# Workload helper, overlaid by run_realworld_pts alongside the shared runner.
+cp "${SRC_DIR}/openclaw-lint.mjs" .
 chmod +x realworld-runner.sh
 
 cat <<EOF > "$EXE_NAME"
