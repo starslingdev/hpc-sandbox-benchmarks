@@ -820,7 +820,7 @@ export function providerStatusText(p: ProviderRun): string {
 /**
  * A full benchmark Run: every provider measured against one pinned target spec at one SHA.
  *
- * `schemaVersion` accepts `"2"` through `"7"`. Version 7 adds experiment plan/attempt linkage;
+ * `schemaVersion` accepts `"2"` through `"8"`. Version 8 labels explicit partial publication and retains frozen coverage. Version 7 adds experiment plan/attempt linkage;
  * older documents do not establish experiment completeness. v1's `skips: { suite, reason }[]` could not say
  * whether a benchmark was deliberately not run or had crashed, and carried no positive record of what
  * DID run — so a suite that vanished (job died, artifact never uploaded) left no trace anywhere in the
@@ -857,7 +857,7 @@ export function providerStatusText(p: ProviderRun): string {
  * migrates them in place.
  */
 export const runSchema = type({
-	schemaVersion: "'2' | '3' | '4' | '5' | '6' | '7'",
+	schemaVersion: "'2' | '3' | '4' | '5' | '6' | '7' | '8'",
 	runId: runIdSchema,
 	sha: "string",
 	// ISO-8601 timestamp the Run was generated at — validated so the RunIndex sort key can't be a
@@ -872,6 +872,33 @@ export const runSchema = type({
 		planDigest: /^sha256:[a-f0-9]{64}$/,
 		"cohortDigest?": /^sha256:[a-f0-9]{64}$/,
 		attemptIds: "string[] >= 1",
+		"partial?": {
+			status: "'partial'",
+			planned: "number.integer >= 1",
+			complete: "number.integer >= 0",
+			incomplete: "number.integer >= 1",
+			excluded: "number.integer >= 0",
+			cells: type({
+				id: "string >= 1",
+				provider: "string >= 1",
+				suite: "string >= 1",
+				replicate: "number.integer >= 0",
+				"attemptId?": "string >= 1",
+				status: "'complete' | 'missing' | 'failed' | 'cancelled' | 'excluded'",
+				plannedMetrics: "string[] >= 1",
+				passes: "number.integer >= 1",
+				missingMetrics: "string[]",
+				excludedMetrics: "string[]",
+				retainedMetrics: "string[]",
+				"passShortfalls?": type({
+					providerId: "string",
+					metricId: "string",
+					source: "'raw-string' | 'single-trial-value' | 'aggregate-value' | 'unverified'",
+					"observed?": "number.integer >= 0",
+					expected: "number.integer >= 1",
+				}).array(),
+			}).array(),
+		},
 	},
 	targetSpec: targetSpecSchema,
 	providers: providerRunSchema.array(),
@@ -882,6 +909,57 @@ export const runSchema = type({
 	const version = Number(run.schemaVersion);
 	if (version >= 7 !== (run.experiment !== undefined)) {
 		return ctx.mustBe("experiment linkage exactly on Run v7 or newer");
+	}
+	const partial = run.experiment?.partial;
+	if ((version === 8) !== (partial !== undefined)) {
+		return ctx.mustBe("explicit partial coverage exactly on Run v8");
+	}
+	if (
+		run.experiment &&
+		new Set(run.experiment.attemptIds).size !== run.experiment.attemptIds.length
+	)
+		return ctx.mustBe("unique experiment attempt IDs");
+	if (partial) {
+		const cells = partial.cells;
+		if (
+			cells.length !== partial.planned ||
+			new Set(cells.map((cell) => cell.id)).size !== cells.length ||
+			cells.filter((cell) => cell.status === "complete").length !== partial.complete ||
+			cells.filter((cell) => cell.status === "excluded").length !== partial.excluded ||
+			partial.complete + partial.incomplete + partial.excluded !== partial.planned
+		)
+			return ctx.mustBe("partial coverage counts matching unique planned cells");
+		const attemptIds = cells.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : []));
+		if (
+			new Set(attemptIds).size !== attemptIds.length ||
+			attemptIds.length !== run.experiment?.attemptIds.length ||
+			attemptIds.some((id) => !run.experiment?.attemptIds.includes(id))
+		)
+			return ctx.mustBe("partial coverage linked to exactly its selected attempts");
+		for (const cell of cells) {
+			const sets = [
+				cell.plannedMetrics,
+				cell.missingMetrics,
+				cell.excludedMetrics,
+				cell.retainedMetrics,
+			];
+			if (
+				sets.some((ids) => new Set(ids).size !== ids.length) ||
+				sets
+					.slice(1)
+					.flat()
+					.some((id) => !cell.plannedMetrics.includes(id)) ||
+				cell.retainedMetrics.some(
+					(id) => cell.missingMetrics.includes(id) || cell.excludedMetrics.includes(id),
+				) ||
+				(cell.retainedMetrics.length > 0 && cell.attemptId === undefined) ||
+				(cell.status === "complete" &&
+					(cell.missingMetrics.length > 0 ||
+						cell.retainedMetrics.length + cell.excludedMetrics.length !==
+							cell.plannedMetrics.length))
+			)
+				return ctx.mustBe("consistent partial metric coverage within each frozen cell");
+		}
 	}
 	// The replicate fields (`replicateIndex`, `MetricResult.replicates`) are v3-or-later, so "v2 == the
 	// pre-replicate schema" stays a real guarantee: a producer that writes a replicate field but forgets

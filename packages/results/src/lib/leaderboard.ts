@@ -311,6 +311,7 @@ export interface AbsentProvider {
 export interface Leaderboard {
 	runId: string;
 	comparisonCohort?: string;
+	partial?: NonNullable<Run["experiment"]>["partial"];
 	sha: string;
 	generatedAt: string;
 	/** The requested comparison target recorded on this Run — never substituted from global config. */
@@ -710,6 +711,7 @@ export function buildLeaderboard(run: Run): Leaderboard {
 
 	return {
 		runId: run.runId,
+		...(run.experiment?.partial ? { partial: run.experiment.partial } : {}),
 		...(run.experiment?.cohortDigest ? { comparisonCohort: run.experiment.cohortDigest } : {}),
 		sha: run.sha,
 		generatedAt: run.generatedAt,
@@ -1119,6 +1121,13 @@ export function renderLeaderboardMarkdown(
 		"",
 		`Run ${runSourceLinks(board.runId)} · commit ${commitSourceLink(board.sha)} ·`,
 		`dataset ${datasetSourceLink(board.runId)} · generated ${board.generatedAt}`,
+		...(board.partial
+			? [
+					"",
+					`**Partial results — incomplete experiment.** ${board.partial.complete} of ${board.partial.planned} planned cells complete; ${board.partial.incomplete} incomplete; ${board.partial.excluded} excluded.`,
+					"Only verified measurements are ranked. Missing trials and failed cells remain in the dataset's frozen coverage; provider coverage is uneven and these results do not establish a complete comparison.",
+				]
+			: []),
 		...(board.comparisonCohort
 			? [
 					"",

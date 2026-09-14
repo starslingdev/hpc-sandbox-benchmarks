@@ -21,3 +21,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0009](./0009-harness-operations-and-gpu-allocation.md) | Separate harness operations and typed provider-specific GPU allocation |
 | [0010](./0010-experiment-completeness.md) | Frozen experiments, immutable attempts and strict completeness |
 | [0011](./0011-inventory-admission-scope.md) | Inventory admission scope and ownership-safe recovery |
+| [0012](./0012-explicit-partial-publication.md) | Explicit partial publication with frozen coverage and verified measurements |

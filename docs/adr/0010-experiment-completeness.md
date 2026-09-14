@@ -5,7 +5,8 @@ status: accepted
 # Frozen experiments and evidence-based publication
 
 The inventory admission condition is refined by
-[ADR-0011](./0011-inventory-admission-scope.md). All other requirements remain.
+[ADR-0011](./0011-inventory-admission-scope.md). Explicit partial publication is refined by
+[ADR-0012](./0012-explicit-partial-publication.md). All other requirements remain.
 
 ## Decision
 
