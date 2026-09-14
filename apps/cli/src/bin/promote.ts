@@ -21,12 +21,19 @@ import {
 import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-artifacts.ts";
 
 if (import.meta.main) {
-	const [runFile, datasetDir, planFile, attemptsRoot] = process.argv.slice(2);
+	const args = process.argv.slice(2);
+	const allowPartial = args.includes("--allow-partial");
+	const [runFile, datasetDir, planFile, attemptsRoot] = args.filter(
+		(arg) => arg !== "--allow-partial",
+	);
 	if (!runFile) {
-		fail("usage: promote <candidateRun.json> [datasetDir plan.json attemptsRoot]", {
-			properties: { title: "promote usage" },
-			exitCode: 2,
-		});
+		fail(
+			"usage: promote <candidateRun.json> [datasetDir plan.json attemptsRoot] [--allow-partial]",
+			{
+				properties: { title: "promote usage" },
+				exitCode: 2,
+			},
+		);
 	}
 
 	logInfo(`Promoting candidate ${runFile}`);
@@ -78,6 +85,7 @@ if (import.meta.main) {
 		const verified = aggregateExperiment(
 			readExperimentPlan(planFile),
 			readExperimentAttempts(attemptsRoot),
+			{ allowPartial },
 		);
 		if (!verified.run) {
 			fail(`experiment is incomplete: ${JSON.stringify(verified.coverage)}`);

@@ -192,6 +192,8 @@ export interface CoverageReport {
 		status: "complete" | "missing" | "failed" | "cancelled" | "excluded";
 		missingMetrics: string[];
 		excludedMetrics: string[];
+		attemptId?: string;
+		retainedMetrics?: string[];
 		passShortfalls?: Array<PtsTrialEvidence & { expected: number }>;
 	}>;
 	conflicts: string[];
@@ -409,7 +411,7 @@ export function evaluateExperiment(
 				(step) => step.state === "completed" && stepAccepted(step),
 			) &&
 			artifact?.sandboxId === execution.sandboxId;
-		const completed =
+		const measurementVerified =
 			receiptsConfirmSuccess &&
 			evidence?.outcome === "completed" &&
 			evidence.completion === "known-success" &&
@@ -426,9 +428,15 @@ export function evaluateExperiment(
 			evidenceDigest(effectiveArtifact(artifact.provenance)) === cell.artifactIdentity &&
 			selected?.run?.replicateIndex === cell.replicate &&
 			provider?.suitesCovered.includes(cell.suite) &&
-			missingMetrics.length === 0 &&
 			!provider.gaps.some((gap) => {
 				if (gap.scope !== "suite" || gap.id !== cell.suite) return true;
+				return gap.cause?.kind !== "metrics-unrecorded";
+			});
+		const completed =
+			measurementVerified &&
+			provider !== undefined &&
+			missingMetrics.length === 0 &&
+			!provider.gaps.some((gap) => {
 				return (
 					gap.cause?.kind !== "metrics-unrecorded" ||
 					gap.cause.metricIds.some((id) => !excludedMetrics.includes(id))
@@ -446,6 +454,9 @@ export function evaluateExperiment(
 			status,
 			missingMetrics,
 			excludedMetrics,
+			...(evidence ? { attemptId: evidence.id } : {}),
+			retainedMetrics:
+				measurementVerified && validLineage ? eligible.filter((id) => measured.has(id)) : [],
 			...(passShortfalls.length ? { passShortfalls } : {}),
 		});
 		if (status === "complete" && evidence) report.selectedAttempts.push(evidence.id);
@@ -458,7 +469,7 @@ export function evaluateExperiment(
 
 export interface ExperimentAggregation {
 	coverage: CoverageReport;
-	/** Present only when coverage is complete: the one Run carrying verified experiment linkage. */
+	/** Verified complete publication, or explicitly requested partial publication with frozen coverage. */
 	run?: Run;
 }
 
@@ -470,10 +481,27 @@ export interface ExperimentAggregation {
 export function aggregateExperiment(
 	plan: ExperimentPlan,
 	attempts: readonly AttemptWithRun[],
+	options: { allowPartial?: boolean } = {},
 ): ExperimentAggregation {
 	const coverage = evaluateExperiment(plan, attempts);
-	if (!coverage.complete) return { coverage };
-	const selected = new Set(coverage.selectedAttempts);
+	const partial = !coverage.complete && options.allowPartial === true;
+	if (!coverage.complete && !partial) return { coverage };
+	// Partial publication relaxes metric completeness only. Missing evidence, conflicting provenance
+	// and unresolved allocations still cannot be published.
+	if (
+		partial &&
+		(coverage.conflicts.length > 0 ||
+			coverage.cells.some((cell) => cell.status === "missing") ||
+			attempts.some(
+				({ evidence, run }) => !run || !evidence.rawDigest || evidence.cleanup === "unresolved",
+			) ||
+			!coverage.cells.some((cell) => (cell.retainedMetrics?.length ?? 0) > 0))
+	)
+		return { coverage };
+	const selectedIds = partial
+		? coverage.cells.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : []))
+		: coverage.selectedAttempts;
+	const selected = new Set(selectedIds);
 	const runs = attempts
 		.filter(({ evidence }) => selected.has(evidence.id))
 		.toSorted((a, b) => a.evidence.cellId.localeCompare(b.evidence.cellId))
@@ -481,14 +509,42 @@ export function aggregateExperiment(
 			if (!run || Number(run.schemaVersion) < 6)
 				throw new Error("experiment publication requires artifact-attributed shards");
 			const cell = plan.cells.find((entry) => entry.id === evidence.cellId);
+			const retained =
+				coverage.cells.find((entry) => entry.id === evidence.cellId)?.retainedMetrics ?? [];
 			const eligible = new Set(
-				cell?.metrics.filter((id) => !cell.exclusions.some((entry) => entry.metricId === id)),
+				partial
+					? retained
+					: cell?.metrics.filter((id) => !cell.exclusions.some((entry) => entry.metricId === id)),
 			);
+			const omitted =
+				cell?.metrics.filter(
+					(id) => !eligible.has(id) && !cell.exclusions.some((entry) => entry.metricId === id),
+				) ?? [];
 			return {
 				...run,
 				providers: run.providers.map((provider) => ({
 					...provider,
-					metrics: provider.metrics.filter((metric) => eligible.has(metric.metricId)),
+					metrics:
+						provider.providerId === cell?.provider
+							? provider.metrics.filter((metric) => eligible.has(metric.metricId))
+							: [],
+					validationStatus:
+						provider.providerId === cell?.provider &&
+						provider.metrics.some((metric) => eligible.has(metric.metricId))
+							? ("validated" as const)
+							: ("pending" as const),
+					gaps:
+						partial && provider.providerId === cell?.provider && omitted.length > 0
+							? [
+									...provider.gaps,
+									{
+										scope: "suite" as const,
+										id: cell.suite,
+										outcome: "failed" as const,
+										reason: `Partial publication withheld unverified measurements: ${omitted.join(", ")}`,
+									},
+								]
+							: provider.gaps,
 				})),
 			};
 		});
@@ -512,11 +568,37 @@ export function aggregateExperiment(
 	].toSorted((a, b) => a.suite.localeCompare(b.suite));
 	const run = parseRun({
 		...merged,
-		schemaVersion: "7",
+		schemaVersion: partial ? "8" : "7",
 		experiment: {
 			planDigest: plan.digest,
 			cohortDigest: evidenceDigest(cohorts),
-			attemptIds: coverage.selectedAttempts,
+			attemptIds: selectedIds,
+			...(partial
+				? {
+						partial: {
+							status: "partial",
+							planned: plan.cells.length,
+							complete: coverage.cells.filter((cell) => cell.status === "complete").length,
+							incomplete: coverage.cells.filter(
+								(cell) => !["complete", "excluded"].includes(cell.status),
+							).length,
+							excluded: coverage.cells.filter((cell) => cell.status === "excluded").length,
+							cells: coverage.cells.map((cell) => {
+								const planned = plan.cells.find((entry) => entry.id === cell.id);
+								if (!planned) throw new Error(`coverage cell missing from plan: ${cell.id}`);
+								return {
+									...cell,
+									provider: planned.provider,
+									suite: planned.suite,
+									replicate: planned.replicate,
+									plannedMetrics: planned.metrics,
+									passes: planned.passes,
+									retainedMetrics: cell.retainedMetrics ?? [],
+								};
+							}),
+						},
+					}
+				: {}),
 		},
 	});
 	return { coverage, run };

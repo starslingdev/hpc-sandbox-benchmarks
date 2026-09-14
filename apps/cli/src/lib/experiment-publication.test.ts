@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildPipelineChartModel } from "@sandbox-benchmarks/figures";
 import {
+	aggregateExperiment,
 	benchmarkDataOf,
 	evidenceDigest,
 	leaderboardFigures,
@@ -232,6 +233,47 @@ const invoke = (bin: string, args: string[]) =>
 		stderr: "pipe",
 		env: { ...process.env, GITHUB_ACTIONS: "false" },
 	});
+
+test("explicit partial publication retains verified cells, preserves shortfalls and labels the leaderboard", () => {
+	const f = fixture("partial");
+	const attemptRoot = join(f.attemptsRoot, "e2b-cpu-node-r0");
+	const runFile = join(attemptRoot, "run.json");
+	const shard = JSON.parse(readFileSync(runFile, "utf8"));
+	const provider = shard.providers.find(
+		(provider: { providerId: string }) => provider.providerId === "e2b",
+	);
+	provider.metrics = [];
+	provider.validationStatus = "pending";
+	writeFileSync(runFile, JSON.stringify(shard));
+	const evidenceFile = join(attemptRoot, "attempt.json");
+	const evidence = JSON.parse(readFileSync(evidenceFile, "utf8"));
+	writeFileSync(evidenceFile, JSON.stringify({ ...evidence, runDigest: evidenceDigest(shard) }));
+	const args = [f.planFile, f.attemptsRoot, f.candidate];
+	expect(invoke("aggregate-experiment", args).exitCode).toBe(1);
+	const result = invoke("aggregate-experiment", [...args, "--allow-partial"]);
+	expect(result.stderr.toString()).toBe("");
+	expect(result.exitCode).toBe(0);
+	const candidateFile = join(f.candidate, "runs", `${f.runId}.json`);
+	const run = parseRun(JSON.parse(readFileSync(candidateFile, "utf8")));
+	expect(run.schemaVersion).toBe("8");
+	expect(run.experiment?.partial).toMatchObject({ planned: 4, complete: 3, incomplete: 1 });
+	expect(run.experiment?.partial?.cells).toHaveLength(4);
+	expect(run.experiment?.attemptIds).toHaveLength(4);
+	const promoteArgs = [candidateFile, f.dataset, f.planFile, f.attemptsRoot];
+	expect(invoke("promote", promoteArgs).exitCode).toBe(1);
+	expect(existsSync(f.dataset)).toBe(false);
+	expect(invoke("promote", [...promoteArgs, "--allow-partial"]).exitCode).toBe(0);
+	const publishedFile = join(f.dataset, "runs", `${f.runId}.json`);
+	const rendered = invoke("leaderboard", [publishedFile]);
+	expect(rendered.exitCode).toBe(0);
+	expect(rendered.stdout.toString()).toContain("**Partial results — incomplete experiment.**");
+	expect(rendered.stdout.toString()).toContain("3 of 4 planned cells complete; 1 incomplete");
+	// Opt-in never permits a substituted candidate or corrupted original evidence.
+	writeFileSync(candidateFile, JSON.stringify({ ...run, generatedAt: "2026-09-13T01:00:00Z" }));
+	expect(invoke("promote", [...promoteArgs, "--allow-partial"]).exitCode).toBe(1);
+	writeFileSync(runFile, JSON.stringify({ ...shard, sha: "b".repeat(40) }));
+	expect(invoke("aggregate-experiment", [...args, "--allow-partial"]).exitCode).toBe(1);
+}, 20_000);
 
 test("normalized PTS trials publish through candidate, dataset index and leaderboard with replicate evidence", () => {
 	const f = fixture("complete");
@@ -532,3 +574,34 @@ test("a valid Run digest cannot substitute changed samples or another provider's
 		expect(existsSync(join(f.candidate, "index.json"))).toBe(false);
 	}
 }, 20_000);
+
+test("partial aggregation retains proven metrics from incomplete suites and rejects unresolved evidence", () => {
+	const f = fixture("partial-metrics", {
+		suite: "realworld-better-auth",
+		changeMetric(metric) {
+			metric.samples = [0];
+			metric.aggregates = aggregate([0]);
+		},
+	});
+	const plan = JSON.parse(readFileSync(f.planFile, "utf8"));
+	const attempts = readExperimentAttempts(f.attemptsRoot);
+	expect(aggregateExperiment(plan, attempts).run).toBeUndefined();
+	const partial = aggregateExperiment(plan, attempts, { allowPartial: true }).run;
+	expect(partial?.experiment?.partial).toMatchObject({ complete: 0, incomplete: 4 });
+	expect(
+		partial?.experiment?.partial?.cells.every((cell) => cell.retainedMetrics.length === 9),
+	).toBe(true);
+	expect(
+		partial?.providers
+			.flatMap((provider) => provider.metrics)
+			.every((metric) => metric.samples.every((sample) => sample > 0)),
+	).toBe(true);
+	expect(aggregateExperiment(plan, attempts.slice(1), { allowPartial: true }).run).toBeUndefined();
+	const first = attempts[0];
+	if (!first) throw new Error("missing fixture attempt");
+	first.evidence.cleanup = "unresolved";
+	expect(aggregateExperiment(plan, attempts, { allowPartial: true }).run).toBeUndefined();
+	first.evidence.cleanup = "confirmed";
+	first.evidence.planDigest = `sha256:${"b".repeat(64)}`;
+	expect(aggregateExperiment(plan, attempts, { allowPartial: true }).run).toBeUndefined();
+});

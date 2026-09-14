@@ -9,16 +9,17 @@ import {
 import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-artifacts.ts";
 
 if (import.meta.main) {
-	const [planFile, attemptsRoot, output] = process.argv.slice(2);
+	const args = process.argv.slice(2);
+	const allowPartial = args.includes("--allow-partial");
+	const [planFile, attemptsRoot, output] = args.filter((arg) => arg !== "--allow-partial");
 	if (!planFile || !attemptsRoot || !output)
 		throw new Error(
-			"usage: aggregate-experiment <plan.json> <attempts-directory> <candidate-directory>",
+			"usage: aggregate-experiment <plan.json> <attempts-directory> <candidate-directory> [--allow-partial]",
 		);
 	const plan = readExperimentPlan(planFile);
 	const attempts = readExperimentAttempts(attemptsRoot);
-	// One evaluation: the coverage report is written either way, and the Run exists only when it is
-	// complete.
-	const { coverage, run } = aggregateExperiment(plan, attempts);
+	// Persist the independently evaluated coverage even when publication cannot proceed.
+	const { coverage, run } = aggregateExperiment(plan, attempts, { allowPartial });
 	mkdirSync(output, { recursive: true });
 	writeFileSync(join(output, "coverage.json"), `${JSON.stringify(coverage, null, 2)}\n`);
 	if (!run) {
