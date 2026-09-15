@@ -25,3 +25,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0013](./0013-cpu-partial-publication-default.md) | CPU workflow defaults to verified partial publication |
 | [0014](./0014-post-run-cleanup-recovery.md) | Append-only cleanup recovery for partial publication |
 | [0015](./0015-synthetic-headline-pair.md) | Synthetic headline selection and paired WAN directions |
+| [0016](./0016-modal-app-scoped-admission.md) | Modal admission scoped to the benchmark App |

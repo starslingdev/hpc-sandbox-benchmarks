@@ -4,7 +4,13 @@ import { reconcileAccount } from "./account-reconciliation.ts";
 
 const ref: SandboxRef = { provider: "tama", id: "machine-owned" };
 
-for (const id of ["daytona-vm", "daytona-container", "novita"] as const) {
+for (const id of [
+	"daytona-vm",
+	"daytona-container",
+	"novita",
+	"modal-gvisor",
+	"modal-vm",
+] as const) {
 	test(`${id} permits foreign churn but removes only benchmark-owned sandboxes`, async () => {
 		const owned: SandboxRef = { provider: id, id: "benchmark-owned" };
 		const deleted: SandboxRef[] = [];
@@ -28,34 +34,33 @@ for (const id of ["daytona-vm", "daytona-container", "novita"] as const) {
 	});
 }
 
-test("benchmark-scoped admission still reject malformed inventory, uncertain cleanup and new owned allocations", async () => {
-	const id = "novita";
-	const owned: SandboxRef = { provider: id, id: "benchmark-owned" };
-	for (const candidate of [
-		driver({ inventory: { list: async () => ({ owned: [], foreignCount: -1 }) } }),
-		driver({ inventory: { list: async () => ({ owned: [ref], foreignCount: 5 }) } }),
-		driver({ inventory: { list: async () => ({ owned: [owned, owned], foreignCount: 5 }) } }),
-		driver({
-			inventory: { list: async () => ({ owned: [owned], foreignCount: 5 }) },
-			destroyById: async () => {},
-			probes: { observe: async () => ({ state: "running" }) },
-		}),
-		driver({
-			inventory: { list: async () => ({ owned: [owned], foreignCount: 5 }) },
-			probes: { observe: async () => ({ state: "absent" }) },
-		}),
-	]) {
-		await expect(
-			reconcileAccount([{ id, driver: candidate }], { timeoutMs: 20, pollMs: 1 }),
-		).rejects.toThrow();
-	}
-});
+for (const id of ["novita", "modal-gvisor", "modal-vm"] as const) {
+	test(`${id} still rejects malformed inventory, uncertain cleanup and new owned allocations`, async () => {
+		const owned: SandboxRef = { provider: id, id: "benchmark-owned" };
+		for (const candidate of [
+			driver({ inventory: { list: async () => ({ owned: [], foreignCount: -1 }) } }),
+			driver({ inventory: { list: async () => ({ owned: [ref], foreignCount: 5 }) } }),
+			driver({ inventory: { list: async () => ({ owned: [owned, owned], foreignCount: 5 }) } }),
+			driver({
+				inventory: { list: async () => ({ owned: [owned], foreignCount: 5 }) },
+				destroyById: async () => {},
+				probes: { observe: async () => ({ state: "running" }) },
+			}),
+			driver({
+				inventory: { list: async () => ({ owned: [owned], foreignCount: 5 }) },
+				probes: { observe: async () => ({ state: "absent" }) },
+			}),
+		]) {
+			await expect(
+				reconcileAccount([{ id, driver: candidate }], { timeoutMs: 20, pollMs: 1 }),
+			).rejects.toThrow();
+		}
+	});
+}
 
 test("foreign resources still block every account-scoped inventory before any deletion", async () => {
 	const accountScoped: ProviderId[] = [
 		"e2b",
-		"modal-gvisor",
-		"modal-vm",
 		"tama",
 		"blaxel",
 		"microsandbox-cloud",

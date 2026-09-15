@@ -22,18 +22,24 @@ const capable = (owned: readonly string[], foreignCount: number): SandboxDriver 
 
 test("benchmark-scoped inventory reports foreign counts without blocking admission", async () => {
 	const rows = await inventoryAccounts(
-		["daytona-vm", "daytona-container", "novita"],
+		["daytona-vm", "daytona-container", "novita", "modal-gvisor", "modal-vm"],
 		async () => ({ driver: capable([], 42) }),
 		String,
 	);
 	expect(inventoryBlocksAdmission(rows)).toBe(false);
 	expect(formatAccountInventory(rows)).toContain("foreign=42 scope=benchmark");
-	expect(rows.map((row) => row.account)).toEqual(["daytona", "daytona", "novita"]);
+	expect(rows.map((row) => row.account)).toEqual([
+		"daytona",
+		"daytona",
+		"novita",
+		"modal",
+		"modal",
+	]);
 });
 
 test("benchmark-scoped listing failure still blocks admission", async () => {
 	const rows = await inventoryAccounts(
-		["daytona-container", "novita"],
+		["daytona-container", "novita", "modal-gvisor", "modal-vm"],
 		async () => {
 			throw new Error("inventory unavailable");
 		},
