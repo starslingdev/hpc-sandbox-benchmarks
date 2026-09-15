@@ -198,8 +198,11 @@ export class RuncloudBootFailureError extends Error {
 		readonly state: string,
 		readonly hostGaveUp: boolean,
 		readonly teardownConfirmed: boolean,
+		readonly vendorDetail?: string,
 	) {
-		super(`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting`);
+		super(
+			`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting${vendorDetail ? `: ${vendorDetail}` : ""}`,
+		);
 		this.name = "RuncloudBootFailureError";
 	}
 }
@@ -258,7 +261,7 @@ function isTerminalBootState(state: string): boolean {
 }
 
 function isTombstone(state: string): boolean {
-	return state === "destroyed" || state === "destroying";
+	return state === "destroyed";
 }
 
 /** Race one native call with a local deadline (and the caller's signal). Production's fetch signal
@@ -306,8 +309,11 @@ class BootTerminalState extends Error {
 	constructor(
 		readonly sandboxId: string,
 		readonly state: string,
+		readonly vendorDetail?: string,
 	) {
-		super(`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting`);
+		super(
+			`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting${vendorDetail ? `: ${vendorDetail}` : ""}`,
+		);
 	}
 }
 
@@ -327,7 +333,12 @@ async function waitUntilRunning(
 			signal,
 		);
 		if (last.state === "running") return last;
-		if (isTerminalBootState(last.state)) throw new BootTerminalState(sandboxId, last.state);
+		if (isTerminalBootState(last.state)) {
+			// Snapshot the failure before teardown changes the record. Diagnostic rendering redacts
+			// credentials before truncation; ignore malformed provider detail here.
+			const detail = typeof last.last_error === "string" ? last.last_error.trim() : undefined;
+			throw new BootTerminalState(sandboxId, last.state, detail);
+		}
 		await timing.sleep(timing.readyPollMs);
 		signal?.throwIfAborted();
 	}
@@ -356,20 +367,20 @@ async function destroySandbox(
 				timing,
 				signal,
 			);
-			if (runcloudObservation(current.state).state !== "running") return;
+			if (isTombstone(current.state)) return;
 		} catch (error) {
 			if (isNotFound(error)) return;
 			throw error;
 		}
 		if (attempt + 1 < timing.cleanupAttempts) await timing.sleep(timing.cleanupRetryMs);
 	}
-	throw new Error(`run.cloud sandbox ${sandboxId} is still running after destroy`);
+	throw new Error(`run.cloud sandbox ${sandboxId} has not confirmed removal after destroy`);
 }
 
 /**
- * Has the control plane confirmed this sandbox is gone, or committed to removing it? `destroying`
- * counts: the control plane owns the teardown from there. A read that cannot answer returns false;
- * the caller then does NOT claim the allocation is released.
+ * Only destroyed/404 confirms removal. A pending delete can race image preparation and return
+ * to running, so destroying must remain visible to inventory and cannot release an allocation.
+ * A read that cannot answer returns false; the caller does not claim the allocation is released.
  */
 async function teardownConfirmed(
 	sdk: RuncloudSandboxClient,
@@ -520,6 +531,7 @@ async function allocate(
 			error.state,
 			hostGaveUp(error.state),
 			await teardownConfirmed(sdk, created.id, timing, signal),
+			error.vendorDetail,
 		);
 	}
 }
@@ -543,12 +555,7 @@ async function execCommand(
  */
 export function runcloudObservation(state: string): SandboxObservation {
 	if (state === "destroyed") return { state: "absent" };
-	if (
-		state === "destroying" ||
-		state === "stopped" ||
-		state === "failed" ||
-		state === "interrupted"
-	)
+	if (state === "stopped" || state === "failed" || state === "interrupted")
 		return { state: "terminal" };
 	return { state: "running" };
 }

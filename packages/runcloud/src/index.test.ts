@@ -252,6 +252,29 @@ describe("run.cloud readiness and failed-create cleanup", () => {
 		expect(isRetryableDriverCreate(error)).toBe(true);
 	});
 
+	it("retains a failed boot's vendor detail before cleanup clears it, with credential redaction", async () => {
+		let removed = false;
+		const client = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () =>
+				nativeSandbox(removed ? "destroyed" : "interrupted", {
+					last_error: removed
+						? null
+						: `image upload digest mismatch ${context.env.RUN_CLOUD_API_KEY}`,
+				}),
+			destroy: async () => {
+				removed = true;
+			},
+		});
+		const error = await driver(client)
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect((error as Error).message).toContain("image upload digest mismatch");
+		expect((error as Error).message).not.toContain(context.env.RUN_CLOUD_API_KEY);
+		expect(removed).toBe(true);
+		expect(isRetryableDriverCreate(error)).toBe(true);
+	});
+
 	it("leaves a boot failure unmarked when teardown cannot be confirmed", async () => {
 		// destroy resolving is a request accepted, not a microVM removed; a control plane that keeps
 		// reporting `interrupted` has not established the "nothing is allocated" half of the mark.
@@ -325,7 +348,7 @@ describe("run.cloud readiness and failed-create cleanup", () => {
 		expect(destroyed).toEqual(["sb-test"]);
 	});
 
-	it("retries a transient cleanup, accepts a destroying confirmation, and surfaces exhaustion", async () => {
+	it("retries a transient cleanup, accepts a destroyed confirmation, and surfaces exhaustion", async () => {
 		let destroyCalls = 0;
 		const transient = nativeClient({
 			create: async () => nativeSandbox("building_image"),
@@ -349,7 +372,7 @@ describe("run.cloud readiness and failed-create cleanup", () => {
 			get: async () => {
 				getCalls++;
 				if (getCalls === 1) throw new Error("readiness failed");
-				return nativeSandbox("destroying");
+				return nativeSandbox("destroyed");
 			},
 			destroy: async () => {
 				destroyCalls++;
@@ -557,7 +580,6 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 			},
 			list: async () => [
 				nativeSandbox("destroyed", { id: "sb-tombstone", name: requestedName }),
-				nativeSandbox("destroying", { id: "sb-going", name: requestedName }),
 				nativeSandbox("running", { id: "sb-other", name: `${requestedName}-different` }),
 			],
 		});
@@ -790,10 +812,36 @@ describe("run.cloud commands, lifecycle, and account inventory", () => {
 		expect(execCalls.at(-1)?.command).toBe("printf test");
 	});
 
+	it("does not release a destroying allocation that returns to running before removal", async () => {
+		const states = ["destroying", "running", "destroyed"];
+		let observations = 0;
+		const client = nativeClient({
+			get: async () => nativeSandbox(states[observations++] ?? "running"),
+		});
+		await driver(client).destroyById?.(sandboxRef("runcloud", "sb-revived"));
+		expect(observations).toBe(3);
+		expect(runcloudObservation("destroying")).toEqual({ state: "running" });
+	});
+
+	it("keeps pending deletions in inventory so admission cannot overlook them", async () => {
+		const client = nativeClient({
+			list: async () => [
+				nativeSandbox("destroying", {
+					id: "sb-pending",
+					name: `${RUNCLOUD_RECOVERY_NAME_PREFIX}-pending`,
+				}),
+			],
+		});
+		expect(await driver(client).inventory?.list()).toEqual({
+			owned: [sandboxRef("runcloud", "sb-pending")],
+			foreignCount: 0,
+		});
+	});
+
 	it("waits for an accepted DELETE to stop running and refuses unconfirmed removal", async () => {
 		let observations = 0;
 		const delayed = nativeClient({
-			get: async () => nativeSandbox(++observations < 3 ? "running" : "destroying"),
+			get: async () => nativeSandbox(++observations < 3 ? "destroying" : "destroyed"),
 		});
 		await driver(delayed).destroyById?.(sandboxRef("runcloud", "sb-delayed"));
 		expect(observations).toBe(3);
@@ -813,7 +861,7 @@ describe("run.cloud commands, lifecycle, and account inventory", () => {
 			},
 			get: async (id) => {
 				if (id === "sb-gone") throw new RunCloudError(404, "gone");
-				return nativeSandbox(id === "sb-tombstone" ? "destroyed" : "destroying", { id });
+				return nativeSandbox(id === "sb-going" ? "destroying" : "destroyed", { id });
 			},
 		});
 		const d = driver(client);
@@ -829,7 +877,7 @@ describe("run.cloud commands, lifecycle, and account inventory", () => {
 			state: "absent",
 		});
 		expect(await d.probes?.observe(sandboxRef("runcloud", "sb-going"))).toEqual({
-			state: "terminal",
+			state: "running",
 		});
 		expect(runcloudObservation("running")).toEqual({ state: "running" });
 		expect(runcloudObservation("building_image")).toEqual({ state: "running" });
