@@ -272,7 +272,9 @@ export const SUITES = {
 			"realworld_mastra_task_build_core",
 			"realworld_mastra_task_test_core",
 		],
-		commands: ["mise run benchmark:realworld:pts:mastra"],
+		// Deadline pilot: preserve the workload and worker policy while allowing slower
+		// providers to finish Test Core. Set this in the guest command, not the host env.
+		commands: ["REALWORLD_TASK_TIMEOUT_SECONDS=2400 mise run benchmark:realworld:pts:mastra"],
 	},
 	// At k=1 each task case runs once (including the per-run git-clean/install resets); the command
 	// budget covers slower virtualized filesystems while the sandbox lifetime leaves setup and
