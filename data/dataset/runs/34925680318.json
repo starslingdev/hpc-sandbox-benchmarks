@@ -1,0 +1,3680 @@
+{
+  "schemaVersion": "8",
+  "runId": "34925680318",
+  "sha": "0aa285a4ca8de67c715c10b961d7cbd019e966ac",
+  "generatedAt": "2026-09-15T07:09:52.977Z",
+  "targetSpec": {
+    "vcpus": 4,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "providers": [
+    {
+      "providerId": "blaxel",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-container",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-vm",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "costEvidence": [],
+      "artifactEvidence": [
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 0
+          },
+          "sandboxId": "izhh19z7h14fc3ity115s",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 1
+          },
+          "sandboxId": "illr0i46fjdlakmany5vs",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 2
+          },
+          "sandboxId": "im8t269rt06wz5u9syglu",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 3
+          },
+          "sandboxId": "ihj235zfckdy4lecgwz5u",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 4
+          },
+          "sandboxId": "i0312u8wsqtqvrbbfodj0",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 5
+          },
+          "sandboxId": "ih67f8c67ruyllolk36xy",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 6
+          },
+          "sandboxId": "iaqeey4x60sttjy7t85ky",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 7
+          },
+          "sandboxId": "i3f028unyxmuyt9l51lab",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 8
+          },
+          "sandboxId": "i49aphek820wbdpuso3q4",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 9
+          },
+          "sandboxId": "inp8ihnjawrx7t2ilf6l7",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 10
+          },
+          "sandboxId": "iyr2sqdvi36ka4vkk4vfq",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "e2b",
+            "suite": "realworld-mastra",
+            "replicateIndex": 11
+          },
+          "sandboxId": "ilxngximmd3s3hwvx53vx",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        }
+      ],
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+        "detectedIsolation": "vm",
+        "diskGb": 104.2,
+        "hostMemoryGb": 8,
+        "hostVcpus": 4,
+        "kernel": "6.1.158+",
+        "memoryGb": 7.77,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "vcpus": 4,
+        "virtualization": "kvm"
+      },
+      "observedMixtures": {
+        "sandboxes": 12,
+        "hostHardware": {
+          "85229e090d7da0f0": {
+            "count": 12,
+            "specs": {
+              "cpuModel": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+              "detectedIsolation": "vm",
+              "diskGb": 104.2,
+              "hostMemoryGb": 8,
+              "hostVcpus": 4,
+              "kernel": "6.1.158+",
+              "memoryGb": 7.77,
+              "os": "Debian GNU/Linux 13 (trixie)",
+              "vcpus": 4,
+              "virtualization": "kvm"
+            },
+            "specMatched": true
+          }
+        },
+        "hostNetwork": {}
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "realworld-mastra/pts_realworld-mastra--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: SW loop KVM: SW loop + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "105GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.158+ (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "KVM"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 12,
+          "hostHardwareId": "85229e090d7da0f0"
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "realworld_mastra_task_build_core",
+          "samples": [
+            111.987, 142.223, 94.42, 112.743, 133.781, 101.62, 122.488, 107.732, 128.266, 128.286,
+            107.457, 125.808
+          ],
+          "aggregates": {
+            "p50": 117.6155,
+            "p95": 137.5799,
+            "mean": 118.06758333333333,
+            "stdev": 14.2469713876212,
+            "min": 94.42,
+            "max": 142.223,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "build_core",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [111.987],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 1,
+              "samples": [142.223],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 2,
+              "samples": [94.42],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 3,
+              "samples": [112.743],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 4,
+              "samples": [133.781],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 5,
+              "samples": [101.62],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 6,
+              "samples": [122.488],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 7,
+              "samples": [107.732],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 8,
+              "samples": [128.266],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 9,
+              "samples": [128.286],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 10,
+              "samples": [107.457],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 11,
+              "samples": [125.808],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_cold_install",
+          "samples": [
+            58.009, 76.749, 68.927, 67.607, 83.529, 58.338, 65.629, 54.298, 69.509, 71.241, 75.556,
+            72.228
+          ],
+          "aggregates": {
+            "p50": 69.218,
+            "p95": 79.8,
+            "mean": 68.46833333333332,
+            "stdev": 8.476532517200154,
+            "min": 54.298,
+            "max": 83.529,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "cold_install",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [58.009],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 1,
+              "samples": [76.749],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 2,
+              "samples": [68.927],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 3,
+              "samples": [67.607],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 4,
+              "samples": [83.529],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 5,
+              "samples": [58.338],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 6,
+              "samples": [65.629],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 7,
+              "samples": [54.298],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 8,
+              "samples": [69.509],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 9,
+              "samples": [71.241],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 10,
+              "samples": [75.556],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 11,
+              "samples": [72.228],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_git_clone",
+          "samples": [
+            4.77, 4.259, 3.18, 3.407, 3.474, 4.72, 4.376, 4.838, 3.434, 4.049, 3.597, 4.245
+          ],
+          "aggregates": {
+            "p50": 4.147,
+            "p95": 4.800599999999999,
+            "mean": 4.029083333333333,
+            "stdev": 0.5922044269788377,
+            "min": 3.18,
+            "max": 4.838,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "git_clone",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [4.77],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 1,
+              "samples": [4.259],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 2,
+              "samples": [3.18],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 3,
+              "samples": [3.407],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 4,
+              "samples": [3.474],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 5,
+              "samples": [4.72],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 6,
+              "samples": [4.376],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 7,
+              "samples": [4.838],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 8,
+              "samples": [3.434],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 9,
+              "samples": [4.049],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 10,
+              "samples": [3.597],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 11,
+              "samples": [4.245],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_lint_format",
+          "samples": [
+            131.24, 172.398, 115.042, 135.859, 167.081, 125.618, 139.944, 128.04, 159.021, 175.284,
+            129.308, 157.611
+          ],
+          "aggregates": {
+            "p50": 137.9015,
+            "p95": 173.6967,
+            "mean": 144.70383333333334,
+            "stdev": 20.483691019635074,
+            "min": 115.042,
+            "max": 175.284,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "lint_format",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [131.24],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 1,
+              "samples": [172.398],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 2,
+              "samples": [115.042],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 3,
+              "samples": [135.859],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 4,
+              "samples": [167.081],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 5,
+              "samples": [125.618],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 6,
+              "samples": [139.944],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 7,
+              "samples": [128.04],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 8,
+              "samples": [159.021],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 9,
+              "samples": [175.284],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 10,
+              "samples": [129.308],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 11,
+              "samples": [157.611],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_test_core",
+          "samples": [
+            1292.25, 1447.819, 1218.157, 1354.005, 1545.021, 1213.625, 1353.12, 1259.377, 1424.221,
+            1519.603, 1266.138, 1417.467
+          ],
+          "aggregates": {
+            "p50": 1353.5625,
+            "p95": 1531.0411,
+            "mean": 1359.2335833333332,
+            "stdev": 112.81170409093878,
+            "min": 1213.625,
+            "max": 1545.021,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "test_core",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [1292.25],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 1,
+              "samples": [1447.819],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 2,
+              "samples": [1218.157],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 3,
+              "samples": [1354.005],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 4,
+              "samples": [1545.021],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 5,
+              "samples": [1213.625],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 6,
+              "samples": [1353.12],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 7,
+              "samples": [1259.377],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 8,
+              "samples": [1424.221],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 9,
+              "samples": [1519.603],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 10,
+              "samples": [1266.138],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            },
+            {
+              "index": 11,
+              "samples": [1417.467],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "85229e090d7da0f0"
+            }
+          ]
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.3312],
+          "aggregates": {
+            "p50": 0.3312,
+            "p95": 0.3312,
+            "mean": 0.3312,
+            "stdev": 0,
+            "min": 0.3312,
+            "max": 0.3312,
+            "n": 1
+          },
+          "derived": true
+        }
+      ],
+      "suitesCovered": ["realworld-mastra"],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "microsandbox-cloud",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-gvisor",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-vm",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "namespace",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "novita",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "runcloud",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "runloop",
+      "costEvidence": [],
+      "artifactEvidence": [
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 0
+          },
+          "sandboxId": "dbx_34P61pOEpJ0pY6eyf5nEh",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 1
+          },
+          "sandboxId": "dbx_34P61si761fMWMT1spAJh",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 2
+          },
+          "sandboxId": "dbx_34P61vdulWRx2XdWRglBE",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 3
+          },
+          "sandboxId": "dbx_34P61ybNNPKyIG9jAW2C8",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 4
+          },
+          "sandboxId": "dbx_34P621ChqMf6ahAjdbMwX",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 5
+          },
+          "sandboxId": "dbx_34P624UXBljZ6nGigQnpw",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 6
+          },
+          "sandboxId": "dbx_34P627qwt4KUkdMMHJY2f",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 7
+          },
+          "sandboxId": "dbx_34P62BeSX3nKuxR0GjH04",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 8
+          },
+          "sandboxId": "dbx_34P62EcPB3T4utR7skFsr",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 9
+          },
+          "sandboxId": "dbx_34P62IUnAzuv8ewq8Ajfz",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 10
+          },
+          "sandboxId": "dbx_34P62LYmCPh9anLOxvupe",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "runloop",
+            "suite": "realworld-mastra",
+            "replicateIndex": 11
+          },
+          "sandboxId": "dbx_34P62OZk9DAlq8oC6uD24",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        }
+      ],
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz",
+        "detectedIsolation": "vm",
+        "diskGb": 63,
+        "hostMemoryGb": 8,
+        "hostVcpus": 4,
+        "kernel": "6.18.32",
+        "memoryGb": 7.78,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "vcpus": 4,
+        "virtualization": "container-other"
+      },
+      "observedMixtures": {
+        "sandboxes": 12,
+        "hostHardware": {
+          "b86745d74d9f0a51": {
+            "count": 12,
+            "specs": {
+              "cpuModel": "Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz",
+              "detectedIsolation": "vm",
+              "diskGb": 63,
+              "hostMemoryGb": 8,
+              "hostVcpus": 4,
+              "kernel": "6.18.32",
+              "memoryGb": 7.78,
+              "os": "Debian GNU/Linux 13 (trixie)",
+              "vcpus": 4,
+              "virtualization": "container-other"
+            },
+            "specMatched": true
+          }
+        },
+        "hostNetwork": {}
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "realworld-mastra/pts_realworld-mastra--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Unknown: Dependent on hypervisor status + ghostwrite: Not affected + indirect_target_selection: Vulnerable + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Vulnerable + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Vulnerable + spec_rstack_overflow: Not affected + spec_store_bypass: Vulnerable + spectre_v1: Vulnerable: __user pointer sanitization and usercopy barriers only; no swapgs barriers + spectre_v2: Vulnerable; IBPB: disabled; STIBP: disabled; PBRSB-eIBRS: Vulnerable; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Mitigation of TSX disabled + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "63GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon Platinum 8259CL (4 Cores)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "ext4"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.32 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "user"
+            }
+          ],
+          "sandboxes": 12,
+          "hostHardwareId": "b86745d74d9f0a51"
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "realworld_mastra_task_build_core",
+          "samples": [
+            169.514, 188.22, 167.257, 182.738, 168.808, 189.406, 189.686, 188.389, 188.527, 167.874,
+            191.878, 191.63
+          ],
+          "aggregates": {
+            "p50": 188.30450000000002,
+            "p95": 191.74159999999998,
+            "mean": 181.99391666666665,
+            "stdev": 10.329647758302604,
+            "min": 167.257,
+            "max": 191.878,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "build_core",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [169.514],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 1,
+              "samples": [188.22],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 2,
+              "samples": [167.257],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 3,
+              "samples": [182.738],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 4,
+              "samples": [168.808],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 5,
+              "samples": [189.406],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 6,
+              "samples": [189.686],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 7,
+              "samples": [188.389],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 8,
+              "samples": [188.527],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 9,
+              "samples": [167.874],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 10,
+              "samples": [191.878],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 11,
+              "samples": [191.63],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_cold_install",
+          "samples": [
+            102.439, 95.144, 96.896, 110.164, 95.127, 107.678, 106.105, 109.345, 108.771, 99.919,
+            97.956, 91.927
+          ],
+          "aggregates": {
+            "p50": 101.179,
+            "p95": 109.71355,
+            "mean": 101.78924999999998,
+            "stdev": 6.450090290065722,
+            "min": 91.927,
+            "max": 110.164,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "cold_install",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [102.439],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 1,
+              "samples": [95.144],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 2,
+              "samples": [96.896],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 3,
+              "samples": [110.164],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 4,
+              "samples": [95.127],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 5,
+              "samples": [107.678],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 6,
+              "samples": [106.105],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 7,
+              "samples": [109.345],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 8,
+              "samples": [108.771],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 9,
+              "samples": [99.919],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 10,
+              "samples": [97.956],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 11,
+              "samples": [91.927],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_git_clone",
+          "samples": [
+            4.376, 5.278, 7.293, 7.282, 5.348, 11.402, 4.878, 10.058, 9.971, 6.663, 5.496, 5.171
+          ],
+          "aggregates": {
+            "p50": 6.0795,
+            "p95": 10.662799999999999,
+            "mean": 6.934666666666667,
+            "stdev": 2.3446929371875047,
+            "min": 4.376,
+            "max": 11.402,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "git_clone",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [4.376],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 1,
+              "samples": [5.278],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 2,
+              "samples": [7.293],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 3,
+              "samples": [7.282],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 4,
+              "samples": [5.348],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 5,
+              "samples": [11.402],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 6,
+              "samples": [4.878],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 7,
+              "samples": [10.058],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 8,
+              "samples": [9.971],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 9,
+              "samples": [6.663],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 10,
+              "samples": [5.496],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 11,
+              "samples": [5.171],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_lint_format",
+          "samples": [
+            226.499, 226.484, 214.075, 238.338, 216.264, 234.758, 240.611, 232.296, 234.781,
+            217.115, 246.19, 230.592
+          ],
+          "aggregates": {
+            "p50": 231.44400000000002,
+            "p95": 243.12154999999998,
+            "mean": 229.83358333333334,
+            "stdev": 10.1262204154124,
+            "min": 214.075,
+            "max": 246.19,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "lint_format",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [226.499],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 1,
+              "samples": [226.484],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 2,
+              "samples": [214.075],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 3,
+              "samples": [238.338],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 4,
+              "samples": [216.264],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 5,
+              "samples": [234.758],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 6,
+              "samples": [240.611],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 7,
+              "samples": [232.296],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 8,
+              "samples": [234.781],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 9,
+              "samples": [217.115],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 10,
+              "samples": [246.19],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 11,
+              "samples": [230.592],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_test_core",
+          "samples": [
+            1710.364, 1760.792, 1673.578, 1775.084, 1680.883, 1792.75, 1785.429, 1781.961, 1799.175,
+            1663.437, 1825.378, 1821.761
+          ],
+          "aggregates": {
+            "p50": 1778.5225,
+            "p95": 1823.3886499999999,
+            "mean": 1755.8826666666664,
+            "stdev": 58.28300785014969,
+            "min": 1663.437,
+            "max": 1825.378,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "test_core",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [1710.364],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 1,
+              "samples": [1760.792],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 2,
+              "samples": [1673.578],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 3,
+              "samples": [1775.084],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 4,
+              "samples": [1680.883],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 5,
+              "samples": [1792.75],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 6,
+              "samples": [1785.429],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 7,
+              "samples": [1781.961],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 8,
+              "samples": [1799.175],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 9,
+              "samples": [1663.437],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 10,
+              "samples": [1825.378],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            },
+            {
+              "index": 11,
+              "samples": [1821.761],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "b86745d74d9f0a51"
+            }
+          ]
+        },
+        {
+          "metricId": "usd_per_hour",
+          "samples": [0.6335999999999999],
+          "aggregates": {
+            "p50": 0.6335999999999999,
+            "p95": 0.6335999999999999,
+            "mean": 0.6335999999999999,
+            "stdev": 0,
+            "min": 0.6335999999999999,
+            "max": 0.6335999999999999,
+            "n": 1
+          },
+          "derived": true
+        }
+      ],
+      "suitesCovered": ["realworld-mastra"],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "tama",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "vercel",
+      "costEvidence": [],
+      "artifactEvidence": [
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 0
+          },
+          "sandboxId": "sandbox-benchmarks-95411c4e-6eed-4f0d-8ab9-637f3a065de6",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 1
+          },
+          "sandboxId": "sandbox-benchmarks-5ad98b6c-3f38-4404-866c-0b7bb32062d3",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 2
+          },
+          "sandboxId": "sandbox-benchmarks-d4fff84f-4b93-4cb1-8949-50ddbbff3aad",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 3
+          },
+          "sandboxId": "sandbox-benchmarks-30807e80-ae2b-42d2-b94a-9e1d953b6214",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 4
+          },
+          "sandboxId": "sandbox-benchmarks-536c8f3d-ff5a-467a-9a8f-2e0230d75853",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 5
+          },
+          "sandboxId": "sandbox-benchmarks-bb64a092-3608-489b-bd8c-7328681e2a0d",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 6
+          },
+          "sandboxId": "sandbox-benchmarks-5779a894-3160-46fb-bdd1-56f5a939c23e",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 7
+          },
+          "sandboxId": "sandbox-benchmarks-dc0a5168-ac2e-4d21-8814-0c0495d9ec62",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 8
+          },
+          "sandboxId": "sandbox-benchmarks-7109c949-a35a-4bb7-b280-1c353df1eba8",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 9
+          },
+          "sandboxId": "sandbox-benchmarks-e34d426f-8a37-4538-88ec-e7112f8b9fa9",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 10
+          },
+          "sandboxId": "sandbox-benchmarks-5bb26092-da7e-4e23-bb0c-bb2b7f8e1d61",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "34925680318",
+            "providerId": "vercel",
+            "suite": "realworld-mastra",
+            "replicateIndex": 11
+          },
+          "sandboxId": "sandbox-benchmarks-3d6e513e-639d-4ffc-a6ef-1c586a1ab32a",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "mirror",
+              "ref": "vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        }
+      ],
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "cpuModel": "Intel(R) Xeon(R) Processor @ 2.90GHz",
+        "detectedIsolation": "vm",
+        "diskGb": 63.9,
+        "hostMemoryGb": 10,
+        "hostVcpus": 4,
+        "kernel": "6.18.49",
+        "memoryGb": 8.21,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "vcpus": 4,
+        "virtualization": "container-other"
+      },
+      "observedMixtures": {
+        "sandboxes": 12,
+        "hostHardware": {
+          "22dd09b0562d98c2": {
+            "count": 11,
+            "specs": {
+              "cpuModel": "Intel(R) Xeon(R) Processor @ 2.90GHz",
+              "detectedIsolation": "vm",
+              "diskGb": 63.9,
+              "hostMemoryGb": 10,
+              "hostVcpus": 4,
+              "kernel": "6.18.49",
+              "memoryGb": 8.21,
+              "os": "Debian GNU/Linux 13 (trixie)",
+              "vcpus": 4,
+              "virtualization": "container-other"
+            },
+            "specMatched": true
+          },
+          "9a886717f30b88a9": {
+            "count": 1,
+            "specs": {
+              "cpuModel": "Intel(R) Xeon(R) Processor @ 2.50GHz",
+              "detectedIsolation": "vm",
+              "diskGb": 63.9,
+              "hostMemoryGb": 10,
+              "hostVcpus": 4,
+              "kernel": "6.18.49",
+              "memoryGb": 8.21,
+              "os": "Debian GNU/Linux 13 (trixie)",
+              "vcpus": 4,
+              "virtualization": "container-other"
+            },
+            "specMatched": true
+          }
+        },
+        "hostNetwork": {}
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "realworld-mastra/pts_realworld-mastra--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Mitigation of Clear buffers; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Mitigation of TSX disabled + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "64GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "10GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.49 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 11,
+          "hostHardwareId": "22dd09b0562d98c2"
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "realworld-mastra/pts_realworld-mastra--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + ghostwrite: Not affected + indirect_target_selection: Mitigation of Aligned branch/return thunks + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Mitigation of Clear buffers; SMT Host state unknown + old_microcode: Not affected + reg_file_data_sampling: Not affected + retbleed: Mitigation of Enhanced IBRS + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: SW sequence; BHI: Vulnerable + srbds: Not affected + tsa: Not affected + tsx_async_abort: Mitigation of TSX disabled + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "64GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "10GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.18.49 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.timestamp",
+              "value": "2026-09-15 06:21:25"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 1,
+          "hostHardwareId": "9a886717f30b88a9"
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "realworld_mastra_task_build_core",
+          "samples": [
+            114.754, 114.443, 110.039, 107.773, 109.749, 112.591, 117.165, 111.481, 156.303,
+            120.719, 110.247, 112.628
+          ],
+          "aggregates": {
+            "p50": 112.6095,
+            "p95": 136.73179999999996,
+            "mean": 116.491,
+            "stdev": 13.030885946299067,
+            "min": 107.773,
+            "max": 156.303,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "build_core",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [114.754],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 1,
+              "samples": [114.443],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 2,
+              "samples": [110.039],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 3,
+              "samples": [107.773],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 4,
+              "samples": [109.749],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 5,
+              "samples": [112.591],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 6,
+              "samples": [117.165],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 7,
+              "samples": [111.481],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 8,
+              "samples": [156.303],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "9a886717f30b88a9"
+            },
+            {
+              "index": 9,
+              "samples": [120.719],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 10,
+              "samples": [110.247],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 11,
+              "samples": [112.628],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_cold_install",
+          "samples": [
+            56.968, 57.576, 55.635, 55.29, 55.966, 56.858, 59.308, 59.051, 76.464, 59.467, 56.41,
+            58.058
+          ],
+          "aggregates": {
+            "p50": 57.272000000000006,
+            "p95": 67.11564999999999,
+            "mean": 58.92091666666666,
+            "stdev": 5.703784301326674,
+            "min": 55.29,
+            "max": 76.464,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "cold_install",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [56.968],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 1,
+              "samples": [57.576],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 2,
+              "samples": [55.635],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 3,
+              "samples": [55.29],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 4,
+              "samples": [55.966],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 5,
+              "samples": [56.858],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 6,
+              "samples": [59.308],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 7,
+              "samples": [59.051],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 8,
+              "samples": [76.464],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "9a886717f30b88a9"
+            },
+            {
+              "index": 9,
+              "samples": [59.467],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 10,
+              "samples": [56.41],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 11,
+              "samples": [58.058],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_git_clone",
+          "samples": [
+            2.442, 4.302, 2.414, 2.362, 2.646, 2.357, 2.396, 4.246, 4.938, 2.324, 3.132, 2.356
+          ],
+          "aggregates": {
+            "p50": 2.428,
+            "p95": 4.5882,
+            "mean": 2.9929166666666673,
+            "stdev": 0.9466439724659214,
+            "min": 2.324,
+            "max": 4.938,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "git_clone",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [2.442],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 1,
+              "samples": [4.302],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 2,
+              "samples": [2.414],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 3,
+              "samples": [2.362],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 4,
+              "samples": [2.646],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 5,
+              "samples": [2.357],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 6,
+              "samples": [2.396],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 7,
+              "samples": [4.246],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 8,
+              "samples": [4.938],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "9a886717f30b88a9"
+            },
+            {
+              "index": 9,
+              "samples": [2.324],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 10,
+              "samples": [3.132],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 11,
+              "samples": [2.356],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_lint_format",
+          "samples": [
+            140.448, 140.706, 138.545, 134.548, 138.593, 142.684, 146.344, 141.078, 192.407,
+            145.316, 138.471, 140.567
+          ],
+          "aggregates": {
+            "p50": 140.6365,
+            "p95": 167.07234999999997,
+            "mean": 144.97558333333333,
+            "stdev": 15.265731304629716,
+            "min": 134.548,
+            "max": 192.407,
+            "n": 12
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "lint_format",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [140.448],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 1,
+              "samples": [140.706],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 2,
+              "samples": [138.545],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 3,
+              "samples": [134.548],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 4,
+              "samples": [138.593],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 5,
+              "samples": [142.684],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 6,
+              "samples": [146.344],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 7,
+              "samples": [141.078],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 8,
+              "samples": [192.407],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "9a886717f30b88a9"
+            },
+            {
+              "index": 9,
+              "samples": [145.316],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 10,
+              "samples": [138.471],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 11,
+              "samples": [140.567],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            }
+          ]
+        },
+        {
+          "metricId": "realworld_mastra_task_test_core",
+          "samples": [
+            1305.165, 1279.35, 1238.95, 1263.058, 1272.761, 1325.475, 1253.42, 1591.587, 1322.077,
+            1258.766, 1278.909
+          ],
+          "aggregates": {
+            "p50": 1278.909,
+            "p95": 1458.531,
+            "mean": 1308.1380000000001,
+            "stdev": 97.996171754819,
+            "min": 1238.95,
+            "max": 1591.587,
+            "n": 11
+          },
+          "sourceFile": "realworld-mastra/pts_realworld-mastra.xml",
+          "appVersion": "b6eeb9d08ebeaf27bc6fd16b6b88087040aaf767",
+          "arguments": "test_core",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [1305.165],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 1,
+              "samples": [1279.35],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 3,
+              "samples": [1238.95],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 4,
+              "samples": [1263.058],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 5,
+              "samples": [1272.761],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 6,
+              "samples": [1325.475],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 7,
+              "samples": [1253.42],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 8,
+              "samples": [1591.587],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "9a886717f30b88a9"
+            },
+            {
+              "index": 9,
+              "samples": [1322.077],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 10,
+              "samples": [1258.766],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            },
+            {
+              "index": 11,
+              "samples": [1278.909],
+              "ptsSampleSource": "aggregate-value",
+              "hostHardwareId": "22dd09b0562d98c2"
+            }
+          ]
+        }
+      ],
+      "suitesCovered": ["realworld-mastra"],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "failed",
+          "reason": "PTS ran but every trial failed for 1 of 5 declared metrics: realworld_mastra_task_test_core (realworld-mastra/pts_realworld-mastra.xml) — attempted, no value recorded",
+          "cause": {
+            "kind": "metrics-unrecorded",
+            "metricIds": ["realworld_mastra_task_test_core"],
+            "declared": 5
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: realworld_mastra_task_test_core"
+        }
+      ],
+      "uncatalogued": []
+    }
+  ],
+  "experiment": {
+    "planDigest": "sha256:9c5dada9f089eedfefb64337b7587d120af45fcbe0fd35dc9a798b07214ce755",
+    "cohortDigest": "sha256:8c34ddf00fd98fde371fff941423d200820e021211e6417cd1bb50140c11e621",
+    "attemptIds": [
+      "e2b-realworld-mastra-r0-a1-4ed6cda9-3032-44f2-ac86-cd88d874febe",
+      "e2b-realworld-mastra-r1-a1-daaeafd7-ee26-4d89-b69c-2c1fd4ba3ffb",
+      "e2b-realworld-mastra-r2-a1-3c47f6a4-61d5-45e4-87cd-4900995b0e2a",
+      "e2b-realworld-mastra-r3-a1-49a979b6-3ed8-463e-bef7-63b1e8d91e31",
+      "e2b-realworld-mastra-r4-a1-dce6560e-03eb-400f-985c-750e5d557137",
+      "e2b-realworld-mastra-r5-a1-c8212b26-13b5-4dea-872c-123344b18cc9",
+      "e2b-realworld-mastra-r6-a1-8e5d9ed2-1ed1-4b23-9d22-817b5a222cf4",
+      "e2b-realworld-mastra-r7-a1-5fac175e-a810-4135-9343-a15f39c98ba6",
+      "e2b-realworld-mastra-r8-a1-5b3cd7c5-9fdd-4ee9-a1b7-89b9969e72c5",
+      "e2b-realworld-mastra-r9-a1-ed397849-8b1a-4c81-a4d8-64351282e698",
+      "e2b-realworld-mastra-r10-a1-323d6d1a-bf2e-4a59-8433-231742d39d1c",
+      "e2b-realworld-mastra-r11-a1-97362eef-1345-4f46-afee-7e22d8fe7ebd",
+      "runloop-realworld-mastra-r0-a1-8f7b8d24-7e69-456b-b5b9-f4380b555182",
+      "runloop-realworld-mastra-r1-a1-2c65d47b-3d34-4050-8471-5eabe18dda0d",
+      "runloop-realworld-mastra-r2-a1-1b7efc17-9409-4857-b346-b594563096cd",
+      "runloop-realworld-mastra-r3-a1-19e62e5c-06fd-41f8-8a95-9f6564fa1294",
+      "runloop-realworld-mastra-r4-a1-967f095a-bff4-42f5-b832-9dd278b3d9a4",
+      "runloop-realworld-mastra-r5-a1-29c0ef01-87b6-4c1a-8ccb-256e382d38b7",
+      "runloop-realworld-mastra-r6-a1-9c69cc44-184c-4207-b02a-7ab8ae91a9c9",
+      "runloop-realworld-mastra-r7-a1-49cb350b-904f-4cff-9fbc-5c2d1362df4f",
+      "runloop-realworld-mastra-r8-a1-4164cf43-bc06-4264-bf8e-5420d5a0c398",
+      "runloop-realworld-mastra-r9-a1-7130e76c-80ee-4770-b30c-3b62ba0ccadc",
+      "runloop-realworld-mastra-r10-a1-426a2a6b-07df-42e9-ac2e-4cf462c2132e",
+      "runloop-realworld-mastra-r11-a1-13f6f485-8e18-47c9-aa31-1f3b50019d36",
+      "vercel-realworld-mastra-r0-a1-36a953f2-4599-4cf8-b23e-5a5e11ad24b6",
+      "vercel-realworld-mastra-r1-a1-546a1c43-0ca1-47ce-a048-f86e3f601391",
+      "vercel-realworld-mastra-r2-a1-8da33a07-21db-437b-9da1-dc1ab29dbbce",
+      "vercel-realworld-mastra-r3-a1-1469ac38-9894-474c-a3c3-cc2e9ce7283e",
+      "vercel-realworld-mastra-r4-a1-05301042-97e9-4b5e-a268-e0d7aea5ada4",
+      "vercel-realworld-mastra-r5-a1-07076f57-c275-4163-a6db-7852286eb143",
+      "vercel-realworld-mastra-r6-a1-0db3e877-8c56-40e6-a371-0ca14b56e6bb",
+      "vercel-realworld-mastra-r7-a1-d1cfc9ea-d401-466e-be7b-97a9caf340cd",
+      "vercel-realworld-mastra-r8-a1-2f30c7aa-fa44-40d8-991a-c5bbc82f7552",
+      "vercel-realworld-mastra-r9-a1-401bcdbd-df19-4eb2-8d25-21f41d4f567d",
+      "vercel-realworld-mastra-r10-a1-07ee635a-0208-4fa9-b4a1-1f7924225188",
+      "vercel-realworld-mastra-r11-a1-ded6e077-8b59-4e6c-a3a5-9add19799fa1"
+    ],
+    "partial": {
+      "status": "partial",
+      "planned": 36,
+      "complete": 35,
+      "incomplete": 1,
+      "excluded": 0,
+      "cells": [
+        {
+          "id": "e2b-realworld-mastra-r0",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r0-a1-4ed6cda9-3032-44f2-ac86-cd88d874febe",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 0,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r1",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r1-a1-daaeafd7-ee26-4d89-b69c-2c1fd4ba3ffb",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 1,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r2",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r2-a1-3c47f6a4-61d5-45e4-87cd-4900995b0e2a",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 2,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r3",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r3-a1-49a979b6-3ed8-463e-bef7-63b1e8d91e31",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 3,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r4",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r4-a1-dce6560e-03eb-400f-985c-750e5d557137",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 4,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r5",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r5-a1-c8212b26-13b5-4dea-872c-123344b18cc9",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 5,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r6",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r6-a1-8e5d9ed2-1ed1-4b23-9d22-817b5a222cf4",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 6,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r7",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r7-a1-5fac175e-a810-4135-9343-a15f39c98ba6",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 7,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r8",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r8-a1-5b3cd7c5-9fdd-4ee9-a1b7-89b9969e72c5",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 8,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r9",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r9-a1-ed397849-8b1a-4c81-a4d8-64351282e698",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 9,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r10",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r10-a1-323d6d1a-bf2e-4a59-8433-231742d39d1c",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 10,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "e2b-realworld-mastra-r11",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "e2b-realworld-mastra-r11-a1-97362eef-1345-4f46-afee-7e22d8fe7ebd",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "e2b",
+          "suite": "realworld-mastra",
+          "replicate": 11,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r0",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r0-a1-8f7b8d24-7e69-456b-b5b9-f4380b555182",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 0,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r1",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r1-a1-2c65d47b-3d34-4050-8471-5eabe18dda0d",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 1,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r2",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r2-a1-1b7efc17-9409-4857-b346-b594563096cd",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 2,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r3",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r3-a1-19e62e5c-06fd-41f8-8a95-9f6564fa1294",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 3,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r4",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r4-a1-967f095a-bff4-42f5-b832-9dd278b3d9a4",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 4,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r5",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r5-a1-29c0ef01-87b6-4c1a-8ccb-256e382d38b7",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 5,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r6",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r6-a1-9c69cc44-184c-4207-b02a-7ab8ae91a9c9",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 6,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r7",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r7-a1-49cb350b-904f-4cff-9fbc-5c2d1362df4f",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 7,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r8",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r8-a1-4164cf43-bc06-4264-bf8e-5420d5a0c398",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 8,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r9",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r9-a1-7130e76c-80ee-4770-b30c-3b62ba0ccadc",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 9,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r10",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r10-a1-426a2a6b-07df-42e9-ac2e-4cf462c2132e",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 10,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "runloop-realworld-mastra-r11",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "runloop-realworld-mastra-r11-a1-13f6f485-8e18-47c9-aa31-1f3b50019d36",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "runloop",
+          "suite": "realworld-mastra",
+          "replicate": 11,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r0",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r0-a1-36a953f2-4599-4cf8-b23e-5a5e11ad24b6",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 0,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r1",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r1-a1-546a1c43-0ca1-47ce-a048-f86e3f601391",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 1,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r2",
+          "status": "failed",
+          "missingMetrics": ["realworld_mastra_task_test_core"],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r2-a1-8da33a07-21db-437b-9da1-dc1ab29dbbce",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 2,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r3",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r3-a1-1469ac38-9894-474c-a3c3-cc2e9ce7283e",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 3,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r4",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r4-a1-05301042-97e9-4b5e-a268-e0d7aea5ada4",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 4,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r5",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r5-a1-07076f57-c275-4163-a6db-7852286eb143",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 5,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r6",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r6-a1-0db3e877-8c56-40e6-a371-0ca14b56e6bb",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 6,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r7",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r7-a1-d1cfc9ea-d401-466e-be7b-97a9caf340cd",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 7,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r8",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r8-a1-2f30c7aa-fa44-40d8-991a-c5bbc82f7552",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 8,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r9",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r9-a1-401bcdbd-df19-4eb2-8d25-21f41d4f567d",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 9,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r10",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r10-a1-07ee635a-0208-4fa9-b4a1-1f7924225188",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 10,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "vercel-realworld-mastra-r11",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "vercel-realworld-mastra-r11-a1-ded6e077-8b59-4e6c-a3a5-9add19799fa1",
+          "retainedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "provider": "vercel",
+          "suite": "realworld-mastra",
+          "replicate": 11,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        }
+      ]
+    }
+  }
+}
