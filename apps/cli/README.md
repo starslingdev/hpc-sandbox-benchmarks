@@ -112,3 +112,8 @@ See [ADR-0017](../../docs/adr/0017-retained-allocation-cleanup-recovery.md).
 Existing CPU cells cannot be measured again by clicking **Re-run failed jobs**: the executor refuses
 cells already present in the journal. After recovery, use a fresh experiment at the corrected revision.
 A dataset-only backfill can re-collect the original attempts with the later cleanup attestations.
+
+The legacy `recover-rejected-create` command refuses generic create-failure markers. They cannot
+prove the vendor rejected a request rather than accepting it before a timeout. No inventory sweep
+or journal write occurs: leave the intent unresolved until identity-based recovery or a reviewed
+vendor-confirmed recovery is available. Diagnostic prose is not authoritative rejection evidence.

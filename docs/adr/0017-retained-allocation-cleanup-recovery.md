@@ -33,10 +33,13 @@ rejection or positively observed removal can release ownership.
 An ambiguous Runcloud create may stop an account that ultimately allocated nothing; falsely
 releasing an allocation can leak resources and corrupt capacity accounting, which is worse.
 
-The Runcloud driver holds that uncertainty in memory, for the process that issued the create. The
-generated name is not retained in attempt evidence, so after that process exits the attempt is
-indistinguishable from a rejected create and the operator's `recover-rejected-create` inventory
-sweep remains the only release path. Retaining the name durably is left to a later decision.
+The Runcloud driver holds the recovery callback in memory for the process that issued the create.
+A recovery name may survive in diagnostic prose, but no structured, authoritative rejection verdict
+is retained. After process exit the intent therefore stays unresolved: the legacy
+`recover-rejected-create` command refuses generic create-failure markers before opening a provider
+or journal. Empty inventory cannot release them. Identity-based recovery requires a retained
+allocation; other cases need vendor-confirmed evidence and an explicitly reviewed recovery path.
+Durable structured recovery locators remain future work.
 
 Between the restored allocation append and the attested release, the attempt is an ordinary
 interrupted allocation: admission recovery would release it without an attestation, after which

@@ -6,7 +6,6 @@ import type { SandboxDriver } from "@sandbox-benchmarks/driver";
 import { evidenceDigest } from "@sandbox-benchmarks/results";
 import type { ExperimentAttempt } from "@sandbox-benchmarks/schema";
 import type { AccountRecord } from "./account-journal.ts";
-import { recoverAccount } from "./account-journal.ts";
 import { rawTreeDigest } from "./experiment-artifacts.ts";
 import { recoverRejectedCreate } from "./rejected-create-recovery.ts";
 
@@ -16,21 +15,21 @@ afterEach(() => {
 	for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function fixture() {
+function fixture(provider: "tama" | "runcloud" = "tama") {
 	const directory = mkdtempSync(join(tmpdir(), "rejected-create-"));
 	directories.push(directory);
 	const raw = join(directory, "raw");
-	mkdirSync(join(raw, "tama", "realworld-openclaw"), { recursive: true });
+	mkdirSync(join(raw, provider, "realworld-openclaw"), { recursive: true });
 	const marker = join(
 		raw,
-		"tama",
+		provider,
 		"realworld-openclaw",
-		"sandbox-tama-realworld-openclaw--failed.json",
+		`sandbox-${provider}-realworld-openclaw--failed.json`,
 	);
 	writeFileSync(
 		marker,
 		JSON.stringify({
-			provider: "tama",
+			provider: provider,
 			suite: "realworld-openclaw",
 			outcome: "failed",
 			reason: "Failed to create sandbox: tama new bench-1 …: exit 1; failed to provision",
@@ -49,7 +48,7 @@ function fixture() {
 	const evidence: ExperimentAttempt = {
 		schemaVersion: "1",
 		id: "attempt-1",
-		cellId: "tama-realworld-openclaw-r4",
+		cellId: `${provider}-realworld-openclaw-r4`,
 		planDigest: `sha256:${"a".repeat(64)}`,
 		sha: SOURCE,
 		workloadRevision: "realworld-openclaw",
@@ -74,7 +73,7 @@ function fixture() {
 		{
 			version: "1",
 			kind: "intent",
-			account: "tama",
+			account: provider,
 			attempt: evidence.id,
 			cellId: evidence.cellId,
 			planDigest: evidence.planDigest,
@@ -106,9 +105,9 @@ function fixture() {
 	};
 	const options = {
 		directory,
-		provider: "tama" as const,
+		provider: provider,
 		suite: "realworld-openclaw" as const,
-		drivers: [{ id: "tama" as const, driver }],
+		drivers: [{ id: provider, driver }],
 		journal,
 		assertQuiescent: async () => {
 			events.push("quiescent");
@@ -128,32 +127,26 @@ function fixture() {
 		},
 	};
 }
-type SandboxRefList = { provider: "tama"; id: string }[];
+type SandboxRefList = { provider: "tama" | "runcloud"; id: string }[];
 
-test("releases the intent as not-allocated, leaving the attempt and the journal consistent", async () => {
+test("legacy rejection prose cannot authorize an inventory-based release", async () => {
 	const f = fixture();
 	const original = readFileSync(join(f.options.directory, "attempt.json"), "utf8");
-	await recoverRejectedCreate(f.options);
-	expect(f.events).toEqual(["quiescent", "inventory", "inventory", "quiescent", "release"]);
-	expect(f.records.at(-1)).toEqual({
-		version: "1",
-		kind: "released",
-		outcome: "not-allocated",
-		account: "tama",
-		attempt: f.evidence.id,
-		cellId: f.evidence.cellId,
-		planDigest: f.evidence.planDigest,
-	});
-	// The recovery is evidence, not a rewrite: the failed attempt is untouched.
+	await expect(recoverRejectedCreate(f.options)).rejects.toThrow(
+		"does not prove a definitive create rejection",
+	);
+	expect(f.events).toEqual([]);
+	expect(f.records).toHaveLength(1);
 	expect(readFileSync(join(f.options.directory, "attempt.json"), "utf8")).toBe(original);
-	// The whole point: admission accepts the account afterwards.
-	await recoverAccount("tama", new Map([["tama", f.driver]]), f.options.journal, f.options.signal);
 });
 
 test("refuses an account still holding an owned sandbox — the create was not cleanly rejected", async () => {
 	const f = fixture();
 	f.hold([{ provider: "tama", id: "bench-1" }]);
-	expect(recoverRejectedCreate(f.options)).rejects.toThrow(/not cleanly rejected/);
+	await expect(recoverRejectedCreate(f.options)).rejects.toThrow(
+		/does not prove a definitive create rejection/,
+	);
+	expect(f.events).toEqual([]);
 	expect(f.records).toHaveLength(1);
 });
 
@@ -174,7 +167,7 @@ test("defers to identity-based recovery when the attempt retained an allocation"
 	// The retained allocation is part of the raw tree, so its digest covers it.
 	f.evidence.rawDigest = rawTreeDigest(join(f.options.directory, "raw"));
 	f.save();
-	expect(recoverRejectedCreate(f.options)).rejects.toThrow(/recover-allocated-intent/);
+	await expect(recoverRejectedCreate(f.options)).rejects.toThrow(/recover-allocated-intent/);
 	expect(f.records).toHaveLength(1);
 });
 
@@ -225,9 +218,27 @@ for (const change of [
 			change === "variant"
 				? { ...f.options, drivers: [...f.options.drivers, ...f.options.drivers] }
 				: f.options;
-		expect(recoverRejectedCreate(options)).rejects.toThrow();
+		await expect(recoverRejectedCreate(options)).rejects.toThrow();
 		expect(f.records.filter((record) => record.kind === "released")).toHaveLength(
 			change === "released" ? 1 : 0,
 		);
 	});
 }
+
+test("ambiguous Runcloud creates remain blocked despite empty inventory", async () => {
+	const f = fixture("runcloud");
+	const marker = JSON.parse(readFileSync(f.marker, "utf8"));
+	marker.reason = marker.cause.detail =
+		"failed to clean up runcloud sandbox by name sandbox-benchmarks-late after create failure";
+	writeFileSync(f.marker, JSON.stringify(marker));
+	f.evidence.rawDigest = rawTreeDigest(join(f.options.directory, "raw"));
+	f.save();
+	const original = readFileSync(join(f.options.directory, "attempt.json"), "utf8");
+	await expect(recoverRejectedCreate(f.options)).rejects.toThrow(
+		"does not prove a definitive create rejection",
+	);
+	f.hold([{ provider: "runcloud", id: "sb-late" }]);
+	expect(f.records).toHaveLength(1);
+	expect(f.events).toEqual([]);
+	expect(readFileSync(join(f.options.directory, "attempt.json"), "utf8")).toBe(original);
+});
