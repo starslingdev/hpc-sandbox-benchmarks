@@ -493,20 +493,18 @@ async function allocate(
 			definitive ? 1 : timing.reconcileAttempts,
 			signal,
 		);
-		// A lookup miss does not cancel a POST that may still finish on the server.
-		if (reconciled.status === "absent") {
+		if (reconciled.status !== "adopted") {
+			// A definitive rejection supplied its own verdict; an empty or unanswered confirming lookup
+			// does not put it back in doubt. Anything else stays unknown: a lookup miss does not cancel
+			// a POST that may still finish on the server.
 			if (definitive) throw error;
 			throw new RuncloudAmbiguousCreateError(
 				options.name,
 				error,
-				new Error("no allocation visible during reconciliation"),
+				reconciled.status === "unanswered"
+					? reconciled.lastError
+					: new Error("no allocation visible during reconciliation"),
 			);
-		}
-		if (reconciled.status === "unanswered") {
-			// A definitive rejection supplied its own verdict; an unanswered confirming lookup does not
-			// put it back in doubt. Anything else stays honestly unknown.
-			if (definitive) throw error;
-			throw new RuncloudAmbiguousCreateError(options.name, error, reconciled.lastError);
 		}
 		// The create SUCCEEDED and only its response was lost. Adopt it: destroying a healthy
 		// sandbox to honour a lost HTTP response would throw away a slow cold pull for no reason.
@@ -665,10 +663,8 @@ export function runcloudSpec(
 			try {
 				return await allocate(sdk(), createOptions, timing, operation.signal);
 			} catch (error) {
-				if (
-					error instanceof RuncloudAmbiguousCreateError ||
-					(error instanceof RuncloudCallTimeoutError && error.operation === "create")
-				)
+				// allocate() folds every non-definitive create failure, timeouts included, into this type.
+				if (error instanceof RuncloudAmbiguousCreateError)
 					unresolvedCreates.add(createOptions.name);
 				if (!(error instanceof RunCloudError)) throw error;
 				// The generic bridge deliberately does not infer vendor metadata. Preserve this SDK's

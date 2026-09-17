@@ -107,7 +107,7 @@ A failure before execution may retain `raw/allocation.json` without an execution
 `recover-experiment-cleanup` command validates that identity and restores a missing journal allocation
 before confirming removal and appending the publication attestation. Use this command when partial
 publication must be recovered; `recover-allocated-intent` alone only resolves account admission.
-See [ADR-0016](../../docs/adr/0016-retained-allocation-cleanup-recovery.md).
+See [ADR-0017](../../docs/adr/0017-retained-allocation-cleanup-recovery.md).
 
 Existing CPU cells cannot be measured again by clicking **Re-run failed jobs**: the executor refuses
 cells already present in the journal. After recovery, use a fresh experiment at the corrected revision.

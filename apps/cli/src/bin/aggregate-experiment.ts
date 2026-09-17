@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	aggregateExperiment,
-	describeCoverageShortfall,
+	describeIncompleteExperiment,
 	writeRunDocument,
 } from "@sandbox-benchmarks/results";
 import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-artifacts.ts";
@@ -19,17 +19,15 @@ if (import.meta.main) {
 	const plan = readExperimentPlan(planFile);
 	const attempts = readExperimentAttempts(attemptsRoot);
 	// Persist the independently evaluated coverage even when publication cannot proceed.
-	const { coverage, run, publicationBlockers } = aggregateExperiment(plan, attempts, {
-		allowPartial,
-	});
+	const aggregation = aggregateExperiment(plan, attempts, { allowPartial });
+	const { coverage, run } = aggregation;
 	mkdirSync(output, { recursive: true });
 	writeFileSync(join(output, "coverage.json"), `${JSON.stringify(coverage, null, 2)}\n`);
 	if (!run) {
 		console.error(
 			[
 				"Experiment is incomplete; retained attempt artifacts and coverage report are diagnostic evidence.",
-				...(publicationBlockers ?? []).map((reason) => `publication blocked: ${reason}`),
-				...describeCoverageShortfall(coverage),
+				...describeIncompleteExperiment(aggregation),
 			].join("\n"),
 		);
 		process.exitCode = 1;

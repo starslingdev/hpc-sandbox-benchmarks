@@ -1,20 +1,14 @@
 import type { ProviderId, SandboxDriver, SandboxRef } from "@sandbox-benchmarks/driver";
 import {
+	accountRecordBase as base,
 	cleanupRecoverySchema,
-	providerIdSchema,
+	sha256DigestSchema as digest,
+	evidenceIdentifierSchema as identity,
+	sandboxRefSchema as refSchema,
 	retainedAllocationSchema,
 } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 
-const identity = type(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/);
-const refSchema = type({ provider: providerIdSchema, id: "string >= 1" });
-const base = {
-	version: "'1'",
-	account: identity,
-	attempt: identity,
-	cellId: identity,
-	planDigest: /^sha256:[a-f0-9]{64}$/,
-} as const;
 export const accountRecordSchema = type.or(
 	type({ ...base, kind: "'intent'" }).onUndeclaredKey("reject"),
 	retainedAllocationSchema,
@@ -33,7 +27,7 @@ export const accountRecordSchema = type.or(
 		evidence: {
 			kind: "'completed-create'",
 			sourceSha: /^[a-f0-9]{40}$/,
-			attemptDigest: /^sha256:[a-f0-9]{64}$/,
+			attemptDigest: digest,
 			workflowRun: /^[0-9]+$/,
 			confirmedAt: "string.date.iso",
 			operator: identity,

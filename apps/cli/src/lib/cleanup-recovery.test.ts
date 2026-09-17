@@ -273,7 +273,13 @@ test("retained pre-execution allocation restores journal identity and remains ve
 });
 
 test("pre-execution recovery rejects unbound identities and measurement evidence before journal writes", async () => {
-	for (const change of ["attempt", "account", "provider", "measurement"]) {
+	const unbound = "retained allocation does not bind the original attempt";
+	for (const [change, guard] of [
+		["attempt", unbound],
+		["account", unbound],
+		["provider", unbound],
+		["measurement", "lost allocation append requires a pre-execution failure"],
+	] as const) {
 		const f = fixture(`retained-invalid-${change}`);
 		rmSync(join(f.directory, "raw", "execution-original.json"));
 		const allocationPath = join(f.directory, "raw", "allocation.json");
@@ -293,7 +299,7 @@ test("pre-execution recovery rejects unbound identities and measurement evidence
 			}),
 		);
 		f.records.splice(1);
-		await expect(recoverExperimentCleanup(f.options)).rejects.toThrow();
+		await expect(recoverExperimentCleanup(f.options)).rejects.toThrow(guard);
 		expect(f.records).toHaveLength(1);
 		expect(f.destroys()).toBe(0);
 	}

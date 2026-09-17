@@ -1,10 +1,11 @@
 import { type } from "arktype";
 import { gpuSpecSchema } from "./driver-schemas.ts";
+import {
+	sha256DigestSchema as digest,
+	evidenceIdentifierSchema as identifier,
+} from "./identifiers.ts";
 import { providerIdSchema } from "./provider-parsers.ts";
 import { targetSpecSchema } from "./target-spec-schema.ts";
-
-const digest = type(/^sha256:[a-f0-9]{64}$/);
-const identifier = type(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/);
 
 const phase = type("'create' | 'setup' | 'benchmark' | 'collect'");
 export const executionReceiptSchema = type({

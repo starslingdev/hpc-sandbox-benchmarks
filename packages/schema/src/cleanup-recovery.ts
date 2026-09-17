@@ -1,4 +1,8 @@
 import { type } from "arktype";
+import {
+	sha256DigestSchema as digest,
+	evidenceIdentifierSchema as identifier,
+} from "./identifiers.ts";
 import { providerIdSchema } from "./provider-parsers.ts";
 
 /** Later ownership evidence never changes the original execution or measurement receipts. */
@@ -6,12 +10,12 @@ export const cleanupRecoverySchema = type({
 	kind: "'post-run-cleanup'",
 	attemptId: "string >= 1",
 	cellId: "string >= 1",
-	planDigest: /^sha256:[a-f0-9]{64}$/,
-	attemptDigest: /^sha256:[a-f0-9]{64}$/,
+	planDigest: digest,
+	attemptDigest: digest,
 	workflowRun: "string >= 1",
 	sourceSha: /^[a-f0-9]{40}$/,
 	confirmedAt: "string.date.iso",
-	operator: /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
+	operator: identifier,
 	observation: type.or(
 		type({
 			kind: "'sandbox'",
@@ -38,14 +42,24 @@ export type CleanupRecovery = typeof cleanupRecoverySchema.infer;
 // Reviewed nativeModalCompute revision: preparation failed AFTER create returned in this App.
 export const MODAL_CREATED_REQUEST_REVISION = "845a0f19b3aa3bda32f0ec988c1d1c188c9e260f";
 
-/** Identity retained in the digest-verified raw tree before the harness receives a session. */
-export const retainedAllocationSchema = type({
+/** Provenance every account-journal record carries: the owning account and the frozen attempt. */
+export const accountRecordBase = {
 	version: "'1'",
+	account: identifier,
+	attempt: identifier,
+	cellId: identifier,
+	planDigest: digest,
+} as const;
+
+export const sandboxRefSchema = type({ provider: providerIdSchema, id: "string >= 1" });
+
+/**
+ * The journal's `allocated` record. The executor also retains it in the digest-verified raw tree
+ * before the harness receives a session, so the identity survives a lost journal append.
+ */
+export const retainedAllocationSchema = type({
+	...accountRecordBase,
 	kind: "'allocated'",
-	account: /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
-	attempt: /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
-	cellId: /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
-	planDigest: /^sha256:[a-f0-9]{64}$/,
-	ref: { provider: providerIdSchema, id: "string >= 1" },
+	ref: sandboxRefSchema,
 }).onUndeclaredKey("reject");
 export type RetainedAllocation = typeof retainedAllocationSchema.infer;

@@ -77,12 +77,13 @@ export function readExperimentAttempt(directory: string): AttemptWithRun {
 	) {
 		throw new Error(`raw digest mismatch: ${evidence.id}`);
 	}
+	const allocationFile = join(directory, "raw", "allocation.json");
 	return {
 		evidence,
-		...(evidence.rawDigest && existsSync(join(directory, "raw", "allocation.json"))
+		...(evidence.rawDigest && existsSync(allocationFile)
 			? {
 					allocation: retainedAllocationSchema.assert(
-						JSON.parse(readFileSync(join(directory, "raw", "allocation.json"), "utf8")),
+						JSON.parse(readFileSync(allocationFile, "utf8")),
 					),
 				}
 			: {}),

@@ -7,7 +7,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as core from "@actions/core";
-import { aggregateExperiment, evidenceDigest, writeRunDocument } from "@sandbox-benchmarks/results";
+import {
+	aggregateExperiment,
+	describeIncompleteExperiment,
+	evidenceDigest,
+	writeRunDocument,
+} from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
 import {
 	fail,
@@ -88,7 +93,7 @@ if (import.meta.main) {
 			{ allowPartial },
 		);
 		if (!verified.run) {
-			fail(`experiment is incomplete: ${JSON.stringify(verified.coverage)}`);
+			fail(["experiment is incomplete", ...describeIncompleteExperiment(verified)].join("\n"));
 		}
 		if (evidenceDigest(run) !== evidenceDigest(verified.run)) {
 			fail("candidate does not match the verified experiment attempts");

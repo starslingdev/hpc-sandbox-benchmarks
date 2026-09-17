@@ -4,7 +4,7 @@ status: accepted
 
 # Post-run cleanup recovery for partial publication
 
-Identity evidence for pre-execution failures is refined by [ADR-0016](./0016-retained-allocation-cleanup-recovery.md).
+Identity evidence for pre-execution failures is refined by [ADR-0017](./0017-retained-allocation-cleanup-recovery.md).
 
 ## Context
 

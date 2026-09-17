@@ -21,8 +21,11 @@ export type {
 export {
 	aggregateExperiment,
 	describeCoverageShortfall,
+	describeIncompleteExperiment,
 	evaluateExperiment,
 	evidenceDigest,
+	failedBeforeExecution,
+	originalSandboxId,
 	verifiedRetainedAllocation,
 	verifyCleanupRecovery,
 	verifyExperimentPlan,

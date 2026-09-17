@@ -85,7 +85,8 @@ Do not use GitHub's **Re-run failed jobs** for this run. Its frozen retry allowa
 `executeExperimentBatch` refuses cells already present in the journal. New attempts would not
 constitute authorized retry lineage. A fresh experiment is required after the fix is merged.
 
-The seven affected accounts are now clear for admission. To repeat the affected providers at the
+The six affected accounts (seven providers; both Modal variants share the `modal` quota domain)
+are now clear for admission. To repeat the affected providers at the
 corrected main revision, preserving normal suite replica/pass defaults:
 
 ```sh

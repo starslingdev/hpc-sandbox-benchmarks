@@ -26,4 +26,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0014](./0014-post-run-cleanup-recovery.md) | Append-only cleanup recovery for partial publication |
 | [0015](./0015-synthetic-headline-pair.md) | Synthetic headline selection and paired WAN directions |
 | [0016](./0016-modal-app-scoped-admission.md) | Modal admission scoped to the benchmark App |
-| [0016](./0016-retained-allocation-cleanup-recovery.md) | Retained allocation evidence for pre-execution cleanup recovery |
+| [0017](./0017-retained-allocation-cleanup-recovery.md) | Retained allocation evidence for pre-execution cleanup recovery |
