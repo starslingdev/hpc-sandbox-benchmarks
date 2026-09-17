@@ -228,3 +228,73 @@ test("a different revision cannot use the identifier-free exception", async () =
 	await expect(recoverExperimentCleanup(f.options)).rejects.toThrow("original failed attempt");
 	expect(f.records).toHaveLength(1);
 });
+
+test("retained pre-execution allocation restores journal identity and remains verifiable after collection", async () => {
+	const f = fixture("retained-before-execution");
+	rmSync(join(f.directory, "raw", "execution-original.json"));
+	const path = join(f.directory, "attempt.json");
+	const original = JSON.parse(readFileSync(path, "utf8"));
+	writeFileSync(
+		path,
+		JSON.stringify({
+			...original,
+			measurementStarted: false,
+			rawDigest: rawTreeDigest(join(f.directory, "raw")),
+		}),
+	);
+	f.records.splice(1);
+	const recovery = await recoverExperimentCleanup(f.options);
+	expect(f.records.map((record) => record.kind)).toEqual(["intent", "allocated", "released"]);
+	expect(recovery.observation).toMatchObject({ kind: "sandbox", sandboxId: "sb-original" });
+	expect(f.destroys()).toBe(1);
+	expect(await recoverExperimentCleanup(f.options)).toEqual(recovery);
+	const fresh = join(root, "retained-collected");
+	await downloadExperimentAttempts(
+		{
+			list: async () => [
+				{
+					id: 1,
+					name: `experiment-attempt-123-${recovery.attemptId}`,
+					expired: false,
+					workflow_run: { id: 123 },
+				},
+			],
+			upload: async () => {},
+			download: async (_artifact, destination) => {
+				cpSync(f.directory, destination, { recursive: true });
+				rmSync(join(destination, "cleanup-recovery.json"));
+			},
+		},
+		f.options.journal,
+		f.plan,
+		fresh,
+	);
+	expect(readExperimentAttempts(fresh)[0]?.cleanupRecovery).toEqual(recovery);
+});
+
+test("pre-execution recovery rejects unbound identities and measurement evidence before journal writes", async () => {
+	for (const change of ["attempt", "account", "provider", "measurement"]) {
+		const f = fixture(`retained-invalid-${change}`);
+		rmSync(join(f.directory, "raw", "execution-original.json"));
+		const allocationPath = join(f.directory, "raw", "allocation.json");
+		const allocation = JSON.parse(readFileSync(allocationPath, "utf8"));
+		if (change === "attempt") allocation.attempt = "other";
+		if (change === "account") allocation.account = "blaxel";
+		if (change === "provider") allocation.ref.provider = "modal-vm";
+		writeFileSync(allocationPath, JSON.stringify(allocation));
+		const path = join(f.directory, "attempt.json");
+		const original = JSON.parse(readFileSync(path, "utf8"));
+		writeFileSync(
+			path,
+			JSON.stringify({
+				...original,
+				measurementStarted: change === "measurement",
+				rawDigest: rawTreeDigest(join(f.directory, "raw")),
+			}),
+		);
+		f.records.splice(1);
+		await expect(recoverExperimentCleanup(f.options)).rejects.toThrow();
+		expect(f.records).toHaveLength(1);
+		expect(f.destroys()).toBe(0);
+	}
+});

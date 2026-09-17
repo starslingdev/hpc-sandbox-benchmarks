@@ -102,3 +102,13 @@ bun apps/cli/src/bin/dataset-impact.ts data/dataset/runs/34804682438.json \
 with every provider/metric estimate and source cell. The review flag is necessary only when cohort
 digests differ or are missing; it cannot override hard measurement incompatibilities. Neither command
 republishes a dataset or dispatches a workflow.
+
+A failure before execution may retain `raw/allocation.json` without an execution receipt. The same
+`recover-experiment-cleanup` command validates that identity and restores a missing journal allocation
+before confirming removal and appending the publication attestation. Use this command when partial
+publication must be recovered; `recover-allocated-intent` alone only resolves account admission.
+See [ADR-0016](../../docs/adr/0016-retained-allocation-cleanup-recovery.md).
+
+Existing CPU cells cannot be measured again by clicking **Re-run failed jobs**: the executor refuses
+cells already present in the journal. After recovery, use a fresh experiment at the corrected revision.
+A dataset-only backfill can re-collect the original attempts with the later cleanup attestations.

@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SandboxDriver } from "@sandbox-benchmarks/driver";
-import { evidenceDigest, verifyCleanupRecovery } from "@sandbox-benchmarks/results";
+import {
+	evidenceDigest,
+	verifiedRetainedAllocation,
+	verifyCleanupRecovery,
+} from "@sandbox-benchmarks/results";
 import type { CleanupRecovery, ExperimentPlan, ProviderId } from "@sandbox-benchmarks/schema";
 import { cleanupRecoverySchema, MODAL_CREATED_REQUEST_REVISION } from "@sandbox-benchmarks/schema";
 import type { AccountJournal } from "./account-journal.ts";
@@ -36,11 +40,11 @@ export async function recoverExperimentCleanup(options: {
 		!attempt.run
 	)
 		throw new Error("recovery requires an original failed attempt with unresolved cleanup");
-	const records = (await options.journal.read(cell.quotaDomain)).filter(
+	let records = (await options.journal.read(cell.quotaDomain)).filter(
 		(r) => r.attempt === evidence.id,
 	);
 	const intent = records.find((r) => r.kind === "intent");
-	const allocation = records.find((r) => r.kind === "allocated");
+	let allocation = records.find((r) => r.kind === "allocated");
 	const release = records.find((r) => r.kind === "released");
 	if (
 		!intent ||
@@ -78,15 +82,29 @@ export async function recoverExperimentCleanup(options: {
 	if (release || records.length !== (allocation ? 2 : 1))
 		throw new Error("cleanup recovery requires matching unresolved journal records");
 	await options.assertQuiescent(evidence.workflowRun, evidence.sha);
+	if (!allocation && attempt.allocation) {
+		if (evidence.measurementStarted || attempt.execution || attempt.cleanup)
+			throw new Error("lost allocation append requires a pre-execution failure");
+		const retained = verifiedRetainedAllocation(options.plan, attempt);
+		const current = (await options.journal.read(cell.quotaDomain)).filter(
+			(record) => record.attempt === evidence.id,
+		);
+		if (evidenceDigest(current) !== evidenceDigest(records))
+			throw new Error("journal changed during cleanup recovery");
+		await withinSignal(options.signal, () => options.journal.append(retained));
+		allocation = retained;
+		records = [...records, retained];
+	}
 	let observation: CleanupRecovery["observation"];
 	if (allocation) {
-		const retained = accountRecordSchema.assert(
-			JSON.parse(readFileSync(join(options.directory, "raw", "allocation.json"), "utf8")),
-		);
+		const retained = verifiedRetainedAllocation(options.plan, attempt);
 		if (
 			evidenceDigest(retained) !== evidenceDigest(allocation) ||
 			allocation.ref.provider !== cell.provider ||
-			attempt.execution?.sandboxId !== allocation.ref.id
+			(attempt.execution
+				? attempt.execution.sandboxId !== allocation.ref.id ||
+					attempt.execution.provider !== cell.provider
+				: evidence.measurementStarted || attempt.cleanup !== undefined)
 		)
 			throw new Error("cleanup recovery allocation differs from original retained execution");
 		const driver = await withinSignal(options.signal, () => options.openDriver(cell.provider));

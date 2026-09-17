@@ -19,13 +19,16 @@ if (import.meta.main) {
 	const plan = readExperimentPlan(planFile);
 	const attempts = readExperimentAttempts(attemptsRoot);
 	// Persist the independently evaluated coverage even when publication cannot proceed.
-	const { coverage, run } = aggregateExperiment(plan, attempts, { allowPartial });
+	const { coverage, run, publicationBlockers } = aggregateExperiment(plan, attempts, {
+		allowPartial,
+	});
 	mkdirSync(output, { recursive: true });
 	writeFileSync(join(output, "coverage.json"), `${JSON.stringify(coverage, null, 2)}\n`);
 	if (!run) {
 		console.error(
 			[
 				"Experiment is incomplete; retained attempt artifacts and coverage report are diagnostic evidence.",
+				...(publicationBlockers ?? []).map((reason) => `publication blocked: ${reason}`),
 				...describeCoverageShortfall(coverage),
 			].join("\n"),
 		);

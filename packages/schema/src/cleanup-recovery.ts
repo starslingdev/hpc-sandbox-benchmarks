@@ -37,3 +37,15 @@ export type CleanupRecovery = typeof cleanupRecoverySchema.infer;
 
 // Reviewed nativeModalCompute revision: preparation failed AFTER create returned in this App.
 export const MODAL_CREATED_REQUEST_REVISION = "845a0f19b3aa3bda32f0ec988c1d1c188c9e260f";
+
+/** Identity retained in the digest-verified raw tree before the harness receives a session. */
+export const retainedAllocationSchema = type({
+	version: "'1'",
+	kind: "'allocated'",
+	account: /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
+	attempt: /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
+	cellId: /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
+	planDigest: /^sha256:[a-f0-9]{64}$/,
+	ref: { provider: providerIdSchema, id: "string >= 1" },
+}).onUndeclaredKey("reject");
+export type RetainedAllocation = typeof retainedAllocationSchema.infer;

@@ -465,7 +465,7 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 		}
 	});
 
-	it("marks a stalled create retryable only once absence is established, keeping the original error", async () => {
+	it("keeps a stalled create unresolved despite repeated empty lookups", async () => {
 		let listCalls = 0;
 		const client = nativeClient({
 			create: () => new Promise<Sandbox>(() => {}),
@@ -477,13 +477,35 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 		const error = await driver(client, { controlPlaneTimeoutMs: 5, reconcileAttempts: 3 })
 			.create(request)
 			.catch((caught: unknown) => caught);
-		expect(error).toMatchObject({ code: "create-failed", provider: "runcloud" });
-		expect((error as Error).message).toContain("run.cloud create did not settle within 5ms");
-		expect((error as Error).message).not.toMatch(/manual cleanup/);
-		// A stall that allocated nothing is this control plane reporting saturation without a 429.
-		expect(isRetryableDriverCreate(error)).toBe(true);
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
+		expect((error as FailedCreateCleanupError).suppressed.message).toContain(
+			"run.cloud create did not settle within 5ms",
+		);
+		expect(isRetryableDriverCreate(error)).toBe(false);
 		// The module's window plus the bridge's own confirming lookups, never a replayed create.
 		expect(listCalls).toBeGreaterThanOrEqual(3);
+	});
+
+	it("keeps a timed-out create unresolved when empty lookups precede a late allocation", async () => {
+		let requestedName: string | undefined;
+		let visible = false;
+		const client = nativeClient({
+			create: (input) => {
+				requestedName = input?.name;
+				return new Promise<Sandbox>(() => {});
+			},
+			list: async () => (visible ? [nativeSandbox("running", { name: requestedName })] : []),
+		});
+		const error = await driver(client, { controlPlaneTimeoutMs: 5, reconcileAttempts: 1 })
+			.create(request)
+			.catch((error: unknown) => error);
+		visible = true;
+		expect(error).toBeInstanceOf(FailedCreateCleanupError);
+		expect(isRetryableDriverCreate(error)).toBe(false);
+		if (!(error instanceof FailedCreateCleanupError))
+			throw new Error("missing recoverable create failure");
+		await error.cleanup();
+		expect(await client.get("sb-test")).toMatchObject({ state: "destroyed" });
 	});
 
 	it("never marks a generic failure, a definitive rejection, or an unanswered window", async () => {
@@ -495,7 +517,10 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 		const genericError = await driver(generic, { reconcileAttempts: 1 })
 			.create(request)
 			.catch((caught: unknown) => caught);
-		expect((genericError as Error).message).toContain("client serialization failed");
+		expect(genericError).toBeInstanceOf(FailedCreateCleanupError);
+		expect((genericError as FailedCreateCleanupError).suppressed.message).toContain(
+			"client serialization failed",
+		);
 		expect(isRetryableDriverCreate(genericError)).toBe(false);
 
 		let listCalls = 0;
@@ -583,9 +608,9 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 				nativeSandbox("running", { id: "sb-other", name: `${requestedName}-different` }),
 			],
 		});
-		await expect(driver(unrelated, { reconcileAttempts: 2 }).create(request)).rejects.toThrow(
-			/response lost after allocation/,
-		);
+		await expect(
+			driver(unrelated, { reconcileAttempts: 2 }).create(request),
+		).rejects.toBeInstanceOf(FailedCreateCleanupError);
 	});
 
 	it("exposes the module verdicts the bridge classifies from", () => {
@@ -605,7 +630,7 @@ describe("run.cloud ambiguous-create reconciliation", () => {
 		expect(recovery.isDefinitive?.(new RuncloudBootFailureError("sb", "failed", true, false))).toBe(
 			false,
 		);
-		expect(recovery.isRetryableCreate?.(new RuncloudCallTimeoutError("create", 5))).toBe(true);
+		expect(recovery.isRetryableCreate?.(new RuncloudCallTimeoutError("create", 5))).toBe(false);
 		expect(
 			recovery.isRetryableCreate?.(new RuncloudCallTimeoutError("destroy sandbox sb", 5)),
 		).toBe(false);

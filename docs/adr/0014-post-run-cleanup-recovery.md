@@ -4,6 +4,8 @@ status: accepted
 
 # Post-run cleanup recovery for partial publication
 
+Identity evidence for pre-execution failures is refined by [ADR-0016](./0016-retained-allocation-cleanup-recovery.md).
+
 ## Context
 
 CPU run 34853816482 retained 470 complete and 178 failed cells. Two Modal failures had unresolved

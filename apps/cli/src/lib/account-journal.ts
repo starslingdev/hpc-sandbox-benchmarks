@@ -1,5 +1,9 @@
 import type { ProviderId, SandboxDriver, SandboxRef } from "@sandbox-benchmarks/driver";
-import { cleanupRecoverySchema, providerIdSchema } from "@sandbox-benchmarks/schema";
+import {
+	cleanupRecoverySchema,
+	providerIdSchema,
+	retainedAllocationSchema,
+} from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 
 const identity = type(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/);
@@ -13,7 +17,7 @@ const base = {
 } as const;
 export const accountRecordSchema = type.or(
 	type({ ...base, kind: "'intent'" }).onUndeclaredKey("reject"),
-	type({ ...base, kind: "'allocated'", ref: refSchema }).onUndeclaredKey("reject"),
+	retainedAllocationSchema,
 	type({
 		...base,
 		kind: "'released'",

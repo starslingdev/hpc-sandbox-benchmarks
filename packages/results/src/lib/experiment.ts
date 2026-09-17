@@ -5,6 +5,7 @@ import type {
 	ExecutionReceipt,
 	ExperimentAttempt,
 	ExperimentPlan,
+	RetainedAllocation,
 	Run,
 } from "@sandbox-benchmarks/schema";
 import {
@@ -23,6 +24,7 @@ import {
 	MODAL_CREATED_REQUEST_REVISION,
 	parseRun,
 	providerReportedNothing,
+	retainedAllocationSchema,
 } from "@sandbox-benchmarks/schema";
 import { aggregateRuns } from "./aggregate.ts";
 import type { PtsTrialEvidence } from "./pts-trial-evidence.ts";
@@ -183,6 +185,7 @@ export interface AttemptWithRun {
 	execution?: ExecutionReceipt;
 	cleanup?: CleanupReceipt;
 	cleanupRecovery?: CleanupRecovery;
+	allocation?: RetainedAllocation;
 	/** When present, raw verification takes precedence over a shard's declared sample origin. */
 	ptsTrials?: PtsTrialEvidence[];
 }
@@ -473,6 +476,7 @@ export function evaluateExperiment(
 
 export interface ExperimentAggregation {
 	coverage: CoverageReport;
+	publicationBlockers?: string[];
 	/** Verified complete publication, or explicitly requested partial publication with frozen coverage. */
 	run?: Run;
 }
@@ -521,19 +525,27 @@ export function aggregateExperiment(
 	if (!coverage.complete && !partial) return { coverage };
 	// Partial publication relaxes metric completeness only. Missing evidence, conflicting provenance
 	// and unresolved allocations still cannot be published.
-	if (
-		partial &&
-		(coverage.conflicts.length > 0 ||
-			coverage.cells.some((cell) => cell.status === "missing") ||
-			attempts.some(
-				(attempt) =>
-					(!attempt.run && !isUnallocatedFailureWithoutRun(attempt)) ||
-					!attempt.evidence.rawDigest ||
-					(attempt.evidence.cleanup === "unresolved" && !attempt.cleanupRecovery),
-			) ||
-			!coverage.cells.some((cell) => (cell.retainedMetrics?.length ?? 0) > 0))
-	)
-		return { coverage };
+	if (partial) {
+		const publicationBlockers = [
+			...coverage.conflicts.map((conflict) => `conflicting evidence: ${conflict}`),
+			...coverage.cells
+				.filter((cell) => cell.status === "missing")
+				.map((cell) => `missing attempt: ${cell.id}`),
+			...attempts.flatMap((attempt) => [
+				...(!attempt.run && !isUnallocatedFailureWithoutRun(attempt)
+					? [`missing Run: ${attempt.evidence.id}`]
+					: []),
+				...(!attempt.evidence.rawDigest ? [`missing raw digest: ${attempt.evidence.id}`] : []),
+				...(attempt.evidence.cleanup === "unresolved" && !attempt.cleanupRecovery
+					? [`unresolved cleanup: ${attempt.evidence.id}`]
+					: []),
+			]),
+			...(!coverage.cells.some((cell) => (cell.retainedMetrics?.length ?? 0) > 0)
+				? ["no verified measurements"]
+				: []),
+		];
+		if (publicationBlockers.length > 0) return { coverage, publicationBlockers };
+	}
 	const selectedIds = partial
 		? coverage.cells.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : []))
 		: coverage.selectedAttempts;
@@ -704,8 +716,12 @@ export function verifyCleanupRecovery(plan: ExperimentPlan, attempt: AttemptWith
 	if (recovery.observation.kind === "sandbox") {
 		if (
 			recovery.observation.provider !== cell.provider ||
-			attempt.execution?.sandboxId !== recovery.observation.sandboxId ||
-			attempt.execution?.provider !== cell.provider
+			(attempt.execution
+				? attempt.execution.sandboxId !== recovery.observation.sandboxId ||
+					attempt.execution.provider !== cell.provider
+				: evidence.measurementStarted ||
+					attempt.cleanup !== undefined ||
+					verifiedRetainedAllocation(plan, attempt).ref.id !== recovery.observation.sandboxId)
 		)
 			throw new Error("cleanup recovery sandbox differs from original execution");
 	} else if (
@@ -720,4 +736,25 @@ export function verifyCleanupRecovery(plan: ExperimentPlan, attempt: AttemptWith
 		)
 	)
 		throw new Error("cleanup recovery is not the reviewed Modal post-create failure");
+}
+
+/** A retained identity is evidence only when bound to this original attempt and frozen account. */
+export function verifiedRetainedAllocation(
+	plan: ExperimentPlan,
+	attempt: AttemptWithRun,
+): RetainedAllocation {
+	const allocation = retainedAllocationSchema.assert(attempt.allocation);
+	const cell = plan.cells.find((cell) => cell.id === attempt.evidence.cellId);
+	if (
+		!cell ||
+		!attempt.evidence.rawDigest ||
+		allocation.attempt !== attempt.evidence.id ||
+		allocation.cellId !== cell.id ||
+		allocation.planDigest !== plan.digest ||
+		allocation.planDigest !== attempt.evidence.planDigest ||
+		allocation.account !== cell.quotaDomain ||
+		allocation.ref.provider !== cell.provider
+	)
+		throw new Error("retained allocation does not bind the original attempt");
+	return allocation;
 }

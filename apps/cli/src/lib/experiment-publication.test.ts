@@ -605,7 +605,9 @@ test("partial aggregation retains proven metrics from incomplete suites and reje
 	const first = attempts[0];
 	if (!first) throw new Error("missing fixture attempt");
 	first.evidence.cleanup = "unresolved";
-	expect(aggregateExperiment(plan, attempts, { allowPartial: true }).run).toBeUndefined();
+	const blocked = aggregateExperiment(plan, attempts, { allowPartial: true });
+	expect(blocked.run).toBeUndefined();
+	expect(blocked.publicationBlockers).toContain(`unresolved cleanup: ${first.evidence.id}`);
 	first.evidence.cleanup = "confirmed";
 	first.evidence.planDigest = `sha256:${"b".repeat(64)}`;
 	expect(aggregateExperiment(plan, attempts, { allowPartial: true }).run).toBeUndefined();

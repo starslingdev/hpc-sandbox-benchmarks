@@ -23,6 +23,7 @@ export {
 	describeCoverageShortfall,
 	evaluateExperiment,
 	evidenceDigest,
+	verifiedRetainedAllocation,
 	verifyCleanupRecovery,
 	verifyExperimentPlan,
 } from "./lib/experiment.ts";
