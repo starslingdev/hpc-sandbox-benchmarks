@@ -43,5 +43,5 @@ Durable structured recovery locators remain future work.
 
 Between the restored allocation append and the attested release, the attempt is an ordinary
 interrupted allocation: admission recovery would release it without an attestation, after which
-publication recovery cannot be attached. Re-run `recover-experiment-cleanup` before admitting the
-account again.
+publication recovery cannot be attached by that implementation.
+[ADR-0018](./0018-attest-already-released-cleanup.md) adds an append-only attestation for this case.

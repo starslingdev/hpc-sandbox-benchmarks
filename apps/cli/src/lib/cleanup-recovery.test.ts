@@ -184,6 +184,55 @@ test("confirmed cleanup appends once, preserves the original attempt and survive
 	expect(f.destroys()).toBe(1);
 });
 
+test("admission cleanup can later receive a publication attestation without rewriting its release", async () => {
+	const f = fixture("admission-released");
+	await recoverAccount(
+		"modal",
+		new Map([["modal-gvisor", f.driver]]),
+		f.options.journal,
+		f.options.signal,
+	);
+	const history = JSON.stringify(f.records);
+	const original = readFileSync(join(f.directory, "attempt.json"), "utf8");
+	const recovery = await recoverExperimentCleanup(f.options);
+	expect(JSON.stringify(f.records.slice(0, 3))).toBe(history);
+	expect(f.records).toHaveLength(4);
+	expect(f.records.at(-1)).toMatchObject({ kind: "cleanup-attested", recovery });
+	expect(await recoverExperimentCleanup(f.options)).toEqual(recovery);
+	expect(f.records).toHaveLength(4);
+	expect(f.destroys()).toBe(1);
+	expect(readFileSync(join(f.directory, "attempt.json"), "utf8")).toBe(original);
+	const fresh = join(root, "collected-admission-released");
+	await downloadExperimentAttempts(
+		{
+			list: async () => [
+				{
+					id: 1,
+					name: `experiment-attempt-123-${recovery.attemptId}`,
+					expired: false,
+					workflow_run: { id: 123 },
+				},
+			],
+			upload: async () => {},
+			download: async (_artifact, destination) => {
+				cpSync(f.directory, destination, { recursive: true });
+				rmSync(join(destination, "cleanup-recovery.json"));
+			},
+		},
+		f.options.journal,
+		f.plan,
+		fresh,
+	);
+	expect(readExperimentAttempts(fresh)[0]?.cleanupRecovery).toEqual(recovery);
+	await recoverAccount(
+		"modal",
+		new Map([["modal-gvisor", f.driver]]),
+		f.options.journal,
+		f.options.signal,
+	);
+	expect(f.destroys()).toBe(1);
+});
+
 test("identifier-free clearance records the reviewed App observation without inventing an allocation", async () => {
 	const f = fixture("unknown", false);
 	const recovery = await recoverExperimentCleanup(f.options);
@@ -196,6 +245,68 @@ test("identifier-free clearance records the reviewed App observation without inv
 	});
 	expect(readExperimentAttempt(f.directory).evidence.cleanup).toBe("unresolved");
 	expect(f.destroys()).toBe(0);
+});
+
+test("a supplemental attestation requires an ordinary matching release and a fresh observation", async () => {
+	for (const fault of ["identity", "not-allocated", "observation", "writers"]) {
+		const f = fixture(`supplement-${fault}`);
+		await recoverAccount(
+			"modal",
+			new Map([["modal-gvisor", f.driver]]),
+			f.options.journal,
+			f.options.signal,
+		);
+		const release = f.records[2];
+		if (release?.kind !== "released" || release.outcome !== "absent")
+			throw new Error("missing release");
+		if (fault === "identity")
+			f.records[2] = { ...release, ref: { ...release.ref, id: "sb-other" } };
+		if (fault === "not-allocated")
+			f.records[2] = {
+				version: "1",
+				kind: "released",
+				outcome: "not-allocated",
+				account: release.account,
+				attempt: release.attempt,
+				cellId: release.cellId,
+				planDigest: release.planDigest,
+			};
+		if (fault === "observation")
+			f.options.openDriver = async () => {
+				throw new Error("observation unavailable");
+			};
+		if (fault === "writers")
+			f.options.assertQuiescent = async () => {
+				throw new Error("active writer");
+			};
+		const before = JSON.stringify(f.records);
+		await expect(recoverExperimentCleanup(f.options)).rejects.toThrow();
+		expect(JSON.stringify(f.records)).toBe(before);
+	}
+});
+
+test("admission rejects a supplemental attestation that contradicts its release", async () => {
+	const f = fixture("supplement-conflict");
+	await recoverAccount(
+		"modal",
+		new Map([["modal-gvisor", f.driver]]),
+		f.options.journal,
+		f.options.signal,
+	);
+	await recoverExperimentCleanup(f.options);
+	const release = f.records[2];
+	if (release?.kind !== "released" || release.outcome !== "absent")
+		throw new Error("missing release");
+	f.records[2] = { ...release, ref: { ...release.ref, id: "sb-other" } };
+	await expect(
+		recoverAccount(
+			"modal",
+			new Map([["modal-gvisor", f.driver]]),
+			f.options.journal,
+			f.options.signal,
+		),
+	).rejects.toThrow("attestation contradicts");
+	await expect(recoverExperimentCleanup(f.options)).rejects.toThrow("attestation contradicts");
 });
 
 test("uncertain observations, live writers and changed journals never append a clearance", async () => {

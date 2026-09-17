@@ -83,6 +83,12 @@ the immutable attempts and attaches the matching recovery record separately. Re-
 partial backfill after recovery: both aggregate and promote re-verify it, and the Run records recovery
 under `experiment.cleanupRecoveries`. Failed cells remain failed and supply no numerical results.
 
+If account admission already wrote an ordinary identity-based release, the command rechecks the
+exact resource and appends a separate `cleanup-attested` record. It never rewrites the release.
+Deploy this journal reader to main and stop older account writers before using that path; older
+revisions reject the new record kind. Use current main for recovery and dataset backfill, not an
+Actions rerun at the old source revision. See [ADR-0018](../../docs/adr/0018-attest-already-released-cleanup.md).
+
 ### Local multi-dataset leaderboard and impact report
 
 The `leaderboard` input can be a Run or a JSON array of Run file paths. Paths in an array are

@@ -1,4 +1,5 @@
 import type { ProviderId, SandboxDriver, SandboxRef } from "@sandbox-benchmarks/driver";
+import type { CleanupRecovery } from "@sandbox-benchmarks/schema";
 import {
 	accountRecordBase as base,
 	cleanupRecoverySchema,
@@ -12,6 +13,9 @@ import { type } from "arktype";
 export const accountRecordSchema = type.or(
 	type({ ...base, kind: "'intent'" }).onUndeclaredKey("reject"),
 	retainedAllocationSchema,
+	type({ ...base, kind: "'cleanup-attested'", recovery: cleanupRecoverySchema }).onUndeclaredKey(
+		"reject",
+	),
 	type({
 		...base,
 		kind: "'released'",
@@ -46,6 +50,46 @@ export interface AccountJournal {
 	append(record: AccountRecord): Promise<void>;
 }
 
+/** A later attestation supplements an ordinary identity-based release; it never replaces it. */
+export function supplementalCleanupRecovery(
+	records: readonly AccountRecord[],
+): CleanupRecovery | undefined {
+	const attestations = records.filter((record) => record.kind === "cleanup-attested");
+	if (attestations.length === 0) return undefined;
+	const attestation = attestations[0];
+	const intent = records.find((record) => record.kind === "intent");
+	const allocation = records.find((record) => record.kind === "allocated");
+	const release = records.find((record) => record.kind === "released");
+	if (
+		!attestation ||
+		attestations.length !== 1 ||
+		records.length !== 4 ||
+		!intent ||
+		!allocation ||
+		!release ||
+		release.outcome !== "absent" ||
+		release.recovery ||
+		records.some(
+			(record) =>
+				record.account !== intent.account ||
+				record.attempt !== intent.attempt ||
+				record.cellId !== intent.cellId ||
+				record.planDigest !== intent.planDigest,
+		) ||
+		allocation.ref.id !== release.ref.id ||
+		allocation.ref.provider !== release.ref.provider ||
+		attestation.recovery.attemptId !== intent.attempt ||
+		attestation.recovery.cellId !== intent.cellId ||
+		attestation.recovery.planDigest !== intent.planDigest ||
+		attestation.recovery.observation.kind !== "sandbox" ||
+		attestation.recovery.observation.sandboxId !== allocation.ref.id ||
+		attestation.recovery.observation.provider !== allocation.ref.provider
+	) {
+		throw new Error("cleanup attestation contradicts durable allocation and release");
+	}
+	return attestation.recovery;
+}
+
 /** Queues provide exclusion; this journal preserves ownership facts, never allocation claims. */
 export async function recoverAccount(
 	account: string,
@@ -65,6 +109,7 @@ export async function recoverAccount(
 	}
 	for (const records of attempts.values()) {
 		signal.throwIfAborted();
+		supplementalCleanupRecovery(records);
 		const intent = records.find((entry) => entry.kind === "intent");
 		const allocated = records.find((entry) => entry.kind === "allocated");
 		const released = records.find((entry) => entry.kind === "released");

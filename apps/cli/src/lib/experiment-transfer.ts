@@ -4,6 +4,7 @@ import { verifyCleanupRecovery } from "@sandbox-benchmarks/results";
 import type { ExperimentPlan } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import type { AccountJournal } from "./account-journal.ts";
+import { supplementalCleanupRecovery } from "./account-journal.ts";
 import {
 	readExperimentAttempt,
 	readExperimentPlan,
@@ -156,12 +157,14 @@ export async function downloadExperimentAttempts(
 			const releases = owned.filter((record) => record.kind === "released");
 			if (releases.length > 1) throw new Error("conflicting cleanup recovery releases");
 			const release = releases[0];
+			const supplemental = supplementalCleanupRecovery(owned);
 			const recovery =
-				release?.outcome === "absent"
+				supplemental ??
+				(release?.outcome === "absent"
 					? release.recovery
 					: release?.outcome === "reconciled" && release.evidence.kind === "post-run-cleanup"
 						? release.evidence
-						: undefined;
+						: undefined);
 			if (!recovery) continue;
 			verifyCleanupRecovery(plan, { ...attempt, cleanupRecovery: recovery });
 			const cell = plan.cells.find((cell) => cell.id === attempt.evidence.cellId);
@@ -176,7 +179,7 @@ export async function downloadExperimentAttempts(
 						r.account !== cell.quotaDomain || r.cellId !== cell.id || r.planDigest !== plan.digest,
 				) ||
 				(release?.outcome === "absent"
-					? owned.length !== 3 ||
+					? owned.length !== (supplemental ? 4 : 3) ||
 						!allocation ||
 						allocation.ref.id !== release.ref.id ||
 						allocation.ref.provider !== release.ref.provider ||

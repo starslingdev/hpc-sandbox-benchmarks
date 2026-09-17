@@ -11,7 +11,12 @@ import {
 import type { CleanupRecovery, ExperimentPlan, ProviderId } from "@sandbox-benchmarks/schema";
 import { cleanupRecoverySchema, MODAL_CREATED_REQUEST_REVISION } from "@sandbox-benchmarks/schema";
 import type { AccountJournal } from "./account-journal.ts";
-import { accountRecordSchema, confirmRemoval, withinSignal } from "./account-journal.ts";
+import {
+	accountRecordSchema,
+	confirmRemoval,
+	supplementalCleanupRecovery,
+	withinSignal,
+} from "./account-journal.ts";
 import { readExperimentAttempt, writeImmutableJson } from "./experiment-artifacts.ts";
 
 /** Explicit post-run ownership recovery. No original receipt or measurement is rewritten. */
@@ -52,6 +57,7 @@ export async function recoverExperimentCleanup(options: {
 	const intent = records.find((r) => r.kind === "intent");
 	let allocation = records.find((r) => r.kind === "allocated");
 	const release = records.find((r) => r.kind === "released");
+	const supplemental = supplementalCleanupRecovery(records);
 	if (
 		!intent ||
 		records.some(
@@ -63,15 +69,16 @@ export async function recoverExperimentCleanup(options: {
 	)
 		throw new Error("cleanup recovery journal provenance mismatch");
 	const previous =
-		release?.outcome === "absent"
+		supplemental ??
+		(release?.outcome === "absent"
 			? release.recovery
 			: release?.outcome === "reconciled" && release.evidence.kind === "post-run-cleanup"
 				? release.evidence
-				: undefined;
+				: undefined);
 	if (previous) {
 		if (
 			release?.outcome === "absent"
-				? records.length !== 3 ||
+				? records.length !== (supplemental ? 4 : 3) ||
 					!allocation ||
 					allocation.ref.id !== release.ref.id ||
 					allocation.ref.provider !== release.ref.provider ||
@@ -85,7 +92,14 @@ export async function recoverExperimentCleanup(options: {
 		persist(previous);
 		return previous;
 	}
-	if (release || records.length !== (allocation ? 2 : 1))
+	if (
+		records.length !== (allocation ? (release ? 3 : 2) : 1) ||
+		(release &&
+			(!allocation ||
+				release.outcome !== "absent" ||
+				release.ref.id !== allocation.ref.id ||
+				release.ref.provider !== allocation.ref.provider))
+	)
 		throw new Error("cleanup recovery requires matching unresolved journal records");
 	await options.assertQuiescent(evidence.workflowRun, evidence.sha);
 	if (!allocation && attempt.allocation) {
@@ -150,9 +164,11 @@ export async function recoverExperimentCleanup(options: {
 	await withinSignal(options.signal, () =>
 		options.journal.append(
 			accountRecordSchema.assert(
-				allocation
-					? { ...intent, kind: "released", outcome: "absent", ref: allocation.ref, recovery }
-					: { ...intent, kind: "released", outcome: "reconciled", evidence: recovery },
+				release
+					? { ...intent, kind: "cleanup-attested", recovery }
+					: allocation
+						? { ...intent, kind: "released", outcome: "absent", ref: allocation.ref, recovery }
+						: { ...intent, kind: "released", outcome: "reconciled", evidence: recovery },
 			),
 		),
 	);
