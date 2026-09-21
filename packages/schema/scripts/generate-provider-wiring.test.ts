@@ -269,6 +269,7 @@ describe("provider wiring projections", () => {
 			"vercel",
 			"runcloud",
 			"tama",
+			"boat",
 		]);
 		expect([...PROVIDER_IDS].filter((id) => fleet.waivers[id] !== undefined)).toEqual([]);
 

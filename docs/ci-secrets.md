@@ -238,6 +238,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `RUNLOOP_API_KEY` | Runloop provider runtime and validation |
    | `RUN_CLOUD_API_KEY` | run.cloud provider runtime and validation |
    | `TAMA_TOKEN` | tama provider runtime and validation |
+   | `BOAT_API_KEY` | boat provider runtime and validation |
    <!-- <<< end generated: provider-secrets -->
 
    Vercel bootstrap credentials are workflow infrastructure, not provider runtime inputs, so they
@@ -276,6 +277,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `VERCEL_TEAM_SLUG` | Vercel Sandbox | — |
    | `VERCEL_PROJECT_NAME` | Vercel Sandbox | — |
    | `TAMA_CLI` | tama | — |
+   | `BOAT_BASE_URL` | boat | — |
    <!-- <<< end generated: provider-variables -->
 
    Optional values with a declared provider default use it when unset. The two Vercel namespace

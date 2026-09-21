@@ -525,6 +525,7 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 		["MICROSANDBOX", "microsandbox", catalogVersion(catalog, "microsandbox")],
 		["NAMESPACE", "@namespacelabs/sdk", catalogVersion(catalog, "@namespacelabs/sdk")],
 		["RUNCLOUD", "@run-cloud/sdk", catalogVersion(catalog, "@run-cloud/sdk")],
+		["BOAT", REGISTRY.boat.sdkPackage, catalogVersion(catalog, REGISTRY.boat.sdkPackage)],
 	] as const;
 	const packages = new Set(
 		driverFleetProjection(root).moduleIds.map((id) => driverModuleLocation(id).directory),

@@ -22,6 +22,7 @@ on:
           - 'vercel'
           - 'runcloud'
           - 'tama'
+          - 'boat'
           # <<< end generated: provider-options
       suite:
         description: Suite to run

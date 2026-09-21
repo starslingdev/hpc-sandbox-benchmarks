@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@sandbox-benchmarks/blaxel": "workspace:*",
+    "@sandbox-benchmarks/boat": "workspace:*",
     "@sandbox-benchmarks/daytona": "workspace:*",
     "@sandbox-benchmarks/driver": "workspace:*",
     "@sandbox-benchmarks/e2b": "workspace:*",

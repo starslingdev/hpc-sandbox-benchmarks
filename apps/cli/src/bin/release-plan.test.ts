@@ -77,6 +77,7 @@ describe("buildReleasePlan matrix", () => {
 			"vercel",
 			"runcloud",
 			"tama",
+			"boat",
 		]);
 	});
 
