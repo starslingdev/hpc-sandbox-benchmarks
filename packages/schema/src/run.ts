@@ -300,14 +300,60 @@ const hostNetworkSpecFields = {
 } as const;
 
 /**
+ * Whether the machine a sandbox landed on already existed when we asked for it.
+ *
+ * Several providers serve `create()` from a pool of pre-booted VMs, and nothing in a lifecycle timing
+ * can tell that apart from a genuinely fast boot: `lifecycle_cold_start_ms` measures pool CHECKOUT on
+ * such a provider and a real cold boot on one that boots per request, under one label. This is the
+ * axis that separates them.
+ *
+ *  - `pre-booted`     — the sandbox's own clock says it had been running well before our create call.
+ *  - `boot-on-create` — its age is bounded by the time since we asked, so it booted for this request.
+ *  - `indeterminate`  — the probe saw too little, or the margin fell in the band where neither
+ *                       answer is safe. Deliberately a VALUE rather than an absent field: "we looked
+ *                       and could not tell" is a different fact from "nothing looked".
+ */
+export const provisioningVerdictSchema = type("'pre-booted' | 'boot-on-create' | 'indeterminate'");
+export type ProvisioningVerdict = typeof provisioningVerdictSchema.infer;
+
+/**
  * Per-sandbox IDENTITY fields — true observations, but unique (or near-unique) to a single sandbox,
  * so they are excluded from both mixture hashes. Full source records live in
  * {@link ProviderRun.hostMetadata} when the individual value is what a reader wants.
+ *
+ * The provisioning block below belongs here for exactly the reason `publicIp` does: a machine's age
+ * changes on every sandbox even when the fleet is homogeneous, so hashing it into a mixture category
+ * would mint one "machine shape" per sandbox and report every count as 1. The COUNTED disclosure that
+ * survives aggregation is {@link ObservedProvisioning}, which tallies these per-sandbox verdicts.
+ *
+ * `uptimeAtProbeS` and `pid1AgeAtProbeS` are two readings of the same quantity with different failure
+ * modes, and both are retained rather than pre-combined: on a shared-kernel sandbox `/proc/uptime` is
+ * the HOST's (large however fresh the sandbox is), while pid 1 is the sandbox's own first process.
+ * Their minimum is the tightest bound on the sandbox's own age, which is what the classifier uses —
+ * see `classifyProvisioning` in @sandbox-benchmarks/results. Keeping the inputs means a sharper rule
+ * can be re-derived over the committed raw tree without re-running anything on hardware that may no
+ * longer exist, exactly as the isolation classifier's recorded signals allow.
  */
 const sandboxIdentitySpecFields = {
 	"publicIp?": "string",
 	"reverseDns?": "string",
 	"user?": "string",
+	/** `/proc/sys/kernel/random/boot_id` — constant for one boot. The same id under two separate
+	 *  `create()` calls is direct proof the provider handed back a machine it had already run. */
+	"bootId?": "string",
+	/** `/proc/uptime` field 1 at spec-probe time; host-scoped on a shared kernel (see above). */
+	"uptimeAtProbeS?": "number >= 0",
+	/** Age of pid 1 at spec-probe time — the sandbox's own first process, whatever the kernel's age. */
+	"pid1AgeAtProbeS?": "number >= 0",
+	/** Harness-measured seconds from issuing `create()` to issuing the spec probe. Measured entirely
+	 *  on the harness clock, so a sandbox whose wall clock is offset cannot distort it. */
+	"elapsedSinceCreateS?": "number >= 0",
+	/** Sandbox age minus {@link elapsedSinceCreateS}: how long the machine predated our request.
+	 *  Negative or near-zero for a machine that booted for us; large and positive for a pooled one.
+	 *  Signed, because measurement noise legitimately puts a fresh boot slightly below zero. */
+	"preBootedByS?": "number",
+	/** The verdict {@link preBootedByS} was classified into. */
+	"provisioning?": provisioningVerdictSchema,
 } as const;
 
 /**
@@ -406,6 +452,67 @@ export const observedHardwareMixtureSchema = type({
 export type ObservedHardwareMixture = typeof observedHardwareMixtureSchema.infer;
 
 /**
+ * How many of a provider's sandboxes came from a machine that already existed — the counted
+ * disclosure that survives aggregation, since the per-sandbox evidence it is built from
+ * ({@link ObservedSpecs.provisioning} and friends) is identity and is dropped from a merged Run.
+ *
+ * This is NOT a hash category like the two mixture maps, and deliberately so: the verdict vocabulary
+ * is closed and tiny, so a content hash would buy an opaque id for three known keys. The invariant
+ * that matters is the same one the categories carry — the counts are sandbox counts drawn from one
+ * reading per sandbox, so they sum to at most {@link ObservedMixtures.sandboxes} — and it is enforced
+ * there, where the denominator lives.
+ *
+ * `indeterminate` is counted rather than dropped. A provider whose sandboxes all fell in the
+ * unsafe-to-call band must not read as one that was never asked, because the two license opposite
+ * conclusions about its cold-start numbers.
+ *
+ * The boot-id pair answers a second, sharper question the verdicts cannot: `distinctBootIds` below
+ * `bootIdSandboxes` means one machine served more than one `create()` in this run, which is reuse
+ * observed directly rather than inferred from a margin.
+ */
+export const observedProvisioningSchema = type({
+	/** Sandboxes whose machine measurably predated the create call that asked for them. */
+	preBooted: "number.integer >= 0",
+	/** Sandboxes whose age was bounded by the time since that create call. */
+	bootOnCreate: "number.integer >= 0",
+	/** Sandboxes the probe could not place either way — missing evidence or an ambiguous margin. */
+	indeterminate: "number.integer >= 0",
+	/** Median {@link ObservedSpecs.preBootedByS} over the sandboxes that yielded a margin at all —
+	 *  every sandbox the probe could measure, whichever verdict its margin fell into, including the
+	 *  ones the band left `indeterminate`. Absent when none did. The median, not the mean: one sandbox
+	 *  recycled from a long-lived pool member would otherwise drag the whole fleet's number. */
+	"medianPreBootedByS?": "number",
+	/** Sandboxes that disclosed a boot id — the denominator for {@link distinctBootIds}. */
+	"bootIdSandboxes?": "number.integer >= 1",
+	/** Distinct boot ids among them. Below `bootIdSandboxes` ⇒ a machine served several sandboxes. */
+	"distinctBootIds?": "number.integer >= 1",
+}).narrow((provisioning, ctx) => {
+	// A tally that counts nothing is not a disclosure, it is a phantom one — the same reasoning that
+	// refuses an empty mixture. A provider whose sandboxes disclosed nothing carries no tally at all.
+	if (provisioning.preBooted + provisioning.bootOnCreate + provisioning.indeterminate < 1) {
+		return ctx.mustBe("an ObservedProvisioning that counts at least one sandbox");
+	}
+	// The pair is meaningless apart: a distinct count with no denominator cannot be read as reuse.
+	if (
+		(provisioning.bootIdSandboxes === undefined) !==
+		(provisioning.distinctBootIds === undefined)
+	) {
+		return ctx.mustBe("an ObservedProvisioning carrying both boot-id counters or neither");
+	}
+	if (
+		provisioning.distinctBootIds !== undefined &&
+		provisioning.bootIdSandboxes !== undefined &&
+		provisioning.distinctBootIds > provisioning.bootIdSandboxes
+	) {
+		return ctx.mustBe(
+			`an ObservedProvisioning with at most one distinct boot id per disclosing sandbox (got ${provisioning.distinctBootIds} of ${provisioning.bootIdSandboxes})`,
+		);
+	}
+	return true;
+});
+export type ObservedProvisioning = typeof observedProvisioningSchema.infer;
+
+/**
  * The precise, countable answer to "how heterogeneous was this provider in this run" — keyed by a
  * stable content hash of the combination, so the same machine shape or egress network carries the same
  * id in every run and can be tracked across the dataset series.
@@ -426,6 +533,16 @@ export const observedMixturesSchema = type({
 	sandboxes: "number.integer >= 1",
 	hostHardware: type({ "[string]": observedHardwareMixtureSchema }),
 	hostNetwork: type({ "[string]": observedNetworkMixtureSchema }),
+	/**
+	 * Whether those sandboxes were served from machines that already existed. Optional because a Run
+	 * whose producer predates the provisioning probe recorded no evidence for it, and absence must keep
+	 * reading as "not recorded" rather than as "none were pooled". Unlike the v4 fields this needs no
+	 * schemaVersion gate: every one of those replaced an EXISTING reading of the same fact, so a
+	 * version-blind consumer would have answered the same question wrongly, while nothing in any
+	 * published Run answers this question at all — a consumer that ignores the field falls back to
+	 * silence, which is what it had before.
+	 */
+	"provisioning?": observedProvisioningSchema,
 }).narrow((mixtures, ctx) => {
 	// A category's counts are sandbox counts drawn from ONE reading per sandbox, so their sum cannot
 	// exceed the denominator. It may fall short — that is the visible partial disclosure a category
@@ -442,6 +559,27 @@ export const observedMixturesSchema = type({
 		if (total > mixtures.sandboxes) {
 			return ctx.mustBe(
 				`ObservedMixtures whose ${category} counts sum to at most sandboxes (got ${total} of ${mixtures.sandboxes})`,
+			);
+		}
+	}
+	// Same denominator, same arithmetic, one reading per sandbox — so the provisioning tally is bound by
+	// it too. Checked HERE rather than inside `observedProvisioningSchema` because `sandboxes` is the
+	// parent's field: the tally alone cannot know what it is a fraction of.
+	const provisioning = mixtures.provisioning;
+	if (provisioning !== undefined) {
+		const classified =
+			provisioning.preBooted + provisioning.bootOnCreate + provisioning.indeterminate;
+		if (classified > mixtures.sandboxes) {
+			return ctx.mustBe(
+				`ObservedMixtures whose provisioning counts sum to at most sandboxes (got ${classified} of ${mixtures.sandboxes})`,
+			);
+		}
+		if (
+			provisioning.bootIdSandboxes !== undefined &&
+			provisioning.bootIdSandboxes > mixtures.sandboxes
+		) {
+			return ctx.mustBe(
+				`ObservedMixtures whose boot-id disclosures are at most sandboxes (got ${provisioning.bootIdSandboxes} of ${mixtures.sandboxes})`,
 			);
 		}
 	}

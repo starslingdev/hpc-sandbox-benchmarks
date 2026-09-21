@@ -196,3 +196,123 @@ describe("combineLeaderboardDatasets", () => {
 		expect(price?.replicates).toBeUndefined();
 	});
 });
+
+describe("combineLeaderboardDatasets — provisioning", () => {
+	/** A v4 Run whose single provider carries mixtures plus a provisioning tally. */
+	function runWithProvisioning(
+		runId: string,
+		provisioning: NonNullable<
+			NonNullable<Run["providers"][number]["observedMixtures"]>["provisioning"]
+		>,
+		sandboxes: number,
+	): Run {
+		const base = run(runId, [[10, 11]]);
+		const provider = base.providers[0];
+		if (provider) {
+			(provider as Record<string, unknown>).observedMixtures = {
+				sandboxes,
+				hostHardware: { aaaaaaaaaaaaaaaa: { count: sandboxes, specs: { cpuModel: "EPYC" } } },
+				hostNetwork: {},
+				provisioning,
+			};
+		}
+		return { ...base, schemaVersion: "4" };
+	}
+
+	it("adds the sandbox counts of the pooled runs", () => {
+		const combined = combineLeaderboardDatasets(
+			[
+				runWithProvisioning("run-p1", { preBooted: 2, bootOnCreate: 1, indeterminate: 0 }, 3),
+				runWithProvisioning("run-p2", { preBooted: 1, bootOnCreate: 0, indeterminate: 2 }, 3),
+			],
+			options,
+		);
+		expect(combined.providers[0]?.observedMixtures?.provisioning).toEqual({
+			preBooted: 3,
+			bootOnCreate: 1,
+			indeterminate: 2,
+		});
+	});
+
+	it("drops the median rather than averaging medians across runs", () => {
+		// A median of medians is not a median, and the per-sandbox margins it would need were discarded by
+		// aggregation. Absent reads as "not available at this grain", which is exactly true.
+		const combined = combineLeaderboardDatasets(
+			[
+				runWithProvisioning(
+					"run-p1",
+					{ preBooted: 2, bootOnCreate: 0, indeterminate: 0, medianPreBootedByS: 100 },
+					2,
+				),
+				runWithProvisioning(
+					"run-p2",
+					{ preBooted: 2, bootOnCreate: 0, indeterminate: 0, medianPreBootedByS: 900 },
+					2,
+				),
+			],
+			options,
+		);
+		expect(
+			combined.providers[0]?.observedMixtures?.provisioning?.medianPreBootedByS,
+		).toBeUndefined();
+	});
+
+	it("sums boot-id counters in the direction that can only under-report reuse", () => {
+		// Summing distinct ids double-counts a machine that appeared in both runs, which can only CLOSE
+		// the distinct<disclosing gap that signals reuse — never open one that was not there.
+		const combined = combineLeaderboardDatasets(
+			[
+				runWithProvisioning(
+					"run-p1",
+					{
+						preBooted: 2,
+						bootOnCreate: 0,
+						indeterminate: 0,
+						bootIdSandboxes: 2,
+						distinctBootIds: 1,
+					},
+					2,
+				),
+				runWithProvisioning(
+					"run-p2",
+					{
+						preBooted: 2,
+						bootOnCreate: 0,
+						indeterminate: 0,
+						bootIdSandboxes: 2,
+						distinctBootIds: 2,
+					},
+					2,
+				),
+			],
+			options,
+		);
+		expect(combined.providers[0]?.observedMixtures?.provisioning).toMatchObject({
+			bootIdSandboxes: 4,
+			distinctBootIds: 3,
+		});
+	});
+
+	it("leaves the pooled mixtures without a tally when no run recorded one", () => {
+		// Pooling Runs from before the probe existed must not manufacture a tally of zeros, which would
+		// read as "checked, nothing pooled".
+		const withoutTally = (runId: string): Run => {
+			const base = run(runId, [[10, 11]]);
+			const provider = base.providers[0];
+			if (provider) {
+				(provider as Record<string, unknown>).observedMixtures = {
+					sandboxes: 1,
+					hostHardware: { aaaaaaaaaaaaaaaa: { count: 1, specs: { cpuModel: "EPYC" } } },
+					hostNetwork: {},
+				};
+			}
+			return { ...base, schemaVersion: "4" };
+		};
+		const combined = combineLeaderboardDatasets(
+			[withoutTally("run-p1"), withoutTally("run-p2")],
+			options,
+		);
+		expect(combined.providers[0]?.observedMixtures?.hostHardware).toBeDefined();
+		expect(combined.providers[0]?.observedMixtures?.provisioning).toBeUndefined();
+	});
+});

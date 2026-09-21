@@ -157,61 +157,125 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 	return steps;
 }
 
+/** Inputs the spec probe cannot observe from inside the sandbox — the harness side of the record. */
+export interface ObservedSpecsProbeOptions {
+	/**
+	 * Epoch ms at which the `create()` call that produced THIS sandbox was issued (the last attempt,
+	 * when creation retried). The probe turns it into `elapsedSinceCreateS`, the denominator the
+	 * provisioning classifier compares the machine's own age against.
+	 *
+	 * Omitted when the caller did not create the sandbox and so cannot vouch for when it was asked for
+	 * — an unknown denominator is left out rather than guessed, and the classifier then records
+	 * `indeterminate` instead of a verdict resting on a fabricated t0.
+	 */
+	readonly createdAtMs?: number;
+	/** Clock for the elapsed calculation; injectable so the emitted script is testable. */
+	readonly now?: () => number;
+}
+
 /**
  * Captures the sandbox's actual specs into benchmark-results/observed-specs.json before the suite
  * runs, so the normalizer reads it with the other results. nproc / /proc/meminfo see the HOST on
  * cgroup-limited containers (Daytona: a 4-vCPU quota on a 48-thread host), so prefer the cgroup quota
  * as the effective Sandbox size and keep the host reading as hostVcpus/hostMemoryGb disclosure.
+ *
+ * It also records HOW OLD the machine was when we got it (`uptimeAtProbeS`, `pid1AgeAtProbeS`,
+ * `bootId`, `elapsedSinceCreateS`). Several providers serve `create()` from a pool of pre-booted VMs,
+ * and no lifecycle timing can tell that apart from a fast boot — `lifecycle_cold_start_ms` measures
+ * pool checkout on such a provider and a real boot on another, under one label. These are the raw
+ * signals; the verdict is classified downstream in @sandbox-benchmarks/results, so a sharper rule can
+ * be re-derived over the committed raw tree without re-running anything (the same collect/classify
+ * split lib/probe/isolation is built on).
+ *
+ * A function rather than a constant because `elapsedSinceCreateS` is a harness measurement, not an
+ * in-sandbox reading: both ends of it are taken on the harness clock, so a sandbox whose wall clock is
+ * skewed cannot distort the comparison.
  */
-export const OBSERVED_SPECS_SCRIPT = [
-	`cd ${DIR} && mkdir -p benchmark-results`,
-	"host_vcpus=$(nproc)",
-	`host_memory_gb=$(awk '/^MemTotal:/ { printf "%.2f", $2 / 1048576 }' /proc/meminfo)`,
-	'vcpus=$host_vcpus; memory_gb=$host_memory_gb; limited=""',
-	"if [ -f /sys/fs/cgroup/cpu.max ]; then",
-	`  q=$(awk '$1 != "max" { printf "%.2f", $1 / $2 }' /sys/fs/cgroup/cpu.max)`,
-	'  [ -n "$q" ] && vcpus=$q && limited=1',
-	"fi",
-	"if [ -f /sys/fs/cgroup/memory.max ] && grep -qv max /sys/fs/cgroup/memory.max; then",
-	`  memory_gb=$(awk '{ printf "%.2f", $1 / 1073741824 }' /sys/fs/cgroup/memory.max) && limited=1`,
-	"fi",
-	// Report the disk the benchmark actually writes to, not the sandbox root: the PTS data dir when it
-	// exists (on Blaxel that's the mounted 40 GiB volume; on baked-image providers it's on the root fs,
-	// so identical to `/`), else `/` (a stock gVisor root pre-PTS — Modal). Keep this dir in sync with
-	// the harness disk gate and the blaxel volume mount path.
-	`disk_src=/var/lib/phoronix-test-suite; [ -d "$disk_src" ] || disk_src=/`,
-	// gVisor (Modal) reports the root as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
-	// when df's answer is plausible for a sandbox (positive, < 100 TB); a sentinel, a failed df, or
-	// a non-numeric column all leave it unset as unknown.
-	`disk_gb=$(df -Pk "$disk_src" | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
-	`cpu_model=$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1 || true)`,
-	"kernel=$(uname -r)",
-	`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,
-	"virt=$(systemd-detect-virt 2>/dev/null || echo unknown)",
-	// Best-effort isolation classification — a cross-check on the declared per-provider isolation, never
-	// authoritative (see run.ts observedSpecs.detectedIsolation: the probe cannot separate every type).
-	// gVisor announces itself in /proc/version; a cgroup quota well below the disclosed host means we're
-	// seeing THROUGH a container to a bigger host; `systemd-detect-virt --vm` confirms a real hypervisor.
-	// (`--vm` restricts detection to VM technologies — bare `systemd-detect-virt` also reports container
-	// types like docker/lxc/podman, which must NOT read as a VM here; `--quiet` gives just an exit status.)
-	"detected=unknown",
-	"if grep -qi gvisor /proc/version 2>/dev/null; then",
-	"  detected=gvisor",
-	// `vcpus` only drops below `host_vcpus` in the cpu.max branch, which is also the only place that
-	// sets `limited` — so `host_vcpus > vcpus` already implies a limit; no separate `[ -n "$limited" ]`.
-	`elif awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
-	"  detected=container",
-	"elif systemd-detect-virt --vm --quiet 2>/dev/null; then",
-	"  detected=vm",
-	"fi",
-	"user=$(id -un)",
-	String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
-	"{",
-	`  printf '{"vcpus":%s,"memoryGb":%s' "$vcpus" "$memory_gb"`,
-	`  if [ -n "$disk_gb" ]; then printf ',"diskGb":%s' "$disk_gb"; fi`,
-	`  if [ -n "$limited" ]; then printf ',"hostVcpus":%s,"hostMemoryGb":%s' "$host_vcpus" "$host_memory_gb"; fi`,
-	`  if [ -n "$cpu_model" ]; then printf ',"cpuModel":"%s"' "$(esc "$cpu_model")"; fi`,
-	String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$detected")" "$(esc "$user")"`,
-	"} > benchmark-results/observed-specs.json",
-	"cat benchmark-results/observed-specs.json",
-].join("\n");
+export function observedSpecsScript(options: ObservedSpecsProbeOptions = {}): string {
+	const { createdAtMs, now = Date.now } = options;
+	// Emitted only for a usable t0: a non-finite or future-dated create stamp would publish a negative
+	// or nonsensical denominator, and the classifier is required to say "indeterminate" when it has no
+	// denominator at all — which is the honest reading of an unusable one too.
+	const probedAtMs = now();
+	const elapsedSinceCreateS =
+		createdAtMs !== undefined && Number.isFinite(createdAtMs) && probedAtMs >= createdAtMs
+			? ((probedAtMs - createdAtMs) / 1000).toFixed(2)
+			: "";
+	return [
+		`cd ${DIR} && mkdir -p benchmark-results`,
+		"host_vcpus=$(nproc)",
+		`host_memory_gb=$(awk '/^MemTotal:/ { printf "%.2f", $2 / 1048576 }' /proc/meminfo)`,
+		'vcpus=$host_vcpus; memory_gb=$host_memory_gb; limited=""',
+		"if [ -f /sys/fs/cgroup/cpu.max ]; then",
+		`  q=$(awk '$1 != "max" { printf "%.2f", $1 / $2 }' /sys/fs/cgroup/cpu.max)`,
+		'  [ -n "$q" ] && vcpus=$q && limited=1',
+		"fi",
+		"if [ -f /sys/fs/cgroup/memory.max ] && grep -qv max /sys/fs/cgroup/memory.max; then",
+		`  memory_gb=$(awk '{ printf "%.2f", $1 / 1073741824 }' /sys/fs/cgroup/memory.max) && limited=1`,
+		"fi",
+		// Report the disk the benchmark actually writes to, not the sandbox root: the PTS data dir when it
+		// exists (on Blaxel that's the mounted 40 GiB volume; on baked-image providers it's on the root fs,
+		// so identical to `/`), else `/` (a stock gVisor root pre-PTS — Modal). Keep this dir in sync with
+		// the harness disk gate and the blaxel volume mount path.
+		`disk_src=/var/lib/phoronix-test-suite; [ -d "$disk_src" ] || disk_src=/`,
+		// gVisor (Modal) reports the root as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
+		// when df's answer is plausible for a sandbox (positive, < 100 TB); a sentinel, a failed df, or
+		// a non-numeric column all leave it unset as unknown.
+		`disk_gb=$(df -Pk "$disk_src" | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
+		`cpu_model=$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1 || true)`,
+		"kernel=$(uname -r)",
+		`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,
+		"virt=$(systemd-detect-virt 2>/dev/null || echo unknown)",
+		// Best-effort isolation classification — a cross-check on the declared per-provider isolation, never
+		// authoritative (see run.ts observedSpecs.detectedIsolation: the probe cannot separate every type).
+		// gVisor announces itself in /proc/version; a cgroup quota well below the disclosed host means we're
+		// seeing THROUGH a container to a bigger host; `systemd-detect-virt --vm` confirms a real hypervisor.
+		// (`--vm` restricts detection to VM technologies — bare `systemd-detect-virt` also reports container
+		// types like docker/lxc/podman, which must NOT read as a VM here; `--quiet` gives just an exit status.)
+		"detected=unknown",
+		"if grep -qi gvisor /proc/version 2>/dev/null; then",
+		"  detected=gvisor",
+		// `vcpus` only drops below `host_vcpus` in the cpu.max branch, which is also the only place that
+		// sets `limited` — so `host_vcpus > vcpus` already implies a limit; no separate `[ -n "$limited" ]`.
+		`elif awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
+		"  detected=container",
+		"elif systemd-detect-virt --vm --quiet 2>/dev/null; then",
+		"  detected=vm",
+		"fi",
+		"user=$(id -un)",
+		// HOW OLD was this machine when we got it. Two readings of the sandbox's age, kept separate because
+		// they fail differently: on a shared kernel /proc/uptime is the HOST's (large however fresh the
+		// sandbox is), while pid 1 is the sandbox's own first process. The classifier downstream takes the
+		// minimum — the tightest bound either can justify — so a long-lived host cannot on its own make a
+		// freshly-created sandbox look pooled.
+		`uptime_s=$(awk 'NR==1 && $1 + 0 > 0 { printf "%.2f", $1 }' /proc/uptime 2>/dev/null || true)`,
+		// pid 1's start time is field 22 of /proc/1/stat, in clock ticks since boot. The comm field (2) is
+		// parenthesized and MAY CONTAIN SPACES AND PARENS, so the fields are counted from the LAST ')' in the
+		// line rather than split from the left — after it, field 22 sits at offset 20. A `$22` here would
+		// misread every sandbox whose pid 1 has a space in its name, and silently: it yields a number.
+		`hz=$(getconf CLK_TCK 2>/dev/null || echo 100)`,
+		`pid1_age_s=$(awk -v up="$uptime_s" -v hz="$hz" '{ if (up + 0 <= 0 || hz + 0 <= 0) exit; for (i = length($0); i > 0; i--) if (substr($0, i, 1) == ")") { p = i; break } if (!p) exit; n = split(substr($0, p + 1), f, " "); if (n < 20) exit; start = f[20] / hz; if (start >= 0 && up + 0 >= start) printf "%.2f", up - start }' /proc/1/stat 2>/dev/null || true)`,
+		// Constant for one boot of one kernel. The same id under two separate create() calls is the one
+		// signal that proves machine reuse outright, with no margin or threshold to argue about.
+		`boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)`,
+		// The harness-measured denominator, interpolated as a literal: both ends are read on the harness
+		// clock, so an offset sandbox clock cannot distort it. Empty when the caller could not vouch for t0.
+		`elapsed_since_create_s=${elapsedSinceCreateS}`,
+		String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
+		"{",
+		`  printf '{"vcpus":%s,"memoryGb":%s' "$vcpus" "$memory_gb"`,
+		`  if [ -n "$disk_gb" ]; then printf ',"diskGb":%s' "$disk_gb"; fi`,
+		`  if [ -n "$limited" ]; then printf ',"hostVcpus":%s,"hostMemoryGb":%s' "$host_vcpus" "$host_memory_gb"; fi`,
+		`  if [ -n "$cpu_model" ]; then printf ',"cpuModel":"%s"' "$(esc "$cpu_model")"; fi`,
+		`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","user":"%s"' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$detected")" "$(esc "$user")"`,
+		// Each provenance field is emitted only when its probe actually read something: an unreadable
+		// /proc/uptime is an absent field, never a zero that would read as "booted the instant we asked".
+		`  if [ -n "$uptime_s" ]; then printf ',"uptimeAtProbeS":%s' "$uptime_s"; fi`,
+		`  if [ -n "$pid1_age_s" ]; then printf ',"pid1AgeAtProbeS":%s' "$pid1_age_s"; fi`,
+		`  if [ -n "$elapsed_since_create_s" ]; then printf ',"elapsedSinceCreateS":%s' "$elapsed_since_create_s"; fi`,
+		`  if [ -n "$boot_id" ]; then printf ',"bootId":"%s"' "$(esc "$boot_id")"; fi`,
+		String.raw`  printf '}\n'`,
+		"} > benchmark-results/observed-specs.json",
+		"cat benchmark-results/observed-specs.json",
+	].join("\n");
+}

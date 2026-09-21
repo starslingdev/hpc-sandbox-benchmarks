@@ -990,3 +990,89 @@ describe("aggregateRuns gap-cause determinism", () => {
 		}
 	});
 });
+
+describe("aggregateRuns — provisioning", () => {
+	/** One replicate sandbox of daytona-vm, with the age evidence its spec probe would have written. */
+	const sandbox = (index: number, age: number | undefined, bootId: string | undefined): Run =>
+		shard(
+			[
+				{
+					...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+					observedSpecs: {
+						cpuModel: "AMD EPYC 9R14",
+						...(age === undefined
+							? {}
+							: {
+									uptimeAtProbeS: age,
+									pid1AgeAtProbeS: age - 1,
+									elapsedSinceCreateS: 90,
+									preBootedByS: age - 1 - 90,
+									provisioning: (age - 1 - 90 >= 30 ? "pre-booted" : "boot-on-create") as
+										| "pre-booted"
+										| "boot-on-create",
+								}),
+						...(bootId === undefined ? {} : { bootId }),
+					},
+				},
+			],
+			"2026-06-01T00:00:00.000Z",
+			index,
+		);
+
+	it("carries the per-sandbox verdicts into the merged Run as a counted tally", () => {
+		// The whole point of the tally: aggregation drops per-sandbox identity, so without it this
+		// evidence would exist only on unmerged shards and never reach the dataset.
+		const merged = aggregateRuns([
+			sandbox(0, 800, "boot-a"),
+			sandbox(1, 800, "boot-a"),
+			sandbox(2, 60, "boot-c"),
+		]);
+		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		expect(daytona?.observedMixtures?.provisioning).toEqual({
+			preBooted: 2,
+			bootOnCreate: 1,
+			indeterminate: 0,
+			medianPreBootedByS: 709,
+			bootIdSandboxes: 3,
+			distinctBootIds: 2,
+		});
+		// One machine shape across all three — the provisioning split is invisible to that category.
+		expect(Object.keys(daytona?.observedMixtures?.hostHardware ?? {})).toHaveLength(1);
+	});
+
+	it("keeps the per-sandbox evidence out of the representative reading", () => {
+		// `observedSpecs` on an aggregate is the DOMINANT hardware and network mixture. One sandbox's boot
+		// id and age were never properties of the provider, and backfilling them from whichever shard
+		// arrived first is exactly the order-dependence that reading was rebuilt to remove.
+		const merged = aggregateRuns([sandbox(0, 800, "boot-a"), sandbox(1, 60, "boot-b")]);
+		const specs = merged.providers.find((p) => p.providerId === "daytona-vm")?.observedSpecs;
+		expect(specs?.bootId).toBeUndefined();
+		expect(specs?.uptimeAtProbeS).toBeUndefined();
+		expect(specs?.provisioning).toBeUndefined();
+		expect(specs?.cpuModel).toBe("AMD EPYC 9R14");
+	});
+
+	it("lets the tally fall short of the denominator when a sandbox was never probed", () => {
+		const merged = aggregateRuns([sandbox(0, 800, "boot-a"), sandbox(1, undefined, undefined)]);
+		const mixtures = merged.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures;
+		expect(mixtures?.sandboxes).toBe(2);
+		expect(mixtures?.provisioning).toEqual({
+			preBooted: 1,
+			bootOnCreate: 0,
+			indeterminate: 0,
+			medianPreBootedByS: 709,
+			bootIdSandboxes: 1,
+			distinctBootIds: 1,
+		});
+	});
+
+	it("publishes no tally for a fleet whose producer never probed", () => {
+		const merged = aggregateRuns([
+			sandbox(0, undefined, undefined),
+			sandbox(1, undefined, undefined),
+		]);
+		expect(
+			merged.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures?.provisioning,
+		).toBeUndefined();
+	});
+});

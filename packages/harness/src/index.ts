@@ -86,7 +86,7 @@ import {
 	withCleanupPreservingPrimaryError,
 	withOwnedSandbox,
 } from "./lib/sandbox-owner.ts";
-import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
+import { DIR, observedSpecsScript, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
 
 export { collectResults } from "./lib/collect.ts";
 // The sandbox shape `StepRunner` drives. Exported so a caller that builds one from a driver session
@@ -391,6 +391,8 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 	// (bad provider config, a missing SDK) BEFORE `sandbox.create` is ever reached, and that path must
 	// record the same failed marker — otherwise the exact incident this guards (an empty Run for a dead
 	// provider config) slips through the one seam creation-failure handling would otherwise leave open.
+	// Same t0 the driver path records, through the same per-attempt hook.
+	let createdAtMs: number | undefined;
 	const sandbox = await createSuiteSandbox(() => config.createCompute(), {
 		suite,
 		suiteName: knownSuiteName,
@@ -399,6 +401,9 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		createOptions: config.createOptions,
 		createTimeoutMs: config.createTimeoutMs,
 		createAttemptCeilingMs: config.createAttemptCeilingMs,
+		onCreateAttempt: (startedAtMs) => {
+			createdAtMs = startedAtMs;
+		},
 	});
 
 	await runSuiteOnSandbox(sandbox, {
@@ -411,6 +416,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<void> {
 		resultsDir,
 		transport: config.transport,
 		costEvidence: config.costEvidence,
+		...(createdAtMs !== undefined ? { createdAtMs } : {}),
 	});
 }
 
@@ -473,6 +479,17 @@ export interface CreateSuiteSandboxContext {
 	 *  recheck exists for) is reproducible instead of dependent on event-loop pressure. Production uses
 	 *  `setTimeout`. */
 	sleep?: (ms: number) => Promise<void>;
+	/**
+	 * Called with `Date.now()` immediately before each create ATTEMPT — the t0 the observed-specs probe
+	 * measures the sandbox's own age against (see {@link SuiteRunContext.createdAtMs}).
+	 *
+	 * Per attempt, not once per call, and that is the whole reason it is a hook rather than a stamp the
+	 * caller takes beforehand: this loop retries through capacity errors, and the machine that comes
+	 * back was asked for by the attempt that SUCCEEDED. Dating it from the first attempt would add every
+	 * failed attempt and its backoff to the denominator, making a pooled machine look younger than it is
+	 * — the direction that hides pooling rather than inventing it.
+	 */
+	onCreateAttempt?: (startedAtMs: number) => void;
 }
 
 /**
@@ -566,6 +583,7 @@ export async function createSuiteSandboxFromPlan<Session extends Pick<SandboxHan
 			"Sandbox creation timed out; allocation ownership unresolved",
 		);
 		try {
+			ctx.onCreateAttempt?.(Date.now());
 			createPromise = createOwnedSandbox(
 				plan.create,
 				plan.destroy === undefined ? {} : { destroy: plan.destroy },
@@ -673,6 +691,16 @@ export interface SuiteRunContext {
 	readiness?: WaitUntilReadyOptions;
 	/** Managed callers must observe removal after the destroy acknowledgement. */
 	confirmCleanup?: () => Promise<void>;
+	/**
+	 * Epoch ms at which the `create()` call for THIS sandbox was issued — the t0 the observed-specs
+	 * probe measures the machine's age against to tell a pooled, pre-booted VM from one that booted for
+	 * this request (see {@link observedSpecsScript}).
+	 *
+	 * Set only by a caller that created the sandbox itself and therefore knows when it asked. A caller
+	 * handed an already-running sandbox leaves it undefined, and the probe then records the machine's
+	 * age with no denominator rather than measuring it against a t0 nobody observed.
+	 */
+	createdAtMs?: number;
 }
 
 /** A selected DriverModule readiness strategy plus its policy-owned wall-clock budget. */
@@ -823,6 +851,9 @@ export async function executeSuite(options: ExecuteSuiteOptions): Promise<void> 
 		budget?.owner === "driver"
 			? Math.min(budget.attemptCeilingMs, timeoutMs ?? Infinity)
 			: (timeoutMs ?? SUITE_CREATE_ATTEMPT_TIMEOUT_MS);
+	// The t0 the observed-specs probe dates the sandbox's age from; re-stamped per attempt by the
+	// creator's own hook, so a create that retried is dated from the attempt that actually won.
+	let createdAtMs: number | undefined;
 	const session = await createSuiteSandboxFromPlan(
 		{
 			create: (signal) => driver.create({ ...request, deadlineMs }, { signal }),
@@ -835,6 +866,9 @@ export async function executeSuite(options: ExecuteSuiteOptions): Promise<void> 
 			providerName: module.id,
 			resultsDir: options.resultsDir,
 			createTimeoutMs: timeoutMs,
+			onCreateAttempt: (startedAtMs) => {
+				createdAtMs = startedAtMs;
+			},
 			...(budget?.owner === "driver"
 				? {
 						createAttemptCeilingMs: options.managed
@@ -853,6 +887,7 @@ export async function executeSuite(options: ExecuteSuiteOptions): Promise<void> 
 			suite,
 			providerName: module.id,
 			artifact: request.artifact,
+			...(createdAtMs !== undefined ? { createdAtMs } : {}),
 			confirmCleanup: async () => {
 				const probes = driver.probes;
 				if (!probes) throw new Error("driver cannot confirm sandbox removal");
@@ -1027,9 +1062,16 @@ async function runSuiteWork(
 			}
 
 			// Observed specs are best-effort: a spec probe must never fail a Run (hence allowFailure below).
-			await runner.run("capture observed specs", OBSERVED_SPECS_SCRIPT, MIN, {
-				allowFailure: true,
-			});
+			// Built here rather than hoisted to a constant: `elapsedSinceCreateS` is measured to the moment
+			// the probe is issued, which is AFTER setup installed the toolchain. That is the correct
+			// denominator — both it and the sandbox's own age grow together while setup runs, so their
+			// difference still isolates how long the machine predated our create call.
+			await runner.run(
+				"capture observed specs",
+				observedSpecsScript(ctx.createdAtMs === undefined ? {} : { createdAtMs: ctx.createdAtMs }),
+				MIN,
+				{ allowFailure: true },
+			);
 
 			try {
 				runner.phase = "benchmark";

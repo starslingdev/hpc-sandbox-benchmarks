@@ -304,6 +304,23 @@ export interface ProviderRosterEntry {
 	detectedIsolation: string | undefined;
 	/** True only when the probe returned a known class that contradicts the declared technology. */
 	mismatch: boolean;
+	/**
+	 * How many of this provider's sandboxes came from a machine that was already running, out of the
+	 * ones the probe could place. Absent when no sandbox recorded provisioning evidence — every Run
+	 * published before the probe existed, and any provider whose sandboxes it could not read.
+	 *
+	 * This is the context a lifecycle number cannot carry on its own: on a provider that serves
+	 * `create()` from a pool of pre-booted VMs, `lifecycle_cold_start_ms` is a pool CHECKOUT time, and
+	 * ranking it against a provider that boots per request compares two different operations.
+	 */
+	provisioning?: {
+		readonly preBooted: number;
+		readonly bootOnCreate: number;
+		readonly indeterminate: number;
+		/** Sandboxes disclosing a boot id, and how many distinct ones — fewer means machine reuse. */
+		readonly bootIdSandboxes?: number;
+		readonly distinctBootIds?: number;
+	};
 }
 
 /**
@@ -743,12 +760,18 @@ function buildRoster(run: LeaderboardDataset): ProviderRosterEntry[] {
 		const mismatch =
 			(declaredClass === "gvisor" && detectedIsolation === "vm") ||
 			(declaredClass === "vm" && detectedIsolation === "gvisor");
+		// Read off the AGGREGATE tally, never recomputed from `observedSpecs`: the representative reading
+		// an aggregated ProviderRun publishes is the dominant hardware and network mixture, and
+		// provisioning is per-sandbox identity that is deliberately absent from it. A shard Run carries no
+		// tally either, which is correct — one sandbox is not a fleet's provisioning profile.
+		const provisioning = provider.observedMixtures?.provisioning;
 		return {
 			providerId: provider.providerId,
 			displayName: meta?.displayName ?? provider.providerId,
 			declaredIsolation,
 			detectedIsolation,
 			mismatch,
+			...(provisioning !== undefined ? { provisioning } : {}),
 		};
 	});
 }
@@ -1123,9 +1146,45 @@ function formatSpec(spec: TargetSpec | ObservedSpecs): string {
  * the probe's best-effort detected class, with ⚠ where a known detected class contradicts the
  * declaration. Empty (no lines) when the Run recorded no providers, so an empty run stays clean.
  */
+/**
+ * One provider's provisioning cell: how many of its sandboxes arrived on a machine that was already
+ * running when we asked for it.
+ *
+ * Rendered as a fraction over the sandboxes the probe could PLACE, not over every sandbox, and the
+ * denominator is printed rather than implied — "pre-booted 6/8" and "pre-booted 6/6" license different
+ * readings of the same 6. A fleet nothing could be decided about prints the count it could not decide
+ * on, so "inconclusive" never masquerades as "boots on request".
+ */
+function provisioningCell(entry: ProviderRosterEntry): string {
+	const tally = entry.provisioning;
+	if (!tally) return "—";
+	const placed = tally.preBooted + tally.bootOnCreate;
+	const total = placed + tally.indeterminate;
+	const reuse =
+		tally.distinctBootIds !== undefined &&
+		tally.bootIdSandboxes !== undefined &&
+		tally.distinctBootIds < tally.bootIdSandboxes
+			? ` ♻ ${tally.bootIdSandboxes - tally.distinctBootIds}`
+			: "";
+	if (placed === 0) return `inconclusive (${total})`;
+	const verdict =
+		tally.preBooted > 0
+			? `pre-booted ${tally.preBooted}/${total}`
+			: `fresh ${tally.bootOnCreate}/${total}`;
+	return `${verdict}${reuse}`;
+}
+
 function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 	if (roster.length === 0) return [];
 	const anyMismatch = roster.some((entry) => entry.mismatch);
+	const anyProvisioning = roster.some((entry) => entry.provisioning !== undefined);
+	const anyPreBooted = roster.some((entry) => (entry.provisioning?.preBooted ?? 0) > 0);
+	const anyReuse = roster.some(
+		(entry) =>
+			entry.provisioning?.distinctBootIds !== undefined &&
+			entry.provisioning.bootIdSandboxes !== undefined &&
+			entry.provisioning.distinctBootIds < entry.provisioning.bootIdSandboxes,
+	);
 	const lines = [
 		"## Providers in this run",
 		"",
@@ -1134,21 +1193,46 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 		"microVM can both read `kvm`; gVisor and a microVM can both read `unknown`), shown only as a",
 		"cross-check.",
 		"",
-		"| Provider | Isolation (declared) | Detected |",
-		"| --- | --- | --- |",
 	];
+	if (anyProvisioning) {
+		lines.push(
+			"**Provisioning** is how many sandboxes arrived on a machine that was already running before we",
+			"called `create()`, out of the ones the probe could place either way. It is the context a",
+			"cold-start number cannot carry on its own: on a provider serving from a pool of pre-booted VMs,",
+			"the lifecycle timings below measure how fast a machine is handed over, not how fast one boots.",
+			"",
+		);
+	}
+	const header = anyProvisioning
+		? ["| Provider | Isolation (declared) | Detected | Provisioning |", "| --- | --- | --- | --- |"]
+		: ["| Provider | Isolation (declared) | Detected |", "| --- | --- | --- |"];
+	lines.push(...header);
 	for (const entry of roster) {
 		// Em-dash (matching `detected`) when the provider isn't in the registry, so an unregistered id
 		// reads distinctly from the probe's "unknown" detection class rather than colliding with it.
 		const declared = entry.declaredIsolation ?? "—";
 		const detected = entry.detectedIsolation ?? "—";
 		const flag = entry.mismatch ? " ⚠" : "";
-		lines.push(`| ${entry.displayName} | ${declared} | ${detected}${flag} |`);
+		const cells = [entry.displayName, declared, `${detected}${flag}`];
+		if (anyProvisioning) cells.push(provisioningCell(entry));
+		lines.push(`| ${cells.join(" | ")} |`);
 	}
 	lines.push("");
 	if (anyMismatch) {
 		lines.push(
 			"> **⚠ Isolation mismatch:** a provider's detected isolation contradicts its declared technology — verify its bake/create configuration.",
+			"",
+		);
+	}
+	if (anyPreBooted) {
+		lines.push(
+			"> **Pre-booted machines:** the lifecycle cold-start and spawn numbers for these providers are POOL CHECKOUT times, not boot times. They are real latencies a caller experiences, but they are not the same operation the boot-on-create providers are ranked on, and a pool that runs dry under load does not serve them.",
+			"",
+		);
+	}
+	if (anyReuse) {
+		lines.push(
+			"> **♻ Machine reuse:** two or more sandboxes reported the same kernel boot id, so one machine served several `create()` calls in this run. The count is how many sandboxes landed on a machine another sandbox had already used — page cache, disk state and thermal history are shared with that earlier workload.",
 			"",
 		);
 	}

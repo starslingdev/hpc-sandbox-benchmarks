@@ -579,6 +579,10 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 	const suite = SUITES[suiteName];
 	const createBudget = createBudgetOf(opened.module);
 	let session: SandboxSession | undefined;
+	// The t0 the observed-specs probe dates the sandbox's own age from, so this lane records whether the
+	// machine was pre-booted too. Re-stamped per attempt, so a create that retried is dated from the
+	// attempt that won.
+	let createdAtMs: number | undefined;
 	const sandbox = await createSuiteSandboxFromPlan(
 		{
 			create: async (signal) => {
@@ -599,6 +603,9 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 			providerName,
 			resultsDir,
 			createTimeoutMs: createBudget.timeoutMs,
+			onCreateAttempt: (startedAtMs) => {
+				createdAtMs = startedAtMs;
+			},
 			...(createBudget.attemptCeilingMs === undefined
 				? {}
 				: { createAttemptCeilingMs: createBudget.attemptCeilingMs }),
@@ -607,6 +614,7 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 
 	await runSuiteOnSandbox(sandbox, {
 		runId: options.runId,
+		...(createdAtMs === undefined ? {} : { createdAtMs }),
 		...(options.replicateIndex === undefined ? {} : { replicateIndex: options.replicateIndex }),
 		suite,
 		suiteName,

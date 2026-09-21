@@ -3,9 +3,13 @@
  * what the sandbox actually delivered into `observed-specs.json`. That file is primary; when it is
  * absent — or omits a field — the in-sandbox jc probe files the producer writes (lscpu/free/uname/df)
  * backfill the EFFECTIVE side (vcpus/memoryGb/diskGb/cpuModel/kernel/virtualization).
+ *
+ * The PROVISIONING verdict (was this machine already running when we asked for it?) is derived here
+ * too, from the age signals the same file carries — see {@link classifyProvisioning}.
  */
 import type { ObservedSpecs } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { classifyProvisioning } from "./provisioning.ts";
 
 /** Reads a named JSON file from a provider's raw directory, or undefined when absent/unparseable. */
 export type JsonReader = (name: string) => unknown;
@@ -22,6 +26,12 @@ const NUMERIC_FIELDS = [
 	"hostVcpus",
 	"hostMemoryGb",
 	"cpuMhz",
+	// Provisioning provenance: how old the machine was, and how long we had been waiting for it.
+	// Raw readings only — `preBootedByS`/`provisioning` are DERIVED from them below and are never read
+	// back out of the file, so a hand-edited record cannot assert a verdict its own numbers deny.
+	"uptimeAtProbeS",
+	"pid1AgeAtProbeS",
+	"elapsedSinceCreateS",
 ] as const;
 const STRING_FIELDS = [
 	"cpuModel",
@@ -30,6 +40,7 @@ const STRING_FIELDS = [
 	"virtualization",
 	"detectedIsolation",
 	"user",
+	"bootId",
 ] as const;
 
 const PROVIDER_STRING_FIELDS = {
@@ -143,10 +154,13 @@ export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
 			? fromProviderFile(providerRaw as Record<string, unknown>)
 			: {};
 	const direct = readJson("observed-specs.json");
-	if (direct && typeof direct === "object" && !Array.isArray(direct)) {
-		return { ...probes, ...provider, ...fromObservedSpecsFile(direct as Record<string, unknown>) };
-	}
-	return { ...probes, ...provider };
+	const merged: ObservedSpecs =
+		direct && typeof direct === "object" && !Array.isArray(direct)
+			? { ...probes, ...provider, ...fromObservedSpecsFile(direct as Record<string, unknown>) }
+			: { ...probes, ...provider };
+	// Classify LAST, over the merged reading: the verdict is a function of the record as a whole, and
+	// deriving it before the merge would let a later source supply an age the verdict never saw.
+	return { ...merged, ...classifyProvisioning(merged) };
 }
 
 /**

@@ -28,6 +28,7 @@ import type {
 } from "@sandbox-benchmarks/schema";
 import { hostHardwareSpecsSchema, hostNetworkSpecsSchema } from "@sandbox-benchmarks/schema";
 import { isVolatileHostMetadataPath } from "./host-metadata.ts";
+import { buildObservedProvisioning } from "./provisioning.ts";
 import { computeSpecMatched } from "./specs.ts";
 
 /**
@@ -161,7 +162,17 @@ export function buildObservedMixtures(
 	for (const [id, mixture] of tallyCategory<HostNetworkSpecs>(readings, HOST_NETWORK_SPEC_KEYS)) {
 		hostNetwork[id] = mixture;
 	}
-	return { sandboxes: readings.length, hostHardware, hostNetwork };
+	// Whether those sandboxes came from machines that already existed. Tallied here, beside the two hash
+	// categories, because it answers the same shape of question about the same readings and shares their
+	// denominator — and because the per-sandbox evidence it is built from is IDENTITY, which aggregation
+	// drops. Without this the signal would live only on unmerged shards and never reach the dataset.
+	const provisioning = buildObservedProvisioning(readings);
+	return {
+		sandboxes: readings.length,
+		hostHardware,
+		hostNetwork,
+		...(provisioning !== undefined ? { provisioning } : {}),
+	};
 }
 
 /** The mixture ids ONE sandbox's reading falls under — the join key from a replicate to its machine. */

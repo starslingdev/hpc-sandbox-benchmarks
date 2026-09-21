@@ -17,6 +17,11 @@ its own completion outcome. A step is not necessarily a measured sample.
 A measurement of sandbox creation, first successful command execution, teardown, or an exposed
 control-plane operation. Operational readiness alone does not define the measured first success.
 
+**Sandbox provisioning**:
+Whether the machine a sandbox ran on already existed when creation was requested. A pre-booted machine
+served from a provider's pool is not a machine that booted for the request, and a fast cold-start
+measurement is not evidence of either.
+
 **Result gap**:
 A recorded absence of a benchmark result, such as a skipped or failed workload. A gap is not a
 zero-valued measurement.

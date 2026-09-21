@@ -163,6 +163,39 @@ Metrics come from three sources:
   timings PTS can't see, measured directly around the provider SDK calls.
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).
 
+### Cold start is not always a boot
+
+Some providers serve `create()` from a pool of **pre-booted** VMs. Nothing in a lifecycle timing can
+tell that apart from a genuinely fast boot: on such a provider `lifecycle_cold_start_ms` measures how
+fast a machine already running is handed over, and on a provider that boots per request it measures a
+boot — two different operations published under one label.
+
+So every sandbox is asked how old it was. The in-sandbox spec probe records `/proc/uptime`, the age of
+pid 1, and the kernel's boot id; the harness records the wall time from issuing `create()` to issuing
+the probe, measured entirely on its own clock so a skewed sandbox clock cannot distort it. The margin
+between the machine's age and that wait is how long it predated the request.
+
+The age used is the **minimum** of the two readings, because they fail in opposite directions: on a
+shared kernel `/proc/uptime` is the host's (large however fresh the sandbox is), while pid 1 is the
+sandbox's own first process. The minimum is the age neither reading can justify exceeding, so a
+long-lived host cannot on its own make a fresh sandbox look pooled — the classifier under-claims
+rather than over-claims.
+
+A margin at or above 30s reads as `pre-booted`, below 5s as `boot-on-create`, and in between as
+`indeterminate` — the band is the honest width of the instrument, not indecision. A sandbox the probe
+could not read at all is counted nowhere, so the tally visibly falls short of the provider's sandbox
+count instead of laundering an absent look into an inconclusive one.
+
+The raw signals are recorded per sandbox and the verdict is derived from them in
+[`provisioning.ts`](../packages/results/src/lib/provisioning.ts), so a sharper rule can be re-applied
+to every past run without re-running anything. The counted per-provider result is
+`observedMixtures.provisioning`, rendered in the leaderboard's provider roster; where two sandboxes
+report the same kernel boot id, one machine served both, and the roster flags that reuse directly.
+
+**Read a pre-booted provider's lifecycle numbers as pool checkout latency.** They are real latencies a
+caller experiences, but they are not the operation the boot-on-create providers are ranked on, and a
+pool that runs dry under load does not serve them.
+
 ## Economics ($/run)
 
 The `economics` dimension is exact-only. The cited registry in

@@ -107,6 +107,30 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		expect(run.observedSpecs.vcpus).toBe(4);
 	});
 
+	it("carries the provisioning verdict from the raw probe onto the shard Run", () => {
+		// The end of the producer→consumer path for this evidence: what the in-sandbox probe wrote must
+		// arrive on the ProviderRun as a classified verdict, not as raw numbers a reader has to interpret.
+		const suiteDir = join(providerDir, "cpu-node");
+		mkdirSync(suiteDir);
+		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
+		writeFileSync(
+			join(suiteDir, "observed-specs.json"),
+			JSON.stringify({
+				vcpus: 4,
+				memoryGb: 8,
+				uptimeAtProbeS: 842.5,
+				pid1AgeAtProbeS: 841.9,
+				elapsedSinceCreateS: 96.3,
+				bootId: "0f6a1c2e-0000-4000-8000-00000000000a",
+			}),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		expect(run.observedSpecs.provisioning).toBe("pre-booted");
+		expect(run.observedSpecs.preBootedByS).toBe(745.6);
+		expect(run.observedSpecs.bootId).toBe("0f6a1c2e-0000-4000-8000-00000000000a");
+	});
+
 	it("strictly ingests suite-scoped cost and artifact evidence into a v6 Run", () => {
 		const suiteDir = join(providerDir, "cpu-node");
 		mkdirSync(suiteDir);

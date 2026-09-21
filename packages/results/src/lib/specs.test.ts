@@ -266,3 +266,60 @@ describe("computeSpecMatched (target: 4 vCPU / 8 GB ±10%)", () => {
 		expect(computeSpecMatched({ vcpus: 8, memoryGb: 8 })).toBe(false);
 	});
 });
+
+describe("readObservedSpecs — provisioning provenance", () => {
+	it("projects the raw age signals and derives the verdict from them", () => {
+		const specs = readObservedSpecs(
+			reader({
+				"observed-specs.json": {
+					vcpus: 4,
+					memoryGb: 16,
+					uptimeAtProbeS: 913.4,
+					pid1AgeAtProbeS: 912.8,
+					elapsedSinceCreateS: 74.2,
+					bootId: "0f6a1c2e-0000-4000-8000-000000000001",
+				},
+			}),
+		);
+		expect(specs).toMatchObject({
+			uptimeAtProbeS: 913.4,
+			pid1AgeAtProbeS: 912.8,
+			elapsedSinceCreateS: 74.2,
+			bootId: "0f6a1c2e-0000-4000-8000-000000000001",
+			preBootedByS: 838.6,
+			provisioning: "pre-booted",
+		});
+	});
+
+	it("derives the verdict rather than reading one the file asserts", () => {
+		// The probe records evidence; the classifier owns the conclusion. A record that carried its own
+		// verdict could contradict its own numbers, and the dataset is re-normalized retroactively, so a
+		// sharpened rule has to reach every past run.
+		const specs = readObservedSpecs(
+			reader({
+				"observed-specs.json": {
+					provisioning: "pre-booted",
+					preBootedByS: 9999,
+					uptimeAtProbeS: 60,
+					pid1AgeAtProbeS: 60,
+					elapsedSinceCreateS: 61,
+				},
+			}),
+		);
+		expect(specs.provisioning).toBe("boot-on-create");
+		expect(specs.preBootedByS).toBe(-1);
+	});
+
+	// Load-bearing: providerReportedNothing asks whether observedSpecs is empty, so a stamp here would
+	// promote every never-dispatched registry placeholder into a provider that "reported".
+	it("leaves a reading with no provisioning evidence completely empty", () => {
+		expect(readObservedSpecs(reader({}))).toEqual({});
+	});
+
+	it("adds no verdict to a legacy record that predates the probe", () => {
+		const specs = readObservedSpecs(
+			reader({ "observed-specs.json": { vcpus: 4, memoryGb: 16, kernel: "6.1.0" } }),
+		);
+		expect(specs).toEqual({ vcpus: 4, memoryGb: 16, kernel: "6.1.0" });
+	});
+});

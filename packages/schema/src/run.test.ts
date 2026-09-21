@@ -1,5 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import { parseRun, parseRunIndex, runDocumentPath, runDocumentPaths } from "./index.ts";
+import { type } from "arktype";
+import {
+	hostHardwareSpecsSchema,
+	hostNetworkSpecsSchema,
+	observedSpecsSchema,
+	parseRun,
+	parseRunIndex,
+	runDocumentPath,
+	runDocumentPaths,
+} from "./index.ts";
 
 const validRun = {
 	schemaVersion: "2",
@@ -308,6 +317,107 @@ describe("Run schema", () => {
 		const provider = v4.providers[0];
 		if (provider) (provider as Record<string, unknown>).observedMixtures = mixtures;
 		expect(parseRun(v4).providers[0]?.observedMixtures?.sandboxes).toBe(2);
+	});
+
+	it("accepts a provisioning tally bounded by the sandbox denominator", () => {
+		const run = structuredClone(validRun);
+		run.schemaVersion = "4";
+		const provider = run.providers[0];
+		if (provider)
+			(provider as Record<string, unknown>).observedMixtures = {
+				sandboxes: 3,
+				hostHardware: { abc0123456789def: { count: 3, specs: { cpuModel: "AMD EPYC 9R14" } } },
+				hostNetwork: {},
+				provisioning: {
+					preBooted: 2,
+					bootOnCreate: 0,
+					indeterminate: 1,
+					medianPreBootedByS: 612.5,
+					bootIdSandboxes: 3,
+					distinctBootIds: 2,
+				},
+			};
+		expect(parseRun(run).providers[0]?.observedMixtures?.provisioning?.preBooted).toBe(2);
+	});
+
+	it("rejects provisioning counts that describe more sandboxes than the provider had", () => {
+		// The denominator is the whole reason the counts mean anything: "4 of 3 sandboxes were pooled" is
+		// arithmetic on a lie, and every proportion a reader takes from it inherits that.
+		const run = structuredClone(validRun);
+		run.schemaVersion = "4";
+		const provider = run.providers[0];
+		if (provider)
+			(provider as Record<string, unknown>).observedMixtures = {
+				sandboxes: 3,
+				hostHardware: { abc0123456789def: { count: 3, specs: { cpuModel: "AMD EPYC 9R14" } } },
+				hostNetwork: {},
+				provisioning: { preBooted: 3, bootOnCreate: 1, indeterminate: 0 },
+			};
+		expect(() => parseRun(run)).toThrow(/provisioning counts sum to at most sandboxes/);
+	});
+
+	it("rejects a boot-id pair that claims more distinct machines than disclosing sandboxes", () => {
+		// `distinct < disclosing` is the reuse signal; `distinct > disclosing` is not a sharper version of
+		// it, it is an impossible reading, and one that would silently rule reuse out.
+		const run = structuredClone(validRun);
+		run.schemaVersion = "4";
+		const provider = run.providers[0];
+		if (provider)
+			(provider as Record<string, unknown>).observedMixtures = {
+				sandboxes: 3,
+				hostHardware: { abc0123456789def: { count: 3, specs: { cpuModel: "AMD EPYC 9R14" } } },
+				hostNetwork: {},
+				provisioning: {
+					preBooted: 1,
+					bootOnCreate: 0,
+					indeterminate: 0,
+					bootIdSandboxes: 2,
+					distinctBootIds: 3,
+				},
+			};
+		expect(() => parseRun(run)).toThrow(/at most one distinct boot id per disclosing sandbox/);
+	});
+
+	it("rejects a provisioning tally that counts no sandbox at all", () => {
+		// All zeros would read as "we checked and nothing was pooled" while resting on nothing checked.
+		const run = structuredClone(validRun);
+		run.schemaVersion = "4";
+		const provider = run.providers[0];
+		if (provider)
+			(provider as Record<string, unknown>).observedMixtures = {
+				sandboxes: 3,
+				hostHardware: { abc0123456789def: { count: 3, specs: { cpuModel: "AMD EPYC 9R14" } } },
+				hostNetwork: {},
+				provisioning: { preBooted: 0, bootOnCreate: 0, indeterminate: 0 },
+			};
+		expect(() => parseRun(run)).toThrow(/counts at least one sandbox/);
+	});
+
+	it("keeps per-sandbox provisioning evidence out of both mixture hash categories", () => {
+		// It changes on every sandbox, so hashing it would mint one "machine shape" per sandbox and report
+		// every count as 1 — the same defect that keeps publicIp out of the categories.
+		expect(hostHardwareSpecsSchema({ uptimeAtProbeS: 900 })).toBeInstanceOf(type.errors);
+		expect(hostNetworkSpecsSchema({ bootId: "b" })).toBeInstanceOf(type.errors);
+		// They remain legal on the full reading, which is where per-sandbox identity lives.
+		const specs = observedSpecsSchema({
+			uptimeAtProbeS: 900,
+			pid1AgeAtProbeS: 880,
+			elapsedSinceCreateS: 60,
+			preBootedByS: 820,
+			provisioning: "pre-booted",
+			bootId: "0f6a",
+		});
+		expect(specs).not.toBeInstanceOf(type.errors);
+	});
+
+	it("rejects a provisioning verdict outside the closed vocabulary", () => {
+		expect(observedSpecsSchema({ provisioning: "warm" })).toBeInstanceOf(type.errors);
+	});
+
+	it("rejects a negative age reading", () => {
+		expect(observedSpecsSchema({ uptimeAtProbeS: -1 })).toBeInstanceOf(type.errors);
+		// The MARGIN is signed, though: measurement noise legitimately puts a fresh boot below zero.
+		expect(observedSpecsSchema({ preBootedByS: -1.5 })).not.toBeInstanceOf(type.errors);
 	});
 
 	it("rejects a replicate mixture id that resolves to nothing", () => {

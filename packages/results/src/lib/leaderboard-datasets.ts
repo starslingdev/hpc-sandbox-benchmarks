@@ -58,6 +58,46 @@ export interface CombineDatasetsOptions {
 	readonly cohortReview?: string;
 }
 
+/**
+ * Pool the provisioning tallies of the runs being combined.
+ *
+ * The verdict counts and the boot-id denominator are plain sandbox counts, so they add. The two
+ * derived numbers cannot be recovered exactly from tallies alone, and each is carried the way that
+ * errs toward saying LESS than the evidence might support:
+ *
+ *  - `distinctBootIds` is summed, which double-counts a machine that served sandboxes in two of the
+ *    pooled runs. Over-counting distinctness can only close the `distinct < disclosing` gap that
+ *    signals reuse, never open one — so a pooled board can miss reuse it would have shown per-run,
+ *    and can never claim reuse that did not happen.
+ *  - `medianPreBootedByS` is dropped rather than averaged: a median of medians is not a median, and
+ *    the margins themselves are per-sandbox identity that aggregation already discarded. Absent reads
+ *    as "not available at this grain", which is exactly true.
+ */
+function mergeProvisioning(
+	mixtures: readonly ObservedMixtures[],
+): ObservedMixtures["provisioning"] {
+	const tallies = mixtures.flatMap((m) => (m.provisioning ? [m.provisioning] : []));
+	if (!tallies.length) return undefined;
+	let bootIdSandboxes = 0;
+	let distinctBootIds = 0;
+	const pooled = tallies.reduce(
+		(acc, tally) => {
+			bootIdSandboxes += tally.bootIdSandboxes ?? 0;
+			distinctBootIds += tally.distinctBootIds ?? 0;
+			return {
+				preBooted: acc.preBooted + tally.preBooted,
+				bootOnCreate: acc.bootOnCreate + tally.bootOnCreate,
+				indeterminate: acc.indeterminate + tally.indeterminate,
+			};
+		},
+		{ preBooted: 0, bootOnCreate: 0, indeterminate: 0 },
+	);
+	return {
+		...pooled,
+		...(bootIdSandboxes > 0 ? { bootIdSandboxes, distinctBootIds } : {}),
+	};
+}
+
 function mergeMixtures(providers: readonly ProviderRun[]): ObservedMixtures | undefined {
 	const mixtures = providers.flatMap((p) => (p.observedMixtures ? [p.observedMixtures] : []));
 	if (!mixtures.length) return undefined;
@@ -74,7 +114,8 @@ function mergeMixtures(providers: readonly ProviderRun[]): ObservedMixtures | un
 			}
 		}
 	}
-	return result;
+	const provisioning = mergeProvisioning(mixtures);
+	return provisioning === undefined ? result : { ...result, provisioning };
 }
 
 /**

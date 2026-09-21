@@ -103,6 +103,76 @@ describe("provider isolation roster", () => {
 		]);
 	});
 
+	/** A measured provider carrying the aggregate provisioning tally a v4 Run publishes. */
+	const withProvisioning = (
+		providerId: string,
+		provisioning: NonNullable<NonNullable<ProviderRun["observedMixtures"]>["provisioning"]>,
+		sandboxes = 4,
+	): ProviderRun => ({
+		...provider(providerId, [metric(HEADLINE, [10])]),
+		// "unknown" so these cases exercise the provisioning column alone — a detected class that
+		// contradicts a declaration would add the mismatch flag to the same cells.
+		observedSpecs: { detectedIsolation: "unknown" },
+		observedMixtures: {
+			sandboxes,
+			hostHardware: { aaaaaaaaaaaaaaaa: { count: sandboxes, specs: { cpuModel: "EPYC" } } },
+			hostNetwork: {},
+			provisioning,
+		},
+	});
+
+	it("reports how many sandboxes arrived on a machine that was already running", () => {
+		const board = buildLeaderboard(
+			run([
+				withProvisioning("daytona-vm", { preBooted: 3, bootOnCreate: 0, indeterminate: 1 }),
+				withProvisioning("modal-gvisor", { preBooted: 0, bootOnCreate: 4, indeterminate: 0 }),
+			]),
+		);
+		const md = render(board);
+		// The denominator is printed, not implied: "3/4" and "3/3" license different readings of the same 3.
+		expect(md).toContain("| Daytona (VM) | microVM (Linux VM) | unknown | pre-booted 3/4 |");
+		expect(md).toContain("| Modal (gVisor) | gVisor container | unknown | fresh 4/4 |");
+		// The caveat the whole field exists for: those cold-start numbers are checkout, not boot.
+		expect(md).toContain("POOL CHECKOUT times");
+	});
+
+	it("says inconclusive rather than fresh when nothing could be placed either way", () => {
+		// "Probed, could not tell" must never render as "boots on request" — they license opposite
+		// conclusions about the same lifecycle numbers.
+		const board = buildLeaderboard(
+			run([withProvisioning("daytona-vm", { preBooted: 0, bootOnCreate: 0, indeterminate: 4 })]),
+		);
+		const md = render(board);
+		expect(md).toContain("inconclusive (4)");
+		expect(md).not.toContain("POOL CHECKOUT times");
+	});
+
+	it("flags a boot id that served more than one sandbox as machine reuse", () => {
+		const board = buildLeaderboard(
+			run([
+				withProvisioning("daytona-vm", {
+					preBooted: 4,
+					bootOnCreate: 0,
+					indeterminate: 0,
+					bootIdSandboxes: 4,
+					distinctBootIds: 2,
+				}),
+			]),
+		);
+		const md = render(board);
+		expect(md).toContain("♻ 2");
+		expect(md).toContain("Machine reuse");
+	});
+
+	it("omits the column entirely when no provider recorded provisioning evidence", () => {
+		// Every Run published before the probe existed. An empty column would read as a finding.
+		const board = buildLeaderboard(run([withDetected("daytona-vm", "vm")]));
+		const md = render(board);
+		expect(md).toContain("| Provider | Isolation (declared) | Detected |");
+		expect(md).not.toContain("Provisioning");
+		expect(board.roster[0]?.provisioning).toBeUndefined();
+	});
+
 	it("flags a mismatch only for the reliably-distinguishable gVisor↔VM contradiction", () => {
 		const board = buildLeaderboard(
 			run([

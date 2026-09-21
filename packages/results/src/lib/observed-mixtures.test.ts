@@ -6,6 +6,7 @@ import {
 	observedMixturesSchema,
 	TARGET_SPEC,
 } from "@sandbox-benchmarks/schema";
+import { type } from "arktype";
 import {
 	buildObservedMixtures,
 	foldHostMetadata,
@@ -250,5 +251,67 @@ describe("per-machine spec verdicts", () => {
 	it("leaves a machine unjudged when its probes saw too little", () => {
 		const mixtures = buildObservedMixtures([{ cpuModel: "A" }]);
 		expect(Object.values(mixtures?.hostHardware ?? {})[0]?.specMatched).toBeUndefined();
+	});
+});
+
+describe("buildObservedMixtures — provisioning", () => {
+	const pooled: ObservedSpecs = {
+		...GENOA,
+		uptimeAtProbeS: 900,
+		pid1AgeAtProbeS: 895,
+		elapsedSinceCreateS: 60,
+		bootId: "boot-a",
+	};
+	const fresh: ObservedSpecs = {
+		...GENOA,
+		uptimeAtProbeS: 58,
+		pid1AgeAtProbeS: 57,
+		elapsedSinceCreateS: 60,
+		bootId: "boot-b",
+	};
+
+	it("tallies the fleet's provisioning beside the two hash categories", () => {
+		const mixtures = buildObservedMixtures([pooled, pooled, fresh]);
+		expect(mixtures?.provisioning).toEqual({
+			preBooted: 2,
+			bootOnCreate: 1,
+			indeterminate: 0,
+			medianPreBootedByS: 835,
+			bootIdSandboxes: 3,
+			distinctBootIds: 2,
+		});
+		// One machine shape, three sandboxes — the provisioning split is invisible to the hardware
+		// category by design, which is exactly why it needs its own tally.
+		expect(Object.keys(mixtures?.hostHardware ?? {})).toHaveLength(1);
+		expect(observedMixturesSchema(mixtures)).not.toBeInstanceOf(type.errors);
+	});
+
+	it("keeps the age signals out of the machine-shape hash", () => {
+		// Two readings of the SAME machine taken at different ages must fold to one mixture; hashing the
+		// age would mint one "machine shape" per sandbox and report every count as 1.
+		const later: ObservedSpecs = { ...pooled, uptimeAtProbeS: 1200, pid1AgeAtProbeS: 1195 };
+		const mixtures = buildObservedMixtures([pooled, later]);
+		expect(Object.keys(mixtures?.hostHardware ?? {})).toHaveLength(1);
+		expect(observedMixtureIds(pooled).hostHardwareId).toBe(
+			observedMixtureIds(later).hostHardwareId ?? "",
+		);
+	});
+
+	it("leaves the tally short of the denominator when a sandbox was never probed", () => {
+		// The visible shortfall is the disclosure. Folding an unprobed sandbox into `indeterminate` would
+		// claim a look that never happened.
+		const mixtures = buildObservedMixtures([pooled, GENOA]);
+		expect(mixtures?.sandboxes).toBe(2);
+		expect(mixtures?.provisioning).toMatchObject({
+			preBooted: 1,
+			bootOnCreate: 0,
+			indeterminate: 0,
+		});
+	});
+
+	it("omits the tally entirely for a fleet that recorded no provisioning evidence", () => {
+		const mixtures = buildObservedMixtures([GENOA, TURIN]);
+		expect(mixtures?.provisioning).toBeUndefined();
+		expect(observedMixturesSchema(mixtures)).not.toBeInstanceOf(type.errors);
 	});
 });
