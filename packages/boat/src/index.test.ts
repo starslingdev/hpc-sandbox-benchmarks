@@ -83,15 +83,25 @@ function nativeClient(overrides: Partial<BoatClient> = {}): BoatClient {
 			ttlSeconds: null,
 			sandbox: nativeSandbox("provisioning", { name: "Sandbox 2026-09-21 12:00" }),
 		}),
-		get: async ({ sandboxId }) => ({
-			ok: true,
-			type: "sandbox.info",
-			sandbox: nativeSandbox(removed.has(sandboxId) ? "archived" : "ready", {
-				id: sandboxId,
-				name: named.get(sandboxId) ?? nativeSandbox().name,
-			}),
-		}),
+		get: async ({ sandboxId }) => {
+			if (sandboxId === undefined) throw new Error("test get requires a sandbox id");
+			return {
+				ok: true,
+				type: "sandbox.info",
+				sandbox: nativeSandbox(removed.has(sandboxId) ? "archived" : "ready", {
+					id: sandboxId,
+					name: named.get(sandboxId) ?? nativeSandbox().name,
+				}),
+			};
+		},
 		update: async ({ sandboxId, updateSandboxRequest }) => {
+			if (
+				sandboxId === undefined ||
+				updateSandboxRequest === undefined ||
+				updateSandboxRequest.name === undefined
+			) {
+				throw new Error("test update requires an id and request");
+			}
 			named.set(sandboxId, updateSandboxRequest.name);
 			return {
 				ok: true,
@@ -130,10 +140,9 @@ function fast(client: BoatClient, seams: BoatSpecOptions = {}): BoatSpecOptions 
 	return {
 		client,
 		readyPollMs: 0,
-		reconcileRetryMs: 0,
+		createRetryMs: 0,
 		cleanupRetryMs: 0,
 		recoveryAbsenceConfirmationMs: 1,
-		sleep: async () => {},
 		...seams,
 	};
 }
