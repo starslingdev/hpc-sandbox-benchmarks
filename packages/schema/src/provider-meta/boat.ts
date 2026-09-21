@@ -32,7 +32,7 @@ export default defineProviderMeta("boat", {
 		],
 		targetHourlyCost: { kind: "exact", componentIds: ["default-machine"] },
 		notes:
-			"Per-second billing while the sandbox is running; stop/archive pauses the meter. $20/mo is a prepaid time allotment (555 hours of default), not a per-sandbox fee, and is recorded as plan metadata rather than a compute discount.",
+			"Per-second billing while the sandbox is running; a stopped sandbox costs nothing. Boat snapshots a running sandbox about once a minute and the pricing page lists no storage charge; teardown deletes the sandbox with its snapshots, so a run leaves no stored data behind. $20/mo is a prepaid time allotment (555 hours of default), not a per-sandbox fee, and is recorded as plan metadata rather than a compute discount.",
 		sources: [
 			{ label: "boat pricing", url: "https://docs.boat.dev/pricing", checkedAt: "2026-09-21" },
 		],
@@ -51,7 +51,7 @@ export default defineProviderMeta("boat", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Native @boatdev/sdk driver covering create, readiness, command exec, and stop/archive teardown; opt-in until a committed validation run exists on this tree.",
+			"Native @boatdev/sdk driver covering create, readiness (including outbound network), command exec, and delete teardown; opt-in until a committed validation run exists on this tree.",
 	},
 	specPinning: "fixed",
 	transport: {
