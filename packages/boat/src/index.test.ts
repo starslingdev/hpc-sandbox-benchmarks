@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Command200Response, Sandbox, SandboxListResponse } from "@boatdev/sdk";
+import { ResponseError } from "@boatdev/sdk";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
 import { sandboxRef } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
@@ -71,6 +72,30 @@ function startedCommand(): Command200Response {
 	};
 }
 
+function vendorError(status: number, code = "error", message = code): ResponseError {
+	return new ResponseError(
+		new Response(JSON.stringify({ ok: false, status, code, message }), { status }),
+		"Response returned an error code",
+	);
+}
+
+function deletion(sandboxId: string) {
+	return {
+		ok: true,
+		type: "sandbox.deleting",
+		operation: {
+			id: "bdop_1",
+			kind: "sandbox",
+			targetId: sandboxId,
+			reason: "explicit",
+			status: "blocked",
+			attemptCount: 1,
+			requestedAt: new Date("2026-09-21T00:00:00.000Z"),
+			completedAt: null,
+		},
+	} as const;
+}
+
 function nativeClient(overrides: Partial<BoatClient> = {}): BoatClient {
 	const removed = new Set<string>();
 	const named = new Map<string, string>();
@@ -84,10 +109,11 @@ function nativeClient(overrides: Partial<BoatClient> = {}): BoatClient {
 		}),
 		get: async ({ sandboxId }) => {
 			if (sandboxId === undefined) throw new Error("test get requires a sandbox id");
+			if (removed.has(sandboxId)) throw vendorError(404, "not_found");
 			return {
 				ok: true,
 				type: "sandbox.info",
-				sandbox: nativeSandbox(removed.has(sandboxId) ? "archived" : "ready", {
+				sandbox: nativeSandbox("ready", {
 					id: sandboxId,
 					name: named.get(sandboxId) ?? nativeSandbox().name,
 				}),
@@ -121,16 +147,10 @@ function nativeClient(overrides: Partial<BoatClient> = {}): BoatClient {
 				sandboxes: [],
 			}) satisfies SandboxListResponse,
 		...overrides,
-		stop: async ({ sandboxId }) => {
-			await overrides.stop?.({ sandboxId });
-			removed.add(sandboxId);
-			return {
-				ok: true,
-				type: "sandbox.stopping",
-				id: sandboxId,
-				status: "archiving",
-				sandbox: nativeSandbox("archiving", { id: sandboxId }),
-			};
+		deleteSandbox: async (input) => {
+			await overrides.deleteSandbox?.(input);
+			removed.add(input.sandboxId);
+			return deletion(input.sandboxId);
 		},
 	};
 }
@@ -141,6 +161,8 @@ function fast(client: BoatClient, seams: BoatSpecOptions = {}): BoatSpecOptions 
 		readyPollMs: 0,
 		createRetryMs: 0,
 		cleanupRetryMs: 0,
+		egressPollMs: 0,
+		deletePollMs: 0,
 		recoveryAbsenceConfirmationMs: 1,
 		...seams,
 	};
@@ -233,29 +255,126 @@ describe("boat module policy", () => {
 		expect(createCalls).toBe(0);
 	});
 
-	it("tears down an undersized allocation after create", async () => {
-		const stopped: string[] = [];
+	it("deletes an undersized allocation after create", async () => {
+		const deleted: string[] = [];
+		const removed = new Set<string>();
 		const client = nativeClient({
-			get: async ({ sandboxId }) => ({
-				ok: true,
-				type: "sandbox.info",
-				sandbox: nativeSandbox("ready", { id: sandboxId, vcpu: 2 }),
-			}),
-			stop: async ({ sandboxId }) => {
-				stopped.push(sandboxId);
+			get: async ({ sandboxId }) => {
+				if (removed.has(sandboxId)) throw vendorError(404, "not_found");
 				return {
 					ok: true,
-					type: "sandbox.stopping",
-					id: sandboxId,
-					status: "archiving",
-					sandbox: nativeSandbox("archiving", { id: sandboxId }),
+					type: "sandbox.info",
+					sandbox: nativeSandbox("ready", { id: sandboxId, vcpu: 2 }),
 				};
+			},
+			deleteSandbox: async ({ sandboxId, xAsciiConfirmDelete }) => {
+				expect(xAsciiConfirmDelete).toBe(sandboxId);
+				deleted.push(sandboxId);
+				removed.add(sandboxId);
+				return deletion(sandboxId);
 			},
 		});
 		await expect(driver(client).create(request)).rejects.toMatchObject({
 			code: "invalid-create-request",
 		});
-		expect(stopped).toEqual(["bx_23456789"]);
+		expect(deleted).toEqual(["bx_23456789"]);
+	});
+
+	it("deletes by id when preparation fails after boat returned the sandbox", async () => {
+		const deleted: string[] = [];
+		const client = nativeClient({
+			update: async () => {
+				throw vendorError(500, "internal");
+			},
+			deleteSandbox: async ({ sandboxId }) => {
+				deleted.push(sandboxId);
+				return deletion(sandboxId);
+			},
+		});
+		await expect(driver(client).create(request)).rejects.toMatchObject({ provider: "boat" });
+		expect(deleted).toEqual(["bx_23456789"]);
+	});
+
+	it("deletes a sandbox that fails while booting", async () => {
+		const deleted: string[] = [];
+		const removed = new Set<string>();
+		const client = nativeClient({
+			get: async ({ sandboxId }) => {
+				if (removed.has(sandboxId)) throw vendorError(404, "not_found");
+				return {
+					ok: true,
+					type: "sandbox.info",
+					sandbox: nativeSandbox("error", { id: sandboxId }),
+				};
+			},
+			deleteSandbox: async ({ sandboxId }) => {
+				deleted.push(sandboxId);
+				removed.add(sandboxId);
+				return deletion(sandboxId);
+			},
+		});
+		await expect(driver(client).create(request)).rejects.toMatchObject({ provider: "boat" });
+		expect(deleted).toEqual(["bx_23456789"]);
+	});
+
+	it("waits for outbound network before handing the sandbox over", async () => {
+		const probes: string[] = [];
+		const client = nativeClient({
+			command: async ({ commandRequest }) => {
+				if (commandRequest.command.startsWith("getent hosts")) {
+					probes.push(commandRequest.command);
+					return { ...finishedCommand(), exitCode: probes.length < 3 ? 1 : 0 };
+				}
+				return finishedCommand(
+					commandRequest.command.startsWith("df -Pk") ? `${80 * 1024 * 1024}\n` : "",
+				);
+			},
+		});
+		await driver(client).create(request);
+		expect(probes).toHaveLength(3);
+		expect(probes[0]).toContain("/dev/tcp/boat.dev/443");
+	});
+
+	it("reports boat's error code when create is refused", async () => {
+		const client = nativeClient({
+			create: async () => {
+				throw vendorError(
+					400,
+					"trial_auto_stop_required",
+					"Free-trial Sandboxes cannot run without auto-stop.",
+				);
+			},
+		});
+		await expect(driver(client).create(request)).rejects.toMatchObject({
+			code: "create-failed",
+			message: expect.stringContaining("HTTP 400 trial_auto_stop_required"),
+		});
+	});
+
+	it("destroys idempotently and only after the sandbox is gone", async () => {
+		let polls = 0;
+		const deleted: string[] = [];
+		const client = nativeClient({
+			get: async ({ sandboxId }) => {
+				if (deleted.length > 0 && ++polls >= 3) throw vendorError(404, "not_found");
+				return {
+					ok: true,
+					type: "sandbox.info",
+					sandbox: nativeSandbox("ready", { id: sandboxId }),
+				};
+			},
+			deleteSandbox: async ({ sandboxId }) => {
+				deleted.push(sandboxId);
+				if (deleted.length > 1) throw vendorError(404, "not_found");
+				return deletion(sandboxId);
+			},
+		});
+		const boat = driver(client);
+		const ref = sandboxRef("boat", "bx_23456789");
+		await boat.destroyById?.(ref);
+		expect(polls).toBe(3);
+		await boat.destroyById?.(ref);
+		expect(deleted).toEqual(["bx_23456789", "bx_23456789"]);
 	});
 
 	it("launches durable work through detached command acceptance", async () => {
@@ -282,14 +401,14 @@ describe("boat module policy", () => {
 		);
 	});
 
-	it("treats archived sandboxes as absent and error as terminal", () => {
-		expect(boatObservation("archived")).toEqual({ state: "absent" });
-		expect(boatObservation("archiving")).toEqual({ state: "absent" });
+	it("never observes a listed row as absent; archiving is still live", () => {
+		expect(boatObservation("archived")).toEqual({ state: "terminal" });
 		expect(boatObservation("error")).toEqual({ state: "terminal" });
+		expect(boatObservation("archiving")).toEqual({ state: "running" });
 		expect(boatObservation("ready")).toEqual({ state: "running" });
 	});
 
-	it("inventories only live sandboxes named with the recovery prefix", async () => {
+	it("inventories every prefixed row as owned and ignores stopped foreign rows", async () => {
 		const client = nativeClient({
 			sandboxes: async () => ({
 				ok: true,
@@ -301,10 +420,22 @@ describe("boat module policy", () => {
 						id: "bx_2345678c",
 						name: `${BOAT_RECOVERY_NAME_PREFIX}-stopped`,
 					}),
+					nativeSandbox("error", {
+						id: "bx_2345678d",
+						name: `${BOAT_RECOVERY_NAME_PREFIX}-failed`,
+					}),
+					nativeSandbox("archived", { id: "bx_2345678e", name: "Box 2026-09-21 22:37" }),
 				],
 			}),
 		});
 		const snapshot = await driver(client).inventory?.list();
-		expect(snapshot).toEqual({ owned: [sandboxRef("boat", "bx_23456789")], foreignCount: 1 });
+		expect(snapshot).toEqual({
+			owned: [
+				sandboxRef("boat", "bx_23456789"),
+				sandboxRef("boat", "bx_2345678c"),
+				sandboxRef("boat", "bx_2345678d"),
+			],
+			foreignCount: 1,
+		});
 	});
 });

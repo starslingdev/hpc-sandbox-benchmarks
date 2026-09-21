@@ -1,6 +1,10 @@
 // boat is a native SDK module over @boatdev/sdk. External SDK values are parsed once through the
 // schemas below; their inferred types are the only vendor records used past that boundary. Shared
 // driver-kit utilities own polling, cause traversal, request validation, and session mechanics.
+//
+// Teardown is deleteSandbox, never stop: boat snapshots a running sandbox about once a minute and
+// stop archives the sandbox with its whole snapshot chain, so a stop-based teardown leaves every
+// allocation's disk behind on the account forever. Delete removes the sandbox and its snapshots.
 
 import { randomUUID } from "node:crypto";
 import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
@@ -34,7 +38,14 @@ export const BOAT_READY_POLL_MS = 2_000;
 export const BOAT_READY_TIMEOUT_MS = 8 * 60_000;
 export const BOAT_CONTROL_TIMEOUT_MS = 30_000;
 export const BOAT_CLEANUP_ATTEMPTS = 4;
-export const BOAT_CLEANUP_RETRY_MS = 20_000;
+export const BOAT_CLEANUP_RETRY_MS = 5_000;
+export const BOAT_DELETE_CONFIRM_MS = 60_000;
+export const BOAT_DELETE_POLL_MS = 1_000;
+// Exec is accepted before the guest's outbound network is up: a clone issued ~1s after boot was
+// refused in 6ms on one of 30 sandboxes. Readiness therefore also waits for DNS plus a TCP connect.
+export const BOAT_EGRESS_PROBE_HOST = "boat.dev";
+export const BOAT_EGRESS_TIMEOUT_MS = 90_000;
+export const BOAT_EGRESS_POLL_MS = 1_000;
 export const BOAT_CREATE_ATTEMPTS = 5;
 export const BOAT_CREATE_RETRY_MS = 2_000;
 export const BOAT_INVENTORY_PAGE_SIZE = 100;
@@ -45,11 +56,15 @@ export const BOAT_EXECUTION = { syncCapMs: 60_000, durable: "native-launch" } as
 export const BOAT_CREATE_CEILING_MS =
 	BOAT_CREATE_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +
 	(BOAT_CREATE_ATTEMPTS - 1) * BOAT_CREATE_RETRY_MS +
-	BOAT_READY_TIMEOUT_MS +
 	BOAT_CONTROL_TIMEOUT_MS +
+	BOAT_READY_TIMEOUT_MS +
 	BOAT_READY_POLL_MS +
+	BOAT_EGRESS_TIMEOUT_MS +
+	BOAT_CONTROL_TIMEOUT_MS + // rename
+	BOAT_CONTROL_TIMEOUT_MS + // disk capacity probe
 	BOAT_CLEANUP_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +
-	(BOAT_CLEANUP_ATTEMPTS - 1) * BOAT_CLEANUP_RETRY_MS;
+	(BOAT_CLEANUP_ATTEMPTS - 1) * BOAT_CLEANUP_RETRY_MS +
+	BOAT_DELETE_CONFIRM_MS;
 export const BOAT_CREATE_BUDGET = {
 	owner: "harness",
 	timeoutMs: BOAT_CREATE_CEILING_MS,
@@ -69,7 +84,9 @@ export const BOAT_REQUEST_COVERAGE = {
 
 const READY_STATES: ReadonlySet<string> = new Set(["ready", "idle", "running"]);
 const TERMINAL_BOOT_STATES: ReadonlySet<string> = new Set(["error", "archived", "archiving"]);
-const ABSENT_STATES: ReadonlySet<string> = new Set(["archived", "archiving"]);
+// Stopped rows hold no compute ("a stopped sandbox costs nothing"). A foreign one is therefore not
+// capacity this benchmark competes with; an owned one is still a leftover to delete.
+const STOPPED_STATES: ReadonlySet<string> = new Set(["archived"]);
 
 const boatSandboxSchema = type({
 	id: BOAT_SANDBOX_ID,
@@ -98,6 +115,16 @@ const boatCommandResponseSchema = type.or(
 		processId: "number.integer > 0",
 	},
 );
+// Deletion is accepted asynchronously. In practice the sandbox 404s within seconds while its
+// operation settles at `blocked` rather than `completed`, so convergence is proven by observing the
+// sandbox gone, never by the operation status.
+const boatDeletionResponseSchema = type({
+	operation: { id: "string >= 1", targetId: "string", status: "string >= 1" },
+});
+const boatErrorBodySchema = type("string.json.parse").to({
+	"code?": "string",
+	"message?": "string",
+});
 const boatCreateOptionsSchema = type({
 	name: "string >= 1",
 	idempotencyKey: "string >= 1",
@@ -109,15 +136,21 @@ const diskCapacityKbSchema = type("string.integer.parse").to("number > 0");
 
 export type BoatSandbox = typeof boatSandboxSchema.infer;
 export type BoatCreateOptions = typeof boatCreateOptionsSchema.infer;
+/** The create response plus the owner-visible name this allocation is renamed to while preparing. */
+export type BoatAllocation = BoatSandbox & { readonly recoveryName: string };
 export type BoatClient = Pick<
 	BoatApi,
-	"create" | "get" | "update" | "stop" | "command" | "sandboxes"
+	"create" | "get" | "update" | "deleteSandbox" | "command" | "sandboxes"
 >;
 
 export interface BoatSpecOptions {
 	readonly client?: BoatClient;
 	readonly readyPollMs?: number;
 	readonly readyTimeoutMs?: number;
+	readonly egressPollMs?: number;
+	readonly egressTimeoutMs?: number;
+	readonly deleteConfirmMs?: number;
+	readonly deletePollMs?: number;
 	readonly cleanupAttempts?: number;
 	readonly cleanupRetryMs?: number;
 	readonly createAttempts?: number;
@@ -130,33 +163,9 @@ export class BoatBootFailureError extends Error {
 	constructor(
 		readonly sandboxId: string,
 		readonly state: string,
-		readonly teardownConfirmed: boolean,
 	) {
 		super(`boat sandbox ${sandboxId} entered terminal state "${state}" while booting`);
 		this.name = "BoatBootFailureError";
-	}
-}
-
-export class BoatAmbiguousCreateError extends AggregateError {
-	constructor(
-		readonly recoveryName: string,
-		createError: unknown,
-		lookupError: unknown,
-	) {
-		super(
-			[createError, lookupError],
-			`boat create outcome is unknown; allocation ${recoveryName} may require manual cleanup`,
-		);
-		this.name = "BoatAmbiguousCreateError";
-	}
-}
-
-class BootTerminalState extends Error {
-	constructor(
-		readonly sandboxId: string,
-		readonly state: string,
-	) {
-		super(`boat sandbox ${sandboxId} entered terminal state "${state}" while booting`);
 	}
 }
 
@@ -218,16 +227,35 @@ export function isBoatDefinitiveCreateRejection(error: unknown): boolean {
 }
 
 export function isBoatRetryableCreate(error: unknown): boolean {
-	return (
-		boatHttpStatus(error) === 429 ||
-		(error instanceof BoatBootFailureError && error.teardownConfirmed)
-	);
+	return boatHttpStatus(error) === 429;
 }
 
+function isBoatTransient(error: unknown): boolean {
+	const status = boatHttpStatus(error);
+	return status === 408 || status === 429 || (status !== undefined && status >= 500);
+}
+
+/**
+ * A listed or fetched row is never `absent`: deletion is the only teardown and a deleted sandbox
+ * 404s. `archiving` is still saving its disk and may be refused back to running, so it is live.
+ */
 export function boatObservation(state: string): SandboxObservation {
-	if (ABSENT_STATES.has(state)) return { state: "absent" };
-	if (state === "error") return { state: "terminal" };
+	if (state === "error" || STOPPED_STATES.has(state)) return { state: "terminal" };
 	return { state: "running" };
+}
+
+/** The vendor's typed error code and message, so a refusal such as a trial policy is diagnosable. */
+export async function boatErrorDetail(error: ResponseError): Promise<string> {
+	const status = error.response.status;
+	try {
+		const body = boatErrorBodySchema(await error.response.clone().text());
+		if (!(body instanceof type.errors) && (body.code ?? body.message) !== undefined) {
+			return `HTTP ${status} ${body.code ?? "error"}: ${body.message ?? ""}`.trimEnd();
+		}
+	} catch {
+		// An unreadable body leaves the status as the only evidence.
+	}
+	return `HTTP ${status}`;
 }
 
 async function getSandbox(
@@ -254,45 +282,86 @@ async function waitUntilReady(
 			const sandbox = await getSandbox(client, sandboxId, operation);
 			if (READY_STATES.has(sandbox.state)) return sandbox;
 			if (TERMINAL_BOOT_STATES.has(sandbox.state)) {
-				throw new BootTerminalState(sandboxId, sandbox.state);
+				throw new BoatBootFailureError(sandboxId, sandbox.state);
 			}
 			return null;
 		},
 	});
 }
 
-async function stopSandbox(
+async function waitForEgress(
+	client: BoatClient,
+	sandboxId: string,
+	options: BoatSpecOptions,
+	operation?: DriverOperationOptions,
+): Promise<void> {
+	const host = BOAT_EGRESS_PROBE_HOST;
+	const probe = `getent hosts ${host} >/dev/null 2>&1 && timeout 3 bash -c 'exec 3<>/dev/tcp/${host}/443'`;
+	await pollUntilReady({
+		provider: "boat",
+		deadlineMs: positiveInteger(options.egressTimeoutMs, BOAT_EGRESS_TIMEOUT_MS),
+		intervalMs: nonnegativeNumber(options.egressPollMs, BOAT_EGRESS_POLL_MS),
+		signal: operation?.signal,
+		poll: async () =>
+			(await execCommand(client, sandboxId, probe, operation)).exitCode === 0 ? true : null,
+	});
+}
+
+/**
+ * Delete the sandbox and every snapshot it accumulated, then prove it is gone. Idempotent: a
+ * repeated delete returns the same accepted operation and an unknown id is already absent.
+ */
+async function deleteSandbox(
 	client: BoatClient,
 	sandboxId: string,
 	options: BoatSpecOptions,
 	operation: DriverOperationOptions = {},
 ): Promise<void> {
 	const attempts = positiveInteger(options.cleanupAttempts, BOAT_CLEANUP_ATTEMPTS);
-	for (let attempt = 1; attempt <= attempts; attempt++) {
+	for (let attempt = 1; ; attempt++) {
 		try {
-			boatSandboxResponseSchema.assert(await client.stop({ sandboxId }, requestInit(operation)));
-			return;
+			const accepted = boatDeletionResponseSchema.assert(
+				await client.deleteSandbox(
+					{ sandboxId, xAsciiConfirmDelete: sandboxId },
+					requestInit(operation),
+				),
+			);
+			if (accepted.operation.targetId !== sandboxId) {
+				throw new Error(`boat deletion ${accepted.operation.id} targets another sandbox`);
+			}
+			break;
 		} catch (error) {
 			if (isBoatNotFound(error)) return;
-			if (boatHttpStatus(error) !== 409 || attempt === attempts) throw error;
+			if (!isBoatTransient(error) || attempt >= attempts) throw error;
 			await delay(
 				nonnegativeNumber(options.cleanupRetryMs, BOAT_CLEANUP_RETRY_MS),
 				operation.signal,
 			);
 		}
 	}
-}
-
-async function teardownConfirmed(
-	client: BoatClient,
-	sandboxId: string,
-	options?: DriverOperationOptions,
-): Promise<boolean> {
-	try {
-		return ABSENT_STATES.has((await getSandbox(client, sandboxId, options)).state);
-	} catch (error) {
-		return isBoatNotFound(error);
-	}
+	const deadlineMs = positiveInteger(options.deleteConfirmMs, BOAT_DELETE_CONFIRM_MS);
+	await pollUntilReady({
+		provider: "boat",
+		deadlineMs,
+		intervalMs: nonnegativeNumber(options.deletePollMs, BOAT_DELETE_POLL_MS),
+		signal: operation.signal,
+		poll: async () => {
+			try {
+				await getSandbox(client, sandboxId, operation);
+				return null;
+			} catch (error) {
+				if (isBoatNotFound(error)) return true;
+				throw error;
+			}
+		},
+	}).catch((error: unknown) => {
+		if (isDriverError(error) && error.code === "readiness-timeout") {
+			throw new Error(`boat sandbox ${sandboxId} still exists ${deadlineMs}ms after deletion`, {
+				cause: error,
+			});
+		}
+		throw error;
+	});
 }
 
 async function completeInventory(
@@ -333,15 +402,13 @@ async function completeInventory(
 	throw new Error("boat inventory exceeded its page limit");
 }
 
-async function liveSandboxesNamed(
+async function sandboxesNamed(
 	client: BoatClient,
 	name: string,
 	options: BoatSpecOptions,
 	operation?: DriverOperationOptions,
 ): Promise<BoatSandbox[]> {
-	return (await completeInventory(client, options, operation)).filter(
-		(row) => row.name === name && !ABSENT_STATES.has(row.state),
-	);
+	return (await completeInventory(client, options, operation)).filter((row) => row.name === name);
 }
 
 async function createWithIdempotency(
@@ -376,55 +443,36 @@ async function createWithIdempotency(
 	throw lastError;
 }
 
+/**
+ * Only the create call. Renaming, readiness, and egress run in the post-create hook so that every
+ * failure after boat returns an id tears down, and retains cleanup, by that id: create takes no
+ * name, so a sandbox whose rename never landed could not be found again by its recovery name.
+ */
 async function allocate(
 	client: BoatClient,
 	createOptions: BoatCreateOptions,
 	options: BoatSpecOptions,
 	operation: DriverOperationOptions,
-): Promise<BoatSandbox> {
-	let sandbox: BoatSandbox;
-	try {
-		sandbox = await createWithIdempotency(client, createOptions, options, operation);
-	} catch (createError) {
-		if (isBoatDefinitiveCreateRejection(createError)) throw createError;
-		try {
-			const [recovered, ...duplicates] = await liveSandboxesNamed(
-				client,
-				createOptions.name,
-				options,
-				operation,
-			);
-			if (recovered === undefined || duplicates.length > 0) throw createError;
-			sandbox = recovered;
-		} catch (lookupError) {
-			throw new BoatAmbiguousCreateError(createOptions.name, createError, lookupError);
-		}
-	}
+): Promise<BoatAllocation> {
+	const sandbox = await createWithIdempotency(client, createOptions, options, operation);
+	return { ...sandbox, recoveryName: createOptions.name };
+}
 
-	try {
-		const named = boatSandboxResponseSchema.assert(
-			await client.update(
-				{
-					sandboxId: sandbox.id,
-					updateSandboxRequest: { name: createOptions.name },
-				},
-				requestInit(operation),
-			),
-		).sandbox;
-		return await waitUntilReady(client, named.id, options, operation);
-	} catch (error) {
-		let stopped = false;
-		try {
-			await stopSandbox(client, sandbox.id, options, operation);
-			stopped = await teardownConfirmed(client, sandbox.id, operation);
-		} catch {
-			stopped = false;
-		}
-		if (error instanceof BootTerminalState) {
-			throw new BoatBootFailureError(error.sandboxId, error.state, stopped);
-		}
-		throw error;
-	}
+async function prepareAllocation(
+	client: BoatClient,
+	allocation: BoatAllocation,
+	options: BoatSpecOptions,
+	operation: DriverOperationOptions,
+): Promise<BoatSandbox> {
+	boatSandboxResponseSchema.assert(
+		await client.update(
+			{ sandboxId: allocation.id, updateSandboxRequest: { name: allocation.recoveryName } },
+			requestInit(operation),
+		),
+	);
+	const ready = await waitUntilReady(client, allocation.id, options, operation);
+	await waitForEgress(client, allocation.id, options, operation);
+	return ready;
 }
 
 async function execCommand(
@@ -538,9 +586,11 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 			try {
 				return await allocate(sdk(), createOptions, options, operation);
 			} catch (error) {
-				if (error instanceof BoatAmbiguousCreateError) unresolvedCreates.add(createOptions.name);
+				// Anything but a refusal may have allocated a sandbox that still carries boat's default
+				// name, so an empty lookup by recovery name can never prove it absent.
+				if (!isBoatDefinitiveCreateRejection(error)) unresolvedCreates.add(createOptions.name);
 				if (!(error instanceof ResponseError)) throw error;
-				throw new DriverError("create-failed", error.message, {
+				throw new DriverError("create-failed", `boat create ${await boatErrorDetail(error)}`, {
 					provider: "boat",
 					vendorHttpStatus: error.response.status,
 					cause: error,
@@ -551,7 +601,7 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 			sandboxId: native.id,
 			runCommand: (command, commandOptions) =>
 				execCommand(sdk(), native.id, command, commandOptions),
-			destroy: () => stopSandbox(sdk(), native.id, options),
+			destroy: () => deleteSandbox(sdk(), native.id, options),
 		}),
 	);
 	return computeSdkSpec(compute, {
@@ -582,18 +632,16 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 		},
 		lifecycle: {
 			destroy: (sandbox, ref, operation) =>
-				stopSandbox(sdk(), ref?.id ?? sandbox.getInstance().id, options, operation),
+				deleteSandbox(sdk(), ref?.id ?? sandbox.getInstance().id, options, operation),
 		},
 		createRecovery: {
 			absenceConfirmationMs: options.recoveryAbsenceConfirmationMs ?? 2_000,
 			maxAttempts: 4,
 			locator: (createOptions) => ({ kind: "name", value: createOptions.name }),
-			isDefinitive: (error) =>
-				isBoatDefinitiveCreateRejection(error) ||
-				(error instanceof BoatBootFailureError && error.teardownConfirmed),
+			isDefinitive: isBoatDefinitiveCreateRejection,
 			isRetryableCreate: isBoatRetryableCreate,
 			cleanup: async (_compute, locator, operation) => {
-				const matches = await liveSandboxesNamed(sdk(), locator.value, options, operation);
+				const matches = await sandboxesNamed(sdk(), locator.value, options, operation);
 				if (matches.length === 0) {
 					if (unresolvedCreates.has(locator.value)) {
 						throw new Error(
@@ -603,12 +651,7 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 					return { status: "absent" };
 				}
 				for (const match of matches) {
-					await stopSandbox(sdk(), match.id, options, operation);
-				}
-				for (const match of matches) {
-					if (!(await teardownConfirmed(sdk(), match.id, operation))) {
-						throw new Error(`boat sandbox ${match.id} has not confirmed teardown`);
-					}
+					await deleteSandbox(sdk(), match.id, options, operation);
 				}
 				unresolvedCreates.delete(locator.value);
 				return { status: "destroyed" };
@@ -620,8 +663,13 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 			launch: (sandbox, command, commandOptions) =>
 				launchCommand(sdk(), sandbox.getInstance().id, command, commandOptions),
 		},
-		prepareAndVerifyCreatedRequest: (_sandbox, native, request, operation) =>
-			verifyBoatAllocation(sdk(), native, request, operation),
+		prepareAndVerifyCreatedRequest: async (_sandbox, native, request, operation) =>
+			verifyBoatAllocation(
+				sdk(),
+				await prepareAllocation(sdk(), native, options, operation),
+				request,
+				operation,
+			),
 		hasWorkingFilesystem: false,
 		probes: {
 			observe: async (_compute, ref) => {
@@ -639,18 +687,19 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 				),
 		},
 		inventory: {
+			// Every owned row is a leftover to delete, stopped and errored ones included: deletion is
+			// the only teardown, so a row still listed under our prefix is data this benchmark left.
 			list: async (_compute, operation) => {
 				const owned: string[] = [];
 				let foreignCount = 0;
 				for (const row of await completeInventory(sdk(), options, operation)) {
-					if (ABSENT_STATES.has(row.state)) continue;
 					if (row.name.startsWith(`${BOAT_RECOVERY_NAME_PREFIX}-`)) owned.push(row.id);
-					else foreignCount += 1;
+					else if (!STOPPED_STATES.has(row.state)) foreignCount += 1;
 				}
 				return { owned, foreignCount };
 			},
 		},
-		destroyById: (_compute, ref, operation) => stopSandbox(sdk(), ref.id, options, operation),
+		destroyById: (_compute, ref, operation) => deleteSandbox(sdk(), ref.id, options, operation),
 	});
 }
 
