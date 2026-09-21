@@ -19,6 +19,7 @@ import type {
 import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
+import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import { type } from "arktype";
 import { BOAT_PROVENANCE } from "./provenance.ts";
 
@@ -28,8 +29,6 @@ export const BOAT_API_BASE = "https://boat.dev/api/v1";
 export const BOAT_SANDBOX_ID = type(/^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/);
 export const BOAT_RECOVERY_NAME_PREFIX = "sandbox-benchmarks";
 export const BOAT_MACHINE_TYPE = "default" as const;
-export const BOAT_DEFAULT_VCPUS = 4;
-export const BOAT_DEFAULT_MEMORY_GB = 8;
 export const BOAT_COMMAND_TIMEOUT_SECONDS = 600;
 export const BOAT_READY_POLL_MS = 2_000;
 export const BOAT_READY_TIMEOUT_MS = 8 * 60_000;
@@ -60,7 +59,7 @@ export const BOAT_REQUEST_COVERAGE = {
 	spec: {
 		vcpus: "mapped",
 		memoryGb: "mapped",
-		diskGb: { capacityAtLeast: 40 },
+		diskGb: { capacityAtLeast: TARGET_SPEC.diskGb },
 	},
 	artifact: "context",
 	deadlineMs: "harness",
@@ -564,11 +563,11 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 					unsupported("boat boots a vendor stock Ubuntu image and cannot take an artifact ref");
 				}
 				if (
-					request.spec.vcpus !== BOAT_DEFAULT_VCPUS ||
-					request.spec.memoryGb !== BOAT_DEFAULT_MEMORY_GB
+					request.spec.vcpus !== TARGET_SPEC.vcpus ||
+					request.spec.memoryGb !== TARGET_SPEC.memoryGb
 				) {
 					unsupported(
-						`boat's default SKU is ${BOAT_DEFAULT_VCPUS} vCPU / ${BOAT_DEFAULT_MEMORY_GB} GiB; ${request.spec.vcpus} vCPU / ${request.spec.memoryGb} GiB is a different size`,
+						`boat's default SKU is ${TARGET_SPEC.vcpus} vCPU / ${TARGET_SPEC.memoryGb} GiB; ${request.spec.vcpus} vCPU / ${request.spec.memoryGb} GiB is a different size`,
 					);
 				}
 				const name = `${BOAT_RECOVERY_NAME_PREFIX}-${randomUUID()}`;

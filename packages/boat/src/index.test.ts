@@ -3,12 +3,11 @@ import type { Command200Response, Sandbox, SandboxListResponse } from "@boatdev/
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
 import { sandboxRef } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
+import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import type { BoatClient, BoatSpecOptions } from "./index.ts";
 import boatDriver, {
 	BOAT_CREATE_BUDGET,
 	BOAT_CREATE_CEILING_MS,
-	BOAT_DEFAULT_MEMORY_GB,
-	BOAT_DEFAULT_VCPUS,
 	BOAT_EXECUTION,
 	BOAT_MACHINE_TYPE,
 	BOAT_PROVENANCE,
@@ -26,7 +25,7 @@ const context = {
 };
 
 const request: CreateRequest = {
-	spec: { vcpus: BOAT_DEFAULT_VCPUS, memoryGb: BOAT_DEFAULT_MEMORY_GB, diskGb: 40 },
+	spec: TARGET_SPEC,
 	artifact: { kind: "none" },
 	deadlineMs: 300_000,
 };

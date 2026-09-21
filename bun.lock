@@ -92,6 +92,7 @@
       "dependencies": {
         "@boatdev/sdk": "catalog:computesdk",
         "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -132,6 +133,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@sandbox-benchmarks/blaxel": "workspace:*",
+        "@sandbox-benchmarks/boat": "workspace:*",
         "@sandbox-benchmarks/daytona": "workspace:*",
         "@sandbox-benchmarks/driver": "workspace:*",
         "@sandbox-benchmarks/e2b": "workspace:*",
