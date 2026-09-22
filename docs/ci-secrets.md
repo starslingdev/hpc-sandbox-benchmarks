@@ -241,6 +241,12 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BOAT_API_KEY` | boat provider runtime and validation |
    <!-- <<< end generated: provider-secrets -->
 
+   For Boat, a key created with the `ci` preset is insufficient: that preset omits
+   `sandbox.delete`, which the provider needs during teardown. Create a scoped key
+   with the `ci` actions **plus `sandbox.delete`**, and store that key as
+   `BOAT_API_KEY`. A key that can create and run a sandbox but cannot delete it
+   makes the smoke test fail during cleanup and leaves an owned sandbox to recover.
+
    Vercel bootstrap credentials are workflow infrastructure, not provider runtime inputs, so they
    remain an explicit list:
 
