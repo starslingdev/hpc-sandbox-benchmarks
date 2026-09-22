@@ -67,7 +67,16 @@ if (import.meta.main) {
 			const coverage = batchCoverage(plan, join(root, "attempts"), attempts);
 			if (!coverage.complete)
 				console.error(
-					[`batch ${batchId} is incomplete`, ...describeCoverageShortfall(coverage)].join("\n"),
+					[
+						`batch ${batchId} is incomplete`,
+						...describeCoverageShortfall(coverage),
+						// The coverage lines say WHICH cells fell short; the attempt diagnostic (already
+						// secret-redacted) says WHY — e.g. an admission refusal for missing credentials.
+						...attempts
+							.filter((attempt) => attempt.diagnostic)
+							.slice(0, 20)
+							.map((attempt) => `diagnostic: ${attempt.cellId}: ${attempt.diagnostic}`),
+					].join("\n"),
 				);
 			await exitAfterSandboxCleanup(coverage.complete ? 0 : 1);
 		} else if (command === "collect") {
