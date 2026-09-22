@@ -57,14 +57,17 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
  * and, on a `build: full` dispatch, an hour of rebuild. Refusing in the plan turns that into a
  * fail-fast with an explanation.
  *
- * Keyed by provider so the reason travels with the refusal. Blaxel still boots a stock vendor image,
- * so its bake/promote publishes nothing even though generated wiring now allows an unscoped release
- * to validate it best-effort. Giving it a toolchain artifact is what would remove this entry.
+ * Keyed by provider so the reason travels with the refusal. Blaxel and boat still boot a stock vendor
+ * image, so their bake/promote publishes nothing even though generated wiring now allows an unscoped
+ * release to validate them best-effort. Giving one a toolchain artifact is what removes its entry.
  */
+const STOCK_IMAGE_UNSCOPABLE =
+	"it boots the vendor's stock image rather than the toolchain and has no artifact to publish; " +
+	"credentialed validation alone cannot produce a scoped backfill";
+
 export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, string>>> = {
-	blaxel:
-		"it boots the vendor's stock image rather than the toolchain and has no artifact to publish; " +
-		"credentialed validation alone cannot produce a scoped backfill",
+	blaxel: STOCK_IMAGE_UNSCOPABLE,
+	boat: STOCK_IMAGE_UNSCOPABLE,
 };
 
 const MIRRORED_CANDIDATE_REFS = {

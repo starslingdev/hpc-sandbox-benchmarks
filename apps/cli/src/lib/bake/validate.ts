@@ -67,7 +67,8 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 				createOptions: { templateId: refs.toolchainImageCandidate },
 			};
 		case "blaxel":
-			// Stock base image — no candidate artifact to point at.
+		case "boat":
+			// Stock vendor image — no candidate artifact to point at.
 			return { artifact: { kind: "none" }, createOptions: {} };
 		case "novita":
 			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.

@@ -65,6 +65,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 	it("pins the registered provider id set", () => {
 		expect(PROVIDERS.map((provider) => provider.id).sort()).toEqual([
 			"blaxel",
+			"boat",
 			"daytona-container",
 			"daytona-vm",
 			"e2b",
@@ -247,6 +248,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"daytona-container": 0.3312,
 			novita: 0.23328,
 			runloop: 0.6336,
+			boat: 0.036,
 		};
 		for (const [id, cost] of Object.entries(expected)) {
 			expect(hourlyCostAtTargetSpec(getProvider(id) as ProviderMeta)).toBeCloseTo(cost, 12);

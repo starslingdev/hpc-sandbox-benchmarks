@@ -86,6 +86,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/boat": {
+      "name": "@sandbox-benchmarks/boat",
+      "version": "0.0.0",
+      "dependencies": {
+        "@boatdev/sdk": "catalog:computesdk",
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/daytona": {
       "name": "@sandbox-benchmarks/daytona",
       "version": "0.0.0",
@@ -118,6 +133,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@sandbox-benchmarks/blaxel": "workspace:*",
+        "@sandbox-benchmarks/boat": "workspace:*",
         "@sandbox-benchmarks/daytona": "workspace:*",
         "@sandbox-benchmarks/driver": "workspace:*",
         "@sandbox-benchmarks/e2b": "workspace:*",
@@ -400,6 +416,7 @@
   "catalogs": {
     "computesdk": {
       "@blaxel/core": "0.3.5",
+      "@boatdev/sdk": "1.0.0",
       "@bufbuild/protobuf": "2.14.1",
       "@computesdk/blaxel": "1.6.16",
       "@computesdk/daytona": "1.7.31",
@@ -528,6 +545,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.16", "", { "os": "win32", "cpu": "x64" }, "sha512-Kp85jgoBHa05gix6UIRjfCDiUV3w/8VIdZ247VyyO2gEjaw12WEVhdIjlxp/AMzXxqxQwbxNTDVZ3Mwd2RG5rw=="],
 
     "@blaxel/core": ["@blaxel/core@0.3.5", "", { "dependencies": { "@hey-api/client-fetch": "^0.10.0", "@modelcontextprotocol/sdk": "^1.20.0", "archiver": "^7.0.1", "axios": "^1.9.0", "dockerfile-ast": "^0.7.1", "dotenv": "^16.5.0", "form-data": "^4.0.2", "jwt-decode": "^4.0.0", "toml": "^3.0.0", "uuid": "^11.1.0", "ws": "^8.18.2", "yaml": "^2.7.1", "zod": "^3.24.3" } }, "sha512-undBY+3HH8TWrBfYpd3OxshyEjulmPWi+Mrl0VQd2VopaRAkvYDLhwjJISOagZdhRGRUTskwjg2vGTPZQhfrnQ=="],
+
+    "@boatdev/sdk": ["@boatdev/sdk@1.0.0", "", {}, "sha512-ktYkXQYeu5SmXUWdsa2oKhf0IJEMcxmsO4sbKHvOcUCw3t2tNWPNeSZtuxaFBdbU01LTDJ10n8kEMw004Fzy1g=="],
 
     "@bufbuild/protobuf": ["@bufbuild/protobuf@2.14.1", "", {}, "sha512-agRJn3+EJDUe8AvxTx/LnHA/GErvLE62pSaSk7+MwFOtOv8eWBu/qCq2qoZjBjVZ3C2aiFJCveuSs17KMkYGOw=="],
 
@@ -938,6 +957,8 @@
     "@runloop/api-client": ["@runloop/api-client@1.28.0", "", { "dependencies": { "@types/node": "^18.11.18", "@types/node-fetch": "^2.6.4", "abort-controller": "^3.0.0", "agentkeepalive": "^4.2.1", "form-data-encoder": "1.7.2", "formdata-node": "^4.3.2", "node-fetch": "^2.6.7", "tar": "^7.5.2", "uuidv7": "^1.0.2", "zod": "^3.24.1" } }, "sha512-ZQVSbSutqknTjgRpsfiiI5WXSkx5KgQvWkUpZQwGMsHR+dPCyM6QQegbAYqQaKuhIxEwxsLkJrSTm2fJkXmunw=="],
 
     "@sandbox-benchmarks/blaxel": ["@sandbox-benchmarks/blaxel@workspace:packages/blaxel"],
+
+    "@sandbox-benchmarks/boat": ["@sandbox-benchmarks/boat@workspace:packages/boat"],
 
     "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
 

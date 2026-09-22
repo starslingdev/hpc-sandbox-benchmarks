@@ -29,6 +29,7 @@ const REQUIRED_INPUTS = {
 	vercel: ["VERCEL_OIDC_TOKEN"],
 	runcloud: ["RUN_CLOUD_API_KEY"],
 	tama: ["TAMA_TOKEN"],
+	boat: ["BOAT_API_KEY"],
 } as const satisfies Record<ProviderId, readonly string[]>;
 
 const ARTIFACT_KINDS = {
@@ -45,6 +46,7 @@ const ARTIFACT_KINDS = {
 	vercel: "mirror",
 	runcloud: "image",
 	tama: "image",
+	boat: "none",
 } as const satisfies Record<ProviderId, (typeof REGISTRY)[ProviderId]["artifact"]["kind"]>;
 
 const BAKED = {

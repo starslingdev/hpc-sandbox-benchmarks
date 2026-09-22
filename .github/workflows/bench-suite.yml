@@ -129,6 +129,8 @@ jobs:
           RUN_CLOUD_API_KEY: ${{ contains(fromJSON(inputs.providers), 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
           TAMA_TOKEN: ${{ contains(fromJSON(inputs.providers), 'tama') && secrets.TAMA_TOKEN || '' }}
           TAMA_CLI: ${{ contains(fromJSON(inputs.providers), 'tama') && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          BOAT_API_KEY: ${{ contains(fromJSON(inputs.providers), 'boat') && secrets.BOAT_API_KEY || '' }}
+          BOAT_BASE_URL: ${{ contains(fromJSON(inputs.providers), 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
           # <<< end generated: provider-inputs-bench
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}

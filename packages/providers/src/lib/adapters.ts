@@ -30,6 +30,7 @@ export const MIGRATED_DRIVER_IDS = [
 	"runloop",
 	"runcloud",
 	"namespace",
+	"boat",
 ] as const satisfies readonly ProviderId[];
 
 /** A schema id served by a registered DriverModule. Derived from the list, so the two cannot drift. */

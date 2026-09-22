@@ -38,7 +38,8 @@
         "@namespacelabs/sdk": "1.0.0",
         "@connectrpc/connect": "2.2.0",
         "@connectrpc/connect-node": "2.2.0",
-        "@bufbuild/protobuf": "2.14.1"
+        "@bufbuild/protobuf": "2.14.1",
+        "@boatdev/sdk": "1.0.0"
       },
       "xml": {
         "@nodable/compact-builder": "1.0.9",

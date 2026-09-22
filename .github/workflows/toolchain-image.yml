@@ -522,6 +522,8 @@ jobs:
           RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
           TAMA_TOKEN: ${{ matrix.provider == 'tama' && secrets.TAMA_TOKEN || '' }}
           TAMA_CLI: ${{ matrix.provider == 'tama' && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          BOAT_API_KEY: ${{ matrix.provider == 'boat' && secrets.BOAT_API_KEY || '' }}
+          BOAT_BASE_URL: ${{ matrix.provider == 'boat' && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
           # <<< end generated: provider-inputs-bake
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
@@ -708,6 +710,8 @@ jobs:
           RUN_CLOUD_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
           TAMA_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama') && secrets.TAMA_TOKEN || '' }}
           TAMA_CLI: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama') && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          BOAT_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && secrets.BOAT_API_KEY || '' }}
+          BOAT_BASE_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
           # <<< end generated: provider-inputs-promote
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |

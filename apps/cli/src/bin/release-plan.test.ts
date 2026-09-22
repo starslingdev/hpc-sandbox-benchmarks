@@ -77,6 +77,7 @@ describe("buildReleasePlan matrix", () => {
 			"vercel",
 			"runcloud",
 			"tama",
+			"boat",
 		]);
 	});
 
@@ -108,6 +109,7 @@ describe("buildReleasePlan matrix", () => {
 	// an artifact a scoped backfill can ship. The plan refuses that impossible request before approval.
 	test("refuses a scope naming a provider the release lane cannot ship", () => {
 		expect(() => buildReleasePlan({ ...base, providers: "blaxel" })).toThrow(/blaxel/);
+		expect(() => buildReleasePlan({ ...base, providers: "boat" })).toThrow(/boat/);
 		expect(() => buildReleasePlan({ ...base, providers: "e2b,blaxel" })).toThrow(
 			/BL_API_KEY|cannot ship/,
 		);
@@ -126,9 +128,11 @@ describe("buildReleasePlan matrix", () => {
 		const plan = buildReleasePlan(base);
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("blaxel");
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("runloop");
+		expect(plan.matrix.include.map((c) => c.provider)).toContain("boat");
 		expect(plan.required).not.toContain("blaxel");
+		expect(plan.required).not.toContain("boat");
 		expect(plan.required).not.toContain("runloop");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel"]);
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel", "boat"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the
