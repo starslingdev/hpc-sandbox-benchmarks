@@ -37,7 +37,7 @@ export const BOAT_COMMAND_TIMEOUT_SECONDS = 600;
 export const BOAT_READY_POLL_MS = 2_000;
 export const BOAT_READY_TIMEOUT_MS = 8 * 60_000;
 export const BOAT_CONTROL_TIMEOUT_MS = 30_000;
-export const BOAT_CLEANUP_ATTEMPTS = 4;
+export const BOAT_CLEANUP_ATTEMPTS = 6;
 export const BOAT_CLEANUP_RETRY_MS = 5_000;
 export const BOAT_DELETE_CONFIRM_MS = 60_000;
 export const BOAT_DELETE_POLL_MS = 1_000;
@@ -232,7 +232,23 @@ export function isBoatRetryableCreate(error: unknown): boolean {
 
 function isBoatTransient(error: unknown): boolean {
 	const status = boatHttpStatus(error);
-	return status === 408 || status === 429 || (status !== undefined && status >= 500);
+	// Deletion can conflict with a current sandbox operation, including an automatic snapshot.
+	return (
+		status === 408 || status === 409 || status === 429 || (status !== undefined && status >= 500)
+	);
+}
+
+async function deletionRefusalDiagnostic(error: ResponseError): Promise<string> {
+	const status = error.response.status;
+	try {
+		const body = boatErrorBodySchema(await error.response.clone().text());
+		if (!(body instanceof type.errors) && body.code && /^[a-z0-9_]{1,80}$/i.test(body.code)) {
+			return `boat delete HTTP ${status} ${body.code}; removal unconfirmed`;
+		}
+	} catch {
+		// Status remains useful when the response body is unreadable.
+	}
+	return `boat delete HTTP ${status}; removal unconfirmed`;
 }
 
 /**
@@ -332,7 +348,10 @@ async function deleteSandbox(
 			break;
 		} catch (error) {
 			if (isBoatNotFound(error)) return;
-			if (!isBoatTransient(error) || attempt >= attempts) throw error;
+			if (!isBoatTransient(error) || attempt >= attempts) {
+				if (error instanceof ResponseError) console.error(await deletionRefusalDiagnostic(error));
+				throw error;
+			}
 			await delay(
 				nonnegativeNumber(options.cleanupRetryMs, BOAT_CLEANUP_RETRY_MS),
 				operation.signal,
