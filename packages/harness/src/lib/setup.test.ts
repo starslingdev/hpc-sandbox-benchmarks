@@ -39,7 +39,6 @@ describe("setupSteps", () => {
 			"libgtk-3-0",
 			"libx11-6",
 			"fonts-liberation",
-			"libasound2",
 			"libatk-bridge2.0-0",
 			"libcairo2",
 			"libgbm1",
@@ -50,6 +49,17 @@ describe("setupSteps", () => {
 		]) {
 			expect(ptsStep?.script).toContain(chromeDep);
 		}
+	});
+
+	it("resolves ALSA to libasound2t64 where Ubuntu 24.04 dropped libasound2's install candidate", () => {
+		const ptsStep = setupSteps(SUITES["cpu-node"]).find(
+			(step) => step.label === "ensure PTS build deps + fresh apt index",
+		);
+		expect(ptsStep?.script).toContain("--dry-run libasound2 ");
+		expect(ptsStep?.script).toContain("echo libasound2t64");
+		expect(ptsStep?.script).toContain('"$ALSA_PKG"');
+		const install = ptsStep?.script.split("$SUDO apt-get install").at(-1);
+		expect(install).not.toMatch(/\blibasound2\b(?!t64)/);
 	});
 
 	it("does not install repository developer tools inside benchmark sandboxes", () => {

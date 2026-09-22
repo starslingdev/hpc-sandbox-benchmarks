@@ -87,10 +87,11 @@ describe("PTS apt dep alignment", () => {
 
 	// The by-construction claim holds only while setup.ts actually interpolates the constant — a
 	// re-inlined literal would pass the subset check against the constant while drifting in the
-	// sandbox. Cheap text tripwire, same spirit as the shell extraction above.
+	// sandbox. Cheap text tripwire, same spirit as the shell extraction above. A derivation of the
+	// constant (e.g. the per-distro libasound2 rename) still interpolates it, so it counts.
 	it("keeps the runtime refresh wired to the canonical PTS_APT_DEPS constant", () => {
 		const text = readFileSync(join(root, "packages/harness/src/lib/setup.ts"), "utf8");
-		expect(text).toContain(`\${PTS_APT_DEPS}`);
+		expect(text).toMatch(/\$\{PTS_APT_DEPS(?:\}|\.)/);
 	});
 
 	// 00-apt.sh used to carry its own literal package list and was gated as a third text source. It is
