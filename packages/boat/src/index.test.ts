@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type { Command200Response, Sandbox, SandboxListResponse } from "@boatdev/sdk";
 import { ResponseError } from "@boatdev/sdk";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
@@ -375,6 +375,41 @@ describe("boat module policy", () => {
 		expect(polls).toBe(3);
 		await boat.destroyById?.(ref);
 		expect(deleted).toEqual(["bx_23456789", "bx_23456789"]);
+	});
+
+	it("retries a temporary delete conflict before confirming absence", async () => {
+		let deletes = 0;
+		const client = nativeClient({
+			deleteSandbox: async () => {
+				deletes++;
+				if (deletes < 3) throw vendorError(409, "snapshot_in_progress");
+				return deletion("bx_23456789");
+			},
+		});
+		await driver(client).destroyById?.(sandboxRef("boat", "bx_23456789"));
+		expect(deletes).toBe(3);
+	});
+
+	it("reports the vendor refusal when deletion cannot be accepted", async () => {
+		const diagnostic = spyOn(console, "error").mockImplementation(() => undefined);
+		let deletes = 0;
+		const client = nativeClient({
+			deleteSandbox: async () => {
+				deletes++;
+				throw vendorError(403, "delete_denied", "account may not delete this sandbox");
+			},
+		});
+		try {
+			await expect(
+				driver(client).destroyById?.(sandboxRef("boat", "bx_23456789")),
+			).rejects.toMatchObject({ code: "destroy-failed" });
+			expect(deletes).toBe(1);
+			expect(diagnostic).toHaveBeenCalledWith(
+				"boat delete HTTP 403 delete_denied; removal unconfirmed",
+			);
+		} finally {
+			diagnostic.mockRestore();
+		}
 	});
 
 	it("launches durable work through detached command acceptance", async () => {
