@@ -891,9 +891,7 @@ abstract class StepExecution<Result extends { stdout?: string; stderr?: string }
 		try {
 			observationBudget(deadline);
 			const sizeText = await withTimeout(
-				this.execute(
-					`bash -c ${shellQuote(`wc -c < ${logPath} 2>/dev/null | tr -d '[:space:]'`)}`,
-				),
+				this.execute(`bash -c ${shellQuote(`wc -c < ${logPath} 2>/dev/null | tr -d '[:space:]'`)}`),
 				observationBudget(deadline),
 				"log size probe",
 			)

@@ -554,9 +554,7 @@ describe("StepRunner.runDetached", () => {
 		expect(
 			commands.some(
 				(c) =>
-					/\bdd\b/.test(c.command) &&
-					c.command.includes("base64") &&
-					c.command.includes(".log"),
+					/\bdd\b/.test(c.command) && c.command.includes("base64") && c.command.includes(".log"),
 			),
 		).toBe(true);
 		expect(commands.some((c) => /\bcat\b/.test(c.command) && c.command.includes(".log"))).toBe(
@@ -590,9 +588,7 @@ describe("StepRunner.runDetached", () => {
 		expect(
 			commands.some(
 				(c) =>
-					/\bdd\b/.test(c.command) &&
-					c.command.includes("base64") &&
-					c.command.includes(".log"),
+					/\bdd\b/.test(c.command) && c.command.includes("base64") && c.command.includes(".log"),
 			),
 		).toBe(true);
 	});
