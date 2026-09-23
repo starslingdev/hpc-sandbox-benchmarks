@@ -2,13 +2,14 @@ import { describe, expect, it, spyOn } from "bun:test";
 import type { Command200Response, Sandbox, SandboxListResponse } from "@boatdev/sdk";
 import { ResponseError } from "@boatdev/sdk";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
-import { sandboxRef } from "@sandbox-benchmarks/driver";
+import { isRetryableDriverCreate, sandboxRef } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import type { BoatClient, BoatSpecOptions } from "./index.ts";
 import boatDriver, {
 	BOAT_CREATE_BUDGET,
 	BOAT_CREATE_CEILING_MS,
+	BOAT_CREATE_RATE_LIMIT_RETRY_MS,
 	BOAT_EXECUTION,
 	BOAT_MACHINE_TYPE,
 	BOAT_PROVENANCE,
@@ -160,6 +161,7 @@ function fast(client: BoatClient, seams: BoatSpecOptions = {}): BoatSpecOptions 
 		client,
 		readyPollMs: 0,
 		createRetryMs: 0,
+		createDelay: async () => {},
 		cleanupRetryMs: 0,
 		egressPollMs: 0,
 		deletePollMs: 0,
@@ -185,6 +187,7 @@ describe("boat module policy", () => {
 		expect(boatDriver.execution).toEqual(BOAT_EXECUTION);
 		expect(boatDriver.createBudget).toEqual(BOAT_CREATE_BUDGET);
 		expect(BOAT_CREATE_CEILING_MS).toBeGreaterThan(8 * 60_000);
+		expect(BOAT_CREATE_RATE_LIMIT_RETRY_MS).toBe(60_000);
 		expect(BOAT_SANDBOX_ID.allows("bx_23456789")).toBe(true);
 		expect(BOAT_SANDBOX_ID.allows("i2f3k4abc")).toBe(false);
 	});
@@ -349,6 +352,58 @@ describe("boat module policy", () => {
 			code: "create-failed",
 			message: expect.stringContaining("HTTP 400 trial_auto_stop_required"),
 		});
+	});
+
+	it("retries a minute-limit refusal with the same idempotency key", async () => {
+		const keys: string[] = [];
+		const retryDelays: number[] = [];
+		let cleanupCalls = 0;
+		const client = nativeClient({
+			create: async (input) => {
+				if (input?.idempotencyKey === undefined) throw new Error("missing idempotency key");
+				keys.push(input.idempotencyKey);
+				if (keys.length === 1) {
+					throw vendorError(429, "rate_limited", "30 sandbox starts per minute");
+				}
+				return nativeClient().create(input);
+			},
+			sandboxes: async () => {
+				cleanupCalls++;
+				throw new Error("a refused create needs no inventory cleanup");
+			},
+		});
+		const session = await driver(client, {
+			createDelay: async (ms) => {
+				retryDelays.push(ms);
+			},
+		}).create(request);
+		expect(session.sandboxRef).toEqual(sandboxRef("boat", "bx_23456789"));
+		expect(keys).toHaveLength(2);
+		expect(keys[0]).toBe(keys[1]);
+		expect(retryDelays).toEqual([BOAT_CREATE_RATE_LIMIT_RETRY_MS]);
+		expect(cleanupCalls).toBe(0);
+	});
+
+	it("keeps an exhausted minute-limit refusal retryable without inventory cleanup", async () => {
+		let createCalls = 0;
+		let cleanupCalls = 0;
+		const client = nativeClient({
+			create: async () => {
+				createCalls++;
+				throw vendorError(429, "rate_limited", "30 sandbox starts per minute");
+			},
+			sandboxes: async () => {
+				cleanupCalls++;
+				throw new Error("a refused create needs no inventory cleanup");
+			},
+		});
+		const error = await driver(client, { createAttempts: 2 })
+			.create(request)
+			.catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "create-failed", vendorHttpStatus: 429 });
+		expect(isRetryableDriverCreate(error)).toBe(true);
+		expect(createCalls).toBe(2);
+		expect(cleanupCalls).toBe(0);
 	});
 
 	it("destroys idempotently and only after the sandbox is gone", async () => {

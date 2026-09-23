@@ -48,6 +48,9 @@ export const BOAT_EGRESS_TIMEOUT_MS = 90_000;
 export const BOAT_EGRESS_POLL_MS = 1_000;
 export const BOAT_CREATE_ATTEMPTS = 5;
 export const BOAT_CREATE_RETRY_MS = 2_000;
+// Boat counts create, fork, and resume against one account-wide starts-per-minute limit.
+// A 429 needs a fresh minute window; the ordinary 2s transient retry is too soon.
+export const BOAT_CREATE_RATE_LIMIT_RETRY_MS = 60_000;
 export const BOAT_INVENTORY_PAGE_SIZE = 100;
 export const BOAT_INVENTORY_MAX_PAGES = 1_000;
 export const BOAT_INVENTORY_TIMEOUT_MS = 5 * 60_000;
@@ -55,7 +58,7 @@ export const BOAT_READINESS = { startup: "create-returns-ready" } as const;
 export const BOAT_EXECUTION = { syncCapMs: 60_000, durable: "native-launch" } as const;
 export const BOAT_CREATE_CEILING_MS =
 	BOAT_CREATE_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +
-	(BOAT_CREATE_ATTEMPTS - 1) * BOAT_CREATE_RETRY_MS +
+	(BOAT_CREATE_ATTEMPTS - 1) * Math.max(BOAT_CREATE_RETRY_MS, BOAT_CREATE_RATE_LIMIT_RETRY_MS) +
 	BOAT_CONTROL_TIMEOUT_MS +
 	BOAT_READY_TIMEOUT_MS +
 	BOAT_READY_POLL_MS +
@@ -155,6 +158,7 @@ export interface BoatSpecOptions {
 	readonly cleanupRetryMs?: number;
 	readonly createAttempts?: number;
 	readonly createRetryMs?: number;
+	readonly createDelay?: (ms: number, signal?: AbortSignal) => Promise<void>;
 	readonly recoveryAbsenceConfirmationMs?: number;
 	readonly inventoryTimeoutMs?: number;
 }
@@ -455,8 +459,17 @@ async function createWithIdempotency(
 			).sandbox;
 		} catch (error) {
 			lastError = error;
-			if (isBoatDefinitiveCreateRejection(error) || attempt === attempts) throw error;
-			await delay(nonnegativeNumber(options.createRetryMs, BOAT_CREATE_RETRY_MS), operation.signal);
+			const rateLimited = isBoatRetryableCreate(error);
+			// A 429 is a definitive refusal (nothing to reconcile), but can succeed next minute.
+			if (attempt === attempts || (isBoatDefinitiveCreateRejection(error) && !rateLimited)) {
+				throw error;
+			}
+			await (options.createDelay ?? delay)(
+				rateLimited
+					? BOAT_CREATE_RATE_LIMIT_RETRY_MS
+					: nonnegativeNumber(options.createRetryMs, BOAT_CREATE_RETRY_MS),
+				operation.signal,
+			);
 		}
 	}
 	throw lastError;
