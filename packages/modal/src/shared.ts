@@ -94,6 +94,12 @@ export const MODAL_COST_SDK_PROVENANCE =
 	MODAL_NATIVE_PROVENANCE satisfies ProviderCostEvidenceCapability["sdk"];
 export const MODAL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
+/**
+ * Waited teardown must fit under the harness destroy ceiling (60s) without racing it.
+ * GHA run 35799078413 modal-gvisor-network-r1 aborted terminate({wait:true}) at the 5s
+ * control budget while measurement had already completed.
+ */
+export const MODAL_DESTROY_TIMEOUT_MS = 55_000;
 /** Enumerating an account is a multi-page loop, not one bounded RPC; it gets its own budget. */
 export const MODAL_INVENTORY_TIMEOUT_MS = 60_000;
 export const MODAL_RECOVERY_CONFIRMATION_MS = 2_000;
@@ -145,11 +151,25 @@ function isModalNotFound(caught: unknown): boolean {
 	}
 }
 
-/** Native gRPC capacity refusal; transport failures and vendor prose stay terminal. */
+/** Exact message the control runner throws when its outer budget elapses. */
+export function modalControlTimeoutMessage(timeoutMs: number): string {
+	return `Modal control operation exceeded ${timeoutMs}ms`;
+}
+
+function isModalControlTimeout(link: unknown): boolean {
+	return link instanceof Error && /^Modal control operation exceeded \d+ms$/.test(link.message);
+}
+
+/**
+ * Native gRPC capacity refusal, or our own control-budget abort after a create path that left no
+ * owned allocation (or whose rollback already destroyed it). Vendor prose stays terminal.
+ */
 export function isModalRetryableCreate(error: unknown): boolean {
 	return matchesAnyCause(
 		error,
-		(link) => link instanceof ClientError && link.code === Status.RESOURCE_EXHAUSTED,
+		(link) =>
+			(link instanceof ClientError && link.code === Status.RESOURCE_EXHAUSTED) ||
+			isModalControlTimeout(link),
 	);
 }
 
@@ -252,7 +272,7 @@ export function createModalControlRunner<Control>(
 			const forwardAbort = () => abort(options.signal?.reason);
 			options.signal?.addEventListener("abort", forwardAbort, { once: true });
 			const timer = setTimeout(
-				() => abort(new Error(`Modal control operation exceeded ${timeoutMs}ms`)),
+				() => abort(new Error(modalControlTimeoutMessage(timeoutMs))),
 				timeoutMs,
 			);
 			try {
@@ -704,23 +724,39 @@ export async function verifyModalDiskCapacity(
 	const requestedDiskGb = request.spec.diskGb;
 	if (requestedDiskGb === undefined) return { status: "honored" };
 	let attached: ModalControlSandbox | undefined;
-	const { stdout, stderr, exitCode } = await runner.run(
-		options,
-		async (control) => {
-			attached = await control.sandboxes.fromId(ref.id);
-			try {
-				const process = await attached.exec(["sh", "-c", "df -Pk / | awk 'NR==2 {print $2}'"], {
+	let process: ModalTextProcess;
+	try {
+		// Bound attachment and exec-start only, matching execModalCommand: guest df wait must not
+		// compete with the short control budget that protects multi-RPC loops like terminate(wait).
+		process = await runner.run(
+			options,
+			async (control) => {
+				attached = await control.sandboxes.fromId(ref.id);
+				return attached.exec(["sh", "-c", "df -Pk / | awk 'NR==2 {print $2}'"], {
 					stdout: "pipe",
 					stderr: "pipe",
 					timeoutMs: MODAL_CONTROL_TIMEOUT_MS,
 				});
-				return await modalProcessResult(process, () => attached?.detach());
-			} finally {
-				attached.detach();
-			}
-		},
-		() => attached?.detach(),
-	);
+			},
+			() => attached?.detach(),
+		);
+	} catch (caught) {
+		try {
+			attached?.detach();
+		} catch {
+			// Local transport close is best effort; the probe-start failure remains primary.
+		}
+		throw caught;
+	}
+	let stdout: string;
+	let stderr: string;
+	let exitCode: number;
+	try {
+		({ stdout, stderr, exitCode } = await modalProcessResult(process, () => attached?.detach()));
+	} finally {
+		attached?.detach();
+	}
+	options.signal?.throwIfAborted();
 	if (exitCode !== 0) {
 		throw new Error(`Modal disk capacity probe exited ${exitCode}: ${stderr}`);
 	}
@@ -753,7 +789,9 @@ function modalSpec<P extends ModalProviderId>(
 			}),
 		);
 	const runner = createModalControlRunner(control);
+	const destroyRunner = createModalControlRunner(control, MODAL_DESTROY_TIMEOUT_MS);
 	const inventoryRunner = createModalControlRunner(control, MODAL_INVENTORY_TIMEOUT_MS);
+	const backend = variant === "gvisor" ? "v2" : "v1";
 	return computeSdkSpec(
 		nativeModalCompute(variant, {
 			tokenId: env.MODAL_TOKEN_ID,
@@ -768,15 +806,15 @@ function modalSpec<P extends ModalProviderId>(
 				launch: (sandbox, command, options, ref) =>
 					launchModalCommand(runner, sandbox, command, ref, options),
 			},
-			lifecycle: modalLifecycle(variant === "gvisor" ? "v2" : "v1", runner),
-			createRecovery: modalCreateRecovery(variant === "gvisor" ? "v2" : "v1", runner),
+			lifecycle: modalLifecycle(backend, destroyRunner),
+			createRecovery: modalCreateRecovery(backend, destroyRunner),
 			prepareAndVerifyCreatedRequest: (sandbox, _native, request, options, ref) =>
 				verifyModalDiskCapacity(runner, sandbox, request, options, ref),
 			// Both variants use the kit's direct-exec filesystem fallback.
 			hasWorkingFilesystem: false,
 			probes: modalProbes(runner),
 			inventory: modalInventory(variant, inventoryRunner),
-			destroyById: modalDestroyById(runner),
+			destroyById: modalDestroyById(destroyRunner),
 		},
 	);
 }

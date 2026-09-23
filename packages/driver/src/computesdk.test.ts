@@ -486,8 +486,8 @@ describe("computeSdkDriver", () => {
 		expect(createCalls).toBe(0);
 	});
 
-	test("omits post-create hook diagnostics and still tears the accepted handle down", async () => {
-		const secret = "post-allocation-callback-secret";
+	test("redacts credentials from post-create hook diagnostics and still tears the accepted handle down", async () => {
+		const secret = "test-key";
 		let destroys = 0;
 		const { compute } = fakeCompute({
 			...baseSandbox,
@@ -506,9 +506,65 @@ describe("computeSdkDriver", () => {
 			.create(request)
 			.catch((caught: unknown) => caught)) as DriverError;
 		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error.message).toContain(
+			"computesdk created-request preparation and verification failed: verification [REDACTED]",
+		);
 		expect(error.message).not.toContain(secret);
+		expect(String(error.cause)).toContain("verification [REDACTED]");
 		expect(String(error.cause)).not.toContain(secret);
 		expect(destroys).toBe(1);
+	});
+
+	test("marks a classified transient prepare failure retryable after successful rollback", async () => {
+		let destroys = 0;
+		const timeout = new Error("Modal control operation exceeded 5000ms");
+		const { compute } = fakeCompute({
+			...baseSandbox,
+			destroy: async () => {
+				destroys += 1;
+			},
+		});
+		const error = (await bridge(compute, {
+			prepareAndVerifyCreatedRequest: async () => {
+				throw timeout;
+			},
+			createRecovery: {
+				absenceConfirmationMs: 5,
+				maxAttempts: 2,
+				locator: () => ({ kind: "name", value: "benchmark-00000000-0000-4000-8000-000000000001" }),
+				cleanup: async () => ({ status: "destroyed" }),
+				isRetryableCreate: (caught) =>
+					caught instanceof Error &&
+					(/Modal control operation exceeded \d+ms/.test(caught.message) ||
+						(caught.cause instanceof Error &&
+							/Modal control operation exceeded \d+ms/.test(caught.cause.message))),
+			},
+		})
+			.create(request)
+			.catch((caught: unknown) => caught)) as DriverError;
+		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
+		expect(error).not.toBeInstanceOf(FailedCreateCleanupError);
+		expect(error.message).toContain("Modal control operation exceeded 5000ms");
+		expect(isRetryableDriverCreate(error)).toBe(true);
+		expect(destroys).toBe(1);
+	});
+
+	test("surfaces a redacted lifecycle destroy diagnostic instead of an opaque callback failure", async () => {
+		const secret = "test-key";
+		const { compute } = fakeCompute(baseSandbox);
+		const session = await bridge(compute, {
+			lifecycle: {
+				destroy: async () => {
+					throw new Error(`terminate wait failed: ${secret}`);
+				},
+			},
+		}).create(request);
+		const error = await session.destroy().catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "destroy-failed", provider: "e2b" });
+		expect((error as Error).message).toContain(
+			"computesdk lifecycle destroy failed: terminate wait failed: [REDACTED]",
+		);
+		expect((error as Error).message).not.toContain(secret);
 	});
 
 	test("rolls back when the caller aborts during an uncancellable post-create hook", async () => {

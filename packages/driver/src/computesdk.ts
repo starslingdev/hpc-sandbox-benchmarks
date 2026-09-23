@@ -476,6 +476,35 @@ async function invokeComputeSdkProviderCallbackAsync<T>(
 	}
 }
 
+/**
+ * Lifecycle callbacks that already sit behind a known sensitive-value set may surface a redacted
+ * diagnostic. Other provider callbacks stay opaque because they can throw untrusted credential
+ * shapes the registry never listed.
+ */
+async function invokeComputeSdkRedactedCallbackAsync<T>(
+	provider: ProviderId,
+	operation: string,
+	callback: () => Promise<T>,
+	options: {
+		readonly code: Extract<DriverErrorCode, "create-failed" | "destroy-failed">;
+		readonly sensitiveValues: readonly string[];
+		readonly ref?: SandboxRef;
+	},
+): Promise<T> {
+	try {
+		return await callback();
+	} catch (caught) {
+		throw wrapperFailure(
+			options.code,
+			provider,
+			operation,
+			caught,
+			options.ref,
+			options.sensitiveValues,
+		);
+	}
+}
+
 function runtimeNumberLabel(value: unknown): string {
 	return typeof value === "number" ? `${value}` : "a non-number value";
 }
@@ -715,11 +744,11 @@ async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends Compute
 	sensitiveValues: readonly string[],
 	ref: SandboxRef,
 ): Promise<void> {
-	const result: unknown = await invokeComputeSdkProviderCallbackAsync(
+	const result: unknown = await invokeComputeSdkRedactedCallbackAsync(
 		provider,
 		"created-request preparation and verification",
 		() => prepareAndVerify(sandbox, native, request, operationOptions ?? {}, ref),
-		{ code: "create-failed", ref },
+		{ code: "create-failed", ref, sensitiveValues },
 	);
 	if (!isNonArrayObject(result)) {
 		throw vendorContractFailure(
@@ -1001,11 +1030,15 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 		recoveryLocator?: ComputeSdkRecoveryLocator,
 	): Promise<unknown> => {
 		if (lifecycle === undefined) return sandbox.destroy();
-		return invokeComputeSdkProviderCallbackAsync(
+		return invokeComputeSdkRedactedCallbackAsync(
 			provider,
 			"lifecycle destroy",
 			() => lifecycle.destroy(sandbox, ref, operationOptions, recoveryLocator),
-			{ code: "destroy-failed", ...(ref === undefined ? {} : { ref }) },
+			{
+				code: "destroy-failed",
+				...(ref === undefined ? {} : { ref }),
+				sensitiveValues: ref === undefined ? sensitiveValuesDefault : sensitiveForRef(ref),
+			},
 		);
 	};
 	return {
@@ -1207,6 +1240,11 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 								: { kind: "id", value: parsedId },
 						cleanup: retryCleanup,
 					});
+				}
+				// Rollback removed the accepted handle. Transient create-path failures are safe to
+				// retry once ownership is gone; permanent shape refusals stay terminal.
+				if (classifiesCreateRejection(provider, createRecovery, "isRetryableCreate", primary)) {
+					markRetryableDriverCreate(primary);
 				}
 				throw primary;
 			}
