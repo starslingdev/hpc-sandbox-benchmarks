@@ -20,7 +20,7 @@ import {
 	writeProviderCostEvidence,
 } from "./collect.ts";
 import type { SandboxHandle } from "./execute.ts";
-import { MIN, StepRunner } from "./execute.ts";
+import { EXEC_LOG_READ_CHUNK_BYTES, MIN, StepRunner } from "./execute.ts";
 
 const work = mkdtempSync(join(tmpdir(), "harness-collect-"));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -32,10 +32,12 @@ const UNCAPPED: ProviderTransport = { streaming: false, syncCapMs: null, detache
 // The LogReadbackError-retry test needs the real detached path (log-file read-back is where the
 // transport failure lives), so it runs capped with an fs-transport fake.
 const CAPPED: ProviderTransport = { streaming: false, syncCapMs: MIN, detachedPoll: true };
+/** Boat's observed silent exec stdout ceiling — tail keep of 512 KiB (run 35799078413). */
+const VENDOR_EXEC_STDOUT_CAP_BYTES = 512 * 1024;
 
 // Build the exact stdout the in-sandbox collect command emits: markers around a base64'd tar of a
 // benchmark-results/ directory holding the given files (name → contents).
-function collectPayload(files: Record<string, string>): string {
+function collectPayload(files: Record<string, string | Uint8Array>): string {
 	const src = mkdtempSync(join(tmpdir(), "harness-src-"));
 	mkdirSync(join(src, "benchmark-results"), { recursive: true });
 	for (const [name, contents] of Object.entries(files)) {
@@ -270,6 +272,58 @@ describe("collectResults", () => {
 		await expect(
 			collectResults(new StepRunner(noMarkers, UNCAPPED), join(work, "x")),
 		).rejects.toThrow(/markers.*truncated or malformed/s);
+	});
+
+	it("recovers BEGIN/END markers when detached exec readback would tail-truncate the log", async () => {
+		// Boat synthetic run 35799078413: disk/network PTS finished, but collect's single-cat readback
+		// kept only the last 524288 chars (BEGIN=false END=true). The log on disk was complete — chunked
+		// dd readback must reassemble it so collect extracts rather than gap the suite.
+		const entropy = crypto.getRandomValues(new Uint8Array(700_000));
+		const payload = collectPayload({
+			"pts_disk.xml": entropy,
+		});
+		expect(payload.length).toBeGreaterThan(VENDOR_EXEC_STDOUT_CAP_BYTES);
+		expect(payload.length).toBeGreaterThan(EXEC_LOG_READ_CHUNK_BYTES);
+		const tailed = payload.slice(-VENDOR_EXEC_STDOUT_CAP_BYTES);
+		expect(tailed.includes("__BENCH_RESULTS_TGZ_BEGIN__")).toBe(false);
+		expect(tailed.includes("__BENCH_RESULTS_TGZ_END__")).toBe(true);
+
+		let probes = 0;
+		const sandbox: SandboxHandle = {
+			runCommand: async (command) => {
+				if (command.includes("nohup")) return { exitCode: 0, stdout: "launched" };
+				if (command.includes(".done")) {
+					const identity = /bench-[a-f0-9-]+/.exec(command)?.[0] ?? "bench-missing";
+					const ready = probes++ >= 0;
+					return {
+						exitCode: 0,
+						stdout: ready ? `v1 ${identity} 0` : "__RUNNING__",
+					};
+				}
+				if (!command.includes(".log")) return { exitCode: 0, stdout: "" };
+				const bytes = Buffer.from(payload);
+				if (/\bwc\s+-c\b/.test(command)) return { exitCode: 0, stdout: String(bytes.length) };
+				if (/\bdd\b/.test(command)) {
+					const skip = Number(/skip=(\d+)/.exec(command)?.[1]);
+					const count = Number(/count=(\d+)/.exec(command)?.[1]);
+					const encoded = bytes.subarray(skip, skip + count).toString("base64");
+					expect(encoded.length).toBeLessThanOrEqual(VENDOR_EXEC_STDOUT_CAP_BYTES);
+					return { exitCode: 0, stdout: encoded };
+				}
+				if (/\bcat\b/.test(command)) {
+					return {
+						exitCode: 0,
+						stdout: bytes.subarray(bytes.length - VENDOR_EXEC_STDOUT_CAP_BYTES).toString(),
+					};
+				}
+				return { exitCode: 1, stdout: "" };
+			},
+			destroy: async () => undefined,
+		};
+		const resultsDir = join(work, "tail-truncate-recover");
+		await collectResults(new StepRunner(sandbox, CAPPED, async () => undefined), resultsDir);
+		expect(existsSync(join(resultsDir, "pts_disk.xml"))).toBe(true);
+		expect(readFileSync(join(resultsDir, "pts_disk.xml"))).toEqual(Buffer.from(entropy));
 	});
 
 	it("retries when a marker-bounded payload fails to extract, then succeeds", async () => {

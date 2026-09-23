@@ -63,6 +63,16 @@ const READBACK_ATTEMPTS = 5;
 const READBACK_DELAY_MS = 2_000;
 /** Done-file sentinel for the no-filesystem cat-poll fallback: printed while the file isn't there yet. */
 const RUNNING_SENTINEL = "__RUNNING__";
+/**
+ * Raw byte budget for one guest log slice before base64. Boat's command API silently keeps only the
+ * last 512 KiB of stdout (run 35799078413: collect returned exactly 524288 chars with BEGIN=false
+ * END=true), so a single `cat` of a multi-MB results log loses the leading markers. Each slice is
+ * base64-encoded on the guest (ADR-0007 §9: never split UTF-8 across string chunks); 192 KiB raw
+ * expands to exactly 256 KiB of ASCII — half the observed vendor cap. Exported for focused tests.
+ */
+export const EXEC_LOG_READ_CHUNK_BYTES = 192 * 1024;
+/** Base64 length of one {@link EXEC_LOG_READ_CHUNK_BYTES} slice (`raw * 4/3`, raw divisible by 3). */
+export const EXEC_LOG_READ_CHUNK_BASE64_CHARS = (EXEC_LOG_READ_CHUNK_BYTES / 3) * 4;
 function observationBudget(deadline: number): number {
 	const remaining = deadline - performance.now();
 	if (remaining <= 0) throw new Error("step observation deadline exceeded");
@@ -864,15 +874,82 @@ abstract class StepExecution<Result extends { stdout?: string; stderr?: string }
 		);
 	}
 
-	/** `cat` the log over exec for {@link readLogTail} and {@link readCompletedLog}, preserving a read
-	 *  failure as `null` rather than folding it into `""` — an unreadable log (wedged sandbox, dead
-	 *  transport) must stay distinguishable from a step that simply printed nothing. */
+	/**
+	 * Read a detached step's log over exec for {@link readLogTail} and {@link readCompletedLog}.
+	 * Preserves a read failure as `null` rather than folding it into `""` — an unreadable log (wedged
+	 * sandbox, dead transport) must stay distinguishable from a step that simply printed nothing.
+	 *
+	 * Large logs are read in {@link EXEC_LOG_READ_CHUNK_BYTES} slices via `dd | base64` rather than one
+	 * `cat`: several providers (Boat) silently truncate exec stdout around 512 KiB and keep the *tail*,
+	 * which drops collect's leading BEGIN marker while leaving END. The log file on disk is complete;
+	 * only the single-shot readback was capped. Each slice is base64 on the wire so a UTF-8 code point
+	 * that straddles a raw byte boundary is never split across JS strings (ADR-0007 §9); the host
+	 * decodes each slice to bytes, concatenates, then UTF-8-decodes once. No `|| true` on the inner
+	 * commands: a failing read must surface as null, not as a successful empty read.
+	 */
 	private async catLogOrNull(logPath: string, deadline = Infinity): Promise<string | null> {
-		// No `|| true`: a failing cat (unreadable/absent log) must surface as null, not as a
-		// successful empty read — `|| true` once collapsed exec-transport failure into stdout "",
-		// which readCompletedLog then accepted as the step's real (empty) output. Exit 0 with empty
-		// stdout remains a legitimate read of a genuinely empty log.
-		observationBudget(deadline);
+		try {
+			observationBudget(deadline);
+			const sizeText = await withTimeout(
+				this.execute(
+					`bash -c ${shellQuote(`wc -c < ${logPath} 2>/dev/null | tr -d '[:space:]'`)}`,
+				),
+				observationBudget(deadline),
+				"log size probe",
+			)
+				.then((res) => (this.exitCode(res) === 0 ? (res.stdout ?? "").trim() : null))
+				.catch(() => null);
+			const size = sizeText === null ? Number.NaN : Number.parseInt(sizeText, 10);
+			// Unusable size probe (missing file, non-numeric stdout, dead transport): fall back to a
+			// single cat so small-log / timeout-tail paths keep working; the cat's own failure stays null.
+			if (!Number.isFinite(size) || size < 0) {
+				return await this.catLogOnce(logPath, deadline);
+			}
+			if (size === 0) return "";
+			if (size <= EXEC_LOG_READ_CHUNK_BYTES) {
+				return await this.catLogOnce(logPath, deadline);
+			}
+			const parts: Uint8Array[] = [];
+			let total = 0;
+			for (let offset = 0; offset < size; offset += EXEC_LOG_READ_CHUNK_BYTES) {
+				const count = Math.min(EXEC_LOG_READ_CHUNK_BYTES, size - offset);
+				// GNU dd skip_bytes/count_bytes → base64: ASCII-only exec response under the vendor cap,
+				// with exact raw bytes recovered on the host (no mid-code-point string join).
+				const chunkCmd =
+					`dd if=${logPath} iflag=skip_bytes,count_bytes ` +
+					`skip=${offset} count=${count} bs=65536 2>/dev/null | base64 | tr -d '\\n'`;
+				const encoded = await withTimeout(
+					this.execute(`bash -c ${shellQuote(chunkCmd)}`),
+					observationBudget(deadline),
+					"log chunk read",
+				)
+					.then((res) => (this.exitCode(res) === 0 ? (res.stdout ?? null) : null))
+					.catch(() => null);
+				if (encoded === null) return null;
+				let bytes: Uint8Array;
+				try {
+					bytes = Uint8Array.fromBase64(encoded.trim());
+				} catch {
+					return null;
+				}
+				if (bytes.length !== count) return null;
+				parts.push(bytes);
+				total += bytes.length;
+			}
+			const combined = new Uint8Array(total);
+			let at = 0;
+			for (const part of parts) {
+				combined.set(part, at);
+				at += part.length;
+			}
+			return new TextDecoder().decode(combined);
+		} catch {
+			return null;
+		}
+	}
+
+	/** One uncapped `cat` of a log path; failures collapse to null (see {@link catLogOrNull}). */
+	private async catLogOnce(logPath: string, deadline: number): Promise<string | null> {
 		return withTimeout(
 			this.execute(`bash -c ${shellQuote(`cat ${logPath} 2>/dev/null`)}`),
 			observationBudget(deadline),

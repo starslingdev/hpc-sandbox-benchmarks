@@ -5,6 +5,8 @@ import type { SandboxHandle } from "./execute.ts";
 import {
 	buildPreamble,
 	DEFAULT_PTS_TIMES_TO_RUN,
+	EXEC_LOG_READ_CHUNK_BASE64_CHARS,
+	EXEC_LOG_READ_CHUNK_BYTES,
 	MIN,
 	PREAMBLE,
 	resolvePtsPassPolicy,
@@ -20,6 +22,48 @@ const CAPPED_NO_DETACH: ProviderTransport = {
 	syncCapMs: MIN,
 	detachedPoll: false,
 };
+
+/** Observed Boat command stdout ceiling (run 35799078413): silent tail keep of 512 KiB. */
+const VENDOR_EXEC_STDOUT_CAP_BYTES = 512 * 1024;
+
+/**
+ * Answer size-probe / chunked-dd+base64 / single-cat log readbacks the way a vendor-capped exec API
+ * does: a lone `cat` of an oversized log keeps only the last {@link VENDOR_EXEC_STDOUT_CAP_BYTES}
+ * bytes (BEGIN lost, END kept), while `wc -c` and `dd|base64` windows return the honest on-disk
+ * content as ASCII base64 (so UTF-8 never splits across string chunks).
+ */
+function execLogReadback(
+	command: string,
+	fullLog: string,
+): { exitCode: number; stdout: string } | null {
+	if (!command.includes(".log")) return null;
+	const bytes = Buffer.from(fullLog);
+	if (/\bwc\s+-c\b/.test(command)) {
+		return { exitCode: 0, stdout: String(bytes.length) };
+	}
+	if (/\bdd\b/.test(command)) {
+		const skip = /skip=(\d+)/.exec(command);
+		const count = /count=(\d+)/.exec(command);
+		if (!skip || !count) return { exitCode: 1, stdout: "" };
+		const offset = Number(skip[1]);
+		const length = Number(count[1]);
+		const slice = bytes.subarray(offset, offset + length);
+		const encoded = slice.toString("base64");
+		// Production pipes through base64; a response over the vendor cap would be silently tailed.
+		expect(encoded.length).toBeLessThanOrEqual(VENDOR_EXEC_STDOUT_CAP_BYTES);
+		return { exitCode: 0, stdout: encoded };
+	}
+	if (/\bcat\b/.test(command)) {
+		if (bytes.length <= VENDOR_EXEC_STDOUT_CAP_BYTES) {
+			return { exitCode: 0, stdout: fullLog };
+		}
+		return {
+			exitCode: 0,
+			stdout: bytes.subarray(bytes.length - VENDOR_EXEC_STDOUT_CAP_BYTES).toString(),
+		};
+	}
+	return null;
+}
 
 describe("selectTransport", () => {
 	it("detaches a step that could reach or outlast a capped provider's synchronous limit", () => {
@@ -415,13 +459,15 @@ describe("StepRunner.runDetached", () => {
 
 	// A sandbox with NO filesystem API: the detached transport must still detach (double-fork) and
 	// observe completion by `cat`-ing the done-file over exec. runCommand answers each command shape —
-	// the launch (contains nohup), the done-file probe (`cat …done`), and the log read (`cat …log`).
+	// the launch (contains nohup), the done-file probe (`cat …done`), and the log read (size probe +
+	// cat or chunked dd — see {@link execLogReadback}).
 	function catPollSandbox(opts: { readyAfter?: number; exitCode?: string; log?: string }): {
 		sandbox: SandboxHandle;
 		commands: Array<{ command: string; background?: boolean }>;
 	} {
 		const commands: Array<{ command: string; background?: boolean }> = [];
 		const readyAfter = opts.readyAfter ?? 0;
+		const log = opts.log ?? "cat output";
 		let probes = 0;
 		const sandbox: SandboxHandle = {
 			runCommand: async (command, options) => {
@@ -434,20 +480,27 @@ describe("StepRunner.runDetached", () => {
 						stdout: ready ? receipt(command, opts.exitCode ?? "0") : "__RUNNING__",
 					};
 				}
-				return { exitCode: 0, stdout: opts.log ?? "cat output" }; // the `.log` read
+				const readback = execLogReadback(command, log);
+				if (readback) return readback;
+				return { exitCode: 0, stdout: log };
 			},
 			destroy: async () => undefined,
 		};
 		return { sandbox, commands };
 	}
 
-	/** Both completion and the log read-back went over the exec `cat` poll, not a filesystem API. */
+	/** Both completion and the log read-back went over the exec poll, not a filesystem API. */
 	function expectPolledOverExec(commands: Array<{ command: string }>): void {
-		for (const suffix of [".done", ".log"]) {
-			expect(commands.some((c) => c.command.includes("cat") && c.command.includes(suffix))).toBe(
-				true,
-			);
-		}
+		expect(commands.some((c) => c.command.includes("cat") && c.command.includes(".done"))).toBe(
+			true,
+		);
+		expect(
+			commands.some(
+				(c) =>
+					c.command.includes(".log") &&
+					(/\bcat\b/.test(c.command) || /\bdd\b/.test(c.command) || /\bwc\s+-c\b/.test(c.command)),
+			),
+		).toBe(true);
 	}
 
 	it("polls the done-file over exec when the sandbox has no filesystem", async () => {
@@ -468,6 +521,80 @@ describe("StepRunner.runDetached", () => {
 		expect(commands[0]?.command).toContain("nohup");
 		// Completion is observed by cat-ing the done-file (the no-filesystem fallback), then the log.
 		expectPolledOverExec(commands);
+	});
+
+	it("reassembles an oversized detached log that a vendor exec would tail-truncate", async () => {
+		// Boat run 35799078413: collect's log was complete on disk, but a single `cat` through the
+		// command API kept only the last 524288 chars — BEGIN=false END=true, suite discarded.
+		// Chunked dd|base64 readback must recover the full payload, including the leading BEGIN marker.
+		const begin = "__BENCH_RESULTS_TGZ_BEGIN__";
+		const end = "__BENCH_RESULTS_TGZ_END__";
+		const mid = "B".repeat(VENDOR_EXEC_STDOUT_CAP_BYTES);
+		const fullLog = `${begin}\n${mid}\n${end}\n`;
+		expect(fullLog.length).toBeGreaterThan(VENDOR_EXEC_STDOUT_CAP_BYTES);
+		expect(fullLog.length).toBeGreaterThan(EXEC_LOG_READ_CHUNK_BYTES);
+		expect(EXEC_LOG_READ_CHUNK_BASE64_CHARS).toBeLessThan(VENDOR_EXEC_STDOUT_CAP_BYTES);
+
+		const tailed = fullLog.slice(-VENDOR_EXEC_STDOUT_CAP_BYTES);
+		expect(tailed.includes(begin)).toBe(false);
+		expect(tailed.includes(end)).toBe(true);
+
+		const { sandbox, commands } = catPollSandbox({ log: fullLog, exitCode: "0" });
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		const result = await runner.runDetached("collect benchmark-results", "true", 60_000);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe(fullLog);
+		const stdout = result.stdout ?? "";
+		expect(stdout.includes(begin)).toBe(true);
+		expect(stdout.includes(end)).toBe(true);
+		expect(commands.some((c) => /\bwc\s+-c\b/.test(c.command) && c.command.includes(".log"))).toBe(
+			true,
+		);
+		expect(
+			commands.some(
+				(c) =>
+					/\bdd\b/.test(c.command) &&
+					c.command.includes("base64") &&
+					c.command.includes(".log"),
+			),
+		).toBe(true);
+		expect(commands.some((c) => /\bcat\b/.test(c.command) && c.command.includes(".log"))).toBe(
+			false,
+		);
+	});
+
+	it("preserves a multibyte UTF-8 character that straddles a raw chunk boundary", async () => {
+		// ADR-0007 §9: joining raw byte slices as strings can split a code point across chunks and
+		// corrupt the log. euro sign is three UTF-8 bytes; place its first byte as the last byte of
+		// chunk 0 so a naive string join would break it while base64→bytes→UTF-8 once must not.
+		const euro = "€";
+		const euroBytes = Buffer.from(euro, "utf8");
+		expect(euroBytes.length).toBe(3);
+		const prefix = "A".repeat(EXEC_LOG_READ_CHUNK_BYTES - 1);
+		const suffix = "B".repeat(EXEC_LOG_READ_CHUNK_BYTES);
+		const fullLog = `${prefix}${euro}${suffix}`;
+		const raw = Buffer.from(fullLog, "utf8");
+		expect(raw.length).toBeGreaterThan(EXEC_LOG_READ_CHUNK_BYTES);
+		expect(raw[EXEC_LOG_READ_CHUNK_BYTES - 1]).toBe(euroBytes[0]);
+		expect(raw[EXEC_LOG_READ_CHUNK_BYTES]).toBe(euroBytes[1]);
+		expect(raw[EXEC_LOG_READ_CHUNK_BYTES + 1]).toBe(euroBytes[2]);
+
+		const { sandbox, commands } = catPollSandbox({ log: fullLog, exitCode: "0" });
+		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
+		const result = await runner.runDetached("utf8 boundary", "true", 60_000);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe(fullLog);
+		expect(result.stdout?.includes(euro)).toBe(true);
+		expect(
+			commands.some(
+				(c) =>
+					/\bdd\b/.test(c.command) &&
+					c.command.includes("base64") &&
+					c.command.includes(".log"),
+			),
+		).toBe(true);
 	});
 
 	it("degrades to the exec poll when the filesystem is PRESENT but unsupported", async () => {
@@ -608,13 +735,15 @@ describe("StepRunner.runDetached", () => {
 	});
 
 	it("falls back to the exec transport when the fs log read-back keeps failing", async () => {
-		// The fs API can be wedged while plain exec still answers — the log must come back over `cat`
+		// The fs API can be wedged while plain exec still answers — the log must come back over exec
 		// rather than the whole completed step failing.
 		const commands: string[] = [];
+		const log = "read back over exec";
 		const sandbox: SandboxHandle = {
 			runCommand: async (command) => {
 				commands.push(command);
-				if (command.includes("cat")) return { exitCode: 0, stdout: "read back over exec" };
+				const readback = execLogReadback(command, log);
+				if (readback) return readback;
 				return { exitCode: 0, stdout: "launched" };
 			},
 			destroy: async () => undefined,
@@ -630,7 +759,7 @@ describe("StepRunner.runDetached", () => {
 		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toBe("read back over exec");
-		expect(commands.some((c) => c.includes("cat") && c.includes(".log"))).toBe(true);
+		expect(commands.some((c) => c.includes(".log"))).toBe(true);
 	});
 
 	it("throws a distinct transport-failure error when the completed log is unreachable everywhere", async () => {
@@ -639,7 +768,14 @@ describe("StepRunner.runDetached", () => {
 		// diagnosis that says the step COMPLETED but its output could not be fetched.
 		const sandbox: SandboxHandle = {
 			runCommand: async (command) => {
-				if (command.includes("cat")) throw new Error("exec transport down too");
+				// Only the log *read* path is dead — cleanup `rm` of the same path must still be allowed
+				// so the finally block does not mask LogReadbackError with a cleanup throw.
+				if (
+					command.includes(".log") &&
+					(/\bcat\b/.test(command) || /\bwc\s+-c\b/.test(command) || /\bdd\b/.test(command))
+				) {
+					throw new Error("exec transport down too");
+				}
 				return { exitCode: 0, stdout: "launched" };
 			},
 			destroy: async () => undefined,
