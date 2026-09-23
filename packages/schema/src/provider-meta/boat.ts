@@ -11,7 +11,7 @@ export default defineProviderMeta("boat", {
 		{ name: "BOAT_BASE_URL", source: { kind: "variable" }, required: false },
 	],
 	isolation: {
-		class: "microVM",
+		class: "vm",
 		technology: "KVM virtual machine",
 		notes:
 			"Full Ubuntu VMs with SSH, Docker, and a dedicated public address. The default SKU is 4 vCPU / 8 GB / 50 GB user disk, which is the size this benchmark requests.",

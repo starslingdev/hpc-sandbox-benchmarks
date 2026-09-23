@@ -38,26 +38,28 @@ scales to its own largest value, so lengths compare within a chart and never acr
 
 ## Providers in this run
 
-Each provider's isolation technology — the **declared** technology is authoritative; **detected**
-is a best-effort in-sandbox probe that cannot separate every isolation type (a container and a
-microVM can both read `kvm`; gVisor and a microVM can both read `unknown`), shown only as a
-cross-check.
+Each provider's isolation technology — the **declared** technology is authoritative. **Detected**
+uses the in-sandbox system probe's runtime, boundary class, and confidence when available,
+with the setup probe as a fallback. Older runs may have a coarse setup result. A VM may sit
+beneath a container; `kvm` alone cannot identify the sandbox's innermost boundary.
+Detection is a cross-check, not a guarantee
+of provider architecture.
 
 | Provider | Isolation (declared) | Detected |
 | --- | --- | --- |
-| Blaxel | microVM | vm |
-| boat | KVM virtual machine | vm |
-| Daytona (VM) | microVM (Linux VM) | vm |
-| E2B | Firecracker microVM | vm |
-| Microsandbox Cloud | libkrun microVM (cloud) | vm |
-| Modal (gVisor) | gVisor container | gvisor |
-| Modal (VM) | microVM (VM runtime) | vm |
-| Namespace | microVM (dedicated instance) | vm |
-| Novita | microVM | vm |
-| run.cloud | Firecracker microVM | vm |
-| Runloop | microVM | vm |
-| tama | container (shared kernel) | unknown |
-| Vercel Sandbox | Firecracker microVM | vm |
+| Blaxel | microVM | firecracker (microVM, confirmed) |
+| boat | KVM virtual machine | qemu-kvm (vm, strong) |
+| Daytona (VM) | microVM (Linux VM) | firecracker (microVM, confirmed) |
+| E2B | Firecracker microVM | firecracker (microVM, confirmed) |
+| Microsandbox Cloud | libkrun microVM (cloud) | libkrun (microVM, strong) |
+| Modal (gVisor) | gVisor container | gvisor (user-kernel, confirmed) |
+| Modal (VM) | microVM (VM runtime) | cloud-hypervisor (microVM, confirmed) |
+| Namespace | microVM (dedicated instance) | oci-container (container, likely) on firecracker |
+| Novita | microVM | firecracker (microVM, confirmed) |
+| run.cloud | Firecracker microVM | firecracker (microVM, confirmed) |
+| Runloop | microVM | oci-container (container, likely) on cloud-hypervisor |
+| tama | container (shared kernel) | oci-container (container, strong) on bare-metal |
+| Vercel Sandbox | Firecracker microVM | oci-container (container, likely) on firecracker |
 
 _Not present in this run: Daytona (container) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._
 

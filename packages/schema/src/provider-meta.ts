@@ -11,7 +11,7 @@ import type {
 	SpecPinning,
 } from "./providers.ts";
 
-export type IsolationClass = "microVM" | "container" | "userspace" | "unknown";
+export type IsolationClass = "vm" | "microVM" | "container" | "userspace" | "unknown";
 
 export type ProviderArtifact =
 	| { readonly kind: "none" }

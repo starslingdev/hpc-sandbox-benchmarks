@@ -223,7 +223,7 @@ _ISO_MACHINE_ORDER=(
 	'qemu-kvm|vm' 'amazon-nitro|vm' 'gce|vm' 'hyper-v|vm' 'xen|vm' 'vmware|vm'
 	'virtualbox|vm' 'parallels|vm' 'apple-virtualization|vm' 'digitalocean|vm' 'openstack|vm'
 	'nutanix|vm' 'proxmox|vm' 'alibaba|vm' 'oracle-cloud|vm' 'bhyve|vm' 'uml|vm' 'wsl2|vm'
-	'microvm-unidentified|microvm' 'vm-unidentified|vm' 'bare-metal|bare-metal'
+	'vm-unidentified|vm'
 )
 _ISO_CONTAINER_ORDER=(
 	'gvisor|user-kernel' 'kata-containers|microvm' 'sysbox|container' 'lxd|container'
@@ -232,10 +232,13 @@ _ISO_CONTAINER_ORDER=(
 	'docker-runc|container' 'oci-container|container'
 )
 # The generic buckets. They are ranked and reported like anything else, but they do not compete for
-# CONFIDENCE: "some unidentified microVM" scoring behind a confirmed Firecracker is the same finding
+# CONFIDENCE: "some unidentified VM" scoring behind a confirmed Firecracker is the same finding
 # stated less precisely, not a rival hypothesis, and letting it narrow the margin would downgrade a
 # firmware self-declaration on exactly the sandboxes this file reads best.
-_ISO_GENERIC="microvm-unidentified,vm-unidentified,oci-container"
-# A container runtime is claimed only above this floor. Every weak marker is worth 15, so no
-# combination of image residue reaches it without at least one live structural signal.
+_ISO_GENERIC="vm-unidentified,oci-container"
+# A name inferred from one weak boot or detector hint is retained as a ranked candidate, not
+# reported as the machine's identity. Generic vm-unidentified has independent positive evidence.
+_ISO_MACHINE_FLOOR=40
+# A container runtime is claimed only above this floor. The classifier additionally requires two
+# independent live containment signals before a generic OCI candidate can pass it.
 _ISO_CONTAINER_FLOOR=40

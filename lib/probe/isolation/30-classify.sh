@@ -157,20 +157,14 @@ isolation_classify() {
 	{ [ "$ISO_KATA_DECLARED" = "true" ] || [ "$ISO_KATA_INFERRED" = "true" ]; } &&
 		_iso_m libkrun -60 "the virtio-fs/virtio-console shape here belongs to a Kata guest, not to libkrun"
 
-	# --- Machine layer: generic buckets, capped below any named match ---
-	if [ "$ISO_HYPERVISOR_FLAG" = "true" ] || [ -n "$ISO_CPU_HYPERVISOR" ]; then
-		if [ "$ISO_HAS_SMBIOS" = "false" ] && [ "$ISO_VIRTIO_TRANSPORT" != "none" ]; then
-			_iso_m microvm-unidentified 45 "a virtio guest with no SMBIOS: a minimal VMM, not identified"
-		elif [ "$ISO_VIRTIO_TRANSPORT" = "mmio" ]; then
-			_iso_m microvm-unidentified 45 "virtio over MMIO: a minimal VMM, not identified"
-		fi
-		_iso_m vm-unidentified 40 "CPUID reports a hypervisor"
-		_iso_m bare-metal -200 "CPUID reports a hypervisor"
-	elif [ "$ISO_CPUINFO_FLAGS" = "true" ]; then
-		# An x86 `flags` line WITHOUT the hypervisor bit is positive evidence of bare metal — no VMM
-		# leaves it clear. Gated on the line existing so an aarch64 guest, which has no such bit to
-		# miss, stays unidentified rather than being declared bare metal.
-		_iso_m bare-metal 60 "x86 CPUID flags present without the hypervisor bit"
+	# --- Machine layer: a visible VM without a defensible VMM identity ---
+	# A virtio topology or a detector's KVM answer establishes a guest, but does not distinguish a
+	# microVM from QEMU with minimal devices. A missing CPUID hypervisor bit is inconclusive: VMMs
+	# can hide it, and containers inherit whatever their host exposes.
+	if [ "$ISO_HYPERVISOR_FLAG" = "true" ] || [ -n "$ISO_CPU_HYPERVISOR" ] ||
+		[ -n "$ISO_VIRTIO_DEVICES" ] ||
+		{ [ -n "$ISO_VIRT_VM" ] && [ "$ISO_VIRT_VM" != "none" ]; }; then
+		_iso_m vm-unidentified 40 "a hypervisor or virtio guest is visible, but its VMM is unidentified"
 	fi
 
 	# --- Container layer ---
@@ -205,6 +199,15 @@ isolation_classify() {
 		_iso_c lxd 10 "unprivileged LXD remaps the user namespace"
 		_iso_c podman 10 "rootless Podman remaps the user namespace"
 	fi
+	# Hardening a VM can drop CAP_SYS_ADMIN or mask /proc, and a container marker can survive an
+	# image copy. A generic OCI verdict needs two independent live namespace/filesystem signals.
+	# Engine-specific self-identification above remains sufficient on its own.
+	local containment_signals=0
+	[ "$ISO_MASKED_PROC" = "true" ] && containment_signals=$((containment_signals + 1))
+	[ "$ISO_ROOT_FSTYPE" = "overlay" ] && containment_signals=$((containment_signals + 1))
+	[ "$ISO_HAS_VETH" = "true" ] && containment_signals=$((containment_signals + 1))
+	[ "$ISO_USERNS_MAPPED" = "true" ] && containment_signals=$((containment_signals + 1))
+	[ "$containment_signals" -lt 2 ] && ISO_SCORE["container:oci-container"]=0
 
 	# --- Rank both layers ---
 	# One tab-split per layer reads all four cells of the winning row; the alternative spelling forks
@@ -228,7 +231,13 @@ isolation_classify() {
 		CONTAINER_RUNTIME="none"
 		CONTAINER_SCORE=0
 	fi
-	[ -n "$MACHINE_VMM" ] || MACHINE_VMM="unknown"
+	# Keep weak VMM hints in MACHINE_ROWS for audit, but do not turn a shared console/boot
+	# argument into a specific runtime name in the headline.
+	if [ -z "$MACHINE_VMM" ] || [ "$MACHINE_SCORE" -lt "$_ISO_MACHINE_FLOOR" ]; then
+		[ -n "$MACHINE_VMM" ] && m_why="below the machine identification floor: ${m_why}"
+		MACHINE_VMM="unknown"
+		MACHINE_SCORE=0
+	fi
 	if [ "$ISO_GVISOR" = "true" ]; then
 		# The sentry IS the kernel here; whatever runs under the runsc process is not observable from
 		# inside, so naming a VMM would be an invention.
