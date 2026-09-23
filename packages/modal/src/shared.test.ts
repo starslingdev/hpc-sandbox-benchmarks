@@ -18,10 +18,12 @@ import {
 	MODAL_APP_NAME,
 	MODAL_CONTROL_TIMEOUT_MS,
 	MODAL_COST_SDK_PROVENANCE,
+	MODAL_DESTROY_TIMEOUT_MS,
 	MODAL_SANDBOX_LIFETIME_MS,
 	MODAL_V1_SANDBOX_ID,
 	MODAL_V2_SANDBOX_ID,
 	modalControlPlane,
+	modalControlTimeoutMessage,
 	modalCreateOptions,
 	modalCreateRecovery,
 	modalDestroyById,
@@ -588,7 +590,7 @@ describe("Modal truthful lifecycle and recovery projections", () => {
 		}
 	});
 
-	it("only typed RESOURCE_EXHAUSTED is a retryable create; prose and UNAVAILABLE are not", () => {
+	it("treats native RESOURCE_EXHAUSTED and control-budget aborts as retryable create", () => {
 		const exhausted = new ClientError(
 			"/modal.client.ModalClient/SandboxCreate",
 			Status.RESOURCE_EXHAUSTED,
@@ -606,8 +608,26 @@ describe("Modal truthful lifecycle and recovery projections", () => {
 		expect(isModalRetryableCreate(new Error("quota|rate limit|capacity"))).toBe(false);
 		expect(isModalRetryableCreate(new Error("Modal quota exceeded somewhere else"))).toBe(false);
 		expect(
+			isModalRetryableCreate(new Error(modalControlTimeoutMessage(MODAL_CONTROL_TIMEOUT_MS))),
+		).toBe(true);
+		expect(
+			isModalRetryableCreate(
+				new Error("create failed", {
+					cause: new Error(modalControlTimeoutMessage(MODAL_DESTROY_TIMEOUT_MS)),
+				}),
+			),
+		).toBe(true);
+		expect(
 			modalCreateRecovery("v1", directRunner({ sandboxes: {} })).isRetryableCreate?.(exhausted),
 		).toBe(true);
+	});
+
+	it("sizes waited destroy under the harness ceiling and above the short control budget", () => {
+		expect(MODAL_DESTROY_TIMEOUT_MS).toBeGreaterThan(MODAL_CONTROL_TIMEOUT_MS);
+		expect(MODAL_DESTROY_TIMEOUT_MS).toBeLessThan(60_000);
+		expect(modalControlTimeoutMessage(MODAL_DESTROY_TIMEOUT_MS)).toBe(
+			`Modal control operation exceeded ${MODAL_DESTROY_TIMEOUT_MS}ms`,
+		);
 	});
 
 	it("preserves an auth-token NOT_FOUND through production name recovery", async () => {
