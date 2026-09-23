@@ -11,6 +11,7 @@ import type { ProviderId } from "./provider-ids.ts";
 import { PROVIDER_IDS } from "./provider-ids.ts";
 import { REGISTRY } from "./provider-meta/index.ts";
 import type {
+	IsolationClass,
 	NormalizedProviderInput,
 	ProviderArtifact,
 	ProviderMetaSource,
@@ -113,7 +114,7 @@ export interface ProviderIsolation {
 	/** e.g. "Firecracker microVM", "gVisor container", "unknown". */
 	technology: string;
 	/** Stable declared class used by figures and normalization; never inferred from display text. */
-	class: "microVM" | "container" | "userspace" | "unknown";
+	class: IsolationClass;
 	notes?: string;
 }
 

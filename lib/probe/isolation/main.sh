@@ -36,8 +36,8 @@
 #         30  a signature consistent with this implementation and a few others.
 #         15  compatible-with, i.e. it does not argue against.
 #        <0   evidence that ARGUES AGAINST (a microVM exposing SMBIOS is not Firecracker).
-#      A generic bucket is capped below any specific match, and ties break toward the more specific
-#      candidate, so "some microVM" can never outrank a named one.
+#      Generic buckets need positive guest evidence, and ties break toward the more specific
+#      candidate. A specific runtime is only named when its own evidence is strong enough.
 #   3. Rank, and report the runners-up with their reasons. The verdict is never the only thing kept:
 #      a reader who disagrees can re-derive it from the signals in the committed record.
 #

@@ -32,6 +32,7 @@ import type {
 	MedianInterval,
 	MetricDef,
 	ObservedSpecs,
+	ProviderRun,
 	Run,
 	TargetSpec,
 } from "@sandbox-benchmarks/schema";
@@ -289,18 +290,16 @@ export interface ComparabilityCaveat {
 
 /**
  * One provider's isolation-technology standing in a Run: what it DECLARES it runs (the authoritative
- * per-provider fact from the schema registry) alongside what the in-sandbox probe could actually
- * DETECT ({@link ObservedSpecs.detectedIsolation}). The two are surfaced together so the comparison
- * discloses which isolation each measured provider used — and `mismatch` flags the rare case where a
- * detectable signal contradicts the declaration (a bake pointed at the wrong class, say), without ever
- * letting the unreliable probe override the declared label.
+ * per-provider fact from the schema registry) alongside the detailed in-sandbox verdict,
+ * falling back to {@link ObservedSpecs.detectedIsolation} when needed. The declaration remains the
+ * provider's label; the observed layers let readers audit that claim.
  */
 export interface ProviderRosterEntry {
 	providerId: string;
 	displayName: string;
 	/** The schema-declared isolation technology (authoritative), or `undefined` for an unknown id. */
 	declaredIsolation: string | undefined;
-	/** The probe's coarse best-effort class ("gvisor"/"container"/"vm"/"unknown"), or `undefined`. */
+	/** Runtime and boundary class from the system probe or the setup probe. */
 	detectedIsolation: string | undefined;
 	/** True only when the probe returned a known class that contradicts the declared technology. */
 	mismatch: boolean;
@@ -718,11 +717,53 @@ function isolationClass(declared: string | undefined): "gvisor" | "container" | 
 	return undefined;
 }
 
+function formatIsolation(
+	runtime: string | undefined,
+	boundaryClass: string | undefined,
+	confidence: string | undefined,
+	machine: string | undefined,
+): string | undefined {
+	if (!runtime || runtime === "unknown" || !boundaryClass || boundaryClass === "unknown")
+		return undefined;
+	const underlying =
+		machine && machine !== "unknown" && machine !== "not-observable" && machine !== runtime
+			? ` on ${machine}`
+			: "";
+	const qualifier =
+		confidence && ["likely", "strong", "confirmed"].includes(confidence) ? `, ${confidence}` : "";
+	return `${runtime} (${boundaryClass === "microvm" ? "microVM" : boundaryClass}${qualifier})${underlying}`;
+}
+
+/** Prefer the later, two-layer system probe; keep every distinct verdict when a fleet varies. */
+function detailedIsolation(provider: ProviderRun): string | undefined {
+	const verdicts = new Set<string>();
+	for (const record of provider.hostMetadata ?? []) {
+		if (
+			record.source !== "mise/system-provider" ||
+			!record.sourceFile.endsWith("system-provider.json")
+		)
+			continue;
+		const field = (path: string) => record.fields.find((entry) => entry.path === path)?.value;
+		const stringField = (path: string) => {
+			const value = field(path);
+			return typeof value === "string" ? value : undefined;
+		};
+		const verdict = formatIsolation(
+			stringField("isolation_runtime"),
+			stringField("isolation_class"),
+			stringField("isolation_confidence"),
+			stringField("machine_vmm"),
+		);
+		if (verdict) verdicts.add(verdict);
+	}
+	if (verdicts.size === 0) return undefined;
+	const distinct = [...verdicts].sort();
+	return distinct.length === 1 ? distinct[0] : `mixed: ${distinct.join(", ")}`;
+}
+
 /**
- * Build the per-provider isolation roster: declared technology (authoritative) beside the probe's
- * best-effort detected class. A `mismatch` is flagged only when the probe returned one of the three
- * recognized classes ("gvisor"/"container"/"vm") that disagrees with the declared one — a detected
- * "unknown" (the common case) or any unrecognized raw value never counts, so the declaration wins.
+ * Build the per-provider roster from declared technology and the most detailed available guest
+ * observation. Historical coarse values still support the narrow gVisor/VM warning below.
  */
 function buildRoster(run: LeaderboardDataset): ProviderRosterEntry[] {
 	// "Every provider measured in this Run": a zero-evidence registry placeholder was not measured —
@@ -731,18 +772,23 @@ function buildRoster(run: LeaderboardDataset): ProviderRosterEntry[] {
 	return measured.map((provider): ProviderRosterEntry => {
 		const meta = getProvider(provider.providerId);
 		const declaredIsolation = meta?.isolation.technology;
-		const detectedIsolation = provider.observedSpecs.detectedIsolation;
+		const observed = provider.observedSpecs;
+		const detectedIsolation =
+			detailedIsolation(provider) ??
+			formatIsolation(
+				observed.detectedIsolation,
+				observed.isolationClass,
+				observed.isolationConfidence,
+				observed.machineVmm,
+			) ??
+			observed.detectedIsolation;
 		const declaredClass = isolationClass(declaredIsolation);
-		// Flag a mismatch ONLY for the one contradiction the probe can tell apart reliably: gVisor
-		// (announced in /proc/version) vs a real VM hypervisor (systemd-detect-virt --vm). The probe's
-		// "container" signal is a cgroup-quota heuristic that a microVM (Daytona's LINUX_VM exposes a
-		// bounded vCPU quota) and gVisor both trip — and gVisor *is* a container runtime — so "container"
-		// cannot contradict a declared vm/gvisor without putting a false ⚠ on a correctly-baked provider
-		// (this PR's own run.ts note says a container and a microVM can't be separated). Any other value
-		// ("unknown", or a raw systemd-detect-virt string) never counts either.
+		// Only the gVisor-versus-visible-VM contradiction is robust enough to flag. The old
+		// coarse values remain readable for historical runs.
+		const detectedClass = observed.isolationClass ?? observed.detectedIsolation;
 		const mismatch =
-			(declaredClass === "gvisor" && detectedIsolation === "vm") ||
-			(declaredClass === "vm" && detectedIsolation === "gvisor");
+			(declaredClass === "gvisor" && ["vm", "microvm"].includes(detectedClass ?? "")) ||
+			(declaredClass === "vm" && detectedClass === "gvisor");
 		return {
 			providerId: provider.providerId,
 			displayName: meta?.displayName ?? provider.providerId,
@@ -1119,9 +1165,9 @@ function formatSpec(spec: TargetSpec | ObservedSpecs): string {
 
 /**
  * The "Providers in this run" section: a table naming each measured provider's isolation technology,
- * so the comparison discloses WHAT each provider runs — the declared technology (authoritative) beside
- * the probe's best-effort detected class, with ⚠ where a known detected class contradicts the
- * declaration. Empty (no lines) when the Run recorded no providers, so an empty run stays clean.
+ * so the comparison discloses WHAT each provider runs — the declared technology beside the richest
+ * available in-sandbox verdict, with ⚠ for the narrow coarse-check contradiction. Empty (no lines)
+ * when the Run recorded no providers, so an empty run stays clean.
  */
 function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 	if (roster.length === 0) return [];
@@ -1129,10 +1175,12 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 	const lines = [
 		"## Providers in this run",
 		"",
-		"Each provider's isolation technology — the **declared** technology is authoritative; **detected**",
-		"is a best-effort in-sandbox probe that cannot separate every isolation type (a container and a",
-		"microVM can both read `kvm`; gVisor and a microVM can both read `unknown`), shown only as a",
-		"cross-check.",
+		"Each provider's isolation technology — the **declared** technology is authoritative. **Detected**",
+		"uses the in-sandbox system probe's runtime, boundary class, and confidence when available,",
+		"with the setup probe as a fallback. Older runs may have a coarse setup result. A VM may sit",
+		"beneath a container; `kvm` alone cannot identify the sandbox's innermost boundary.",
+		"Detection is a cross-check, not a guarantee",
+		"of provider architecture.",
 		"",
 		"| Provider | Isolation (declared) | Detected |",
 		"| --- | --- | --- |",

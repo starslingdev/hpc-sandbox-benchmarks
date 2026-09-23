@@ -193,22 +193,14 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"kernel=$(uname -r)",
 	`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,
 	"virt=$(systemd-detect-virt 2>/dev/null || echo unknown)",
-	// Best-effort isolation classification — a cross-check on the declared per-provider isolation, never
-	// authoritative (see run.ts observedSpecs.detectedIsolation: the probe cannot separate every type).
-	// gVisor announces itself in /proc/version; a cgroup quota well below the disclosed host means we're
-	// seeing THROUGH a container to a bigger host; `systemd-detect-virt --vm` confirms a real hypervisor.
-	// (`--vm` restricts detection to VM technologies — bare `systemd-detect-virt` also reports container
-	// types like docker/lxc/podman, which must NOT read as a VM here; `--quiet` gives just an exit status.)
-	"detected=unknown",
-	"if grep -qi gvisor /proc/version 2>/dev/null; then",
-	"  detected=gvisor",
-	// `vcpus` only drops below `host_vcpus` in the cpu.max branch, which is also the only place that
-	// sets `limited` — so `host_vcpus > vcpus` already implies a limit; no separate `[ -n "$limited" ]`.
-	`elif awk -v h="$host_vcpus" -v v="$vcpus" 'BEGIN { exit !(h > v + 0.5) }'; then`,
-	"  detected=container",
-	"elif systemd-detect-virt --vm --quiet 2>/dev/null; then",
-	"  detected=vm",
-	"fi",
+	// Use the same evidence collector and classifier as the system-provider task for every suite.
+	// That library tolerates unreadable guest paths, so suspend the runner's `set -e` while probing.
+	"set +e",
+	'source "$PWD/lib/bench.sh"',
+	'source "$PWD/lib/probe/isolation/main.sh"',
+	"isolation_collect",
+	"isolation_classify",
+	"set -e",
 	"user=$(id -un)",
 	String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
 	"{",
@@ -216,7 +208,7 @@ export const OBSERVED_SPECS_SCRIPT = [
 	`  if [ -n "$disk_gb" ]; then printf ',"diskGb":%s' "$disk_gb"; fi`,
 	`  if [ -n "$limited" ]; then printf ',"hostVcpus":%s,"hostMemoryGb":%s' "$host_vcpus" "$host_memory_gb"; fi`,
 	`  if [ -n "$cpu_model" ]; then printf ',"cpuModel":"%s"' "$(esc "$cpu_model")"; fi`,
-	String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$detected")" "$(esc "$user")"`,
+	String.raw`  printf ',"kernel":"%s","os":"%s","virtualization":"%s","detectedIsolation":"%s","isolationClass":"%s","isolationConfidence":"%s","machineVmm":"%s","containerRuntime":"%s","user":"%s"}\n' "$(esc "$kernel")" "$(esc "$os")" "$(esc "$virt")" "$(esc "$ISOLATION_RUNTIME")" "$(esc "$ISOLATION_CLASS")" "$(esc "$ISOLATION_CONFIDENCE")" "$(esc "$MACHINE_VMM")" "$(esc "$CONTAINER_RUNTIME")" "$(esc "$user")"`,
 	"} > benchmark-results/observed-specs.json",
 	"cat benchmark-results/observed-specs.json",
 ].join("\n");

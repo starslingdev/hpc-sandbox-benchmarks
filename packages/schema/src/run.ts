@@ -260,13 +260,15 @@ const hostHardwareSpecFields = {
 	"kernel?": "string",
 	"os?": "string",
 	"virtualization?": "string",
-	// A coarse, best-effort classification of the isolation boundary the in-sandbox probe could
-	// actually see — "gvisor" (kernel marker), "container" (a cgroup-limited quota under a much larger
-	// disclosed host), "vm" (a self-sized machine), or "unknown". Deliberately NOT authoritative:
-	// systemd-detect-virt cannot separate a container from a microVM (both read "kvm") or gVisor from a
-	// microVM (both read "unknown"), so the declared per-provider isolation stays the source of truth
-	// and this is only a cross-check the leaderboard flags when the two disagree.
+	// The innermost boundary identified by the shared in-sandbox isolation probe. Historical runs
+	// used coarse values (gvisor/container/vm/unknown); new runs record the precise runtime token
+	// when evidence permits and "unknown" otherwise. The system-provider host record retains the
+	// underlying signals and ranked alternatives for audits.
 	"detectedIsolation?": "string",
+	"isolationClass?": "string",
+	"isolationConfidence?": "string",
+	"machineVmm?": "string",
+	"containerRuntime?": "string",
 	// DMI, from benchmark:system:provider — describes the machine/hypervisor the sandbox ran on.
 	"manufacturer?": "string",
 	"productName?": "string",

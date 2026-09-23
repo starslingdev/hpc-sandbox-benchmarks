@@ -58,8 +58,8 @@ echo
 echo "note: the egress ASN describes the public network path, not necessarily the compute host."
 echo "      the isolation verdict is an in-sandbox observation; the declared per-provider technology"
 echo "      (packages/schema/src/providers.ts) stays authoritative when the two disagree."
-echo "      generic KVM/virtio evidence alone never names a VMM — it scores the 'microvm-unidentified'"
-echo "      bucket, which is capped below every named candidate."
+echo "      generic KVM/virtio evidence alone never names a VMM — it scores 'vm-unidentified'"
+echo "      below any named candidate."
 echo "      CPU/memory/kernel/OS/disk are recorded by the PTS <System> block and observed-specs.json,"
 echo "      not here. Docker-in-Docker is assessed passively; no daemon is started, no container run."
 

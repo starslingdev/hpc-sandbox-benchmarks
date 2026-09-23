@@ -29,6 +29,10 @@ const STRING_FIELDS = [
 	"os",
 	"virtualization",
 	"detectedIsolation",
+	"isolationClass",
+	"isolationConfidence",
+	"machineVmm",
+	"containerRuntime",
 	"user",
 ] as const;
 
@@ -52,6 +56,11 @@ const PROVIDER_STRING_FIELDS = {
 	prefix: "networkPrefix",
 	asn_source: "asnSource",
 	geo_source: "geoSource",
+	isolation_runtime: "detectedIsolation",
+	isolation_class: "isolationClass",
+	isolation_confidence: "isolationConfidence",
+	machine_vmm: "machineVmm",
+	container_runtime: "containerRuntime",
 } as const satisfies Record<string, keyof ObservedSpecs>;
 
 function fromObservedSpecsFile(raw: Record<string, unknown>): ObservedSpecs {
@@ -144,7 +153,23 @@ export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
 			: {};
 	const direct = readJson("observed-specs.json");
 	if (direct && typeof direct === "object" && !Array.isArray(direct)) {
-		return { ...probes, ...provider, ...fromObservedSpecsFile(direct as Record<string, unknown>) };
+		const specs = {
+			...probes,
+			...provider,
+			...fromObservedSpecsFile(direct as Record<string, unknown>),
+		};
+		// The system task runs later and can add network evidence (notably libkrun TSI).
+		// Prefer that task's isolation verdict when both probes are present.
+		for (const key of [
+			"detectedIsolation",
+			"isolationClass",
+			"isolationConfidence",
+			"machineVmm",
+			"containerRuntime",
+		] as const) {
+			if (provider[key] !== undefined) specs[key] = provider[key];
+		}
+		return specs;
 	}
 	return { ...probes, ...provider };
 }

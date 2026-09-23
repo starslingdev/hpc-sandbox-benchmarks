@@ -47,7 +47,11 @@ describe("readObservedSpecs: observed-specs.json (harness-written, primary)", ()
 					kernel: "6.17.0-22-generic",
 					os: "Debian GNU/Linux 13 (trixie)",
 					virtualization: "kvm",
-					detectedIsolation: "container",
+					detectedIsolation: "qemu-kvm",
+					isolationClass: "vm",
+					isolationConfidence: "strong",
+					machineVmm: "qemu-kvm",
+					containerRuntime: "none",
 					user: "root",
 				},
 			}),
@@ -63,7 +67,11 @@ describe("readObservedSpecs: observed-specs.json (harness-written, primary)", ()
 			kernel: "6.17.0-22-generic",
 			os: "Debian GNU/Linux 13 (trixie)",
 			virtualization: "kvm",
-			detectedIsolation: "container",
+			detectedIsolation: "qemu-kvm",
+			isolationClass: "vm",
+			isolationConfidence: "strong",
+			machineVmm: "qemu-kvm",
+			containerRuntime: "none",
 			user: "root",
 		});
 	});
@@ -107,6 +115,32 @@ describe("readObservedSpecs: observed-specs.json (harness-written, primary)", ()
 });
 
 describe("readObservedSpecs: system-provider.json rich identity projection", () => {
+	it("uses the later system probe's isolation verdict when it adds evidence", () => {
+		const specs = readObservedSpecs(
+			reader({
+				"observed-specs.json": {
+					detectedIsolation: "vm-unidentified",
+					isolationClass: "vm",
+					machineVmm: "vm-unidentified",
+				},
+				"system-provider.json": {
+					isolation_runtime: "libkrun",
+					isolation_class: "microvm",
+					isolation_confidence: "strong",
+					machine_vmm: "libkrun",
+					container_runtime: "none",
+				},
+			}),
+		);
+		expect(specs).toMatchObject({
+			detectedIsolation: "libkrun",
+			isolationClass: "microvm",
+			isolationConfidence: "strong",
+			machineVmm: "libkrun",
+			containerRuntime: "none",
+		});
+	});
+
 	it("projects every queryable ASN/geo/DMI field and lets observed-specs stay authoritative", () => {
 		const specs = readObservedSpecs(
 			reader({

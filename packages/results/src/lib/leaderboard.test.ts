@@ -103,6 +103,71 @@ describe("provider isolation roster", () => {
 		]);
 	});
 
+	it("renders the detailed boundary instead of the earlier KVM-only classification", () => {
+		const boat = withDetected("boat", "vm");
+		boat.hostMetadata = [
+			{
+				source: "mise/system-provider",
+				sourceFile: "system/system-provider.json",
+				fields: [
+					{ path: "isolation_runtime", value: "qemu-kvm" },
+					{ path: "isolation_class", value: "vm" },
+					{ path: "isolation_confidence", value: "strong" },
+					{ path: "machine_vmm", value: "qemu-kvm" },
+					{ path: "container_runtime", value: "none" },
+				],
+			},
+		];
+		const firecracker = withDetected("e2b", "vm");
+		firecracker.hostMetadata = [
+			{
+				source: "mise/system-provider",
+				sourceFile: "system/system-provider.json",
+				fields: [
+					{ path: "isolation_runtime", value: "firecracker" },
+					{ path: "isolation_class", value: "microvm" },
+					{ path: "isolation_confidence", value: "confirmed" },
+				],
+			},
+		];
+		const layered = withDetected("vercel", "vm");
+		layered.hostMetadata = [
+			{
+				source: "mise/system-provider",
+				sourceFile: "system/system-provider.json",
+				fields: [
+					{ path: "isolation_runtime", value: "oci-container" },
+					{ path: "isolation_class", value: "container" },
+					{ path: "isolation_confidence", value: "likely" },
+					{ path: "machine_vmm", value: "firecracker" },
+				],
+			},
+		];
+		const board = buildLeaderboard(run([boat, firecracker, layered]));
+		expect(board.roster.map((entry) => entry.detectedIsolation)).toEqual([
+			"qemu-kvm (vm, strong)",
+			"firecracker (microVM, confirmed)",
+			"oci-container (container, likely) on firecracker",
+		]);
+		const md = render(board);
+		expect(md).toContain("| boat | KVM virtual machine | qemu-kvm (vm, strong) |");
+		expect(md).toContain("| E2B | Firecracker microVM | firecracker (microVM, confirmed) |");
+	});
+
+	it("renders precise setup detection without a system suite", () => {
+		const boat = withDetected("boat", "qemu-kvm");
+		boat.observedSpecs = {
+			detectedIsolation: "qemu-kvm",
+			isolationClass: "vm",
+			isolationConfidence: "strong",
+			machineVmm: "qemu-kvm",
+			containerRuntime: "none",
+		};
+		expect(buildLeaderboard(run([boat])).roster[0]?.detectedIsolation).toBe(
+			"qemu-kvm (vm, strong)",
+		);
+	});
+
 	it("flags a mismatch only for the reliably-distinguishable gVisor↔VM contradiction", () => {
 		const board = buildLeaderboard(
 			run([

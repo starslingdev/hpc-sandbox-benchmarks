@@ -3,7 +3,13 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SUITES } from "@sandbox-benchmarks/schema";
-import { REPO_URL, setupSteps } from "./setup.ts";
+import { OBSERVED_SPECS_SCRIPT, REPO_URL, setupSteps } from "./setup.ts";
+
+it("emits a syntactically valid observed-specs script using the shared isolation probe", () => {
+	const syntax = Bun.spawnSync(["bash", "-n", "-c", OBSERVED_SPECS_SCRIPT]);
+	expect(syntax.exitCode, syntax.stderr.toString()).toBe(0);
+	expect(OBSERVED_SPECS_SCRIPT).toContain('source "$PWD/lib/probe/isolation/main.sh"');
+});
 
 describe("setupSteps", () => {
 	const labels = setupSteps(SUITES["cpu-node"]).map((step) => step.label);

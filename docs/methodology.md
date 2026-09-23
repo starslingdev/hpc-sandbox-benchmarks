@@ -13,11 +13,28 @@ so the comparison attributes results to the isolation the sandbox actually used:
 `SandboxClass.LINUX_VM` microVM) vs `daytona-container` (a Sysbox/OCI container), and `modal-gvisor`
 (Modal's default gVisor runtime) vs `modal-vm` (Modal's gVisor-free VM runtime). Each provider's
 declared isolation is the authoritative label and is shown in the leaderboard's **Providers in this
-run** roster, beside a best-effort **detected** class from an in-sandbox probe (gVisor kernel marker;
-a cgroup quota far below the disclosed host ⇒ container; a self-sized hypervisor ⇒ VM). The probe
-cannot separate every type — a container and a microVM can both report `kvm`; gVisor and a microVM can
-both report `unknown` — so it is only a cross-check that flags a declared/detected contradiction, never
-a source of truth.
+run** roster. Every suite's setup probe records the detected runtime, boundary class, confidence,
+machine VMM, and container runtime. The system suite repeats the same probe with network evidence
+and records the individual signals and ranked candidates. The shared classifier scores firmware,
+SMBIOS, devices, kernel, mount, cgroup, and container signals separately for
+the machine and container layers, then reports the innermost visible boundary with its evidence
+confidence: `confirmed` for a self-identifying runtime, `strong` for a distinctive signature, and
+`likely` for shared structural signals. The roster prefers the later system record when available
+and falls back to the setup result. Older runs may retain coarse `detectedIsolation` values
+(`gvisor`, `container`, `vm`, or `unknown`).
+`observedSpecs.virtualization` comes from `systemd-detect-virt` and describes a visible
+virtualization layer, not necessarily the sandbox boundary: a container and a microVM can
+both report `kvm`. Neither probe proves tenancy, host placement, or a vendor's internal implementation.
+No in-guest detector can identify every possible implementation: a provider can hide firmware and
+hypervisor identifiers, and several runtimes expose the same guest devices. The classifier reports
+`vm-unidentified` or `unknown` rather than assigning a specific runtime from generic KVM/virtio
+evidence or the absence of a CPUID flag. Weak single hints remain in the ranked evidence but do not
+become a named machine verdict. Detection remains a cross-check on the declaration; a
+contradiction requires review of the underlying signals rather than an automatic relabeling.
+The committed Run 35819944942 predates this stricter rule. Its Runloop and Vercel system records
+label `oci-container` from a weak marker plus just one hardening signal; those historical labels
+should be treated as unconfirmed until those providers are remeasured. The new rule requires two
+independent live containment signals before reporting a generic OCI container.
 
 ## Target spec
 

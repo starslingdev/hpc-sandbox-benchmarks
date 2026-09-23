@@ -108,17 +108,16 @@ isolation_collect() {
 	else
 		ISO_VIRT="$ISO_VIRT_VM"
 	fi
-	# virt-what reads CPUID leaves and DMI directly rather than consulting marker files first, so it
-	# does not inherit systemd's image-residue failure mode. Rarely installed; a bonus, not a
-	# requirement.
+	# virt-what reads several hardware and firmware surfaces rather than relying on one marker.
+	# Rarely installed; corroborating evidence, not a requirement.
 	have virt-what && ISO_VIRT_WHAT="$(virt-what 2>/dev/null | _iso_joinset)"
 
 	# --- Is there a hypervisor under this kernel at all? ---
-	# The CPUID hypervisor bit is set by every VMM and by nothing else, so it separates "guest" from
-	# "bare metal" without naming anyone. It is x86-only: on aarch64 /proc/cpuinfo has a `Features`
+	# A set CPUID hypervisor bit is useful guest evidence without naming a VMM. It is x86-only:
+	# on aarch64 /proc/cpuinfo has a `Features`
 	# line and no such bit, so its ABSENCE there says nothing. Recorded separately from the flag,
-	# because "no hypervisor bit on x86" is proof of bare metal and "no hypervisor bit on ARM" is no
-	# information whatsoever, and one boolean cannot mean both.
+	# because a positive hypervisor bit is useful evidence, but its absence on x86 or ARM does not
+	# prove bare metal: some VMMs hide it, and a container inherits the host's CPU view.
 	# One pass for both CPU-level facts, so /proc/cpuinfo — which the kernel synthesizes per read and
 	# which scales with thread count — is read once instead of once here and once for the UML check.
 	local cpuinfo_head flags_line
@@ -127,7 +126,7 @@ isolation_collect() {
 	case "$cpuinfo_head" in *"User Mode Linux"*) ISO_CPU_IS_UML="true" ;; esac
 	[ -n "$flags_line" ] && ISO_CPUINFO_FLAGS="true"
 	# Whole-word match in the shell rather than a `grep` alternation: BRE `\|` is a GNU extension a
-	# busybox image does not honour, and silently never matching would read as bare metal.
+	# busybox image does not honour, and silently never matching would lose guest evidence.
 	case " ${flags_line} " in *" hypervisor "*) ISO_HYPERVISOR_FLAG="true" ;; esac
 	have lscpu &&
 		ISO_CPU_HYPERVISOR="$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Hypervisor vendor:[[:space:]]*//p' | head -1)"
@@ -135,8 +134,8 @@ isolation_collect() {
 		ISO_CPU_HYPERVISOR="$(printf '%s\n' "$dmesg_head" | sed -n 's/^.*Hypervisor detected: //p' | head -1)"
 
 	# --- virtio topology ---
-	# WHICH devices the VMM chose to expose, and over WHICH transport, is what separates two KVM
-	# guests that otherwise look identical. Firecracker gives virtio-blk + virtio-net (classically
+	# WHICH devices the VMM chose to expose, and over WHICH transport, can support a VMM identity,
+	# but a generic virtio topology cannot name one. Firecracker gives virtio-blk + virtio-net (classically
 	# over MMIO, with `pci=off`); libkrun gives virtio-fs as the ROOT plus virtio-console and, in TSI
 	# mode, no network device at all; Cloud Hypervisor and stock QEMU put everything on PCI.
 	local dev id path saw_pci=0 saw_mmio=0
@@ -198,8 +197,8 @@ isolation_collect() {
 	[ ${#drivers[@]} -gt 0 ] && ISO_NET_DRIVERS="$(printf '%s\n' "${drivers[@]}" | _iso_joinset)"
 
 	# --- Root filesystem, mount vocabulary, consoles ---
-	# `virtiofs` as the root is a libkrun/Kata shape; a block device with ext4 is the
-	# microVM-with-a-disk shape; `overlay` is a container; gVisor names its own overlay `overlayfs`
+	# `virtiofs` as the root is a libkrun/Kata shape; a block device with ext4 is a
+	# VM-with-a-disk shape; `overlay` supports a container inference; gVisor names its own overlay `overlayfs`
 	# and its gofer mounts `9p`/`goferfs`, which no Linux kernel does.
 	#
 	# /proc/self/mountinfo, not `findmnt`: no tool dependency, and its post-"-" fields give the fstype

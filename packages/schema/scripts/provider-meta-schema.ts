@@ -102,7 +102,7 @@ export const providerMetaSourceSchema = type({
 	inputs: providerInputSchema.array().atLeastLength(1),
 	isolation: type({
 		technology: nonemptyStringSchema,
-		class: "'microVM' | 'container' | 'userspace' | 'unknown'",
+		class: "'vm' | 'microVM' | 'container' | 'userspace' | 'unknown'",
 		"notes?": nonemptyStringSchema,
 	}).onUndeclaredKey("reject"),
 	pricing: providerPricingSchema,
