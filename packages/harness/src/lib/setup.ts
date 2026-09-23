@@ -106,16 +106,16 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 			// exhausted 60-request quota. Later `mise run` commands inherit the global Node config while
 			// task auto-install stays off. The pinned baked image takes the fast path for both checks.
 			//
-			// $SUDO on the mise fallback, because that branch writes to the BAKED image's paths, not the
-			// user's: mise installs into MISE_DATA_DIR (/usr/local/share/mise) and `--global` resolves to
-			// MISE_CONFIG_DIR (/etc/mise/config.toml), both root-owned 0755. Unprivileged and unelevated,
-			// the step dies there. Redirecting both dirs under $HOME is NOT the alternative — measured on
-			// a Runloop devbox, mise still reaches back to rebuild `latest` symlinks in the root-owned
-			// tree and fails anyway. The pnpm branch stays unelevated: its --prefix is under $HOME by
-			// design, and elevating it would plant root-owned files in the sandbox user's own home.
+			// Boat installs mise under the user's ~/.local/bin, which sudo's secure PATH cannot find.
+			// Run it as the user unless a baked image points at root-owned mise directories. In that
+			// case, elevate using the resolved binary path. pnpm always installs under the user's HOME.
 			script: [
 				`cd "$HOME"`,
-				`(node -e 'process.exit(process.versions.node === "${NODE_VERSION}" ? 0 : 1)' 2>/dev/null || $SUDO mise use --global --yes node@${NODE_VERSION})`,
+				`(node -e 'process.exit(process.versions.node === "${NODE_VERSION}" ? 0 : 1)' 2>/dev/null || { ` +
+					`if { [ -n "\${MISE_DATA_DIR:-}" ] && [ ! -w "$MISE_DATA_DIR" ]; } || ` +
+					`{ [ -n "\${MISE_CONFIG_DIR:-}" ] && [ ! -w "$MISE_CONFIG_DIR" ]; }; then ` +
+					`$SUDO "$(command -v mise)" use --global --yes node@${NODE_VERSION}; ` +
+					`else mise use --global --yes node@${NODE_VERSION}; fi; })`,
 				`if command -v pnpm >/dev/null 2>&1 && [ "$(pnpm -v)" = "${PNPM_VERSION}" ]; then :; else npm install --global --prefix "$HOME/.local" pnpm@${PNPM_VERSION}; fi`,
 				"node -v && pnpm -v",
 			].join(" && "),

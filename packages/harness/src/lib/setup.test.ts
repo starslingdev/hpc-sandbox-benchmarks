@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SUITES } from "@sandbox-benchmarks/schema";
 import { REPO_URL, setupSteps } from "./setup.ts";
 
@@ -75,15 +78,47 @@ describe("setupSteps", () => {
 		expect(nodeStep?.script).not.toContain(`cd "$HOME/sandbox-benchmarks" && mise use`);
 	});
 
-	// The mise fallback writes to the baked image's root-owned MISE_DATA_DIR/MISE_CONFIG_DIR, so an
-	// unprivileged sandbox (runloop) needs the preamble's $SUDO to survive it. The pnpm branch must
-	// NOT be elevated — it installs under $HOME, where root-owned files would be the new bug.
-	it("elevates only the mise fallback, which writes outside $HOME", () => {
+	it("uses user-local mise on stock images and elevates only for root-owned mise paths", () => {
 		const nodeStep = setupSteps(SUITES["cpu-node"]).find(
 			(step) => step.label === "setup node 22 + pnpm 10",
 		);
-		expect(nodeStep?.script).toContain("$SUDO mise use --global");
-		expect(nodeStep?.script).not.toContain("$SUDO npm install");
+		if (!nodeStep) throw new Error("node setup step missing");
+		const home = mkdtempSync(join(tmpdir(), "mise-setup-test-"));
+		const log = join(home, "calls.log");
+		try {
+			for (const [name, body] of [
+				["node", 'if [ "$1" = "-e" ]; then exit 1; fi; echo v22.23.1'],
+				["pnpm", "echo 10.34.5"],
+				["mise", 'echo "mise $*" >> "$PROBE_LOG"'],
+				["sudo", 'echo sudo >> "$PROBE_LOG"; shift; exec "$@"'],
+			] as const) {
+				const path = join(home, name);
+				writeFileSync(path, `#!/bin/sh\n${body}\n`);
+				chmodSync(path, 0o755);
+			}
+			const run = (miseDataDir: string) => {
+				writeFileSync(log, "");
+				const result = Bun.spawnSync(["bash", "-c", nodeStep.script], {
+					env: {
+						...process.env,
+						HOME: home,
+						PATH: `${home}:${process.env.PATH}`,
+						SUDO: "sudo -E",
+						MISE_DATA_DIR: miseDataDir,
+						MISE_CONFIG_DIR: "",
+						PROBE_LOG: log,
+					},
+				});
+				expect(result.exitCode, result.stderr.toString()).toBe(0);
+				return readFileSync(log, "utf8");
+			};
+			expect(run("")).toBe("mise use --global --yes node@22.23.1\n");
+			expect(run(join(home, "unwritable-mise-data"))).toBe(
+				"sudo\nmise use --global --yes node@22.23.1\n",
+			);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
 	});
 
 	it("checksum-verifies the pinned mise fallback without executing a remote installer", () => {
