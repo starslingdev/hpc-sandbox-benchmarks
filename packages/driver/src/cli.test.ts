@@ -1906,20 +1906,36 @@ describe("cliDriver", () => {
 		expect(cleanupCalls).toBe(1);
 	});
 
-	test("a create that never becomes ready reconciles inside the reserved cleanup tail", async () => {
+	test("readiness reserves time for in-line failed-create reconciliation", async () => {
 		const vendor = fakeVendor({ readyAfterPolls: Number.POSITIVE_INFINITY });
-		const driver = cliDriver(tamaLikeSpec(), { run: vendor.run });
-		const started = Date.now();
+		const spec = tamaLikeSpec();
+		let pollTimeoutMs: number | undefined;
+		const driver = cliDriver(
+			{
+				...spec,
+				ready: {
+					...spec.ready,
+					classify: () => ({ terminal: "stopped before readiness" }),
+				},
+			},
+			{
+				run: (binary, args, options) => {
+					if (args[0] === "list") pollTimeoutMs = options.timeoutMs;
+					return vendor.run(binary, args, options);
+				},
+			},
+		);
+		const deadlineMs = 1_000;
 		const error = (await driver
-			.create({ ...request, deadlineMs: 25 })
+			.create({ ...request, deadlineMs })
 			.catch((caught: unknown) => caught)) as DriverError;
-		// Readiness stops short of the attempt ceiling, so the failed create still owns a bounded
-		// window to reconcile in-line rather than deferring a billable machine to the process owner.
+		// The readiness command cannot consume the cleanup half of the same attempt deadline.
+		expect(pollTimeoutMs).toBeGreaterThan(0);
+		expect(pollTimeoutMs).toBeLessThanOrEqual(deadlineMs / 2);
 		expect(error).not.toBeInstanceOf(FailedCreateCleanupError);
-		expect(error.code).toBe("readiness-timeout");
-		expect(error.message).toMatch(/tama sandbox not ready within 25ms/);
-		// The reserve is carved out of the same deadline, never added to it.
-		expect(Date.now() - started).toBeLessThan(250);
+		expect(error.code).toBe("create-failed");
+		expect(error.message).toMatch(/stopped before readiness/);
+		expect(vendor.calls.some(([verb]) => verb === "rm-name")).toBe(true);
 		expect(vendor.machines.size).toBe(0);
 	});
 
