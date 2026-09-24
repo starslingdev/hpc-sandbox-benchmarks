@@ -1,6 +1,6 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import type { Command200Response, Sandbox, SandboxListResponse } from "@boatdev/sdk";
-import { ResponseError } from "@boatdev/sdk";
+import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, sandboxRef } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
@@ -11,6 +11,7 @@ import boatDriver, {
 	BOAT_CREATE_CEILING_MS,
 	BOAT_CREATE_RATE_LIMIT_RETRY_MS,
 	BOAT_EXECUTION,
+	BOAT_MACHINE_PROVIDER,
 	BOAT_MACHINE_TYPE,
 	BOAT_PROVENANCE,
 	BOAT_READINESS,
@@ -236,6 +237,120 @@ describe("boat module policy", () => {
 		);
 		expect(named).toBe(createInput?.idempotencyKey);
 		expect(states).toHaveLength(0);
+	});
+
+	it("sends machineProvider only on the create request, through the real SDK", async () => {
+		const sandboxId = "bx_23456789";
+		const requests: Array<{
+			method: string;
+			path: string;
+			headers: Headers;
+			body: Record<string, unknown> | undefined;
+			hasSignal: boolean;
+		}> = [];
+		let name = "Sandbox 2026-09-21 12:00";
+		let deleted = false;
+		const json = (body: unknown, status = 200) =>
+			new Response(JSON.stringify(body), {
+				status,
+				headers: { "Content-Type": "application/json" },
+			});
+		const fetchApi = (async (...[input, init]: Parameters<typeof fetch>) => {
+			const url = new URL(String(input));
+			const method = init?.method ?? "GET";
+			const path = url.pathname.replace(/^\/api\/v1/, "");
+			const body =
+				typeof init?.body === "string"
+					? (JSON.parse(init.body) as Record<string, unknown>)
+					: undefined;
+			requests.push({
+				method,
+				path,
+				headers: new Headers(init?.headers),
+				body,
+				hasSignal: init?.signal instanceof AbortSignal,
+			});
+			const sandbox = (state: Sandbox["state"]) => ({ ...nativeSandbox(state), name });
+			if (method === "POST" && path === "/sandboxes") {
+				return json({
+					ok: true,
+					type: "sandbox.created",
+					status: "provisioning",
+					ttlSeconds: null,
+					sandbox: sandbox("provisioning"),
+				});
+			}
+			if (method === "GET" && path === "/sandboxes") {
+				return json({
+					ok: true,
+					type: "sandbox.list",
+					sandboxes: [],
+					pageInfo: { nextCursor: null, hasMore: false },
+				});
+			}
+			if (path === `/sandboxes/${sandboxId}/commands`) {
+				const command = String(body?.command);
+				if (body?.detached === true) {
+					return json({ ...startedCommand(), startedAt: "2026-09-21T00:00:00.000Z" });
+				}
+				return json(finishedCommand(command.startsWith("df -Pk") ? `${80 * 1024 * 1024}\n` : ""));
+			}
+			if (path === `/sandboxes/${sandboxId}`) {
+				if (method === "PATCH") {
+					name = String(body?.name);
+					return json({ ok: true, type: "sandbox.info", sandbox: sandbox("provisioning") });
+				}
+				if (method === "DELETE") {
+					deleted = true;
+					return json({
+						...deletion(sandboxId),
+						operation: {
+							...deletion(sandboxId).operation,
+							requestedAt: "2026-09-21T00:00:00.000Z",
+						},
+					});
+				}
+				if (deleted) return json({ ok: false, status: 404, code: "not_found" }, 404);
+				return json({ ok: true, type: "sandbox.info", sandbox: sandbox("ready") });
+			}
+			throw new Error(`unexpected boat request ${method} ${path}`);
+		}) as typeof fetch;
+		const client = new BoatApi(
+			new Configuration({ accessToken: context.env.BOAT_API_KEY, fetchApi }),
+		);
+		const boat = driver(client);
+		const session = await boat.create(request);
+		await session.exec("uname -a");
+		await session.launch?.("sleep 120");
+		await session.destroy();
+		await boat.inventory?.list();
+
+		const calls = new Set(requests.map(({ method, path }) => `${method} ${path}`));
+		expect(calls).toEqual(
+			new Set([
+				"POST /sandboxes",
+				"PATCH /sandboxes/bx_23456789",
+				"GET /sandboxes/bx_23456789",
+				"POST /sandboxes/bx_23456789/commands",
+				"DELETE /sandboxes/bx_23456789",
+				"GET /sandboxes",
+			]),
+		);
+		const carrying = requests.filter(({ body }) => body !== undefined && "machineProvider" in body);
+		expect(carrying.map(({ method, path }) => `${method} ${path}`)).toEqual(["POST /sandboxes"]);
+		const [create] = carrying;
+		expect(create?.body).toEqual({
+			type: BOAT_MACHINE_TYPE,
+			machineProvider: BOAT_MACHINE_PROVIDER,
+			ttlSeconds: null,
+			noEnv: true,
+		});
+		expect(create?.headers.get("Content-Type")).toBe("application/json");
+		expect(create?.headers.get("Authorization")).toBe(`Bearer ${context.env.BOAT_API_KEY}`);
+		expect(create?.headers.get("Idempotency-Key")).toMatch(
+			new RegExp(`^${BOAT_RECOVERY_NAME_PREFIX}-[0-9a-f-]{36}$`),
+		);
+		expect(requests.every(({ hasSignal }) => hasSignal)).toBe(true);
 	});
 
 	it("refuses a non-stock artifact and an off-SKU shape before allocation", async () => {
