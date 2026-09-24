@@ -5,8 +5,13 @@
 // Teardown is deleteSandbox, never stop: boat snapshots a running sandbox about once a minute and
 // stop archives the sandbox with its whole snapshot chain, so a stop-based teardown leaves every
 // allocation's disk behind on the account forever. Delete removes the sandbox and its snapshots.
+//
+// Create pins the bare-metal machine provider. The SDK's CreateSandboxRequest serializer drops
+// fields it does not know, so machineProvider is merged into create's body by an init override;
+// every other SDK call is sent unchanged.
 
 import { randomUUID } from "node:crypto";
+import type { InitOverrideFunction } from "@boatdev/sdk";
 import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
 import type {
 	CreateRequest,
@@ -33,6 +38,7 @@ export const BOAT_API_BASE = "https://boat.dev/api/v1";
 export const BOAT_SANDBOX_ID = type(/^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/);
 export const BOAT_RECOVERY_NAME_PREFIX = "sandbox-benchmarks";
 export const BOAT_MACHINE_TYPE = "default" as const;
+export const BOAT_MACHINE_PROVIDER = "baremetal" as const;
 export const BOAT_COMMAND_TIMEOUT_SECONDS = 600;
 export const BOAT_READY_POLL_MS = 2_000;
 export const BOAT_READY_TIMEOUT_MS = 8 * 60_000;
@@ -132,9 +138,11 @@ const boatCreateOptionsSchema = type({
 	name: "string >= 1",
 	idempotencyKey: "string >= 1",
 	type: "'default'",
+	machineProvider: "'baremetal'",
 	ttlSeconds: "null",
 	noEnv: "true",
 });
+const serializedCreateBodySchema = type({ "[string]": "unknown" });
 const diskCapacityKbSchema = type("string.integer.parse").to("number > 0");
 
 export type BoatSandbox = typeof boatSandboxSchema.infer;
@@ -188,6 +196,25 @@ function controlSignal(options?: DriverOperationOptions, timeoutMs = BOAT_CONTRO
 
 function requestInit(options?: DriverOperationOptions, timeoutMs?: number): RequestInit {
 	return { signal: controlSignal(options, timeoutMs) };
+}
+
+/**
+ * Create's request init with machineProvider merged into the body. The override runs after the SDK
+ * has built the JSON object and before it stringifies it, so the body is still an object here.
+ */
+function createRequestInit(
+	machineProvider: BoatCreateOptions["machineProvider"],
+	options?: DriverOperationOptions,
+): InitOverrideFunction {
+	return async ({ init }) => ({
+		...requestInit(options),
+		// The SDK stringifies a JSON body after this override, so it must stay an object; a string
+		// would be encoded twice. RequestInit's body type does not model that contract.
+		body: {
+			...serializedCreateBodySchema.assert(init.body),
+			machineProvider,
+		} as unknown as RequestInit["body"],
+	});
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -454,7 +481,7 @@ async function createWithIdempotency(
 							noEnv: createOptions.noEnv,
 						},
 					},
-					requestInit(operation),
+					createRequestInit(createOptions.machineProvider, operation),
 				),
 			).sandbox;
 		} catch (error) {
@@ -657,6 +684,7 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 					name,
 					idempotencyKey: name,
 					type: BOAT_MACHINE_TYPE,
+					machineProvider: BOAT_MACHINE_PROVIDER,
 					ttlSeconds: null,
 					noEnv: true,
 				});
