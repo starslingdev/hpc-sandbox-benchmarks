@@ -10,15 +10,14 @@ describe("provider artifact composition", () => {
 	});
 
 	test("does not make no-op bakers constructable", () => {
-		// @ts-expect-error stock providers are excluded by BakedProviderId
-		expect(BAKED_ARTIFACT_BUILDERS.blaxel).toBeUndefined();
+		expect(BAKED_ARTIFACT_BUILDERS.blaxel).toBeFunction();
 		// @ts-expect-error image providers are excluded by BakedProviderId
 		expect(BAKED_ARTIFACT_BUILDERS["modal-gvisor"]).toBeUndefined();
 	});
 
 	test("describes non-baked work from lifecycle metadata", () => {
 		expect(nonBakedArtifactAction("modal-gvisor", "candidate")).toContain("candidate image");
-		expect(nonBakedArtifactAction("blaxel", "version")).toContain("vendor stock image");
+		expect(nonBakedArtifactAction("boat", "version")).toContain("vendor stock image");
 		expect(nonBakedArtifactAction("vercel", "candidate")).toContain(
 			REGISTRY.vercel.artifact.repository,
 		);

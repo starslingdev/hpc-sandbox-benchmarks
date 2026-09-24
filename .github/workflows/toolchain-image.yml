@@ -88,8 +88,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege, global default: read-only. build and promote widen to packages: write; plan widens
-# to packages: read (the immutability probe + package-visibility guard). bake needs no package scope
-# (providers pull the public candidate anonymously) but, like publish, widens to id-token: write for
+# to packages: read (the immutability probe + package-visibility guard). bake needs packages: read
+# so Blaxel's remote builder can pull the digest-pinned base via GHCR credentials. Like publish, bake
+# widens to id-token: write for
 # Namespace's OIDC federation — scoped per-job, never at the workflow level (zizmor: excessive perms).
 permissions:
   contents: read
@@ -398,9 +399,10 @@ jobs:
     # Only the namespace cell uses id-token (Namespace's GitHub OIDC federation, no stored secret), but
     # GHA permissions are per-job, not per-cell — so it is scoped to the whole bake job and the other
     # cells simply never request a token. contents: read is the workflow default, re-declared so this
-    # block widens rather than replaces. No packages scope: providers pull the public candidate anon.
+    # block widens rather than replaces.
     permissions:
       contents: read
+      packages: read
       id-token: write
     strategy:
       fail-fast: false
@@ -413,6 +415,14 @@ jobs:
           persist-credentials: false
       - name: Set up toolchain
         uses: ./.github/actions/setup-toolchain
+      - name: GHCR session for Blaxel remote build
+        if: matrix.provider == 'blaxel'
+        uses: ./.github/actions/ghcr-login
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Blaxel CLI
+        if: matrix.provider == 'blaxel'
+        uses: ./.github/actions/setup-blaxel-cli
       # Namespace has no stored secret: the shared action federates through GitHub OIDC and exposes
       # the same `namespace.outputs.token-file` contract in every managed lane. Keeping the producer
       # id/output identical is what lets provider metadata describe this input without lane-specific
@@ -483,8 +493,7 @@ jobs:
         # The cell's provider + required flag reach the script through the environment, never
         # interpolated into the shell, so a matrix value can't inject into the runner command. Provider
         # creds are optional: a missing one SKIPS that provider (required cells fail instead — see
-        # --require below). blaxel gets no creds here (its bake is a no-op booting the stock base), so
-        # it skips, exactly as the previous monolithic lane did.
+        # --require below). Blaxel builds a workspace image from the shared base and is required.
         #
         # Each cell is handed ONLY its own provider's credentials. The cell already restricts execution
         # to one provider (`--provider`), so injecting every provider secret into every cell would hand
@@ -635,6 +644,9 @@ jobs:
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Blaxel CLI
+        if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel')
+        uses: ./.github/actions/setup-blaxel-cli
       # Namespace federates through GitHub OIDC with no stored secret. Promote is a serial transaction,
       # so the shared action runs once when Namespace is in scope and gives this lane the same
       # `namespace.outputs.token-file` contract as validation and benchmarks. continue-on-error keeps

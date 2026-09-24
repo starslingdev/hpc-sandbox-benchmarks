@@ -32,6 +32,7 @@ import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harnes
 import { config } from "@sandbox-benchmarks/providers/config";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
+import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
@@ -256,6 +257,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		runloopBlueprintCandidate: config.runloopBlueprintCandidate,
+		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,

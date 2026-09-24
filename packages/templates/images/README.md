@@ -1,7 +1,7 @@
 # `@sandbox-benchmarks/templates` — provider toolchain images
 
 Modular, composable Dockerfiles that build the **shared toolchain** every sandbox provider runs, plus
-the **per-provider variants** (e2b, daytona, modal, vercel) that compose on top of it. Published as
+the **per-provider variants** (e2b, daytona, blaxel, modal, vercel) that compose on top of it. Published as
 `ghcr.io/starslingdev/sandbox-benchmarks-toolchain` (name + version, like every pin, live in the
 arktype-validated TypeScript config — see below).
 
@@ -12,6 +12,7 @@ debian:13-slim                 (upstream, BASE_IMAGE default for base/)
   └─ base/                     the shared toolchain (mise tools + Phoronix Test Suite + caches)
        ├─ e2b/                 thin variant: e2b template (envd injected by the e2b builder)
        ├─ daytona/             thin variant: daytona snapshot source
+       ├─ blaxel/              sandbox API + disk-backed writable paths
        ├─ modal/               thin variant: consumed via Image.fromRegistry
        └─ vercel/              thin variant: mirrored to VCR for custom-image sandbox boots
 ```
@@ -71,6 +72,9 @@ the freshly built base. Variants share `_shared/validate-base.sh`, so their buil
   is cleaned up.
 - **Variants validate their base** — `_shared/validate-base.sh` fails with a "rebuild the base first"
   message if the base is missing the stable node symlink, mise, or the PTS caches.
+- **Blaxel mounts its volume at `/mnt/benchmark-volume`** — the entrypoint copies the baked PTS
+  profiles there and links `/var/lib/phoronix-test-suite` and `/blaxel` to the volume before starting
+  `sandbox-api`. This keeps benchmark writes off Blaxel's RAM-backed root overlay.
 - **Stable internal paths** — consumers use `/usr/local/bin/bench-node`; the node-version coupling is
   resolved once in the base.
 - **OCI labels via ARGs** — `BUILD_DATE`/`BUILD_REF`/`BUILD_VERSION` stamp `org.opencontainers.image.*`.

@@ -158,13 +158,12 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    first. Two more refusals keep a scoped release honest, both fail-fast in the plan or before the
    public base moves:
 
-   - **`providers: blaxel` is refused.** It still boots a vendor stock image, so the release lane has
-     no artifact a scoped backfill can publish. Generated credentials let an *unscoped* release
-     validate it best-effort, but validation alone cannot turn the stock image into a release output.
-     Runloop is scopable: its protected `RUNLOOP_API_KEY` builds and validates a candidate Blueprint,
-     and a scoped Runloop dispatch is required/fail-closed.
+   - **`providers: boat` is refused.** Boat still boots a vendor stock image, so the release lane has
+     no artifact a scoped backfill can publish. Blaxel is scopable: its protected `BL_API_KEY` and
+     `BL_WORKSPACE` build and validate a candidate image from the shared base, then publish the
+     version-named image. A scoped Blaxel dispatch is required/fail-closed.
    - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
-     *from* the base (e2b, daytona, novita, runloop). Those providers' candidates are verified but their version
+     *from* the base (e2b, daytona, blaxel, novita, runloop). Those providers' candidates are verified but their version
      artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
      bump `TOOLCHAIN_VERSION` and cut a full release. Providers that don't bake from the base (vercel,
      modal, namespace, microsandbox) are unaffected: their version artifact is a retag of the exact

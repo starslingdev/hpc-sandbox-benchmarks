@@ -37,15 +37,16 @@ import { isBuildMode } from "../lib/release-inputs.ts";
 /**
  * Providers the release is REQUIRED to bake + validate before the public version is published — the
  * same set CI passes to `bake --promote --require …`, single-sourced here so the matrix's per-cell
- * `required` flags and promote's gate can't drift. e2b/daytona-vm bake a real artifact; modal-gvisor is
- * required because its `Image.fromRegistry` boot validates the published image the same way. The new
+ * `required` flags and promote's gate can't drift. e2b/daytona-vm/blaxel bake provider artifacts;
+ * modal-gvisor is required because its `Image.fromRegistry` boot validates the published image. The new
  * isolation variants (daytona-container, modal-vm) are best-effort until a committed run validates
- * them — like blaxel (a no-op bake booting the stock base) and novita (optional control plane), a
+ * them — like novita (optional control plane), a
  * missing secret or an unproven variant skips without failing the release.
  */
 export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
 	"e2b",
 	"daytona-vm",
+	"blaxel",
 	"modal-gvisor",
 ];
 
@@ -57,16 +58,14 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
  * and, on a `build: full` dispatch, an hour of rebuild. Refusing in the plan turns that into a
  * fail-fast with an explanation.
  *
- * Keyed by provider so the reason travels with the refusal. Blaxel and boat still boot a stock vendor
- * image, so their bake/promote publishes nothing even though generated wiring now allows an unscoped
- * release to validate them best-effort. Giving one a toolchain artifact is what removes its entry.
+ * Keyed by provider so the reason travels with the refusal. Boat still boots a stock vendor image,
+ * so its bake/promote publishes nothing even though an unscoped release can validate it best-effort.
  */
 const STOCK_IMAGE_UNSCOPABLE =
 	"it boots the vendor's stock image rather than the toolchain and has no artifact to publish; " +
 	"credentialed validation alone cannot produce a scoped backfill";
 
 export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, string>>> = {
-	blaxel: STOCK_IMAGE_UNSCOPABLE,
 	boat: STOCK_IMAGE_UNSCOPABLE,
 };
 

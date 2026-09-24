@@ -207,6 +207,23 @@ describe("provider artifact evidence", () => {
 		).toThrow(/requested kind matches e2b/);
 	});
 
+	it("preserves stock-image attribution in Blaxel runs recorded before its baked-image migration", () => {
+		const stock = {
+			...evidence({ source: "request-fallback", requested: { kind: "none" } }),
+			cell: { ...CELL, providerId: "blaxel" },
+		};
+		expect(parseEvidence(stock).provenance.requested.kind).toBe("none");
+		expect(() =>
+			parseEvidence({ ...stock, provenance: { source: "request-fallback", requested: BAKED } }),
+		).not.toThrow();
+		expect(() =>
+			parseEvidence({
+				...stock,
+				provenance: { source: "request-fallback", requested: { kind: "image", ref: "wrong" } },
+			}),
+		).toThrow(/requested kind matches blaxel/);
+	});
+
 	it("rejects missing identity and undeclared keys", () => {
 		expect(() =>
 			parseEvidence({ cell: CELL, provenance: { source: "request-fallback", requested: BAKED } }),

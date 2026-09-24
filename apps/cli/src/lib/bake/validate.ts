@@ -16,6 +16,8 @@ export interface CandidateRefs {
 	novitaTemplateCandidate: string;
 	/** Candidate Blueprint on Runloop's control plane. */
 	runloopBlueprintCandidate: string;
+	/** Candidate sandbox image in the Blaxel workspace registry. */
+	blaxelImageCandidate: string;
 	toolchainImageCandidate: string;
 	/** Candidate image mirrored into the linked project's Vercel Container Registry. */
 	vercelImageCandidate: string;
@@ -67,6 +69,10 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 				createOptions: { templateId: refs.toolchainImageCandidate },
 			};
 		case "blaxel":
+			return {
+				artifact: { kind: "baked", ref: refs.blaxelImageCandidate },
+				createOptions: { image: `${refs.blaxelImageCandidate}:latest` },
+			};
 		case "boat":
 			// Stock vendor image — no candidate artifact to point at.
 			return { artifact: { kind: "none" }, createOptions: {} };

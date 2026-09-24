@@ -5,13 +5,13 @@ export default defineProviderMeta("blaxel", {
 	vendor: "Blaxel",
 	website: "https://blaxel.ai",
 	sdkPackage: "@blaxel/core",
-	artifact: { kind: "none" },
+	artifact: { kind: "baked" },
 	inputs: ["BL_API_KEY", "BL_WORKSPACE"],
 	isolation: {
 		class: "microVM",
 		technology: "microVM",
 		notes:
-			"Blaxel sandboxes (sub-25ms boot claim). CPU is COUPLED to RAM (measured: cores = memory MB / 2048) with no cgroup cpu.max, and the sandbox root is a RAM-overlay tmpfs with no independent disk knob (storageMb/diskPercent are accepted but silently ignored on this plan). The adapter pins memory=8192 -> 8 GiB RAM and 4 vCPU (specMatched=true covers that effective vCPU/memory pair only), and mounts a 40 GiB volume at the PTS data dir so the separate disk gate clears (see blaxel-volume.ts). The target's vCPU is 4 precisely so Blaxel's coupled point lands on-spec — the dimensions stay coupled, so a different target shape would put Blaxel off-spec again.",
+			"Blaxel sandboxes (sub-25ms boot claim). CPU is coupled to RAM (measured: cores = memory MB / 2048) with no cgroup cpu.max. The adapter pins memory=8192 -> 8 GiB RAM and 4 vCPU. Its shared-toolchain image copies the baked PTS tree into an ephemeral XFS volume and puts /blaxel on the same volume, keeping benchmark writes off Blaxel's RAM-backed root overlay. The target's vCPU is 4 precisely so Blaxel's coupled point lands on-spec; a different target shape may not.",
 	},
 	pricing: {
 		model: "published",
@@ -45,7 +45,7 @@ export default defineProviderMeta("blaxel", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Now carries committed runs and is in the default matrix set. memory=8192 hits the 4 vCPU / 8 GiB target (specMatched=true is that vCPU/memory check only); the 40 GiB volume (mounted at the PTS data dir) separately lets the realworld suites (mastra 30, openclaw 25) clear the disk gate instead of skipping.",
+			"Now carries committed runs and is in the default matrix set. memory=8192 hits the 4 vCPU / 8 GiB target (specMatched=true is that vCPU/memory check only); the 40 GiB volume holds the writable PTS tree and /blaxel and lets the realworld suites clear the disk gate.",
 	},
 	// memory=8192 lands on the target's 8 GiB / 4 vCPU point because the target's vCPU was chosen to
 	// sit on Blaxel's RAM/CPU coupling curve (specMatched only judges that pair). The 40 GiB volume

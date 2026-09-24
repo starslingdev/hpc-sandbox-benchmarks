@@ -659,9 +659,9 @@ test("an attempt from another workflow cannot satisfy experiment coverage", () =
 test("stock boots do not require verification of an artifact they never requested", () => {
 	const stockCell = {
 		...cell(),
-		id: "blaxel-memory-r0",
-		provider: "blaxel" as const,
-		quotaDomain: "blaxel",
+		id: "boat-memory-r0",
+		provider: "boat" as const,
+		quotaDomain: "boat",
 		artifactIdentity: evidenceDigest({ kind: "none" }),
 	};
 	const stockPlan = planExperiment({
@@ -674,13 +674,13 @@ test("stock boots do not require verification of an artifact they never requeste
 	if (!attempt.run || !attempt.execution) throw new Error("fixture incomplete");
 	const provider = attempt.run.providers[0];
 	if (!provider?.artifactEvidence?.[0]) throw new Error("fixture missing artifact");
-	provider.providerId = "blaxel";
-	provider.artifactEvidence[0].cell.providerId = "blaxel";
+	provider.providerId = "boat";
+	provider.artifactEvidence[0].cell.providerId = "boat";
 	provider.artifactEvidence[0].provenance = {
 		source: "request-fallback",
 		requested: { kind: "none" },
 	};
-	attempt.execution.provider = "blaxel";
+	attempt.execution.provider = "boat";
 	attempt.evidence.cellId = stockCell.id;
 	attempt.evidence.planDigest = stockPlan.digest;
 	attempt.evidence.artifactIdentity = stockCell.artifactIdentity;

@@ -34,8 +34,8 @@ describe("artifact partitions", () => {
 		const accepted: BakedProviderId = "e2b";
 		expect(accepted).toBe("e2b");
 		// @ts-expect-error stock providers cannot acquire a baker
-		const stock: BakedProviderId = "blaxel";
-		expect(String(stock)).toBe("blaxel");
+		const stock: BakedProviderId = "boat";
+		expect(String(stock)).toBe("boat");
 	});
 
 	test("requires baked name suffixes to begin with a separator", () => {
@@ -69,5 +69,6 @@ describe("artifact projections", () => {
 		expect(bakedArtifactName("e2b", "version")).toBe(canonical);
 		expect(bakedArtifactName("novita", "candidate")).toBe(`${canonical}-candidate`);
 		expect(bakedArtifactName("daytona-container", "version")).toBe(`${canonical}-container`);
+		expect(bakedArtifactName("blaxel", "candidate")).toBe(`${canonical}-candidate`);
 	});
 });

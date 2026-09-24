@@ -5,30 +5,32 @@ import { sandboxRef } from "@sandbox-benchmarks/driver";
 import blaxelDriver, {
 	BLAXEL_ATTEMPT_LABEL,
 	BLAXEL_EXECUTION,
-	BLAXEL_IMAGE,
 	BLAXEL_KEEPALIVE_PROCESS,
 	BLAXEL_OWNER_LABEL,
 	BLAXEL_PROVENANCE,
-	BLAXEL_PTS_DATA_DIR,
 	BLAXEL_READINESS,
 	BLAXEL_REGION,
 	BLAXEL_REQUEST_COVERAGE,
 	BLAXEL_SANDBOX_ID,
 	BLAXEL_VOLUME_HEADROOM_MB,
+	BLAXEL_VOLUME_MOUNT_DIR,
+	blaxelImageRef,
 	blaxelSpec,
 	execBlaxelCommand,
 	isBlaxelNotFound,
 } from "./index.ts";
 
+const imageName = "sandbox-benchmarks-toolchain-v8";
+const imageRef = blaxelImageRef(imageName);
 const context = {
 	env: { BL_API_KEY: "bl_test-key", BL_WORKSPACE: "test-workspace" },
-	artifact: { kind: "none" },
-	resolvedArtifact: { kind: "none" },
+	artifact: { kind: "baked", ref: imageName },
+	resolvedArtifact: { kind: "baked", ref: imageName },
 } as const;
 
 const request: CreateRequest = {
 	spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
-	artifact: { kind: "none" },
+	artifact: { kind: "baked", ref: imageName },
 	deadlineMs: 300_000,
 };
 
@@ -55,7 +57,7 @@ function fakeInstance(
 	const instance = {
 		metadata: { name, labels: options.labels ?? {} },
 		spec: {
-			runtime: { memory: options.memory ?? 8192, image: BLAXEL_IMAGE },
+			runtime: { memory: options.memory ?? 8192, image: imageRef },
 			region: BLAXEL_REGION,
 		},
 		status: options.status ?? "DEPLOYED",
@@ -132,12 +134,13 @@ describe("Blaxel module policy", () => {
 			throw new Error(detail);
 		});
 		expect(mapped).toMatchObject({
-			image: BLAXEL_IMAGE,
+			image: imageRef,
 			memory: 8192,
 			region: BLAXEL_REGION,
 			ttl: "10800s",
 			volumes: [
 				expect.objectContaining({
+					mountPath: BLAXEL_VOLUME_MOUNT_DIR,
 					sizeMb: 40 * 1024 + BLAXEL_VOLUME_HEADROOM_MB,
 					type: "ephemeral",
 				}),
@@ -151,7 +154,8 @@ describe("Blaxel module policy", () => {
 		for (const invalid of [
 			{ ...request, spec: { ...request.spec, memoryGb: 16 } },
 			{ ...request, spec: { ...request.spec, vcpus: 2 } },
-			{ ...request, artifact: { kind: "image", ref: "ghcr.io/x/y:1" } },
+			{ ...request, spec: { vcpus: 4, memoryGb: 8 } },
+			{ ...request, artifact: { kind: "baked", ref: "wrong-image" } },
 		] as const) {
 			expect(() =>
 				spec.createOptions.map(invalid, (detail) => {
@@ -177,7 +181,7 @@ describe("Blaxel lifecycle", () => {
 				region: BLAXEL_REGION,
 				volumes: [
 					{
-						mountPath: BLAXEL_PTS_DATA_DIR,
+						mountPath: BLAXEL_VOLUME_MOUNT_DIR,
 						type: "ephemeral",
 						sizeMb: 40 * 1024 + BLAXEL_VOLUME_HEADROOM_MB,
 					},
