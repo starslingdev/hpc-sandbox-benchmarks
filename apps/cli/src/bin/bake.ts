@@ -17,6 +17,7 @@ import {
 import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
+import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import {
@@ -152,6 +153,7 @@ if (import.meta.main) {
 				daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
 				novitaTemplate: config.novitaTemplateVersion,
 				runloopBlueprint: config.runloopBlueprintVersion,
+				blaxelImage: bakedArtifactName("blaxel", "version"),
 			},
 			reports: promoted.reports,
 		});
@@ -176,10 +178,8 @@ if (import.meta.main) {
 	// Resolve once after the push and validate the exact candidate bytes by immutable digest. This also
 	// makes a tag change between provider bakes unable to redirect Modal's validation to different bytes.
 	//
-	// Only providers that actually reference the base need it: vercel boots its own VCR mirror while
-	// blaxel boots a vendor stock image, so a cell restricted to either must not die on a base candidate it
-	// never reads — under `build: skip` that ref may legitimately be stale or absent, and failing there
-	// would break the one flow the scoped release exists for.
+	// Only providers that actually reference the base need it: vercel boots its own VCR mirror, so a
+	// cell restricted to it must not die on a base candidate it never reads.
 	const needsBase = (only ?? PROVIDERS.map((p) => p.id)).some((id) => baseImageUse(id) !== "none");
 	let pinnedBaseImage = baseImageRef;
 	if (needsBase) {
@@ -201,6 +201,7 @@ if (import.meta.main) {
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		runloopBlueprintCandidate: config.runloopBlueprintCandidate,
+		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,

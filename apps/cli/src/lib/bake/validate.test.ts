@@ -10,6 +10,7 @@ const refs: CandidateRefs = {
 	// Distinct from the e2b value so the novita case fails if it ever reads the e2b field.
 	novitaTemplateCandidate: "tc-v1-novita-candidate",
 	runloopBlueprintCandidate: "tc-v1-runloop-candidate",
+	blaxelImageCandidate: "tc-v1-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
 	vercelImageCandidate: "sandbox-benchmarks-toolchain-vercel:v1-candidate",
 	daytonaVmTarget: "us-west-2",
@@ -60,6 +61,16 @@ describe("candidateCreateOptions", () => {
 	it("points Runloop at its candidate Blueprint by name", () => {
 		expect(candidateCreateOptions("runloop", refs)).toEqual({
 			blueprint_name: "tc-v1-runloop-candidate",
+		});
+	});
+
+	it("points Blaxel at its versioned candidate workspace image", () => {
+		expect(candidateResolvedArtifact("blaxel", refs)).toEqual({
+			kind: "baked",
+			ref: refs.blaxelImageCandidate,
+		});
+		expect(candidateCreateOptions("blaxel", refs)).toEqual({
+			image: `${refs.blaxelImageCandidate}:latest`,
 		});
 	});
 

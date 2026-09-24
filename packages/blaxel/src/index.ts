@@ -2,8 +2,8 @@
 // carry this provider through account admission: its `list()` maps over a PaginatedList (a TypeError
 // against @blaxel/core 0.3.5) and its `destroy` swallows every failure, so a leaked, billable
 // sandbox would read as removed. One registry-joined file therefore owns credentials, the
-// memory-coupled shape, the ephemeral volume and keepalive a benchmark needs on Blaxel's RAM-overlay
-// root, sandbox identity, lifecycle truth, inventory and recovery. The shared bridge still owns
+// memory-coupled shape, the disk-backed writable paths and keepalive a benchmark needs on Blaxel's
+// RAM-overlay root, sandbox identity, lifecycle truth, inventory and recovery. The shared bridge owns
 // request validation, error normalization, redaction, ambiguous-create ownership, output caps, and
 // session assembly.
 
@@ -34,13 +34,16 @@ type BlaxelProcess = Awaited<ReturnType<SandboxInstance["process"]["exec"]>>;
 
 /** Blaxel resource names: lowercase alphanumeric plus hyphens, at most 49 characters. */
 export const BLAXEL_SANDBOX_ID = type(/^[a-z0-9][a-z0-9-]{0,48}$/);
-/** The Debian image: Blaxel's stock Alpine base has no apt, so PTS cannot be installed there. */
-export const BLAXEL_IMAGE = "blaxel/ts-app:latest";
+/** Blaxel resolves this workspace image name to the most recently completed remote build. */
+export function blaxelImageRef(name: string): string {
+	return `${name}:latest`;
+}
 export const BLAXEL_REGION = "us-was-1";
 /** Blaxel couples CPU to RAM (measured: cores = memory MB / 2048) and exposes no independent knob. */
 export const BLAXEL_MEMORY_MB_PER_VCPU = 2048;
 export const BLAXEL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
-/** Where the heavy suites write (PTS_USER_PATH_OVERRIDE); the ephemeral volume mounts here. */
+/** The image entrypoint links PTS and HOME into this disk-backed ephemeral volume. */
+export const BLAXEL_VOLUME_MOUNT_DIR = "/mnt/benchmark-volume";
 export const BLAXEL_PTS_DATA_DIR = "/var/lib/phoronix-test-suite";
 /**
  * Filesystem metadata eats into an ephemeral volume: a 40960 MB volume mounted with 39.94 GiB
@@ -322,8 +325,8 @@ export function blaxelSpec({ env, resolvedArtifact }: DriverContext<"blaxel">) {
 		createOptions: {
 			coverage: BLAXEL_REQUEST_COVERAGE,
 			map: (request, unsupported) => {
-				if (request.artifact.kind !== "none" || resolvedArtifact.kind !== "none") {
-					unsupported("Blaxel boots its stock image; the request names an artifact");
+				if (request.artifact.kind !== "baked" || request.artifact.ref !== resolvedArtifact.ref) {
+					unsupported("the request artifact does not match the resolved Blaxel image");
 				}
 				const memoryMb = request.spec.memoryGb * 1024;
 				if (memoryMb !== request.spec.vcpus * BLAXEL_MEMORY_MB_PER_VCPU) {
@@ -331,26 +334,26 @@ export function blaxelSpec({ env, resolvedArtifact }: DriverContext<"blaxel">) {
 						`Blaxel couples vCPU to RAM at ${BLAXEL_MEMORY_MB_PER_VCPU} MB per vCPU; ${request.spec.vcpus} vCPU and ${request.spec.memoryGb} GiB are off that curve`,
 					);
 				}
+				const diskGb = request.spec.diskGb;
+				if (diskGb === undefined) {
+					return unsupported("the Blaxel toolchain image requires a mounted benchmark volume");
+				}
 				const name = `benchmark-${randomUUID()}`;
 				return {
 					name,
-					image: BLAXEL_IMAGE,
+					image: blaxelImageRef(resolvedArtifact.ref),
 					memory: memoryMb,
 					region: BLAXEL_REGION,
 					ttl: `${Math.ceil(BLAXEL_SANDBOX_LIFETIME_MS / 1000)}s`,
 					labels: { [BLAXEL_OWNER_LABEL]: "blaxel", [BLAXEL_ATTEMPT_LABEL]: name },
-					...(request.spec.diskGb === undefined
-						? {}
-						: {
-								volumes: [
-									{
-										name: `sbx-bench-${name.slice(-8)}`,
-										mountPath: BLAXEL_PTS_DATA_DIR,
-										type: "ephemeral" as const,
-										sizeMb: request.spec.diskGb * 1024 + BLAXEL_VOLUME_HEADROOM_MB,
-									},
-								],
-							}),
+					volumes: [
+						{
+							name: `sbx-bench-${name.slice(-8)}`,
+							mountPath: BLAXEL_VOLUME_MOUNT_DIR,
+							type: "ephemeral" as const,
+							sizeMb: diskGb * 1024 + BLAXEL_VOLUME_HEADROOM_MB,
+						},
+					],
 				};
 			},
 		},

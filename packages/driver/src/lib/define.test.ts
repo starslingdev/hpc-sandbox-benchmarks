@@ -82,7 +82,9 @@ describe("EnvOf", () => {
 		type _e2bResolved = Expect<
 			Equal<ResolvedArtifactOf<"e2b">, { readonly kind: "baked"; readonly ref: string }>
 		>;
-		type _blaxelResolved = Expect<Equal<ResolvedArtifactOf<"blaxel">, { readonly kind: "none" }>>;
+		type _blaxelResolved = Expect<
+			Equal<ResolvedArtifactOf<"blaxel">, { readonly kind: "baked"; readonly ref: string }>
+		>;
 		expect(true).toBe(true);
 	});
 });

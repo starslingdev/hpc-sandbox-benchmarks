@@ -36,7 +36,7 @@ const ARTIFACT_KINDS = {
 	e2b: "baked",
 	"daytona-vm": "baked",
 	"daytona-container": "baked",
-	blaxel: "none",
+	blaxel: "baked",
 	"microsandbox-cloud": "image",
 	"modal-gvisor": "image",
 	"modal-vm": "image",
@@ -53,6 +53,7 @@ const BAKED = {
 	e2b: true,
 	"daytona-vm": true,
 	"daytona-container": true,
+	blaxel: true,
 	novita: true,
 	runloop: true,
 } as const satisfies Record<BakedProviderId, true>;
@@ -131,15 +132,15 @@ describe("provider metadata authoring", () => {
 			"e2b",
 			"daytona-vm",
 			"daytona-container",
+			"blaxel",
 			"novita",
 			"runloop",
 		]);
 		const acceptBaked = (id: BakedProviderId) => id;
 		const acceptStock = (id: StockProviderId) => id;
 		expect(acceptBaked("e2b")).toBe("e2b");
-		expect(acceptStock("blaxel")).toBe("blaxel");
-		// @ts-expect-error blaxel's stock image cannot acquire a no-op baker.
-		acceptBaked("blaxel");
+		expect(acceptBaked("blaxel")).toBe("blaxel");
+		expect(acceptStock("boat")).toBe("boat");
 		// @ts-expect-error a baked provider cannot enter the stock-image partition.
 		acceptStock("e2b");
 	});

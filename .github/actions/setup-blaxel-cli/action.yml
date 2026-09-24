@@ -1,0 +1,17 @@
+name: Set up Blaxel CLI
+description: Install the pinned Blaxel CLI for workspace image builds
+runs:
+  using: composite
+  steps:
+    - name: Install Blaxel CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        bin_dir="${RUNNER_TEMP}/blaxel-cli"
+        mkdir -p "${bin_dir}"
+        curl --fail --show-error --silent --location \
+          https://raw.githubusercontent.com/blaxel-ai/toolkit/main/install.sh \
+          --output "${RUNNER_TEMP}/blaxel-install.sh"
+        VERSION=v0.1.100 BINDIR="${bin_dir}" sh "${RUNNER_TEMP}/blaxel-install.sh"
+        "${bin_dir}/bl" version
+        echo "${bin_dir}" >> "${GITHUB_PATH}"

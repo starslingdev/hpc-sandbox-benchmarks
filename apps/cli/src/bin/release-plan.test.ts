@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { config } from "@sandbox-benchmarks/providers";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
+import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
 import {
 	buildReleasePlan,
 	planOutputs,
@@ -108,11 +109,15 @@ describe("buildReleasePlan matrix", () => {
 	// The flip side of "everything you name is required": validating a stock provider does not create
 	// an artifact a scoped backfill can ship. The plan refuses that impossible request before approval.
 	test("refuses a scope naming a provider the release lane cannot ship", () => {
-		expect(() => buildReleasePlan({ ...base, providers: "blaxel" })).toThrow(/blaxel/);
 		expect(() => buildReleasePlan({ ...base, providers: "boat" })).toThrow(/boat/);
-		expect(() => buildReleasePlan({ ...base, providers: "e2b,blaxel" })).toThrow(
-			/BL_API_KEY|cannot ship/,
-		);
+		expect(() => buildReleasePlan({ ...base, providers: "e2b,boat" })).toThrow(/cannot ship/);
+	});
+
+	test("a scoped Blaxel backfill builds and publishes a required version image", () => {
+		const plan = buildReleasePlan({ ...backfillBase, providers: "blaxel", alreadyPublished: true });
+		expect(plan.required).toEqual(["blaxel"]);
+		expect(plan.providers[0]?.artifact).toBe(bakedArtifactName("blaxel", "candidate"));
+		expect(plan.image.source).toBe(config.toolchainImageVersion);
 	});
 
 	test("accepts a scoped Runloop release and makes it required", () => {
@@ -129,10 +134,10 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("blaxel");
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("runloop");
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("boat");
-		expect(plan.required).not.toContain("blaxel");
+		expect(plan.required).toContain("blaxel");
 		expect(plan.required).not.toContain("boat");
 		expect(plan.required).not.toContain("runloop");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["blaxel", "boat"]);
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the
