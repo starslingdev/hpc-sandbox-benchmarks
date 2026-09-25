@@ -76,6 +76,7 @@ jobs:
       actions: read
     outputs:
       accounts: ${{ steps.plan.outputs.axis }}
+      waves: ${{ steps.plan.outputs.waves }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,6 +106,9 @@ jobs:
   wave-synthetic-memory:
     name: Synthetic - Memory / ${{ matrix.account }}
     needs: plan
+    if: >
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-memory')
     permissions:
       contents: write
       actions: read
@@ -123,7 +127,8 @@ jobs:
     name: Synthetic - System / ${{ matrix.account }}
     needs: [plan, wave-synthetic-memory]
     if: >
-      !cancelled() && needs.plan.result == 'success'
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-system')
     permissions:
       contents: write
       actions: read
@@ -142,7 +147,8 @@ jobs:
     name: realworld / ${{ matrix.account }}
     needs: [plan, wave-synthetic-system]
     if: >
-      !cancelled() && needs.plan.result == 'success'
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'realworld')
     permissions:
       contents: write
       actions: read

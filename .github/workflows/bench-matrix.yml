@@ -54,6 +54,7 @@ jobs:
       actions: read
     outputs:
       accounts: ${{ steps.plan.outputs.axis }}
+      waves: ${{ steps.plan.outputs.waves }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,6 +90,9 @@ jobs:
   wave-synthetic-memory:
     name: Synthetic - Memory / ${{ matrix.account }}
     needs: plan
+    if: >
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-memory')
     permissions:
       contents: write
       actions: read
@@ -108,7 +112,8 @@ jobs:
     needs: [plan, wave-synthetic-memory]
     # `needs` orders waves without making one account's shortfall cancel later independent work.
     if: >
-      !cancelled() && needs.plan.result == 'success'
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-system')
     permissions:
       contents: write
       actions: read
@@ -130,7 +135,8 @@ jobs:
     # off), so without this one account's shortfall skips realworld for EVERY account and discards
     # the whole wave over a single provider's cells. Publication is gated on coverage, not on this.
     if: >
-      !cancelled() && needs.plan.result == 'success'
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'realworld')
     permissions:
       contents: write
       actions: read

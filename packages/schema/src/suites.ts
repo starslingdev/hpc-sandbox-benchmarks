@@ -5,9 +5,6 @@ import type { Dimension } from "./metrics.ts";
 export const BENCHMARK_WAVE_ORDER = ["synthetic-memory", "synthetic-system", "realworld"] as const;
 export type BenchmarkWave = (typeof BENCHMARK_WAVE_ORDER)[number];
 
-/** Minimum pooled node-web-tooling trials in a complete default matrix cell. */
-export const CPU_NODE_MIN_SAMPLES = 10;
-
 /**
  * The benchmark suite registry — the shared contract between the harness (which runs a suite's
  * commands inside a sandbox) and CI matrix planning (which fans suites out into jobs). Kept here in

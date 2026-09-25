@@ -52,11 +52,14 @@ export function planExperiment(
 			!cell.metrics.every((metric) => cell.exclusions.some((entry) => entry.metricId === metric)),
 	);
 	const waveRank = new Map(BENCHMARK_WAVE_ORDER.map((wave, index) => [wave, index]));
+	const rankForSuite = (suite: string): number => {
+		const wave = benchmarkWave(suite);
+		const rank = waveRank.get(wave);
+		if (rank === undefined) throw new Error(`benchmark wave is missing from order: ${wave}`);
+		return rank;
+	};
 	const ordered = [...eligible].sort((left, right) => {
-		return (
-			(waveRank.get(benchmarkWave(left.suite)) ?? Number.MAX_SAFE_INTEGER) -
-			(waveRank.get(benchmarkWave(right.suite)) ?? Number.MAX_SAFE_INTEGER)
-		);
+		return rankForSuite(left.suite) - rankForSuite(right.suite);
 	});
 	type Prepared = {
 		cell: ExperimentCell;

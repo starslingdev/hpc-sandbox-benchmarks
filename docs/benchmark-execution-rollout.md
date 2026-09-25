@@ -63,7 +63,11 @@ This is an implementation status record, not a claim that the live fleet meets t
 Matrix and smoke freeze one immutable plan. Matrix releases three waves: **Synthetic - Memory**
 (`synthetic-memory`), **Synthetic - System** (`synthetic-system`), then real-world. Later jobs can
 run after an earlier-wave failure; completeness still requires every planned cell.
-Within each wave, jobs dispatch by account and bounded batch.
+[`packages/schema/src/suites.ts`](../packages/schema/src/suites.ts) owns membership and order;
+verification rejects mixed and out-of-order batches or rounds even when their wave metadata is
+omitted. Plans frozen with the retired `synthetic` wave token are rejected and must be replanned.
+Suite-filtered runs skip reusable workflow calls for waves with no frozen batches. Within each active
+wave, jobs dispatch by account and bounded batch.
 Every allocating worker verifies the plan and source revision, reconciles its account once, and runs
 one rolling pool through the existing harness and normalizer. Different suites and provider variants
 with compatible resource requirements share that pool up to the account's sandbox and resource caps.
@@ -78,8 +82,10 @@ Memory cells, 17 Synthetic - System cells (cpu-node uses five replicas; the othe
 and 36 real-world cells (twelve replicas per suite). The complete cpu-node default is five sandboxes
 times two fixed passes, yielding 10 pooled Node samples. With an account cap of 75, Modal VM and
 gVisor share one 6-cell Synthetic - Memory batch, one 34-cell Synthetic - System batch, and one
-72-cell real-world batch, so both variants can run every cell concurrently. Smaller caps refill the pool as allocations finish and
-their release records are persisted. Unresolved cleanup, a journal failure, or a typed vendor
+72-cell real-world batch, so both variants can run every cell concurrently. Relative to the former
+two-wave workflow, the default fleet adds one account-matrix wave (about 12 reusable calls); each call
+uses the same existing permissions. Smaller caps refill the pool as allocations finish and their
+release records are persisted. Unresolved cleanup, a journal failure, or a typed vendor
 concurrent-limit rejection stops new admissions; already admitted peers still finish and release
 their own allocations. A rejected capacity declaration must be reconciled before a fresh experiment;
 the worker does not silently lower its frozen policy or replay creates. Scheduling changes apply

@@ -3,6 +3,7 @@ import type { ExperimentCell, ExperimentPlan } from "@sandbox-benchmarks/schema"
 import {
 	accountCapacityPolicySchema,
 	BENCHMARK_WAVE_ORDER,
+	benchmarkWave,
 	providerIdSchema,
 	quotaDomain,
 	SUITES,
@@ -102,11 +103,25 @@ export function workflowExperiment(env: NodeJS.ProcessEnv, createdOn: string): E
 	}
 	const plan = planExperiment({ id, sha, createdOn, cells }, capacity);
 	workflowAxes(plan);
+	workflowWaves(plan);
 	for (const account of plan.accounts) {
 		workflowAxes(plan, account.quotaDomain);
 		for (const wave of BENCHMARK_WAVE_ORDER) workflowAxes(plan, account.quotaDomain, wave);
 	}
 	return plan;
+}
+
+/** Ordered waves that contain at least one frozen batch. */
+export function workflowWaves(plan: ExperimentPlan): (typeof BENCHMARK_WAVE_ORDER)[number][] {
+	const cells = new Map(plan.cells.map((cell) => [cell.id, cell]));
+	const active = new Set(
+		plan.batches.map((batch) => {
+			const cell = cells.get(batch.cells[0] ?? "");
+			if (!cell) throw new Error(`batch has no known cell: ${batch.id}`);
+			return batch.wave ?? benchmarkWave(cell.suite);
+		}),
+	);
+	return BENCHMARK_WAVE_ORDER.filter((wave) => active.has(wave));
 }
 
 /** Every nesting level stays within the Actions matrix limit under one frozen plan. */

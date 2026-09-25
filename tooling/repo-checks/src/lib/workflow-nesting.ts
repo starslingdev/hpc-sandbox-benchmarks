@@ -85,50 +85,59 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 		if (!condition) errors.push(detail);
 	};
 	const waveJobs = [
-		["wave-synthetic-memory", "synthetic-memory"],
-		["wave-synthetic-system", "synthetic-system"],
-		["wave-realworld", "realworld"],
+		{
+			job: "wave-synthetic-memory",
+			wave: "synthetic-memory",
+			label: "Synthetic - Memory",
+			previous: undefined,
+		},
+		{
+			job: "wave-synthetic-system",
+			wave: "synthetic-system",
+			label: "Synthetic - System",
+			previous: "wave-synthetic-memory",
+		},
+		{
+			job: "wave-realworld",
+			wave: "realworld",
+			label: "realworld",
+			previous: "wave-synthetic-system",
+		},
 	] as const;
 	for (const file of ["bench-matrix.yml", "bench-smoke.yml"]) {
-		for (const [waveJob, expectedWave] of waveJobs) {
-			const caller = job(file, waveJob);
+		for (const waveJob of waveJobs) {
+			const caller = job(file, waveJob.job);
 			expect(
 				caller.uses === "./.github/workflows/bench-account.yml",
-				`${file}: ${waveJob} must dispatch account workflow`,
+				`${file}: ${waveJob.job} must dispatch account workflow`,
 			);
 			const strategy = asRecord(caller.strategy, file);
 			expect(
 				asRecord(strategy.matrix, file).account === "${{ fromJSON(needs.plan.outputs.accounts) }}",
-				`${file}: ${waveJob} account axis must come from frozen plan`,
+				`${file}: ${waveJob.job} account axis must come from frozen plan`,
 			);
 			const wave = asRecord(caller.with, file).wave;
-			expect(wave === expectedWave, `${file}: ${waveJob} must bind its wave input`);
+			expect(wave === waveJob.wave, `${file}: ${waveJob.job} must bind its wave input`);
+			expect(
+				typeof caller.if === "string" &&
+					caller.if.includes("!cancelled()") &&
+					caller.if.includes("needs.plan.result == 'success'") &&
+					caller.if.includes(`contains(fromJSON(needs.plan.outputs.waves), '${waveJob.wave}')`),
+				`${file}: ${waveJob.label} must skip an empty frozen wave without gating later work`,
+			);
+			if (waveJob.previous !== undefined)
+				expect(
+					Array.isArray(caller.needs) && caller.needs.includes(waveJob.previous),
+					`${file}: ${waveJob.label} must wait for ${waveJob.previous}`,
+				);
 		}
-		const syntheticSystem = job(file, "wave-synthetic-system");
-		const syntheticSystemNeeds = syntheticSystem.needs;
+		const plan = job(file, "plan");
+		const outputs = asRecord(plan.outputs, file);
 		expect(
-			Array.isArray(syntheticSystemNeeds) && syntheticSystemNeeds.includes("wave-synthetic-memory"),
-			`${file}: Synthetic - System must wait for isolated Synthetic - Memory`,
+			outputs.waves === "${{ steps.plan.outputs.waves }}",
+			`${file}: active waves must come from the frozen plan`,
 		);
-		expect(
-			typeof syntheticSystem.if === "string" &&
-				syntheticSystem.if.includes("!cancelled()") &&
-				syntheticSystem.if.includes("needs.plan.result == 'success'"),
-			`${file}: Synthetic - System ordering must not turn Synthetic - Memory failure into a global gate`,
-		);
-		const realworldNeeds = asRecord(job(file, "wave-realworld"), file).needs;
-		expect(
-			Array.isArray(realworldNeeds) && realworldNeeds.includes("wave-synthetic-system"),
-			`${file}: realworld wave must wait for Synthetic - System`,
-		);
-		const realworld = job(file, "wave-realworld");
-		expect(
-			typeof realworld.if === "string" &&
-				realworld.if.includes("!cancelled()") &&
-				realworld.if.includes("needs.plan.result == 'success'"),
-			`${file}: realworld ordering must not turn synthetic failure into a global gate`,
-		);
-		const step = stepByName(job(file, "plan"), "Plan", file);
+		const step = stepByName(plan, "Plan", file);
 		expect(
 			step?.run === "bun apps/cli/src/bin/workflow-experiment.ts plan",
 			`${file}: must freeze experiment before dispatch`,

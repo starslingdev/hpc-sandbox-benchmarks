@@ -74,95 +74,137 @@ function basePlan(
 	return { ...body, digest: evidenceDigest(body) } as ExperimentPlan;
 }
 
-test("pre-wave mixed batches verify when wave is undeclared", () => {
-	const plan = basePlan({
-		batches: [
-			{
-				id: "batch-0",
-				quotaDomain: "e2b",
-				cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
-				maxConcurrency: 2,
-				budgetMinutes: 80,
-			},
-		],
-		rounds: [{ id: "round-0", quotaDomain: "e2b", batches: ["batch-0"] }],
-	});
-	expect(() => verifyExperimentPlan(plan)).not.toThrow();
+function separatedBatches(): ExperimentPlan["batches"] {
+	return [
+		{
+			id: "batch-memory",
+			quotaDomain: "e2b",
+			cells: ["e2b-memory-r0"],
+			maxConcurrency: 1,
+			budgetMinutes: 40,
+		},
+		{
+			id: "batch-system",
+			quotaDomain: "e2b",
+			cells: ["e2b-system-r0"],
+			maxConcurrency: 1,
+			budgetMinutes: 40,
+		},
+		{
+			id: "batch-realworld",
+			quotaDomain: "e2b",
+			cells: ["e2b-realworld-mastra-r0"],
+			maxConcurrency: 1,
+			budgetMinutes: 40,
+		},
+	];
+}
+
+function separatedRounds(): ExperimentPlan["rounds"] {
+	return [
+		{ id: "round-memory", quotaDomain: "e2b", batches: ["batch-memory"] },
+		{ id: "round-system", quotaDomain: "e2b", batches: ["batch-system"] },
+		{ id: "round-realworld", quotaDomain: "e2b", batches: ["batch-realworld"] },
+	];
+}
+
+test("homogeneous undeclared waves verify in canonical order", () => {
+	expect(() =>
+		verifyExperimentPlan(basePlan({ batches: separatedBatches(), rounds: separatedRounds() })),
+	).not.toThrow();
 });
 
-test("declared Synthetic - System wave rejects mixed members", () => {
-	const plan = basePlan({
-		batches: [
-			{
-				id: "batch-0",
-				quotaDomain: "e2b",
-				wave: "synthetic-system",
-				cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
-				maxConcurrency: 2,
-				budgetMinutes: 80,
-			},
-		],
-		rounds: [
-			{
-				id: "round-0",
-				quotaDomain: "e2b",
-				wave: "synthetic-system",
-				batches: ["batch-0"],
-			},
-		],
-	});
-	expect(() => verifyExperimentPlan(plan)).toThrow(/mixes benchmark waves/);
-});
-
-test("declared synthetic waves reject memory/non-memory mixes", () => {
-	for (const wave of ["synthetic-memory", "synthetic-system"] as const) {
+test("mixed batch members are rejected with or without declared wave metadata", () => {
+	for (const wave of [undefined, "synthetic-system"] as const) {
+		const mixed = {
+			id: "batch-mixed",
+			quotaDomain: "e2b",
+			...(wave ? { wave } : {}),
+			cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
+			maxConcurrency: 2,
+			budgetMinutes: 80,
+		};
 		const plan = basePlan({
-			batches: [
-				{
-					id: "batch-0",
-					quotaDomain: "e2b",
-					wave,
-					cells: ["e2b-memory-r0", "e2b-system-r0"],
-					maxConcurrency: 2,
-					budgetMinutes: 40,
-				},
-				{
-					id: "batch-1",
-					quotaDomain: "e2b",
-					wave: "realworld",
-					cells: ["e2b-realworld-mastra-r0"],
-					maxConcurrency: 1,
-					budgetMinutes: 40,
-				},
-			],
-			rounds: [
-				{ id: "round-0", quotaDomain: "e2b", wave, batches: ["batch-0"] },
-				{ id: "round-1", quotaDomain: "e2b", wave: "realworld", batches: ["batch-1"] },
-			],
+			batches: [mixed],
+			rounds: [{ id: "round-mixed", quotaDomain: "e2b", batches: [mixed.id] }],
 		});
-		expect(() => verifyExperimentPlan(plan)).toThrow(/mixes benchmark waves/);
+		expect(() => verifyExperimentPlan(plan)).toThrow(/batch mixes benchmark waves/);
 	}
 });
 
-test("a declared Synthetic - Memory round rejects an undeclared mixed batch", () => {
+test("an undeclared round cannot combine homogeneous batches from different waves", () => {
 	const plan = basePlan({
-		batches: [
-			{
-				id: "batch-0",
-				quotaDomain: "e2b",
-				cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
-				maxConcurrency: 2,
-				budgetMinutes: 80,
-			},
-		],
+		batches: separatedBatches(),
 		rounds: [
 			{
-				id: "round-0",
+				id: "round-mixed",
 				quotaDomain: "e2b",
-				wave: "synthetic-memory",
-				batches: ["batch-0"],
+				batches: ["batch-memory", "batch-system"],
 			},
+			{ id: "round-realworld", quotaDomain: "e2b", batches: ["batch-realworld"] },
 		],
 	});
-	expect(() => verifyExperimentPlan(plan)).toThrow(/invalid round assignment/);
+	expect(() => verifyExperimentPlan(plan)).toThrow(/round mixes benchmark waves/);
+});
+
+test("declared batch and round waves must agree with their members", () => {
+	const batches = separatedBatches();
+	const rounds = separatedRounds();
+	const memoryBatch = batches[0];
+	const memoryRound = rounds[0];
+	if (!memoryBatch || !memoryRound) throw new Error("wave fixture is incomplete");
+	const cases = [
+		{
+			plan: basePlan({
+				batches: [{ ...memoryBatch, wave: "synthetic-system" }, ...batches.slice(1)],
+				rounds,
+			}),
+			error: /batch wave disagrees with its cells/,
+		},
+		{
+			plan: basePlan({
+				batches,
+				rounds: [{ ...memoryRound, wave: "synthetic-system" }, ...rounds.slice(1)],
+			}),
+			error: /round wave disagrees with its batches/,
+		},
+	];
+	for (const { plan, error } of cases) expect(() => verifyExperimentPlan(plan)).toThrow(error);
+});
+
+test("batch and round wave order is mandatory per account", () => {
+	const batches = separatedBatches();
+	const rounds = separatedRounds();
+	const [memoryBatch, systemBatch, realworldBatch] = batches;
+	const [memoryRound, systemRound, realworldRound] = rounds;
+	if (
+		!memoryBatch ||
+		!systemBatch ||
+		!realworldBatch ||
+		!memoryRound ||
+		!systemRound ||
+		!realworldRound
+	)
+		throw new Error("wave fixture is incomplete");
+	const cases = [
+		basePlan({ batches: [systemBatch, memoryBatch, realworldBatch], rounds }),
+		basePlan({ batches, rounds: [systemRound, memoryRound, realworldRound] }),
+	];
+	expect(() => verifyExperimentPlan(cases[0])).toThrow(/batches are out of wave order/);
+	expect(() => verifyExperimentPlan(cases[1])).toThrow(/rounds are out of wave order/);
+});
+
+test('legacy "synthetic" wave metadata fails with an explicit cutover error', () => {
+	const current = basePlan({ batches: separatedBatches(), rounds: separatedRounds() });
+	const { digest: _, ...body } = current;
+	const legacyBody = {
+		...body,
+		batches: body.batches.map((batch, index) =>
+			index === 1 ? { ...batch, wave: "synthetic" } : batch,
+		),
+	};
+	const legacy = { ...legacyBody, digest: evidenceDigest(legacyBody) };
+	expect(() => verifyExperimentPlan(legacy)).toThrow(
+		/legacy experiment wave "synthetic" is unsupported/,
+	);
 });

@@ -14,7 +14,12 @@ import {
 	downloadExperimentPlan,
 } from "../lib/experiment-transfer.ts";
 import { githubAccountJournal, githubGitRequest } from "../lib/github-account-journal.ts";
-import { workflowAxes, workflowBatch, workflowExperiment } from "../lib/workflow-experiment.ts";
+import {
+	workflowAxes,
+	workflowBatch,
+	workflowExperiment,
+	workflowWaves,
+} from "../lib/workflow-experiment.ts";
 
 if (import.meta.main) {
 	const commandStarted = performance.now();
@@ -38,6 +43,8 @@ if (import.meta.main) {
 			const axis = workflowAxes(plan, account, wave);
 			if (!process.env.GITHUB_OUTPUT) throw new Error("workflow output file is required");
 			appendFileSync(process.env.GITHUB_OUTPUT, `axis=${JSON.stringify(axis)}\n`);
+			if (command === "plan")
+				appendFileSync(process.env.GITHUB_OUTPUT, `waves=${JSON.stringify(workflowWaves(plan))}\n`);
 		} else if (command === "execute") {
 			const batchId = process.env.BENCH_BATCH_ID;
 			if (!batchId) throw new Error("batch id is required");

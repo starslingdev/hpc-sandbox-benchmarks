@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import type { Suite } from "./index.ts";
 import {
 	BENCHMARK_WAVE_ORDER,
-	CPU_NODE_MIN_SAMPLES,
 	METRIC_CATALOG,
 	paddedSuiteToken,
 	padSuiteList,
@@ -68,9 +67,7 @@ describe("suite registry", () => {
 		}
 		expect(SUITES["cpu-node"].ptsTimesToRun).toBe(2);
 		expect(SUITES["cpu-node"].defaultReplicas).toBe(5);
-		expect(
-			SUITES["cpu-node"].defaultReplicas * SUITES["cpu-node"].ptsTimesToRun,
-		).toBeGreaterThanOrEqual(CPU_NODE_MIN_SAMPLES);
+		expect(SUITES["cpu-node"].defaultReplicas * SUITES["cpu-node"].ptsTimesToRun).toBe(10);
 		// Convergence is enabled on the two suites that converge cheaply and predictably: cpu-node + memory.
 		const converging: string[] = SUITE_NAMES.filter((name) => (SUITES[name] as Suite).ptsConverge);
 		expect(converging.sort()).toEqual(["cpu-node", "memory"]);

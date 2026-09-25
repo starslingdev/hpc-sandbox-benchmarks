@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { SUITES } from "@sandbox-benchmarks/schema";
-import { workflowAxes, workflowBatch, workflowExperiment } from "./workflow-experiment.ts";
+import {
+	workflowAxes,
+	workflowBatch,
+	workflowExperiment,
+	workflowWaves,
+} from "./workflow-experiment.ts";
 
 const env = {
 	GITHUB_RUN_ID: "123",
@@ -15,6 +20,7 @@ test("workflow planning preserves samples and defaults shared accounts to one sa
 	expect(plan.batches).toHaveLength(23);
 	expect(workflowAxes(plan)).toEqual(["daytona", "tama"]);
 	expect(plan.accounts.every((account) => account.sandboxes === 1)).toBe(true);
+	expect(workflowWaves(plan)).toEqual(["synthetic-system", "realworld"]);
 	expect(workflowAxes(plan, "daytona")).toEqual(["synthetic-system", "realworld"]);
 	expect(workflowAxes(plan, "daytona", "synthetic-system")).toEqual([
 		{ batch: "batch-0", providers: ["daytona-vm"], suite: "system", wave: "synthetic-system" },
@@ -38,6 +44,14 @@ test("workflow planning preserves samples and defaults shared accounts to one sa
 		...Array.from({ length: 12 }, (_, i) => i),
 		...Array.from({ length: 12 }, (_, i) => i),
 	]);
+});
+
+test("suite-filtered plans expose only active waves to workflow callers", () => {
+	const plan = workflowExperiment(
+		{ ...env, BENCH_PROVIDERS: "tama", BENCH_SUITES: "network", BENCH_REPLICAS: "1" },
+		"2026-09-10",
+	);
+	expect(workflowWaves(plan)).toEqual(["synthetic-system"]);
 });
 test("convergence and implicit per-cell quota overrides fail admission", () => {
 	expect(() =>
