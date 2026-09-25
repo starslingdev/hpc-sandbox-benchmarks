@@ -85,8 +85,8 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 		if (!condition) errors.push(detail);
 	};
 	const waveJobs = [
-		["wave-memory", "memory"],
-		["wave-synthetic", "synthetic"],
+		["wave-synthetic-memory", "synthetic-memory"],
+		["wave-synthetic-system", "synthetic-system"],
 		["wave-realworld", "realworld"],
 	] as const;
 	for (const file of ["bench-matrix.yml", "bench-smoke.yml"]) {
@@ -104,22 +104,22 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 			const wave = asRecord(caller.with, file).wave;
 			expect(wave === expectedWave, `${file}: ${waveJob} must bind its wave input`);
 		}
-		const synthetic = job(file, "wave-synthetic");
-		const syntheticNeeds = synthetic.needs;
+		const syntheticSystem = job(file, "wave-synthetic-system");
+		const syntheticSystemNeeds = syntheticSystem.needs;
 		expect(
-			Array.isArray(syntheticNeeds) && syntheticNeeds.includes("wave-memory"),
-			`${file}: synthetic wave must wait for isolated memory wave`,
+			Array.isArray(syntheticSystemNeeds) && syntheticSystemNeeds.includes("wave-synthetic-memory"),
+			`${file}: Synthetic - System must wait for isolated Synthetic - Memory`,
 		);
 		expect(
-			typeof synthetic.if === "string" &&
-				synthetic.if.includes("!cancelled()") &&
-				synthetic.if.includes("needs.plan.result == 'success'"),
-			`${file}: synthetic wave ordering must not turn memory failure into a global gate`,
+			typeof syntheticSystem.if === "string" &&
+				syntheticSystem.if.includes("!cancelled()") &&
+				syntheticSystem.if.includes("needs.plan.result == 'success'"),
+			`${file}: Synthetic - System ordering must not turn Synthetic - Memory failure into a global gate`,
 		);
 		const realworldNeeds = asRecord(job(file, "wave-realworld"), file).needs;
 		expect(
-			Array.isArray(realworldNeeds) && realworldNeeds.includes("wave-synthetic"),
-			`${file}: realworld wave must wait for synthetic wave`,
+			Array.isArray(realworldNeeds) && realworldNeeds.includes("wave-synthetic-system"),
+			`${file}: realworld wave must wait for Synthetic - System`,
 		);
 		const realworld = job(file, "wave-realworld");
 		expect(
@@ -213,8 +213,8 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 	);
 	expect(
 		Array.isArray(publish.needs) &&
-			publish.needs.includes("wave-memory") &&
-			publish.needs.includes("wave-synthetic") &&
+			publish.needs.includes("wave-synthetic-memory") &&
+			publish.needs.includes("wave-synthetic-system") &&
 			publish.needs.includes("wave-realworld") &&
 			publish.needs.includes("plan"),
 		"publication must wait for plan and all three waves",

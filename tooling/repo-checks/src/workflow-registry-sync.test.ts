@@ -276,8 +276,8 @@ test("the integrated workflow gate rejects parallel waves, serialised batches, d
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: GitHub expression under test
 		['"allow_partial":"${{ inputs.allow_partial }}"', '"allow_partial":true'],
 		// Each later wave must wait for the preceding isolation boundary.
-		['"needs":["plan","wave-memory"]', '"needs":["plan"]'],
-		['"needs":["plan","wave-synthetic"]', '"needs":["plan"]'],
+		['"needs":["plan","wave-synthetic-memory"]', '"needs":["plan"]'],
+		['"needs":["plan","wave-synthetic-system"]', '"needs":["plan"]'],
 		// A wave's batches created together: reintroducing max-parallel is one approval per batch.
 		[
 			'"fail-fast":false,"matrix":{"include":',

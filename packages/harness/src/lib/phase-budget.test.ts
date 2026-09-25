@@ -56,7 +56,7 @@ test("managed setup pins and verifies the experiment commit, independent of ambi
 	const sha = "a".repeat(40);
 	const clone = setupSteps(
 		{
-			wave: "synthetic",
+			wave: "synthetic-system",
 			commands: [],
 			commandTimeoutMinutes: 1,
 			timeoutMinutes: 1,

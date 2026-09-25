@@ -418,7 +418,7 @@ const suite = (overrides: Partial<Suite>): Suite => ({
 	metrics: [],
 	commands: ["benchmark-cmd"],
 	...overrides,
-	wave: overrides.wave ?? "synthetic",
+	wave: overrides.wave ?? "synthetic-system",
 });
 
 const ctx = (s: Suite, resultsDir: string): SuiteRunContext => ({

@@ -102,8 +102,8 @@ jobs:
           BENCH_ARTIFACT_VERCEL: ${{ vars.BENCH_ARTIFACT_VERCEL }}
         run: bun apps/cli/src/bin/workflow-experiment.ts plan
 
-  wave-memory:
-    name: memory / ${{ matrix.account }}
+  wave-synthetic-memory:
+    name: Synthetic - Memory / ${{ matrix.account }}
     needs: plan
     permissions:
       contents: write
@@ -116,12 +116,12 @@ jobs:
     uses: ./.github/workflows/bench-account.yml
     with:
       account: ${{ matrix.account }}
-      wave: memory
+      wave: synthetic-memory
     secrets: inherit
 
-  wave-synthetic:
-    name: synthetic / ${{ matrix.account }}
-    needs: [plan, wave-memory]
+  wave-synthetic-system:
+    name: Synthetic - System / ${{ matrix.account }}
+    needs: [plan, wave-synthetic-memory]
     if: >
       !cancelled() && needs.plan.result == 'success'
     permissions:
@@ -135,12 +135,12 @@ jobs:
     uses: ./.github/workflows/bench-account.yml
     with:
       account: ${{ matrix.account }}
-      wave: synthetic
+      wave: synthetic-system
     secrets: inherit
 
   wave-realworld:
     name: realworld / ${{ matrix.account }}
-    needs: [plan, wave-synthetic]
+    needs: [plan, wave-synthetic-system]
     if: >
       !cancelled() && needs.plan.result == 'success'
     permissions:

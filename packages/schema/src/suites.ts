@@ -1,8 +1,8 @@
 import { type } from "arktype";
 import type { Dimension } from "./metrics.ts";
 
-/** Ordered CPU matrix collection waves. Memory is isolated before other synthetic work. */
-export const BENCHMARK_WAVE_ORDER = ["memory", "synthetic", "realworld"] as const;
+/** Ordered CPU matrix collection waves. STREAM is isolated before other synthetic work. */
+export const BENCHMARK_WAVE_ORDER = ["synthetic-memory", "synthetic-system", "realworld"] as const;
 export type BenchmarkWave = (typeof BENCHMARK_WAVE_ORDER)[number];
 
 /** Minimum pooled node-web-tooling trials in a complete default matrix cell. */
@@ -28,7 +28,7 @@ export const CPU_NODE_MIN_SAMPLES = 10;
  */
 
 export interface Suite {
-	/** CPU matrix collection wave. Memory is a dedicated isolation boundary. */
+	/** CPU matrix collection wave. Synthetic - Memory is a dedicated isolation boundary. */
 	wave: BenchmarkWave;
 	/** Install the Phoronix Test Suite during setup (PTS-backed suites need it). */
 	setupPts?: boolean;
@@ -117,7 +117,7 @@ export const FIO_SCENARIO_METRICS: readonly string[] = [
  */
 export const SUITES = {
 	"cpu-node": {
-		wave: "synthetic",
+		wave: "synthetic-system",
 		setupPts: true,
 		setupNode: true,
 		// Publication pins k=2 and uses R=5 independent sandboxes: 5 × 2 = 10 pooled trials. Diagnostic
@@ -142,7 +142,7 @@ export const SUITES = {
 	// fixed count and takes its tightness from the R=3 replicates, like the other I/O-touching suites; a
 	// calibration dispatch that re-derives a converge-safe budget could re-enable it later.
 	system: {
-		wave: "synthetic",
+		wave: "synthetic-system",
 		setupPts: true,
 		commandTimeoutMinutes: 55,
 		timeoutMinutes: 65,
@@ -162,7 +162,7 @@ export const SUITES = {
 	// each timed pass re-runs an expensive scale-100 `pgbench -i`, so a variable DynamicRunCount count
 	// would blow the 75-min budget the four fixed passes already fill; R=3 replicates carry the spread.
 	pgbench: {
-		wave: "synthetic",
+		wave: "synthetic-system",
 		setupPts: true,
 		commandTimeoutMinutes: 75,
 		timeoutMinutes: 85,
@@ -179,7 +179,7 @@ export const SUITES = {
 		commands: ["mise run benchmark:pgbench:all"],
 	},
 	// The memory dimension: STREAM (Copy/Scale/Add/Triad). Short — STREAM runs in a couple of minutes.
-	// Isolated memory wave, PTS CONVERGES in unmanaged diagnostics (R=3) — one of the two converging
+	// Synthetic - Memory, PTS CONVERGES in unmanaged diagnostics (R=3) — one of the two converging
 	// suites (with cpu-node):
 	// STREAM is a tight, cheap bandwidth loop, so DynamicRunCount settles fast and even a long convergence
 	// fits the 30-min budget many times over (unlike system, whose SQLite leg timed convergence out in run #49).
@@ -187,7 +187,7 @@ export const SUITES = {
 	// under noisy virtualization (STREAM's between-machine CV is the highest of the synthetics, so R=3
 	// leaves it the widest-interval headline — convergence tightens within-machine, replicas the rest).
 	memory: {
-		wave: "memory",
+		wave: "synthetic-memory",
 		setupPts: true,
 		commandTimeoutMinutes: 30,
 		timeoutMinutes: 40,
@@ -210,7 +210,7 @@ export const SUITES = {
 	// noisy fio cases to 20-40 runs and exhausted the suite (lib/bench.sh), the exact blowup the fixed pin
 	// was introduced to prevent; the between-machine spread rides the R=3 replicates instead.
 	disk: {
-		wave: "synthetic",
+		wave: "synthetic-system",
 		setupPts: true,
 		commandTimeoutMinutes: 65,
 		timeoutMinutes: 75,
@@ -240,7 +240,7 @@ export const SUITES = {
 	// the WAN leg reselects the closest public server per run, so repeated in-sandbox passes aren't
 	// like-for-like; the between-machine spread rides the R=3 replicates instead.
 	network: {
-		wave: "synthetic",
+		wave: "synthetic-system",
 		setupPts: true,
 		commandTimeoutMinutes: 30,
 		timeoutMinutes: 40,

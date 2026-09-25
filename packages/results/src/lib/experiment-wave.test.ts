@@ -90,25 +90,32 @@ test("pre-wave mixed batches verify when wave is undeclared", () => {
 	expect(() => verifyExperimentPlan(plan)).not.toThrow();
 });
 
-test("declared synthetic wave rejects mixed members", () => {
+test("declared Synthetic - System wave rejects mixed members", () => {
 	const plan = basePlan({
 		batches: [
 			{
 				id: "batch-0",
 				quotaDomain: "e2b",
-				wave: "synthetic",
+				wave: "synthetic-system",
 				cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
 				maxConcurrency: 2,
 				budgetMinutes: 80,
 			},
 		],
-		rounds: [{ id: "round-0", quotaDomain: "e2b", wave: "synthetic", batches: ["batch-0"] }],
+		rounds: [
+			{
+				id: "round-0",
+				quotaDomain: "e2b",
+				wave: "synthetic-system",
+				batches: ["batch-0"],
+			},
+		],
 	});
 	expect(() => verifyExperimentPlan(plan)).toThrow(/mixes benchmark waves/);
 });
 
-test("declared memory and synthetic waves reject memory/non-memory mixes", () => {
-	for (const wave of ["memory", "synthetic"] as const) {
+test("declared synthetic waves reject memory/non-memory mixes", () => {
+	for (const wave of ["synthetic-memory", "synthetic-system"] as const) {
 		const plan = basePlan({
 			batches: [
 				{
@@ -137,7 +144,7 @@ test("declared memory and synthetic waves reject memory/non-memory mixes", () =>
 	}
 });
 
-test("a declared memory round rejects an undeclared mixed batch", () => {
+test("a declared Synthetic - Memory round rejects an undeclared mixed batch", () => {
 	const plan = basePlan({
 		batches: [
 			{
@@ -148,7 +155,14 @@ test("a declared memory round rejects an undeclared mixed batch", () => {
 				budgetMinutes: 80,
 			},
 		],
-		rounds: [{ id: "round-0", quotaDomain: "e2b", wave: "memory", batches: ["batch-0"] }],
+		rounds: [
+			{
+				id: "round-0",
+				quotaDomain: "e2b",
+				wave: "synthetic-memory",
+				batches: ["batch-0"],
+			},
+		],
 	});
 	expect(() => verifyExperimentPlan(plan)).toThrow(/invalid round assignment/);
 });

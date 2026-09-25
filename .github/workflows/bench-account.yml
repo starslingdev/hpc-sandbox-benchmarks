@@ -6,7 +6,7 @@ on:
         type: string
         required: true
       wave:
-        description: 'memory, synthetic, or realworld — the ordered CPU matrix waves'
+        description: 'synthetic-memory, synthetic-system, or realworld — the ordered CPU matrix waves'
         type: string
         required: true
 

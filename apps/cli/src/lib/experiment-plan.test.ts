@@ -709,10 +709,16 @@ test("memory is isolated from other synthetic suites in ordered batches", () => 
 		["e2b-memory-r0", "e2b-memory-r1"],
 		["e2b-system-r0"],
 	]);
-	expect(result.batches.map((batch) => batch.wave)).toEqual(["memory", "synthetic"]);
+	expect(result.batches.map((batch) => batch.wave)).toEqual([
+		"synthetic-memory",
+		"synthetic-system",
+	]);
 	expect(result.batches.map((batch) => batch.maxConcurrency)).toEqual([2, 2]);
 	expect(result.batches.map((batch) => batch.budgetMinutes)).toEqual([85, 105]);
-	expect(result.rounds.map((round) => round.wave)).toEqual(["memory", "synthetic"]);
+	expect(result.rounds.map((round) => round.wave)).toEqual([
+		"synthetic-memory",
+		"synthetic-system",
+	]);
 });
 
 test("different allocation requirements stay in separate account batches", () => {

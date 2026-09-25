@@ -4,19 +4,20 @@
 
 - `packages/schema/src/suites.ts` owns wave membership. Every `Suite` declares a required
   `wave`, and `BENCHMARK_WAVE_ORDER` defines the only execution order:
-  `memory` → `synthetic` → `realworld`.
-- The `memory` wave contains only the `memory` suite. The `synthetic` wave contains every other
-  non-realworld suite. Plan verification rejects a batch or round whose declared wave disagrees
-  with any member cell, including any memory/non-memory mix.
+  `synthetic-memory` → `synthetic-system` → `realworld`.
+- **Synthetic - Memory** (`synthetic-memory`) contains only the `memory` suite.
+  **Synthetic - System** (`synthetic-system`) contains every other non-realworld suite. Plan
+  verification rejects a batch or round whose declared wave disagrees with any member cell,
+  including any memory/non-memory mix.
 - The same suite registry owns the cpu-node sample floor. `CPU_NODE_MIN_SAMPLES` is 10, and the
   default cpu-node plan must satisfy
   `defaultReplicas × ptsTimesToRun >= CPU_NODE_MIN_SAMPLES`.
 
 ## Decisions
 
-Memory runs first because STREAM is short and especially sensitive to shared-host level shifts; its
-wave finishes before longer synthetic work can contend for account capacity. Remaining synthetic
-suites run next, preserving the existing realworld-last boundary.
+Synthetic - Memory runs first because STREAM is short and especially sensitive to shared-host level
+shifts; its wave finishes before longer work can contend for account capacity. Synthetic - System
+runs next, preserving the existing realworld-last boundary.
 
 For cpu-node, use five replicate sandboxes and two fixed PTS passes per sandbox. A complete normal
 matrix cell therefore publishes `5 sandboxes × 2 trials = 10` pooled

@@ -134,7 +134,7 @@ describe("DriverModule benchmark path", () => {
 			},
 		};
 		const suite: Suite = {
-			wave: "synthetic",
+			wave: "synthetic-system",
 			setupPts: false,
 			commandTimeoutMinutes: 1,
 			timeoutMinutes: 1,

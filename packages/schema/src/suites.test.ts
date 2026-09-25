@@ -77,9 +77,13 @@ describe("suite registry", () => {
 	});
 
 	it("owns ordered wave membership and isolates memory", () => {
-		expect(BENCHMARK_WAVE_ORDER).toEqual(["memory", "synthetic", "realworld"]);
-		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "memory")).toEqual(["memory"]);
-		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "synthetic")).not.toContain("memory");
+		expect(BENCHMARK_WAVE_ORDER).toEqual(["synthetic-memory", "synthetic-system", "realworld"]);
+		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "synthetic-memory")).toEqual([
+			"memory",
+		]);
+		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "synthetic-system")).not.toContain(
+			"memory",
+		);
 		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "realworld").sort()).toEqual([
 			"realworld-better-auth",
 			"realworld-mastra",

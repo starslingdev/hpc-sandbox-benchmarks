@@ -82,7 +82,7 @@ export const experimentCellSchema = type({
 export const experimentBatchSchema = type({
 	id: identifier,
 	quotaDomain: identifier,
-	"wave?": "'memory' | 'synthetic' | 'realworld'",
+	"wave?": "'synthetic-memory' | 'synthetic-system' | 'realworld'",
 	cells: "string[] >= 1",
 	maxConcurrency: "number.integer >= 1",
 	budgetMinutes: "number.safe > 0",
@@ -111,7 +111,7 @@ export const experimentPlanSchema = type({
 	rounds: type({
 		id: identifier,
 		quotaDomain: identifier,
-		"wave?": "'memory' | 'synthetic' | 'realworld'",
+		"wave?": "'synthetic-memory' | 'synthetic-system' | 'realworld'",
 		batches: "string[] >= 1",
 	})
 		.onUndeclaredKey("reject")

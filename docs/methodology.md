@@ -273,10 +273,11 @@ so 20–80-minute suites such as Mastra launch detached and remain observable th
    in-process leaves the sandbox count, provider load, and wall clock unchanged (the cell's wall clock
    is its slowest replicate, not their sum) while the runner bill stops scaling with R. Isolation is
    preserved: every replicate runs to completion and writes its shard even when a peer dies, and the
-   cell goes red at the end if any did. Collection runs in three schema-owned waves: isolated `memory`
-   first, all remaining `synthetic` suites next, and `realworld` last. STREAM never shares a batch or
-   round with another suite. Two axes are the statistical knobs, both defaulting to per-suite schema
-   config so a bare dispatch already carries the intended statistical power for separating providers
+   cell goes red at the end if any did. Collection runs in three schema-owned waves:
+   **Synthetic - Memory** (`synthetic-memory`) first, **Synthetic - System**
+   (`synthetic-system`) next, and `realworld` last. STREAM never shares a batch or round with another
+   suite. Two axes are the statistical knobs, both defaulting to per-suite schema config so a bare
+   dispatch already carries the intended statistical power for separating providers
    (subject to the genuine near-tie limit noted below — no sample size resolves providers that are truly
    within a few percent):
    - **replicates** — R sandboxes per cell, the between-machine axis (`replicas` blank = each suite's

@@ -15,16 +15,21 @@ test("workflow planning preserves samples and defaults shared accounts to one sa
 	expect(plan.batches).toHaveLength(23);
 	expect(workflowAxes(plan)).toEqual(["daytona", "tama"]);
 	expect(plan.accounts.every((account) => account.sandboxes === 1)).toBe(true);
-	expect(workflowAxes(plan, "daytona")).toEqual(["synthetic", "realworld"]);
-	expect(workflowAxes(plan, "daytona", "synthetic")).toEqual([
-		{ batch: "batch-0", providers: ["daytona-vm"], suite: "system", wave: "synthetic" },
+	expect(workflowAxes(plan, "daytona")).toEqual(["synthetic-system", "realworld"]);
+	expect(workflowAxes(plan, "daytona", "synthetic-system")).toEqual([
+		{ batch: "batch-0", providers: ["daytona-vm"], suite: "system", wave: "synthetic-system" },
 		{
 			batch: "batch-1",
 			providers: ["daytona-vm", "daytona-container"],
 			suite: "system",
-			wave: "synthetic",
+			wave: "synthetic-system",
 		},
-		{ batch: "batch-2", providers: ["daytona-container"], suite: "system", wave: "synthetic" },
+		{
+			batch: "batch-2",
+			providers: ["daytona-container"],
+			suite: "system",
+			wave: "synthetic-system",
+		},
 	]);
 	expect(
 		plan.cells.filter((cell) => cell.suite === "realworld-mastra").map((cell) => cell.replicate),
@@ -84,7 +89,11 @@ test("full provider plans isolate memory and guarantee the cpu-node sample floor
 	);
 	expect(plan.cells).toHaveLength(56);
 	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([3, 17, 36]);
-	expect(plan.batches.map((batch) => batch.wave)).toEqual(["memory", "synthetic", "realworld"]);
+	expect(plan.batches.map((batch) => batch.wave)).toEqual([
+		"synthetic-memory",
+		"synthetic-system",
+		"realworld",
+	]);
 	expect(plan.batches.every((batch) => batch.maxConcurrency === 30)).toBe(true);
 	expect(plan.batches.map((batch) => batch.budgetMinutes)).toEqual([100, 145, 300]);
 	expect(plan.batches.every((batch) => batch.budgetMinutes <= 330)).toBe(true);
@@ -100,11 +109,21 @@ test("full provider plans isolate memory and guarantee the cpu-node sample floor
 	const cpuNode = plan.cells.filter((cell) => cell.suite === "cpu-node");
 	expect(cpuNode).toHaveLength(5);
 	expect(cpuNode.length * (cpuNode[0]?.passes ?? 0)).toBe(10);
-	expect(workflowAxes(plan, "e2b", "memory")).toEqual([
-		{ batch: "batch-0", providers: ["e2b"], suite: "memory", wave: "memory" },
+	expect(workflowAxes(plan, "e2b", "synthetic-memory")).toEqual([
+		{
+			batch: "batch-0",
+			providers: ["e2b"],
+			suite: "memory",
+			wave: "synthetic-memory",
+		},
 	]);
-	expect(workflowAxes(plan, "e2b", "synthetic")).toEqual([
-		{ batch: "batch-1", providers: ["e2b"], suite: "synthetic", wave: "synthetic" },
+	expect(workflowAxes(plan, "e2b", "synthetic-system")).toEqual([
+		{
+			batch: "batch-1",
+			providers: ["e2b"],
+			suite: "synthetic-system",
+			wave: "synthetic-system",
+		},
 	]);
 	expect(workflowAxes(plan, "e2b", "realworld")).toEqual([
 		{ batch: "batch-2", providers: ["e2b"], suite: "realworld", wave: "realworld" },
