@@ -256,6 +256,20 @@ describe("Namespace token authentication", () => {
 		expect(action).toContain("--expires_in 6h");
 		expect(action).not.toContain("--no_expiry");
 	});
+
+	test("every lane logs into the explicitly pinned tenant, never the org-resolved one", () => {
+		const root = findRepoRoot();
+		const action = readFileSync(join(root, ".github/actions/namespace-token/action.yml"), "utf8");
+		expect(action).toMatch(/nsc auth exchange-oidc-token --tenant_id "\$\{NSC_TENANT_ID\}"/);
+		expect(action).not.toMatch(/^\s*(?:run: )?nsc auth exchange-github-token/m);
+		expect(action).not.toContain("uses: namespacelabs/nscloud-setup");
+		const workflowText = ["bench-suite.yml", "toolchain-image.yml"]
+			.map((file) => readFileSync(join(root, WORKFLOWS_DIR, file), "utf8"))
+			.join("\n");
+		expect(workflowText.match(/tenant-id: \$\{\{ secrets\.NAMESPACE_TENANT_ID \}\}/g)).toHaveLength(
+			3,
+		);
+	});
 });
 
 describe("run.cloud credential scoping", () => {

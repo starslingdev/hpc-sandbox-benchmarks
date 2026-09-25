@@ -65,6 +65,7 @@ jobs:
         id: namespace
         uses: ./.github/actions/namespace-token
         with:
+          tenant-id: ${{ secrets.NAMESPACE_TENANT_ID }}
           # batch_id is required: two mixed batches in one run otherwise mint the same
           # suite-run-attempt name and the second job's continue-on-error path left NSC_TOKEN_FILE empty.
           token-name: sandbox-benchmarks-${{ inputs.suite }}-${{ inputs.batch_id }}-${{ github.run_id }}-${{ github.run_attempt }}
