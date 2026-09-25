@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import type { Suite } from "./index.ts";
-import { METRIC_CATALOG, paddedSuiteToken, padSuiteList, SUITE_NAMES, SUITES } from "./index.ts";
+import {
+	BENCHMARK_WAVE_ORDER,
+	CPU_NODE_MIN_SAMPLES,
+	METRIC_CATALOG,
+	paddedSuiteToken,
+	padSuiteList,
+	SUITE_NAMES,
+	SUITES,
+} from "./index.ts";
 // Not part of the public surface (curation is an implementation detail of the catalog merge); this
 // PR's pinned-subset test reaches in directly to compare its suite's declarations against curated keys.
 import { ptsOverrides } from "./pts-overrides.ts";
@@ -35,7 +43,8 @@ describe("suite registry", () => {
 
 	it("declares the per-tier pass policy and replicate count (R)", () => {
 		// Real-world captures cold-start once (k=1, no in-sandbox convergence) across many sandboxes
-		// (R=12, data-informed so the between-machine CIs separate providers). The synthetics run R=3, and
+		// (R=12, data-informed so the between-machine CIs separate providers). Most synthetics run R=3;
+		// cpu-node runs R=5 so its fixed k=2 publication path reaches ten pooled samples. Diagnostic
 		// PTS convergence is enabled on the two suites that converge cheaply and predictably: `memory`
 		// (STREAM, a tiny budget-safe loop) and `cpu-node` (CPU-bound, so DynamicRunCount settles near its
 		// ~3-pass minimum — no runaway). The rest keep a fixed count — convergence there re-introduces fio's
@@ -53,13 +62,29 @@ describe("suite registry", () => {
 			expect(suite.ptsConverge).toBeUndefined();
 			expect(suite.defaultReplicas).toBe(12);
 		}
-		for (const name of ["cpu-node", "system", "pgbench", "memory", "disk", "network"] as const) {
+		for (const name of ["system", "pgbench", "memory", "disk", "network"] as const) {
 			expect(SUITES[name].ptsTimesToRun).toBe(2);
 			expect(SUITES[name].defaultReplicas).toBe(3);
 		}
+		expect(SUITES["cpu-node"].ptsTimesToRun).toBe(2);
+		expect(SUITES["cpu-node"].defaultReplicas).toBe(5);
+		expect(
+			SUITES["cpu-node"].defaultReplicas * SUITES["cpu-node"].ptsTimesToRun,
+		).toBeGreaterThanOrEqual(CPU_NODE_MIN_SAMPLES);
 		// Convergence is enabled on the two suites that converge cheaply and predictably: cpu-node + memory.
 		const converging: string[] = SUITE_NAMES.filter((name) => (SUITES[name] as Suite).ptsConverge);
 		expect(converging.sort()).toEqual(["cpu-node", "memory"]);
+	});
+
+	it("owns ordered wave membership and isolates memory", () => {
+		expect(BENCHMARK_WAVE_ORDER).toEqual(["memory", "synthetic", "realworld"]);
+		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "memory")).toEqual(["memory"]);
+		expect(
+			SUITE_NAMES.filter((name) => SUITES[name].wave === "synthetic"),
+		).not.toContain("memory");
+		expect(
+			SUITE_NAMES.filter((name) => SUITES[name].wave === "realworld").sort(),
+		).toEqual(["realworld-better-auth", "realworld-mastra", "realworld-openclaw"]);
 	});
 
 	it("mirrors each realworld suite's metrics from the generated catalog (no hand-drift)", () => {

@@ -60,8 +60,9 @@ This is an implementation status record, not a claim that the live fleet meets t
 
 ## Integrated execution
 
-Matrix and smoke freeze one immutable plan. Matrix releases two waves: synthetic, then real-world.
-Real-world jobs can run after a synthetic failure; completeness still requires every planned cell.
+Matrix and smoke freeze one immutable plan. Matrix releases three waves: isolated memory, remaining
+synthetic, then real-world. Later jobs can run after an earlier-wave failure; completeness still
+requires every planned cell.
 Within each wave, jobs dispatch by account and bounded batch.
 Every allocating worker verifies the plan and source revision, reconciles its account once, and runs
 one rolling pool through the existing harness and normalizer. Different suites and provider variants
@@ -72,10 +73,12 @@ The account concurrency group serializes batches; independent accounts can proce
 
 Bounded publication uses each suite's fixed pass default (two unless the suite declares another
 count). An explicit fixed-pass override changes every selected suite's workload identity; explicit
-convergence remains inadmissible. All nine suites use 54 sandboxes per provider: 18 synthetic cells
-(three replicas per suite) and 36 real-world cells (twelve replicas per suite). With an account cap of
-75, Modal VM and gVisor share one 36-cell synthetic batch and one 72-cell real-world batch, so both
-variants can run every cell concurrently. Smaller caps refill the pool as allocations finish and
+convergence remains inadmissible. All nine suites use 56 sandboxes per provider: 3 isolated memory
+cells, 17 remaining synthetic cells (cpu-node uses five replicas; the other suites use three), and
+36 real-world cells (twelve replicas per suite). The complete cpu-node default is five sandboxes
+times two fixed passes, yielding 10 pooled Node samples. With an account cap of 75, Modal VM and
+gVisor share one 6-cell memory batch, one 34-cell synthetic batch, and one 72-cell real-world batch,
+so both variants can run every cell concurrently. Smaller caps refill the pool as allocations finish and
 their release records are persisted. Unresolved cleanup, a journal failure, or a typed vendor
 concurrent-limit rejection stops new admissions; already admitted peers still finish and release
 their own allocations. A rejected capacity declaration must be reconciled before a fresh experiment;

@@ -35,6 +35,23 @@ function basePlan(
 				finishMinutes: 5,
 			},
 			{
+				id: "e2b-system-r0",
+				provider: "e2b" as const,
+				quotaDomain: "e2b",
+				suite: "system",
+				replicate: 0,
+				workloadRevision: "w-system",
+				artifactIdentity: "a",
+				environmentRevision: "e",
+				target: { vcpus: 4, memoryGb: 8 },
+				metrics: ["pybench_milliseconds"],
+				exclusions: [],
+				passes: 1,
+				startupMinutes: 10,
+				workloadMinutes: 10,
+				finishMinutes: 5,
+			},
+			{
 				id: "e2b-realworld-mastra-r0",
 				provider: "e2b" as const,
 				quotaDomain: "e2b",
@@ -63,9 +80,9 @@ test("pre-wave mixed batches verify when wave is undeclared", () => {
 			{
 				id: "batch-0",
 				quotaDomain: "e2b",
-				cells: ["e2b-memory-r0", "e2b-realworld-mastra-r0"],
+				cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
 				maxConcurrency: 2,
-				budgetMinutes: 40,
+				budgetMinutes: 80,
 			},
 		],
 		rounds: [{ id: "round-0", quotaDomain: "e2b", batches: ["batch-0"] }],
@@ -80,12 +97,58 @@ test("declared synthetic wave rejects mixed members", () => {
 				id: "batch-0",
 				quotaDomain: "e2b",
 				wave: "synthetic",
-				cells: ["e2b-memory-r0", "e2b-realworld-mastra-r0"],
+				cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
 				maxConcurrency: 2,
-				budgetMinutes: 40,
+				budgetMinutes: 80,
 			},
 		],
 		rounds: [{ id: "round-0", quotaDomain: "e2b", wave: "synthetic", batches: ["batch-0"] }],
 	});
-	expect(() => verifyExperimentPlan(plan)).toThrow(/mixes synthetic and realworld/);
+	expect(() => verifyExperimentPlan(plan)).toThrow(/mixes benchmark waves/);
+});
+
+test("declared memory and synthetic waves reject memory/non-memory mixes", () => {
+	for (const wave of ["memory", "synthetic"] as const) {
+		const plan = basePlan({
+			batches: [
+				{
+					id: "batch-0",
+					quotaDomain: "e2b",
+					wave,
+					cells: ["e2b-memory-r0", "e2b-system-r0"],
+					maxConcurrency: 2,
+					budgetMinutes: 40,
+				},
+				{
+					id: "batch-1",
+					quotaDomain: "e2b",
+					wave: "realworld",
+					cells: ["e2b-realworld-mastra-r0"],
+					maxConcurrency: 1,
+					budgetMinutes: 40,
+				},
+			],
+			rounds: [
+				{ id: "round-0", quotaDomain: "e2b", wave, batches: ["batch-0"] },
+				{ id: "round-1", quotaDomain: "e2b", wave: "realworld", batches: ["batch-1"] },
+			],
+		});
+		expect(() => verifyExperimentPlan(plan)).toThrow(/mixes benchmark waves/);
+	}
+});
+
+test("a declared memory round rejects an undeclared mixed batch", () => {
+	const plan = basePlan({
+		batches: [
+			{
+				id: "batch-0",
+				quotaDomain: "e2b",
+				cells: ["e2b-memory-r0", "e2b-system-r0", "e2b-realworld-mastra-r0"],
+				maxConcurrency: 2,
+				budgetMinutes: 80,
+			},
+		],
+		rounds: [{ id: "round-0", quotaDomain: "e2b", wave: "memory", batches: ["batch-0"] }],
+	});
+	expect(() => verifyExperimentPlan(plan)).toThrow(/invalid round assignment/);
 });

@@ -106,7 +106,7 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 			batch.wave !== undefined &&
 			members.some((cell) => benchmarkWave(cell.suite) !== batch.wave)
 		)
-			throw new Error(`batch mixes synthetic and realworld work: ${batch.id}`);
+			throw new Error(`batch mixes benchmark waves: ${batch.id}`);
 		// Rolling admission runs at most maxConcurrency cells at once; capacity is checked against
 		// that window, not the full batch length.
 		const sample = members[0];
@@ -134,10 +134,14 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 		roundIds.add(round.id);
 		for (const id of round.batches) {
 			const batch = plan.batches.find((entry) => entry.id === id);
+			const batchMembers =
+				batch?.cells.map((cellId) => cells.get(cellId)).filter((cell) => cell !== undefined) ?? [];
 			if (
 				!batch ||
 				batch.quotaDomain !== round.quotaDomain ||
 				(batch.wave !== undefined && round.wave !== undefined && batch.wave !== round.wave) ||
+				(round.wave !== undefined &&
+					batchMembers.some((cell) => benchmarkWave(cell.suite) !== round.wave)) ||
 				scheduled.has(id)
 			)
 				throw new Error(`invalid round assignment: ${id}`);

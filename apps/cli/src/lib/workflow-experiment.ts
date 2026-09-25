@@ -2,6 +2,7 @@ import { evidenceDigest } from "@sandbox-benchmarks/results";
 import type { ExperimentCell, ExperimentPlan } from "@sandbox-benchmarks/schema";
 import {
 	accountCapacityPolicySchema,
+	BENCHMARK_WAVE_ORDER,
 	providerIdSchema,
 	quotaDomain,
 	SUITES,
@@ -103,7 +104,7 @@ export function workflowExperiment(env: NodeJS.ProcessEnv, createdOn: string): E
 	workflowAxes(plan);
 	for (const account of plan.accounts) {
 		workflowAxes(plan, account.quotaDomain);
-		for (const wave of ["synthetic", "realworld"] as const)
+		for (const wave of BENCHMARK_WAVE_ORDER)
 			workflowAxes(plan, account.quotaDomain, wave);
 	}
 	return plan;
@@ -127,7 +128,8 @@ export function workflowAxes(plan: ExperimentPlan, account?: string, wave?: stri
 			throw new Error("account requires explicit wave collection partitions");
 		return waves;
 	}
-	if (wave !== "synthetic" && wave !== "realworld") throw new Error("unknown collection wave");
+	if (!BENCHMARK_WAVE_ORDER.some((candidate) => candidate === wave))
+		throw new Error("unknown collection wave");
 	const selected = plan.batches.filter(
 		(batch) => batch.quotaDomain === account && batch.wave === wave,
 	);

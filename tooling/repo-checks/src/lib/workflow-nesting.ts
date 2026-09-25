@@ -84,8 +84,13 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 	const expect = (condition: boolean, detail: string) => {
 		if (!condition) errors.push(detail);
 	};
+	const waveJobs = [
+		["wave-memory", "memory"],
+		["wave-synthetic", "synthetic"],
+		["wave-realworld", "realworld"],
+	] as const;
 	for (const file of ["bench-matrix.yml", "bench-smoke.yml"]) {
-		for (const waveJob of ["wave-synthetic", "wave-realworld"]) {
+		for (const [waveJob, expectedWave] of waveJobs) {
 			const caller = job(file, waveJob);
 			expect(
 				caller.uses === "./.github/workflows/bench-account.yml",
@@ -98,14 +103,33 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 			);
 			const wave = asRecord(caller.with, file).wave;
 			expect(
-				wave === (waveJob === "wave-synthetic" ? "synthetic" : "realworld"),
+				wave === expectedWave,
 				`${file}: ${waveJob} must bind its wave input`,
 			);
 		}
+		const synthetic = job(file, "wave-synthetic");
+		const syntheticNeeds = synthetic.needs;
+		expect(
+			Array.isArray(syntheticNeeds) && syntheticNeeds.includes("wave-memory"),
+			`${file}: synthetic wave must wait for isolated memory wave`,
+		);
+		expect(
+			typeof synthetic.if === "string" &&
+				synthetic.if.includes("!cancelled()") &&
+				synthetic.if.includes("needs.plan.result == 'success'"),
+			`${file}: synthetic wave ordering must not turn memory failure into a global gate`,
+		);
 		const realworldNeeds = asRecord(job(file, "wave-realworld"), file).needs;
 		expect(
 			Array.isArray(realworldNeeds) && realworldNeeds.includes("wave-synthetic"),
 			`${file}: realworld wave must wait for synthetic wave`,
+		);
+		const realworld = job(file, "wave-realworld");
+		expect(
+			typeof realworld.if === "string" &&
+				realworld.if.includes("!cancelled()") &&
+				realworld.if.includes("needs.plan.result == 'success'"),
+			`${file}: realworld ordering must not turn synthetic failure into a global gate`,
 		);
 		const step = stepByName(job(file, "plan"), "Plan", file);
 		expect(
@@ -192,10 +216,11 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 	);
 	expect(
 		Array.isArray(publish.needs) &&
+			publish.needs.includes("wave-memory") &&
 			publish.needs.includes("wave-synthetic") &&
 			publish.needs.includes("wave-realworld") &&
 			publish.needs.includes("plan"),
-		"publication must wait for plan and both waves",
+		"publication must wait for plan and all three waves",
 	);
 	const commitJob = job("commit-dataset.yml", "commit");
 	const aggregate = stepByName(commitJob, "Aggregate", "commit-dataset.yml");

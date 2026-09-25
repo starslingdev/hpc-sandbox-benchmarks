@@ -264,9 +264,8 @@ so 20–80-minute suites such as Mastra launch detached and remain observable th
    trees (`data/raw/<runId>/r<idx>/<provider>/<suite>/`), and normalizes each into its own shard Run
    document (`data/runs/<runId>-r<idx>.json`) stamped with that replicate index. `--replicate <idx>` is
    the single-sandbox spelling, writing the un-suffixed `data/runs/<runId>.json`.
-2. **Matrix** — the `bench-matrix` workflow plans three axes (`plan-providers` / `plan-suites` /
-   `plan-replicates`), then one suite-matrix job calls the reusable `bench-suite` workflow per suite
-   (GitHub-native nesting: `<suite> / <provider>`), fanning out over the selected providers; each
+2. **Matrix** — the `bench-matrix` workflow freezes provider, suite, and replicate cells into account
+   batches, then calls the reusable `bench-suite` workflow for each batch; each
    `(provider, suite)` cell drives that suite's whole replicate fleet itself and uploads all its shard
    Runs as one artifact. **Replicates are not a runner axis.** A bench runner is idle for essentially
    its whole life — it creates a sandbox and polls it — so a runner per replicate billed R idle runners
@@ -274,21 +273,22 @@ so 20–80-minute suites such as Mastra launch detached and remain observable th
    in-process leaves the sandbox count, provider load, and wall clock unchanged (the cell's wall clock
    is its slowest replicate, not their sum) while the runner bill stops scaling with R. Isolation is
    preserved: every replicate runs to completion and writes its shard even when a peer dies, and the
-   cell goes red at the end if any did. Two axes are the statistical knobs, both defaulting to the per-suite schema
+   cell goes red at the end if any did. Collection runs in three schema-owned waves: isolated `memory`
+   first, all remaining `synthetic` suites next, and `realworld` last. STREAM never shares a batch or
+   round with another suite. Two axes are the statistical knobs, both defaulting to per-suite schema
    config so a bare dispatch already carries the intended statistical power for separating providers
    (subject to the genuine near-tie limit noted below — no sample size resolves providers that are truly
    within a few percent):
    - **replicates** — R sandboxes per cell, the between-machine axis (`replicas` blank = each suite's
-     `Suite.defaultReplicas`: synthetic R=3, realworld **R=12**, sized from the committed dataset's
-     observed between-machine variance so realworld provider CIs separate; a number overrides every suite).
-   - **PTS passes** — the within-machine axis (`pts_passes` blank = each suite's own policy). The `memory`
-     and `cpu-node` suites **converge** via PTS's `DynamicRunCount` — both are cheap or CPU-bound enough that
-     convergence settles near its ~3-pass minimum without a runaway. Every other suite keeps a **fixed** pass
-     count, because convergence there re-introduces fio's runaway (20–40 runs) on `disk`, timed `system` out
-     at its budget on modal-gvisor (SQLite's I/O variance) in a converge run, breaks `iperf`'s fixed-trial
-     rule on `network`, or is a k=1 cold-start whose install/build IS the metric (realworld). Everything
-     fixed carries its spread via replicates, not in-sandbox repeats; a number or `converge` forces one
-     policy across every suite.
+     `Suite.defaultReplicas`: cpu-node **R=5**, other synthetic/memory suites R=3, and realworld **R=12**;
+     a number overrides every suite). cpu-node's complete default matrix cell combines five independent
+     sandboxes with two trials each, publishing at least 10 `node_web_tooling_runs_per_s` samples.
+   - **PTS passes** — the within-machine axis. Bounded publication uses fixed suite defaults:
+     cpu-node and other synthetic/memory suites use k=2, while realworld uses k=1 because the cold
+     install/build is the metric. Managed plans reject convergence; it remains a separate diagnostic
+     mode because DynamicRunCount does not provide a frozen published sample count. Completeness proves
+     every planned pass. A partial Run may contain fewer Node samples only when its coverage record
+     identifies failed or withheld cells.
 
    The `bench-smoke` workflow is this same step, narrowed: the same plan action over a single
    dispatched provider and suite, calling the same reusable `bench-suite` workflow, defaulting to one

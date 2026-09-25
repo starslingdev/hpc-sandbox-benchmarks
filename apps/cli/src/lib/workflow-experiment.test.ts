@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { SUITES } from "@sandbox-benchmarks/schema";
 import { workflowAxes, workflowBatch, workflowExperiment } from "./workflow-experiment.ts";
 
 const env = {
@@ -71,7 +72,7 @@ test("workflow waves retain cells within the released queue limit and reject ove
 	expect(twoWaves.rounds.map((round) => round.batches.length)).toEqual([64, 64]);
 });
 
-test("full provider plans separate synthetic and realworld under the account cap", () => {
+test("full provider plans isolate memory and guarantee the cpu-node sample floor", () => {
 	const plan = workflowExperiment(
 		{
 			...env,
@@ -81,29 +82,36 @@ test("full provider plans separate synthetic and realworld under the account cap
 		},
 		"2026-09-10",
 	);
-	expect(plan.cells).toHaveLength(54);
-	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([18, 36]);
-	expect(plan.batches.map((batch) => batch.wave)).toEqual(["synthetic", "realworld"]);
+	expect(plan.cells).toHaveLength(56);
+	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([3, 17, 36]);
+	expect(plan.batches.map((batch) => batch.wave)).toEqual(["memory", "synthetic", "realworld"]);
 	expect(plan.batches.every((batch) => batch.maxConcurrency === 30)).toBe(true);
-	expect(plan.batches.map((batch) => batch.budgetMinutes)).toEqual([145, 300]);
+	expect(plan.batches.map((batch) => batch.budgetMinutes)).toEqual([100, 145, 300]);
 	expect(plan.batches.every((batch) => batch.budgetMinutes <= 330)).toBe(true);
 	for (const suite of new Set(plan.cells.map((cell) => cell.suite))) {
 		const cells = plan.cells.filter((cell) => cell.suite === suite);
-		const realworld = suite.startsWith("realworld-");
+		const realworld = SUITES[suite as keyof typeof SUITES].wave === "realworld";
+		const replicas = suite === "cpu-node" ? 5 : realworld ? 12 : 3;
 		expect(cells.map((cell) => cell.replicate)).toEqual(
-			Array.from({ length: realworld ? 12 : 3 }, (_, i) => i),
+			Array.from({ length: replicas }, (_, i) => i),
 		);
 		expect(cells.every((cell) => cell.passes === (realworld ? 1 : 2))).toBe(true);
 	}
+	const cpuNode = plan.cells.filter((cell) => cell.suite === "cpu-node");
+	expect(cpuNode).toHaveLength(5);
+	expect(cpuNode.length * (cpuNode[0]?.passes ?? 0)).toBe(10);
+	expect(workflowAxes(plan, "e2b", "memory")).toEqual([
+		{ batch: "batch-0", providers: ["e2b"], suite: "memory", wave: "memory" },
+	]);
 	expect(workflowAxes(plan, "e2b", "synthetic")).toEqual([
-		{ batch: "batch-0", providers: ["e2b"], suite: "synthetic", wave: "synthetic" },
+		{ batch: "batch-1", providers: ["e2b"], suite: "synthetic", wave: "synthetic" },
 	]);
 	expect(workflowAxes(plan, "e2b", "realworld")).toEqual([
-		{ batch: "batch-1", providers: ["e2b"], suite: "realworld", wave: "realworld" },
+		{ batch: "batch-2", providers: ["e2b"], suite: "realworld", wave: "realworld" },
 	]);
 });
 
-test("Modal variants share one owner and fill both waves together at account capacity 75", () => {
+test("Modal variants share one owner and fill all waves together at account capacity 75", () => {
 	const plan = workflowExperiment(
 		{
 			...env,
@@ -113,9 +121,9 @@ test("Modal variants share one owner and fill both waves together at account cap
 		},
 		"2026-09-13",
 	);
-	expect(plan.cells).toHaveLength(108);
-	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([36, 72]);
-	expect(plan.batches.map((batch) => batch.budgetMinutes)).toEqual([145, 150]);
+	expect(plan.cells).toHaveLength(112);
+	expect(plan.batches.map((batch) => batch.cells.length)).toEqual([6, 34, 72]);
+	expect(plan.batches.map((batch) => batch.budgetMinutes)).toEqual([100, 145, 150]);
 	for (const batch of plan.batches) {
 		expect(batch.maxConcurrency).toBe(75);
 		expect(
