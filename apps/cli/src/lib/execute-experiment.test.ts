@@ -685,7 +685,7 @@ test("different suites enter measurement together and retain independent attempt
 			GITHUB_RUN_ID: "mixed",
 			GITHUB_SHA: plan.sha,
 			BENCH_PROVIDERS: "tama",
-			BENCH_SUITES: "cpu-node,memory",
+			BENCH_SUITES: "cpu-node,system",
 			BENCH_REPLICAS: "1",
 			BENCH_ACCOUNT_CAPACITY: '{"tama":{"sandboxes":2}}',
 		},
@@ -708,7 +708,7 @@ test("different suites enter measurement together and retain independent attempt
 						return {
 							...session,
 							exec: async (command, options) => {
-								if (command.includes("benchmark:cpu") || command.includes("benchmark:memory")) {
+								if (command.includes("benchmark:cpu") || command.includes("benchmark:system")) {
 									started.add(session.sandboxRef.id);
 									if (started.size === 2) gate.resolve();
 									await gate.promise;
@@ -726,7 +726,7 @@ test("different suites enter measurement together and retain independent attempt
 		expect(
 			attempts.every((attempt) => attempt.measurementStarted && attempt.cleanup === "confirmed"),
 		).toBe(true);
-		// The CPU-only fixture cannot fabricate the missing memory metrics.
+		// The CPU-only fixture cannot fabricate the missing system metrics.
 		expect(batchIsComplete(mixed, f.options.root, attempts)).toBe(false);
 		expect(f.present.size).toBe(0);
 	} finally {
