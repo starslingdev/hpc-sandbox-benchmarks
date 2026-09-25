@@ -1,21 +1,27 @@
 name: Mint a portable Namespace token
 description: >-
-  Log the `nsc` CLI into the workspace via GitHub OIDC federation, then mint a scoped, revocable
-  token file @computesdk/namespace can read through NSC_TOKEN_FILE. Namespace is the one provider
-  with no stored secret — it federates on the job's `id-token: write` identity, which the caller must
-  grant.
+  Log the `nsc` CLI into ONE pinned Namespace tenant via GitHub OIDC federation, then mint a scoped,
+  revocable token file @computesdk/namespace can read through NSC_TOKEN_FILE. Namespace federates on
+  the job's `id-token: write` identity, which the caller must grant; the only stored value is the
+  tenant id, passed in by the caller.
 
-  The login itself lives in the CLI's own local session store, not a discoverable file
-  (/var/run/nsc/token.json is only pre-populated on Namespace-hosted runners — confirmed by a live
-  smoke run: ENOENT on a regular GitHub-hosted runner), so a portable token file has to be minted
-  from that session. The grant below is the minimal permission set the harness needs against the
-  Compute API's instance resource: create (CreateInstance), list (ListInstances), get
-  (DescribeInstance), destroy (DestroyInstance), and exec (RunCommandSync) — found by live trial: a
-  wildcard action is rejected outright ("not allowed in revokable tokens"), and each wrong verb name
-  (e.g. "read"/"delete" instead of "get"/"destroy") is named individually in the CLI's error. All of
-  this requires a trust relationship (this repo -> the Namespace tenant) registered once on the
-  Namespace side. The token expires after six hours: thirty minutes beyond the caller's 330-minute job
-  ceiling, and explicit here rather than inherited from the CLI's longer default.
+  The tenant is chosen EXPLICITLY (`nsc auth exchange-oidc-token --tenant_id`). The previous
+  `namespacelabs/nscloud-setup` path ran `nsc auth exchange-github-token`, which has no tenant flag —
+  Namespace resolved the tenant server-side from the GitHub org's app installation, so which tenant
+  ran the benchmarks was invisible to this repo. nscloud-setup always performs that implicit exchange
+  (plus a registry login) before returning, so it is replaced by a checksum-pinned `nsc` install
+  rather than followed by a second login. The exchange requires a trust relationship registered once
+  on the target tenant (`nsc auth trust-relationships add`) with issuer
+  https://token.actions.githubusercontent.com, a subject matching this repo's `privileged`
+  environment, and the audience below.
+
+  The mint grant is the minimal permission set the harness needs against the Compute API's instance
+  resource: create (CreateInstance), list (ListInstances), get (DescribeInstance), destroy
+  (DestroyInstance), and exec (RunCommandSync) — found by live trial: a wildcard action is rejected
+  outright ("not allowed in revokable tokens"), and each wrong verb name (e.g. "read"/"delete"
+  instead of "get"/"destroy") is named individually in the CLI's error. The token expires after six
+  hours: thirty minutes beyond the caller's 330-minute job ceiling, and explicit here rather than
+  inherited from the CLI's longer default.
 
   FAILURE POSTURE is deliberately left to the caller, as a property of the action AS A WHOLE: put
   `continue-on-error: true` on the `uses:` step, and any failure inside here degrades to "no token" —
@@ -24,12 +30,13 @@ description: >-
   document and no summary. Whether that skip is tolerated or fatal is decided downstream by
   REQUIRE_PROVIDERS, not here.
 
-  Both steps below could take their own `continue-on-error` (composite steps do support it), and
-  deliberately don't: an asymmetric posture — say, masking a transient `nsc token create` while
-  letting a broken CLI install abort the cell — is a real option, but it is the caller's call to make,
-  and splitting it across two files would hide half of it here.
-
 inputs:
+  tenant-id:
+    description: >-
+      The Namespace tenant every token is minted in. Pass `secrets.NAMESPACE_TENANT_ID` (a
+      `privileged` environment secret) — this is a public repo, so the id is kept out of the source
+      and masked in logs. Empty fails the login, which degrades to "no token" like any other failure.
+    required: true
   token-name:
     description: >-
       Name recorded on the minted token, so a leaked one is traceable to the cell that minted it.
@@ -49,10 +56,56 @@ outputs:
 runs:
   using: composite
   steps:
-    # Third-party actions are pinned to a commit SHA (the tag comment is for humans) so a
-    # moved/compromised tag can't silently change what runs.
-    - name: Set up Namespace CLI
-      uses: namespacelabs/nscloud-setup@df198f982fcecfb8264bea3f1274b56a61b6dfdc # v0
+    # Pinned release + per-arch sha256 from the release's checksums.txt, so a replaced asset can't
+    # silently change what runs (same posture as SHA-pinned actions).
+    - name: Install Namespace CLI
+      shell: bash
+      env:
+        NSC_VERSION: 0.0.561
+        NSC_SHA256_X64: a9712493b257b75a94e7f6a0729d6a7ba90043db7e627fb522aaa02b2f08b019
+        NSC_SHA256_ARM64: d599a992d3d1124ba3443aa4ca0f19530205681e1c0e49000354939497bf29a8
+      run: |
+        set -euo pipefail
+        case "${RUNNER_ARCH}" in
+          X64) arch=amd64; sha="${NSC_SHA256_X64}" ;;
+          ARM64) arch=arm64; sha="${NSC_SHA256_ARM64}" ;;
+          *) echo "::error::Unsupported runner architecture: ${RUNNER_ARCH}"; exit 1 ;;
+        esac
+        bin_dir="${RUNNER_TEMP}/nsc-cli"
+        archive="${RUNNER_TEMP}/nsc.tar.gz"
+        mkdir -p "${bin_dir}"
+        curl --fail --show-error --silent --location \
+          "https://github.com/namespacelabs/foundation/releases/download/v${NSC_VERSION}/nsc_${NSC_VERSION}_linux_${arch}.tar.gz" \
+          --output "${archive}"
+        echo "${sha}  ${archive}" | sha256sum --check --strict
+        tar -xzf "${archive}" -C "${bin_dir}" nsc
+        "${bin_dir}/nsc" version
+        echo "${bin_dir}" >> "${GITHUB_PATH}"
+
+    # The tenant id and OIDC JWT reach the shell through the environment, never interpolated into the
+    # run block (zizmor template-injection), and both are masked before `nsc` can print them. The
+    # audience must equal the one on the tenant's trust relationship.
+    - name: Log into the pinned Namespace tenant
+      shell: bash
+      env:
+        NSC_TENANT_ID: ${{ inputs.tenant-id }}
+        NSC_OIDC_AUDIENCE: namespace.so
+      run: |
+        set -euo pipefail
+        echo "::add-mask::${NSC_TENANT_ID}"
+        if [ -z "${NSC_TENANT_ID}" ]; then
+          echo "::error::tenant-id is empty; is NAMESPACE_TENANT_ID set on the privileged environment?"
+          exit 1
+        fi
+        if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+          echo "::error::No GitHub OIDC endpoint; the calling job must grant id-token: write"
+          exit 1
+        fi
+        jwt="$(curl --fail --show-error --silent \
+          --header "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${NSC_OIDC_AUDIENCE}" | jq -er '.value')"
+        echo "::add-mask::${jwt}"
+        nsc auth exchange-oidc-token --tenant_id "${NSC_TENANT_ID}" --token "${jwt}"
 
     # The token name reaches the shell through the environment, never interpolated into the run
     # block, so a dispatch-controlled suite name inside it can't inject into the runner command

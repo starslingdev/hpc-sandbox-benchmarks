@@ -264,6 +264,23 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    file. Toolchain jobs additionally run `vercel vcr login docker`, use `vercel vcr push docker` for
    publication, and always run `docker logout vcr.vercel.com`.
 
+   Namespace has no stored credential, only the target tenant: set `NAMESPACE_TENANT_ID` (a
+   `tenant_*` id) as a `privileged` environment secret so the id stays out of this public repo and
+   masked in logs. The shared `namespace-token` composite exchanges the job's GitHub OIDC token
+   (audience `namespace.so`) for a session in exactly that tenant, then mints a six-hour scoped token
+   file. The tenant needs a one-time trust relationship, created while logged into it:
+
+   ```sh
+   nsc auth trust-relationships add \
+     --issuer https://token.actions.githubusercontent.com \
+     --subject-match '<sub_claim_prefix>:environment:privileged' \
+     --audience namespace.so
+   ```
+
+   This repository uses GitHub's immutable OIDC subjects, so take the prefix verbatim from
+   `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (`sub_claim_prefix`, of the form
+   `repo:<owner>@<id>/<repo>@<id>`) — a plain `repo:<owner>/<repo>` pattern never matches.
+
    Put ordinary, non-credential provider configuration in GitHub Actions **variables** (Settings →
    Secrets and variables → Actions → Variables), *not* secrets. The generated workflow accepts the
    legacy secret location as a migration fallback, but new configuration should use variables:
