@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+	BenchmarkWave,
 	CleanupReceipt,
 	CleanupRecovery,
 	ExecutionReceipt,
@@ -11,6 +12,7 @@ import type {
 import {
 	artifactVerified,
 	BENCH_JOB_CEILING_MINUTES,
+	BENCHMARK_WAVE_ORDER,
 	benchmarkWave,
 	canonicalJsonString,
 	cleanupReceiptSchema,
@@ -27,6 +29,35 @@ import {
 } from "@sandbox-benchmarks/schema";
 import { aggregateRuns } from "./aggregate.ts";
 import type { PtsTrialEvidence } from "./pts-trial-evidence.ts";
+
+const benchmarkWaveRanks = new Map<BenchmarkWave, number>(
+	BENCHMARK_WAVE_ORDER.map((wave, index) => [wave, index]),
+);
+
+function requiredWaveRank(wave: BenchmarkWave): number {
+	const rank = benchmarkWaveRanks.get(wave);
+	if (rank === undefined) throw new Error(`benchmark wave is missing from order: ${wave}`);
+	return rank;
+}
+
+function hasLegacySyntheticWave(value: unknown): boolean {
+	if (typeof value !== "object" || value === null) return false;
+	const record = value as Record<string, unknown>;
+	for (const key of ["batches", "rounds"]) {
+		const entries = record[key];
+		if (
+			Array.isArray(entries) &&
+			entries.some(
+				(entry) =>
+					typeof entry === "object" &&
+					entry !== null &&
+					(entry as Record<string, unknown>).wave === "synthetic",
+			)
+		)
+			return true;
+	}
+	return false;
+}
 
 export function evidenceDigest(value: unknown): string {
 	// Full experiment/Run envelopes are larger than individual vendor response diagnostics.
@@ -46,6 +77,10 @@ export function evidenceDigest(value: unknown): string {
 }
 
 export function verifyExperimentPlan(value: unknown): ExperimentPlan {
+	if (hasLegacySyntheticWave(value))
+		throw new Error(
+			'legacy experiment wave "synthetic" is unsupported; use "synthetic-memory" or "synthetic-system"',
+		);
 	const plan = experimentPlanSchema.assert(value);
 	const { digest, ...body } = plan;
 	if (evidenceDigest(body) !== digest) throw new Error("experiment plan digest mismatch");
@@ -77,6 +112,8 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 	const accounts = new Map(plan.accounts.map((account) => [account.quotaDomain, account]));
 	if (accounts.size !== plan.accounts.length) throw new Error("duplicate quota domain");
 	const batchIds = new Set<string>();
+	const batchWaves = new Map<string, BenchmarkWave>();
+	const lastBatchWaveRank = new Map<string, number>();
 	for (const batch of plan.batches) {
 		const account = accounts.get(batch.quotaDomain);
 		if (
@@ -102,11 +139,18 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 			assigned.add(id);
 		}
 		const members = batch.cells.map((id) => cells.get(id)).filter((cell) => cell !== undefined);
-		if (
-			batch.wave !== undefined &&
-			members.some((cell) => benchmarkWave(cell.suite) !== batch.wave)
-		)
-			throw new Error(`batch mixes synthetic and realworld work: ${batch.id}`);
+		const memberWaves = new Set(members.map((cell) => benchmarkWave(cell.suite)));
+		if (memberWaves.size !== 1) throw new Error(`batch mixes benchmark waves: ${batch.id}`);
+		const inferredWave = memberWaves.values().next().value;
+		if (inferredWave === undefined || (batch.wave !== undefined && batch.wave !== inferredWave))
+			throw new Error(`batch wave disagrees with its cells: ${batch.id}`);
+		const effectiveWave = batch.wave ?? inferredWave;
+		const rank = requiredWaveRank(effectiveWave);
+		const previousRank = lastBatchWaveRank.get(batch.quotaDomain);
+		if (previousRank !== undefined && rank < previousRank)
+			throw new Error(`experiment batches are out of wave order: ${batch.id}`);
+		lastBatchWaveRank.set(batch.quotaDomain, rank);
+		batchWaves.set(batch.id, effectiveWave);
 		// Rolling admission runs at most maxConcurrency cells at once; capacity is checked against
 		// that window, not the full batch length.
 		const sample = members[0];
@@ -128,21 +172,31 @@ export function verifyExperimentPlan(value: unknown): ExperimentPlan {
 		throw new Error("experiment cells missing from batches");
 	const scheduled = new Set<string>();
 	const roundIds = new Set<string>();
+	const lastRoundWaveRank = new Map<string, number>();
 	for (const round of plan.rounds) {
 		if (roundIds.has(round.id) || round.batches.length > 256)
 			throw new Error(`invalid collection round: ${round.id}`);
 		roundIds.add(round.id);
+		const memberWaves = new Set<BenchmarkWave>();
 		for (const id of round.batches) {
 			const batch = plan.batches.find((entry) => entry.id === id);
-			if (
-				!batch ||
-				batch.quotaDomain !== round.quotaDomain ||
-				(batch.wave !== undefined && round.wave !== undefined && batch.wave !== round.wave) ||
-				scheduled.has(id)
-			)
+			if (!batch || batch.quotaDomain !== round.quotaDomain || scheduled.has(id))
 				throw new Error(`invalid round assignment: ${id}`);
+			const batchWave = batchWaves.get(id);
+			if (batchWave === undefined) throw new Error(`invalid round assignment: ${id}`);
+			memberWaves.add(batchWave);
 			scheduled.add(id);
 		}
+		if (memberWaves.size !== 1) throw new Error(`round mixes benchmark waves: ${round.id}`);
+		const inferredWave = memberWaves.values().next().value;
+		if (inferredWave === undefined || (round.wave !== undefined && round.wave !== inferredWave))
+			throw new Error(`round wave disagrees with its batches: ${round.id}`);
+		const effectiveWave = round.wave ?? inferredWave;
+		const rank = requiredWaveRank(effectiveWave);
+		const previousRank = lastRoundWaveRank.get(round.quotaDomain);
+		if (previousRank !== undefined && rank < previousRank)
+			throw new Error(`experiment rounds are out of wave order: ${round.id}`);
+		lastRoundWaveRank.set(round.quotaDomain, rank);
 	}
 	if (scheduled.size !== plan.batches.length)
 		throw new Error("batches missing from collection rounds");

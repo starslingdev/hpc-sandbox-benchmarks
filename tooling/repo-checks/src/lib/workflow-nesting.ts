@@ -84,30 +84,60 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 	const expect = (condition: boolean, detail: string) => {
 		if (!condition) errors.push(detail);
 	};
+	const waveJobs = [
+		{
+			job: "wave-synthetic-memory",
+			wave: "synthetic-memory",
+			label: "Synthetic - Memory",
+			previous: undefined,
+		},
+		{
+			job: "wave-synthetic-system",
+			wave: "synthetic-system",
+			label: "Synthetic - System",
+			previous: "wave-synthetic-memory",
+		},
+		{
+			job: "wave-realworld",
+			wave: "realworld",
+			label: "realworld",
+			previous: "wave-synthetic-system",
+		},
+	] as const;
 	for (const file of ["bench-matrix.yml", "bench-smoke.yml"]) {
-		for (const waveJob of ["wave-synthetic", "wave-realworld"]) {
-			const caller = job(file, waveJob);
+		for (const waveJob of waveJobs) {
+			const caller = job(file, waveJob.job);
 			expect(
 				caller.uses === "./.github/workflows/bench-account.yml",
-				`${file}: ${waveJob} must dispatch account workflow`,
+				`${file}: ${waveJob.job} must dispatch account workflow`,
 			);
 			const strategy = asRecord(caller.strategy, file);
 			expect(
 				asRecord(strategy.matrix, file).account === "${{ fromJSON(needs.plan.outputs.accounts) }}",
-				`${file}: ${waveJob} account axis must come from frozen plan`,
+				`${file}: ${waveJob.job} account axis must come from frozen plan`,
 			);
 			const wave = asRecord(caller.with, file).wave;
+			expect(wave === waveJob.wave, `${file}: ${waveJob.job} must bind its wave input`);
 			expect(
-				wave === (waveJob === "wave-synthetic" ? "synthetic" : "realworld"),
-				`${file}: ${waveJob} must bind its wave input`,
+				typeof caller.if === "string" &&
+					caller.if.includes("!cancelled()") &&
+					caller.if.includes("needs.plan.result == 'success'") &&
+					caller.if.includes(`contains(fromJSON(needs.plan.outputs.waves), '${waveJob.wave}')`),
+				`${file}: ${waveJob.label} must skip an empty frozen wave without gating later work`,
 			);
+			if (waveJob.previous !== undefined)
+				expect(
+					Array.isArray(caller.needs) && caller.needs.includes(waveJob.previous),
+					`${file}: ${waveJob.label} must wait for ${waveJob.previous}`,
+				);
 		}
-		const realworldNeeds = asRecord(job(file, "wave-realworld"), file).needs;
+		const plan = job(file, "plan");
+		const outputs = asRecord(plan.outputs, file);
 		expect(
-			Array.isArray(realworldNeeds) && realworldNeeds.includes("wave-synthetic"),
-			`${file}: realworld wave must wait for synthetic wave`,
+			outputs.waves === "${{ steps.plan.outputs.waves }}",
+			`${file}: active waves must come from the frozen plan`,
 		);
-		const step = stepByName(job(file, "plan"), "Plan", file);
+		const step = stepByName(plan, "Plan", file);
 		expect(
 			step?.run === "bun apps/cli/src/bin/workflow-experiment.ts plan",
 			`${file}: must freeze experiment before dispatch`,
@@ -192,10 +222,11 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 	);
 	expect(
 		Array.isArray(publish.needs) &&
-			publish.needs.includes("wave-synthetic") &&
+			publish.needs.includes("wave-synthetic-memory") &&
+			publish.needs.includes("wave-synthetic-system") &&
 			publish.needs.includes("wave-realworld") &&
 			publish.needs.includes("plan"),
-		"publication must wait for plan and both waves",
+		"publication must wait for plan and all three waves",
 	);
 	const commitJob = job("commit-dataset.yml", "commit");
 	const aggregate = stepByName(commitJob, "Aggregate", "commit-dataset.yml");

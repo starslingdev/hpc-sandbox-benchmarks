@@ -688,7 +688,7 @@ test("stock boots do not require verification of an artifact they never requeste
 	expect(evaluateExperiment(stockPlan, [attempt]).complete).toBe(true);
 });
 
-test("mixed synthetic suites share a rolling batch with the longest member budget", () => {
+test("memory is isolated from other synthetic suites in ordered batches", () => {
 	const cells = [
 		cell(),
 		{
@@ -706,11 +706,19 @@ test("mixed synthetic suites share a rolling batch with the longest member budge
 		{ "e2b-benchmark": { sandboxes: 30, vcpus: 8, memoryGb: 16 } },
 	);
 	expect(result.batches.map((batch) => batch.cells)).toEqual([
-		["e2b-memory-r0", "e2b-system-r0", "e2b-memory-r1"],
+		["e2b-memory-r0", "e2b-memory-r1"],
+		["e2b-system-r0"],
 	]);
-	expect(result.batches.map((batch) => batch.wave)).toEqual(["synthetic"]);
-	expect(result.batches.map((batch) => batch.maxConcurrency)).toEqual([2]);
-	expect(result.batches.map((batch) => batch.budgetMinutes)).toEqual([210]);
+	expect(result.batches.map((batch) => batch.wave)).toEqual([
+		"synthetic-memory",
+		"synthetic-system",
+	]);
+	expect(result.batches.map((batch) => batch.maxConcurrency)).toEqual([2, 2]);
+	expect(result.batches.map((batch) => batch.budgetMinutes)).toEqual([85, 105]);
+	expect(result.rounds.map((round) => round.wave)).toEqual([
+		"synthetic-memory",
+		"synthetic-system",
+	]);
 });
 
 test("different allocation requirements stay in separate account batches", () => {

@@ -76,6 +76,7 @@ jobs:
       actions: read
     outputs:
       accounts: ${{ steps.plan.outputs.axis }}
+      waves: ${{ steps.plan.outputs.waves }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,9 +103,12 @@ jobs:
           BENCH_ARTIFACT_VERCEL: ${{ vars.BENCH_ARTIFACT_VERCEL }}
         run: bun apps/cli/src/bin/workflow-experiment.ts plan
 
-  wave-synthetic:
-    name: synthetic / ${{ matrix.account }}
+  wave-synthetic-memory:
+    name: Synthetic - Memory / ${{ matrix.account }}
     needs: plan
+    if: >
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-memory')
     permissions:
       contents: write
       actions: read
@@ -116,12 +120,35 @@ jobs:
     uses: ./.github/workflows/bench-account.yml
     with:
       account: ${{ matrix.account }}
-      wave: synthetic
+      wave: synthetic-memory
+    secrets: inherit
+
+  wave-synthetic-system:
+    name: Synthetic - System / ${{ matrix.account }}
+    needs: [plan, wave-synthetic-memory]
+    if: >
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-system')
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        account: ${{ fromJSON(needs.plan.outputs.accounts) }}
+    uses: ./.github/workflows/bench-account.yml
+    with:
+      account: ${{ matrix.account }}
+      wave: synthetic-system
     secrets: inherit
 
   wave-realworld:
     name: realworld / ${{ matrix.account }}
-    needs: [plan, wave-synthetic]
+    needs: [plan, wave-synthetic-system]
+    if: >
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'realworld')
     permissions:
       contents: write
       actions: read

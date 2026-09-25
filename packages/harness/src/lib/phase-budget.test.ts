@@ -55,7 +55,14 @@ test("managed setup pins and verifies the experiment commit, independent of ambi
 	const { setupSteps } = await import("./setup.ts");
 	const sha = "a".repeat(40);
 	const clone = setupSteps(
-		{ commands: [], commandTimeoutMinutes: 1, timeoutMinutes: 1, dimensions: [], metrics: [] },
+		{
+			wave: "synthetic-system",
+			commands: [],
+			commandTimeoutMinutes: 1,
+			timeoutMinutes: 1,
+			dimensions: [],
+			metrics: [],
+		},
 		sha,
 	).find((step) => step.label === "clone repo");
 	expect(clone?.script).toContain(`git checkout --detach "${sha}"`);

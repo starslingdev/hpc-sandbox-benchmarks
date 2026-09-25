@@ -5,11 +5,11 @@
  * The between-machine axis used to be a GitHub Actions matrix axis — one runner per
  * (provider, suite, replicate) — but a bench runner spends essentially all of its wall time *waiting*
  * on a sandbox (create → poll a detached step → poll again), so R runners idled in lockstep while R
- * sandboxes did the work. The runner-minutes bill scaled with R for no throughput gain: at the shipped
- * defaults (6 providers × 9 suites, R=3 synthetic / R=12 realworld) that is 324 runners doing the work
- * of 54. Driving all R replicates from one runner keeps the sandbox fan-out identical — the same R
- * sandboxes are created concurrently against the same provider account, so provider load and wall
- * clock are unchanged — and collapses the runner axis.
+ * sandboxes did the work. The runner-minutes bill scaled with R for no throughput gain. Current
+ * defaults are suite-specific (cpu-node R=5, other synthetic suites R=3, realworld R=12), producing
+ * 56 cells per provider in a full plan. Driving all R replicates from one runner keeps the sandbox
+ * fan-out identical — the same R sandboxes are created concurrently against the same provider account,
+ * so provider load and wall clock are unchanged — and collapses the runner axis.
  *
  * Host-side concurrency was already safe: the harness names every temp archive/staging dir with a
  * `randomUUID` precisely so concurrent collects can't collide (packages/harness/src/lib/collect.ts),

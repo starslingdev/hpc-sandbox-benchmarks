@@ -147,6 +147,7 @@ describe("setupSteps", () => {
 
 	it("omits node/PTS setup for a bare suite", () => {
 		const bare = setupSteps({
+			wave: "synthetic-system",
 			commandTimeoutMinutes: 1,
 			timeoutMinutes: 1,
 			dimensions: [],

@@ -2,6 +2,7 @@ import { evidenceDigest, verifyExperimentPlan } from "@sandbox-benchmarks/result
 import type { ExperimentCell, ExperimentPlan } from "@sandbox-benchmarks/schema";
 import {
 	BENCH_JOB_CEILING_MINUTES,
+	BENCHMARK_WAVE_ORDER,
 	benchmarkWave,
 	experimentCellSchema,
 } from "@sandbox-benchmarks/schema";
@@ -50,9 +51,15 @@ export function planExperiment(
 		(cell) =>
 			!cell.metrics.every((metric) => cell.exclusions.some((entry) => entry.metricId === metric)),
 	);
+	const waveRank = new Map(BENCHMARK_WAVE_ORDER.map((wave, index) => [wave, index]));
+	const rankForSuite = (suite: string): number => {
+		const wave = benchmarkWave(suite);
+		const rank = waveRank.get(wave);
+		if (rank === undefined) throw new Error(`benchmark wave is missing from order: ${wave}`);
+		return rank;
+	};
 	const ordered = [...eligible].sort((left, right) => {
-		const rank = (suite: string) => (benchmarkWave(suite) === "synthetic" ? 0 : 1);
-		return rank(left.suite) - rank(right.suite);
+		return rankForSuite(left.suite) - rankForSuite(right.suite);
 	});
 	type Prepared = {
 		cell: ExperimentCell;
@@ -125,7 +132,7 @@ export function planExperiment(
 	}
 	const rounds: ExperimentPlan["rounds"] = [];
 	for (const quotaDomain of new Set(cells.map((cell) => cell.quotaDomain))) {
-		for (const wave of ["synthetic", "realworld"] as const) {
+		for (const wave of BENCHMARK_WAVE_ORDER) {
 			const domainBatches = batches.filter(
 				(batch) => batch.quotaDomain === quotaDomain && batch.wave === wave,
 			);

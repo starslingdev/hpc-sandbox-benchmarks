@@ -77,7 +77,7 @@ describe("parseReplicasOverride", () => {
 describe("replicaCountForSuite", () => {
 	it("uses the suite's schema default when no override is given", () => {
 		expect(replicaCountForSuite("realworld-mastra")).toBe(12);
-		expect(replicaCountForSuite("cpu-node")).toBe(3);
+		expect(replicaCountForSuite("cpu-node")).toBe(5);
 	});
 
 	it("the override wins over every suite's default", () => {
@@ -89,7 +89,7 @@ describe("replicaCountForSuite", () => {
 describe("planReplicateMap", () => {
 	it("keys exactly the selected suites (matching the suite axis), each as [0..R-1]", () => {
 		expect(planReplicateMap("cpu-node,network", undefined)).toEqual({
-			"cpu-node": [0, 1, 2],
+			"cpu-node": [0, 1, 2, 3, 4],
 			network: [0, 1, 2],
 		});
 	});

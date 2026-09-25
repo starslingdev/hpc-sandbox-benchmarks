@@ -5,6 +5,7 @@ import {
 	evidenceIdentifierSchema as identifier,
 } from "./identifiers.ts";
 import { providerIdSchema } from "./provider-parsers.ts";
+import { BENCHMARK_WAVE_ORDER } from "./suites.ts";
 import { targetSpecSchema } from "./target-spec-schema.ts";
 
 const phase = type("'create' | 'setup' | 'benchmark' | 'collect'");
@@ -79,10 +80,12 @@ export const experimentCellSchema = type({
 	finishMinutes: "number.safe > 0",
 }).onUndeclaredKey("reject");
 
+export const benchmarkWaveSchema = type.enumerated(...BENCHMARK_WAVE_ORDER);
+
 export const experimentBatchSchema = type({
 	id: identifier,
 	quotaDomain: identifier,
-	"wave?": "'synthetic' | 'realworld'",
+	"wave?": benchmarkWaveSchema,
 	cells: "string[] >= 1",
 	maxConcurrency: "number.integer >= 1",
 	budgetMinutes: "number.safe > 0",
@@ -111,7 +114,7 @@ export const experimentPlanSchema = type({
 	rounds: type({
 		id: identifier,
 		quotaDomain: identifier,
-		"wave?": "'synthetic' | 'realworld'",
+		"wave?": benchmarkWaveSchema,
 		batches: "string[] >= 1",
 	})
 		.onUndeclaredKey("reject")
