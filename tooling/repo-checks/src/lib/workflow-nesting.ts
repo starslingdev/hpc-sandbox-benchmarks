@@ -102,10 +102,7 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 				`${file}: ${waveJob} account axis must come from frozen plan`,
 			);
 			const wave = asRecord(caller.with, file).wave;
-			expect(
-				wave === expectedWave,
-				`${file}: ${waveJob} must bind its wave input`,
-			);
+			expect(wave === expectedWave, `${file}: ${waveJob} must bind its wave input`);
 		}
 		const synthetic = job(file, "wave-synthetic");
 		const syntheticNeeds = synthetic.needs;

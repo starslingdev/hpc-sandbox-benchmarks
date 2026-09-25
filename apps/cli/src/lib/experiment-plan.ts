@@ -1,8 +1,8 @@
 import { evidenceDigest, verifyExperimentPlan } from "@sandbox-benchmarks/results";
 import type { ExperimentCell, ExperimentPlan } from "@sandbox-benchmarks/schema";
 import {
-	BENCHMARK_WAVE_ORDER,
 	BENCH_JOB_CEILING_MINUTES,
+	BENCHMARK_WAVE_ORDER,
 	benchmarkWave,
 	experimentCellSchema,
 } from "@sandbox-benchmarks/schema";

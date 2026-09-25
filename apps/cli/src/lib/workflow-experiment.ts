@@ -104,8 +104,7 @@ export function workflowExperiment(env: NodeJS.ProcessEnv, createdOn: string): E
 	workflowAxes(plan);
 	for (const account of plan.accounts) {
 		workflowAxes(plan, account.quotaDomain);
-		for (const wave of BENCHMARK_WAVE_ORDER)
-			workflowAxes(plan, account.quotaDomain, wave);
+		for (const wave of BENCHMARK_WAVE_ORDER) workflowAxes(plan, account.quotaDomain, wave);
 	}
 	return plan;
 }

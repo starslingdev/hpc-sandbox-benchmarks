@@ -79,12 +79,12 @@ describe("suite registry", () => {
 	it("owns ordered wave membership and isolates memory", () => {
 		expect(BENCHMARK_WAVE_ORDER).toEqual(["memory", "synthetic", "realworld"]);
 		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "memory")).toEqual(["memory"]);
-		expect(
-			SUITE_NAMES.filter((name) => SUITES[name].wave === "synthetic"),
-		).not.toContain("memory");
-		expect(
-			SUITE_NAMES.filter((name) => SUITES[name].wave === "realworld").sort(),
-		).toEqual(["realworld-better-auth", "realworld-mastra", "realworld-openclaw"]);
+		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "synthetic")).not.toContain("memory");
+		expect(SUITE_NAMES.filter((name) => SUITES[name].wave === "realworld").sort()).toEqual([
+			"realworld-better-auth",
+			"realworld-mastra",
+			"realworld-openclaw",
+		]);
 	});
 
 	it("mirrors each realworld suite's metrics from the generated catalog (no hand-drift)", () => {
