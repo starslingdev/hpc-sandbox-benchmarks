@@ -75,6 +75,12 @@ the freshly built base. Variants share `_shared/validate-base.sh`, so their buil
 - **Blaxel mounts its volume at `/mnt/benchmark-volume`** — the entrypoint copies the baked PTS
   profiles there and links `/var/lib/phoronix-test-suite` and `/blaxel` to the volume before starting
   `sandbox-api`. This keeps benchmark writes off Blaxel's RAM-backed root overlay.
+- **Blaxel's builder must not slim the image.** `bl push` runs an automatic slimming pass on sandbox
+  images by default; on the toolchain it stripped the C compiler and the dpkg database (v8, run
+  36104006010: STREAM `cc: command not found`, iperf `no acceptable C compiler`). The bake CLI
+  (`apps/cli/src/lib/bake/blaxel.ts`) writes `[build] slim = false` into the uploaded `blaxel.toml`,
+  and the shared smoke spec's `cc-toolchain` probe fails the bake cell if a compiler ever goes missing
+  after provider packaging again.
 - **Stable internal paths** — consumers use `/usr/local/bin/bench-node`; the node-version coupling is
   resolved once in the base.
 - **OCI labels via ARGs** — `BUILD_DATE`/`BUILD_REF`/`BUILD_VERSION` stamp `org.opencontainers.image.*`.
