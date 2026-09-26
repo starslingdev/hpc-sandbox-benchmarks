@@ -101,6 +101,29 @@ export function pgbenchPayloadSmokeCheck(installTests: string): SmokeCheck | nul
 const pgbenchPayloadCheck = pgbenchPayloadSmokeCheck(pins.ptsInstallTests);
 
 /**
+ * Compile, link and run a C program with the baked toolchain — the whole chain (driver, cc1,
+ * assembler, linker, libc headers and crt objects) that STREAM's in-place recompile and the iperf
+ * profile installs exercise inside every sandbox at benchmark time.
+ *
+ * The tool-version probes above only prove the mise-managed binaries survived provider packaging;
+ * they say nothing about the apt `build` group. Blaxel's builder slims sandbox images by default and
+ * shipped v8 with `build-essential` stripped: every probe here passed, every pre-built profile ran,
+ * and the two leaves that COMPILE recorded gaps on every cell (`cc: command not found`, run
+ * 36104006010). This is the tripwire — a required provider whose packaging drops the compiler now
+ * fails its bake cell instead of publishing. Scratch lives under mktemp so the probe works for the
+ * injected unprivileged user too, and it is removed on every path so a `set -e` smoke run cannot
+ * leave the temp dir behind on a failed compile.
+ */
+export const ccToolchainSmokeCheck: SmokeCheck = {
+	name: "cc-toolchain",
+	cmd:
+		'dir="$(mktemp -d)" && trap \'rm -rf "$dir"\' EXIT && ' +
+		"echo 'int main(void) { return 0; }' > \"$dir/probe.c\" && " +
+		'cc -O2 -o "$dir/probe" "$dir/probe.c" && "$dir/probe" && echo cc-toolchain-ok',
+	expect: "cc-toolchain-ok",
+};
+
+/**
  * The probes, in run order. Expects are pinned to the same pins.ts that built the image, so this
  * asserts the *exact* toolchain is present — not merely that "a" node/python exists.
  */
@@ -128,6 +151,9 @@ export const smokeChecks: readonly SmokeCheck[] = [
 	// it survived provider packaging (e2b envd injection / daytona snapshot / modal import / VCR —
 	// the same drift class that dropped fast-cli's Chrome libs).
 	...(pgbenchPayloadCheck ? [pgbenchPayloadCheck] : []),
+	// The apt `build` group survived packaging as a WORKING compiler, not just as files on disk — the
+	// leaves that compile in-sandbox (STREAM, iperf) are the ones a provider-side slimming pass breaks.
+	ccToolchainSmokeCheck,
 	// The enforced verification manifest is present (proves the base build's 99-manifest step ran)…
 	{ name: "manifest", cmd: "cat /toolchain-manifest.json", expect: TOOLCHAIN_IMAGE_NAME },
 	// …and declares the expected toolchain version, so a stale/wrong-version manifest fails loudly.

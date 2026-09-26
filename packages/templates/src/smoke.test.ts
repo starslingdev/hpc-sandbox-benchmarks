@@ -1,10 +1,30 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PTS_STATE_SELECT_SH } from "@sandbox-benchmarks/schema";
 import type { SmokeExec } from "./smoke.ts";
-import { ptsInstalledTestsSmokeCheck, runSmoke, smokeBashScript, smokeChecks } from "./smoke.ts";
+import {
+	ccToolchainSmokeCheck,
+	ptsInstalledTestsSmokeCheck,
+	runSmoke,
+	smokeBashScript,
+	smokeChecks,
+} from "./smoke.ts";
+
+/** Run one probe's cmd through bash the way smokeBashScript does, with PATH under test control. */
+async function runProbe(
+	cmd: string,
+	env: Record<string, string>,
+): Promise<{ exitCode: number; output: string }> {
+	const proc = Bun.spawn(["bash", "-c", cmd], { stdout: "pipe", stderr: "pipe", env });
+	const [exitCode, stdout, stderr] = await Promise.all([
+		proc.exited,
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+	]);
+	return { exitCode, output: `${stdout}${stderr}` };
+}
 
 /** A stand-in for an override the published image ENV already exported into the sandbox. */
 const INHERITED_OVERRIDE = "/inherited-from-image-env/";
@@ -157,6 +177,66 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 			expect(result.exitCode).toBe(1);
 		});
 	}
+
+	// Blaxel's default image slimming shipped v8 without a compiler while every other probe stayed
+	// green (run 36104006010: STREAM `cc: command not found`, iperf `no acceptable C compiler`). The
+	// probe must exercise the whole compile+link+run chain, not `command -v cc`, because a stripped
+	// toolchain can leave the driver behind and lose cc1/ld/libc headers underneath it.
+	describe("cc-toolchain probe", () => {
+		const hostHasCc = Bun.which("cc") !== null;
+
+		it("is part of the shared spec and keyed on its sentinel", () => {
+			expect(smokeChecks).toContain(ccToolchainSmokeCheck);
+			expect(ccToolchainSmokeCheck.expect).toBe("cc-toolchain-ok");
+			expect(ccToolchainSmokeCheck.cmd).toContain("cc -O2");
+			expect(ccToolchainSmokeCheck.cmd).toContain("mktemp -d");
+		});
+
+		it.skipIf(!hostHasCc)(
+			"compiles, links and runs on a host with a working toolchain",
+			async () => {
+				const tmp = await mkdtemp(join(tmpdir(), "cc-smoke-"));
+				try {
+					const result = await runProbe(ccToolchainSmokeCheck.cmd, { ...process.env, TMPDIR: tmp });
+					expect(result.exitCode).toBe(0);
+					expect(result.output).toContain(ccToolchainSmokeCheck.expect);
+					// The scratch dir is removed on success, so a smoke run leaves nothing behind.
+					expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: tmp, dot: true }))).toEqual(
+						[],
+					);
+				} finally {
+					await rm(tmp, { recursive: true, force: true });
+				}
+			},
+		);
+
+		it("fails without emitting the sentinel when cc is missing, and still cleans up", async () => {
+			const tmp = await mkdtemp(join(tmpdir(), "cc-smoke-"));
+			const bin = join(tmp, "bin");
+			const scratch = join(tmp, "scratch");
+			await Promise.all([mkdir(bin), mkdir(scratch)]);
+			// Shadow cc with the shell's own not-found failure rather than emptying PATH: mktemp/rm must
+			// still resolve, which is exactly the shape of a slimmed image (utilities kept, compiler gone).
+			await writeFile(join(bin, "cc"), "#!/bin/sh\necho 'cc: command not found' >&2\nexit 127\n", {
+				mode: 0o755,
+			});
+			try {
+				const result = await runProbe(ccToolchainSmokeCheck.cmd, {
+					...process.env,
+					PATH: `${bin}:${process.env.PATH ?? ""}`,
+					TMPDIR: scratch,
+				});
+				expect(result.exitCode).not.toBe(0);
+				expect(result.output).not.toContain(ccToolchainSmokeCheck.expect);
+				expect(result.output).toContain("cc: command not found");
+				expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: scratch, dot: true }))).toEqual(
+					[],
+				);
+			} finally {
+				await rm(tmp, { recursive: true, force: true });
+			}
+		});
+	});
 
 	it("emits a bash script asserting every probe", () => {
 		const script = smokeBashScript();
