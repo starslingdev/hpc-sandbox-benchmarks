@@ -1,0 +1,1106 @@
+{
+  "schemaVersion": "7",
+  "runId": "36264310361",
+  "sha": "e3ecd6b1a117f93d78cb121960a8fe3a0cc19476",
+  "generatedAt": "2026-09-26T19:07:04.229Z",
+  "targetSpec": {
+    "vcpus": 4,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "providers": [
+    {
+      "providerId": "blaxel",
+      "costEvidence": [],
+      "artifactEvidence": [
+        {
+          "cell": {
+            "runId": "36264310361",
+            "providerId": "blaxel",
+            "suite": "memory",
+            "replicateIndex": 0
+          },
+          "sandboxId": "benchmark-ab9f2502-7aaa-4e47-a949-3b3e53781519",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "36264310361",
+            "providerId": "blaxel",
+            "suite": "memory",
+            "replicateIndex": 1
+          },
+          "sandboxId": "benchmark-7a220fdb-f406-4f06-ab6f-017d0571ca6c",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "36264310361",
+            "providerId": "blaxel",
+            "suite": "memory",
+            "replicateIndex": 2
+          },
+          "sandboxId": "benchmark-f1df3817-6f33-4a07-bdae-a29a2da0845d",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "36264310361",
+            "providerId": "blaxel",
+            "suite": "network",
+            "replicateIndex": 0
+          },
+          "sandboxId": "benchmark-592a040e-2dad-4376-883a-ccf4410ab5a0",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "36264310361",
+            "providerId": "blaxel",
+            "suite": "network",
+            "replicateIndex": 1
+          },
+          "sandboxId": "benchmark-6c975a2d-b422-4657-91d5-988dbe90d7da",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "36264310361",
+            "providerId": "blaxel",
+            "suite": "network",
+            "replicateIndex": 2
+          },
+          "sandboxId": "benchmark-f0646a3e-208e-473b-81a7-676084abb142",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        }
+      ],
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "containerRuntime": "none",
+        "cpuModel": "AMD EPYC",
+        "detectedIsolation": "firecracker",
+        "diskGb": 40.2,
+        "hostMemoryGb": 8,
+        "hostVcpus": 4,
+        "isolationClass": "microvm",
+        "isolationConfidence": "confirmed",
+        "kernel": "6.1.166",
+        "machineVmm": "firecracker",
+        "memoryGb": 7.78,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "vcpus": 4,
+        "virtualization": "container-other"
+      },
+      "observedMixtures": {
+        "sandboxes": 6,
+        "hostHardware": {
+          "2de7487d9eb1b4d3": {
+            "count": 6,
+            "specs": {
+              "containerRuntime": "none",
+              "cpuModel": "AMD EPYC",
+              "detectedIsolation": "firecracker",
+              "diskGb": 40.2,
+              "hostMemoryGb": 8,
+              "hostVcpus": 4,
+              "isolationClass": "microvm",
+              "isolationConfidence": "confirmed",
+              "kernel": "6.1.166",
+              "machineVmm": "firecracker",
+              "memoryGb": 7.78,
+              "os": "Debian GNU/Linux 13 (trixie)",
+              "vcpus": 4,
+              "virtualization": "container-other"
+            },
+            "specMatched": true
+          }
+        },
+        "hostNetwork": {}
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "memory/pts_stream--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=3 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "CFLAGS_OVERRIDE=\"-O3 -march=native -DSTREAM_ARRAY_SIZE=150000000\" BL_DEBUG_TELEMETRY=false"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: always-on; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "41GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.166 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 3,
+          "hostHardwareId": "2de7487d9eb1b4d3"
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "network/pts_iperf-tcp-p1--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=3 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "BL_DEBUG_TELEMETRY=false"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: always-on; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "41GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.166 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 3,
+          "hostHardwareId": "2de7487d9eb1b4d3"
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "network/pts_iperf-tcp-p10--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=3 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "BL_DEBUG_TELEMETRY=false"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: always-on; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "41GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.166 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 3,
+          "hostHardwareId": "2de7487d9eb1b4d3"
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "network/pts_iperf-udp-10g--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=3 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "BL_DEBUG_TELEMETRY=false"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: always-on; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "41GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.166 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 3,
+          "hostHardwareId": "2de7487d9eb1b4d3"
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "network/pts_iperf-wan-download--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=3 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "BL_DEBUG_TELEMETRY=false"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: always-on; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "41GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.166 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 3,
+          "hostHardwareId": "2de7487d9eb1b4d3"
+        },
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "network/pts_iperf-wan-upload--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.compiler-configuration",
+              "value": "--build=x86_64-linux-gnu --disable-vtable-verify --disable-werror --enable-bootstrap --enable-cet --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-gnu-unique-object --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --enable-libphobos-checking=release --enable-libstdcxx-backtrace --enable-libstdcxx-debug --enable-libstdcxx-time=yes --enable-link-serialization=3 --enable-multiarch --enable-multilib --enable-nls --enable-objc-gc=auto --enable-offload-defaulted --enable-offload-targets=nvptx-none=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/reproducible-path/gcc-14-14.2.0/debian/tmp-gcn/usr --enable-plugin --enable-shared --enable-threads=posix --host=x86_64-linux-gnu --program-prefix=x86_64-linux-gnu- --target=x86_64-linux-gnu --with-abi=m64 --with-arch-32=i686 --with-build-config=bootstrap-lto-lean --with-default-libstdcxx-abi=new --with-gcc-major-version-only --with-multilib-list=m32,m64,mx32 --with-target-system-zlib=auto --with-tune=generic --without-cuda-driver -v"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1000065"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "BL_DEBUG_TELEMETRY=false"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Retpolines; IBPB: conditional; IBRS_FW; STIBP: always-on; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected + srbds: Not affected + tsa: Not affected + tsx_async_abort: Not affected + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "41GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "AMD EPYC (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "xfs"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.1.166 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 3,
+          "hostHardwareId": "2de7487d9eb1b4d3"
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+          "samples": [98377, 97373, 92248, 89851, 180750, 183676],
+          "aggregates": {
+            "p50": 97875,
+            "p95": 182944.5,
+            "mean": 123712.5,
+            "stdev": 45433.84311611774,
+            "min": 89851,
+            "max": 183676,
+            "n": 6
+          },
+          "sourceFile": "network/pts_iperf-tcp-p1.xml",
+          "appVersion": "3.14",
+          "arguments": "-c localhost -p 5201 -t 10  -P 1",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [98377, 97373],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [92248, 89851],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [180750, 183676],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+          "samples": [106222, 106150, 99586, 108427, 113623, 138273],
+          "aggregates": {
+            "p50": 107324.5,
+            "p95": 132110.5,
+            "mean": 112046.83333333334,
+            "stdev": 13618.906026794757,
+            "min": 99586,
+            "max": 138273,
+            "n": 6
+          },
+          "sourceFile": "network/pts_iperf-tcp-p10.xml",
+          "appVersion": "3.14",
+          "arguments": "-c localhost -p 5201 -t 10  -P 10",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [106222, 106150],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [99586, 108427],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [113623, 138273],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+          "samples": [9999, 9999, 9999, 9999, 9999, 9999],
+          "aggregates": {
+            "p50": 9999,
+            "p95": 9999,
+            "mean": 9999,
+            "stdev": 0,
+            "min": 9999,
+            "max": 9999,
+            "n": 6
+          },
+          "sourceFile": "network/pts_iperf-udp-10g.xml",
+          "appVersion": "3.14",
+          "arguments": "-c localhost -p 5201 -t 10 -u -b 10000m -P 1",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [9999, 9999],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [9999, 9999],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [9999, 9999],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "iperf_wan_direction_download",
+          "samples": [1687.15, 1481.89, 1624.87, 1314.56, 1457.65, 1911.66],
+          "aggregates": {
+            "p50": 1553.38,
+            "p95": 1855.5325,
+            "mean": 1579.6299999999999,
+            "stdev": 209.0671958007761,
+            "min": 1314.56,
+            "max": 1911.66,
+            "n": 6
+          },
+          "sourceFile": "network/pts_iperf-wan-download.xml",
+          "appVersion": "3.14",
+          "arguments": "-R",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [1687.15, 1481.89],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [1624.87, 1314.56],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [1457.65, 1911.66],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "iperf_wan_direction_upload",
+          "samples": [5910.71, 5025.25, 5912.35, 5281.38, 5455.85, 5756.86],
+          "aggregates": {
+            "p50": 5606.355,
+            "p95": 5911.9400000000005,
+            "mean": 5557.0666666666675,
+            "stdev": 363.3962434955349,
+            "min": 5025.25,
+            "max": 5912.35,
+            "n": 6
+          },
+          "sourceFile": "network/pts_iperf-wan-upload.xml",
+          "appVersion": "3.14",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [5910.71, 5025.25],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [5912.35, 5281.38],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [5455.85, 5756.86],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "stream_type_add",
+          "samples": [105368.3, 104302, 103199.2, 122440.6, 109695.6, 106562.6],
+          "aggregates": {
+            "p50": 105965.45000000001,
+            "p95": 119254.35,
+            "mean": 108594.71666666667,
+            "stdev": 7141.410344299412,
+            "min": 103199.2,
+            "max": 122440.6,
+            "n": 6
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Add",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [105368.3, 104302],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [103199.2, 122440.6],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [109695.6, 106562.6],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "stream_type_copy",
+          "samples": [120320, 120583.7, 108656, 137190.2, 123636.1, 122379.5],
+          "aggregates": {
+            "p50": 121481.6,
+            "p95": 133801.67500000002,
+            "mean": 122127.58333333333,
+            "stdev": 9125.305432130303,
+            "min": 108656,
+            "max": 137190.2,
+            "n": 6
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Copy",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [120320, 120583.7],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [108656, 137190.2],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [123636.1, 122379.5],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "stream_type_scale",
+          "samples": [96118.8, 95980.4, 96973.5, 96879.2, 100616, 99456.9],
+          "aggregates": {
+            "p50": 96926.35,
+            "p95": 100326.225,
+            "mean": 97670.8,
+            "stdev": 1910.1502694814292,
+            "min": 95980.4,
+            "max": 100616,
+            "n": 6
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Scale",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [96118.8, 95980.4],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [96973.5, 96879.2],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [100616, 99456.9],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        },
+        {
+          "metricId": "stream_type_triad",
+          "samples": [106307.5, 105655.9, 102654.8, 138148.5, 107813.5, 106806.1],
+          "aggregates": {
+            "p50": 106556.8,
+            "p95": 130564.75,
+            "mean": 111231.05000000002,
+            "stdev": 13301.764177694618,
+            "min": 102654.8,
+            "max": 138148.5,
+            "n": 6
+          },
+          "sourceFile": "memory/pts_stream.xml",
+          "appVersion": "2013-01-17",
+          "arguments": "Triad",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [106307.5, 105655.9],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 1,
+              "samples": [102654.8, 138148.5],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            },
+            {
+              "index": 2,
+              "samples": [107813.5, 106806.1],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "2de7487d9eb1b4d3"
+            }
+          ]
+        }
+      ],
+      "suitesCovered": ["memory", "network"],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "boat",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-container",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-vm",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "microsandbox-cloud",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-gvisor",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-vm",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "namespace",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "novita",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "runcloud",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "runloop",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "tama",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "vercel",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    }
+  ],
+  "experiment": {
+    "planDigest": "sha256:929f764e2d5da1af9d61572d5b3ac24a8b5617cd7bb0f5224aa94086c6c17247",
+    "cohortDigest": "sha256:5b277e31ec5ddb8baf86ce31a60eb484bccbdcd9a5fe23a54274285fb1204a87",
+    "attemptIds": [
+      "blaxel-memory-r0-a1-d3f5d151-9ce0-49ac-a1f8-3bc9e3255805",
+      "blaxel-memory-r1-a1-e10506a5-7cf6-4e92-99d8-183a967a945f",
+      "blaxel-memory-r2-a1-cbc819cf-1bab-44e9-8989-6251b4a2988c",
+      "blaxel-network-r0-a1-23d408db-39c8-410f-bcf2-2d000a8bd567",
+      "blaxel-network-r1-a1-d0c7a49a-82db-45af-a24c-b04f5f19308e",
+      "blaxel-network-r2-a1-5510b1ac-9135-4fd1-88d5-d80ca138de3e"
+    ]
+  }
+}
