@@ -134,31 +134,77 @@ export function githubAccountJournal(
 	};
 }
 
-export function githubGitRequest(env: NodeJS.ProcessEnv = process.env): GitRequest {
+/** Intent, allocation, and release appends POST a tree and commit, then PATCH the ref. */
+const JOURNAL_WRITE_ATTEMPTS = 3;
+
+class GitHubJournalHttpError extends Error {
+	readonly status: number;
+	constructor(status: number, message: string) {
+		super(message);
+		this.name = "GitHubJournalHttpError";
+		this.status = status;
+	}
+}
+
+export type GitHubJournalRequestOptions = {
+	/** Wait before another write attempt. The default is 250ms, then 500ms. */
+	retryDelayMs?: (failedAttempt: number) => number;
+};
+
+/**
+ * Git Data API transport for one account journal.
+ *
+ * POST and PATCH retry HTTP 5xx with a bounded backoff. Run 36265300223 lost intent and
+ * not-allocated release appends on a single GitHub 500. 4xx auth and validation failures are
+ * not retried. Reads fail closed on the first error. A retried commit POST can leave an
+ * unreferenced duplicate; the ref update still names exactly one tree.
+ */
+export function githubGitRequest(
+	env: NodeJS.ProcessEnv = process.env,
+	options: GitHubJournalRequestOptions = {},
+): GitRequest {
 	const repository = env.GITHUB_REPOSITORY;
 	const token = env.GH_TOKEN || env.GITHUB_TOKEN;
 	if (!repository || !/^[\w.-]+\/[\w.-]+$/.test(repository) || !token)
 		throw new Error("account journal requires GitHub repository and token");
+	const retryDelayMs =
+		options.retryDelayMs ?? ((failedAttempt: number) => 250 * (failedAttempt + 1));
 	return async (method, path, body) => {
-		const response = await fetch(`https://api.github.com/repos/${repository}${path}`, {
-			method,
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: "application/vnd.github+json",
-				"Content-Type": "application/json",
-				"X-GitHub-Api-Version": "2022-11-28",
-			},
-			...(body === undefined ? {} : { body: JSON.stringify(body) }),
-			signal: AbortSignal.timeout(20_000),
-		});
-		if (!response.ok) {
-			const payload = responseError(await response.json().catch(() => null));
-			const detail = payload instanceof type.errors ? "" : `: ${payload.message}`;
-			const requestId = response.headers.get("x-github-request-id");
-			throw new Error(
-				`account journal ${method} HTTP ${response.status}${detail}${requestId ? ` [request ${requestId}]` : ""}; allocation blocked`,
-			);
+		const attempts = method === "POST" || method === "PATCH" ? JOURNAL_WRITE_ATTEMPTS : 1;
+		for (let attempt = 0; attempt < attempts; attempt++) {
+			const response = await fetch(`https://api.github.com/repos/${repository}${path}`, {
+				method,
+				headers: {
+					Authorization: `Bearer ${token}`,
+					Accept: "application/vnd.github+json",
+					"Content-Type": "application/json",
+					"X-GitHub-Api-Version": "2022-11-28",
+				},
+				...(body === undefined ? {} : { body: JSON.stringify(body) }),
+				signal: AbortSignal.timeout(20_000),
+			});
+			if (response.ok) return response.json();
+			const exhausted = attempt > 0 && attempt + 1 === attempts;
+			const failure = await journalHttpError(method, response, exhausted ? attempt + 1 : undefined);
+			const retry = attempt + 1 < attempts && failure.status >= 500 && failure.status <= 599;
+			if (!retry) throw failure;
+			await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
 		}
-		return response.json();
+		throw new Error("account journal write failed");
 	};
+}
+
+async function journalHttpError(
+	method: "GET" | "POST" | "PATCH",
+	response: Response,
+	attempts: number | undefined,
+): Promise<GitHubJournalHttpError> {
+	const payload = responseError(await response.json().catch(() => null));
+	const detail = payload instanceof type.errors ? "" : `: ${payload.message}`;
+	const requestId = response.headers.get("x-github-request-id");
+	const suffix = attempts === undefined ? "" : ` after ${attempts} attempts`;
+	return new GitHubJournalHttpError(
+		response.status,
+		`account journal ${method} HTTP ${response.status}${detail}${requestId ? ` [request ${requestId}]` : ""}; allocation blocked${suffix}`,
+	);
 }

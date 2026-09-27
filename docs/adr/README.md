@@ -27,3 +27,5 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0015](./0015-synthetic-headline-pair.md) | Synthetic headline selection and paired WAN directions |
 | [0016](./0016-modal-app-scoped-admission.md) | Modal admission scoped to the benchmark App |
 | [0017](./0017-retained-allocation-cleanup-recovery.md) | Retained allocation evidence for pre-execution cleanup recovery |
+| [0018](./0018-attest-already-released-cleanup.md) | Attest cleanup after an ordinary account release |
+| [0019](./0019-not-allocated-intent-recovery.md) | Retry journal write HTTP 5xx and recover a lost not-allocated release |

@@ -9,6 +9,7 @@ The inventory admission condition is refined by
 [ADR-0012](./0012-explicit-partial-publication.md). All other requirements remain.
 
 Later cleanup attestations are refined by [ADR-0014](./0014-post-run-cleanup-recovery.md).
+A lost `not-allocated` release is recovered by [ADR-0019](./0019-not-allocated-intent-recovery.md).
 
 ## Decision
 

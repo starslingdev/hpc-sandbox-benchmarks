@@ -46,6 +46,7 @@ import {
 	writeImmutableJson,
 } from "./experiment-artifacts.ts";
 import type { ExperimentStore } from "./experiment-store.ts";
+import { admissionStoppedDetail, STARTUP_DEADLINE_BEFORE_CREATE } from "./pre-create-stop.ts";
 import { runReplicate } from "./run-replicate.ts";
 
 export interface BatchExecution {
@@ -139,9 +140,7 @@ export async function executeExperimentBatch(
 	// Already admitted peers finish and persist their own cleanup/release evidence.
 	let refillFailure: Error | undefined;
 	const stopRefill = (cell: ExperimentCell) => {
-		refillFailure ??= new Error(
-			`account ${batch.quotaDomain} admission stopped after ${cell.id}: allocation ownership or journal release remains unresolved`,
-		);
+		refillFailure ??= new Error(admissionStoppedDetail(batch.quotaDomain, cell.id));
 	};
 	const runCell = async (cell: (typeof cells)[number]) => {
 		const id = `${cell.id}-a${options.workflowAttempt}-${randomUUID()}`;
@@ -204,8 +203,7 @@ export async function executeExperimentBatch(
 					// allocation boundary, before issuing a request that has not yet been admitted.
 					if (refillFailure) throw refillFailure;
 					createOptions?.signal?.throwIfAborted();
-					if (Date.now() >= startupDeadline)
-						throw new Error("startup deadline exceeded before create");
+					if (Date.now() >= startupDeadline) throw new Error(STARTUP_DEADLINE_BEFORE_CREATE);
 					createStarted = true;
 					const session = await opened.driver.create(request, createOptions).catch((error) => {
 						// Drivers throw FailedCreateCleanupError only when cleanup could not prove

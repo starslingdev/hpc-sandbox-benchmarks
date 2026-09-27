@@ -58,6 +58,6 @@ for (const entry of unresolved) {
 	);
 }
 console.error(
-	`${unresolved.length} unresolved attempt(s); recover with recover-allocated-intent / recover-completed-create before another full matrix`,
+	`${unresolved.length} unresolved attempt(s); recover with recover-not-allocated-intent (create never started), recover-allocated-intent, or recover-completed-create before another full matrix`,
 );
 process.exit(1);

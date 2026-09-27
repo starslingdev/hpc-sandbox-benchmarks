@@ -133,7 +133,7 @@ export async function recoverAccount(
 		}
 		if (!allocated)
 			throw new Error(
-				`unresolved create ${intent.attempt}: no durable sandbox identity; vendor-confirmed recovery required (recover-allocated-intent when the retained attempt evidence holds allocation.json)`,
+				`unresolved create ${intent.attempt}: no durable sandbox identity; recover-not-allocated-intent when the attempt proves create never started and cleanup is not-allocated, otherwise vendor-confirmed recovery required (recover-allocated-intent when the retained attempt evidence holds allocation.json)`,
 			);
 		const driver = drivers.get(allocated.ref.provider);
 		if (!driver?.destroyById || !driver.probes)

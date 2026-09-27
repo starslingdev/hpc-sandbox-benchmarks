@@ -123,3 +123,21 @@ The legacy `recover-rejected-create` command refuses generic create-failure mark
 prove the vendor rejected a request rather than accepting it before a timeout. No inventory sweep
 or journal write occurs: leave the intent unresolved until identity-based recovery or a reviewed
 vendor-confirmed recovery is available. Diagnostic prose is not authoritative rejection evidence.
+
+### Lost not-allocated release
+
+An intent can block the next matrix when create never started and the `released` / `not-allocated`
+append was lost. Stop local account writers and run
+`recover-not-allocated-intent --exclusive-account <original-attempt-directory>` with
+`GITHUB_REPOSITORY` and a journal-write `GH_TOKEN`. The flag asserts exclusive operational
+ownership; it does not acquire a distributed lock.
+
+The attempt must be failed, unmeasured, and `cleanup: not-allocated`, with no allocation,
+execution, or cleanup receipt. Its single create-failure marker must record an executor pre-create
+stop — admission stopped, or the startup deadline before create — and the attempt diagnostic must
+carry that same detail. The command checks that the original workflow completed and that the
+repository has no queued or running workflows, then appends the ordinary not-allocated release.
+It does not call a provider. Vendor create failures, retained `allocation.json`, and unresolved
+cleanup are refused; use `recover-allocated-intent` when the raw tree retained a sandbox identity.
+The original attempt stays failed and is not rewritten. See
+[ADR-0019](../../docs/adr/0019-not-allocated-intent-recovery.md).

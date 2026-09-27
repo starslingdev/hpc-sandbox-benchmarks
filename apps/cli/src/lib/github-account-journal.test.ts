@@ -148,6 +148,97 @@ test("a lost acknowledgement is recovered from the exact committed ref without r
 	expect(patches).toBe(1);
 });
 
+const github500 = () =>
+	new Response(
+		JSON.stringify({
+			message:
+				"Something went wrong on our side and we cannot service your request. Sorry about that. Please try resubmitting your request and contact us if the problem persists.",
+		}),
+		{ status: 500, headers: { "x-github-request-id": "request-500" } },
+	);
+
+test("a transient journal POST or PATCH HTTP 500 is retried and then acknowledged", async () => {
+	for (const method of ["POST", "PATCH"] as const) {
+		const fetch = spyOn(globalThis, "fetch")
+			.mockResolvedValueOnce(github500())
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ sha: "b".repeat(40) }), { status: 201 }),
+			);
+		try {
+			const request = githubGitRequest(
+				{ GITHUB_REPOSITORY: "owner/repo", GH_TOKEN: "test-token" },
+				{ retryDelayMs: () => 0 },
+			);
+			await expect(request(method, "/git/trees", {})).resolves.toEqual({ sha: "b".repeat(40) });
+			expect(fetch.mock.calls).toHaveLength(2);
+		} finally {
+			fetch.mockRestore();
+		}
+	}
+});
+
+test("journal write HTTP 4xx is not retried", async () => {
+	for (const status of [401, 422] as const) {
+		const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ message: "rejected" }), {
+				status,
+				headers: { "x-github-request-id": "request-4xx" },
+			}),
+		);
+		try {
+			const request = githubGitRequest(
+				{ GITHUB_REPOSITORY: "owner/repo", GH_TOKEN: "test-token" },
+				{ retryDelayMs: () => 0 },
+			);
+			await expect(request("POST", "/git/commits", {})).rejects.toThrow(
+				`HTTP ${status}: rejected [request request-4xx]`,
+			);
+			expect(fetch.mock.calls).toHaveLength(1);
+		} finally {
+			fetch.mockRestore();
+		}
+	}
+});
+
+test("journal write HTTP 500 fails clearly after the retry budget", async () => {
+	const failure = () =>
+		new Response(JSON.stringify({ message: "Something went wrong" }), { status: 500 });
+	const fetch = spyOn(globalThis, "fetch")
+		.mockResolvedValueOnce(failure())
+		.mockResolvedValueOnce(failure())
+		.mockResolvedValueOnce(failure());
+	try {
+		const request = githubGitRequest(
+			{ GITHUB_REPOSITORY: "owner/repo", GH_TOKEN: "test-token" },
+			{ retryDelayMs: () => 0 },
+		);
+		await expect(request("POST", "/git/commits", {})).rejects.toThrow(
+			/^account journal POST HTTP 500: Something went wrong; allocation blocked after 3 attempts$/,
+		);
+		expect(fetch.mock.calls).toHaveLength(3);
+	} finally {
+		fetch.mockRestore();
+	}
+});
+
+test("a journal read HTTP 500 is not retried", async () => {
+	const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+		new Response(JSON.stringify({ message: "Something went wrong" }), { status: 500 }),
+	);
+	try {
+		const request = githubGitRequest(
+			{ GITHUB_REPOSITORY: "owner/repo", GH_TOKEN: "test-token" },
+			{ retryDelayMs: () => 0 },
+		);
+		await expect(request("GET", "/git/ref/heads/journal")).rejects.toThrow(
+			/^account journal GET HTTP 500: Something went wrong; allocation blocked$/,
+		);
+		expect(fetch.mock.calls).toHaveLength(1);
+	} finally {
+		fetch.mockRestore();
+	}
+});
+
 test("GitHub rejection diagnostics preserve the reason and request ID", async () => {
 	const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
 		new Response(JSON.stringify({ message: "Update is not a fast forward" }), {
