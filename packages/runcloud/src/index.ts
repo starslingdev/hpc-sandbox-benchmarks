@@ -167,7 +167,7 @@ function timingOf(options: RuncloudSpecOptions): Timing {
 		readyTimeoutMs: options.readyTimeoutMs ?? RUNCLOUD_READY_TIMEOUT_MS,
 		cleanupAttempts: Math.max(1, Math.floor(options.cleanupAttempts ?? RUNCLOUD_CLEANUP_ATTEMPTS)),
 		cleanupRetryMs: Math.max(0, options.cleanupRetryMs ?? RUNCLOUD_CLEANUP_RETRY_MS),
-		removalDeadlineMs: Math.max(0, options.removalDeadlineMs ?? RUNCLOUD_REMOVAL_DEADLINE_MS),
+		removalDeadlineMs: Math.max(1, options.removalDeadlineMs ?? RUNCLOUD_REMOVAL_DEADLINE_MS),
 		controlPlaneTimeoutMs: Math.max(
 			1,
 			Math.floor(options.controlPlaneTimeoutMs ?? RUNCLOUD_CONTROL_TIMEOUT_MS),
@@ -356,6 +356,10 @@ async function waitUntilRunning(
 	);
 }
 
+/** An accepted DELETE whose removal the deadline never confirmed. Retrying would only re-send the
+ *  DELETE and restart the same watch, so failed-create cleanup stops on it. */
+class RuncloudRemovalUnconfirmed extends Error {}
+
 async function destroySandbox(
 	sdk: RuncloudSandboxClient,
 	sandboxId: string,
@@ -372,7 +376,7 @@ async function destroySandbox(
 		throw error;
 	}
 	let last: string | undefined;
-	do {
+	for (;;) {
 		try {
 			// Cap each read at the time left, so a hung read cannot carry the destroy past its deadline.
 			const remaining = Math.max(1, deadline - timing.now());
@@ -391,9 +395,9 @@ async function destroySandbox(
 		if (timing.now() + timing.cleanupRetryMs >= deadline) break;
 		await timing.sleep(timing.cleanupRetryMs);
 		signal?.throwIfAborted();
-	} while (timing.now() < deadline);
-	throw new Error(
-		`run.cloud sandbox ${sandboxId} has not confirmed removal after destroy (last state: ${last ?? "unknown"} after ${timing.removalDeadlineMs}ms)`,
+	}
+	throw new RuncloudRemovalUnconfirmed(
+		`run.cloud sandbox ${sandboxId} has not confirmed removal after destroy (last state: ${last} after ${timing.removalDeadlineMs}ms)`,
 	);
 }
 
@@ -435,6 +439,8 @@ async function cleanupFailedCreate(
 			await destroySandbox(sdk, sandboxId, timing, signal);
 			return;
 		} catch (error) {
+			// The DELETE was accepted and the full removal deadline already watched it.
+			if (error instanceof RuncloudRemovalUnconfirmed) throw error;
 			lastError = error;
 			if (await teardownConfirmed(sdk, sandboxId, timing, signal)) return;
 			if (attempt < timing.cleanupAttempts) await timing.sleep(timing.cleanupRetryMs);
