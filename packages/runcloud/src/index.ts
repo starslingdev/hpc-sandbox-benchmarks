@@ -32,6 +32,13 @@ export const RUNCLOUD_READY_TIMEOUT_MS = 20 * 60_000;
  *  handle (and so no generic cleanup path) until create resolves. */
 export const RUNCLOUD_CLEANUP_ATTEMPTS = 5;
 export const RUNCLOUD_CLEANUP_RETRY_MS = 2_000;
+/**
+ * How long one destroy (the DELETE plus watching for `destroyed`/404) may take. run.cloud deletes
+ * asynchronously and a record can sit in `destroying` well past a few polls: in run 36356024651 two
+ * sandboxes failed cleanup after the old 5-poll (~8 s) window and were found absent at recovery.
+ * 50 s keeps the whole destroy inside the harness's 60 s destroy timeout.
+ */
+export const RUNCLOUD_REMOVAL_DEADLINE_MS = 50_000;
 /** Bound each REST control-plane call independently: a fetch that never settles must not suspend a
  *  deadline check or a failed-create cleanup. */
 export const RUNCLOUD_CONTROL_TIMEOUT_MS = 30_000;
@@ -130,6 +137,7 @@ export interface RuncloudSpecOptions {
 	readonly readyTimeoutMs?: number;
 	readonly cleanupAttempts?: number;
 	readonly cleanupRetryMs?: number;
+	readonly removalDeadlineMs?: number;
 	readonly controlPlaneTimeoutMs?: number;
 	readonly reconcileAttempts?: number;
 	readonly reconcileRetryMs?: number;
@@ -143,6 +151,7 @@ interface Timing {
 	readonly readyTimeoutMs: number;
 	readonly cleanupAttempts: number;
 	readonly cleanupRetryMs: number;
+	readonly removalDeadlineMs: number;
 	readonly controlPlaneTimeoutMs: number;
 	readonly inventoryTimeoutMs: number;
 	readonly reconcileAttempts: number;
@@ -158,6 +167,7 @@ function timingOf(options: RuncloudSpecOptions): Timing {
 		readyTimeoutMs: options.readyTimeoutMs ?? RUNCLOUD_READY_TIMEOUT_MS,
 		cleanupAttempts: Math.max(1, Math.floor(options.cleanupAttempts ?? RUNCLOUD_CLEANUP_ATTEMPTS)),
 		cleanupRetryMs: Math.max(0, options.cleanupRetryMs ?? RUNCLOUD_CLEANUP_RETRY_MS),
+		removalDeadlineMs: Math.max(0, options.removalDeadlineMs ?? RUNCLOUD_REMOVAL_DEADLINE_MS),
 		controlPlaneTimeoutMs: Math.max(
 			1,
 			Math.floor(options.controlPlaneTimeoutMs ?? RUNCLOUD_CONTROL_TIMEOUT_MS),
@@ -352,28 +362,39 @@ async function destroySandbox(
 	timing: Timing,
 	signal?: AbortSignal,
 ): Promise<void> {
+	// One deadline for the DELETE and the watch after it: run.cloud removes asynchronously, so
+	// `destroying` can outlast any fixed number of polls. Only `destroyed`/404 confirms removal.
+	const deadline = timing.now() + timing.removalDeadlineMs;
 	try {
 		await bounded(`destroy sandbox ${sandboxId}`, () => sdk.destroy(sandboxId), timing, signal);
 	} catch (error) {
 		if (isNotFound(error)) return;
 		throw error;
 	}
-	for (let attempt = 0; attempt < timing.cleanupAttempts; attempt++) {
+	let last: string | undefined;
+	do {
 		try {
+			// Cap each read at the time left, so a hung read cannot carry the destroy past its deadline.
+			const remaining = Math.max(1, deadline - timing.now());
 			const current = await bounded(
 				`observe destroy ${sandboxId}`,
 				() => sdk.get(sandboxId),
-				timing,
+				{ ...timing, controlPlaneTimeoutMs: Math.min(timing.controlPlaneTimeoutMs, remaining) },
 				signal,
 			);
 			if (isTombstone(current.state)) return;
+			last = current.state;
 		} catch (error) {
 			if (isNotFound(error)) return;
 			throw error;
 		}
-		if (attempt + 1 < timing.cleanupAttempts) await timing.sleep(timing.cleanupRetryMs);
-	}
-	throw new Error(`run.cloud sandbox ${sandboxId} has not confirmed removal after destroy`);
+		if (timing.now() + timing.cleanupRetryMs >= deadline) break;
+		await timing.sleep(timing.cleanupRetryMs);
+		signal?.throwIfAborted();
+	} while (timing.now() < deadline);
+	throw new Error(
+		`run.cloud sandbox ${sandboxId} has not confirmed removal after destroy (last state: ${last ?? "unknown"} after ${timing.removalDeadlineMs}ms)`,
+	);
 }
 
 /**
