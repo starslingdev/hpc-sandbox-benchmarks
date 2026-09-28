@@ -128,6 +128,8 @@ function isolationFromRuntime(runtime: string | undefined): FigureIsolation | un
 		return { kind: "microVM", technology: "Cloud Hypervisor" };
 	}
 	if (normalized.includes("crosvm")) return { kind: "microVM", technology: "crosvm" };
+	// A full QEMU/KVM guest (boat's `qemu-kvm`) is a VM, not a microVM.
+	if (normalized.includes("qemu")) return { kind: "VM", technology: "QEMU" };
 	if (normalized.includes("sysbox")) return { kind: "Container", technology: "Sysbox" };
 	if (normalized.includes("lxc")) return { kind: "Container", technology: "LXC" };
 	if (normalized.includes("oci") || normalized.includes("container")) {
@@ -147,9 +149,12 @@ function isolationFromDeclaration(declared: string | undefined): FigureIsolation
 	if (normalized.includes("libkrun")) return { kind: "microVM", technology: "libkrun" };
 	if (normalized.includes("gvisor")) return { kind: "Userspace", technology: "gVisor" };
 	if (normalized.includes("kata")) return { kind: "microVM", technology: "Kata" };
-	if (normalized.includes("microvm") || normalized.includes("vm")) {
+	if (normalized.includes("microvm")) {
 		const detail = declared.match(/\(([^)]+)\)/)?.[1];
 		return { kind: "microVM", technology: detail ?? "VM" };
+	}
+	if (normalized.includes("virtual machine") || normalized.includes("vm")) {
+		return { kind: "VM", technology: normalized.includes("kvm") ? "KVM" : "VM" };
 	}
 	if (normalized.includes("container")) return { kind: "Container", technology: "OCI" };
 	return undefined;

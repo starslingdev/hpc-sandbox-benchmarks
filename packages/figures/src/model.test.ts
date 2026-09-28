@@ -234,6 +234,39 @@ describe("buildRealworldFigureModel", () => {
 		]);
 	});
 
+	// boat is a full QEMU/KVM Ubuntu VM; the chip once fell back to "microVM · VM" for it.
+	it("chips a full QEMU/KVM guest as a VM, observed or declared", () => {
+		const model = buildRealworldFigureModel({
+			run: run([
+				provider("boat", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])], {
+					hostMetadata: [
+						{
+							source: "mise/system-provider",
+							sourceFile: "system/system-provider.json",
+							fields: [
+								{ path: "container_runtime", value: "none" },
+								{ path: "isolation_runtime", value: "qemu-kvm" },
+								{ path: "machine_vmm", value: "qemu-kvm" },
+							],
+						},
+					],
+				}),
+				provider("boat-declared", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])]),
+			]),
+			metrics: METRICS,
+			providers: [
+				{ id: "boat", displayName: "boat", isolationTechnology: "KVM virtual machine" },
+				{ id: "boat-declared", displayName: "boat", isolationTechnology: "KVM virtual machine" },
+			],
+			suites: SUITES,
+		});
+
+		expect(model.providers.map((p) => p.isolation)).toEqual([
+			{ kind: "VM", technology: "QEMU" },
+			{ kind: "VM", technology: "KVM" },
+		]);
+	});
+
 	it("charts a suite two environments completed, named from its task labels", () => {
 		const model = build([
 			provider("alpha", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])]),
