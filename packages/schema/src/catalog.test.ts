@@ -3,10 +3,13 @@ import { catalogSchema } from "./catalog.ts";
 import {
 	DIMENSIONS,
 	expectedHeadlines,
+	fioModeTwin,
 	getMetric,
 	headlineMetric,
 	METRIC_CATALOG,
 	metricsForDimension,
+	runHeadlineIds,
+	SUITES,
 } from "./index.ts";
 
 describe("metric catalog", () => {
@@ -98,13 +101,41 @@ describe("metric catalog", () => {
 		).toEqual(["stream_type_add", "stream_type_copy", "stream_type_scale", "stream_type_triad"]);
 	});
 
-	it("resolves the fio buffered 4KB random-write bandwidth headline for the disk dimension", () => {
+	it("resolves the O_DIRECT 4KB random-write bandwidth headline for the disk dimension", () => {
 		const metric = headlineMetric("disk");
 		expect(metric.id).toBe(
-			"fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+			"fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
 		);
-		expect(metric.label).toBe("fio rand write 4KB, buffered (MB/s)");
+		expect(metric.label).toBe("fio rand write 4KB, O_DIRECT (MB/s)");
 		expect(metric.direction).toBe("HIB");
+	});
+
+	it("headlines disk with a metric the publication disk suite actually emits", () => {
+		// The headline follows DISK_FIO_DIRECT; a headline in the other mode would leave every new
+		// Run's disk section without a lead chart.
+		expect(SUITES.disk.metrics).toContain(headlineMetric("disk").id);
+	});
+
+	it("resolves a Run's headlines, standing a fio mode twin in for an absent disk headline", () => {
+		const yes = headlineMetric("disk").id;
+		const no = yes.replace("_direct_yes_", "_direct_no_");
+		expect(fioModeTwin(yes)).toBe(no);
+		expect(fioModeTwin(no)).toBe(yes);
+		expect(fioModeTwin("stream_type_triad")).toBeUndefined();
+
+		const headlines = (emitted: string[]) => runHeadlineIds(new Set(emitted));
+		// Every catalog headline stands when the Run emitted it, or emitted nothing to stand in.
+		expect(headlines([yes])).toContain(yes);
+		expect(headlines([])).toContain(yes);
+		// A buffered-only Run headlines its buffered twin, and only that, for disk.
+		expect(headlines([no])).toContain(no);
+		expect(headlines([no])).not.toContain(yes);
+		// Both modes present: the catalog headline wins.
+		expect(headlines([yes, no])).toContain(yes);
+		expect(headlines([yes, no])).not.toContain(no);
+		// Exactly as many headlines as the catalog declares, whatever the Run carried.
+		const declared = METRIC_CATALOG.filter((m) => m.headline).length;
+		expect(headlines([no]).size).toBe(declared);
 	});
 
 	it("resolves hardlink via a non-`pts/` (local) join key", () => {

@@ -21,9 +21,13 @@ The self-test requires PHP with XML support and the PTS 10.8.4 source tree. It c
 for all three bandwidth units and preserves numeric and abbreviated IOPS values. The ordinary Bun
 suite also verifies that staging replaces stale definitions without deleting the installed executable.
 
-The publication disk suite explicitly sets `BENCH_FIO_DIRECT=No` and requires only buffered fio
-metrics plus hardlink. This gives every provider the same I/O mode; buffered results include page
-cache effects and are labelled accordingly. Direct-mode catalog entries remain readable for historical or explicit standalone measurements.
+The publication disk suite runs every provider in one explicit mode, `DISK_FIO_DIRECT` in
+`packages/schema/src/fio-mode.ts` (default `Yes`, O_DIRECT; see
+[ADR-0020](../../../docs/adr/0020-disk-suite-o-direct.md)). That one value sets the suite command
+(`BENCH_FIO_DIRECT=Yes mise run benchmark:disk:all`), the eight fio metrics the plan requires beside
+hardlink, and the disk headline. O_DIRECT measures the storage path; buffered mode on this 1 GiB,
+no-fsync job measures the guest page cache (writes complete as memory copies, cold reads run
+serially). Both modes stay catalogued, so historical buffered Runs remain readable.
 Standalone leaves without an explicit mode retain their filesystem probe. Invalid explicit modes
 fail before measurement. Changing the suite command and eligible metrics changes its frozen workload
 identity; no old experiment denominator is modified.

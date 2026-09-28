@@ -1,4 +1,6 @@
 import { type } from "arktype";
+import type { FioDirectMode } from "./fio-mode.ts";
+import { DISK_FIO_DIRECT, fioDirectToken } from "./fio-mode.ts";
 import type { Dimension } from "./metrics.ts";
 
 /** Ordered CPU matrix collection waves. STREAM is isolated before other synthetic work. */
@@ -108,6 +110,16 @@ export const FIO_SCENARIO_METRICS: readonly string[] = [
 	"fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
 ];
 
+/** The fio scenario metrics a disk run in `mode` emits: the eight pinned scenarios, one mode. */
+export function diskFioMetrics(mode: FioDirectMode): string[] {
+	return FIO_SCENARIO_METRICS.filter((id) => id.includes(fioDirectToken(mode)));
+}
+
+/** The disk suite's command for `mode`; the mode is part of the frozen workload revision. */
+export function diskSuiteCommand(mode: FioDirectMode): string {
+	return `BENCH_FIO_DIRECT=${mode} mise run benchmark:disk:all`;
+}
+
 /**
  * The suite registry. Suite names fan out into the in-sandbox mise tasks under
  * `/.mise/tasks/benchmark/**`; keep the two in sync (a drift gate lands with the multi-suite work).
@@ -215,12 +227,10 @@ export const SUITES = {
 		ptsTimesToRun: 2,
 		defaultReplicas: 3,
 		dimensions: ["disk"],
-		metrics: [
-			"hardlink_bogo_ops_per_s",
-			...FIO_SCENARIO_METRICS.filter((id) => id.includes("_direct_no_")),
-		],
-		// One fixed mode across providers; the command and eligible metrics share a workload revision.
-		commands: ["BENCH_FIO_DIRECT=No mise run benchmark:disk:all"],
+		metrics: ["hardlink_bogo_ops_per_s", ...diskFioMetrics(DISK_FIO_DIRECT)],
+		// One fixed mode across providers (DISK_FIO_DIRECT, O_DIRECT by default); the command and the
+		// eligible metrics are derived from it together and share a workload revision.
+		commands: [diskSuiteCommand(DISK_FIO_DIRECT)],
 	},
 	// The network dimension, iperf composition (benchmark:network:suite): iperf3 over localhost
 	// isolates the sandbox's network stack/virtualization overhead (virtio/KVM vs gVisor netstack vs

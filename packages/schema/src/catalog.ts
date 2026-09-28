@@ -11,6 +11,7 @@
 // `dimension` correction). The previously hand-authored cpu entry (node-web-tooling) is now this
 // generated module's wildcard entry; its curation lives in pts-overrides.ts.
 import { economicsMetrics } from "./economics.ts";
+import { fioModeTwin } from "./fio-mode.ts";
 import { harnessMetrics } from "./harness-metrics.ts";
 import type { Dimension, MetricDef } from "./metrics.ts";
 import { expectedHeadlines, metricDefSchema, ptsKey } from "./metrics.ts";
@@ -174,6 +175,22 @@ export function isDerivedMetric(metric: { metricId: string; derived?: true }): b
 /** Every Metric belonging to a Dimension, in Catalog order. */
 export function metricsForDimension(dimension: Dimension): MetricDef[] {
 	return METRIC_CATALOG.filter((metric) => metric.dimension === dimension);
+}
+
+/**
+ * The Metric ids that headline a Run which emitted `emitted`. Each catalog headline stands, except a
+ * fio headline the Run did not emit whose other-mode twin it did: the twin headlines instead. A Run
+ * measured in the mode the disk suite no longer uses (ADR-0020) therefore still leads disk with the
+ * same scenario it measured, and the count per Dimension never changes.
+ */
+export function runHeadlineIds(emitted: ReadonlySet<string>): Set<string> {
+	const ids = new Set<string>();
+	for (const metric of METRIC_CATALOG) {
+		if (!metric.headline) continue;
+		const twin = fioModeTwin(metric.id);
+		ids.add(!emitted.has(metric.id) && twin !== undefined && emitted.has(twin) ? twin : metric.id);
+	}
+	return ids;
 }
 
 /** The first headline Metric of a Dimension, for singular consumers. Throws if none exists. */

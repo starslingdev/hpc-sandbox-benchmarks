@@ -59,6 +59,14 @@ higher-is-better, LIB = lower-is-better), and whether it `headline`s its dimensi
 (enforced at catalog load; see ADR-0015); the leaderboard ranks *every* emitted metric and
 leads each dimension with its headline.
 
+### Disk I/O mode
+
+The disk suite runs fio with O_DIRECT on every provider, so each request reaches the virtual disk
+and the host storage behind it. That is what a cold install, a database commit or a build larger
+than memory waits on. The mode is one setting (`DISK_FIO_DIRECT`), the mode is part of every fio
+metric id, and Runs are compared only within one mode. The reasoning, and what buffered mode
+measures on this job instead, is in [ADR-0020](./adr/0020-disk-suite-o-direct.md).
+
 ### How the leaderboard is laid out
 
 Which sections exist is driven by the data — a dimension no provider emitted is simply absent — but the

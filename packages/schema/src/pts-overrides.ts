@@ -7,6 +7,7 @@
 //
 // Not yet wired into the catalog — committed alongside the generator output so the curation is
 // reviewable now and the seam is a pure import-time merge when it lands.
+import { DISK_FIO_DIRECT } from "./fio-mode.ts";
 import type { MetricDef } from "./metrics.ts";
 
 /** The curatable subset of a MetricDef; everything else is owned by the generator. */
@@ -44,7 +45,8 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	// is probed at run time (O_DIRECT
 	// fails on some sandbox filesystems), so each scenario has an O_DIRECT and a buffered variant —
 	// the mode travels in the metric identity rather than being silently mixed across providers.
-	// Buffered 4KB random-write bandwidth leads disk; direct I/O remains a separate metric.
+	// 4KB random-write bandwidth leads disk, in the mode the publication suite runs (DISK_FIO_DIRECT;
+	// O_DIRECT by default, ADR-0020). The other mode's variant stays catalogued for historical Runs.
 	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio seq read 1MB, O_DIRECT (MB/s)" },
 	fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
@@ -60,7 +62,7 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
 		{ label: "fio rand write 4KB, O_DIRECT (IOPS)" },
 	fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
-		{ label: "fio rand write 4KB, O_DIRECT (MB/s)" },
+		{ headline: DISK_FIO_DIRECT === "Yes", label: "fio rand write 4KB, O_DIRECT (MB/s)" },
 	fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s:
 		{ label: "fio seq read 1MB, buffered (MB/s)" },
 	fio_type_sequential_read_engine_linux_aio_direct_no_block_size_1mb_job_count_1_disk_target_default_test_directory_iops:
@@ -76,7 +78,7 @@ export const ptsOverrides: Record<string, MetricOverride> = {
 	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_iops:
 		{ label: "fio rand write 4KB, buffered (IOPS)" },
 	fio_type_random_write_engine_linux_aio_direct_no_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s:
-		{ headline: true, label: "fio rand write 4KB, buffered (MB/s)" },
+		{ headline: DISK_FIO_DIRECT === "No", label: "fio rand write 4KB, buffered (MB/s)" },
 
 	// WAN download and upload lead network together. Loopback remains a separate
 	// network-stack measurement; WAN includes the public server and Internet path.

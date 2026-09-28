@@ -122,7 +122,7 @@ jobs:
             echo ""
             echo "$(find docs/figures -maxdepth 1 -name '*.webp' | wc -l | tr -d ' ') charts regenerated with pinned Chrome."
             echo ""
-            echo "Headline selection: Node.js web tooling; fio buffered 4KB random write; STREAM Triad; iperf3 WAN download and upload; Git common operations."
+            echo "Headline selection: Node.js web tooling; fio O_DIRECT 4KB random write; STREAM Triad; iperf3 WAN download and upload; Git common operations."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Pre-flight the exact gate the PR must pass — `biome check . --error-on-warnings`, the same

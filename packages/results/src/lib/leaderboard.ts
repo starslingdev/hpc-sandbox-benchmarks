@@ -49,6 +49,7 @@ import {
 	mannWhitneyU,
 	providerReportedNothing,
 	reportedMedianOf,
+	runHeadlineIds,
 	SUITE_NAMES,
 } from "@sandbox-benchmarks/schema";
 import type {
@@ -808,13 +809,19 @@ export function buildLeaderboard(
 		Array.isArray(value);
 	const run = isArray(input) ? combineLeaderboardDatasets(input, options) : input;
 	const dimensions: LeaderboardDimension[] = [];
+	// The Run's own headlines: the catalog's, with a fio mode twin standing in for a disk headline the
+	// Run did not measure (ADR-0020). Resolved once here, so the tables, summaries and figures that
+	// read `metric.headline` downstream all agree.
+	const headlineIds = runHeadlineIds(
+		new Set(run.providers.flatMap((provider) => provider.metrics.map((m) => m.metricId))),
+	);
 
 	for (const dimension of LEADERBOARD_DIMENSION_ORDER) {
 		// Catalog order is the stable display order, except the dimension's editorial headline leads.
 		// Crucially, every emitted Metric gets a table: headline is presentation priority, not a filter.
-		const catalogued = METRIC_CATALOG.filter((metric) => metric.dimension === dimension).sort(
-			(a, b) => Number(b.headline) - Number(a.headline),
-		);
+		const catalogued = METRIC_CATALOG.filter((metric) => metric.dimension === dimension)
+			.map((metric) => ({ ...metric, headline: headlineIds.has(metric.id) }))
+			.sort((a, b) => Number(b.headline) - Number(a.headline));
 		const metrics = catalogued.flatMap((metric): LeaderboardMetric[] => {
 			const rows = rankMetric(run, metric);
 			return rows.length === 0 ? [] : [{ metric, rows }];

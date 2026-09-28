@@ -306,6 +306,49 @@ describe("buildLeaderboard", () => {
 		expect(md).toContain("### SQLite Speedtest");
 	});
 
+	describe("disk headline follows the fio mode the Run measured (ADR-0020)", () => {
+		const scenario = (mode: "yes" | "no") =>
+			`fio_type_random_write_engine_linux_aio_direct_${mode}_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s`;
+		const diskHeadline = (board: Leaderboard) =>
+			board.dimensions
+				.find(({ dimension }) => dimension === "disk")
+				?.metrics.filter(({ metric }) => metric.headline)
+				.map(({ metric }) => metric.id);
+
+		it("headlines the O_DIRECT random-write bandwidth on an O_DIRECT Run", () => {
+			const board = buildLeaderboard(
+				run([provider("daytona-vm", [metric(scenario("yes"), [900])])]),
+			);
+			expect(diskHeadline(board)).toEqual([scenario("yes")]);
+		});
+
+		it("stands the buffered twin in when a Run measured only buffered fio", () => {
+			const board = buildLeaderboard(
+				run([
+					provider("daytona-vm", [
+						metric(scenario("no"), [700]),
+						metric("hardlink_bogo_ops_per_s", [5]),
+					]),
+				]),
+			);
+			expect(diskHeadline(board)).toEqual([scenario("no")]);
+			// The stand-in leads its dimension, exactly as the catalog headline would.
+			expect(board.dimensions.find(({ dimension }) => dimension === "disk")?.metric.id).toBe(
+				scenario("no"),
+			);
+			expect(render(board)).toContain("### fio rand write 4KB, buffered (MB/s) _(headline)_");
+		});
+
+		it("keeps the catalog headline when a Run emitted both modes", () => {
+			const board = buildLeaderboard(
+				run([
+					provider("daytona-vm", [metric(scenario("yes"), [900]), metric(scenario("no"), [700])]),
+				]),
+			);
+			expect(diskHeadline(board)).toEqual([scenario("yes")]);
+		});
+	});
+
 	it("uses the Run's target and warns when observed specs are not comparable", () => {
 		const blaxel = {
 			...provider("blaxel", [metric("node_web_tooling_runs_per_s", [10])]),

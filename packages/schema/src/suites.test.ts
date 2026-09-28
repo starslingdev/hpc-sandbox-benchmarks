@@ -2,6 +2,10 @@ import { describe, expect, it } from "bun:test";
 import type { Suite } from "./index.ts";
 import {
 	BENCHMARK_WAVE_ORDER,
+	DISK_FIO_DIRECT,
+	diskFioMetrics,
+	diskSuiteCommand,
+	fioDirectToken,
 	METRIC_CATALOG,
 	paddedSuiteToken,
 	padSuiteList,
@@ -148,7 +152,11 @@ describe("suite registry", () => {
 		for (const { suite, prefix } of subsets) {
 			const declared: string[] = SUITES[suite].metrics.filter((id) => id.startsWith(prefix)).sort();
 			const curated = overrideKeys
-				.filter((id) => id.startsWith(prefix) && (suite !== "disk" || id.includes("_direct_no_")))
+				.filter(
+					(id) =>
+						id.startsWith(prefix) &&
+						(suite !== "disk" || id.includes(fioDirectToken(DISK_FIO_DIRECT))),
+				)
 				.sort();
 			expect(declared.length).toBeGreaterThan(0);
 			expect(declared).toEqual(curated);
@@ -175,12 +183,30 @@ describe("padded suite tokens", () => {
 	});
 });
 
-it("disk freezes a uniform buffered workload with exactly its eligible metrics", () => {
-	expect(SUITES.disk.commands).toEqual(["BENCH_FIO_DIRECT=No mise run benchmark:disk:all"]);
-	expect(SUITES.disk.metrics).toHaveLength(9);
-	expect(
-		SUITES.disk.metrics
-			.filter((id) => id.startsWith("fio_"))
-			.every((id) => id.includes("_direct_no_")),
-	).toBe(true);
+describe("disk fio mode", () => {
+	it("defaults the publication disk suite to O_DIRECT (ADR-0020)", () => {
+		expect(DISK_FIO_DIRECT).toBe("Yes");
+		expect(SUITES.disk.commands).toEqual(["BENCH_FIO_DIRECT=Yes mise run benchmark:disk:all"]);
+	});
+
+	it("freezes a uniform workload with exactly the configured mode's eligible metrics", () => {
+		expect(SUITES.disk.commands).toEqual([diskSuiteCommand(DISK_FIO_DIRECT)]);
+		expect(SUITES.disk.metrics).toEqual([
+			"hardlink_bogo_ops_per_s",
+			...diskFioMetrics(DISK_FIO_DIRECT),
+		]);
+	});
+
+	it.each([
+		"Yes",
+		"No",
+	] as const)("derives eight %s-mode fio metrics and a matching command", (mode) => {
+		const metrics = diskFioMetrics(mode);
+		const other = mode === "Yes" ? "No" : "Yes";
+		// Four scenarios (seq/rand × read/write) × two scales (bandwidth, IOPS), all in one mode.
+		expect(metrics).toHaveLength(8);
+		expect(metrics.every((id) => id.includes(fioDirectToken(mode)))).toBe(true);
+		expect(metrics.some((id) => id.includes(fioDirectToken(other)))).toBe(false);
+		expect(diskSuiteCommand(mode)).toBe(`BENCH_FIO_DIRECT=${mode} mise run benchmark:disk:all`);
+	});
 });

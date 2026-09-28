@@ -18,6 +18,7 @@ export * from "./cost-evidence.ts";
 // pure cost models (burst vs fixed-infra amortization) they build on.
 export * from "./economics.ts";
 export * from "./experiment.ts";
+export * from "./fio-mode.ts";
 // The non-PTS, harness-measured Metric slice (lifecycle + control-plane) and its operation→id contract.
 export * from "./harness-metrics.ts";
 // Canonical persisted identifiers shared by Run and evidence schemas.
