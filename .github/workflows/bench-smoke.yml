@@ -23,6 +23,7 @@ on:
           - 'runcloud'
           - 'tama'
           - 'boat'
+          - 'freestyle'
           # <<< end generated: provider-options
       suite:
         description: Suite to run

@@ -27,6 +27,7 @@ describe("generated driver loader", () => {
 			"runcloud",
 			"tama",
 			"boat",
+			"freestyle",
 		]);
 		expect(Object.values(DRIVERS).every((load) => typeof load === "function")).toBe(true);
 		expect(Object.isFrozen(DRIVERS)).toBe(true);

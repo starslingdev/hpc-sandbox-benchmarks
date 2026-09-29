@@ -19,6 +19,7 @@
     "@sandbox-benchmarks/daytona": "workspace:*",
     "@sandbox-benchmarks/driver": "workspace:*",
     "@sandbox-benchmarks/e2b": "workspace:*",
+    "@sandbox-benchmarks/freestyle": "workspace:*",
     "@sandbox-benchmarks/microsandbox-cloud": "workspace:*",
     "@sandbox-benchmarks/modal": "workspace:*",
     "@sandbox-benchmarks/namespace": "workspace:*",

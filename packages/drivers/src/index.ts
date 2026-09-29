@@ -18,6 +18,7 @@ export interface DriverModuleMap {
 	runcloud: typeof import("@sandbox-benchmarks/runcloud").default;
 	tama: typeof import("@sandbox-benchmarks/tama").default;
 	boat: typeof import("@sandbox-benchmarks/boat").default;
+	freestyle: typeof import("@sandbox-benchmarks/freestyle").default;
 }
 
 type Assert<Condition extends true> = Condition;
@@ -50,6 +51,7 @@ export const DRIVERS: {
 	runcloud: () => import("@sandbox-benchmarks/runcloud").then((module) => module.default),
 	tama: () => import("@sandbox-benchmarks/tama").then((module) => module.default),
 	boat: () => import("@sandbox-benchmarks/boat").then((module) => module.default),
+	freestyle: () => import("@sandbox-benchmarks/freestyle").then((module) => module.default),
 });
 
 export const loadDriverModule = <P extends DriverProviderId>(id: P): Promise<DriverModuleMap[P]> =>

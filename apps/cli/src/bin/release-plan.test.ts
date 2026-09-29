@@ -79,6 +79,7 @@ describe("buildReleasePlan matrix", () => {
 			"runcloud",
 			"tama",
 			"boat",
+			"freestyle",
 		]);
 	});
 
@@ -137,7 +138,7 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.required).toContain("blaxel");
 		expect(plan.required).not.toContain("boat");
 		expect(plan.required).not.toContain("runloop");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat"]);
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat", "freestyle"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the

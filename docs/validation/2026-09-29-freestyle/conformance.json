@@ -1,0 +1,67 @@
+{
+  "provider": "freestyle",
+  "tier": "smoke",
+  "clauses": [
+    {
+      "clause": "core-lifecycle",
+      "status": "pass",
+      "detail": "create, exec 0/7 and split streams behaved",
+      "durationMs": 111.79874999999993
+    },
+    {
+      "clause": "readiness",
+      "status": "pass",
+      "detail": "create-returns-ready: exec succeeded with no polling",
+      "durationMs": 45.79591699999992
+    },
+    {
+      "clause": "filesystem",
+      "status": "pass",
+      "detail": "native files round-tripped and read an exec-written file",
+      "durationMs": 277.74775
+    },
+    {
+      "clause": "durable-execution",
+      "status": "pass",
+      "detail": "shell-detach reached an observable done-file",
+      "durationMs": 1327.718584
+    },
+    {
+      "clause": "sync-routing",
+      "status": "pass",
+      "detail": "router selects durable at the 60000ms boundary",
+      "durationMs": 0.0007079999999888287
+    },
+    {
+      "clause": "artifact-identity",
+      "status": "not-applicable",
+      "detail": "provider boots stock; no artifact to attribute",
+      "durationMs": 0.5317500000001019
+    },
+    {
+      "clause": "control-plane-convergence",
+      "status": "pass",
+      "detail": "control plane reports absent after destroy",
+      "durationMs": 278.38341599999967
+    },
+    {
+      "clause": "snapshots",
+      "status": "pass",
+      "detail": "snapshot sh-4afa0626e90442f99577332628733fab created and deleted",
+      "durationMs": 2719.492708
+    },
+    {
+      "clause": "gpu",
+      "status": "pass",
+      "detail": "no accelerator strategy; the gpu request was refused before allocation",
+      "durationMs": 0.6595829999996567
+    },
+    {
+      "clause": "secret-diagnostics",
+      "status": "pass",
+      "detail": "every live observable diagnostic surface was free of supplied secret values",
+      "durationMs": 0.10666700000000162
+    }
+  ],
+  "admissible": true
+}

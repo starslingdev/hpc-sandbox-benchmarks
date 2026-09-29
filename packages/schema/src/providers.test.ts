@@ -69,6 +69,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"daytona-container",
 			"daytona-vm",
 			"e2b",
+			"freestyle",
 			"microsandbox-cloud",
 			"modal-gvisor",
 			"modal-vm",

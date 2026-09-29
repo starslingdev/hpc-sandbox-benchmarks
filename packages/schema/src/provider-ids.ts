@@ -20,6 +20,7 @@ export const PROVIDER_IDS = [
 	"runcloud",
 	"tama",
 	"boat",
+	"freestyle",
 ] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];

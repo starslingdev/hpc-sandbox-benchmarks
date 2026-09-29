@@ -1,0 +1,81 @@
+{
+  "provider": "freestyle",
+  "phase": "version",
+  "startedAt": "2026-09-29T18:48:16.297Z",
+  "completedAt": "2026-09-29T18:53:32.435Z",
+  "workloadSeconds": 305,
+  "checks": [
+    {
+      "name": "resolve",
+      "status": "pass",
+      "detail": "artifact none, sdk freestyle@0.2.16",
+      "durationMs": 0
+    },
+    {
+      "name": "create",
+      "status": "pass",
+      "detail": "freestyle/vm-d4ac4cd71d8d48f4b275dc70fa75edae, booted none",
+      "durationMs": 3278.7505
+    },
+    {
+      "name": "readiness",
+      "status": "pass",
+      "detail": "create-returns-ready: exec succeeded with no polling",
+      "durationMs": 35.444375000000036
+    },
+    {
+      "name": "exec-success",
+      "status": "pass",
+      "detail": "exit 0 reported as exited/0",
+      "durationMs": 36.565250000000106
+    },
+    {
+      "name": "exec-exit-code",
+      "status": "pass",
+      "detail": "exit 7 preserved",
+      "durationMs": 38.21591699999999
+    },
+    {
+      "name": "exec-streams",
+      "status": "pass",
+      "detail": "stdout and stderr stayed separate",
+      "durationMs": 40.68829199999982
+    },
+    {
+      "name": "files-roundtrip",
+      "status": "pass",
+      "detail": "native files round-tripped",
+      "durationMs": 132.69508300000007
+    },
+    {
+      "name": "step-sync",
+      "status": "pass",
+      "detail": "workload ok after 1s",
+      "durationMs": 1148.2065409999996
+    },
+    {
+      "name": "step-durable",
+      "status": "pass",
+      "detail": "workload ok after 305s (durable path, cap 60000ms)",
+      "durationMs": 311262.63058399997
+    },
+    {
+      "name": "destroy",
+      "status": "pass",
+      "detail": "destroyed",
+      "durationMs": 54.55229199997848
+    },
+    {
+      "name": "destroy-idempotent",
+      "status": "pass",
+      "detail": "second destroy succeeded",
+      "durationMs": 0.05816600000252947
+    },
+    {
+      "name": "destroy-converged",
+      "status": "pass",
+      "detail": "observed absent",
+      "durationMs": 101.27712499996414
+    }
+  ]
+}

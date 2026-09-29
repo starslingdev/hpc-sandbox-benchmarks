@@ -6,6 +6,7 @@ import boat from "./boat.ts";
 import daytona_container from "./daytona-container.ts";
 import daytona_vm from "./daytona-vm.ts";
 import e2b from "./e2b.ts";
+import freestyle from "./freestyle.ts";
 import microsandbox_cloud from "./microsandbox-cloud.ts";
 import modal_gvisor from "./modal-gvisor.ts";
 import modal_vm from "./modal-vm.ts";
@@ -31,6 +32,7 @@ const MODULES = {
 	runcloud: runcloud,
 	tama: tama,
 	boat: boat,
+	freestyle: freestyle,
 } as const satisfies { [P in ProviderId]: ProviderMetaModule<P> };
 
 export const REGISTRY = {
@@ -48,6 +50,7 @@ export const REGISTRY = {
 	runcloud: MODULES.runcloud.meta,
 	tama: MODULES.tama.meta,
 	boat: MODULES.boat.meta,
+	freestyle: MODULES.freestyle.meta,
 } as const satisfies Record<ProviderId, ProviderMetaSource>;
 
 type IdsWithArtifact<K extends ProviderArtifact["kind"]> = {
