@@ -1,0 +1,70 @@
+{
+  "samples": [
+    {
+      "provider": "freestyle",
+      "operation": "lifecycle_spawn_ms",
+      "durationMs": 331.2990829999999
+    },
+    {
+      "provider": "freestyle",
+      "operation": "lifecycle_time_to_first_exec_ms",
+      "durationMs": 59.602584000000206
+    },
+    {
+      "provider": "freestyle",
+      "operation": "lifecycle_cold_start_ms",
+      "durationMs": 390.9016670000001
+    },
+    {
+      "provider": "freestyle",
+      "operation": "lifecycle_exec_ms",
+      "durationMs": 46.29137499999979
+    },
+    {
+      "provider": "freestyle",
+      "operation": "control_plane_exec_payload_64k_ms",
+      "durationMs": 120.89674999999988
+    },
+    {
+      "provider": "freestyle",
+      "operation": "control_plane_info_ms",
+      "durationMs": 24.833583999999973
+    },
+    {
+      "provider": "freestyle",
+      "operation": "control_plane_info_ms",
+      "durationMs": 25.58508299999994
+    },
+    {
+      "provider": "freestyle",
+      "operation": "control_plane_info_ms",
+      "durationMs": 39.18220800000017
+    },
+    {
+      "provider": "freestyle",
+      "operation": "control_plane_list_ms",
+      "durationMs": 18.35687499999949
+    },
+    {
+      "provider": "freestyle",
+      "operation": "control_plane_list_ms",
+      "durationMs": 27.73450000000048
+    },
+    {
+      "provider": "freestyle",
+      "operation": "control_plane_list_ms",
+      "durationMs": 17.443874999999935
+    },
+    {
+      "provider": "freestyle",
+      "operation": "lifecycle_snapshot_ms",
+      "durationMs": 2389.692792
+    },
+    {
+      "provider": "freestyle",
+      "operation": "lifecycle_teardown_ms",
+      "durationMs": 322.31979200000023
+    }
+  ],
+  "gaps": []
+}

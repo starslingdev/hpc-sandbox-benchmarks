@@ -1,0 +1,11 @@
+{
+  "checkedAt": "2026-09-29T21:28:13.279Z",
+  "provider": "freestyle",
+  "inventory": {
+    "owned": [],
+    "foreignCount": 0
+  },
+  "snapshotsRemaining": 0,
+  "status": "pass",
+  "note": "All validation VMs and snapshots removed; no existing API key was revoked"
+}

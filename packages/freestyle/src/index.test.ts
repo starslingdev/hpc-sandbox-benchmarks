@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
+import { BENCH_JOB_CEILING_MINUTES } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
-import { Freestyle, FreestyleApiError } from "freestyle";
-import { FREESTYLE_OWNER_KEY, freestyleSpec } from "./index.ts";
+import { FreestyleApiError } from "freestyle";
+import type { FreestyleSpecOptions } from "./index.ts";
+import { FREESTYLE_OWNER_KEY, FREESTYLE_VM_TTL_SECONDS, freestyleSpec } from "./index.ts";
 
 const context = {
 	env: { FREESTYLE_API_KEY: "freestyle-test-sentinel" },
@@ -24,21 +26,26 @@ const row = (id = "vm-test", state = "running", marker = "benchmark-test") => ({
 });
 
 function fixture(
-	override?: (path: string, method: string, body: Record<string, unknown>) => Response | undefined,
+	override?: (
+		path: string,
+		method: string,
+		body: Record<string, unknown>,
+		init?: RequestInit,
+	) => Response | undefined | Promise<Response | undefined>,
+	options: FreestyleSpecOptions = {},
 ) {
 	let deleted = false;
 	const calls: { path: string; method: string; body: Record<string, unknown>; headers: Headers }[] =
 		[];
-	const client = new Freestyle({
-		apiKey: context.env.FREESTYLE_API_KEY,
-		fetch: (async (input, init) => {
+	const mockFetch = Object.assign(
+		async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
 			const url = new URL(String(input));
 			const path = url.pathname + url.search;
 			const method = init?.method ?? "GET";
 			const body =
 				typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
 			calls.push({ path, method, body, headers: new Headers(init?.headers) });
-			const custom = override?.(path, method, body);
+			const custom = await override?.(path, method, body, init);
 			if (custom) return custom;
 			if (path === "/v5/vms" && method === "POST") return Response.json(row());
 			if (path === "/v5/vms/vm-test/resize") return Response.json(row());
@@ -53,16 +60,177 @@ function fixture(
 			}
 			if (path === "/v5/vms/vm-test") return deleted ? missing() : Response.json(row());
 			throw new Error(`Unexpected fixture request: ${method} ${path}`);
-		}) as typeof fetch,
-	});
-	const spec = freestyleSpec(context, client);
+		},
+		{ preconnect: fetch.preconnect },
+	);
+	const spec = freestyleSpec(context, { ...options, fetch: mockFetch });
 	const driver = driverFromComputeSpec("freestyle", spec, context.resolvedArtifact, [
 		context.env.FREESTYLE_API_KEY,
 	]);
-	return { client, calls, spec, driver };
+	return { calls, spec, driver };
 }
 
 describe("Freestyle native SDK driver", () => {
+	test("keeps VM lifetime independent of a short create deadline", async () => {
+		const { driver, calls } = fixture();
+		const session = await driver.create({ ...request, deadlineMs: 1_000 });
+		const create = calls.find((call) => call.path === "/v5/vms");
+		expect(create?.body.ttlSeconds).toBeGreaterThan(BENCH_JOB_CEILING_MINUTES * 60);
+		await session.destroy();
+	});
+
+	test("exposes an array of VM records to the lifecycle list consumer", async () => {
+		const { driver } = fixture((path) =>
+			path === "/v5/vms?limit=100" ? Response.json({ vms: [row()], totalCount: 1 }) : undefined,
+		);
+		expect(await driver.probes?.list?.()).toEqual([row()]);
+	});
+
+	test("bounds a pending DELETE before acknowledgement", async () => {
+		let deleteSignal: AbortSignal | undefined;
+		const { driver } = fixture(
+			(path, method, _body, init) => {
+				if (path !== "/v5/vms/vm-test" || method !== "DELETE") return;
+				deleteSignal = init?.signal ?? undefined;
+				return new Promise((_resolve, reject) => {
+					deleteSignal?.addEventListener("abort", () => reject(deleteSignal?.reason), {
+						once: true,
+					});
+				});
+			},
+			{ deleteTimeoutMs: 30 },
+		);
+		await expect(
+			driver.destroyById?.({ provider: "freestyle", id: "vm-test" }),
+		).rejects.toMatchObject({ code: "destroy-failed" });
+		expect(deleteSignal?.aborted).toBe(true);
+	});
+
+	test("bounds the whole inventory scan across multiple pages", async () => {
+		let secondSignal: AbortSignal | undefined;
+		const { driver } = fixture(
+			(path, _method, _body, init) => {
+				if (path === "/v5/vms?limit=100&offset=0")
+					return Response.json({ vms: [row()], totalCount: 2 });
+				if (path !== "/v5/vms?limit=100&offset=1") return;
+				secondSignal = init?.signal ?? undefined;
+				return new Promise((_resolve, reject) => {
+					secondSignal?.addEventListener("abort", () => reject(secondSignal?.reason), {
+						once: true,
+					});
+				});
+			},
+			{ inventoryTimeoutMs: 30 },
+		);
+		await expect(driver.inventory?.list()).rejects.toThrow();
+		expect(secondSignal?.aborted).toBe(true);
+	});
+
+	test("does not turn a lost allocation followed by 404 into confirmed absence", async () => {
+		let appeared = false;
+		const { spec, calls } = fixture((path, method) => {
+			if (path === "/v5/vms" && method === "POST") throw new Error("lost response");
+			if (path === "/v5/vms/sandbox-benchmarks-test")
+				return appeared ? Response.json(row()) : missing();
+		});
+		await expect(
+			spec.compute.sandbox.create({
+				slug: "sandbox-benchmarks-test",
+				marker: "benchmark-test",
+				deadlineMs: 1_000,
+			}),
+		).rejects.toThrow("lost response");
+		const locator = { kind: "marker", key: FREESTYLE_OWNER_KEY, value: "benchmark-test" } as const;
+		for (let attempt = 0; attempt < 2; attempt++)
+			await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).rejects.toThrow(
+				"absence is unconfirmed",
+			);
+		expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+		appeared = true;
+		await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).resolves.toEqual({
+			status: "destroyed",
+		});
+		appeared = false;
+		await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).resolves.toEqual({
+			status: "absent",
+		});
+	});
+
+	test("does not treat a missing background poll record as allocation rejection", async () => {
+		const { spec } = fixture((path, method) => {
+			if (path === "/v5/vms" && method === "POST")
+				return Response.json({ requestId: "request-lost" }, { status: 202 });
+			if (
+				path === "/v5/background-requests/request-lost" ||
+				path === "/v5/vms/sandbox-benchmarks-test"
+			)
+				return missing();
+		});
+		await expect(
+			spec.compute.sandbox.create({
+				slug: "sandbox-benchmarks-test",
+				marker: "benchmark-test",
+				deadlineMs: 1_000,
+			}),
+		).rejects.toThrow();
+		await expect(
+			spec.createRecovery?.cleanup(
+				spec.compute,
+				{ kind: "marker", key: FREESTYLE_OWNER_KEY, value: "benchmark-test" },
+				{},
+			),
+		).rejects.toThrow("absence is unconfirmed");
+	});
+
+	test("session files do not retain an expired create signal", async () => {
+		const controller = new AbortController();
+		const { driver } = fixture((path, _method, _body, init) => {
+			if (!path.includes("/fs/exists")) return;
+			init?.signal?.throwIfAborted();
+			return Response.json({ exists: true });
+		});
+		const session = await driver.create(request, { signal: controller.signal });
+		controller.abort(new Error("create operation finished"));
+		expect(await session.files?.exists("/tmp/probe")).toBe(true);
+		await session.destroy();
+	});
+
+	test("cancelling accepted synchronous exec waits until the command settles", async () => {
+		const controller = new AbortController();
+		let finish: ((result: Response) => void) | undefined;
+		let entered: (() => void) | undefined;
+		const started = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const { driver } = fixture((path, _method, body) => {
+			if (!path.endsWith("/exec-await") || body.command !== "work") return;
+			entered?.();
+			return new Promise((resolve) => {
+				finish = resolve;
+			});
+		});
+		const session = await driver.create(request);
+		let settled = false;
+		const execution = session.exec("work", { signal: controller.signal });
+		const outcome = execution.then(
+			() => {
+				settled = true;
+				return "completed";
+			},
+			() => {
+				settled = true;
+				return "cancelled";
+			},
+		);
+		await started;
+		controller.abort(new Error("cancel work"));
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		finish?.(Response.json({ statusCode: 0, stdout: "", stderr: "" }));
+		expect(await outcome).toBe("cancelled");
+		await session.destroy();
+	});
+
 	test("maps the target shape, opens only outbound traffic, and bounds orphan lifetime", async () => {
 		const { driver, calls } = fixture();
 		const session = await driver.create(request);
@@ -71,7 +239,7 @@ describe("Freestyle native SDK driver", () => {
 			snapshotId: "freestyle/ubuntu",
 			idleTimeoutSeconds: -1,
 			autoDeleteSeconds: 0,
-			ttlSeconds: 900,
+			ttlSeconds: FREESTYLE_VM_TTL_SECONDS,
 			firewall: { rules: [{ action: "allow", source: {}, destination: { public: true } }] },
 		});
 		expect(create?.body.slug).toMatch(/^sandbox-benchmarks-[a-f0-9-]+$/);

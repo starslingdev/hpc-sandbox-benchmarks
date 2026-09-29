@@ -22,8 +22,14 @@ There is no provider artifact to bake or release.
   deleted, with a ten-minute TTL as a cleanup backstop.
 - Each VM has a unique slug and attempt metadata for failed-create recovery and paginated account
   inventory. Only an exact marker match authorizes recovery deletion. Teardown deletes the VM and
-  waits for a typed 404; pausing does not count as removal. VM TTL is the attempt budget plus ten
-  minutes, and idle pausing is disabled so CPU-bound workloads can finish.
+  waits for a typed 404; pausing does not count as removal. VM TTL is six hours, covering the
+  maximum 330-minute job with cleanup headroom. Idle pausing is disabled so CPU-bound workloads
+  can finish. A lost create response remains uncertain until its matching VM is found and deleted;
+  repeated not-found responses alone do not justify retrying an allocation.
+- Control-plane calls and background request polling share bounded deadlines and cancellation.
+  Deletion has a total 60-second budget; inventory has a five-minute budget across all pages.
+  Accepted synchronous commands settle before reporting caller cancellation, because the API
+  cannot kill them. Session filesystem calls do not retain the create operation's signal.
 - The firewall permits outbound public traffic for dependency installation and network benchmarks.
   No public inbound rule, domain, VPC, or SSH credential is created.
 

@@ -8,9 +8,16 @@ import { type } from "arktype";
 import type { Vm } from "freestyle";
 import { Freestyle, FreestyleApiError } from "freestyle";
 import { FREESTYLE_PROVENANCE } from "./provenance.ts";
+import { freestyleFetch } from "./transport.ts";
 
 export const FREESTYLE_SNAPSHOT = "freestyle/ubuntu";
 export const FREESTYLE_OWNER_KEY = "sandbox-benchmarks-attempt";
+// Longest supported benchmark job is 330 minutes; leave headroom for cleanup.
+export const FREESTYLE_VM_TTL_SECONDS = 6 * 60 * 60;
+const CONTROL_TIMEOUT_MS = 30_000;
+const DELETE_TIMEOUT_MS = 60_000;
+const INVENTORY_TIMEOUT_MS = 5 * 60_000;
+const EXEC_TIMEOUT_MS = 300_000;
 const OWNER_PREFIX = "benchmark-";
 const vmId = type(/^[A-Za-z0-9_-]+$/);
 const resources = type({
@@ -40,28 +47,49 @@ function hasStatus(error: unknown, statuses: readonly number[]): boolean {
 	);
 }
 
-async function exec(vm: Vm, command: string, options?: DriverOperationOptions) {
-	options?.signal?.throwIfAborted();
-	// Native file writes belong to ubuntu. Root cannot overwrite those files in sticky /tmp
-	// with fs.protected_regular=2; use the same user and let harness setup elevate with sudo.
-	const result = execResult.assert(
-		await vm.exec({ command, linuxUser: "ubuntu", timeoutMs: 300_000 }),
-	);
-	return {
-		stdout: result.stdout ?? "",
-		stderr: result.stderr ?? "",
-		...(result.statusCode == null ? {} : { exitCode: result.statusCode }),
-	};
+export interface FreestyleSpecOptions {
+	readonly fetch?: typeof fetch;
+	readonly controlTimeoutMs?: number;
+	readonly deleteTimeoutMs?: number;
+	readonly inventoryTimeoutMs?: number;
 }
 
 export function freestyleSpec(
 	{ env }: DriverContext<"freestyle">,
-	client = new Freestyle({ apiKey: env.FREESTYLE_API_KEY }),
+	options: FreestyleSpecOptions = {},
 ) {
-	async function observe(id: string) {
+	const controlTimeoutMs = options.controlTimeoutMs ?? CONTROL_TIMEOUT_MS;
+	const deleteTimeoutMs = options.deleteTimeoutMs ?? DELETE_TIMEOUT_MS;
+	const inventoryTimeoutMs = options.inventoryTimeoutMs ?? INVENTORY_TIMEOUT_MS;
+	const unresolvedCreates = new Set<string>();
+	const api = (operation?: DriverOperationOptions, timeoutMs = controlTimeoutMs) =>
+		new Freestyle({
+			apiKey: env.FREESTYLE_API_KEY,
+			fetch: freestyleFetch(options.fetch ?? fetch, timeoutMs, operation?.signal),
+		});
+
+	async function exec(vm: Vm, command: string, operation?: DriverOperationOptions) {
+		operation?.signal?.throwIfAborted();
+		// Native file writes belong to ubuntu. Root cannot overwrite those files in sticky /tmp
+		// with fs.protected_regular=2; use the same user and let harness setup elevate with sudo.
+		const result = execResult.assert(
+			// The synchronous API cannot kill accepted work. Wait for its bounded completion before
+			// reporting cancellation, so a caller never overlaps the next command with this one.
+			await api(undefined, EXEC_TIMEOUT_MS + 10_000)
+				.vms.ref(vm.id)
+				.exec({ command, linuxUser: "ubuntu", timeoutMs: EXEC_TIMEOUT_MS }),
+		);
+		operation?.signal?.throwIfAborted();
+		return {
+			stdout: result.stdout ?? "",
+			stderr: result.stderr ?? "",
+			...(result.statusCode == null ? {} : { exitCode: result.statusCode }),
+		};
+	}
+	async function observe(id: string, operation?: DriverOperationOptions) {
 		try {
 			// Paused/stopped VMs still own disk: only a missing record proves deletion.
-			vmRecord.assert(await client.vms.get(id));
+			vmRecord.assert(await api(operation).vms.get(id));
 			return { state: "running" as const };
 		} catch (error) {
 			if (hasStatus(error, [404])) return { state: "absent" as const };
@@ -69,33 +97,49 @@ export function freestyleSpec(
 		}
 	}
 	async function destroy(id: string, operation?: DriverOperationOptions) {
-		operation?.signal?.throwIfAborted();
+		const bounded = {
+			signal: AbortSignal.any([
+				AbortSignal.timeout(deleteTimeoutMs),
+				...(operation?.signal ? [operation.signal] : []),
+			]),
+		};
+		bounded.signal.throwIfAborted();
 		try {
-			await client.vms.delete(id);
+			await api(bounded).vms.delete(id);
 		} catch (error) {
 			if (!hasStatus(error, [404])) throw error;
 		}
 		await pollUntilReady({
 			provider: "freestyle",
-			deadlineMs: 60_000,
+			deadlineMs: deleteTimeoutMs,
 			intervalMs: 500,
-			signal: operation?.signal,
-			poll: async () => ((await observe(id)).state === "absent" ? true : null),
+			signal: bounded.signal,
+			poll: async () => ((await observe(id, bounded)).state === "absent" ? true : null),
 		});
 	}
 	const compute = nativeSdkCompute(
-		async (options: { slug: string; marker: string; ttlSeconds: number }, operation) => {
+		async (options: { slug: string; marker: string; deadlineMs: number }, operation) => {
 			operation.signal?.throwIfAborted();
-			const created = await client.vms.create({
-				snapshotId: FREESTYLE_SNAPSHOT,
-				slug: options.slug,
-				metadata: { [FREESTYLE_OWNER_KEY]: options.marker },
-				idleTimeoutSeconds: -1,
-				autoDeleteSeconds: 0,
-				ttlSeconds: options.ttlSeconds,
-				firewall: { rules: [{ action: "allow", source: {}, destination: { public: true } }] },
-			});
-			return created.vm;
+			unresolvedCreates.add(options.marker);
+			try {
+				const created = await api(operation, options.deadlineMs).vms.create({
+					snapshotId: FREESTYLE_SNAPSHOT,
+					slug: options.slug,
+					metadata: { [FREESTYLE_OWNER_KEY]: options.marker },
+					idleTimeoutSeconds: -1,
+					autoDeleteSeconds: 0,
+					ttlSeconds: FREESTYLE_VM_TTL_SECONDS,
+					firewall: { rules: [{ action: "allow", source: {}, destination: { public: true } }] },
+				});
+				const id = vmId.assert(created.vm.id);
+				unresolvedCreates.delete(options.marker);
+				// Do not retain the create signal in the session's native filesystem transport.
+				return api().vms.ref(id);
+			} catch (error) {
+				if (hasStatus(error, [400, 401, 403, 404, 422, 429]))
+					unresolvedCreates.delete(options.marker);
+				throw error;
+			}
 		},
 		(vm) => ({
 			sandboxId: vm.id,
@@ -135,8 +179,7 @@ export function freestyleSpec(
 				return {
 					slug: `sandbox-benchmarks-${attempt}`,
 					marker: `${OWNER_PREFIX}${attempt}`,
-					// The harness owns the attempt deadline; TTL is a final cleanup backstop.
-					ttlSeconds: Math.ceil(request.deadlineMs / 1000) + 600,
+					deadlineMs: request.deadlineMs,
 				};
 			},
 		},
@@ -147,8 +190,9 @@ export function freestyleSpec(
 				memory: request.spec.memoryGb * 1024,
 				storage: (request.spec.diskGb ?? 32) * 1024,
 			};
-			await vm.resize(requested);
-			const actual = vmRecord.assert(await vm.data()).resources;
+			const current = api(operation).vms.ref(vm.id);
+			await current.resize(requested);
+			const actual = vmRecord.assert(await current.data()).resources;
 			if (
 				actual.cpu !== requested.cpu ||
 				actual.memory !== requested.memory ||
@@ -172,32 +216,43 @@ export function freestyleSpec(
 				const slug = `sandbox-benchmarks-${locator.value.slice(OWNER_PREFIX.length)}`;
 				let vm: typeof vmRecord.infer;
 				try {
-					vm = vmRecord.assert(await client.vms.get(slug));
+					vm = vmRecord.assert(await api(operation).vms.get(slug));
 				} catch (error) {
-					if (hasStatus(error, [404])) return { status: "absent" };
+					if (hasStatus(error, [404])) {
+						if (unresolvedCreates.has(locator.value))
+							throw new Error(
+								"Freestyle create has no terminal allocation verdict; absence is unconfirmed",
+							);
+						return { status: "absent" };
+					}
 					throw error;
 				}
 				if (vm.metadata?.[FREESTYLE_OWNER_KEY] !== locator.value)
 					throw new Error("Freestyle recovery found an unrelated VM");
 				await destroy(vm.id, operation);
+				unresolvedCreates.delete(locator.value);
 				return { status: "destroyed" };
 			},
 		},
 		hasWorkingFilesystem: true,
 		probes: {
 			observe: (_compute, ref) => observe(ref.id),
-			describe: (_compute, ref) => client.vms.get(ref.id),
-			list: () => client.vms.list({ limit: 100 }),
+			describe: (_compute, ref) => api().vms.get(ref.id),
+			list: async () => pageSchema.assert(await api().vms.list({ limit: 100 })).vms,
 		},
 		inventory: {
 			list: async (_compute, operation) => {
+				const signal = AbortSignal.any([
+					AbortSignal.timeout(inventoryTimeoutMs),
+					...(operation.signal ? [operation.signal] : []),
+				]);
 				const owned: string[] = [];
 				const seen = new Set<string>();
 				let foreignCount = 0;
 				let total: number | undefined;
 				for (let offset = 0; offset < 100_000; ) {
-					operation.signal?.throwIfAborted();
-					const page = pageSchema.assert(await client.vms.list({ limit: 100, offset }));
+					signal.throwIfAborted();
+					const page = pageSchema.assert(await api({ signal }).vms.list({ limit: 100, offset }));
 					if (total !== undefined && total !== page.totalCount)
 						throw new Error("Freestyle inventory changed during pagination");
 					total = page.totalCount;
@@ -218,10 +273,14 @@ export function freestyleSpec(
 		destroyById: (_compute, ref, operation) => destroy(ref.id, operation),
 		snapshots: {
 			create: async (_compute, session) =>
-				snapshotResult.assert(await session.native.snapshot({ ttlSeconds: 600 })),
+				snapshotResult.assert(
+					await api(undefined, EXEC_TIMEOUT_MS)
+						.vms.ref(session.native.id)
+						.snapshot({ ttlSeconds: 600 }),
+				),
 			delete: async (_compute, id) => {
 				try {
-					await client.vms.snapshots.delete(id);
+					await api().vms.snapshots.delete(id);
 				} catch (error) {
 					if (!hasStatus(error, [404])) throw error;
 				}

@@ -1,9 +1,9 @@
 {
   "provider": "freestyle",
   "phase": "version",
-  "startedAt": "2026-09-29T18:48:16.297Z",
-  "completedAt": "2026-09-29T18:53:32.435Z",
-  "workloadSeconds": 305,
+  "startedAt": "2026-09-29T21:07:19.296Z",
+  "completedAt": "2026-09-29T21:27:26.996Z",
+  "workloadSeconds": 1205,
   "checks": [
     {
       "name": "resolve",
@@ -14,68 +14,68 @@
     {
       "name": "create",
       "status": "pass",
-      "detail": "freestyle/vm-d4ac4cd71d8d48f4b275dc70fa75edae, booted none",
-      "durationMs": 3278.7505
+      "detail": "freestyle/vm-2df36f10bd4d41a0ba7394a053154deb, booted none",
+      "durationMs": 540.007167
     },
     {
       "name": "readiness",
       "status": "pass",
       "detail": "create-returns-ready: exec succeeded with no polling",
-      "durationMs": 35.444375000000036
+      "durationMs": 58.5145
     },
     {
       "name": "exec-success",
       "status": "pass",
       "detail": "exit 0 reported as exited/0",
-      "durationMs": 36.565250000000106
+      "durationMs": 69.99883399999999
     },
     {
       "name": "exec-exit-code",
       "status": "pass",
       "detail": "exit 7 preserved",
-      "durationMs": 38.21591699999999
+      "durationMs": 51.50024999999994
     },
     {
       "name": "exec-streams",
       "status": "pass",
       "detail": "stdout and stderr stayed separate",
-      "durationMs": 40.68829199999982
+      "durationMs": 54.270583999999985
     },
     {
       "name": "files-roundtrip",
       "status": "pass",
       "detail": "native files round-tripped",
-      "durationMs": 132.69508300000007
+      "durationMs": 133.00879200000008
     },
     {
       "name": "step-sync",
       "status": "pass",
       "detail": "workload ok after 1s",
-      "durationMs": 1148.2065409999996
+      "durationMs": 1091.2572499999999
     },
     {
       "name": "step-durable",
       "status": "pass",
-      "detail": "workload ok after 305s (durable path, cap 60000ms)",
-      "durationMs": 311262.63058399997
+      "detail": "workload ok after 1205s (durable path, cap 60000ms)",
+      "durationMs": 1205549.872542
     },
     {
       "name": "destroy",
       "status": "pass",
       "detail": "destroyed",
-      "durationMs": 54.55229199997848
+      "durationMs": 120.44195899995975
     },
     {
       "name": "destroy-idempotent",
       "status": "pass",
       "detail": "second destroy succeeded",
-      "durationMs": 0.05816600000252947
+      "durationMs": 0.031833000015467405
     },
     {
       "name": "destroy-converged",
       "status": "pass",
       "detail": "observed absent",
-      "durationMs": 101.27712499996414
+      "durationMs": 30.15362500003539
     }
   ]
 }

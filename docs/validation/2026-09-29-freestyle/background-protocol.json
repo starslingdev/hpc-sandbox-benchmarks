@@ -1,0 +1,10 @@
+{
+  "provider": "freestyle",
+  "status": "pass",
+  "inlineBackgroundExecSeconds": 6,
+  "acceptedResponses": 6,
+  "backgroundPolls": 6,
+  "cancelledAfterMs": 7136.192250000001,
+  "cancellation": "rejected after accepted command settled; its file was readable",
+  "teardown": "confirmed absent"
+}
