@@ -1,8 +1,9 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import type { Sandbox } from "@infercrane/brezel";
 import { BrezelClient, BrezelError } from "@infercrane/brezel";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
+import { pollUntilReady } from "@sandbox-benchmarks/driver";
 import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
@@ -10,9 +11,8 @@ import { type } from "arktype";
 import { BREZEL_PROVENANCE } from "./provenance.ts";
 
 export const BREZEL_SANDBOX_ID = type(/^sbx_[A-Za-z0-9_-]+$/);
-const TERMINAL_STATES = new Set(["deleted", "expired", "failed"]);
-// The qualified Brezel benchmark project caps a single allocation at two hours. The longest
-// Starsling task is routed through shell-detach and remains below this allocation boundary.
+const REMOVED_STATES = new Set(["deleted", "expired"]);
+// Safety expiry for the operator-qualified endpoint; shell-detach does not extend allocation TTL.
 const CREATE_TTL_SECONDS = 2 * 60 * 60;
 const CONTROL_TIMEOUT_MS = 45_000;
 const READY_TIMEOUT_MS = 3 * 60_000;
@@ -24,7 +24,19 @@ const sandboxResource = type({
 	state:
 		"'requested' | 'preparing' | 'running' | 'pausing' | 'standby' | 'resuming' | 'deleting' | 'deleted' | 'expired' | 'failed' | 'unknown'",
 	environment_revision: "string >= 1",
+	"failure?": type({ code: "string" }).onUndeclaredKey("ignore"),
 }).onUndeclaredKey("ignore");
+function isRemoved(resource: typeof sandboxResource.infer): boolean {
+	return (
+		REMOVED_STATES.has(resource.state) ||
+		// Reconciliation can retain a failed record after confirming the backend is absent.
+		(resource.state === "failed" &&
+			["backend_resource_missing", "backend_capacity_unavailable"].includes(
+				resource.failure?.code ?? "",
+			))
+	);
+}
+
 const createResponse = type({ resource: sandboxResource }).onUndeclaredKey("ignore");
 const optionsSchema = type({
 	idempotencyKey: "string >= 1",
@@ -38,7 +50,7 @@ interface BrezelCreateBody {
 }
 
 export interface BrezelSpecOptions {
-	readonly client?: BrezelClient;
+	readonly fetch?: typeof globalThis.fetch;
 	readonly pollMs?: number;
 	readonly readyTimeoutMs?: number;
 	readonly deleteTimeoutMs?: number;
@@ -59,8 +71,8 @@ function isNotFound(error: unknown): boolean {
 function isDefinitiveCreateRejection(error: unknown): boolean {
 	return matchesAnyCause(
 		error,
-		// Brezel checks project quota and node capacity before it calls the backend, so 429 proves
-		// that this attempt allocated nothing while still remaining eligible for a harness retry.
+		// Quota rejection happens before provisioning; backend capacity rejection explicitly
+		// confirms no resource was created. Both remain eligible for a harness retry.
 		(cause) => cause instanceof BrezelError && [400, 401, 403, 404, 429].includes(cause.status),
 	);
 }
@@ -74,67 +86,6 @@ function isRetryableCreateRejection(error: unknown): boolean {
 
 function quoteShell(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	await delay(ms, undefined, signal === undefined ? undefined : { signal });
-}
-
-async function getResource(client: BrezelClient, id: string) {
-	return sandboxResource.assert(await client.requestJSON("GET", `/v1/sandboxes/${id}`));
-}
-
-async function waitForRunning(
-	client: BrezelClient,
-	id: string,
-	options: { readonly signal?: AbortSignal; readonly pollMs: number; readonly timeoutMs: number },
-) {
-	const deadline = Date.now() + options.timeoutMs;
-	for (;;) {
-		options.signal?.throwIfAborted();
-		const resource = await getResource(client, id);
-		if (resource.state === "running") return resource;
-		if (TERMINAL_STATES.has(resource.state)) {
-			throw new Error(`Brezel sandbox entered terminal state ${resource.state} before readiness`);
-		}
-		if (Date.now() >= deadline) throw new Error("Brezel sandbox did not become ready in time");
-		await sleep(options.pollMs, options.signal);
-	}
-}
-
-async function destroyAndConverge(
-	client: BrezelClient,
-	id: string,
-	options: {
-		readonly signal?: AbortSignal;
-		readonly pollMs: number;
-		readonly timeoutMs: number;
-	},
-): Promise<void> {
-	options.signal?.throwIfAborted();
-	try {
-		const current = await getResource(client, id);
-		if (TERMINAL_STATES.has(current.state)) return;
-	} catch (error) {
-		if (isNotFound(error)) return;
-		throw error;
-	}
-	await client.requestJSON("DELETE", `/v1/sandboxes/${id}`, {
-		idempotencyKey: `benchmark-delete-${id}`,
-	});
-	const deadline = Date.now() + options.timeoutMs;
-	for (;;) {
-		options.signal?.throwIfAborted();
-		try {
-			const resource = await getResource(client, id);
-			if (TERMINAL_STATES.has(resource.state)) return;
-		} catch (error) {
-			if (isNotFound(error)) return;
-			throw error;
-		}
-		if (Date.now() >= deadline) throw new Error("Brezel sandbox deletion did not converge");
-		await sleep(options.pollMs, options.signal);
-	}
 }
 
 async function exec(native: Sandbox, command: string, options?: ExecOptions) {
@@ -154,40 +105,93 @@ export function brezelSpec(
 	{ env, resolvedArtifact }: DriverContext<"brezel">,
 	seams: BrezelSpecOptions = {},
 ) {
-	const client =
-		seams.client ??
-		new BrezelClient({
-			token: env.BREZEL_API_KEY,
-			baseUrl: env.BREZEL_API_URL,
-			project: env.BREZEL_PROJECT_ID,
-			timeoutMs: CONTROL_TIMEOUT_MS,
-		});
+	// The SDK supplies its own timeout signal but has no caller-signal option. Scope the
+	// additional signal to control calls so the returned Sandbox retains a reusable transport.
+	const controlSignals = new AsyncLocalStorage<AbortSignal>();
+	const transport: typeof globalThis.fetch = Object.assign(
+		async (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
+			const signal = controlSignals.getStore();
+			return (seams.fetch ?? globalThis.fetch)(input, {
+				...init,
+				signal: signal
+					? AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])])
+					: init?.signal,
+			});
+		},
+		{ preconnect: globalThis.fetch.preconnect },
+	);
+	const client = new BrezelClient({
+		token: env.BREZEL_API_KEY,
+		baseUrl: env.BREZEL_API_URL,
+		project: env.BREZEL_PROJECT_ID,
+		timeoutMs: CONTROL_TIMEOUT_MS,
+		fetch: transport,
+	});
+	async function control<T>(signal: AbortSignal | undefined, call: () => Promise<T>): Promise<T> {
+		signal?.throwIfAborted();
+		const result = await (signal ? controlSignals.run(signal, call) : call());
+		signal?.throwIfAborted();
+		return result;
+	}
 	const pollMs = seams.pollMs ?? POLL_MS;
 	const readyTimeoutMs = seams.readyTimeoutMs ?? READY_TIMEOUT_MS;
 	const deleteTimeoutMs = seams.deleteTimeoutMs ?? DELETE_TIMEOUT_MS;
 	const environmentRevision = env.BREZEL_ENVIRONMENT_REVISION;
 	const body = createBody(environmentRevision);
 
+	const getResource = (id: string, signal?: AbortSignal) =>
+		control(signal, async () =>
+			sandboxResource.assert(await client.requestJSON("GET", `/v1/sandboxes/${id}`)),
+		);
+	const boundedSignal = (timeoutMs: number, signal?: AbortSignal) =>
+		AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
+	async function destroy(id: string, signal?: AbortSignal): Promise<void> {
+		const bounded = boundedSignal(deleteTimeoutMs, signal);
+		let deleteRequested = false;
+		await pollUntilReady({
+			provider: "brezel",
+			deadlineMs: deleteTimeoutMs,
+			intervalMs: pollMs,
+			signal: bounded,
+			poll: async () => {
+				try {
+					const current = await getResource(id, bounded);
+					if (isRemoved(current)) return true;
+					if (!deleteRequested && current.state !== "deleting") {
+						await control(bounded, () =>
+							client.requestJSON("DELETE", `/v1/sandboxes/${id}`, {
+								idempotencyKey: `benchmark-delete-${id}`,
+							}),
+						);
+						deleteRequested = true;
+					}
+					return null;
+				} catch (error) {
+					if (isNotFound(error)) return true;
+					throw error;
+				}
+			},
+		});
+	}
+
 	const compute = nativeSdkCompute(
 		async (options: typeof optionsSchema.infer, operation) => {
 			operation.signal?.throwIfAborted();
 			const payload = createResponse.assert(
-				await client.requestJSON("POST", "/v1/sandboxes", {
-					body,
-					idempotencyKey: options.idempotencyKey,
-				}),
+				await control(operation.signal, () =>
+					client.requestJSON("POST", "/v1/sandboxes", {
+						body,
+						idempotencyKey: options.idempotencyKey,
+					}),
+				),
 			);
 			operation.signal?.throwIfAborted();
-			return client.sandbox(payload.resource.id);
+			return control(operation.signal, () => client.sandbox(payload.resource.id));
 		},
 		(native) => ({
 			sandboxId: native.id,
 			runCommand: (command: string, options?: ExecOptions) => exec(native, command, options),
-			destroy: () =>
-				destroyAndConverge(client, native.id, {
-					pollMs,
-					timeoutMs: deleteTimeoutMs,
-				}),
+			destroy: () => destroy(native.id),
 			filesystem: {
 				readFile: async (path: string) => new TextDecoder().decode(await native.readFile(path)),
 				exists: async (path: string) =>
@@ -223,11 +227,7 @@ export function brezelSpec(
 		},
 		lifecycle: {
 			destroy: async (sandbox, ref, operation) =>
-				destroyAndConverge(client, ref?.id ?? sandbox.sandboxId ?? sandbox.getInstance().id, {
-					signal: operation.signal,
-					pollMs,
-					timeoutMs: deleteTimeoutMs,
-				}),
+				destroy(ref?.id ?? sandbox.sandboxId ?? sandbox.getInstance().id, operation.signal),
 		},
 		createRecovery: {
 			absenceConfirmationMs: 1000,
@@ -242,24 +242,31 @@ export function brezelSpec(
 			cleanup: async (_compute, locator, operation) => {
 				operation.signal?.throwIfAborted();
 				const payload = createResponse.assert(
-					await client.requestJSON("POST", "/v1/sandboxes", {
-						body,
-						idempotencyKey: locator.value,
-					}),
+					await control(operation.signal, () =>
+						client.requestJSON("POST", "/v1/sandboxes", {
+							body,
+							idempotencyKey: locator.value,
+						}),
+					),
 				);
-				await destroyAndConverge(client, payload.resource.id, {
-					signal: operation.signal,
-					pollMs,
-					timeoutMs: deleteTimeoutMs,
-				});
+				await destroy(payload.resource.id, operation.signal);
 				return { status: "destroyed" };
 			},
 		},
 		prepareAndVerifyCreatedRequest: async (_sandbox, native, request, operation) => {
-			const resource = await waitForRunning(client, native.id, {
-				signal: operation.signal,
-				pollMs,
-				timeoutMs: readyTimeoutMs,
+			const signal = boundedSignal(readyTimeoutMs, operation.signal);
+			const resource = await pollUntilReady({
+				provider: "brezel",
+				deadlineMs: readyTimeoutMs,
+				intervalMs: pollMs,
+				signal,
+				poll: async () => {
+					const row = await getResource(native.id, signal);
+					if (row.state === "running") return row;
+					if (REMOVED_STATES.has(row.state) || row.state === "failed")
+						throw new Error(`Brezel sandbox entered ${row.state} before readiness`);
+					return null;
+				},
 			});
 			if (resource.environment_revision !== environmentRevision) {
 				throw new Error("Brezel created a sandbox from a different environment revision");
@@ -281,35 +288,35 @@ export function brezelSpec(
 		probes: {
 			observe: async (_compute, ref) => {
 				try {
-					const resource = await getResource(client, ref.id);
-					if (resource.state === "running") return { state: "running" };
-					if (TERMINAL_STATES.has(resource.state)) return { state: "absent" };
-					return { state: "terminal", detail: `Brezel sandbox is ${resource.state}` };
+					const resource = await getResource(ref.id);
+					// Non-running and failed sandboxes can still own resources. Release ownership
+					// only after the API confirms deletion, expiration, or a missing record.
+					return { state: isRemoved(resource) ? "absent" : "running" };
 				} catch (error) {
 					if (isNotFound(error)) return { state: "absent" };
 					throw error;
 				}
 			},
 			describe: (_compute, ref) => client.requestJSON("GET", `/v1/sandboxes/${ref.id}`),
-			list: () => client.listSandboxes(),
+			list: () => client.listSandboxes({ includeTerminal: true }),
 		},
 		inventory: {
 			list: async (_compute, operation) => {
 				operation.signal?.throwIfAborted();
-				const rows = await client.listSandboxes();
+				const rows = await control(operation.signal, () =>
+					client.listSandboxes({ includeTerminal: true }),
+				);
 				operation.signal?.throwIfAborted();
 				return {
-					owned: rows.map((row) => sandboxResource.assert(row).id),
+					owned: rows
+						.map((row) => sandboxResource.assert(row))
+						.filter((row) => !isRemoved(row))
+						.map((row) => row.id),
 					foreignCount: 0,
 				};
 			},
 		},
-		destroyById: async (_compute, ref, operation) =>
-			destroyAndConverge(client, ref.id, {
-				signal: operation.signal,
-				pollMs,
-				timeoutMs: deleteTimeoutMs,
-			}),
+		destroyById: async (_compute, ref, operation) => destroy(ref.id, operation.signal),
 	});
 }
 

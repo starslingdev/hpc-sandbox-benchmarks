@@ -108,11 +108,13 @@ describe("runtimeUserSummary", () => {
 	it("stays quiet for a provider that declares an unprivileged runtime identity", () => {
 		expect(runtimeUserSummary("runloop", "user")).toBe("user");
 		expect(runtimeUserSummary("runloop", "sandbox")).toBe("sandbox");
+		expect(runtimeUserSummary("brezel", "user")).toBe("user");
 	});
 
 	// The other direction is drift too: a provider that silently gained root changed the security
 	// posture the isolation notes describe, and setup would start writing root-owned state.
 	it("flags root where an unprivileged identity was declared", () => {
 		expect(runtimeUserSummary("runloop", "root")).toBe("⚠ root (expected unprivileged)");
+		expect(runtimeUserSummary("brezel", "root")).toBe("⚠ root (expected unprivileged)");
 	});
 });

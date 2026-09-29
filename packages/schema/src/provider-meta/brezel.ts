@@ -27,8 +27,10 @@ export default defineProviderMeta("brezel", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Native SDK driver for create, command execution, files, inventory, ambiguous-create recovery, and convergent teardown. The credential must target a project dedicated to Starsling: every nonterminal sandbox in that project is benchmark-owned. Publication requires a separately qualified Linux/KVM endpoint and a manually pinned BREZEL_ENVIRONMENT_REVISION with the benchmark toolchain and 4 vCPU / 8 GiB target shape.",
+			"Native SDK driver for create, command execution, files, inventory, ambiguous-create recovery, and convergent teardown. The credential must target a project dedicated to Starsling: every sandbox without confirmed backend removal in that project is benchmark-owned. Publication requires a separately qualified Linux/KVM endpoint and a manually pinned BREZEL_ENVIRONMENT_REVISION with the benchmark toolchain and 4 vCPU / 8 GiB target shape.",
 	},
+	// The qualified environment executes commands as its unprivileged guest user.
+	runtimeIdentity: "unprivileged",
 	specPinning: "fixed",
 	transport: {
 		streaming: false,
