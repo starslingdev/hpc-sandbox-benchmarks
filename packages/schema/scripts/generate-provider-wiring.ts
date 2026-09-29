@@ -526,6 +526,7 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 		["NAMESPACE", "@namespacelabs/sdk", catalogVersion(catalog, "@namespacelabs/sdk")],
 		["RUNCLOUD", "@run-cloud/sdk", catalogVersion(catalog, "@run-cloud/sdk")],
 		["BOAT", REGISTRY.boat.sdkPackage, catalogVersion(catalog, REGISTRY.boat.sdkPackage)],
+		["FREESTYLE", "freestyle", catalogVersion(catalog, "freestyle")],
 		["BREZEL", REGISTRY.brezel.sdkPackage, catalogVersion(catalog, REGISTRY.brezel.sdkPackage)],
 	] as const;
 	const packages = new Set(

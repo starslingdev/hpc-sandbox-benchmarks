@@ -20,6 +20,7 @@ export const PROVIDER_IDS = [
 	"runcloud",
 	"tama",
 	"boat",
+	"freestyle",
 	"brezel",
 ] as const;
 

@@ -238,6 +238,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `RUN_CLOUD_API_KEY` | run.cloud provider runtime and validation |
    | `TAMA_TOKEN` | tama provider runtime and validation |
    | `BOAT_API_KEY` | boat provider runtime and validation |
+   | `FREESTYLE_API_KEY` | Freestyle provider runtime and validation |
    | `BREZEL_API_KEY` | Brezel provider runtime and validation |
    <!-- <<< end generated: provider-secrets -->
 

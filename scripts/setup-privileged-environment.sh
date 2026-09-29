@@ -59,7 +59,7 @@ echo "Secret checklist:"
 echo "  E2B_API_KEY, DAYTONA_API_KEY, BL_API_KEY, BL_WORKSPACE"
 echo "  MSB_API_KEY, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, NOVITA_API_KEY"
 echo "  RUNLOOP_API_KEY, RUN_CLOUD_API_KEY, TAMA_TOKEN, BOAT_API_KEY"
-echo "  BREZEL_API_KEY"
+echo "  FREESTYLE_API_KEY, BREZEL_API_KEY"
 # <<< end generated: provider-secret-checklist
 echo "  VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID (Vercel bootstrap)"
 echo

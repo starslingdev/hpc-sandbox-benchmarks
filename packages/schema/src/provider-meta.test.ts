@@ -30,6 +30,7 @@ const REQUIRED_INPUTS = {
 	runcloud: ["RUN_CLOUD_API_KEY"],
 	tama: ["TAMA_TOKEN"],
 	boat: ["BOAT_API_KEY"],
+	freestyle: ["FREESTYLE_API_KEY"],
 	brezel: ["BREZEL_API_KEY", "BREZEL_API_URL", "BREZEL_PROJECT_ID", "BREZEL_ENVIRONMENT_REVISION"],
 } as const satisfies Record<ProviderId, readonly string[]>;
 
@@ -48,6 +49,7 @@ const ARTIFACT_KINDS = {
 	runcloud: "image",
 	tama: "image",
 	boat: "none",
+	freestyle: "none",
 	brezel: "none",
 } as const satisfies Record<ProviderId, (typeof REGISTRY)[ProviderId]["artifact"]["kind"]>;
 

@@ -149,9 +149,11 @@
       "dependencies": {
         "@sandbox-benchmarks/blaxel": "workspace:*",
         "@sandbox-benchmarks/boat": "workspace:*",
+        "@sandbox-benchmarks/brezel": "workspace:*",
         "@sandbox-benchmarks/daytona": "workspace:*",
         "@sandbox-benchmarks/driver": "workspace:*",
         "@sandbox-benchmarks/e2b": "workspace:*",
+        "@sandbox-benchmarks/freestyle": "workspace:*",
         "@sandbox-benchmarks/microsandbox-cloud": "workspace:*",
         "@sandbox-benchmarks/modal": "workspace:*",
         "@sandbox-benchmarks/namespace": "workspace:*",
@@ -191,6 +193,21 @@
         "@fontsource/geist-sans": "5.3.0",
         "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/freestyle": {
+      "name": "@sandbox-benchmarks/freestyle",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+        "freestyle": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -451,6 +468,7 @@
       "@vercel/sandbox": "2.9.2",
       "computesdk": "4.1.3",
       "e2b": "2.27.1",
+      "freestyle": "0.2.16",
       "microsandbox": "0.6.8",
       "modal": "0.9.0",
       "nice-grpc": "2.1.16",
@@ -992,6 +1010,8 @@
 
     "@sandbox-benchmarks/figures": ["@sandbox-benchmarks/figures@workspace:packages/figures"],
 
+    "@sandbox-benchmarks/freestyle": ["@sandbox-benchmarks/freestyle@workspace:packages/freestyle"],
+
     "@sandbox-benchmarks/harness": ["@sandbox-benchmarks/harness@workspace:packages/harness"],
 
     "@sandbox-benchmarks/microsandbox-cloud": ["@sandbox-benchmarks/microsandbox-cloud@workspace:packages/microsandbox-cloud"],
@@ -1425,6 +1445,8 @@
     "forwarded": ["forwarded@0.2.0", "", {}, "sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow=="],
 
     "forwarded-parse": ["forwarded-parse@2.1.2", "", {}, "sha512-alTFZZQDKMporBH77856pXgzhEzaUVmLCDk+egLgIgHst3Tpndzz8MnKe+GzRJRfvVdn69HhpW7cmXzvtLvJAw=="],
+
+    "freestyle": ["freestyle@0.2.16", "", { "dependencies": { "dotenv": "^17.4.2", "ws": "^8.18.0", "yargs": "^17.7.2" }, "optionalDependencies": { "undici": "^7.16.0 || ^8.0.0" }, "bin": { "freestyle": "dist/cli/index.js" } }, "sha512-8pC7lh/R2PDanbs9Noc1Q7YlPl8Be8hHaQA/rpwFmELrcLTUAuCuxpoZ1Xm+7fuxqhJqJzO83bTTeLcSUoJ9SA=="],
 
     "fresh": ["fresh@2.0.0", "", {}, "sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A=="],
 
@@ -2131,6 +2153,10 @@
     "finalhandler/debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" }, "peerDependencies": { "supports-color": "*" }, "optionalPeers": ["supports-color"] }, "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="],
 
     "foreground-child/signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
+
+    "freestyle/undici": ["undici@7.27.2", "", {}, "sha512-uZsKNuzQxDMUY6M3pIMvy5tvlGmtq8XJ2oLAkfRKGNu+1VQAIvLy2xIVG5ATZl5wDXl/tddByAWCizRbOme+TA=="],
+
+    "freestyle/ws": ["ws@8.21.3", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=="],
 
     "http-proxy-agent/agent-base": ["agent-base@7.1.4", "", {}, "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="],
 

@@ -10,12 +10,14 @@ import {
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import type { RuncloudSpecOptions } from "./index.ts";
 import runcloudDriver, {
+	RUNCLOUD_CLEANUP_RETRY_MS,
 	RUNCLOUD_CREATE_BUDGET,
 	RUNCLOUD_CREATE_CEILING_MS,
 	RUNCLOUD_EXECUTION,
 	RUNCLOUD_PROVENANCE,
 	RUNCLOUD_READINESS,
 	RUNCLOUD_RECOVERY_NAME_PREFIX,
+	RUNCLOUD_REMOVAL_DEADLINE_MS,
 	RUNCLOUD_SANDBOX_LIFETIME_SECS,
 	RuncloudAmbiguousCreateError,
 	RuncloudBootFailureError,
@@ -75,16 +77,44 @@ function nativeClient(overrides: Partial<NativeClient> = {}): NativeClient {
 	} as NativeClient;
 }
 
-/** Fast seams: no real sleeps, tight bounds, and no absence-confirmation wait in the bridge. */
+/** A simulated clock that each sleep advances (by at least 1 ms, so a zero-interval poll still
+ *  moves time and a deadline loop terminates). */
+function simulatedClock() {
+	let now = 0;
+	return {
+		now: () => now,
+		sleep: async (ms: number) => {
+			now += Math.max(1, ms);
+		},
+	};
+}
+
+/** Fast seams: no real sleeps, tight bounds, and no absence-confirmation wait in the bridge. The
+ *  removal watch runs on a simulated clock, so a sandbox that never leaves `destroying` exhausts a
+ *  short simulated deadline instead of spinning in real time. */
 function fast(client: NativeClient, seams: RuncloudSpecOptions = {}): RuncloudSpecOptions {
 	return {
 		client,
 		readyPollMs: 0,
 		reconcileRetryMs: 0,
 		cleanupRetryMs: 0,
+		removalDeadlineMs: 10,
 		recoveryAbsenceConfirmationMs: 1,
-		sleep: async () => {},
+		...simulatedClock(),
 		...seams,
+	};
+}
+
+/** The production removal cadence and deadline, on a simulated clock the test can read. */
+function productionRemoval() {
+	const clock = simulatedClock();
+	return {
+		clock,
+		seams: {
+			...clock,
+			cleanupRetryMs: RUNCLOUD_CLEANUP_RETRY_MS,
+			removalDeadlineMs: RUNCLOUD_REMOVAL_DEADLINE_MS,
+		},
 	};
 }
 
@@ -346,6 +376,25 @@ describe("run.cloud readiness and failed-create cleanup", () => {
 		expect((error as Error).message).toMatch(/readiness get for sandbox sb-test did not settle/);
 		expect(isRetryableDriverCreate(error)).toBe(false);
 		expect(destroyed).toEqual(["sb-test"]);
+	});
+
+	it("stops failed-create cleanup once an accepted DELETE outlasts the removal deadline", async () => {
+		// Re-sending the DELETE would only restart the same watch: one full deadline is the budget.
+		let destroyCalls = 0;
+		let getCalls = 0;
+		const lingering = nativeClient({
+			create: async () => nativeSandbox("building_image"),
+			get: async () => {
+				getCalls++;
+				if (getCalls === 1) throw new Error("readiness failed");
+				return nativeSandbox("destroying");
+			},
+			destroy: async () => {
+				destroyCalls++;
+			},
+		});
+		await expect(driver(lingering, { cleanupAttempts: 3 }).create(request)).rejects.toThrow();
+		expect(destroyCalls).toBe(1);
 	});
 
 	it("retries a transient cleanup, accepts a destroyed confirmation, and surfaces exhaustion", async () => {
@@ -872,8 +921,34 @@ describe("run.cloud commands, lifecycle, and account inventory", () => {
 		expect(observations).toBe(3);
 		const stuck = nativeClient({ get: async () => nativeSandbox("running") });
 		await expect(
-			driver(stuck, { cleanupAttempts: 2 }).destroyById?.(sandboxRef("runcloud", "sb-stuck")),
+			driver(stuck).destroyById?.(sandboxRef("runcloud", "sb-stuck")),
 		).rejects.toMatchObject({ code: "destroy-failed" });
+	});
+
+	it("confirms a DELETE that run.cloud takes longer than a few polls to finish", async () => {
+		// Run 36356024651: runcloud-pgbench-r2 and runcloud-realworld-better-auth-r2 measured, then
+		// failed cleanup with "has not confirmed removal after destroy". Both were observed absent at
+		// recovery minutes later, so the DELETE landed; the driver stopped watching too early.
+		const { clock, seams } = productionRemoval();
+		const client = nativeClient({
+			get: async () => nativeSandbox(clock.now() < 20_000 ? "destroying" : "destroyed"),
+		});
+		await expect(
+			driver(client, seams).destroyById?.(sandboxRef("runcloud", "sb-slow-delete")),
+		).resolves.toBeUndefined();
+		expect(clock.now()).toBeGreaterThanOrEqual(20_000);
+	});
+
+	it("gives up on unconfirmed removal inside the harness's 60 s destroy timeout", async () => {
+		const { clock, seams } = productionRemoval();
+		const client = nativeClient({ get: async () => nativeSandbox("destroying") });
+		await expect(
+			driver(client, seams).destroyById?.(sandboxRef("runcloud", "sb-never")),
+		).rejects.toMatchObject({ code: "destroy-failed" });
+		expect(clock.now()).toBeLessThan(60_000);
+		expect(clock.now()).toBeGreaterThanOrEqual(
+			RUNCLOUD_REMOVAL_DEADLINE_MS - RUNCLOUD_CLEANUP_RETRY_MS,
+		);
 	});
 
 	it("destroys by canonical id, converges on 404, and reads tombstones as absence", async () => {

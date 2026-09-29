@@ -31,6 +31,7 @@ export const MIGRATED_DRIVER_IDS = [
 	"runcloud",
 	"namespace",
 	"boat",
+	"freestyle",
 	"brezel",
 ] as const satisfies readonly ProviderId[];
 

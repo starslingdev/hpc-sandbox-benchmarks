@@ -535,6 +535,7 @@ jobs:
           TAMA_CLI: ${{ matrix.provider == 'tama' && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
           BOAT_API_KEY: ${{ matrix.provider == 'boat' && secrets.BOAT_API_KEY || '' }}
           BOAT_BASE_URL: ${{ matrix.provider == 'boat' && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
+          FREESTYLE_API_KEY: ${{ matrix.provider == 'freestyle' && secrets.FREESTYLE_API_KEY || '' }}
           BREZEL_API_KEY: ${{ matrix.provider == 'brezel' && secrets.BREZEL_API_KEY || '' }}
           BREZEL_API_URL: ${{ matrix.provider == 'brezel' && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ matrix.provider == 'brezel' && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
@@ -731,6 +732,7 @@ jobs:
           TAMA_CLI: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama') && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
           BOAT_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && secrets.BOAT_API_KEY || '' }}
           BOAT_BASE_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
+          FREESTYLE_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'freestyle') && secrets.FREESTYLE_API_KEY || '' }}
           BREZEL_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && secrets.BREZEL_API_KEY || '' }}
           BREZEL_API_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
