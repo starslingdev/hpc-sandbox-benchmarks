@@ -1,9 +1,0 @@
-{
-  "provider": "freestyle",
-  "status": "pass",
-  "injectedFailure": "lost response after the API accepted the VM",
-  "createCalls": 1,
-  "deleteCalls": 1,
-  "recovery": "exact attempt marker found through its slug; VM deleted by failed-create cleanup",
-  "teardown": "confirmed absent"
-}

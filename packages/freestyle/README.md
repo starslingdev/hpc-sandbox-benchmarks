@@ -1,51 +1,33 @@
 # @sandbox-benchmarks/freestyle
 
-Native [Freestyle](https://www.freestyle.sh/docs/vms) VM driver using the exact SDK version in the
-root catalog. Set `FREESTYLE_API_KEY` and select `freestyle` explicitly in `bench-smoke` or the CLI.
-Use a dedicated benchmark account: managed admission rejects live foreign allocations.
+Native [Freestyle](https://www.freestyle.sh/docs/vms) VM driver; the SDK is pinned in the root catalog.
+Set `FREESTYLE_API_KEY` and select `freestyle` explicitly in `bench-smoke` or the CLI.
 
-Before the first Actions benchmark, provision the protected
-`benchmark-account-journal-freestyle` branch after confirming a clean account inventory, following
-[account admission setup](../../docs/benchmark-execution-rollout.md#account-admission-before-live-rollout).
-The `privileged` environment needs `FREESTYLE_API_KEY` and must permit the dispatched branch.
-A pre-merge `bench-smoke` dispatch also requires `allow_branch=true`; it can run before this PR is
-merged. A missing journal blocks allocation rather than creating an empty journal automatically.
+Like Boat, this driver boots a stock image (`freestyle/ubuntu`) with `artifact: { kind: "none" }`.
+The shared harness installs pinned tools at runtime on Ubuntu 24.04. Freestyle is opt-in, excluded
+from required releases, and cannot be scoped for artifact backfill. The stock snapshot slug is mutable.
 
-The driver boots `freestyle/ubuntu`, then grows CPU, memory and disk to the requested shape.
-The standard target is **4 vCPU / 8 GiB RAM / 40 GiB disk**; it needs Hobby or higher because Free
-caps disk at 32 GiB. Shapes below the snapshot's 4 vCPU / 8 GiB / 32 GiB are rejected before creation.
-The API's returned resource allocation is checked after resizing; the harness separately records
-effective guest resources. A resize or readiness failure deletes the accepted VM.
+The standard target is **4 vCPU / 8 GiB RAM / 40 GiB disk**. Resizing is grow-only from the snapshot's
+4 vCPU / 8 GiB / 32 GiB minimum; create verifies the requested allocation and guest readiness.
 
-This is a stock Ubuntu 24.04 snapshot, with the pinned tools installed by the harness during setup,
-not the shared Debian 13 toolchain image. The public snapshot slug can change between runs.
-Freestyle remains opt-in; this addition does not publish results or promote it into the default matrix.
-There is no provider artifact to bake or release.
+- VMs have a six-hour TTL independent of the create deadline, with idle pausing disabled.
+- Exec and native files use `ubuntu` (passwordless sudo). Long steps use the shared detached runner.
+  Missing exit status remains unknown; accepted synchronous commands settle before caller cancellation
+  is reported because the API cannot kill them.
+- HTTP 202 polling shares the operation's deadline. Inventory drains all pages within five minutes;
+  teardown has 60 seconds to delete and confirm absence. Pausing does not count as deletion.
+- Failed-create recovery deletes only an exact attempt-marker match. A lost response remains uncertain
+  until ownership and deletion are confirmed; repeated 404s alone do not prove allocation failed.
+- Snapshots capture memory and disk, are explicitly deleted, and have a ten-minute TTL.
+  Outbound public traffic is allowed for runtime installation and benchmarks.
 
-- Exec runs as the snapshot's `ubuntu` user (with passwordless sudo), preserves stdout/stderr and
-  exit codes, and reports missing/timeout status as unknown. Steps of 60 seconds or longer use the harness's detached shell and completion-file polling;
-  the underlying synchronous API has a five-minute maximum.
-- Files use the SDK's native guest filesystem. Snapshots capture memory and disk and are explicitly
-  deleted, with a ten-minute TTL as a cleanup backstop.
-- Each VM has a unique slug and attempt metadata for failed-create recovery and paginated account
-  inventory. Only an exact marker match authorizes recovery deletion. Teardown deletes the VM and
-  waits for a typed 404; pausing does not count as removal. VM TTL is six hours, covering the
-  maximum 330-minute job with cleanup headroom. Idle pausing is disabled so CPU-bound workloads
-  can finish. A lost create response remains uncertain until its matching VM is found and deleted;
-  repeated not-found responses alone do not justify retrying an allocation.
-- Control-plane calls and background request polling share bounded deadlines and cancellation.
-  Deletion has a total 60-second budget; inventory has a five-minute budget across all pages.
-  Accepted synchronous commands settle before reporting caller cancellation, because the API
-  cannot kill them. Session filesystem calls do not retain the create operation's signal.
-- The firewall permits outbound public traffic for dependency installation and network benchmarks.
-  No public inbound rule, domain, VPC, or SSH credential is created.
+Actions requires a dedicated benchmark account, `FREESTYLE_API_KEY` in `privileged`, and a protected
+`benchmark-account-journal-freestyle` branch: follow [account admission setup](../../docs/benchmark-execution-rollout.md#account-admission-before-live-rollout).
+For branch smoke validation, set `allow_branch=true` and permit that ref in the environment.
 
-Run `bun run --filter @sandbox-benchmarks/freestyle test` and `typecheck` from the repo root.
-
-With credentials, exercise the real harness transports and cleanup with:
+Run `bun run --filter @sandbox-benchmarks/freestyle test` or `typecheck` from the repo root.
+With credentials, check the real harness and cleanup without publishing results:
 
 ```sh
 bun apps/cli/src/bin/driver-check.ts --provider freestyle --require-pass --workload-seconds 305
 ```
-
-This checks driver behavior without publishing benchmark samples.
