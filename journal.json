@@ -1,5 +1,1 @@
-{
-  "schemaVersion": "1",
-  "account": "freestyle",
-  "records": []
-}
+{"schemaVersion":"1","account":"freestyle","records":[{"version":"1","kind":"intent","account":"freestyle","attempt":"freestyle-memory-r0-a1-3a2c4783-ec29-4eaf-874a-f2e055eef4cf","cellId":"freestyle-memory-r0","planDigest":"sha256:089cff9425626f7da16f11e5807492f0321c73d1ffce3e418039f2909c656bf6"}]}
