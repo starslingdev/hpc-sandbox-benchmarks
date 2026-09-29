@@ -56,3 +56,23 @@ Live checks used the existing account key without recording or revoking it. All 
 snapshots were removed; [final account cleanup](./cleanup.json) records the post-validation state.
 The full PTS workload matrix and a 330-minute job were not run. The hardlink result validates runtime
 wiring and is not a comparative performance claim or default-matrix promotion.
+
+## Approved Actions smoke
+
+[Smoke run 36641937347](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/36641937347)
+passed on the main repository's `codex/review-pr-538` branch at reviewed driver commit
+`b7022a4d732c083d8a8b5ab6fafd5484d1bf5510`, before merging the fork PR. It used `allow_branch=true`,
+the `privileged` environment's `FREESTYLE_API_KEY`, explicit reviewer approval, one VM, and two fixed
+PTS passes. The stock Ubuntu VM installed its runtime dependencies and compiled STREAM locally.
+All four memory metrics retained two numeric trials from the [original XML](./pts-stream-gha.xml),
+with no skips or gaps. Independent evaluate, aggregate, and strict promote commands passed against
+the downloaded plan and original attempt artifacts, writing only to a temporary dataset.
+
+The [first smoke](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/36641323524)
+stopped before allocation because the Freestyle account journal was missing. After confirming an
+empty account and no active writers, the operator seeded `benchmark-account-journal-freestyle`
+under the existing journal ruleset, which blocks deletion and force pushes. The fresh successful
+run appended intent → allocated → released(absent), confirmed VM deletion, and left account
+inventory empty. [The receipt](./gha-smoke.json) records the plan digest, samples, cleanup evidence,
+journal records, and initial setup failure. Provider code and workflows were unchanged between
+these runs; the subsequent PR update adds these receipts and documents account setup.

@@ -4,6 +4,13 @@ Native [Freestyle](https://www.freestyle.sh/docs/vms) VM driver using the exact 
 root catalog. Set `FREESTYLE_API_KEY` and select `freestyle` explicitly in `bench-smoke` or the CLI.
 Use a dedicated benchmark account: managed admission rejects live foreign allocations.
 
+Before the first Actions benchmark, provision the protected
+`benchmark-account-journal-freestyle` branch after confirming a clean account inventory, following
+[account admission setup](../../docs/benchmark-execution-rollout.md#account-admission-before-live-rollout).
+The `privileged` environment needs `FREESTYLE_API_KEY` and must permit the dispatched branch.
+A pre-merge `bench-smoke` dispatch also requires `allow_branch=true`; it can run before this PR is
+merged. A missing journal blocks allocation rather than creating an empty journal automatically.
+
 The driver boots `freestyle/ubuntu`, then grows CPU, memory and disk to the requested shape.
 The standard target is **4 vCPU / 8 GiB RAM / 40 GiB disk**; it needs Hobby or higher because Free
 caps disk at 32 GiB. Shapes below the snapshot's 4 vCPU / 8 GiB / 32 GiB are rejected before creation.
