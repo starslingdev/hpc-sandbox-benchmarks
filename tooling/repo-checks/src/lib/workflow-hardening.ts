@@ -25,6 +25,7 @@ import {
 	accountSecretNames,
 	foreignCredentialExpression,
 	PROVIDER_ACCOUNTS,
+	PROVIDER_SECRET_NAMES,
 } from "@sandbox-benchmarks/schema/provider-ci";
 import { Glob } from "bun";
 import { findRepoRoot } from "./workspace.ts";
@@ -724,10 +725,27 @@ export function checkProviderIsolation(doc: unknown, file: string): string[] {
 	for (const [id, value] of Object.entries(jobs)) {
 		const job = asRecord(value, `${file}::${id}`);
 		const label = `${file}::${id}`;
-		if (job.secrets !== undefined)
-			errors.push(
-				`${label}: secret forwarding is forbidden; use the callee's provider environment`,
+		const environmentWorker =
+			typeof job.uses === "string" &&
+			["bench-suite", "provider-release", "bench-gpu-worker"].some(
+				(name) => job.uses === `./.github/workflows/${name}.yml`,
 			);
+		if (job.secrets !== undefined) {
+			const bindings = job.secrets;
+			if (
+				!environmentWorker ||
+				typeof bindings !== "object" ||
+				bindings === null ||
+				Array.isArray(bindings) ||
+				Object.entries(bindings).some(
+					([name, value]) => !PROVIDER_SECRET_NAMES.includes(name) || value !== "",
+				)
+			)
+				errors.push(
+					`${label}: secret forwarding is forbidden; only empty environment-key bindings are allowed`,
+				);
+		} else if (environmentWorker)
+			errors.push(`${label}: environment workers require empty secret argument bindings`);
 		const environment = jobEnvironmentName(job);
 		const fixedAccount = environment?.startsWith("provider-") ? environment.slice(9) : undefined;
 		const strings = [...envStrings(root.env), ...jobSecretStrings(job, file, id)];

@@ -44,9 +44,8 @@ const NON_PROVIDER_CREDENTIALS = [
 	"SUBMODULES_PAT",
 	"FIREWORKS_API_KEY",
 ];
-export const WORKER_SECRET_NAMES = [
-	...new Set([...PROVIDER_ACCOUNTS.flatMap(accountSecretNames), ...NON_PROVIDER_CREDENTIALS]),
-];
+export const PROVIDER_SECRET_NAMES = [...new Set(PROVIDER_ACCOUNTS.flatMap(accountSecretNames))];
+export const WORKER_SECRET_NAMES = [...PROVIDER_SECRET_NAMES, ...NON_PROVIDER_CREDENTIALS];
 
 /** Presence-only guard: no foreign secret value is exported into the runner process. */
 export function foreignCredentialExpression(fixedAccount?: string): string {

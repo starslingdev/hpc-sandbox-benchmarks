@@ -88,3 +88,25 @@ test("provider workers cannot grant arbitrary write scopes", () => {
 		).join("\n"),
 	).toContain("issues: write");
 });
+
+test("environment lookup bindings never forward a credential value", () => {
+	const call = { uses: "./.github/workflows/bench-suite.yml", secrets: { BREZEL_API_KEY: "" } };
+	expect(checkProviderIsolation(workflow(call), "caller.yml")).toEqual([]);
+	for (const secrets of [
+		{ BREZEL_API_KEY: "value" },
+		{ BREZEL_API_KEY: `\${{ secrets.BREZEL_API_KEY }}` },
+		{ ANTHROPIC_API_KEY: "" },
+	])
+		expect(
+			checkProviderIsolation(workflow({ ...call, secrets }), "caller.yml").join("\n"),
+		).toContain("secret forwarding");
+	expect(
+		checkProviderIsolation(
+			workflow({ ...call, uses: "other/repo/workflow.yml@main" }),
+			"caller.yml",
+		).length,
+	).toBeGreaterThan(0);
+	expect(checkProviderIsolation(workflow({ uses: call.uses }), "caller.yml").join("\n")).toContain(
+		"empty secret argument",
+	);
+});

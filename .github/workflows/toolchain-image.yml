@@ -340,6 +340,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    secrets: &environment-secrets
+      # >>> generated: environment-secret-arguments — bun run generate-provider-wiring
+      E2B_API_KEY: ''
+      DAYTONA_API_KEY: ''
+      BL_API_KEY: ''
+      BL_WORKSPACE: ''
+      MSB_API_KEY: ''
+      MODAL_TOKEN_ID: ''
+      MODAL_TOKEN_SECRET: ''
+      NOVITA_API_KEY: ''
+      RUNLOOP_API_KEY: ''
+      NAMESPACE_TENANT_ID: ''
+      VERCEL_ORG_ID: ''
+      VERCEL_PROJECT_ID: ''
+      VERCEL_TOKEN: ''
+      RUN_CLOUD_API_KEY: ''
+      TAMA_TOKEN: ''
+      BOAT_API_KEY: ''
+      FREESTYLE_API_KEY: ''
+      BREZEL_API_KEY: ''
+      # <<< end generated: environment-secret-arguments
     uses: ./.github/workflows/provider-release.yml
     with:
       account: ${{ matrix.account }}
@@ -369,6 +390,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    secrets: *environment-secrets
     uses: ./.github/workflows/provider-release.yml
     with:
       account: ${{ matrix.account }}

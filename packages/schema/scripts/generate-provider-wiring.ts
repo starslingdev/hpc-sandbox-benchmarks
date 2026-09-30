@@ -7,7 +7,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+	accountSecretNames,
 	foreignCredentialExpression,
+	PROVIDER_SECRET_NAMES,
 	providerAccount,
 	WORKER_SECRET_NAMES,
 } from "../src/provider-ci.ts";
@@ -371,6 +373,13 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 		},
 	]);
 	return [
+		...["bench-account.yml", "toolchain-image.yml", "bench-gpu.yml"].map((file) => ({
+			file: `.github/workflows/${file}`,
+			label: "environment-secret-arguments",
+			body: (file === "bench-gpu.yml" ? accountSecretNames("modal") : PROVIDER_SECRET_NAMES)
+				.map((name) => `      ${name}: ''`)
+				.join("\n"),
+		})),
 		...["bench-suite.yml", "provider-release.yml", "bench-gpu-worker.yml"].map((file) => ({
 			file: `.github/workflows/${file}`,
 			label: "provider-secret-declarations",
