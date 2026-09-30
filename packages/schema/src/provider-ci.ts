@@ -38,6 +38,16 @@ export function assertProviderAccount(account: string, providers: readonly strin
 		throw new Error(`Providers must belong to account ${account}`);
 }
 
+const NON_PROVIDER_CREDENTIALS = [
+	"NSC_TOKEN",
+	"ANTHROPIC_API_KEY",
+	"SUBMODULES_PAT",
+	"FIREWORKS_API_KEY",
+];
+export const WORKER_SECRET_NAMES = [
+	...new Set([...PROVIDER_ACCOUNTS.flatMap(accountSecretNames), ...NON_PROVIDER_CREDENTIALS]),
+];
+
 /** Presence-only guard: no foreign secret value is exported into the runner process. */
 export function foreignCredentialExpression(fixedAccount?: string): string {
 	if (fixedAccount !== undefined) providerEnvironment(fixedAccount);
@@ -49,10 +59,6 @@ export function foreignCredentialExpression(fixedAccount?: string): string {
 					: `secrets.${name} != ''`,
 			),
 	);
-	clauses.push(
-		...["NSC_TOKEN", "ANTHROPIC_API_KEY", "SUBMODULES_PAT", "FIREWORKS_API_KEY"].map(
-			(name) => `secrets.${name} != ''`,
-		),
-	);
+	clauses.push(...NON_PROVIDER_CREDENTIALS.map((name) => `secrets.${name} != ''`));
 	return `\${{ ${clauses.join(" || ")} }}`;
 }

@@ -22,6 +22,10 @@ on:
       BOAT_API_KEY: { required: false }
       FREESTYLE_API_KEY: { required: false }
       BREZEL_API_KEY: { required: false }
+      NSC_TOKEN: { required: false }
+      ANTHROPIC_API_KEY: { required: false }
+      SUBMODULES_PAT: { required: false }
+      FIREWORKS_API_KEY: { required: false }
       # <<< end generated: provider-secret-declarations
     inputs:
       account:

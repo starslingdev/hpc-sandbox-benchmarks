@@ -3,8 +3,28 @@ on:
   workflow_call:
     secrets:
       # >>> generated: provider-secret-declarations — bun run generate-provider-wiring
+      E2B_API_KEY: { required: false }
+      DAYTONA_API_KEY: { required: false }
+      BL_API_KEY: { required: false }
+      BL_WORKSPACE: { required: false }
+      MSB_API_KEY: { required: false }
       MODAL_TOKEN_ID: { required: false }
       MODAL_TOKEN_SECRET: { required: false }
+      NOVITA_API_KEY: { required: false }
+      RUNLOOP_API_KEY: { required: false }
+      NAMESPACE_TENANT_ID: { required: false }
+      VERCEL_ORG_ID: { required: false }
+      VERCEL_PROJECT_ID: { required: false }
+      VERCEL_TOKEN: { required: false }
+      RUN_CLOUD_API_KEY: { required: false }
+      TAMA_TOKEN: { required: false }
+      BOAT_API_KEY: { required: false }
+      FREESTYLE_API_KEY: { required: false }
+      BREZEL_API_KEY: { required: false }
+      NSC_TOKEN: { required: false }
+      ANTHROPIC_API_KEY: { required: false }
+      SUBMODULES_PAT: { required: false }
+      FIREWORKS_API_KEY: { required: false }
       # <<< end generated: provider-secret-declarations
     inputs:
       mode:
