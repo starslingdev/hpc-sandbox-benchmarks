@@ -50,8 +50,8 @@ jobs:
       # wave under the 100-job queue:max ceiling.
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.axis) }}
-    # The entry workflow passes no secrets into this intermediary.
-    secrets: inherit # zizmor: ignore[secrets-inherit] CI enforces an empty incoming secret context.
+    secrets:
+      github-token: ${{ github.token }}
     uses: ./.github/workflows/bench-suite.yml
     with:
       account: ${{ inputs.account }}

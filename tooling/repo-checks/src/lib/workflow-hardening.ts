@@ -746,7 +746,11 @@ export function checkProviderIsolation(doc: unknown, file: string): string[] {
 		}
 		if (
 			job.secrets !== undefined &&
-			!(boundary && job.secrets === "inherit" && job.uses === `./.github/workflows/${boundary}`)
+			!(boundary && job.secrets === "inherit" && job.uses === `./.github/workflows/${boundary}`) &&
+			!(
+				job.uses === "./.github/workflows/bench-suite.yml" &&
+				JSON.stringify(job.secrets) === JSON.stringify({ "github-token": `\${{ github.token }}` })
+			)
 		)
 			errors.push(`${label}: secret forwarding is forbidden outside a secretless intermediary`);
 		const environment = jobEnvironmentName(job);

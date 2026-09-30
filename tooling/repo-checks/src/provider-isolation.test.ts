@@ -107,3 +107,16 @@ test("only secretless intermediary workflows can enable environment inheritance"
 			"secret forwarding",
 		);
 });
+
+test("an explicit built-in token binding never forwards custom credentials", () => {
+	const uses = "./.github/workflows/bench-suite.yml";
+	const secrets = { "github-token": `\${{ github.token }}` };
+	expect(checkProviderIsolation(workflow({ uses, secrets }), "caller.yml")).toEqual([]);
+	for (const bindings of [
+		{ ...secrets, BREZEL_API_KEY: "value" },
+		{ "github-token": `\${{ secrets.BREZEL_API_KEY }}` },
+	])
+		expect(
+			checkProviderIsolation(workflow({ uses, secrets: bindings }), "caller.yml").length,
+		).toBeGreaterThan(0);
+});
