@@ -56,4 +56,3 @@ jobs:
       providers: ${{ toJSON(matrix.providers) }}
       suite: ${{ matrix.suite }}
       batch_id: ${{ matrix.batch }}
-    secrets: inherit

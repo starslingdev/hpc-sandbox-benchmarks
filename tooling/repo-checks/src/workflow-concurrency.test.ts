@@ -37,15 +37,13 @@ test("all current allocating workflows share account queues across variants and 
 	// CPU batches bind the frozen domain directly; the bake lane resolves the same registry domains.
 	const bench = jobQueue("bench-suite.yml", "bench").group;
 	expect(bench).toBe(`benchmark-account-\${{ inputs.account }}`);
-	const bake = jobQueue("toolchain-image.yml", "bake").group;
-	expect(bake).toStartWith("benchmark-account-${{ ");
-	expect(bake).toEndWith(" || matrix.provider }}");
-	for (const provider of ["modal-gvisor", "modal-vm", "daytona-vm", "daytona-container"] as const)
-		expect(bake).toContain(`'${provider}'`);
+	for (const job of ["release", "namespace"])
+		expect(jobQueue("provider-release.yml", job).group).toBe(bench);
+	expect(jobQueue("bench-suite.yml", "namespace").group).toBe(bench);
 	// The GPU lane is Modal-only and names the account directly: the registry's domain, not a literal
 	// that could survive a rename.
 	for (const job of ["prepare-assets", "prepare-kernels", "benchmark"])
-		expect(jobQueue("bench-gpu.yml", job).group).toBe(
+		expect(jobQueue("bench-gpu-worker.yml", job).group).toBe(
 			`benchmark-account-${quotaDomain("modal-gvisor")}`,
 		);
 });

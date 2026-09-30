@@ -1,291 +1,84 @@
-# CI & secrets
+# CI credentials and approval gates
 
-Provider credentials and release mutations live only in the GitHub Environment **`privileged`**.
-Repository-level copies of those secrets must not exist: that is how we keep them unavailable to
-PR workflows, forks, and any job that forgot to declare the environment.
+Provider execution uses one protected GitHub Environment per **account quota domain**:
+`provider-e2b`, `provider-daytona`, `provider-modal`, and the other registry accounts.
+Daytona VM/container share their vendor credentials; Modal gVisor/VM/GPU share theirs.
+Every other account is isolated, including `provider-brezel` and `provider-freestyle`.
 
-`tooling/repo-checks` enforces the workflow side of this posture (see `workflow-hardening.ts`):
-custom secrets and `contents: write` / `packages: write` jobs must set `environment: privileged`,
-and toolchain publish must not trigger on `push`.
+`release` is a separate protected environment with **no custom secrets**. It gates GHCR publication,
+dataset publication and leaderboard changes. Provider SDKs do not execute in publication jobs.
+The former shared `privileged` environment is retained only while old main workflows need it.
 
-## What is gated
+## Execution boundary
 
-| Workflow | Job | Why |
-| --- | --- | --- |
-| `toolchain-image.yml` | `publish` | Provider bake secrets + `packages: write` (GHCR release) |
-| `bench-suite.yml` | `bench` | Provider API keys (the reusable benchmark cell BOTH `bench-matrix.yml` and `bench-smoke.yml` call) |
-| `commit-dataset.yml` | `commit` | Dataset JSON commit (`contents: write` + `pull-requests: write`) |
-| `update-leaderboard.yml` | `leaderboard` | Public `LEADERBOARD.md` commit (`contents: write` + `pull-requests: write`) |
+- CPU batches, GPU jobs and provider bake/promotion jobs run in reusable-only workflows, called
+  **without `secrets: inherit` or any secret forwarding**. Repository and organization secrets
+  therefore are not passed into these workers. Their own environment supplies the account credentials.
+- Provider jobs use fresh `ubuntu-24.04` runners, disable persisted checkout credentials and declare
+  explicit token permissions. Only the Namespace job grants `id-token: write`; Vercel obtains its
+  project OIDC token through the pinned Vercel CLI using its own bootstrap credentials.
+- Release and GPU workers use a read-only repository token. CPU workers additionally need
+  `contents: write` for the durable account journal and `actions: read` for frozen experiment evidence.
+  The CPU job's write token stays on the host; the public repository is cloned anonymously in guests.
+  That token remains repository-wide; environment scoping cannot restrict it to a journal branch.
+- The selected account is checked against the provider IDs before authentication. A generated
+  presence-only check refuses CPU/GPU/release execution if another provider's credentials or the known
+  unrelated repository/organization credentials are available. No secret values are exported by that check.
+- Ordinary endpoints, targets and environment revision IDs use variables. Secrets do not serve as
+  a fallback for ordinary configuration.
 
-`bench-matrix.yml` and `bench-smoke.yml` are **not** listed: neither reads a provider secret itself.
-`bench-smoke.yml` is a `plan` job plus a suite-matrix job that calls `bench-suite.yml`;
-`bench-matrix.yml` is the same, plus a `publish` job that calls `commit-dataset.yml`. Both callees are
-in the table above and carry their own `privileged` gate, so a dispatch lane's jobs only plan and
-orchestrate. A smoke dispatch is gated exactly as a matrix cell is — same approval, same Environment
-secrets, same callee — it simply has no third phase to gate.
+The workflow hardening and generated wiring gates reject shared credential environments, secret
+forwarding, dynamic/whole secret context extraction, unknown secret references, provider execution
+outside reusable workers, nonstandard provider runners and unnecessary write/OIDC permissions.
+Keep provider environment contents aligned with the registry using the administrator audit below.
 
-Two of these are reusable workflows whose `privileged` gate lives on their own job, because a `uses:`
-caller can't declare `environment:` (the workflow-hardening drift gate checks the callee and passes the
-local caller):
+## Configure environments
 
-- `bench-suite.yml` runs one suite across a provider matrix. It is the single benchmark-cell
-  implementation: `bench-matrix.yml`'s suite-matrix job calls it once per planned suite, and
-  `bench-smoke.yml`'s calls it once for the dispatched suite. Environment secrets on `privileged`
-  resolve from the reusable job's own `environment:` declaration (a `uses:` caller can't set
-  `environment:`). Both callers pass `secrets: inherit` for repository-level secrets / token context.
-- `commit-dataset.yml` commits the machine-readable dataset: `bench-matrix.yml`'s `publish` job calls it
-  at the end of a matrix run, and a maintainer can dispatch it standalone to backfill (see rule 6). It
-  lands `data/dataset/` only — the public `LEADERBOARD.md` is regenerated separately (see rule 7), so the
-  dataset can accumulate a run per matrix run without moving the published comparison surface.
-- `update-leaderboard.yml` regenerates `LEADERBOARD.md` from a committed dataset run. It is
-  maintainer-dispatched (never called by the matrix), so the published table only moves on a deliberate
-  action — see rule 7.
+Create `provider-<account>` and `release` in GitHub repository settings with required maintainer
+review, administrator bypass disabled and selected deployment branches. Permit `main`; temporary
+validation may add one exact reviewed branch. Store only the account's credentials below, ordinary
+configuration as variables, and no custom secrets in `release`.
 
-Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no secrets).
+```sh
+# Upload without putting the value in argv or source.
+gh secret set BREZEL_API_KEY --env provider-brezel
 
-## Release rules (public-safe)
+# Read-only audit of review, branches and exact credential names.
+bun scripts/audit-provider-environments.ts
+# During reviewed pre-merge validation:
+bun scripts/audit-provider-environments.ts --validation-branch=codex/review-pr-534
+```
 
-1. **No publish on merge.** Toolchain GHCR promote is `workflow_dispatch` only (never `push`).
-2. **Main only, this repo only.** Privileged jobs require
-   `github.ref == 'refs/heads/main'` and
-   `github.repository == 'starslingdev/hpc-sandbox-benchmarks'`. The benchmark matrix and the smoke
-   dispatch additionally permit an explicitly opted-in non-main dispatch (`allow_branch`) for
-   pre-merge validation; those runs still require `privileged` approval, and every mutation of the
-   repo — dataset publishing, GHCR promote, leaderboard — remains main-only.
-3. **Environment approval.** `privileged` must require at least one reviewer and restrict
-   deployments to `main` plus whatever branch pattern you want `allow_branch` to reach. Write access
-   alone cannot finish a release.
-4. **Fork PRs.** Same-repo guard on self-hosted PR jobs; fork PR code never runs on
-   `starsling-ubuntu-24.04-2`. Forks never receive Environment secrets on `pull_request`.
-5. **Dataset lands via PR, lint-gated.** `main` is protected by a "changes must be made through a
-   pull request" ruleset, so `commit-dataset.yml`'s `commit` job cannot push the promoted dataset
-   straight to `main` (a direct push is rejected with `GH013`). It opens a `dataset/publish-<run-id>`
-   PR instead (hence `pull-requests: write`) and merges it the same way the leaderboard flow does
-   (rule 7): a direct `gh pr merge` — GitHub still enforces the ruleset on that call; it succeeds
-   because the ruleset has no required status checks and `data/dataset/` is unowned. Deliberately not
-   `--auto`: arming auto-merge on a `GITHUB_TOKEN` PR whose required check will never run would leave
-   the PR stranded behind a green job. As a fast pre-flight, the job first runs the
-   Biome gate on the generated dataset (`biome check data/dataset`, the same rules ci.yml runs) —
-   Biome formats JSON, so an unformatted Run document would fail the PR — and aborts before opening a
-   doomed PR on a miss. The push/PR step is idempotent: a re-run reuses the existing open PR instead of
-   colliding on the deterministic branch. Leaderboard landing follows the same `GITHUB_TOKEN` + PR
-   pattern, path-fenced to exactly `LEADERBOARD.md` and `docs/figures/*.webp` (rule 7).
+Use `--accounts=brezel,release` for a scoped audit. Missing or foreign keys fail the audit.
+The old `setup-privileged-environment.sh` entry point now performs this read-only audit.
+Remove temporary branch policies after merging; retain the legacy store until main is validated.
 
-   > **`GITHUB_TOKEN` caveat.** A PR opened with the default `GITHUB_TOKEN` does **not** trigger
-   > `ci.yml` (GitHub suppresses workflow events raised by the Actions token). So if the Biome/CI
-   > check ever becomes a *required* status on the main ruleset, the direct merge fails and the
-   > publish job goes red — a maintainer completes the merge (their merge to `main` runs `ci.yml`
-   > normally). Today the ruleset requires no status checks, so this caveat only bites if one is
-   > added — the in-job Biome pre-flights already guarantee the generated content is clean either
-   > way. For fully hands-off merging *with* required checks, the PR would need to be opened with a
-   > GitHub App installation token or PAT instead of `GITHUB_TOKEN`; we deliberately avoid
-   > provisioning one until that trade-off is actually needed.
-6. **Backfilling a failed dataset commit.** The commit logic is the reusable `commit-dataset.yml`, so
-   when a matrix run's dataset commit fails (or was never reached) a maintainer can re-run it standalone:
-   **Actions → Commit dataset → Run workflow**, passing the original run's id — or, from a
-   gh-authenticated clone, `scripts/backfill-dataset.sh <run-id>` (a thin `gh workflow run` wrapper that
-   also warns if the run's experiment artifacts have already expired). It re-downloads that run's
-   frozen experiment plan and attempt artifacts by run-id (needs `actions: read`), re-aggregates, and
-   opens the same lint-gated dataset PR — no re-benching. This only works while that run's artifacts
-   are still within the repo's artifact-retention window. Dispatch is still gated by Environment
-   `privileged` (main-only, required reviewer), so it is effectively maintainer-only.
-   (`workflow_dispatch` is only offered for the copy of the workflow on the default branch, so
-   `commit-dataset.yml` must be merged to `main` before it can be dispatched.)
-
-   **A run whose cells failed** fails at the Aggregate step by design (strict completeness,
-   ADR-0010) — the matrix's own publish job and a plain backfill both refuse it, and its
-   `experiment-coverage-<run-id>-attempt-<n>` artifact names every incomplete cell. To publish the
-   verified measurements anyway, backfill with the `allow_partial` input checked (or
-   `scripts/backfill-dataset.sh <run-id> --allow-partial`): the job passes the CLI's
-   `--allow-partial` to both aggregate and promote and commits a Run v8 marked
-   `experiment.partial` with every planned cell and its shortfall retained (ADR-0012). The PR and
-   squash commit are titled `(partial)`. A partial dataset is evidence, not a readiness
-   certification — re-run the matrix at the corrected revision for a complete comparison.
-
-7. **Updating the public leaderboard (github-actions bot, path-fenced).** `LEADERBOARD.md` is regenerated
-   separately from the dataset commit, on a deliberate maintainer action: **Actions → Update
-   leaderboard → Run workflow** — or `scripts/update-leaderboard.sh [run-id]` from a gh-authenticated
-   clone. Leave `run_id` blank to render from the newest committed dataset run (the first entry in
-   `data/dataset/index.json`), or pass an explicit run id to point the table at a specific run. The
-   workflow renders `LEADERBOARD.md` from `data/dataset/runs/<run-id>.json` — the **committed** dataset,
-   never the gitignored `data/runs/` scratch tree (what the `leaderboard-artifact-sync` gate enforces) —
-   so the run must already be committed (via a bench-matrix run or rule 6) before the leaderboard can
-   name it. It then:
-
-   1. Pushes `leaderboard/update-<run-id>` and opens the PR as the built-in **github-actions bot**
-      (`GITHUB_TOKEN` — no extra App or PAT; requires the "Allow GitHub Actions to create and approve
-      pull requests" toggle, see operator setup).
-   2. Runs `scripts/assert-paths-allowlisted.sh` on the staged index **and** the PR file list; anything
-      other than `LEADERBOARD.md` and `docs/figures/*.webp` aborts before any merge is attempted.
-   3. Merges the PR with a direct `gh pr merge` (deliberately not `--auto`: on a `GITHUB_TOKEN` PR a
-      required check never runs, so arming auto-merge could only ever strand the PR behind a green
-      job). GitHub still enforces the ruleset on the merge call; this is not a bypass — it succeeds
-      only because the ruleset has no required status checks, code-owner review is the sole review
-      requirement, and `LEADERBOARD.md` is intentionally unowned.
-
-   Because the render is deterministic, the resulting `LEADERBOARD.md` is exactly what
-   `leaderboard-artifact-sync` expects, so subsequent CI stays green. The job also pre-flights the
-   repo-wide Biome gate (`biome check .`, the same command ci.yml's lint job runs) before opening the
-   PR — it must be repo-wide, not `biome check LEADERBOARD.md`: Biome has no Markdown handler under
-   this config, so a Markdown-only invocation processes zero files and exits non-zero.
-
-   This is intentionally **not** a ruleset bypass for `github-actions`. Public contributors who open a
-   PR that modifies `.github/` still need a code-owner approval (see operator setup), and the dispatch
-   itself is gated by Environment `privileged` (main-only + required reviewer), so fork PRs can never
-   drive this flow.
-
-8. **Adding one provider to a version everyone else already runs (scoped backfill).** A provider added
-   after a toolchain version was cut has no artifact for it, and the two obvious recoveries are both
-   wrong: a version bump re-benches the whole fleet, and `force_republish` regenerates *every*
-   provider's artifact in place — destructively for Daytona, which deletes each snapshot before
-   recreating it. `toolchain-image.yml` therefore takes three optional dispatch inputs that narrow the
-   release instead (all default to the full release, so a normal version bump is unchanged):
-
-   | Input | Effect |
-   | --- | --- |
-   | `providers` | Comma-separated provider ids the release covers; blank = all. Scoping produces only those bake cells, and makes promote a **backfill**: it publishes just those providers' version artifacts onto the already-published version and never rewrites the public base or anyone else's artifact. Every provider a scoped dispatch names is **required** — you asked for it, so it must ship. |
-   | `build` | `full` rebuilds the base (the default). `skip` skips the build job outright and derives everything from what the registry already holds. A backfill wants `skip`: it attaches to the **published** base, so the new provider gets exactly the bytes the fleet already runs — and since the toolchain build is not reproducible, a rebuild would quietly hand it a different `:vN`. |
-   | `promote` | Uncheck to bake + verify only; the publish job is skipped. |
-
-   A backfill needs no shared build phase: every provider derives its candidate or version artifact
-   from the one already-published toolchain base during bake/promote. Runloop builds a named Blueprint
-   whose Dockerfile starts from that digest. Vercel mirrors the same base into VCR because its platform
-   cannot pull GHCR directly (and injects its own session agent at boot, so there is no provider delta).
-
-   `force_republish` is rejected together with a `providers` list — they are opposite operations, and
-   silently picking one would do something the operator did not ask for. A scoped promote also refuses
-   if the version is **not** yet published: there is nothing to backfill onto, so run a full release
-   first. Two more refusals keep a scoped release honest, both fail-fast in the plan or before the
-   public base moves:
-
-   - **`providers: boat` is refused.** Boat still boots a vendor stock image, so the release lane has
-     no artifact a scoped backfill can publish. Blaxel is scopable: its protected `BL_API_KEY` and
-     `BL_WORKSPACE` build and validate a candidate image from the shared base, then publish the
-     version-named image. A scoped Blaxel dispatch is required/fail-closed.
-   - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
-     *from* the base (e2b, daytona, blaxel, novita, runloop). Those providers' candidates are verified but their version
-     artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
-     bump `TOOLCHAIN_VERSION` and cut a full release. Providers that don't bake from the base (vercel,
-     modal, namespace, microsandbox) are unaffected: their version artifact is a retag of the exact
-     candidate that was just booted.
-
-   The Runloop-on-v8 flow, as an example — two dispatches, neither of which touches another provider,
-   and neither of which runs a build job:
-
-   1. **Actions → Toolchain image → Run workflow** with `providers=runloop`, `build=skip`, `promote`
-      unchecked. Builds the candidate Blueprint from the published GHCR `:v8` digest, boots it, and
-      runs the smoke spec. Nothing public moves.
-   2. Same dispatch with `promote` checked. Re-validates the candidate Blueprint and builds the
-      version-named Blueprint from the pinned base. The GHCR base `:v8` is never rewritten.
-
-   The release pulls exactly **one** GHCR package (`sandbox-benchmarks-toolchain`), anonymously, so the
-   one-time Public bootstrap it needs has already been done. Adding a provider never adds a package —
-   which matters because GHCR creates a package private on first push and offers **no API to flip it**,
-   so a per-provider package would put a manual, un-automatable step in the middle of every new
-   provider's first release. The plan's visibility guard still checks the package and warns if it is
-   ever not public.
-
-> **Approval gates per bench-matrix run: one per collection round, plus `publish`.** Every batch
-> job (each calling `bench-suite.yml` with `environment: privileged`) and the `publish` job carry the
-> environment. GitHub approves only the jobs that are pending at that moment, so the workflows are
-> shaped to make jobs pend together: a round's batch jobs are created at once (no `max-parallel`;
-> the `benchmark-account-<domain>` concurrency queue serialises them), and every account's first
-> round starts as soon as `plan` finishes, so one approval of `privileged` releases the whole first
-> wave. An account with more batches than one round holds (64, see `ROUND_BATCH_LIMIT`) raises a
-> further gate when its next round starts; `publish` becomes pending only after the last account
-> finishes, raising the final gate before the dataset is committed. A reviewer who approves only the
-> first wave and walks away leaves the run parked at the next gate until an approval lands or the
-> protection rule times out.
-
-## Operator setup (before flipping the repo public)
-
-Do this in the GitHub UI (Settings → Environments / Rules / Actions), then delete any matching
-**repository** secrets.
-
-### Environment `privileged`
-
-1. Create Environment **`privileged`**.
-2. **Required reviewers:** at least one maintainer (two preferred).
-3. **Deployment branches:** `Selected branches` → `main`.
-
-   This rule is a SECOND gate, independent of each workflow's `if:`. `bench-matrix.yml` and
-   `bench-smoke.yml` both offer an `allow_branch` dispatch input for pre-merge validation, but a
-   branch dispatch still fails at the environment with *"Branch is not allowed to deploy to
-   privileged"* until this list admits the branch. To use `allow_branch`, add the branch patterns you
-   want to reach it — e.g. `claude/*`, or a dedicated `bench/*` prefix maintainers push validation
-   branches to. Patterns use branch-protection syntax, where `*` does not match `/`: a bare `*` admits
-   `main`-style names only, so a `codex/…` branch needs its own entry or a `codex/*` pattern (a smoke
-   dispatch on such a branch otherwise fails in 2 s with *"not allowed to deploy to privileged"*).
-   Prefer a narrow pattern over `All branches`: anyone who can push a matching branch can
-   then request a `privileged` run (a reviewer still has to approve it, and the workflows' own
-   same-repo guard still excludes forks, so this widens *who can ask*, not *what runs unattended*).
-   Leave the list at `main` alone if you do not want branch dispatches at all — the input is inert
-   without it.
-4. Add these **environment** secrets (then delete repository-level copies if present):
+Store each secret only in its owning provider environment:
 
    <!-- >>> generated: provider-secrets — bun run generate-provider-wiring -->
-   | Secret | Used by |
-   | --- | --- |
-   | `E2B_API_KEY` | E2B provider runtime and validation |
-   | `DAYTONA_API_KEY` | Daytona (VM), Daytona (container) provider runtime and validation |
-   | `BL_API_KEY` | Blaxel provider runtime and validation |
-   | `BL_WORKSPACE` | Blaxel provider runtime and validation |
-   | `MSB_API_KEY` | Microsandbox Cloud provider runtime and validation |
-   | `MODAL_TOKEN_ID` | Modal (gVisor), Modal (VM) provider runtime and validation |
-   | `MODAL_TOKEN_SECRET` | Modal (gVisor), Modal (VM) provider runtime and validation |
-   | `NOVITA_API_KEY` | Novita provider runtime and validation |
-   | `RUNLOOP_API_KEY` | Runloop provider runtime and validation |
-   | `RUN_CLOUD_API_KEY` | run.cloud provider runtime and validation |
-   | `TAMA_TOKEN` | tama provider runtime and validation |
-   | `BOAT_API_KEY` | boat provider runtime and validation |
-   | `FREESTYLE_API_KEY` | Freestyle provider runtime and validation |
-   | `BREZEL_API_KEY` | Brezel provider runtime and validation |
+   | Secret | Environment | Used by |
+   | --- | --- | --- |
+   | `E2B_API_KEY` | `provider-e2b` | E2B runtime and validation |
+   | `DAYTONA_API_KEY` | `provider-daytona` | Daytona (VM), Daytona (container) runtime and validation |
+   | `BL_API_KEY` | `provider-blaxel` | Blaxel runtime and validation |
+   | `BL_WORKSPACE` | `provider-blaxel` | Blaxel runtime and validation |
+   | `MSB_API_KEY` | `provider-microsandbox-cloud` | Microsandbox Cloud runtime and validation |
+   | `MODAL_TOKEN_ID` | `provider-modal` | Modal (gVisor), Modal (VM) runtime and validation |
+   | `MODAL_TOKEN_SECRET` | `provider-modal` | Modal (gVisor), Modal (VM) runtime and validation |
+   | `NOVITA_API_KEY` | `provider-novita` | Novita runtime and validation |
+   | `RUNLOOP_API_KEY` | `provider-runloop` | Runloop runtime and validation |
+   | `RUN_CLOUD_API_KEY` | `provider-runcloud` | run.cloud runtime and validation |
+   | `TAMA_TOKEN` | `provider-tama` | tama runtime and validation |
+   | `BOAT_API_KEY` | `provider-boat` | boat runtime and validation |
+   | `FREESTYLE_API_KEY` | `provider-freestyle` | Freestyle runtime and validation |
+   | `BREZEL_API_KEY` | `provider-brezel` | Brezel runtime and validation |
    <!-- <<< end generated: provider-secrets -->
 
-   For Boat, a key created with the `ci` preset is insufficient: that preset omits
-   `sandbox.delete`, which the provider needs during teardown. Create a scoped key
-   with the `ci` actions **plus `sandbox.delete`**, and store that key as
-   `BOAT_API_KEY`. A key that can create and run a sandbox but cannot delete it
-   makes the smoke test fail during cleanup and leaves an owned sandbox to recover.
+Namespace additionally needs `NAMESPACE_TENANT_ID` in `provider-namespace`; Vercel needs
+`VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` in `provider-vercel`.
+Do not store `NSC_TOKEN`: Namespace uses short-lived tokens minted through GitHub OIDC.
 
-   Vercel bootstrap credentials are workflow infrastructure, not provider runtime inputs, so they
-   remain an explicit list:
-
-   | Secret | Used by |
-   | --- | --- |
-   | `VERCEL_TOKEN` | Bootstrap only: Vercel CLI pulls a short-lived project OIDC token |
-   | `VERCEL_ORG_ID` | Links the Vercel CLI to the repository's organization (`team_*`) |
-   | `VERCEL_PROJECT_ID` | Links the Vercel CLI to the repository's project (`prj_*`) |
-
-   `MSB_API_URL` is an optional Microsandbox Cloud endpoint override for staging or private deployments. Leave it unset to use the SDK's `https://api.microsandbox.dev` default.
-
-   Enable **OIDC Federation** in the linked Vercel project's Security settings and create the
-   `sandbox-benchmarks-toolchain-vercel` VCR repository once (for example with `vercel vcr add`). The
-   shared `vercel-auth` composite runs the pinned Vercel CLI's `pull` and `env pull` commands, masks
-   `VERCEL_OIDC_TOKEN`, exports it through `GITHUB_ENV`, and immediately deletes its temporary env
-   file. Toolchain jobs additionally run `vercel vcr login docker`, use `vercel vcr push docker` for
-   publication, and always run `docker logout vcr.vercel.com`.
-
-   Namespace has no stored credential, only the target tenant: set `NAMESPACE_TENANT_ID` (a
-   `tenant_*` id) as a `privileged` environment secret so the id stays out of this public repo and
-   masked in logs. The shared `namespace-token` composite exchanges the job's GitHub OIDC token
-   (audience `namespace.so`) for a session in exactly that tenant, then mints a six-hour scoped token
-   file. The tenant needs a one-time trust relationship, created while logged into it:
-
-   ```sh
-   nsc auth trust-relationships add \
-     --issuer https://token.actions.githubusercontent.com \
-     --subject-match '<sub_claim_prefix>:environment:privileged' \
-     --audience namespace.so
-   ```
-
-   This repository uses GitHub's immutable OIDC subjects, so take the prefix verbatim from
-   `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (`sub_claim_prefix`, of the form
-   `repo:<owner>@<id>/<repo>@<id>`) — a plain `repo:<owner>/<repo>` pattern never matches.
-
-   Put ordinary, non-credential provider configuration in GitHub Actions **variables** (Settings →
-   Secrets and variables → Actions → Variables), *not* secrets. The generated workflow accepts the
-   legacy secret location as a migration fallback, but new configuration should use variables:
+Provider configuration variables:
 
    <!-- >>> generated: provider-variables — bun run generate-provider-wiring -->
    | Variable | Used by | Default |
@@ -307,94 +100,56 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BREZEL_ENVIRONMENT_REVISION` | Brezel | — |
    <!-- <<< end generated: provider-variables -->
 
-   Optional values with a declared provider default use it when unset. The two Vercel namespace
-   values fall back to `VERCEL_TEAM_SLUG_DEFAULT` /
-   `VERCEL_PROJECT_NAME_DEFAULT` in `packages/schema/src/toolchain.ts`, which is the single place the
-   default namespace is defined. Set them only to publish into a different team or project.
+Put variables in their owning provider environment (repository variables are also supported).
+Brezel needs `BREZEL_API_URL`, `BREZEL_PROJECT_ID` and `BREZEL_ENVIRONMENT_REVISION`.
 
-   These are the human-readable **names**; `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` are the `team_*` /
-   `prj_*` **API IDs** that `vercel pull` links with. The two pairs are not interchangeable, and
-   passing an ID where a name belongs is rejected at config load rather than becoming a registry path
-   segment. `VERCEL_PROJECT_NAME` must name the same project as `VERCEL_PROJECT_ID`: the mirror step
-   passes it to `vercel vcr push --project`, so a mismatch fails the push instead of publishing into a
-   repository the providers never pull from.
+### Namespace trust migration
 
-### Main ruleset (public-safe bot merges)
-
-Configure the `main` ruleset so the bot-authored dataset/leaderboard PRs can merge hands-off
-**without** letting a public contributor merge a PR that edits `.github/`:
-
-1. Ruleset on `main` (or default branch):
-   - Require a pull request before merging.
-   - **Required approving review count: `0`.**
-   - **Require review from Code Owners: on.**
-   - **No required status checks** — `GITHUB_TOKEN`-authored PRs never run them (the caveat in
-     rule 5), so a required check would strand every bot PR on a maintainer merge. The bot-landed
-     content is guarded instead by the in-job Biome pre-flights, the deterministic renderer, and the
-     path allowlist.
-2. Keep [`.github/CODEOWNERS`](../.github/CODEOWNERS) owning **everything by default** (`*` owner)
-   with ownerless overrides for exactly the bot-landed artifacts (`/LEADERBOARD.md`,
-   `/data/dataset/`, `/docs/figures/*.webp` — a CODEOWNERS entry with no owner un-owns its paths;
-   last match wins). Those must stay unowned so code-owner review is not required for the bot's PRs;
-   everything else — in particular the leaderboard renderer and its backing packages, whose output a
-   `privileged` job commits — must stay owned so no code change can merge without maintainer review.
-
-   > **Keep this list in lockstep with the landing jobs' path allowlists.** The un-owned set must be
-   > a superset of everything `assert-paths-allowlisted.sh` permits the bot to commit. Widening a
-   > job's fence without un-owning the new path is a silent break: the PR still opens, GitHub
-   > requests a code-owner review, and the direct merge fails with *"the base branch policy
-   > prohibits the merge"* — a red job on an otherwise-correct PR. This is exactly how #311 broke
-   > the leaderboard flow: it started committing `docs/figures/*.webp`, which `*` still owned.
-3. **Do not** add `github-actions` (or a broad actor) as a ruleset bypass. The bot does not need
-   bypass when code-owner review is the only review requirement and its two landing paths are
-   unowned.
-4. **Settings → General → Pull Requests → Allow auto-merge** is not needed by these flows: the
-   workflows use a direct `gh pr merge`, never `--auto` (arming auto-merge on a `GITHUB_TOKEN` PR
-   whose required check can never run would strand it behind a green job).
-
-With that posture: a fork/public PR that touches `/.github/` still needs `@dbworku`; a
-`leaderboard/update-*` PR that only changes `LEADERBOARD.md` and its rendered `docs/figures/*.webp`
-merges as soon as the workflow opens it.
-
-### Other Actions settings
-
-1. Confirm the GHCR package `sandbox-benchmarks-toolchain` is **public** so providers can pull
-   the candidate base anonymously (Org → Packages → package settings).
-2. Enable **Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create
-   and approve pull requests"** — both `commit-dataset.yml` and `update-leaderboard.yml` use
-   `GITHUB_TOKEN` for `gh pr create`. Prefer the default **Read** repository contents permission;
-   elevated `contents` / `pull-requests` stay on individual jobs.
-
-Optional bootstrap (creates the empty environment; reviewers/secrets still need a human):
+The Namespace trust must accept issuer `https://token.actions.githubusercontent.com`, audience
+`namespace.so`, and the exact subject
+`repo:starslingdev/hpc-sandbox-benchmarks:environment:provider-namespace`.
+Configure it while authenticated to the **benchmark tenant**, not a personal workspace:
 
 ```sh
-./scripts/setup-privileged-environment.sh
+nsc workspace describe
+nsc auth trust-relationships add \
+  --issuer https://token.actions.githubusercontent.com \
+  --subject-match repo:starslingdev/hpc-sandbox-benchmarks:environment:provider-namespace \
+  --audience namespace.so
 ```
 
-## Local credentials
+Verify a Namespace worker mints its six-hour scoped token successfully before retiring the old trust.
+A subject tied to `privileged` does not authorize the new environment.
 
-Copy [`.env.example`](../.env.example) to a gitignored `.env` and fill in the providers you have
-(Bun auto-loads `.env` when you run a bin). A missing credential is a skip, not a failure. Never
-commit them; never paste them into issues or pull requests. See [SECURITY.md](../SECURITY.md).
+## Release and publication rules
 
-`microsandbox-cloud` needs `MSB_API_KEY`; `MSB_API_URL` is an optional endpoint override. The cloud adapter keeps the key in the SDK control-plane backend and never adds it to sandbox metadata, create-time environment variables, or guest commands.
+Toolchain release remains manual, same-repository and main-only. The plan selects the scope and base;
+provider workers bake and validate independently, then revalidate and stage each version artifact.
+The final `release` job checks complete per-provider evidence, source revision, immutable base digest,
+version, release mode and every required provider before writing the public base **last**. A scoped
+backfill requires an existing published base and never retags it. `force_republish` cannot be combined
+with a backfill; a failed forced Daytona rebuild can leave an existing snapshot absent.
 
-Runloop needs `RUNLOOP_API_KEY`. The release lane keeps it in the SDK control-plane client while
-building versioned Blueprints from digest-pinned public toolchain images; the runtime adapter boots the
-released Blueprint by name. The credential is never copied into Blueprint parameters, Devbox create
-options, or the guest. `RUNLOOP_BLUEPRINT` is an optional local runtime override; leave it unset to use
-the canonical version-scoped Blueprint. Runloop disk snapshots remain temporary lifecycle-benchmark
-measurements; they are not release artifacts and are never selected for ordinary benchmark startup.
+`promote: false` stops after bake/verification. A required provider failure blocks publication;
+best-effort failures remain visible in diagnostics. Stock/external artifact-free providers cannot be
+named in a scoped toolchain backfill.
 
-run.cloud needs `RUN_CLOUD_API_KEY`. Its SDK reads the key directly from the benchmark process; the adapter never adds it to sandbox metadata, create-time environment variables, or guest commands.
+Fork PR checks remain credential-free. Branch benchmark dispatches require `allow_branch` plus an
+exact environment branch policy and maintainer approval; publication always requires main.
 
-tama needs `TAMA_TOKEN`, minted with `tama tokens create`. It publishes no SDK, so the bench cell
-installs the checksum-pinned CLI (`.github/actions/setup-tama`) and the adapter drives that binary as a
-subprocess. The token is adopted into the CLI's own profile on the first control-plane call and never
-reaches sandbox metadata, create-time environment variables, or guest commands; every diagnostic that
-quotes an argument vector redacts it. A fresh runner has no profile, so the secret is what authenticates
-it — locally the adapter probes an existing `tama login` profile first and only falls back to the token,
-because `tama login --token` REPLACES the stored credential.
+Dataset and leaderboard publication use path-fenced bot PRs, not direct pushes to main.
+Keep code-owner review on code, workflow and script changes; dataset/leaderboard ownership exemptions
+permit the existing bot publication path. Enable GitHub Actions PR creation. Bot-created PRs do not
+trigger ordinary CI, so adding required checks requires a maintainer merge or a separately scoped App.
 
-The `tooling/repo-checks` secret-hygiene gate enforces this: it fails CI if any tracked file is a
-credential file (`.env`, `*.pem`, `id_rsa`, …) or contains a high-signal secret token.
+Backfill a failed dataset commit through `commit-dataset.yml` with the original run ID, or
+`scripts/backfill-dataset.sh`. Incomplete experiments require explicit verified partial publication.
+Update the public leaderboard through `update-leaderboard.yml` or `scripts/update-leaderboard.sh`.
+
+## Retire the shared store
+
+After this change reaches main and the provider workers are verified, remove provider secrets from
+`privileged`, remove repository-level provider copies (including the legacy `NSC_TOKEN`), and delete
+its wildcard/temporary deployment policies. Keep the old encrypted values until migration is verified;
+GitHub cannot return their plaintext. Re-run the administrator audit whenever credentials or
+provider environments change.

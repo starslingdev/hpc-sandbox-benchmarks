@@ -12,7 +12,7 @@ description: >-
   (plus a registry login) before returning, so it is replaced by a checksum-pinned `nsc` install
   rather than followed by a second login. The exchange requires a trust relationship registered once
   on the target tenant (`nsc auth trust-relationships add`) with issuer
-  https://token.actions.githubusercontent.com, a subject matching this repo's `privileged`
+  https://token.actions.githubusercontent.com, a subject matching this repo's `provider-namespace`
   environment, and the audience below.
 
   The mint grant is the minimal permission set the harness needs against the Compute API's instance
@@ -34,7 +34,7 @@ inputs:
   tenant-id:
     description: >-
       The Namespace tenant every token is minted in. Pass `secrets.NAMESPACE_TENANT_ID` (a
-      `privileged` environment secret) — this is a public repo, so the id is kept out of the source
+      `provider-namespace` environment secret) — this is a public repo, so the id is kept out of the source
       and masked in logs. Empty fails the login, which degrades to "no token" like any other failure.
     required: true
   token-name:
@@ -94,7 +94,7 @@ runs:
         set -euo pipefail
         echo "::add-mask::${NSC_TENANT_ID}"
         if [ -z "${NSC_TENANT_ID}" ]; then
-          echo "::error::tenant-id is empty; is NAMESPACE_TENANT_ID set on the privileged environment?"
+          echo "::error::tenant-id is empty; is NAMESPACE_TENANT_ID set on provider-namespace?"
           exit 1
         fi
         if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then

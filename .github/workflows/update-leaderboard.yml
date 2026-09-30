@@ -57,7 +57,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.repository == 'starslingdev/hpc-sandbox-benchmarks'
     runs-on: ubuntu-24.04
-    environment: privileged
+    environment: release
     # contents: write to commit + push the leaderboard branch; pull-requests: write to open the PR. No
     # actions: read here — the leaderboard renders from the committed dataset, not from run artifacts.
     permissions:

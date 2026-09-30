@@ -123,7 +123,6 @@ jobs:
     with:
       account: ${{ matrix.account }}
       wave: synthetic-memory
-    secrets: inherit
 
   wave-synthetic-system:
     name: Synthetic - System / ${{ matrix.account }}
@@ -143,7 +142,6 @@ jobs:
     with:
       account: ${{ matrix.account }}
       wave: synthetic-system
-    secrets: inherit
 
   wave-realworld:
     name: realworld / ${{ matrix.account }}
@@ -163,4 +161,3 @@ jobs:
     with:
       account: ${{ matrix.account }}
       wave: realworld
-    secrets: inherit

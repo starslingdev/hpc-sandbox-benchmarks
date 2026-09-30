@@ -14,7 +14,8 @@
     "./providers": "./src/providers.ts",
     "./target-spec": "./src/target-spec.ts",
     "./target-spec-schema": "./src/target-spec-schema.ts",
-    "./toolchain": "./src/toolchain.ts"
+    "./toolchain": "./src/toolchain.ts",
+    "./provider-ci": "./src/provider-ci.ts"
   },
   "scripts": {
     "test": "bun test",

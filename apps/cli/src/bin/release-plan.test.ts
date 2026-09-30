@@ -93,7 +93,9 @@ describe("buildReleasePlan matrix", () => {
 
 	test("a scoped dispatch emits only its own cells", () => {
 		const plan = buildReleasePlan({ ...backfillBase, providers: "vercel" });
-		expect(plan.matrix.include).toEqual([{ provider: "vercel", required: true }]);
+		expect(plan.matrix.include).toEqual([
+			{ provider: "vercel", required: true, account: "vercel" },
+		]);
 		expect(plan.providers.map((p) => p.provider)).toEqual(["vercel"]);
 	});
 
@@ -125,7 +127,9 @@ describe("buildReleasePlan matrix", () => {
 
 	test("accepts a scoped Runloop release and makes it required", () => {
 		const plan = buildReleasePlan({ ...backfillBase, providers: "runloop" });
-		expect(plan.matrix.include).toEqual([{ provider: "runloop", required: true }]);
+		expect(plan.matrix.include).toEqual([
+			{ provider: "runloop", required: true, account: "runloop" },
+		]);
 		expect(plan.required).toEqual(["runloop"]);
 		expect(plan.providers[0]?.artifact).toBe(config.runloopBlueprintCandidate);
 	});
