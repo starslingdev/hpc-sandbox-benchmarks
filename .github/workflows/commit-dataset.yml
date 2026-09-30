@@ -73,7 +73,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.repository == 'starslingdev/hpc-sandbox-benchmarks'
     runs-on: ubuntu-24.04
-    environment: release
+    environment: privileged
     # contents: write to commit + push the dataset branch; pull-requests: write to open the PR;
     # actions: read to download another run's shard artifacts by run-id (the backfill path).
     permissions:

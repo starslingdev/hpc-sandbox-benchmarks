@@ -211,10 +211,11 @@ describe("provider wiring projections", () => {
 	test("requires exact owner-aware pre-auth steps in benchmark, bake, and promote", () => {
 		const lanes = [
 			{ file: ".github/workflows/bench-suite.yml", job: "bench", lane: "batch" as const },
+			{ file: ".github/workflows/toolchain-image.yml", job: "bake", lane: "matrix" as const },
 			{
-				file: ".github/workflows/provider-release-worker.yml",
-				job: "release",
-				lane: "worker" as const,
+				file: ".github/workflows/toolchain-image.yml",
+				job: "publish",
+				lane: "release-scope" as const,
 			},
 		];
 		expect(preAuthBindings().map(({ preAuth }) => preAuth)).toEqual([

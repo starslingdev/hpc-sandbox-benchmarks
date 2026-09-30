@@ -1,16 +1,53 @@
 name: Toolchain image
 
-# PRs build and smoke-test the base without provider credentials. Manual releases on main
-# stage candidates, validate and promote each provider in its own protected account environment,
-# then commit the public base only after the required promotion evidence passes.
+# Build, validate, and publish the sandbox-benchmarks toolchain — staged as a release pipeline rather
+# than one monolithic job. Two lanes:
+#   • Pull requests — build the base (no push) and run the docker smoke. Fast gate, no credentials.
+#   • Manual dispatch on main (GitHub Environment `privileged`) — the release phases: PLAN → BUILD
+#     candidate → BAKE + verify each provider (a matrix, one cell per provider) → PROMOTE the validated
+#     candidate to the immutable public :v1. Iteration never touches :v1; bump TOOLCHAIN_VERSION
+#     (packages/schema/src/toolchain.ts) to publish a new version.
 #
-# plan -> build -> bake (provider matrix) -> promote-providers (provider matrix) -> publish
-# Build and publish use the credential-free `release` environment. Provider workers cannot write
-# GHCR; only Namespace workers can request GitHub OIDC. Reusable calls forward no custom secrets.
+# Releases never fire on push/merge: only workflow_dispatch reaches the publish lane, and every
+# credentialed job runs behind Environment `privileged` (reviewer approval) so the public cannot
+# complete a release.
 #
-# Scoped dispatches require build=skip and backfill the published base without retagging it.
-# promote=false validates candidates only. force_republish explicitly permits version replacement.
-
+# Phase split (needs edges only where an artifact is required, so build/bake work runs in parallel and
+# the ONLY serialized section is the promote transaction):
+#
+#   plan ──> build ──> bake (matrix: provider × required) ──> publish
+#     │        │                                                  ▲
+#     └── emits release-plan.json; every downstream job consumes  │
+#         the plan (mode, refs, provider matrix, gates) rather    │
+#         than re-reading the raw workflow inputs. ───────────────┘
+#
+# The plan also decides WHICH of those phases run, so a dispatch pays only for what it asked for. All
+# four dispatch inputs are optional and their defaults reproduce the full release exactly:
+#
+#   providers  scope the whole lane to a subset (`vercel`). Only those matrix cells exist, and promote
+#              becomes a BACKFILL: it publishes just those providers' version artifacts onto the
+#              already-published version and never rewrites the public base or anyone else's artifact.
+#              A scoped dispatch names what it wants, so every provider it names is REQUIRED.
+#   build      `full` rebuilds the base (the default; what a version bump needs). `skip` skips the
+#              build job outright and derives everything from what the registry already holds. A
+#              scoped release is a backfill and therefore REQUIRES `skip`: its source is the PUBLISHED
+#              base, so the new provider gets exactly the bytes the fleet already runs (the toolchain
+#              build is not reproducible, so a rebuild would quietly hand it a different `:vN`).
+#   promote    off ⇒ the publish job is skipped: bake + verify, look at the report, promote later.
+#
+# The canonical use is adding a provider to a version everyone else already runs — e.g. Runloop on v8:
+#   1. providers=runloop, build=skip, promote=false → bake + verify a candidate Blueprint, nothing public
+#   2. providers=runloop, build=skip, promote=true  → publish just the Runloop v8 Blueprint
+# Neither dispatch runs the shared build job: Runloop derives its candidate/version Blueprints from
+# the one already-published base during bake/promote.
+#
+# Cross-cutting GitHub Actions mechanics live in .github/actions/* composites (setup, ghcr login,
+# input validation, package-visibility guard, summaries); provider bake/verify/promote logic lives in
+# the package scripts under apps/cli (thin YAML, fat scripts). GHCR auth is the job's GITHUB_TOKEN; the
+# only OIDC here is Namespace's GitHub federation (its only stored value is the tenant id), so
+# the two jobs that boot a Namespace instance — `bake` (its namespace matrix cell) and `publish`
+# (promote's re-validation) — each scope `id-token: write` to themselves. No other job requests an
+# OIDC token.
 on:
   # Manual publish (e.g. after bumping TOOLCHAIN_VERSION). The public version is immutable;
   # `force_republish` deliberately regenerates it over an existing version for fast dev iteration.
@@ -51,8 +88,11 @@ concurrency:
   group: toolchain-image-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Read-only by default. Build/publish may write GHCR. Reusable provider calls allow read-only
-# GHCR access and delegate OIDC exclusively to their Namespace job.
+# Least privilege, global default: read-only. build and promote widen to packages: write; plan widens
+# to packages: read (the immutability probe + package-visibility guard). bake needs packages: read
+# so Blaxel's remote builder can pull the digest-pinned base via GHCR credentials. Like publish, bake
+# widens to id-token: write for
+# Namespace's OIDC federation — scoped per-job, never at the workflow level (zizmor: excessive perms).
 permissions:
   contents: read
 
@@ -109,7 +149,7 @@ jobs:
       - name: Build base (no push) + docker smoke
         # Hand build.sh the job's own read-only token so mise's tool-release lookups hit GitHub's
         # authenticated rate limit (5000/h) instead of the anonymous 60/h that flakes the base build.
-        # GITHUB_TOKEN is a built-in (not a custom secret), so this needs no `environment: release`.
+        # GITHUB_TOKEN is a built-in (not a custom secret), so this needs no `environment: privileged`.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -257,7 +297,7 @@ jobs:
     runs-on: starsling-ubuntu-24.04-8
     # The heavy phase: a full base-image build (apt, mise, the PTS install) plus the push.
     timeout-minutes: 60
-    environment: release
+    environment: privileged
     permissions:
       contents: read
       packages: write
@@ -323,16 +363,44 @@ jobs:
           verify: bun apps/cli/src/bin/build-candidate.ts
           diagnostics: build-metadata-${{ github.run_id }}
 
+  # BAKE + verify: one matrix cell per provider (from the plan). Each cell bakes its candidate artifact
+  # from the plan-selected base (the pushed candidate for a full release, published version for a
+  # backfill) and validates it by booting a sandbox and running the shared smoke spec. fail-fast: false
+  # so a flaky provider doesn't cancel the others' diagnostics — but ANY cell
+  # that RAN and failed still fails this job (and, being a `needs`, blocks promote). Required cells
+  # (plan `required`) additionally pass `--require`, so a missing/misnamed secret fails the cell instead
+  # of silently skipping a provider the release must ship.
+  #
+  # The matrix comes from the plan, so a scoped dispatch simply produces fewer cells — there is no
+  # per-cell `if:` to keep in sync with the scope, and an out-of-scope provider's job never exists.
   bake:
+    name: Bake + verify (${{ matrix.provider }})
+    concurrency:
+      # >>> generated: provider-account-group-bake — bun run generate-provider-wiring
+      group: benchmark-account-${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}
+      # <<< end generated: provider-account-group-bake
+      cancel-in-progress: false
+      queue: max
     needs: [plan, build]
+    # `build` is skippable (`build: skip`), and a skipped `needs` would normally skip this job too — so
+    # the condition is spelled out rather than left to the default. `!cancelled()` re-enables the job
+    # after a skipped dependency, which then makes plan's own success something we must assert (a FAILED
+    # plan emits no outputs, and `'' != 'true'` would have read as "don't skip"). build must have either
+    # succeeded or been skipped on purpose; anything else means there is no candidate to bake.
     if: >
       !cancelled() &&
       needs.plan.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.build.result) &&
       needs.plan.outputs.skip != 'true' &&
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main' &&
-      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
+      contains(fromJSON('["success", "skipped"]'), needs.build.result)
+    runs-on: starsling-ubuntu-24.04-2
+    # Each cell boots a provider sandbox with that provider's secret — a credentialed job, so it runs
+    # behind Environment `privileged` like the rest of the release lane.
+    environment: privileged
+    timeout-minutes: 60
+    # Only the namespace cell uses id-token (Namespace's GitHub OIDC federation into the pinned
+    # tenant), but GHA permissions are per-job, not per-cell — so it is scoped to the whole bake job
+    # and the other cells simply never request a token. contents: read is the workflow default,
+    # re-declared so this block widens rather than replaces.
     permissions:
       contents: read
       packages: read
@@ -340,96 +408,372 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    uses: ./.github/workflows/provider-release.yml
-    with:
-      account: ${{ matrix.account }}
-      provider: ${{ matrix.provider }}
-      required: ${{ matrix.required }}
-      phase: bake
-      base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
-      partial: ${{ needs.plan.outputs.mode == 'backfill' }}
-      force: ${{ inputs.force_republish }}
-
-  promote-providers:
-    needs: [plan, build, bake]
-    if: >
-      !cancelled() &&
-      needs.plan.result == 'success' &&
-      needs.bake.result == 'success' &&
-      needs.plan.outputs.run-publish == 'true' &&
-      contains(fromJSON('["success", "skipped"]'), needs.build.result) &&
-      needs.plan.outputs.skip != 'true' &&
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main' &&
-      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
-    permissions:
-      contents: read
-      packages: read
-      id-token: write
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    uses: ./.github/workflows/provider-release.yml
-    with:
-      account: ${{ matrix.account }}
-      provider: ${{ matrix.provider }}
-      required: ${{ matrix.required }}
-      phase: promote
-      base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
-      partial: ${{ needs.plan.outputs.mode == 'backfill' }}
-      force: ${{ inputs.force_republish }}
-
-  publish:
-    name: Commit toolchain release
-    needs: [plan, build, promote-providers]
-    if: >
-      !cancelled() &&
-      needs.plan.result == 'success' &&
-      needs.promote-providers.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.build.result) &&
-      needs.plan.outputs.skip != 'true' &&
-      needs.plan.outputs.run-publish == 'true' &&
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main' &&
-      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
-    environment: release
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      actions: read
-      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Boots the just-baked candidate via provider SDKs — no git push, no ghcr push. Don't persist.
+          persist-credentials: false
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-toolchain
+      - name: GHCR session for Blaxel remote build
+        if: matrix.provider == 'blaxel'
+        uses: ./.github/actions/ghcr-login
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Blaxel CLI
+        if: matrix.provider == 'blaxel'
+        uses: ./.github/actions/setup-blaxel-cli
+      # Namespace stores only its tenant id: the shared action federates through GitHub OIDC and exposes
+      # the same `namespace.outputs.token-file` contract in every managed lane. Keeping the producer
+      # id/output identical is what lets provider metadata describe this input without lane-specific
+      # generator exceptions. A failed federation still degrades to the normal missing-input skip.
+      - name: Set up Namespace credentials
+        # >>> generated: preauth-namespace-token-bake — bun run generate-provider-wiring
+        if: matrix.provider == 'namespace'
+        # <<< end generated: preauth-namespace-token-bake
+        continue-on-error: true
+        id: namespace
+        uses: ./.github/actions/namespace-token
+        with:
+          tenant-id: ${{ secrets.NAMESPACE_TENANT_ID }}
+          token-name: sandbox-benchmarks-toolchain-bake-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Authenticate with Vercel and VCR
+        # >>> generated: preauth-vercel-auth-bake — bun run generate-provider-wiring
+        if: matrix.provider == 'vercel'
+        # <<< end generated: preauth-vercel-auth-bake
+        continue-on-error: true
+        id: vercel-auth
+        uses: ./.github/actions/vercel-auth
+        with:
+          token: ${{ secrets.VERCEL_TOKEN }}
+          org-id: ${{ secrets.VERCEL_ORG_ID }}
+          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vcr-login: "true"
+      # Vercel Sandbox can only boot images from VCR, so the shared toolchain base is mirrored across
+      # rather than pulled from GHCR like every other provider. It is the SAME base image the rest of
+      # the fleet runs — Vercel injects its own session agent at boot, so there is no provider delta to
+      # bake in and no separate GHCR image to keep in step.
+      #
+      # SOURCE_REF follows the same resolved source as every bake cell. A full build uses that job's
+      # immutable output digest; a build-skipped backfill uses the plan's PUBLISHED version, while the
+      # mutable candidate may already have moved toward the next release. Mirroring any other ref would
+      # verify one image and ship another, and promote cannot catch it because Vercel's version artifact
+      # is a retag of whatever was mirrored here. See releaseBaseTag().
+      - name: Mirror the toolchain base into VCR
+        if: matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success'
+        id: vercel-vcr
+        env:
+          SOURCE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          # `vercel vcr push` is a CLI call, so it needs CLI credentials of its own — the vercel-auth
+          # composite's docker login covers the REGISTRY, not the CLI, and its `--token` lives in that
+          # composite's step env, which does not carry across steps. Without this the push dies with
+          # "No existing credentials found", after the multi-GB pull above has already run.
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          target_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
+          project="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelProjectName)')"
+          target_name="${target_ref##*/}"
+          echo ">>> mirroring $SOURCE_REF into VCR as $target_ref"
+          docker pull "$SOURCE_REF"
+          docker tag "$SOURCE_REF" "$target_ref"
+          # --project pins the destination to the SAME resolved name the target ref was built from.
+          # Without it the push silently follows whatever project VERCEL_PROJECT_ID linked, so a
+          # mismatched VERCEL_PROJECT_NAME would tag one repository and publish into another — and the
+          # digest read back below would describe an image the providers never pull.
+          # --token explicitly rather than relying on the CLI's env pickup: one documented contract,
+          # and it fails loudly here rather than silently falling back to some ambient session.
+          ./node_modules/.bin/vercel vcr push docker "$target_name" --project "$project" --token="$VERCEL_TOKEN"
+          digest="$(docker buildx imagetools inspect "$target_ref" --format '{{json .Manifest.Digest}}' | jq -er '.')"
+          echo "digest-ref=${target_ref%:*}@${digest}" >> "$GITHUB_OUTPUT"
+      - name: Log out of VCR after mirror
+        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'
+        run: docker logout vcr.vercel.com
+      - name: Bake + verify candidate
+        id: bake
+        # The cell's provider + required flag reach the script through the environment, never
+        # interpolated into the shell, so a matrix value can't inject into the runner command. Provider
+        # creds are optional: a missing one SKIPS that provider (required cells fail instead — see
+        # --require below). Blaxel builds a workspace image from the shared base and is required.
+        #
+        # Each cell is handed ONLY its own provider's credentials. The cell already restricts execution
+        # to one provider (`--provider`), so injecting every provider secret into every cell would hand
+        # a compromised dependency in any one cell every other provider's key for no benefit. Scoping
+        # them here is what makes the fan-out least-privilege rather than just concurrent.
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          REQUIRED: ${{ matrix.required }}
+          # Pin every cell to the one base selected by the release plan. A full build supplies its
+          # immutable output digest; a build-skipped scoped backfill supplies the published version,
+          # never the mutable candidate that may already contain the next release's bytes.
+          BASE_IMAGE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          # >>> generated: provider-inputs-bake — bun run generate-provider-wiring
+          E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
+          E2B_TEMPLATE: ${{ matrix.provider == 'e2b' && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
+          DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_SNAPSHOT: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_SNAPSHOT: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
+          BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
+          MSB_API_KEY: ${{ matrix.provider == 'microsandbox-cloud' && secrets.MSB_API_KEY || '' }}
+          MSB_API_URL: ${{ matrix.provider == 'microsandbox-cloud' && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
+          MODAL_TOKEN_ID: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && secrets.MODAL_TOKEN_SECRET || '' }}
+          NOVITA_API_KEY: ${{ matrix.provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
+          NOVITA_TEMPLATE: ${{ matrix.provider == 'novita' && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
+          RUNLOOP_API_KEY: ${{ matrix.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}
+          RUNLOOP_BLUEPRINT: ${{ matrix.provider == 'runloop' && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
+          NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
+          VERCEL_OIDC_TOKEN: ${{ matrix.provider == 'vercel' && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+          VERCEL_TEAM_SLUG: ${{ matrix.provider == 'vercel' && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
+          VERCEL_PROJECT_NAME: ${{ matrix.provider == 'vercel' && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
+          RUN_CLOUD_API_KEY: ${{ matrix.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}
+          TAMA_TOKEN: ${{ matrix.provider == 'tama' && secrets.TAMA_TOKEN || '' }}
+          TAMA_CLI: ${{ matrix.provider == 'tama' && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          BOAT_API_KEY: ${{ matrix.provider == 'boat' && secrets.BOAT_API_KEY || '' }}
+          BOAT_BASE_URL: ${{ matrix.provider == 'boat' && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
+          FREESTYLE_API_KEY: ${{ matrix.provider == 'freestyle' && secrets.FREESTYLE_API_KEY || '' }}
+          BREZEL_API_KEY: ${{ matrix.provider == 'brezel' && secrets.BREZEL_API_KEY || '' }}
+          BREZEL_API_URL: ${{ matrix.provider == 'brezel' && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
+          BREZEL_PROJECT_ID: ${{ matrix.provider == 'brezel' && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
+          BREZEL_ENVIRONMENT_REVISION: ${{ matrix.provider == 'brezel' && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
+          # <<< end generated: provider-inputs-bake
+          VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
+        run: |
+          set -euo pipefail
+          args=(--provider "${PROVIDER}" --base-image "${BASE_IMAGE_REF}")
+          # Required providers must not silently skip: --require fails the cell if this provider's
+          # secret is missing/misnamed or it fails to validate.
+          if [ "${REQUIRED}" = "true" ]; then args+=(--require "${PROVIDER}"); fi
+          # Route the report JSON to a file via env (not a `> file` redirect): the provider CLIs inherit
+          # stdout, so a redirect would splice their chatter into the report. bake.ts writes the file
+          # even when it exits non-zero, so it's a clean diagnostic on failure too.
+          export BAKE_REPORT_FILE="bake-${PROVIDER}.json"
+          # Only a REQUIRED provider blocks the release: a required cell passed --require above, so
+          # bake.ts exits non-zero (failing the cell) if it fails or skips. A NON-required cell — e.g.
+          # daytona-container / modal-vm, which share a required variant's credentials and so can never
+          # take the missing-creds skip path — still runs, but a failure is surfaced as a warning and
+          # must NOT block the publish (its outcome is in the uploaded bake report either way).
+          if [ "${REQUIRED}" = "true" ]; then
+            bun apps/cli/src/bin/bake.ts "${args[@]}"
+          else
+            bun apps/cli/src/bin/bake.ts "${args[@]}" ||
+              echo "::warning title=Non-required provider not validated::${PROVIDER} did not pass its bake/verify — reported, not blocking the release (best-effort variant)"
+          fi
+      # Failure-safe fallback for auth/mirror failures that skip the immediate post-mirror logout.
+      - name: Ensure VCR logout
+        if: always()
+        run: docker logout vcr.vercel.com || true
+      - name: Upload bake report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bake-${{ matrix.provider }}-${{ github.run_id }}
+          path: bake-${{ matrix.provider }}.json
+          if-no-files-found: warn
+          # See the plan upload: overwrite so re-running a single failed cell (same run_id) can't fail on
+          # its own first-attempt artifact — the whole point of the per-cell re-run.
+          overwrite: true
+      - name: Release summary
+        if: always()
+        uses: ./.github/actions/release-summary
+        with:
+          phase: ${{ matrix.provider }}/bake
+          status: ${{ job.status }}
+          mode: ${{ needs.plan.outputs.mode }}
+          scope: ${{ needs.plan.outputs.providers }}
+          source-ref: ${{ github.sha }}
+          # The build job may have been skipped (`build: skip`), leaving its outputs empty — fall back
+          # to the plan's source (the published version for a scoped backfill, candidate otherwise).
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          provider-target: ${{ matrix.provider }}
+          size-tier: ${{ needs.plan.outputs.size-tier }}
+          verify: bun apps/cli/src/bin/bake.ts --provider ${{ matrix.provider }} --base-image ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}${{ matrix.required && format(' --require {0}', matrix.provider) || '' }}
+          diagnostics: bake-${{ matrix.provider }}-${{ github.run_id }}
+
+  # PROMOTE: the serialized publication barrier and the ONLY job that mutates the public :v1. Runs only
+  # after every bake cell converges (a failed required cell fails `bake` and blocks this via `needs`).
+  # promote re-validates the candidate (TOCTOU: the candidate tag is mutable), builds each provider's
+  # version-named artifact FROM the revalidated bytes, then retags the base → :v1 LAST as the commit
+  # point. `--require` (from the plan) fails the promote before publish if a required provider's version
+  # artifact was skipped/failed. `--force` (force_republish only) regenerates an existing version.
+  # `--provider` (from the plan) scopes the transaction; a SUBSET makes it a backfill that publishes only
+  # those providers' version artifacts onto the existing version and never writes the base at all.
+  # The release job (named `publish` — the drift gate requires this name for the GHCR release lane).
+  #
+  # Dynamic job skipping #2: `promote: false` drops this job (`run-publish`), so a dispatch can stage and
+  # verify a candidate, leave the public surface untouched, and promote from a later dispatch.
+  publish:
+    name: Promote candidate → version
+    needs: [plan, build, bake]
+    # The only job that mutates the public :v1. Confine it to a manual dispatch on main of this repo
+    # (redundant with plan's gate, but the hardening gate asserts this literally on the publish job).
+    # Same `!cancelled()` shape as `bake` (build is skippable), so each dependency is asserted by hand:
+    # plan must have succeeded, bake must be green (a failed required cell blocks the release), and
+    # build must have either succeeded or been deliberately skipped.
+    if: >
+      !cancelled() &&
+      needs.plan.result == 'success' &&
+      needs.bake.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.build.result) &&
+      needs.plan.outputs.skip != 'true' &&
+      needs.plan.outputs.run-publish == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'starslingdev/hpc-sandbox-benchmarks'
+    runs-on: starsling-ubuntu-24.04-2
+    environment: privileged
+    # Re-validates and promotes every in-scope provider SERIALLY (it is a transaction, not a fan-out),
+    # so at full scope it is the longest-running credentialed job. Sized for that worst case; a scoped
+    # backfill finishes in a fraction of it.
+    timeout-minutes: 60
+    # packages: write retags the base → public :v1. id-token: write is Namespace's OIDC federation for
+    # the re-validation boot (only the tenant id is stored) — scoped here, not at the workflow level (zizmor).
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Publishes to GHCR via docker/login-action, never git push — don't persist the job token.
           persist-credentials: false
       - name: Set up toolchain
         uses: ./.github/actions/setup-toolchain
         with:
-          buildx: 'true'
+          buildx: "true"
       - name: GHCR session
         uses: ./.github/actions/ghcr-login
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download provider promotion evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Set up Blaxel CLI
+        if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel')
+        uses: ./.github/actions/setup-blaxel-cli
+      # Namespace federates through GitHub OIDC into the pinned tenant. Promote is a serial transaction,
+      # so the shared action runs once when Namespace is in scope and gives this lane the same
+      # `namespace.outputs.token-file` contract as validation and benchmarks. continue-on-error keeps
+      # Namespace best-effort; the scope test uses matrix element equality because string contains
+      # would also match a future provider id that merely contains `namespace`.
+      - name: Set up Namespace credentials
+        # >>> generated: preauth-namespace-token-promote — bun run generate-provider-wiring
+        if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'namespace')
+        # <<< end generated: preauth-namespace-token-promote
+        continue-on-error: true
+        id: namespace
+        uses: ./.github/actions/namespace-token
         with:
-          pattern: promote-*-${{ github.run_id }}
-          path: promotion-evidence
-          merge-multiple: true
-      - name: Commit release after required providers passed
+          tenant-id: ${{ secrets.NAMESPACE_TENANT_ID }}
+          token-name: sandbox-benchmarks-toolchain-promote-${{ github.run_id }}-${{ github.run_attempt }}
+      # Same scope gate as the Namespace mint above: a release that isn't promoting vercel has no reason
+      # to pull a project OIDC token or log docker into VCR.
+      - name: Authenticate with Vercel and VCR
+        # >>> generated: preauth-vercel-auth-promote — bun run generate-provider-wiring
+        if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel')
+        # <<< end generated: preauth-vercel-auth-promote
+        continue-on-error: true
+        id: vercel-auth
+        uses: ./.github/actions/vercel-auth
+        with:
+          token: ${{ secrets.VERCEL_TOKEN }}
+          org-id: ${{ secrets.VERCEL_ORG_ID }}
+          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vcr-login: "true"
+      - name: Log in to VCR and pin candidate
+        if: steps.vercel-auth.outcome == 'success'
+        id: vercel-vcr
+        run: |
+          set -euo pipefail
+          candidate="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
+          digest="$(docker buildx imagetools inspect "$candidate" --format '{{json .Manifest.Digest}}' | jq -er '.')"
+          echo "digest-ref=${candidate%:*}@${digest}" >> "$GITHUB_OUTPUT"
+      - name: Promote candidate → version
+        id: promote
         env:
-          RELEASE_MATRIX: ${{ needs.plan.outputs.matrix }}
-          RELEASE_PARTIAL: ${{ needs.plan.outputs.mode == 'backfill' }}
-          RELEASE_FORCE: ${{ inputs.force_republish }}
-          RELEASE_BASE_IMAGE: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
-          RELEASE_SOURCE_REF: ${{ github.sha }}
-        run: bun apps/cli/src/bin/release-commit.ts promotion-evidence
-      - name: Upload committed release evidence
+          REQUIRED: ${{ needs.plan.outputs.required }}
+          # The resolved scope, always passed (never the raw dispatch input): for a full release it is
+          # simply every registered provider and `--provider` is a no-op, and for a scoped one it is what
+          # makes the promote a backfill. bake.ts derives "partial" from the list length, so the
+          # subset-vs-everything decision has exactly one owner.
+          RELEASE_PROVIDERS: ${{ needs.plan.outputs.providers }}
+          FORCE_REPUBLISH: ${{ inputs.force_republish }}
+          # Route the promote payload JSON to a file via env (not a `> file` redirect): the provider
+          # CLIs inherit stdout, so a redirect would splice their chatter into the payload. bake.ts
+          # writes the file even when promote aborts (it records the structured reports before exiting).
+          BAKE_REPORT_FILE: promote-payload.json
+          # >>> generated: provider-inputs-promote — bun run generate-provider-wiring
+          E2B_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && secrets.E2B_API_KEY || '' }}
+          E2B_TEMPLATE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
+          DAYTONA_API_KEY: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container')) && secrets.DAYTONA_API_KEY || '' }}
+          DAYTONA_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_SNAPSHOT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_SNAPSHOT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container') && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
+          BL_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel') && secrets.BL_API_KEY || '' }}
+          BL_WORKSPACE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel') && secrets.BL_WORKSPACE || '' }}
+          MSB_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'microsandbox-cloud') && secrets.MSB_API_KEY || '' }}
+          MSB_API_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'microsandbox-cloud') && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
+          MODAL_TOKEN_ID: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm')) && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm')) && secrets.MODAL_TOKEN_SECRET || '' }}
+          NOVITA_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'novita') && secrets.NOVITA_API_KEY || '' }}
+          NOVITA_TEMPLATE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'novita') && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
+          RUNLOOP_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && secrets.RUNLOOP_API_KEY || '' }}
+          RUNLOOP_BLUEPRINT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
+          NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
+          VERCEL_OIDC_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel') && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
+          VERCEL_TEAM_SLUG: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel') && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
+          VERCEL_PROJECT_NAME: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel') && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
+          RUN_CLOUD_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
+          TAMA_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama') && secrets.TAMA_TOKEN || '' }}
+          TAMA_CLI: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama') && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
+          BOAT_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && secrets.BOAT_API_KEY || '' }}
+          BOAT_BASE_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
+          FREESTYLE_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'freestyle') && secrets.FREESTYLE_API_KEY || '' }}
+          BREZEL_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && secrets.BREZEL_API_KEY || '' }}
+          BREZEL_API_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
+          BREZEL_PROJECT_ID: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
+          BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
+          # <<< end generated: provider-inputs-promote
+          VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
+        run: |
+          set -euo pipefail
+          args=(--promote --require "${REQUIRED}" --provider "${RELEASE_PROVIDERS}")
+          # --force (manual force_republish dispatch only) republishes over an existing immutable
+          # version; never set on the automated push path. bake.ts refuses --force on a scoped promote,
+          # and release-validate rejects the combination before the release spends anything.
+          if [ "${FORCE_REPUBLISH}" = "true" ]; then args+=(--force); fi
+          bun apps/cli/src/bin/bake.ts "${args[@]}"
+      - name: Log out of VCR
+        if: always()
+        run: docker logout vcr.vercel.com || true
+      - name: Upload promote payload
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: promote-payload-${{ github.run_id }}
           path: promote-payload.json
-          if-no-files-found: error
+          if-no-files-found: warn
+          # See the plan upload: overwrite so a re-run (same run_id, new run_attempt) can't fail on a
+          # duplicate artifact name.
           overwrite: true
+      - name: Release summary
+        if: always()
+        uses: ./.github/actions/release-summary
+        with:
+          phase: publish
+          status: ${{ job.status }}
+          mode: ${{ needs.plan.outputs.mode }}
+          scope: ${{ needs.plan.outputs.providers }}
+          source-ref: ${{ github.sha }}
+          # Empty when the build job was skipped (`build: skip`) — fall back to the same plan-selected
+          # source the partial promote re-validates (published version for a backfill, candidate otherwise).
+          image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
+          size-tier: ${{ needs.plan.outputs.size-tier }}
+          verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}
+          published: ${{ needs.plan.outputs.publish-target }}
+          diagnostics: promote-payload-${{ github.run_id }}

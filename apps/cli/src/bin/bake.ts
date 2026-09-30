@@ -131,8 +131,7 @@ if (import.meta.main) {
 		// A scoped promote is a backfill onto an existing version, which is the opposite of what --force
 		// does (regenerate the whole version in place, destructively for daytona). Refuse the combination
 		// rather than pick a winner: whichever we picked would silently not be what the operator asked for.
-		const stage = process.argv.includes("--stage-provider");
-		if (!stage && isPartialScope(only) && force) {
+		if (isPartialScope(only) && force) {
 			log(
 				"error: --force cannot be combined with a scoped --provider promote — a scoped promote " +
 					"backfills providers onto an already-published version, while --force regenerates the " +
@@ -140,38 +139,13 @@ if (import.meta.main) {
 			);
 			await exitAfterSandboxCleanup(2);
 		}
-		if (
-			stage &&
-			(only?.length !== 1 || !["true", "false"].includes(process.env.RELEASE_PARTIAL ?? ""))
-		)
-			throw new Error("Provider staging requires one provider and explicit RELEASE_PARTIAL");
-		const stageBase = stage ? await resolveImageDigestRef(baseImageRef) : undefined;
-		const partial = stage ? process.env.RELEASE_PARTIAL === "true" : isPartialScope(only);
-		if (partial && force) throw new Error("Cannot force a scoped backfill");
-		const promoted = await promoteAll(log, {
-			force,
-			only,
-			...(stageBase ? { stageProvider: { partial, baseImage: stageBase } } : {}),
-		});
+		const promoted = await promoteAll(log, { force, only });
 		writeReport({
 			// The scope is recorded alongside the version names because those names are the FULL set the
 			// version owns — on a partial promote most of them were not touched, and the payload has to
 			// say which run this was rather than leave a reader to infer it from `reports`.
-			...(stage
-				? {
-						stage: {
-							provider: only?.[0],
-							sourceRef: process.env.RELEASE_SOURCE_REF,
-							baseImage: stageBase,
-							version: config.toolchainImageVersion,
-							partial,
-							force,
-							ok: promoted.ok,
-						},
-					}
-				: {}),
 			scope: only ?? PROVIDERS.map((p) => p.id),
-			partial,
+			partial: isPartialScope(only),
 			version: {
 				image: config.toolchainImageVersion,
 				e2bTemplate: config.e2bTemplateVersion,

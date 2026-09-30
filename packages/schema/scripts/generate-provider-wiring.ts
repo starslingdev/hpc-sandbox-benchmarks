@@ -1,16 +1,10 @@
 #!/usr/bin/env bun
-
 // Generate marker-delimited provider wiring from the validated metadata registry (ADR-0006).
 // Workflows keep their hand-tuned control flow; only mechanical provider choices/input projections
 // live here. Adding a provider changes its descriptor and this reviewed output, not six dialects.
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-	environmentSecretBindings,
-	foreignCredentialExpression,
-	providerAccount,
-} from "../src/provider-ci.ts";
 import type { ProviderId } from "../src/provider-ids.ts";
 import { PROVIDER_IDS } from "../src/provider-ids.ts";
 import { REGISTRY } from "../src/provider-meta/index.ts";
@@ -46,7 +40,7 @@ export interface QuotaDomainBinding {
 	readonly owners: readonly ProviderId[];
 }
 
-export type WiringLane = "matrix" | "batch" | "release-scope" | "worker";
+export type WiringLane = "matrix" | "batch" | "release-scope";
 
 export interface DriverMigrationWaiver {
 	readonly owner: string;
@@ -165,8 +159,8 @@ function ghaString(value: string): string {
 
 function ownerCondition(owners: readonly ProviderId[], lane: WiringLane): string {
 	const clauses = owners.map((id) =>
-		lane === "matrix" || lane === "worker"
-			? `${lane === "worker" ? "inputs" : "matrix"}.provider == ${ghaString(id)}`
+		lane === "matrix"
+			? `matrix.provider == ${ghaString(id)}`
 			: lane === "batch"
 				? `contains(fromJSON(inputs.providers), ${ghaString(id)})`
 				: `contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, ${ghaString(id)})`,
@@ -204,8 +198,9 @@ function inputValue(input: NormalizedProviderInput): string {
 			return `steps.${input.source.step}.outputs.${input.source.output}`;
 		case "variable": {
 			// `env` covers pre-auth composites (Vercel), `vars` is the intended ordinary-value home,
-			// ordinary configuration never falls back to the credential store.
-			const candidates = [`env.${input.name}`, `vars.${input.name}`];
+			// and `secrets` is a compatibility fallback while existing installations migrate targets and
+			// endpoint overrides out of their Environment secret store.
+			const candidates = [`env.${input.name}`, `vars.${input.name}`, `secrets.${input.name}`];
 			if (input.default !== undefined) candidates.push(ghaString(input.default));
 			return candidates.join(" || ");
 		}
@@ -327,12 +322,10 @@ export function renderCiSecretTable(): string {
 		.filter(({ input }) => input.source.kind === "secret")
 		.map(({ input, owners }) => {
 			const providers = owners.map((id) => escapeMarkdownCell(REGISTRY[id].displayName)).join(", ");
-			const owner = owners[0];
-			if (!owner) throw new Error(`Missing owner for ${input.name}`);
-			return `   | \`${input.name}\` | \`provider-${providerAccount(owner)}\` | ${providers} runtime and validation |`;
+			return `   | \`${input.name}\` | ${providers} provider runtime and validation |`;
 		})
 		.join("\n");
-	return `   | Secret | Environment | Used by |\n   | --- | --- | --- |\n${rows}`;
+	return `   | Secret | Used by |\n   | --- | --- |\n${rows}`;
 }
 
 export function renderCiVariableTable(): string {
@@ -365,23 +358,41 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 			body: renderPreAuthCondition(preAuth, "batch"),
 		},
 		{
-			file: ".github/workflows/provider-release-worker.yml",
-			label: `preauth-${preAuth}-release`,
-			body: renderPreAuthCondition(preAuth, "worker"),
+			file: ".github/workflows/toolchain-image.yml",
+			label: `preauth-${preAuth}-bake`,
+			body: renderPreAuthCondition(preAuth, "matrix"),
+		},
+		{
+			file: ".github/workflows/toolchain-image.yml",
+			label: `preauth-${preAuth}-promote`,
+			body: renderPreAuthCondition(preAuth, "release-scope"),
 		},
 	]);
 	return [
 		{
-			file: ".github/workflows/bench-account.yml",
-			label: "environment-secret-arguments",
-			body: Object.entries(environmentSecretBindings("inputs.account"))
-				.map(([name, value]) => `      ${name}: ${value}`)
-				.join("\n"),
-		},
-		{
 			file: ".github/workflows/bench-smoke.yml",
 			label: "provider-options",
 			body: renderSmokeProviderOptions(),
+		},
+		{
+			file: ".github/workflows/bench-suite.yml",
+			label: "provider-account-group-bench",
+			body: renderAccountConcurrencyGroup("      ", "batch"),
+		},
+		{
+			file: ".github/workflows/toolchain-image.yml",
+			label: "provider-account-group-bake",
+			body: renderAccountConcurrencyGroup(),
+		},
+		{
+			file: ".github/workflows/bench-suite.yml",
+			label: "provider-runner",
+			body: renderRunnerSelection("batch"),
+		},
+		{
+			file: ".github/workflows/bench-suite.yml",
+			label: "provider-runner-cache",
+			body: renderRunnerNoCache("          ", "batch"),
 		},
 		{
 			file: ".github/workflows/bench-suite.yml",
@@ -395,25 +406,23 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 			body: renderWorkflowInputs("batch"),
 		},
 		{
-			file: ".github/workflows/provider-release-worker.yml",
-			label: "provider-inputs-release",
-			body: renderWorkflowInputs("worker"),
+			file: ".github/workflows/toolchain-image.yml",
+			label: "provider-inputs-bake",
+			body: renderWorkflowInputs("matrix"),
 		},
-		...["prepare-assets", "prepare-kernels", "benchmark"].map((job) => ({
-			file: ".github/workflows/bench-gpu-worker.yml",
-			label: `provider-isolation-${job}`,
-			body: `          FOREIGN_CREDENTIALS: ${foreignCredentialExpression("modal")}`,
-		})),
-		...["bench-suite.yml", "provider-release-worker.yml"].flatMap((file) =>
-			["provider-isolation-check"].map((label) => ({
-				file: `.github/workflows/${file}`,
-				label,
-				body: `          FOREIGN_CREDENTIALS: ${foreignCredentialExpression()}`,
-			})),
-		),
+		{
+			file: ".github/workflows/toolchain-image.yml",
+			label: "provider-inputs-promote",
+			body: renderWorkflowInputs("release-scope"),
+		},
 		{ file: ".env.example", label: "provider-inputs-local", body: renderEnvExample() },
 		{ file: "docs/ci-secrets.md", label: "provider-secrets", body: renderCiSecretTable() },
 		{ file: "docs/ci-secrets.md", label: "provider-variables", body: renderCiVariableTable() },
+		{
+			file: "scripts/setup-privileged-environment.sh",
+			label: "provider-secret-checklist",
+			body: renderSetupSecretChecklist(),
+		},
 	];
 }
 

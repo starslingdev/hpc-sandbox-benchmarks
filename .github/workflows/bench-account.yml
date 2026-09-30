@@ -50,30 +50,10 @@ jobs:
       # wave under the 100-job queue:max ceiling.
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.axis) }}
-    secrets:
-      # >>> generated: environment-secret-arguments — bun run generate-provider-wiring
-      E2B_API_KEY: ${{ inputs.account == 'e2b' && 'environment-only' || '' }}
-      DAYTONA_API_KEY: ${{ inputs.account == 'daytona' && 'environment-only' || '' }}
-      BL_API_KEY: ${{ inputs.account == 'blaxel' && 'environment-only' || '' }}
-      BL_WORKSPACE: ${{ inputs.account == 'blaxel' && 'environment-only' || '' }}
-      MSB_API_KEY: ${{ inputs.account == 'microsandbox-cloud' && 'environment-only' || '' }}
-      MODAL_TOKEN_ID: ${{ inputs.account == 'modal' && 'environment-only' || '' }}
-      MODAL_TOKEN_SECRET: ${{ inputs.account == 'modal' && 'environment-only' || '' }}
-      NOVITA_API_KEY: ${{ inputs.account == 'novita' && 'environment-only' || '' }}
-      RUNLOOP_API_KEY: ${{ inputs.account == 'runloop' && 'environment-only' || '' }}
-      NAMESPACE_TENANT_ID: ${{ inputs.account == 'namespace' && 'environment-only' || '' }}
-      VERCEL_ORG_ID: ${{ inputs.account == 'vercel' && 'environment-only' || '' }}
-      VERCEL_PROJECT_ID: ${{ inputs.account == 'vercel' && 'environment-only' || '' }}
-      VERCEL_TOKEN: ${{ inputs.account == 'vercel' && 'environment-only' || '' }}
-      RUN_CLOUD_API_KEY: ${{ inputs.account == 'runcloud' && 'environment-only' || '' }}
-      TAMA_TOKEN: ${{ inputs.account == 'tama' && 'environment-only' || '' }}
-      BOAT_API_KEY: ${{ inputs.account == 'boat' && 'environment-only' || '' }}
-      FREESTYLE_API_KEY: ${{ inputs.account == 'freestyle' && 'environment-only' || '' }}
-      BREZEL_API_KEY: ${{ inputs.account == 'brezel' && 'environment-only' || '' }}
-      # <<< end generated: environment-secret-arguments
     uses: ./.github/workflows/bench-suite.yml
     with:
       account: ${{ inputs.account }}
       providers: ${{ toJSON(matrix.providers) }}
       suite: ${{ matrix.suite }}
       batch_id: ${{ matrix.batch }}
+    secrets: inherit

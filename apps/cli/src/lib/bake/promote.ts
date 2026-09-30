@@ -59,8 +59,6 @@ export interface PromoteOptions {
 	/** `--force`: deliberately regenerate an already-published version in place (see step 1). Manual
 	 *  force_republish dispatch only, and never valid together with a partial scope. */
 	force?: boolean;
-	/** Isolated CI stage: revalidate and publish one provider's artifact, never the shared base. */
-	stageProvider?: { partial: boolean; baseImage: string };
 	/**
 	 * Restrict the transaction to these providers (`--provider`). Omitted → every registered provider.
 	 *
@@ -141,9 +139,7 @@ export function effectivePromotionRequirements(
 
 export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<PromoteResult> {
 	const { force = false, only } = options;
-	const partial = options.stageProvider?.partial ?? isPartialScope(only);
-	if (options.stageProvider && only?.length !== 1)
-		throw new Error("A provider stage requires exactly one provider");
+	const partial = isPartialScope(only);
 	const reports: BakeReport[] = [];
 	const scope = only ? only.join(", ") : "every provider";
 	/** Record a refusal/abort as a structured `image` failure and stop — the shape every early exit
@@ -158,9 +154,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	// skips, so its re-validation or artifact failure is recorded but must NOT abort a full publish.
 	// A scoped backfill is inherently strict: every provider explicitly named is required even if a
 	// direct local caller omitted the redundant `--require` flag.
-	const required = options.stageProvider
-		? requiredProviders()
-		: effectivePromotionRequirements(requiredProviders(), only);
+	const required = effectivePromotionRequirements(requiredProviders(), only);
 	const blocks = (r: { provider: string; status: string }): boolean =>
 		r.status === "failed" && (required.length === 0 || required.includes(r.provider));
 
@@ -221,8 +215,6 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	let pinnedBaseImage: string;
 	try {
 		pinnedBaseImage = await resolveImageDigestRef(baseTag);
-		if (options.stageProvider && options.stageProvider.baseImage !== pinnedBaseImage)
-			return refuse("selected release base has changed", "aborted");
 	} catch (err) {
 		return refuse(
 			`could not resolve immutable digest for ${baseTag}: ${err instanceof Error ? err.message : String(err)} (nothing published)`,
@@ -388,8 +380,6 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		reports.push({ provider: "image", status: "failed", reason });
 		return { reports, ok: false };
 	}
-
-	if (options.stageProvider) return { reports, ok: true };
 
 	// 4. LAST: publish the candidate base as the immutable public version — the commit point. A partial
 	//    promote has none: the version it backfilled onto is already published, and its providers'

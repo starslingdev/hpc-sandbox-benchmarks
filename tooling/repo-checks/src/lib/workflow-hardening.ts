@@ -21,12 +21,6 @@
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-	accountSecretNames,
-	environmentSecretBindings,
-	foreignCredentialExpression,
-	PROVIDER_ACCOUNTS,
-} from "@sandbox-benchmarks/schema/provider-ci";
 import { Glob } from "bun";
 import { findRepoRoot } from "./workspace.ts";
 
@@ -336,15 +330,6 @@ function privilegeReasons(f: {
 	return reasons;
 }
 
-function isProtectedEnvironment(name: string | undefined, privileged: string): boolean {
-	return (
-		name === privileged ||
-		name === "release" ||
-		name === `\${{ format('provider-{0}', inputs.account) }}` ||
-		PROVIDER_ACCOUNTS.some((account) => name === `provider-${account}`)
-	);
-}
-
 /** True if any job in a parsed workflow declares `environment: <privileged>`. Used to confirm a local
  *  reusable workflow carries its own approval gate (the caller can't declare one for it). */
 function hasPrivilegedJob(
@@ -358,9 +343,7 @@ function hasPrivilegedJob(
 		asRecord(job, "reusable job"),
 	);
 	const nested = jobs.filter((job) => typeof job.uses === "string");
-	const directGate = jobs.some((job) =>
-		isProtectedEnvironment(jobEnvironmentName(job), privileged),
-	);
+	const directGate = jobs.some((job) => jobEnvironmentName(job) === privileged);
 	if (nested.length === 0) return directGate;
 	return nested.every((job) => {
 		if (
@@ -467,7 +450,7 @@ export function checkPrivilegedEnvironment(
 		}
 
 		const envName = jobEnvironmentName(job);
-		if (!isProtectedEnvironment(envName, privileged)) {
+		if (envName !== privileged) {
 			const reasons = privilegeReasons({ secrets, forwardsSecrets, contentsWrite, packagesWrite });
 			errors.push(
 				`${key}: must set \`environment: ${privileged}\` because it uses ${reasons.join(" and ")} — ` +
@@ -532,9 +515,9 @@ export function checkToolchainDispatchOnly(
 		return errors;
 	}
 	const publish = asRecord(jobs.publish, `${file}: publish job is not a mapping`);
-	if (jobEnvironmentName(publish) !== "release") {
+	if (jobEnvironmentName(publish) !== PRIVILEGED_ENVIRONMENT) {
 		errors.push(
-			`${file}::publish: must set \`environment: release\` — GHCR publication must be isolated from providers`,
+			`${file}::publish: must set \`environment: ${PRIVILEGED_ENVIRONMENT}\` — GHCR promote is a release`,
 		);
 	}
 	const publishIf = typeof publish.if === "string" ? publish.if : "";
@@ -685,7 +668,6 @@ export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 		return doc;
 	};
 	for (const file of files) {
-		errors.push(...checkProviderIsolation(docs.get(file), file));
 		errors.push(
 			...checkPrivilegedEnvironment(
 				docs.get(file),
@@ -713,102 +695,6 @@ export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 				),
 			);
 		}
-	}
-	return errors;
-}
-
-// Only these secretless intermediaries may inherit into environment-bound workers.
-const SECRETLESS_BOUNDARIES: Readonly<Record<string, string>> = {
-	"bench-account.yml": "bench-suite.yml",
-	"bench-gpu-account.yml": "bench-gpu-worker.yml",
-	"provider-release.yml": "provider-release-worker.yml",
-};
-
-/** Entry workflows cut off repo/org secrets before the environment lookup inheritance hop. */
-export function checkProviderIsolation(doc: unknown, file: string): string[] {
-	const root = asRecord(doc, file);
-	const jobs = asRecord(root.jobs, `${file}: jobs`);
-	const errors: string[] = [];
-	for (const [id, value] of Object.entries(jobs)) {
-		const job = asRecord(value, `${file}::${id}`);
-		const label = `${file}::${id}`;
-		const boundary = SECRETLESS_BOUNDARIES[file];
-		if (boundary) {
-			const triggers = asRecord(root.on, `${file}: on`);
-			const call = asRecord(triggers.workflow_call, `${file}: workflow_call`);
-			if (
-				Object.keys(triggers).join(",") !== "workflow_call" ||
-				call.secrets !== undefined ||
-				job.environment !== undefined
-			)
-				errors.push(
-					`${label}: intermediary must be reusable-only with no secret inputs or environment`,
-				);
-		}
-		if (
-			job.secrets !== undefined &&
-			!(boundary && job.secrets === "inherit" && job.uses === `./.github/workflows/${boundary}`) &&
-			!(
-				job.uses === "./.github/workflows/bench-suite.yml" &&
-				JSON.stringify(job.secrets) === JSON.stringify(environmentSecretBindings("inputs.account"))
-			)
-		)
-			errors.push(`${label}: secret forwarding is forbidden outside a secretless intermediary`);
-		const environment = jobEnvironmentName(job);
-		const fixedAccount = environment?.startsWith("provider-") ? environment.slice(9) : undefined;
-		const strings = [...envStrings(root.env), ...jobSecretStrings(job, file, id)];
-		const guard = foreignCredentialExpression(
-			PROVIDER_ACCOUNTS.includes(fixedAccount ?? "") ? fixedAccount : undefined,
-		);
-		const names = new Set(strings.filter((value) => value !== guard).flatMap(customSecretsIn));
-		for (const text of strings) {
-			for (const match of text.matchAll(EXPR_BLOCK)) {
-				if (/\bsecrets\b/.test((match[1] ?? "").replace(SECRET_ACCESS, "")))
-					errors.push(`${label}: dynamic or whole secrets context access is forbidden`);
-			}
-		}
-		const dynamic = environment === `\${{ format('provider-{0}', inputs.account) }}`;
-		if (boundary && strings.some((text) => customSecretsIn(text).length > 0))
-			errors.push(`${label}: intermediary cannot read custom secrets`);
-		if (names.size > 0 && !dynamic && !PROVIDER_ACCOUNTS.includes(fixedAccount ?? ""))
-			errors.push(`${label}: custom secrets require a provider environment`);
-		if (!dynamic && fixedAccount === undefined) continue;
-		const triggers = root.on;
-		if (
-			triggers === null ||
-			typeof triggers !== "object" ||
-			Array.isArray(triggers) ||
-			Object.keys(triggers).join(",") !== "workflow_call"
-		)
-			errors.push(`${label}: provider execution must be a reusable-only worker`);
-		if (dynamic && !["bench-suite.yml", "provider-release-worker.yml"].includes(file))
-			errors.push(`${label}: unrecognized dynamic provider environment`);
-		if (!job.permissions || typeof job.permissions !== "object")
-			errors.push(`${label}: provider worker must declare explicit permissions`);
-
-		if (job["runs-on"] !== "ubuntu-24.04")
-			errors.push(`${label}: provider execution requires a fresh hosted runner`);
-		const allowed = new Set(
-			(dynamic ? PROVIDER_ACCOUNTS : [fixedAccount ?? ""]).flatMap((account) =>
-				PROVIDER_ACCOUNTS.includes(account) ? accountSecretNames(account) : [],
-			),
-		);
-		for (const name of names)
-			if (!allowed.has(name)) errors.push(`${label}: foreign secret ${name}`);
-		const permissions =
-			parsePermissions(job.permissions, label) ?? parsePermissions(root.permissions, file) ?? {};
-		if (
-			permissions["id-token"] === "write" &&
-			!(fixedAccount === "namespace" || (dynamic && job.if === "inputs.account == 'namespace'"))
-		)
-			errors.push(`${label}: OIDC is permitted only for Namespace`);
-		for (const [scope, value] of Object.entries(permissions))
-			if (value === "write" && scope !== "contents" && scope !== "id-token")
-				errors.push(`${label}: unnecessary ${scope}: write`);
-		if (permissions.packages === "write")
-			errors.push(`${label}: provider workers cannot publish GHCR`);
-		if (permissions.contents === "write" && file !== "bench-suite.yml")
-			errors.push(`${label}: provider worker cannot write the repository`);
 	}
 	return errors;
 }

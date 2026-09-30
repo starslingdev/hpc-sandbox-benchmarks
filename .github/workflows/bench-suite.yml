@@ -2,29 +2,6 @@ name: Benchmark account batch (reusable)
 
 on:
   workflow_call:
-    secrets:
-      ANTHROPIC_API_KEY: { required: false }
-      BL_API_KEY: { required: false }
-      BL_WORKSPACE: { required: false }
-      BOAT_API_KEY: { required: false }
-      BREZEL_API_KEY: { required: false }
-      DAYTONA_API_KEY: { required: false }
-      E2B_API_KEY: { required: false }
-      FIREWORKS_API_KEY: { required: false }
-      FREESTYLE_API_KEY: { required: false }
-      MODAL_TOKEN_ID: { required: false }
-      MODAL_TOKEN_SECRET: { required: false }
-      MSB_API_KEY: { required: false }
-      NAMESPACE_TENANT_ID: { required: false }
-      NOVITA_API_KEY: { required: false }
-      NSC_TOKEN: { required: false }
-      RUNLOOP_API_KEY: { required: false }
-      RUN_CLOUD_API_KEY: { required: false }
-      SUBMODULES_PAT: { required: false }
-      TAMA_TOKEN: { required: false }
-      VERCEL_ORG_ID: { required: false }
-      VERCEL_PROJECT_ID: { required: false }
-      VERCEL_TOKEN: { required: false }
     inputs:
       account:
         description: 'Frozen account quota domain; one owner schedules all variants in this batch.'
@@ -44,36 +21,40 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
+  actions: read
+  id-token: write
 
 jobs:
   bench:
-    if: inputs.account != 'namespace'
-    environment: ${{ format('provider-{0}', inputs.account) }}
-    runs-on: ubuntu-24.04
     concurrency:
+      # >>> generated: provider-account-group-bench — bun run generate-provider-wiring
       group: benchmark-account-${{ inputs.account }}
+      # <<< end generated: provider-account-group-bench
       cancel-in-progress: false
       queue: max
+    name: ${{ join(fromJSON(inputs.providers), ' + ') }}
+    environment: privileged
+    # >>> generated: provider-runner — bun run generate-provider-wiring
+    runs-on: ${{ 'ubuntu-24.04' }}
+    # <<< end generated: provider-runner
     timeout-minutes: 330
-    permissions:
-      contents: write
-      actions: read
-    steps: &provider-steps
+    steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - name: Set up workspace
         uses: ./.github/actions/setup-workspace
-      - name: Validate account boundary
-        env:
-          ACCOUNT: ${{ inputs.account }}
-          # >>> generated: provider-isolation-check — bun run generate-provider-wiring
-          FOREIGN_CREDENTIALS: ${{ (inputs.account != 'e2b' && secrets.E2B_API_KEY != '') || (inputs.account != 'daytona' && secrets.DAYTONA_API_KEY != '') || (inputs.account != 'blaxel' && secrets.BL_API_KEY != '') || (inputs.account != 'blaxel' && secrets.BL_WORKSPACE != '') || (inputs.account != 'microsandbox-cloud' && secrets.MSB_API_KEY != '') || (inputs.account != 'modal' && secrets.MODAL_TOKEN_ID != '') || (inputs.account != 'modal' && secrets.MODAL_TOKEN_SECRET != '') || (inputs.account != 'novita' && secrets.NOVITA_API_KEY != '') || (inputs.account != 'runloop' && secrets.RUNLOOP_API_KEY != '') || (inputs.account != 'namespace' && secrets.NAMESPACE_TENANT_ID != '') || (inputs.account != 'vercel' && secrets.VERCEL_ORG_ID != '') || (inputs.account != 'vercel' && secrets.VERCEL_PROJECT_ID != '') || (inputs.account != 'vercel' && secrets.VERCEL_TOKEN != '') || (inputs.account != 'runcloud' && secrets.RUN_CLOUD_API_KEY != '') || (inputs.account != 'tama' && secrets.TAMA_TOKEN != '') || (inputs.account != 'boat' && secrets.BOAT_API_KEY != '') || (inputs.account != 'freestyle' && secrets.FREESTYLE_API_KEY != '') || (inputs.account != 'brezel' && secrets.BREZEL_API_KEY != '') || secrets.E2B_API_KEY == 'environment-only' || secrets.DAYTONA_API_KEY == 'environment-only' || secrets.BL_API_KEY == 'environment-only' || secrets.BL_WORKSPACE == 'environment-only' || secrets.MSB_API_KEY == 'environment-only' || secrets.MODAL_TOKEN_ID == 'environment-only' || secrets.MODAL_TOKEN_SECRET == 'environment-only' || secrets.NOVITA_API_KEY == 'environment-only' || secrets.RUNLOOP_API_KEY == 'environment-only' || secrets.NAMESPACE_TENANT_ID == 'environment-only' || secrets.VERCEL_ORG_ID == 'environment-only' || secrets.VERCEL_PROJECT_ID == 'environment-only' || secrets.VERCEL_TOKEN == 'environment-only' || secrets.RUN_CLOUD_API_KEY == 'environment-only' || secrets.TAMA_TOKEN == 'environment-only' || secrets.BOAT_API_KEY == 'environment-only' || secrets.FREESTYLE_API_KEY == 'environment-only' || secrets.BREZEL_API_KEY == 'environment-only' || secrets.NSC_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' || secrets.SUBMODULES_PAT != '' || secrets.FIREWORKS_API_KEY != '' }}
-          # <<< end generated: provider-isolation-check
-          PROVIDERS: ${{ inputs.providers }}
-        run: bun -e 'import { assertProviderAccount } from "@sandbox-benchmarks/schema/provider-ci"; if (process.env.FOREIGN_CREDENTIALS !== "false") throw new Error("Foreign or unresolved credentials available to provider worker"); assertProviderAccount(process.env.ACCOUNT!, JSON.parse(process.env.PROVIDERS!))'
+        with:
+          # >>> generated: provider-runner-cache — bun run generate-provider-wiring
+          no-cache: ${{ false && 'true' || 'false' }}
+          # <<< end generated: provider-runner-cache
+
+      # Each attempt's evidence is uploaded by the CLI as soon as that attempt ends (durable per
+      # attempt, not only at job end), which needs the artifact runtime GitHub gives only to action
+      # steps. The diagnostic bundle below still goes through actions/upload-artifact.
       - name: Expose artifact runtime to scripts
         uses: ./.github/actions/artifact-runtime
 
@@ -93,7 +74,6 @@ jobs:
         if: contains(fromJSON(inputs.providers), 'namespace')
         env:
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
-        shell: bash
         run: |
           if [ -z "${NSC_TOKEN_FILE}" ] || [ ! -s "${NSC_TOKEN_FILE}" ]; then
             echo "::error::Namespace credential mint failed; refusing to continue without NSC_TOKEN_FILE"
@@ -118,7 +98,7 @@ jobs:
       - name: Run suite and normalize
         env:
           BENCH_REPO_REF: ${{ github.sha }}
-          BENCH_REPO_TOKEN: ''
+          BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_ACCOUNT: ${{ inputs.account }}
           BENCH_BATCH_PROVIDERS: ${{ inputs.providers }}
           BENCH_SUITE: ${{ inputs.suite }}
@@ -127,41 +107,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           # >>> generated: provider-inputs-bench — bun run generate-provider-wiring
           E2B_API_KEY: ${{ contains(fromJSON(inputs.providers), 'e2b') && secrets.E2B_API_KEY || '' }}
-          E2B_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE) || '' }}
+          E2B_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
           DAYTONA_API_KEY: ${{ (contains(fromJSON(inputs.providers), 'daytona-vm') || contains(fromJSON(inputs.providers), 'daytona-container')) && secrets.DAYTONA_API_KEY || '' }}
-          DAYTONA_TARGET: ${{ contains(fromJSON(inputs.providers), 'daytona-vm') && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || 'us-west-2') || '' }}
-          DAYTONA_SNAPSHOT: ${{ contains(fromJSON(inputs.providers), 'daytona-vm') && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT) || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
-          DAYTONA_CONTAINER_SNAPSHOT: ${{ contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
+          DAYTONA_TARGET: ${{ contains(fromJSON(inputs.providers), 'daytona-vm') && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_SNAPSHOT: ${{ contains(fromJSON(inputs.providers), 'daytona-vm') && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_SNAPSHOT: ${{ contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
           BL_API_KEY: ${{ contains(fromJSON(inputs.providers), 'blaxel') && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ contains(fromJSON(inputs.providers), 'blaxel') && secrets.BL_WORKSPACE || '' }}
           MSB_API_KEY: ${{ contains(fromJSON(inputs.providers), 'microsandbox-cloud') && secrets.MSB_API_KEY || '' }}
-          MSB_API_URL: ${{ contains(fromJSON(inputs.providers), 'microsandbox-cloud') && (env.MSB_API_URL || vars.MSB_API_URL) || '' }}
+          MSB_API_URL: ${{ contains(fromJSON(inputs.providers), 'microsandbox-cloud') && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
           MODAL_TOKEN_ID: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_ID || '' }}
           MODAL_TOKEN_SECRET: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_SECRET || '' }}
           NOVITA_API_KEY: ${{ contains(fromJSON(inputs.providers), 'novita') && secrets.NOVITA_API_KEY || '' }}
-          NOVITA_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'novita') && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE) || '' }}
+          NOVITA_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'novita') && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
           RUNLOOP_API_KEY: ${{ contains(fromJSON(inputs.providers), 'runloop') && secrets.RUNLOOP_API_KEY || '' }}
-          RUNLOOP_BLUEPRINT: ${{ contains(fromJSON(inputs.providers), 'runloop') && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT) || '' }}
+          RUNLOOP_BLUEPRINT: ${{ contains(fromJSON(inputs.providers), 'runloop') && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
           VERCEL_OIDC_TOKEN: ${{ contains(fromJSON(inputs.providers), 'vercel') && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
-          VERCEL_TEAM_SLUG: ${{ contains(fromJSON(inputs.providers), 'vercel') && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG) || '' }}
-          VERCEL_PROJECT_NAME: ${{ contains(fromJSON(inputs.providers), 'vercel') && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME) || '' }}
+          VERCEL_TEAM_SLUG: ${{ contains(fromJSON(inputs.providers), 'vercel') && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}
+          VERCEL_PROJECT_NAME: ${{ contains(fromJSON(inputs.providers), 'vercel') && (env.VERCEL_PROJECT_NAME || vars.VERCEL_PROJECT_NAME || secrets.VERCEL_PROJECT_NAME) || '' }}
           RUN_CLOUD_API_KEY: ${{ contains(fromJSON(inputs.providers), 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}
           TAMA_TOKEN: ${{ contains(fromJSON(inputs.providers), 'tama') && secrets.TAMA_TOKEN || '' }}
-          TAMA_CLI: ${{ contains(fromJSON(inputs.providers), 'tama') && (env.TAMA_CLI || vars.TAMA_CLI) || '' }}
+          TAMA_CLI: ${{ contains(fromJSON(inputs.providers), 'tama') && (env.TAMA_CLI || vars.TAMA_CLI || secrets.TAMA_CLI) || '' }}
           BOAT_API_KEY: ${{ contains(fromJSON(inputs.providers), 'boat') && secrets.BOAT_API_KEY || '' }}
-          BOAT_BASE_URL: ${{ contains(fromJSON(inputs.providers), 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL) || '' }}
+          BOAT_BASE_URL: ${{ contains(fromJSON(inputs.providers), 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
           FREESTYLE_API_KEY: ${{ contains(fromJSON(inputs.providers), 'freestyle') && secrets.FREESTYLE_API_KEY || '' }}
           BREZEL_API_KEY: ${{ contains(fromJSON(inputs.providers), 'brezel') && secrets.BREZEL_API_KEY || '' }}
-          BREZEL_API_URL: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL) || '' }}
-          BREZEL_PROJECT_ID: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID) || '' }}
-          BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION) || '' }}
+          BREZEL_API_URL: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
+          BREZEL_PROJECT_ID: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
+          BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
           # <<< end generated: provider-inputs-bench
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}
           # <<< end generated: provider-runner-lifetime
-        shell: bash
         run: bun apps/cli/src/bin/workflow-experiment.ts execute
 
       - name: Upload Run + raw results
@@ -171,18 +150,3 @@ jobs:
           name: diagnostic-${{ inputs.batch_id }}-${{ inputs.account }}-attempt-${{ github.run_attempt }}-${{ github.run_id }}
           path: experiment/attempts/
           if-no-files-found: error
-
-  namespace:
-    if: inputs.account == 'namespace'
-    environment: ${{ format('provider-{0}', inputs.account) }}
-    runs-on: ubuntu-24.04
-    concurrency:
-      group: benchmark-account-${{ inputs.account }}
-      cancel-in-progress: false
-      queue: max
-    timeout-minutes: 330
-    permissions:
-      contents: write
-      actions: read
-      id-token: write
-    steps: *provider-steps

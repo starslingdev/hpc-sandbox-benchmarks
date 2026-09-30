@@ -16,7 +16,6 @@
 // a best-effort EARLY skip — the authoritative immutable-version guard lives in `promote` (which
 // REFUSES on an uncertain check), so an inconclusive probe here proceeds rather than blocks.
 import { config } from "@sandbox-benchmarks/providers/config";
-import { providerAccount } from "@sandbox-benchmarks/schema/provider-ci";
 import type {
 	MirroredProviderId,
 	ProviderArtifact,
@@ -165,7 +164,7 @@ export interface ReleasePlan {
 		publishTarget: string;
 	};
 	/** The `strategy.matrix` contract the bake fan-out reads: one cell per provider IN SCOPE. */
-	matrix: { include: Array<{ provider: ProviderId; required: boolean; account: string }> };
+	matrix: { include: Array<{ provider: ProviderId; required: boolean }> };
 }
 
 /**
@@ -257,11 +256,7 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 			publishTarget: config.toolchainImageVersion,
 		},
 		matrix: {
-			include: providers.map((p) => ({
-				provider: p.provider,
-				required: p.required,
-				account: providerAccount(p.provider),
-			})),
+			include: providers.map((p) => ({ provider: p.provider, required: p.required })),
 		},
 	};
 }

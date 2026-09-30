@@ -37,9 +37,15 @@ import { findRepoRoot } from "./lib/workspace.ts";
 const NOOP_STEP = { run: "true" };
 /** Build a single-job workflow doc: `{ ...root, jobs: { [id]: job } }`. */
 const oneJob = (id: string, job: object, root: object = {}) => ({ ...root, jobs: { [id]: job } });
-const SCOPED_RUNCLOUD_KEY = `\${{ inputs.provider == 'runcloud' && secrets.RUN_CLOUD_API_KEY || '' }}`;
-const SCOPED_RUNLOOP_KEY = `\${{ inputs.provider == 'runloop' && secrets.RUNLOOP_API_KEY || '' }}`;
-const SELECTED_BASE_IMAGE = `\${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}`;
+const SCOPED_RUNCLOUD_KEY =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}";
+const SCOPED_RUNLOOP_KEY =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+	"${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runloop') && secrets.RUNLOOP_API_KEY || '' }}";
+const SELECTED_BASE_IMAGE =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+	"${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}";
 // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansion under test
 const BASE_IMAGE_ARG = '--base-image "${BASE_IMAGE_REF}"';
 
@@ -181,39 +187,32 @@ describe("checkCiLintGate", () => {
 describe("Vercel CLI authentication", () => {
 	test("all Vercel jobs use the shared action without raw token minting", () => {
 		const root = findRepoRoot();
-		const workflowText = [
-			".github/workflows/bench-smoke.yml",
-			".github/workflows/bench-suite.yml",
-			".github/workflows/provider-release-worker.yml",
-		]
-			.map((file) => readFileSync(join(root, file), "utf8"))
+		const workflowText = ["bench-smoke.yml", "bench-suite.yml", "toolchain-image.yml"]
+			.map((file) => readFileSync(join(root, WORKFLOWS_DIR, file), "utf8"))
 			.join("\n");
-		// The benchmark worker and release worker each own one authentication step.
+		// Three call sites: the reusable benchmark cell (bench-suite.yml) plus toolchain-image.yml's two.
 		// bench-smoke.yml is still read here — not because it authenticates (it reaches Vercel only
 		// through the reusable cell now) but so the "no hand-minted token" assertions below still cover
 		// it if a lane ever grows its own credential handling again.
-		expect(workflowText.match(/uses: \.\/\.github\/actions\/vercel-auth/g)).toHaveLength(2);
+		expect(workflowText.match(/uses: \.\/\.github\/actions\/vercel-auth/g)).toHaveLength(3);
 		expect(workflowText).not.toContain("api.vercel.com/v1/projects");
 		expect(workflowText).not.toContain("VERCEL_OIDC_TOKEN_FILE");
 		expect(workflowText).not.toContain("docker login vcr.vercel.com");
-		// The fallback logout remains; the immediate post-mirror logout is fail-closed.
-		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(1);
+		// Two best-effort `always()` fallbacks remain; the immediate post-mirror logout is fail-closed.
+		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(2);
 		expect(workflowText).toContain('vercel vcr push docker "$target_name"');
-		const toolchain = readFileSync(
-			join(root, ".github/workflows/provider-release-worker.yml"),
-			"utf8",
-		);
+		const toolchain = readFileSync(join(root, WORKFLOWS_DIR, "toolchain-image.yml"), "utf8");
 		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeGreaterThan(
-			toolchain.indexOf("- name: Mirror the toolchain base into VCR"),
+			toolchain.indexOf("- name: Mirror candidate into VCR"),
 		);
 		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeLessThan(
 			toolchain.indexOf("- name: Bake + verify candidate"),
 		);
 		expect(toolchain).toContain(
-			"- name: Log out of VCR after mirror\n        if: inputs.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        shell: bash\n        run: docker logout vcr.vercel.com\n",
+			"- name: Log out of VCR after mirror\n        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        run: docker logout vcr.vercel.com\n",
 		);
 		expect(toolchain).not.toContain(
-			"- name: Log out of VCR after mirror\n        if: inputs.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        shell: bash\n        run: docker logout vcr.vercel.com || true",
+			"- name: Log out of VCR after mirror\n        if: matrix.provider == 'vercel' && steps.vercel-vcr.outcome == 'success'\n        run: docker logout vcr.vercel.com || true",
 		);
 		expect(toolchain).toContain("- name: Ensure VCR logout\n        if: always()");
 	});
@@ -236,17 +235,14 @@ describe("Vercel CLI authentication", () => {
 describe("Namespace token authentication", () => {
 	test("all managed lanes share one producer id and output contract", () => {
 		const root = findRepoRoot();
-		const workflowText = [
-			".github/workflows/bench-suite.yml",
-			".github/workflows/provider-release-worker.yml",
-		]
-			.map((file) => readFileSync(join(root, file), "utf8"))
+		const workflowText = ["bench-suite.yml", "toolchain-image.yml"]
+			.map((file) => readFileSync(join(root, WORKFLOWS_DIR, file), "utf8"))
 			.join("\n");
-		expect(workflowText.match(/uses: \.\/\.github\/actions\/namespace-token/g)).toHaveLength(2);
-		expect(workflowText.match(/id: namespace/g)).toHaveLength(2);
+		expect(workflowText.match(/uses: \.\/\.github\/actions\/namespace-token/g)).toHaveLength(3);
+		expect(workflowText.match(/id: namespace/g)).toHaveLength(3);
 		expect(
 			workflowText.match(/NSC_TOKEN_FILE: \$\{\{ steps\.namespace\.outputs\.token-file \}\}/g),
-		).toHaveLength(3);
+		).toHaveLength(4);
 		expect(workflowText).not.toContain("id: nsc-token");
 		expect(workflowText).not.toContain("id: nsc-setup");
 		expect(workflowText).not.toMatch(/run: \|\s*\n\s*nsc token create/);
@@ -267,22 +263,19 @@ describe("Namespace token authentication", () => {
 		expect(action).toMatch(/nsc auth exchange-oidc-token --tenant_id "\$\{NSC_TENANT_ID\}"/);
 		expect(action).not.toMatch(/^\s*(?:run: )?nsc auth exchange-github-token/m);
 		expect(action).not.toContain("uses: namespacelabs/nscloud-setup");
-		const workflowText = [
-			".github/workflows/bench-suite.yml",
-			".github/workflows/provider-release-worker.yml",
-		]
-			.map((file) => readFileSync(join(root, file), "utf8"))
+		const workflowText = ["bench-suite.yml", "toolchain-image.yml"]
+			.map((file) => readFileSync(join(root, WORKFLOWS_DIR, file), "utf8"))
 			.join("\n");
 		expect(workflowText.match(/tenant-id: \$\{\{ secrets\.NAMESPACE_TENANT_ID \}\}/g)).toHaveLength(
-			2,
+			3,
 		);
 	});
 });
 
 describe("run.cloud credential scoping", () => {
-	test("the isolated worker exposes the key only when its provider is runcloud", () => {
-		const doc = readWorkflow(`${WORKFLOWS_DIR}/provider-release-worker.yml`);
-		const publish = workflowJob(doc, "release", "provider-release-worker.yml");
+	test("the promote step exposes the key only when the resolved plan contains runcloud", () => {
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
 		// Exactly one assignment anywhere in the publish job, and its entire value is the plan gate. This
 		// rejects every unscoped spelling (including `secrets.RUN_CLOUD_API_KEY || ''`) rather than one
 		// fragile literal while ignoring a second assignment in another step or at job scope.
@@ -291,32 +284,25 @@ describe("run.cloud credential scoping", () => {
 });
 
 describe("Runloop credential scoping", () => {
-	test("the isolated worker exposes the key only when its provider is runloop", () => {
-		const doc = readWorkflow(`${WORKFLOWS_DIR}/provider-release-worker.yml`);
-		const publish = workflowJob(doc, "release", "provider-release-worker.yml");
+	test("the promote step exposes the key only when the resolved plan contains runloop", () => {
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
+		const publish = workflowJob(doc, "publish", TOOLCHAIN_WORKFLOW);
 		expect(valuesForKey(publish, "RUNLOOP_API_KEY")).toEqual([SCOPED_RUNLOOP_KEY]);
 	});
 });
 
 describe("toolchain bake base-image selection", () => {
 	test("threads one immutable source through every bake cell and the Vercel mirror", () => {
-		const worker = readWorkflow(`${WORKFLOWS_DIR}/provider-release-worker.yml`);
-		const doc = { jobs: { bake: workflowJob(worker, "release", "provider-release-worker.yml") } };
-		const pipeline = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
-		for (const id of ["bake", "promote-providers"]) {
-			expect(
-				asRecord(workflowJob(pipeline, id, TOOLCHAIN_WORKFLOW).with, "worker inputs")["base-image"],
-			).toBe(SELECTED_BASE_IMAGE);
-		}
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
 		const env = stepEnv(doc, "bake", "Bake + verify candidate", TOOLCHAIN_WORKFLOW);
-		expect(env.BASE_IMAGE_REF).toBe(`\${{ inputs.base-image }}`);
+		expect(env.BASE_IMAGE_REF).toBe(SELECTED_BASE_IMAGE);
 		const mirrorEnv = stepEnv(
 			doc,
 			"bake",
 			"Mirror the toolchain base into VCR",
 			TOOLCHAIN_WORKFLOW,
 		);
-		expect(mirrorEnv.SOURCE_REF).toBe(`\${{ inputs.base-image }}`);
+		expect(mirrorEnv.SOURCE_REF).toBe(SELECTED_BASE_IMAGE);
 		const step = stepByName(
 			workflowJob(doc, "bake", TOOLCHAIN_WORKFLOW),
 			"Bake + verify candidate",
@@ -330,25 +316,31 @@ describe("customSecretsIn", () => {
 	test("ignores GITHUB_TOKEN and extracts provider secrets in dot and bracket notation", () => {
 		expect(
 			customSecretsIn(
-				`\${{ secrets.GITHUB_TOKEN }} \${{ secrets.E2B_API_KEY }} \${{ secrets.DAYTONA_TARGET || 'us-west-2' }} \${{ secrets['NOVITA_API_KEY'] }} \${{ secrets["BL_API_KEY"] }}`,
+				// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+				"${{ secrets.GITHUB_TOKEN }} ${{ secrets.E2B_API_KEY }} ${{ secrets.DAYTONA_TARGET || 'us-west-2' }} ${{ secrets['NOVITA_API_KEY'] }} ${{ secrets[\"BL_API_KEY\"] }}",
 			),
 		).toEqual(["E2B_API_KEY", "DAYTONA_TARGET", "NOVITA_API_KEY", "BL_API_KEY"]);
 	});
 
 	test("matches the dot accessor even with GHA-legal whitespace around it", () => {
 		expect(
-			customSecretsIn(`\${{ secrets . E2B_API_KEY }} \${{ secrets. DAYTONA_API_KEY }}`),
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			customSecretsIn("${{ secrets . E2B_API_KEY }} ${{ secrets. DAYTONA_API_KEY }}"),
 		).toEqual(["E2B_API_KEY", "DAYTONA_API_KEY"]);
 	});
 
 	test("detects a secret guarded behind a condition (the scoped `&& secrets.X || ''` form)", () => {
 		expect(
-			customSecretsIn(`\${{ inputs.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}`),
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			customSecretsIn("${{ inputs.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}"),
 		).toEqual(["DAYTONA_API_KEY"]);
 	});
 
 	test("finds every secret access within a single expression block", () => {
-		expect(customSecretsIn(`\${{ secrets.A || secrets.B }}`)).toEqual(["A", "B"]);
+		expect(
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			customSecretsIn("${{ secrets.A || secrets.B }}"),
+		).toEqual(["A", "B"]);
 	});
 });
 
@@ -368,13 +360,15 @@ describe("checkPrivilegedEnvironment", () => {
 	});
 
 	test("passes jobs that only use GITHUB_TOKEN without an environment", () => {
-		const env = { TOKEN: `\${{ secrets.GITHUB_TOKEN }}` };
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+		const env = { TOKEN: "${{ secrets.GITHUB_TOKEN }}" };
 		const doc = oneJob("clone", { steps: [{ env, run: "true" }] });
 		expect(checkPrivilegedEnvironment(doc, "safe.yml")).toEqual([]);
 	});
 
 	test("flags a custom secret without environment: privileged", () => {
-		const env = { E2B_API_KEY: `\${{ secrets.E2B_API_KEY }}` };
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+		const env = { E2B_API_KEY: "${{ secrets.E2B_API_KEY }}" };
 		const doc = oneJob("bench", { steps: [{ env, run: "true" }] });
 		const errors = checkPrivilegedEnvironment(doc, "leak.yml");
 		expect(errors).toHaveLength(1);
@@ -387,7 +381,8 @@ describe("checkPrivilegedEnvironment", () => {
 		// The bench/smoke lanes scope each secret behind a condition; the gate must still require
 		// `environment: privileged` for such a job, or removing it would silently pass the drift gate.
 		const env = {
-			DAYTONA_API_KEY: `\${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}`,
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			DAYTONA_API_KEY: "${{ matrix.provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}",
 		};
 		const doc = oneJob("bench", { steps: [{ env, run: "true" }] });
 		const errors = checkPrivilegedEnvironment(doc, "scoped-leak.yml");
@@ -399,8 +394,10 @@ describe("checkPrivilegedEnvironment", () => {
 
 	test("flags custom secrets in job or step if conditions without environment: privileged", () => {
 		const doc = oneJob("bench", {
-			if: `\${{ secrets.JOB_SECRET != '' }}`,
-			steps: [{ if: `\${{ secrets.STEP_SECRET != '' }}`, run: "true" }],
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			if: "${{ secrets.JOB_SECRET != '' }}",
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			steps: [{ if: "${{ secrets.STEP_SECRET != '' }}", run: "true" }],
 		});
 		const errors = checkPrivilegedEnvironment(doc, "leak-if.yml");
 		expect(errors).toHaveLength(1);
@@ -413,7 +410,8 @@ describe("checkPrivilegedEnvironment", () => {
 		const doc = oneJob(
 			"plan",
 			{ steps: [NOOP_STEP] },
-			{ env: { E2B_API_KEY: `\${{ secrets.E2B_API_KEY }}` } },
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			{ env: { E2B_API_KEY: "${{ secrets.E2B_API_KEY }}" } },
 		);
 		const errors = checkPrivilegedEnvironment(doc, "leak-root-env.yml");
 		expect(errors).toHaveLength(1);
@@ -524,7 +522,8 @@ describe("checkPrivilegedEnvironment", () => {
 		// there (instead of the `secrets:` block) to an unverifiable remote callee must not slip past.
 		const doc = oneJob("call", {
 			uses: "org/repo/.github/workflows/deploy.yml@main",
-			with: { api_key: `\${{ secrets.DEPLOY_KEY }}` },
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			with: { api_key: "${{ secrets.DEPLOY_KEY }}" },
 		});
 		const errors = checkPrivilegedEnvironment(doc, "with-leak.yml");
 		expect(errors).toHaveLength(1);
@@ -536,7 +535,8 @@ describe("checkPrivilegedEnvironment", () => {
 		// A local call defers the privileged gate to the called file, which must gate a job itself.
 		const doc = oneJob("call", {
 			uses: "./.github/workflows/deploy.yml",
-			with: { api_key: `\${{ secrets.DEPLOY_KEY }}` },
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal GitHub Actions expression under test
+			with: { api_key: "${{ secrets.DEPLOY_KEY }}" },
 		});
 		expect(
 			checkPrivilegedEnvironment(doc, "with-ok.yml", PRIVILEGED_ENVIRONMENT, () => gatedCallee),
@@ -567,7 +567,7 @@ describe("checkToolchainDispatchOnly", () => {
 	const DISPATCH_GATE_IF =
 		"github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'starslingdev/hpc-sandbox-benchmarks'";
 	const gatedPublish = {
-		environment: "release",
+		environment: PRIVILEGED_ENVIRONMENT,
 		if: DISPATCH_GATE_IF,
 		steps: [NOOP_STEP],
 	};
