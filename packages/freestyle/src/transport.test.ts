@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { Freestyle } from "freestyle";
 import { freestyleFetch } from "./transport.ts";
 
@@ -48,6 +48,29 @@ describe("Freestyle bounded SDK transport", () => {
 		});
 		await expect(client.vms.list()).rejects.toThrow();
 		expect(pollSignal?.aborted).toBe(true);
+	});
+
+	test("cancels the fetch when polling times out before the deadline signal", async () => {
+		const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(new AbortController().signal);
+		try {
+			let pollSignal: AbortSignal | undefined;
+			const bounded = freestyleFetch(
+				transport((url, init) => {
+					if (url.pathname === "/v5/vms") return accepted();
+					pollSignal = init?.signal ?? undefined;
+					return new Promise((_resolve, reject) => {
+						pollSignal?.addEventListener("abort", () => reject(pollSignal?.reason), { once: true });
+					});
+				}),
+				5,
+			);
+			await expect(bounded("https://api.freestyle.sh/v5/vms")).rejects.toMatchObject({
+				code: "readiness-timeout",
+			});
+			expect(pollSignal?.aborted).toBe(true);
+		} finally {
+			timeout.mockRestore();
+		}
 	});
 
 	test("caller cancellation stops polling and reaches the underlying fetch", async () => {

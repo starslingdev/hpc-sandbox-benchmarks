@@ -39,15 +39,21 @@ export function freestyleFetch(
 			const headers = new Headers(init?.headers);
 			headers.delete("x-freestyle-background-after-secs");
 			headers.delete("content-type");
+			const pollController = new AbortController();
+			const pollSignal = AbortSignal.any([signal, pollController.signal]);
 			const completed = await pollUntilReady({
 				provider: "freestyle",
 				deadlineMs: Math.max(1, deadline - Date.now()),
 				intervalMs: 500,
-				signal,
+				signal: pollSignal,
 				poll: async () => {
-					const result = await fetchImpl(resultUrl, { method: "GET", headers, signal });
+					const result = await fetchImpl(resultUrl, { method: "GET", headers, signal: pollSignal });
 					return result.status === 202 ? null : result;
 				},
+			}).catch((error: unknown) => {
+				// Readiness can expire before the composed timeout signal fires.
+				pollController.abort(error);
+				throw error;
 			});
 			// Preserve the SDK's uncapped GET fallback when a background result was too large to store.
 			if (!completed.ok && (init?.method ?? "GET") === "GET") {
