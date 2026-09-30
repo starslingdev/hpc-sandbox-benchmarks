@@ -1,6 +1,11 @@
 name: Isolated Modal GPU worker
 on:
   workflow_call:
+    secrets:
+      # >>> generated: provider-secret-declarations — bun run generate-provider-wiring
+      MODAL_TOKEN_ID: { required: false }
+      MODAL_TOKEN_SECRET: { required: false }
+      # <<< end generated: provider-secret-declarations
     inputs:
       mode:
         type: string

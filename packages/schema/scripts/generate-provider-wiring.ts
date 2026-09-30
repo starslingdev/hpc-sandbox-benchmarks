@@ -6,7 +6,12 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { foreignCredentialExpression, providerAccount } from "../src/provider-ci.ts";
+import {
+	accountSecretNames,
+	foreignCredentialExpression,
+	PROVIDER_ACCOUNTS,
+	providerAccount,
+} from "../src/provider-ci.ts";
 import type { ProviderId } from "../src/provider-ids.ts";
 import { PROVIDER_IDS } from "../src/provider-ids.ts";
 import { REGISTRY } from "../src/provider-meta/index.ts";
@@ -367,6 +372,19 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 		},
 	]);
 	return [
+		...(
+			[
+				["bench-suite.yml", PROVIDER_ACCOUNTS],
+				["provider-release.yml", PROVIDER_ACCOUNTS],
+				["bench-gpu-worker.yml", ["modal"]],
+			] as const
+		).map(([file, accounts]) => ({
+			file: `.github/workflows/${file}`,
+			label: "provider-secret-declarations",
+			body: [...new Set(accounts.flatMap(accountSecretNames))]
+				.map((name) => `      ${name}: { required: false }`)
+				.join("\n"),
+		})),
 		{
 			file: ".github/workflows/bench-smoke.yml",
 			label: "provider-options",
