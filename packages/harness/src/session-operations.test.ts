@@ -6,6 +6,7 @@ import type {
 	DriverModule,
 	ExecResult,
 	ProviderId,
+	ResolvedArtifact,
 	SandboxDriver,
 	SandboxSession,
 } from "@sandbox-benchmarks/driver";
@@ -25,11 +26,16 @@ const result = (stdout = ""): ExecResult => ({
 	truncated: false,
 });
 const artifact = { kind: "baked", ref: bakedArtifactName("e2b", "version") } as const;
-function fixture(exec: SandboxSession["exec"]) {
+function fixture(
+	exec: SandboxSession["exec"],
+	requested: ResolvedArtifact = artifact,
+	reportedArtifact?: ResolvedArtifact,
+) {
 	const calls: string[] = [];
 	const session: SandboxSession = {
 		sandboxRef: { provider: "e2b", id: "itest" },
-		artifact,
+		artifact: requested,
+		...(reportedArtifact === undefined ? {} : { reportedArtifact }),
 		native: {},
 		exec,
 		async destroy() {
@@ -39,7 +45,7 @@ function fixture(exec: SandboxSession["exec"]) {
 	const driver: SandboxDriver = {
 		probes: { observe: async () => ({ state: calls.includes("destroy") ? "absent" : "running" }) },
 		async create(request, options) {
-			expect(request.artifact).toEqual(artifact);
+			expect(request.artifact).toEqual(requested);
 			expect(request.deadlineMs).toBe(1000);
 			expect(options?.signal).toBeInstanceOf(AbortSignal);
 			calls.push("create");
@@ -54,10 +60,42 @@ function fixture(exec: SandboxSession["exec"]) {
 		execution: { syncCapMs: null, durable: "none" },
 		readiness: { startup: "create-returns-ready" },
 	};
-	return { allocation: { module, driver, request: { artifact, spec: TARGET_SPEC } }, calls };
+	return {
+		allocation: { module, driver, request: { artifact: requested, spec: TARGET_SPEC } },
+		calls,
+	};
 }
 
 describe("declarative session operations", () => {
+	test("persists a driver-observed immutable artifact without inventing release fingerprint authority", async () => {
+		const root = mkdtempSync(join(tmpdir(), "session-suite-"));
+		roots.push(root);
+		const requested = { kind: "baked", ref: "sh-observed" } as const;
+		const { allocation, calls } = fixture(
+			async (command) => {
+				if (command.includes("/toolchain-manifest.json"))
+					throw new Error("arbitrary IDs have no release fingerprint mapping");
+				return result(command.includes("df -Pk") ? "1" : "");
+			},
+			requested,
+			requested,
+		);
+		await executeSuite({
+			allocation,
+			runId: "session-test",
+			suiteName: "system",
+			resultsDir: root,
+		});
+		const evidence = JSON.parse(
+			readFileSync(join(root, "provider-artifact-evidence.json"), "utf8"),
+		);
+		expect(evidence.provenance).toEqual({
+			source: "driver-reported",
+			requested,
+			reported: requested,
+		});
+		expect(calls).toEqual(["create", "destroy"]);
+	});
 	test("persists request evidence before readiness and observed evidence before a disk gap", async () => {
 		const root = mkdtempSync(join(tmpdir(), "session-suite-"));
 		roots.push(root);

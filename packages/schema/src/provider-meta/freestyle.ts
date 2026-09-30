@@ -5,14 +5,30 @@ export default defineProviderMeta("freestyle", {
 	vendor: "Freestyle",
 	website: "https://www.freestyle.sh",
 	sdkPackage: "freestyle",
-	artifact: { kind: "none" },
-	inputs: ["FREESTYLE_API_KEY"],
+	artifact: { kind: "baked", source: "native-snapshot" },
+	inputs: [
+		"FREESTYLE_API_KEY",
+		{
+			name: "FREESTYLE_SNAPSHOT_ID",
+			source: { kind: "variable" },
+			required: false,
+			description:
+				"Required for benchmark execution: immutable sh-... ID from the native bake report. Not needed to bake.",
+		},
+		{
+			name: "FREESTYLE_BASE_SNAPSHOT_ID",
+			source: { kind: "variable" },
+			required: false,
+			description:
+				"Optional bake base: immutable sh-... ID recorded in /freestyle-snapshot-build.json; empty bootstraps freestyle/ubuntu.",
+		},
+	],
 	runtimeIdentity: "unprivileged",
 	isolation: {
 		class: "vm",
 		technology: "KVM virtual machine",
 		notes:
-			"Full Linux VMs booted from freestyle/ubuntu (Ubuntu 24.04). The driver grows the snapshot's resources to the requested shape before returning a session. The shared toolchain is installed at runtime.",
+			"Full Linux VMs booted from a native custom snapshot derived from Freestyle Ubuntu 24.04, with the shared pinned toolchain and a clean system PATH. The driver verifies the requested shape before returning a session. This is an Ubuntu VM, while OCI-based providers use Debian 13.",
 	},
 	pricing: {
 		model: "published",
@@ -56,7 +72,7 @@ export default defineProviderMeta("freestyle", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Opt-in native SDK driver. Boots vendor stock Ubuntu 24.04 rather than the shared Debian 13 image; runtime setup installs the pinned benchmark tools. The stock snapshot slug is mutable. Default-matrix promotion and published benchmark results require separate validation.",
+			"Opt-in native SDK driver with a regenerable custom snapshot recipe. FREESTYLE_SNAPSHOT_ID pins an immutable snapshot ID; release builds record that ID. Default-matrix promotion requires live conformance and complete Mastra metric coverage on the selected snapshot.",
 	},
 	specPinning: "settable",
 	transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },

@@ -97,6 +97,12 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.providers.map((p) => p.provider)).toEqual(["vercel"]);
 	});
 
+	test("Freestyle supports required scoped backfill while remaining optional in a full release", () => {
+		const plan = buildReleasePlan({ ...backfillBase, providers: "freestyle" });
+		expect(plan.matrix.include).toEqual([{ provider: "freestyle", required: true }]);
+		expect(RELEASE_REQUIRED_PROVIDERS).not.toContain("freestyle");
+	});
+
 	// A named provider that could still skip on a missing secret would report a green release that
 	// published nothing — the exact failure the scoped path is meant to make impossible.
 	test("every provider a partial dispatch names is required, even a normally best-effort one", () => {
@@ -140,7 +146,7 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.required).toContain("blaxel");
 		expect(plan.required).not.toContain("boat");
 		expect(plan.required).not.toContain("runloop");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat", "freestyle", "brezel"]);
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat", "brezel"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the

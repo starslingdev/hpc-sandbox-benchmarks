@@ -661,6 +661,8 @@ export interface SuiteRunContext {
 	providerName: ProviderConfig["name"];
 	/** Exact create input the adjacent provider adapter booted. */
 	artifact: DriverResolvedArtifact;
+	/** Control-plane observation retained by the driver at create time. */
+	reportedArtifact?: DriverResolvedArtifact;
 	resultsDir: string;
 	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
 	transport: ProviderTransport;
@@ -853,6 +855,9 @@ export async function executeSuite(options: ExecuteSuiteOptions): Promise<void> 
 			suite,
 			providerName: module.id,
 			artifact: request.artifact,
+			...(session.reportedArtifact === undefined
+				? {}
+				: { reportedArtifact: session.reportedArtifact }),
 			confirmCleanup: async () => {
 				const probes = driver.probes;
 				if (!probes) throw new Error("driver cannot confirm sandbox removal");
@@ -962,6 +967,17 @@ async function runSuiteWork(
 		runner = createRunner();
 		runner.phase = "setup";
 		await verifyReadiness();
+		if (ctx.reportedArtifact !== undefined) {
+			writeProviderArtifactEvidence(resultsDir, {
+				cell: artifactCell,
+				sandboxId,
+				provenance: {
+					source: "driver-reported",
+					requested: ctx.artifact,
+					reported: ctx.reportedArtifact,
+				},
+			});
+		}
 		const expectedFingerprint = expectedToolchainFingerprint(providerName, ctx.artifact);
 		if (expectedFingerprint !== undefined) {
 			const captured = await runner.run(
@@ -979,6 +995,7 @@ async function runSuiteWork(
 					source: "guest-fingerprint",
 					requested: ctx.artifact,
 					fingerprint,
+					...(ctx.reportedArtifact === undefined ? {} : { reported: ctx.reportedArtifact }),
 				},
 			});
 		}

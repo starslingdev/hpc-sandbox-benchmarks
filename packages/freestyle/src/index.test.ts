@@ -1,25 +1,34 @@
 import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { BENCH_JOB_CEILING_MINUTES } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import { FreestyleApiError } from "freestyle";
 import type { FreestyleSpecOptions } from "./index.ts";
-import { FREESTYLE_OWNER_KEY, FREESTYLE_VM_TTL_SECONDS, freestyleSpec } from "./index.ts";
+import {
+	FREESTYLE_OWNER_KEY,
+	FREESTYLE_VM_TTL_SECONDS,
+	freestyleCommand,
+	freestyleSpec,
+} from "./index.ts";
 
 const context = {
 	env: { FREESTYLE_API_KEY: "freestyle-test-sentinel" },
-	artifact: { kind: "none" },
-	resolvedArtifact: { kind: "none" },
+	artifact: { kind: "baked", source: "native-snapshot" },
+	resolvedArtifact: { kind: "baked", ref: "sh-test" },
 } as const;
 const request: CreateRequest = {
 	spec: TARGET_SPEC,
-	artifact: { kind: "none" },
+	artifact: { kind: "baked", ref: "sh-test" },
 	deadlineMs: 300_000,
 };
 const missing = () => Response.json({ code: "NOT_FOUND", message: "gone" }, { status: 404 });
 const row = (id = "vm-test", state = "running", marker = "benchmark-test") => ({
 	id,
+	snapshotId: "sh-test",
 	state,
 	metadata: { [FREESTYLE_OWNER_KEY]: marker },
 	resources: { cpu: 4, memory: 8192, storage: 40960 },
@@ -71,6 +80,63 @@ function fixture(
 }
 
 describe("Freestyle native SDK driver", () => {
+	test("retains the control-plane snapshot observation for publication evidence", async () => {
+		const { driver } = fixture();
+		const session = await driver.create(request);
+		expect(session.reportedArtifact).toEqual(context.resolvedArtifact);
+		await session.destroy();
+	});
+	test("exec excludes stock NVM globals, including Mastra's missing language server", async () => {
+		const home = mkdtempSync(join(tmpdir(), "freestyle-path-"));
+		const nvmBin = join(home, ".nvm/versions/node/v22/bin");
+		mkdirSync(nvmBin, { recursive: true });
+		const server = join(nvmBin, "typescript-language-server");
+		writeFileSync(
+			join(home, "stock-env"),
+			`export PATH='${nvmBin}':$PATH\nexport NODE_OPTIONS=poison NODE_PATH=stock NVM_BIN=stock\n`,
+		);
+		writeFileSync(server, "#!/bin/sh\nexit 0\n");
+		chmodSync(server, 0o755);
+		const { driver } = fixture(async (path, _method, body) => {
+			if (!path.endsWith("/exec-await")) return;
+			const process = Bun.spawn(
+				["/bin/bash", "--noprofile", "--norc", "-c", String(body.command)],
+				{
+					env: { HOME: home, PATH: `${nvmBin}:/usr/bin:/bin`, BASH_ENV: join(home, "stock-env") },
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
+			return Response.json({
+				statusCode: await process.exited,
+				stdout: await new Response(process.stdout).text(),
+				stderr: await new Response(process.stderr).text(),
+			});
+		});
+		try {
+			const session = await driver.create(request);
+			const result = await session.exec(
+				// biome-ignore lint/suspicious/noTemplateCurlyInString: expanded by the guest shell
+				'if command -v typescript-language-server; then exit 1; fi; test -z "${NODE_OPTIONS:-}${NODE_PATH:-}${NVM_BIN:-}" && printf clean',
+			);
+			expect(result.exit).toEqual({ kind: "exited", code: 0 });
+			expect(result.stdout).toBe("clean");
+			await session.destroy();
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	test("deletes a VM if its reported boot snapshot differs from the frozen request", async () => {
+		let deleted = false;
+		const { driver, calls } = fixture((path, method) => {
+			if (method === "DELETE") deleted = true;
+			if (path === "/v5/vms/vm-test" && method === "GET" && !deleted)
+				return Response.json({ ...row(), snapshotId: "sh-unexpected" });
+		});
+		await expect(driver.create(request)).rejects.toThrow("requested immutable snapshot");
+		expect(calls.some((call) => call.method === "DELETE")).toBe(true);
+	});
 	test("keeps VM lifetime independent of a short create deadline", async () => {
 		const { driver, calls } = fixture();
 		const session = await driver.create({ ...request, deadlineMs: 1_000 });
@@ -136,6 +202,7 @@ describe("Freestyle native SDK driver", () => {
 		await expect(
 			spec.compute.sandbox.create({
 				slug: "sandbox-benchmarks-test",
+				snapshotId: "sh-test",
 				marker: "benchmark-test",
 				deadlineMs: 1_000,
 			}),
@@ -169,6 +236,7 @@ describe("Freestyle native SDK driver", () => {
 		await expect(
 			spec.compute.sandbox.create({
 				slug: "sandbox-benchmarks-test",
+				snapshotId: "sh-test",
 				marker: "benchmark-test",
 				deadlineMs: 1_000,
 			}),
@@ -203,7 +271,7 @@ describe("Freestyle native SDK driver", () => {
 			entered = resolve;
 		});
 		const { driver } = fixture((path, _method, body) => {
-			if (!path.endsWith("/exec-await") || body.command !== "work") return;
+			if (!path.endsWith("/exec-await") || body.command !== freestyleCommand("work")) return;
 			entered?.();
 			return new Promise((resolve) => {
 				finish = resolve;
@@ -236,7 +304,7 @@ describe("Freestyle native SDK driver", () => {
 		const session = await driver.create(request);
 		const create = calls.find((call) => call.path === "/v5/vms");
 		expect(create?.body).toMatchObject({
-			snapshotId: "freestyle/ubuntu",
+			snapshotId: "sh-test",
 			idleTimeoutSeconds: -1,
 			autoDeleteSeconds: 0,
 			ttlSeconds: FREESTYLE_VM_TTL_SECONDS,
@@ -253,7 +321,7 @@ describe("Freestyle native SDK driver", () => {
 			storage: 40960,
 		});
 		expect(calls.find((call) => call.path.endsWith("/exec-await"))?.body).toMatchObject({
-			command: "true",
+			command: freestyleCommand("true"),
 			linuxUser: "ubuntu",
 			timeoutMs: 300_000,
 		});
@@ -270,6 +338,7 @@ describe("Freestyle native SDK driver", () => {
 			{ ...request, spec: { vcpus: 4, memoryGb: 4 } },
 			{ ...request, spec: { vcpus: 4, memoryGb: 8, diskGb: 16 } },
 			{ ...request, artifact: { kind: "image" as const, ref: "unrelated" } },
+			{ ...request, artifact: { kind: "baked" as const, ref: "freestyle/ubuntu" } },
 			{ ...request, env: { INJECT: "value" } },
 			{ ...request, gpu: { model: "A100", count: 1 } },
 		])
@@ -279,11 +348,11 @@ describe("Freestyle native SDK driver", () => {
 
 	test("preserves split output and nonzero exits; a timeout never becomes exit zero", async () => {
 		const { driver } = fixture((path, _method, body) => {
-			if (!path.endsWith("/exec-await") || body.command === "true") return;
+			if (!path.endsWith("/exec-await") || body.command === freestyleCommand("true")) return;
 			return Response.json({
 				stdout: "out\n",
 				stderr: "err\n",
-				statusCode: body.command === "timeout" ? null : 7,
+				statusCode: body.command === freestyleCommand("timeout") ? null : 7,
 			});
 		});
 		const session = await driver.create(request);

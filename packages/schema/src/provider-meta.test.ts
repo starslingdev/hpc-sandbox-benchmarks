@@ -49,7 +49,7 @@ const ARTIFACT_KINDS = {
 	runcloud: "image",
 	tama: "image",
 	boat: "none",
-	freestyle: "none",
+	freestyle: "baked",
 	brezel: "none",
 } as const satisfies Record<ProviderId, (typeof REGISTRY)[ProviderId]["artifact"]["kind"]>;
 
@@ -58,6 +58,7 @@ const BAKED = {
 	"daytona-vm": true,
 	"daytona-container": true,
 	blaxel: true,
+	freestyle: true,
 	novita: true,
 	runloop: true,
 } as const satisfies Record<BakedProviderId, true>;
@@ -137,6 +138,7 @@ describe("provider metadata authoring", () => {
 			"daytona-vm",
 			"daytona-container",
 			"blaxel",
+			"freestyle",
 			"novita",
 			"runloop",
 		]);

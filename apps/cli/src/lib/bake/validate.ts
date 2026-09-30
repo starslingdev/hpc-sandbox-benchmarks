@@ -7,6 +7,7 @@ import type { DriverResolvedArtifact } from "@sandbox-benchmarks/schema/driver-s
 export { baseImageUse } from "@sandbox-benchmarks/schema/provider-artifacts";
 
 export interface CandidateRefs {
+	freestyleSnapshotCandidate?: string;
 	e2bTemplateCandidate: string;
 	/** Candidate LINUX_VM snapshot for daytona-vm. */
 	daytonaSnapshotCandidate: string;
@@ -74,10 +75,16 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 				createOptions: { image: `${refs.blaxelImageCandidate}:latest` },
 			};
 		case "boat":
-		case "freestyle":
 		case "brezel":
 			// Stock or externally prepared image — no candidate artifact to point at.
 			return { artifact: { kind: "none" }, createOptions: {} };
+		case "freestyle":
+			if (!refs.freestyleSnapshotCandidate)
+				throw new Error("Freestyle candidate snapshot ID was not resolved");
+			return {
+				artifact: { kind: "baked", ref: refs.freestyleSnapshotCandidate },
+				createOptions: { snapshotId: refs.freestyleSnapshotCandidate },
+			};
 		case "novita":
 			// Same mapping as e2b (snapshotId → template name), against Novita's control plane.
 			return {

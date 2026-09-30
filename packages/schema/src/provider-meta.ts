@@ -16,7 +16,11 @@ export type IsolationClass = "vm" | "microVM" | "container" | "userspace" | "unk
 export type ProviderArtifact =
 	| { readonly kind: "none" }
 	| { readonly kind: "image" }
-	| { readonly kind: "baked"; readonly nameSuffix?: `-${string}` }
+	| {
+			readonly kind: "baked";
+			readonly nameSuffix?: `-${string}`;
+			readonly source?: "native-snapshot";
+	  }
 	| { readonly kind: "mirror"; readonly repository: string }
 	| { readonly kind: "built"; readonly recipe: string };
 
@@ -31,6 +35,8 @@ export interface ProviderInputDescriptor {
 	readonly source?: ProviderInputSource;
 	readonly required?: boolean;
 	readonly default?: string;
+	/** Operator guidance for configuration whose requiredness depends on the lane. */
+	readonly description?: string;
 	/** Fixed value injected only by generated CI wiring (for runner capability opt-ins). */
 	readonly ciValue?: string;
 }
@@ -43,6 +49,7 @@ export interface NormalizedProviderInput {
 	readonly source: ProviderInputSource;
 	readonly required: boolean;
 	readonly default?: string;
+	readonly description?: string;
 	readonly ciValue?: string;
 }
 
@@ -132,6 +139,7 @@ export function normalizeProviderInput(input: ProviderInput): NormalizedProvider
 		source: input.source ?? { kind: "secret" },
 		required: input.required ?? input.default === undefined,
 		...(input.default === undefined ? {} : { default: input.default }),
+		...(input.description === undefined ? {} : { description: input.description }),
 		...(input.ciValue === undefined ? {} : { ciValue: input.ciValue }),
 	};
 }

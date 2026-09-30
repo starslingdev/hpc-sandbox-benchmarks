@@ -4,6 +4,7 @@ import type { CandidateRefs } from "./validate.ts";
 import { baseImageUse, candidateCreateOptions, candidateResolvedArtifact } from "./validate.ts";
 
 const refs: CandidateRefs = {
+	freestyleSnapshotCandidate: "sh-freestyle-candidate",
 	e2bTemplateCandidate: "tc-v1-candidate",
 	daytonaSnapshotCandidate: "snap-v1-candidate",
 	daytonaContainerSnapshotCandidate: "snap-v1-container-candidate",

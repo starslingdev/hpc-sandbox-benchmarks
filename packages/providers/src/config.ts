@@ -21,6 +21,8 @@ import { type } from "arktype";
 //    live in us-west-2 (DAYTONA_TARGET / DAYTONA_CONTAINER_TARGET override the region per variant;
 //    the account's default region has no runners or snapshots, so the defaults below always pin it).
 const envSchema = type({
+	"FREESTYLE_SNAPSHOT_ID?": "string >= 1",
+	"FREESTYLE_BASE_SNAPSHOT_ID?": "string >= 1",
 	"BENCH_TOOLCHAIN_IMAGE?": "string >= 1",
 	"E2B_TEMPLATE?": "string >= 1",
 	"DAYTONA_API_KEY?": "string >= 1",
@@ -56,6 +58,8 @@ const envSchema = type({
  * cover them.
  */
 export const ENV_KEYS = [
+	"FREESTYLE_SNAPSHOT_ID",
+	"FREESTYLE_BASE_SNAPSHOT_ID",
 	"BENCH_TOOLCHAIN_IMAGE",
 	"E2B_TEMPLATE",
 	"DAYTONA_API_KEY",
@@ -155,6 +159,8 @@ const vercelImageCandidate = env.VERCEL_CANDIDATE_IMAGE
 
 // 3. The single, fully-typed config object. Everything that needs config imports THIS.
 export const config = {
+	/** Optional immutable Ubuntu base for regenerating Freestyle's native toolchain. */
+	freestyleBaseSnapshotId: env.FREESTYLE_BASE_SNAPSHOT_ID,
 	/** Pinned cross-provider target spec — see {@link TARGET_SPEC} for the dimensions and sizing rationale. */
 	targetSpec: TARGET_SPEC,
 	/** Immutable toolchain image version tag. */

@@ -536,6 +536,8 @@ jobs:
           BOAT_API_KEY: ${{ matrix.provider == 'boat' && secrets.BOAT_API_KEY || '' }}
           BOAT_BASE_URL: ${{ matrix.provider == 'boat' && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
           FREESTYLE_API_KEY: ${{ matrix.provider == 'freestyle' && secrets.FREESTYLE_API_KEY || '' }}
+          FREESTYLE_SNAPSHOT_ID: ${{ matrix.provider == 'freestyle' && (env.FREESTYLE_SNAPSHOT_ID || vars.FREESTYLE_SNAPSHOT_ID || secrets.FREESTYLE_SNAPSHOT_ID) || '' }}
+          FREESTYLE_BASE_SNAPSHOT_ID: ${{ matrix.provider == 'freestyle' && (env.FREESTYLE_BASE_SNAPSHOT_ID || vars.FREESTYLE_BASE_SNAPSHOT_ID || secrets.FREESTYLE_BASE_SNAPSHOT_ID) || '' }}
           BREZEL_API_KEY: ${{ matrix.provider == 'brezel' && secrets.BREZEL_API_KEY || '' }}
           BREZEL_API_URL: ${{ matrix.provider == 'brezel' && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ matrix.provider == 'brezel' && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
@@ -733,6 +735,8 @@ jobs:
           BOAT_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && secrets.BOAT_API_KEY || '' }}
           BOAT_BASE_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
           FREESTYLE_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'freestyle') && secrets.FREESTYLE_API_KEY || '' }}
+          FREESTYLE_SNAPSHOT_ID: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'freestyle') && (env.FREESTYLE_SNAPSHOT_ID || vars.FREESTYLE_SNAPSHOT_ID || secrets.FREESTYLE_SNAPSHOT_ID) || '' }}
+          FREESTYLE_BASE_SNAPSHOT_ID: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'freestyle') && (env.FREESTYLE_BASE_SNAPSHOT_ID || vars.FREESTYLE_BASE_SNAPSHOT_ID || secrets.FREESTYLE_BASE_SNAPSHOT_ID) || '' }}
           BREZEL_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && secrets.BREZEL_API_KEY || '' }}
           BREZEL_API_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}

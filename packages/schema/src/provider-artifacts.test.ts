@@ -52,7 +52,7 @@ describe("artifact projections", () => {
 		const expected = (artifact: ProviderArtifact): ReturnType<typeof baseImageUse> => {
 			switch (artifact.kind) {
 				case "baked":
-					return "bakes";
+					return artifact.source === "native-snapshot" ? "none" : "bakes";
 				case "image":
 				case "built":
 					return "boots";

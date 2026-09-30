@@ -59,6 +59,7 @@ const inputDescriptorSchema = type({
 	"source?": inputSourceSchema,
 	"required?": "boolean",
 	"default?": singleLineStringSchema,
+	"description?": singleLineStringSchema,
 	"ciValue?": singleLineStringSchema,
 }).onUndeclaredKey("reject");
 const providerInputSchema = environmentNameSchema.or(inputDescriptorSchema);
@@ -77,6 +78,7 @@ const bakedNameSuffixSchema = nonemptyStringSchema.narrow((suffix, ctx) => {
 const bakedArtifactSchema = type({
 	kind: "'baked'",
 	"nameSuffix?": bakedNameSuffixSchema,
+	"source?": "'native-snapshot'",
 }).onUndeclaredKey("reject");
 const mirrorArtifactSchema = type({
 	kind: "'mirror'",

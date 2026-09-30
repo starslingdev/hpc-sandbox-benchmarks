@@ -8,6 +8,11 @@ This context describes the sandbox behavior that benchmark execution can request
 An allocated sandbox with provider-qualified identity and available execution and lifecycle
 capabilities. A session identifies a particular allocation, not a provider as a whole.
 
+**Reported artifact**:
+The boot artifact identity observed from the provider's control plane. It must agree with the
+requested artifact before the driver returns a session; copying a request does not establish an
+observation.
+
 **Driver**:
 An implementation of sandbox creation and behavior for a provider integration. Its exposed
 capabilities describe that integration, not every capability offered by the vendor.

@@ -19,6 +19,39 @@ const baseTable: MethodTable<string, null> = {
 };
 
 describe("driverFromTable", () => {
+	test("retains an explicit observed artifact and rejects a contradictory report before returning", async () => {
+		let destroyed = 0;
+		const table: MethodTable<string, null> = {
+			...baseTable,
+			create: async () => ({
+				handle: "h",
+				sandboxRef: sandboxRef("tama", "m-1"),
+				reportedArtifact: request.artifact,
+			}),
+			destroy: async () => {
+				destroyed++;
+			},
+		};
+		expect(
+			(await driverFromTable(table, async () => null).create(request)).reportedArtifact,
+		).toEqual(request.artifact);
+		const conflicting = driverFromTable(
+			{
+				...table,
+				create: async () => ({
+					handle: "h",
+					sandboxRef: sandboxRef("tama", "m-1"),
+					reportedArtifact: { kind: "image", ref: "wrong" } as const,
+				}),
+			},
+			async () => null,
+		);
+		await expect(conflicting.create(request)).rejects.toMatchObject({ code: "artifact-mismatch" });
+		expect(destroyed).toBe(1);
+		expect(
+			(await driverFromTable(baseTable, async () => null).create(request)).reportedArtifact,
+		).toBeUndefined();
+	});
 	test("a later owner signal cancels an already-running failed-create cleanup", async () => {
 		let attempts = 0;
 		const failure = new FailedCreateCleanupError(

@@ -94,6 +94,14 @@ export function resolveDriverArtifact(
 	id: ProviderId,
 	resolution: ArtifactResolution = {},
 ): ResolvedArtifact {
+	if (
+		id === "freestyle" &&
+		(resolution.ref === undefined || !/^sh-[A-Za-z0-9_-]+$/.test(resolution.ref))
+	) {
+		throw new Error(
+			"Freestyle requires an immutable snapshot ID (sh-...). Bake --provider freestyle, then set FREESTYLE_SNAPSHOT_ID and BENCH_ARTIFACT_FREESTYLE to the recorded ID",
+		);
+	}
 	return resolveArtifactDescriptor(id, REGISTRY[id].artifact, resolution);
 }
 
@@ -281,6 +289,7 @@ const ARTIFACT_REF_OVERRIDE_ENV = {
 	"daytona-vm": "DAYTONA_SNAPSHOT",
 	"daytona-container": "DAYTONA_CONTAINER_SNAPSHOT",
 	runloop: "RUNLOOP_BLUEPRINT",
+	freestyle: "FREESTYLE_SNAPSHOT_ID",
 } as const satisfies Partial<Record<DriverProviderId, string>>;
 
 /**

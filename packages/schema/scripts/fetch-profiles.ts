@@ -23,6 +23,7 @@
 // byte-identical output and the source is auditable. Blobs are read under that commit and pulled by
 // their per-file SHAs. Bump `REF` and re-run to vendor an updated upstream.
 import { Octokit } from "@octokit/rest";
+import { PTS_PROFILE_SOURCE_REF } from "../src/pts-profile-source.ts";
 
 // Upstream repo and the profile dirs we vendor, pinned by exact `<name>-<ver>` — the suites we run
 // (e.g. node-web-tooling-1.0.1). Version suffixes are mandatory and non-uniform upstream, so
@@ -33,7 +34,7 @@ const REPO = "test-profiles";
 // `REF` always yields the same blobs (reproducible vendoring). To update, bump this to a newer
 // `phoronix-test-suite/test-profiles` commit SHA and re-run. Latest on master:
 //   gh api repos/phoronix-test-suite/test-profiles/commits/master --jq .sha
-const REF = "d2f1a150d388bd062737b445891edda0780f7e25";
+const REF = PTS_PROFILE_SOURCE_REF;
 const PROFILES = [
 	"node-web-tooling-1.0.1",
 	// System dimension — both single-result (no <Option> matrix), so each generates a description-less

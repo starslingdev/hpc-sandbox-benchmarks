@@ -190,6 +190,19 @@ describe("artifact helpers", () => {
 });
 
 describe("provider artifact evidence", () => {
+	it("preserves historical Freestyle stock attribution while validating new observed snapshot IDs", () => {
+		const old = evidence({ source: "request-fallback", requested: { kind: "none" } });
+		expect(
+			parseEvidence({ ...old, cell: { ...old.cell, providerId: "freestyle" } }).provenance.source,
+		).toBe("request-fallback");
+		const requested = { kind: "baked", ref: "sh-observed" } as const;
+		const observed = evidence({ source: "driver-reported", requested, reported: requested });
+		expect(
+			artifactVerified(
+				parseEvidence({ ...observed, cell: { ...observed.cell, providerId: "freestyle" } }),
+			),
+		).toBe(true);
+	});
 	it("joins attribution to a complete benchmark cell and sandbox", () => {
 		const parsed = parseEvidence(evidence({ source: "request-fallback", requested: BAKED }));
 		expect(parsed.cell).toEqual(CELL);

@@ -303,7 +303,8 @@ export function renderEnvExample(): string {
 					`# Shared by: ${owners.map((owner) => oneLineComment(REGISTRY[owner].displayName)).join(", ")}`,
 				);
 			}
-			if (!input.required)
+			if (input.description !== undefined) lines.push(`# ${oneLineComment(input.description)}`);
+			else if (!input.required)
 				lines.push("# Optional override; leave empty to use the provider default.");
 			if (input.ciValue !== undefined) {
 				lines.push(`# CI injects ${input.ciValue}; set locally only on a compatible runner.`);

@@ -30,3 +30,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0018](./0018-attest-already-released-cleanup.md) | Attest cleanup after an ordinary account release |
 | [0019](./0019-not-allocated-intent-recovery.md) | Retry journal write HTTP 5xx and recover a lost not-allocated release |
 | [0020](./0020-disk-suite-o-direct.md) | The publication disk suite measures fio with O_DIRECT |
+| [0021](./0021-freestyle-native-snapshots.md) | Freestyle benchmarks use immutable native snapshots |

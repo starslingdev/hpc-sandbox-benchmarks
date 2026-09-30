@@ -23,8 +23,8 @@ export function isMirroredProviderId(id: ProviderId): id is MirroredProviderId {
 
 /**
  * How a provider relates to the shared toolchain base. This is a direct lifecycle projection:
- * baked artifacts derive from it, image/built artifacts boot it, and stock/mirrored artifacts do
- * not read it in the sandbox release lane.
+ * OCI-backed baked artifacts derive from it and image/built artifacts boot it. Native snapshots
+ * share the installation recipe; stock/mirrored artifacts also do not read the OCI base.
  */
 export function baseImageUse(id: ProviderId): BaseImageUse {
 	return baseImageUseForArtifact(REGISTRY[id].artifact);
@@ -33,7 +33,7 @@ export function baseImageUse(id: ProviderId): BaseImageUse {
 function baseImageUseForArtifact(artifact: ProviderArtifact): BaseImageUse {
 	switch (artifact.kind) {
 		case "baked":
-			return "bakes";
+			return artifact.source === "native-snapshot" ? "none" : "bakes";
 		case "image":
 		case "built":
 			return "boots";

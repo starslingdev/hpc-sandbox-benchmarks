@@ -28,3 +28,8 @@ measurements may remain diagnostic evidence without contributing to that compari
 **Comparison cohort**:
 The workload revisions, execution environment, pass policy, requested resources and eligible metrics
 that must agree for scores to be compared.
+
+**Native baked snapshot**:
+A provider artifact captured from a VM after installing the shared pinned toolchain directly in it.
+Its immutable provider ID identifies the captured environment; a mutable release alias does not.
+Sharing toolchain pins does not imply identical operating-system packages or kernels.

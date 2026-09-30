@@ -165,10 +165,11 @@ export const providerArtifactEvidenceSchema = type({
 		const { providerId } = evidence.cell;
 		const { requested } = evidence.provenance;
 		const declaredKind = REGISTRY[providerId].artifact.kind;
-		// Runs recorded before the Blaxel shared-image migration booted a stock image. Keep their
+		// Runs recorded before the Blaxel/Freestyle baked-image migrations booted a stock image. Keep their
 		// historical attribution valid; current creates are constrained by the baked-only driver.
-		const legacyBlaxelStock = providerId === "blaxel" && requested.kind === "none";
-		if (requested.kind !== declaredKind && !legacyBlaxelStock) {
+		const legacyStock =
+			(providerId === "blaxel" || providerId === "freestyle") && requested.kind === "none";
+		if (requested.kind !== declaredKind && !legacyStock) {
 			return ctx.mustBe(
 				`artifact evidence whose requested kind matches ${providerId}'s registry declaration (${declaredKind})`,
 			);

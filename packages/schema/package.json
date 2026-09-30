@@ -11,6 +11,7 @@
     "./provider-ids": "./src/provider-ids.ts",
     "./provider-parsers": "./src/provider-parsers.ts",
     "./provider-pricing": "./src/provider-pricing.ts",
+    "./pts-profile-source": "./src/pts-profile-source.ts",
     "./providers": "./src/providers.ts",
     "./target-spec": "./src/target-spec.ts",
     "./target-spec-schema": "./src/target-spec-schema.ts",

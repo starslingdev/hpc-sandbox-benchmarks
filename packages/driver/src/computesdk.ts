@@ -45,6 +45,7 @@ import {
 	sandboxRef,
 } from "@sandbox-benchmarks/driver";
 import { sensitiveEnvValuesFor } from "@sandbox-benchmarks/driver/env";
+import { resolvedArtifactSchema } from "@sandbox-benchmarks/schema/driver-schemas";
 import type { Out, Type } from "arktype";
 import { type } from "arktype";
 
@@ -280,7 +281,7 @@ export interface ComputeSdkCreateRequestMapper<Options = Readonly<Record<string,
 }
 
 export type ComputeSdkCreatedRequestVerification =
-	| { readonly status: "honored" }
+	| { readonly status: "honored"; readonly reportedArtifact?: ResolvedArtifact }
 	| { readonly status: "unsupported"; readonly detail: string };
 
 export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
@@ -743,7 +744,7 @@ async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends Compute
 	prepareAndVerify: NonNullable<ComputeSdkDriverSpec<TCompute>["prepareAndVerifyCreatedRequest"]>,
 	sensitiveValues: readonly string[],
 	ref: SandboxRef,
-): Promise<void> {
+): Promise<ResolvedArtifact | undefined> {
 	const result: unknown = await invokeComputeSdkRedactedCallbackAsync(
 		provider,
 		"created-request preparation and verification",
@@ -761,9 +762,11 @@ async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends Compute
 	}
 	let status: unknown;
 	let detail: unknown;
+	let reported: unknown;
 	try {
 		status = Reflect.get(result, "status");
 		detail = Reflect.get(result, "detail");
+		reported = Reflect.get(result, "reportedArtifact");
 	} catch {
 		throw vendorContractFailure(
 			provider,
@@ -773,7 +776,16 @@ async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends Compute
 			ref,
 		);
 	}
-	if (status === "honored" && detail === undefined) return;
+	if (status === "honored" && detail === undefined) {
+		return reported === undefined
+			? undefined
+			: invokeComputeSdkRedactedCallbackAsync(
+					provider,
+					"created artifact observation",
+					async () => resolvedArtifactSchema.assert(reported),
+					{ code: "create-failed", ref, sensitiveValues },
+				);
+	}
 	if (status === "unsupported" && typeof detail === "string" && detail.length > 0) {
 		throw new DriverError(
 			"invalid-create-request",
@@ -1159,8 +1171,9 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 						ref,
 					);
 				}
+				let reportedArtifact: ResolvedArtifact | undefined;
 				if (prepareAndVerifyCreatedRequest !== undefined) {
-					await prepareAndVerifyComputeSdkCreatedRequest(
+					reportedArtifact = await prepareAndVerifyComputeSdkCreatedRequest(
 						provider,
 						created,
 						native,
@@ -1179,6 +1192,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 					native,
 					sandboxRef: ref,
 					artifact: resolvedArtifact,
+					...(reportedArtifact === undefined ? {} : { reportedArtifact }),
 				};
 			} catch (primary) {
 				const retryCleanup = async (cleanupOptions?: DriverOperationOptions) => {

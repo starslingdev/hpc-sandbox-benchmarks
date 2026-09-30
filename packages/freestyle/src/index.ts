@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DriverContext, DriverOperationOptions } from "@sandbox-benchmarks/driver";
-import { pollUntilReady } from "@sandbox-benchmarks/driver";
+import { pollUntilReady, shellQuote } from "@sandbox-benchmarks/driver";
 import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
@@ -10,7 +10,16 @@ import { Freestyle, FreestyleApiError } from "freestyle";
 import { FREESTYLE_PROVENANCE } from "./provenance.ts";
 import { freestyleFetch } from "./transport.ts";
 
-export const FREESTYLE_SNAPSHOT = "freestyle/ubuntu";
+export const FREESTYLE_BASE_SNAPSHOT = "freestyle/ubuntu";
+// Match the shared image's system PATH. The harness adds the user's pinned mise and pnpm dirs.
+// Stock Ubuntu's NVM globals include language servers that change workload test semantics.
+export const FREESTYLE_PATH =
+	"/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+export function freestyleCommand(command: string): string {
+	// Reset inside the guest shell: an exec env alone can be overwritten by stock shell startup.
+	const script = `if [ -f /etc/mise/config.toml ]; then export MISE_DATA_DIR=/usr/local/share/mise MISE_CONFIG_DIR=/etc/mise; fi; ${command}`;
+	return `env -u BASH_ENV -u ENV -u NODE_PATH -u NODE_OPTIONS -u NVM_DIR -u NVM_BIN -u NVM_INC PATH=${shellQuote(FREESTYLE_PATH)} bash --noprofile --norc -c ${shellQuote(script)}`;
+}
 export const FREESTYLE_OWNER_KEY = "sandbox-benchmarks-attempt";
 // Longest supported benchmark job is 330 minutes; leave headroom for cleanup.
 export const FREESTYLE_VM_TTL_SECONDS = 6 * 60 * 60;
@@ -30,6 +39,7 @@ const vmRecord = type({
 	state: "'starting' | 'running' | 'pausing' | 'paused' | 'stopped'",
 	"slug?": "string | null",
 	"metadata?": { "[string]": "string" },
+	"snapshotId?": "string | null",
 	resources,
 });
 const pageSchema = type({ vms: vmRecord.array(), totalCount: "number.integer >= 0" });
@@ -48,6 +58,8 @@ function hasStatus(error: unknown, statuses: readonly number[]): boolean {
 }
 
 export interface FreestyleSpecOptions {
+	/** Release composition only: boot stock once, then record its immutable ID in the recipe. */
+	readonly allowStockBaseForBake?: boolean;
 	readonly fetch?: typeof fetch;
 	readonly controlTimeoutMs?: number;
 	readonly deleteTimeoutMs?: number;
@@ -77,7 +89,11 @@ export function freestyleSpec(
 			// reporting cancellation, so a caller never overlaps the next command with this one.
 			await api(undefined, EXEC_TIMEOUT_MS + 10_000)
 				.vms.ref(vm.id)
-				.exec({ command, linuxUser: "ubuntu", timeoutMs: EXEC_TIMEOUT_MS }),
+				.exec({
+					command: freestyleCommand(command),
+					linuxUser: "ubuntu",
+					timeoutMs: EXEC_TIMEOUT_MS,
+				}),
 		);
 		operation?.signal?.throwIfAborted();
 		return {
@@ -118,12 +134,15 @@ export function freestyleSpec(
 		});
 	}
 	const compute = nativeSdkCompute(
-		async (options: { slug: string; marker: string; deadlineMs: number }, operation) => {
+		async (
+			options: { slug: string; marker: string; deadlineMs: number; snapshotId: string },
+			operation,
+		) => {
 			operation.signal?.throwIfAborted();
 			unresolvedCreates.add(options.marker);
 			try {
 				const created = await api(operation, options.deadlineMs).vms.create({
-					snapshotId: FREESTYLE_SNAPSHOT,
+					snapshotId: options.snapshotId,
 					slug: options.slug,
 					metadata: { [FREESTYLE_OWNER_KEY]: options.marker },
 					idleTimeoutSeconds: -1,
@@ -167,8 +186,14 @@ export function freestyleSpec(
 				env: "unsupported",
 			},
 			map: (request, unsupported) => {
-				if (request.artifact.kind !== "none")
-					unsupported("Freestyle boots its stock Ubuntu snapshot");
+				if (request.artifact.kind !== "baked")
+					unsupported("Freestyle requires a native baked snapshot");
+				if (
+					request.artifact.kind === "baked" &&
+					!/^sh-[A-Za-z0-9_-]+$/.test(request.artifact.ref) &&
+					!(options.allowStockBaseForBake && request.artifact.ref === FREESTYLE_BASE_SNAPSHOT)
+				)
+					unsupported("Freestyle requires an immutable snapshot ID rather than a mutable slug");
 				if (
 					request.spec.vcpus < 4 ||
 					request.spec.memoryGb < 8 ||
@@ -180,6 +205,7 @@ export function freestyleSpec(
 					slug: `sandbox-benchmarks-${attempt}`,
 					marker: `${OWNER_PREFIX}${attempt}`,
 					deadlineMs: request.deadlineMs,
+					snapshotId: request.artifact.kind === "baked" ? request.artifact.ref : "",
 				};
 			},
 		},
@@ -192,7 +218,14 @@ export function freestyleSpec(
 			};
 			const current = api(operation).vms.ref(vm.id);
 			await current.resize(requested);
-			const actual = vmRecord.assert(await current.data()).resources;
+			const record = vmRecord.assert(await current.data());
+			if (
+				request.artifact.kind === "baked" &&
+				!(options.allowStockBaseForBake && request.artifact.ref === FREESTYLE_BASE_SNAPSHOT) &&
+				record.snapshotId !== request.artifact.ref
+			)
+				throw new Error("Freestyle did not boot the requested immutable snapshot");
+			const actual = record.resources;
 			if (
 				actual.cpu !== requested.cpu ||
 				actual.memory !== requested.memory ||
@@ -201,7 +234,13 @@ export function freestyleSpec(
 				return { status: "unsupported", detail: "Freestyle did not apply the requested resources" };
 			const ready = await exec(vm, "true", operation);
 			if (ready.exitCode !== 0) throw new Error("Freestyle guest readiness command failed");
-			return { status: "honored" };
+			return {
+				status: "honored",
+				// A stock bootstrap slug differs from the immutable ID and is not benchmark evidence.
+				...(request.artifact.kind === "baked" && record.snapshotId === request.artifact.ref
+					? { reportedArtifact: { kind: "baked", ref: record.snapshotId } as const }
+					: {}),
+			};
 		},
 		lifecycle: {
 			destroy: (sandbox, ref, operation) => destroy(ref?.id ?? sandbox.getInstance().id, operation),

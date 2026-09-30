@@ -36,6 +36,7 @@ import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
+import { resolveFreestyleSnapshotId } from "./freestyle.ts";
 import {
 	imageDigest,
 	imageExistsInRegistry,
@@ -263,6 +264,20 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		daytonaVmTarget: config.daytonaVm.target,
 		daytonaContainerTarget: config.daytonaContainer.target,
 	};
+	if (
+		(only ?? PROVIDERS.map((provider) => provider.id)).includes("freestyle") &&
+		process.env.FREESTYLE_API_KEY
+	)
+		try {
+			candidateRefs.freestyleSnapshotCandidate = await resolveFreestyleSnapshotId(
+				bakedArtifactName("freestyle", "candidate"),
+			);
+		} catch (error) {
+			// Optional native builds must remain an ordinary provider validation failure.
+			log(
+				`Freestyle candidate could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 	log(`>>> re-validating ${scope} against ${pinnedBaseImage} before promote…`);
 	const validateRuns = await validateCandidates(candidateRefs, log, only);
 	if (validateRuns.some(blocks)) {
@@ -298,9 +313,15 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 					async (target) => {
 						if (isBakedProviderId(target.id)) {
 							log(`>>> ${target.id}: building version artifact from ${pinnedBaseImage}…`);
-							await buildBakedProviderArtifact(target.id, "version", pinnedBaseImage, (m) =>
-								log(`    ${m}`),
+							const artifactRef = await buildBakedProviderArtifact(
+								target.id,
+								"version",
+								target.id === "freestyle"
+									? (candidateRefs.freestyleSnapshotCandidate ?? "")
+									: pinnedBaseImage,
+								(m) => log(`    ${m}`),
 							);
+							return typeof artifactRef === "string" ? artifactRef : undefined;
 						} else if (isMirroredProviderId(target.id)) {
 							log(`>>> ${target.id}: ${nonBakedArtifactAction(target.id, "version")}…`);
 							await promoteMirroredProviderArtifact(target.id, (m) => log(`    ${m}`));
@@ -326,6 +347,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 			status: run.status,
 			...(run.reason ? { reason: run.reason } : {}),
 			...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
+			...(typeof run.value === "string" ? { artifactRef: run.value } : {}),
 		});
 	}
 

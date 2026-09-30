@@ -133,6 +133,8 @@ jobs:
           BOAT_API_KEY: ${{ contains(fromJSON(inputs.providers), 'boat') && secrets.BOAT_API_KEY || '' }}
           BOAT_BASE_URL: ${{ contains(fromJSON(inputs.providers), 'boat') && (env.BOAT_BASE_URL || vars.BOAT_BASE_URL || secrets.BOAT_BASE_URL) || '' }}
           FREESTYLE_API_KEY: ${{ contains(fromJSON(inputs.providers), 'freestyle') && secrets.FREESTYLE_API_KEY || '' }}
+          FREESTYLE_SNAPSHOT_ID: ${{ contains(fromJSON(inputs.providers), 'freestyle') && (env.FREESTYLE_SNAPSHOT_ID || vars.FREESTYLE_SNAPSHOT_ID || secrets.FREESTYLE_SNAPSHOT_ID) || '' }}
+          FREESTYLE_BASE_SNAPSHOT_ID: ${{ contains(fromJSON(inputs.providers), 'freestyle') && (env.FREESTYLE_BASE_SNAPSHOT_ID || vars.FREESTYLE_BASE_SNAPSHOT_ID || secrets.FREESTYLE_BASE_SNAPSHOT_ID) || '' }}
           BREZEL_API_KEY: ${{ contains(fromJSON(inputs.providers), 'brezel') && secrets.BREZEL_API_KEY || '' }}
           BREZEL_API_URL: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}

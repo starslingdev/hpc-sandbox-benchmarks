@@ -16,4 +16,6 @@ export interface BakeReport {
 	durationMs?: number;
 	/** Smoke results from booting the just-baked candidate artifact. */
 	checks?: SmokeResult[];
+	/** Immutable native snapshot produced by this release step. */
+	artifactRef?: string;
 }

@@ -18,12 +18,17 @@ import {
 import { bakeBlaxelImage } from "./blaxel.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
+import { bakeFreestyleSnapshot } from "./freestyle.ts";
 import { promoteImage } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
 import { bakeRunloopBlueprint } from "./runloop.ts";
 import type { Log } from "./types.ts";
 
-export type BakeProviderArtifact = (name: string, baseImage: string, log: Log) => Promise<void>;
+export type BakeProviderArtifact = (
+	name: string,
+	baseImage: string,
+	log: Log,
+) => Promise<void> | Promise<string>;
 
 /**
  * Exhaustive over baked providers and impossible to populate for any other artifact lifecycle.
@@ -36,6 +41,7 @@ export const BAKED_ARTIFACT_BUILDERS = {
 	blaxel: bakeBlaxelImage,
 	novita: bakeNovitaTemplate,
 	runloop: bakeRunloopBlueprint,
+	freestyle: bakeFreestyleSnapshot,
 } as const satisfies Record<BakedProviderId, BakeProviderArtifact>;
 
 export function buildBakedProviderArtifact(
@@ -43,7 +49,7 @@ export function buildBakedProviderArtifact(
 	phase: ArtifactPhase,
 	baseImage: string,
 	log: Log,
-): Promise<void> {
+): Promise<void> | Promise<string> {
 	return BAKED_ARTIFACT_BUILDERS[id](bakedArtifactName(id, phase), baseImage, log);
 }
 

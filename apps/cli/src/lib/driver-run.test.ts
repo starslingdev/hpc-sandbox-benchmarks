@@ -182,6 +182,18 @@ describe("createOwnedDriverSession", () => {
 });
 
 describe("resolveDriverArtifact", () => {
+	test("Freestyle plans require immutable snapshot IDs and preserve the boot identity", () => {
+		for (const ref of [undefined, "freestyle/ubuntu", "mutable-slug"])
+			expect(() => resolveDriverArtifact("freestyle", { ref })).toThrow(/immutable snapshot ID/);
+		const env = parseDriverEnv("freestyle", {
+			FREESTYLE_API_KEY: "test",
+			FREESTYLE_SNAPSHOT_ID: "sh-pinned",
+		});
+		expect(resolveDriverArtifact("freestyle", driverArtifactResolution("freestyle", env))).toEqual({
+			kind: "baked",
+			ref: "sh-pinned",
+		});
+	});
 	test("derives a baked provider's ref from the registry, per phase", () => {
 		const version = resolveDriverArtifact("e2b");
 		const candidate = resolveDriverArtifact("e2b", { phase: "candidate" });

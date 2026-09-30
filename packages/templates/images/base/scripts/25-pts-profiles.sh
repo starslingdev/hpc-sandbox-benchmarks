@@ -20,13 +20,22 @@ set -Eeuxo pipefail
 
 read -ra pts_tests <<< "${PTS_PROFILE_GROUP}"
 (( ${#pts_tests[@]} > 0 )) || { echo "ERROR: empty PTS_PROFILE_GROUP" >&2; exit 1; }
+# Fully qualified IDs select a staged definition directly. Bare names first consult the mutable
+# repository index, which can drop an older pinned version even when its files exist locally.
+pts_ids=("${pts_tests[@]/#/pts/}")
 echo "::: PTS profile group: ${PTS_PROFILE_GROUP}"
 
 # > The staging list DERIVES from the install list (same versioned pins — caching a different version
 # > than the leaves batch-run would send the installer back to the network). Do not cache unwired
 # > future profiles: provider snapshot registries must import the complete compressed image.
 # > network-loopback has no downloads and no-ops here harmlessly.
-phoronix-test-suite make-download-cache "${pts_tests[@]}"
+# Native snapshots stage the pinned definitions from GitHub before this script. PTS's cache
+# command scans every repository profile, including unavailable definitions, after downloading
+# the requested files. Skip that scan when the native builder requests direct batch-install;
+# batch-install still downloads and verifies each profile's payload before the checks below.
+if [ "${PTS_DIRECT_INSTALL:-0}" != "1" ]; then
+	phoronix-test-suite make-download-cache "${pts_ids[@]}"
+fi
 
 # > fio's configure defaults to -march=native — native to the BAKE machine, which is wrong on both
 # > counts for a baked image: it is not the run machine's ISA and it is not portable. Modal's gVisor
@@ -50,7 +59,7 @@ done
 # > entry ("fio-2.1.0") already ends in its version, so it anchors on a following non-name character
 # > instead. Both keep a profile name that is a substring of another installed test from masking its
 # > own install failure.
-phoronix-test-suite batch-install "${pts_tests[@]}"
+phoronix-test-suite batch-install "${pts_ids[@]}"
 installed="$(phoronix-test-suite list-installed-tests)"
 for t in "${pts_tests[@]}"; do
 	echo "${installed}" | grep -qE "(^|/)${t}(-[0-9]|[[:space:]]|$)" || { echo "ERROR: pre-install of ${t} failed" >&2; exit 1; }

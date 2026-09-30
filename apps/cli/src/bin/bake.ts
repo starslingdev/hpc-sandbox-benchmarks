@@ -26,6 +26,7 @@ import {
 	nonBakedArtifactAction,
 } from "../lib/bake/provider-artifacts.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
+import type { CandidateRefs } from "../lib/bake/validate.ts";
 import { baseImageUse } from "../lib/bake/validate.ts";
 import { bootAndSmokeCandidate } from "../lib/bake/validate-run.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
@@ -195,7 +196,7 @@ if (import.meta.main) {
 	} else {
 		log(`>>> no provider in scope reads ${baseImageRef} — not resolving it`);
 	}
-	const candidateRefs = {
+	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
@@ -212,9 +213,17 @@ if (import.meta.main) {
 		async (target) => {
 			if (isBakedProviderId(target.id)) {
 				log(`>>> ${target.id}: baking candidate…`);
-				await buildBakedProviderArtifact(target.id, "candidate", pinnedBaseImage, (m) =>
-					log(`    ${m}`),
+				const builtRef = await buildBakedProviderArtifact(
+					target.id,
+					"candidate",
+					pinnedBaseImage,
+					(m) => log(`    ${m}`),
 				);
+				if (target.id === "freestyle") {
+					if (typeof builtRef !== "string")
+						throw new Error("Freestyle bake did not return its immutable snapshot ID");
+					candidateRefs.freestyleSnapshotCandidate = builtRef;
+				}
 			} else {
 				log(`>>> ${target.id}: ${nonBakedArtifactAction(target.id, "candidate")}`);
 			}
@@ -251,6 +260,7 @@ if (import.meta.main) {
 
 	writeReport({
 		candidate: {
+			freestyleSnapshotId: candidateRefs.freestyleSnapshotCandidate,
 			image: pinnedBaseImage,
 			e2bTemplate: config.e2bTemplateCandidate,
 			daytonaSnapshot: config.daytonaSnapshotCandidate,

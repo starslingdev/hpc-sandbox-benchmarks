@@ -54,9 +54,11 @@
     "@daytona/sdk": "catalog:computesdk",
     "@runloop/api-client": "catalog:computesdk",
     "modal": "catalog:computesdk",
+    "freestyle": "catalog:computesdk",
     "novita-sandbox": "catalog:computesdk",
     "dotenv": "catalog:",
     "@sandbox-benchmarks/modal": "workspace:*",
+    "@sandbox-benchmarks/freestyle": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

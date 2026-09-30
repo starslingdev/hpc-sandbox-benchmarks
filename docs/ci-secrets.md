@@ -302,6 +302,8 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `VERCEL_PROJECT_NAME` | Vercel Sandbox | — |
    | `TAMA_CLI` | tama | — |
    | `BOAT_BASE_URL` | boat | — |
+   | `FREESTYLE_SNAPSHOT_ID` | Freestyle | — |
+   | `FREESTYLE_BASE_SNAPSHOT_ID` | Freestyle | — |
    | `BREZEL_API_URL` | Brezel | — |
    | `BREZEL_PROJECT_ID` | Brezel | — |
    | `BREZEL_ENVIRONMENT_REVISION` | Brezel | — |

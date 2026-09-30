@@ -92,6 +92,8 @@ export interface SandboxFiles {
 export interface SandboxSession<Handle = unknown> {
 	readonly sandboxRef: SandboxRef;
 	readonly artifact: ResolvedArtifact;
+	/** Actual boot identity observed from the provider, distinct from the request fallback. */
+	readonly reportedArtifact?: ResolvedArtifact;
 	readonly native: Handle;
 	exec(command: string, options?: ExecOptions): Promise<ExecResult>;
 	destroy(options?: DriverOperationOptions): Promise<void>;

@@ -34,6 +34,7 @@ export type MethodTableCreateResult<Handle, Native = Handle> = {
 	readonly handle: Handle;
 	readonly sandboxRef: SandboxRef;
 	readonly artifact?: ResolvedArtifact;
+	readonly reportedArtifact?: ResolvedArtifact;
 } & (SameType<Handle, Native> extends true
 	? { readonly native?: Native }
 	: { readonly native: Native });
@@ -199,11 +200,14 @@ export function driverFromTable<Handle, Ctx, Native = Handle>(
 		async create(request, operationOptions) {
 			const resolved = await ctx();
 			const created = await table.create(resolved, request, operationOptions);
-			const artifact = created.artifact ?? request.artifact;
-			if (!artifactsEqual(artifact, request.artifact)) {
+			const artifact = created.artifact ?? created.reportedArtifact ?? request.artifact;
+			const contradiction = [created.artifact, created.reportedArtifact].find(
+				(candidate) => candidate !== undefined && !artifactsEqual(candidate, request.artifact),
+			);
+			if (contradiction !== undefined) {
 				const mismatch = new DriverError(
 					"artifact-mismatch",
-					`artifact mismatch: request says ${artifactLabel(request.artifact)}, driver booted ${artifactLabel(artifact)}`,
+					`artifact mismatch: request says ${artifactLabel(request.artifact)}, driver booted ${artifactLabel(contradiction)}`,
 					{ ref: created.sandboxRef },
 				);
 				// Tear the orphan down before failing — but never let a teardown failure hide the
@@ -325,6 +329,9 @@ export function driverFromTable<Handle, Ctx, Native = Handle>(
 			const session: SandboxSession<Native> = {
 				sandboxRef: ref,
 				artifact,
+				...(created.reportedArtifact === undefined
+					? {}
+					: { reportedArtifact: created.reportedArtifact }),
 				native,
 				exec: (command, options?: ExecOptions) =>
 					alive(() => {

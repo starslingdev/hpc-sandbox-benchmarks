@@ -79,6 +79,7 @@ jobs:
           BENCH_ARTIFACT_DAYTONA_VM: ${{ vars.DAYTONA_SNAPSHOT }}
           BENCH_ARTIFACT_DAYTONA_CONTAINER: ${{ vars.DAYTONA_CONTAINER_SNAPSHOT }}
           BENCH_ARTIFACT_VERCEL: ${{ vars.BENCH_ARTIFACT_VERCEL }}
+          BENCH_ARTIFACT_FREESTYLE: ${{ vars.FREESTYLE_SNAPSHOT_ID }}
         run: bun apps/cli/src/bin/workflow-experiment.ts plan
 
       - name: Audit account journals
