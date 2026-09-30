@@ -72,7 +72,7 @@ export default defineProviderMeta("freestyle", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Opt-in native SDK driver with a regenerable custom snapshot recipe. FREESTYLE_SNAPSHOT_ID pins an immutable snapshot ID; release builds record that ID. Default-matrix promotion requires live conformance and complete Mastra metric coverage on the selected snapshot.",
+			"Native SDK driver included in the default CPU benchmark selection after native snapshot release and complete Mastra smoke coverage. FREESTYLE_SNAPSHOT_ID pins the immutable release snapshot; Ubuntu OS/compiler/kernel differences remain disclosed. Replicated suite coverage is established by each benchmark experiment.",
 	},
 	specPinning: "settable",
 	transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },

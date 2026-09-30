@@ -45,6 +45,9 @@ user receives its own copy of the pinned profile definitions and mutable PTS sta
 - Freestyle can participate in scoped bake/backfill and emit a pinned artifact reference, but stays
   opt-in and outside `RELEASE_REQUIRED` until live conformance and complete suite coverage pass.
   Mastra Test Core is a required metric; a green process exit or toolchain smoke cannot replace it.
+  The [2026-09-30 promotion decision](../freestyle-default-matrix-2026-09-30.md) revisits the opt-in
+  condition for default CPU collection after native release and main-branch Mastra confirmation;
+  it retains experiment-level coverage checks and does not change `RELEASE_REQUIRED`.
 - A private snapshot consumes build time and retained storage. Plans imposing automatic snapshot
   expiry cannot provide a durable release artifact and fail the bake. Old candidate IDs are retained
   to keep prior experiment pins usable; account owners manage their eventual retirement.

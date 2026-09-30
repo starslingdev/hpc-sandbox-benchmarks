@@ -1,11 +1,13 @@
 # @sandbox-benchmarks/freestyle
 
 Native [Freestyle](https://www.freestyle.sh/docs/vms) VM driver; the SDK is pinned in the root catalog.
-Set `FREESTYLE_API_KEY`, pin `FREESTYLE_SNAPSHOT_ID` to a private immutable `sh-…` ID, and select
-`freestyle` explicitly in `bench-smoke` or the CLI. The driver verifies the booted snapshot ID.
+Set `FREESTYLE_API_KEY` and pin `FREESTYLE_SNAPSHOT_ID` to a private immutable `sh-…` ID.
+Freestyle is included in the default CPU benchmark selection; `bench-smoke` or the CLI can select
+`freestyle` explicitly for a targeted run. The driver verifies the booted snapshot ID.
 
 Freestyle uses a native baked snapshot, installed directly in Ubuntu 24.04 from the shared toolchain
-recipes and pins. It supports scoped bake/backfill but remains opt-in and outside `RELEASE_REQUIRED`.
+recipes and pins. It supports scoped bake/backfill and remains outside `RELEASE_REQUIRED`,
+which is independent of the default CPU benchmark selection.
 Ubuntu packages and the VM kernel differ from the shared Debian 13 image; disclose that difference
 when comparing results. See [ADR-0021](../../docs/adr/0021-freestyle-native-snapshots.md).
 
@@ -52,8 +54,11 @@ Promotion revalidates and snapshots the exact candidate ID without reinstalling;
 recipe or an existing version name. Replaced candidate IDs remain available for pinned experiments.
 Use the returned ID for `FREESTYLE_SNAPSHOT_ID` and the frozen planner's `BENCH_ARTIFACT_FREESTYLE`.
 Actions derives the planner input from the repository variable `FREESTYLE_SNAPSHOT_ID`.
-Only admit Freestyle to the default matrix after live driver conformance and full suite coverage,
-including `realworld_mastra_task_test_core`, pass on that ID. Toolchain smoke alone is insufficient.
+The [default-matrix promotion evidence](../../docs/freestyle-default-matrix-2026-09-30.md) records
+the native release, driver diagnostics, complete diagnostic suite coverage and main-branch Mastra
+smoke, including `realworld_mastra_task_test_core`. The smoke used the promoted snapshot ID.
+Default collection does not establish replicated coverage: each experiment still validates its own
+attempts, artifact identity, metric coverage and cleanup before publication.
 
 Actions requires a dedicated benchmark account, `FREESTYLE_API_KEY` in `privileged`, and a protected
 `benchmark-account-journal-freestyle` branch: follow [account admission setup](../../docs/benchmark-execution-rollout.md#account-admission-before-live-rollout).
