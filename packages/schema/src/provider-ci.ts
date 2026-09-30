@@ -45,6 +45,20 @@ const NON_PROVIDER_CREDENTIALS = [
 	"FIREWORKS_API_KEY",
 ];
 
+// A non-secret placeholder names the environment keys; workers reject any unresolved placeholder.
+export function environmentSecretBindings(
+	account: "inputs.account" | "matrix.account" | "'modal'",
+): Record<string, string> {
+	return Object.fromEntries(
+		PROVIDER_ACCOUNTS.flatMap((owner) =>
+			accountSecretNames(owner).map((name) => [
+				name,
+				`\${{ ${account} == '${owner}' && 'environment-only' || '' }}`,
+			]),
+		),
+	);
+}
+
 /** Presence-only guard: no foreign secret value is exported into the runner process. */
 export function foreignCredentialExpression(fixedAccount?: string): string {
 	if (fixedAccount !== undefined) providerEnvironment(fixedAccount);
@@ -55,6 +69,11 @@ export function foreignCredentialExpression(fixedAccount?: string): string {
 					? `(inputs.account != '${account}' && secrets.${name} != '')`
 					: `secrets.${name} != ''`,
 			),
+	);
+	clauses.push(
+		...PROVIDER_ACCOUNTS.flatMap(accountSecretNames).map(
+			(name) => `secrets.${name} == 'environment-only'`,
+		),
 	);
 	clauses.push(...NON_PROVIDER_CREDENTIALS.map((name) => `secrets.${name} != ''`));
 	return `\${{ ${clauses.join(" || ")} }}`;

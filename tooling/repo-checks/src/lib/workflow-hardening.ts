@@ -23,6 +23,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	accountSecretNames,
+	environmentSecretBindings,
 	foreignCredentialExpression,
 	PROVIDER_ACCOUNTS,
 } from "@sandbox-benchmarks/schema/provider-ci";
@@ -749,7 +750,7 @@ export function checkProviderIsolation(doc: unknown, file: string): string[] {
 			!(boundary && job.secrets === "inherit" && job.uses === `./.github/workflows/${boundary}`) &&
 			!(
 				job.uses === "./.github/workflows/bench-suite.yml" &&
-				JSON.stringify(job.secrets) === JSON.stringify({ "github-token": `\${{ github.token }}` })
+				JSON.stringify(job.secrets) === JSON.stringify(environmentSecretBindings("inputs.account"))
 			)
 		)
 			errors.push(`${label}: secret forwarding is forbidden outside a secretless intermediary`);

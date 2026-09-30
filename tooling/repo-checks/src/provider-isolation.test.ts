@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { environmentSecretBindings } from "@sandbox-benchmarks/schema/provider-ci";
 import {
 	checkProviderIsolation,
 	listWorkflowFiles,
@@ -108,13 +109,13 @@ test("only secretless intermediary workflows can enable environment inheritance"
 		);
 });
 
-test("an explicit built-in token binding never forwards custom credentials", () => {
+test("environment lookup placeholders never forward credentials", () => {
 	const uses = "./.github/workflows/bench-suite.yml";
-	const secrets = { "github-token": `\${{ github.token }}` };
+	const secrets = environmentSecretBindings("inputs.account");
 	expect(checkProviderIsolation(workflow({ uses, secrets }), "caller.yml")).toEqual([]);
 	for (const bindings of [
 		{ ...secrets, BREZEL_API_KEY: "value" },
-		{ "github-token": `\${{ secrets.BREZEL_API_KEY }}` },
+		{ ...secrets, BREZEL_API_KEY: `\${{ secrets.BREZEL_API_KEY }}` },
 	])
 		expect(
 			checkProviderIsolation(workflow({ uses, secrets: bindings }), "caller.yml").length,
