@@ -89,24 +89,21 @@ test("provider workers cannot grant arbitrary write scopes", () => {
 	).toContain("issues: write");
 });
 
-test("environment lookup bindings never forward a credential value", () => {
-	const call = { uses: "./.github/workflows/bench-suite.yml", secrets: { BREZEL_API_KEY: "" } };
-	expect(checkProviderIsolation(workflow(call), "caller.yml")).toEqual([]);
-	for (const secrets of [
-		{ BREZEL_API_KEY: "value" },
-		{ BREZEL_API_KEY: `\${{ secrets.BREZEL_API_KEY }}` },
-		{ ANTHROPIC_API_KEY: "" },
+test("only secretless intermediary workflows can enable environment inheritance", () => {
+	const call = { uses: "./.github/workflows/bench-suite.yml", secrets: "inherit" };
+	const clean = workflow(call);
+	expect(checkProviderIsolation(clean, "bench-account.yml")).toEqual([]);
+	for (const doc of [
+		{ ...clean, on: { workflow_call: { secrets: { BREZEL_API_KEY: { required: false } } } } },
+		{ ...clean, on: { workflow_call: {}, workflow_dispatch: {} } },
+		workflow({ ...call, environment: "provider-brezel" }),
+		workflow({ ...call, with: { key: `\${{ secrets.BREZEL_API_KEY }}` } }),
+		workflow({ ...call, uses: "other/repo/workflow.yml@main" }),
+		workflow({ ...call, secrets: { BREZEL_API_KEY: "" } }),
 	])
-		expect(
-			checkProviderIsolation(workflow({ ...call, secrets }), "caller.yml").join("\n"),
-		).toContain("secret forwarding");
-	expect(
-		checkProviderIsolation(
-			workflow({ ...call, uses: "other/repo/workflow.yml@main" }),
-			"caller.yml",
-		).length,
-	).toBeGreaterThan(0);
-	expect(checkProviderIsolation(workflow({ uses: call.uses }), "caller.yml").join("\n")).toContain(
-		"empty secret argument",
-	);
+		expect(checkProviderIsolation(doc, "bench-account.yml").length).toBeGreaterThan(0);
+	for (const uses of [call.uses, "./.github/workflows/bench-account.yml"])
+		expect(checkProviderIsolation(workflow({ ...call, uses }), "caller.yml").join("\n")).toContain(
+			"secret forwarding",
+		);
 });

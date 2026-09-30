@@ -16,4 +16,4 @@ export function checkConcurrencyQueues(source: string): void {
 
 // Match only the parser's unsupported-field diagnostic; every other actionlint check remains active.
 export const ACTIONLINT_QUEUE_COMPATIBILITY =
-	'^unexpected key "queue" for "concurrency" section\\. expected one of "cancel-in-progress", "group"$';
+	'^unexpected key "queue" for "concurrency" section\\. expected one of "cancel-in-progress", "group"( \\[syntax-check\\])?$';

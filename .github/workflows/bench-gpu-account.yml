@@ -1,0 +1,16 @@
+name: GPU account boundary
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  execute:
+    # The entry workflow passes no secrets into this intermediary.
+    secrets: inherit # zizmor: ignore[secrets-inherit] CI enforces an empty incoming secret context.
+    uses: ./.github/workflows/bench-gpu-worker.yml
+    with:
+      mode: ${{ inputs.mode }}

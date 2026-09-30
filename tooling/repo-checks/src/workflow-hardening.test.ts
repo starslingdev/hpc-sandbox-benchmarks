@@ -184,7 +184,7 @@ describe("Vercel CLI authentication", () => {
 		const workflowText = [
 			".github/workflows/bench-smoke.yml",
 			".github/workflows/bench-suite.yml",
-			".github/workflows/provider-release.yml",
+			".github/workflows/provider-release-worker.yml",
 		]
 			.map((file) => readFileSync(join(root, file), "utf8"))
 			.join("\n");
@@ -199,7 +199,10 @@ describe("Vercel CLI authentication", () => {
 		// The fallback logout remains; the immediate post-mirror logout is fail-closed.
 		expect(workflowText.match(/docker logout vcr\.vercel\.com \|\| true/g)).toHaveLength(1);
 		expect(workflowText).toContain('vercel vcr push docker "$target_name"');
-		const toolchain = readFileSync(join(root, ".github/workflows/provider-release.yml"), "utf8");
+		const toolchain = readFileSync(
+			join(root, ".github/workflows/provider-release-worker.yml"),
+			"utf8",
+		);
 		expect(toolchain.indexOf("- name: Log out of VCR after mirror")).toBeGreaterThan(
 			toolchain.indexOf("- name: Mirror the toolchain base into VCR"),
 		);
@@ -235,7 +238,7 @@ describe("Namespace token authentication", () => {
 		const root = findRepoRoot();
 		const workflowText = [
 			".github/workflows/bench-suite.yml",
-			".github/workflows/provider-release.yml",
+			".github/workflows/provider-release-worker.yml",
 		]
 			.map((file) => readFileSync(join(root, file), "utf8"))
 			.join("\n");
@@ -266,7 +269,7 @@ describe("Namespace token authentication", () => {
 		expect(action).not.toContain("uses: namespacelabs/nscloud-setup");
 		const workflowText = [
 			".github/workflows/bench-suite.yml",
-			".github/workflows/provider-release.yml",
+			".github/workflows/provider-release-worker.yml",
 		]
 			.map((file) => readFileSync(join(root, file), "utf8"))
 			.join("\n");
@@ -278,8 +281,8 @@ describe("Namespace token authentication", () => {
 
 describe("run.cloud credential scoping", () => {
 	test("the isolated worker exposes the key only when its provider is runcloud", () => {
-		const doc = readWorkflow(`${WORKFLOWS_DIR}/provider-release.yml`);
-		const publish = workflowJob(doc, "release", "provider-release.yml");
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/provider-release-worker.yml`);
+		const publish = workflowJob(doc, "release", "provider-release-worker.yml");
 		// Exactly one assignment anywhere in the publish job, and its entire value is the plan gate. This
 		// rejects every unscoped spelling (including `secrets.RUN_CLOUD_API_KEY || ''`) rather than one
 		// fragile literal while ignoring a second assignment in another step or at job scope.
@@ -289,16 +292,16 @@ describe("run.cloud credential scoping", () => {
 
 describe("Runloop credential scoping", () => {
 	test("the isolated worker exposes the key only when its provider is runloop", () => {
-		const doc = readWorkflow(`${WORKFLOWS_DIR}/provider-release.yml`);
-		const publish = workflowJob(doc, "release", "provider-release.yml");
+		const doc = readWorkflow(`${WORKFLOWS_DIR}/provider-release-worker.yml`);
+		const publish = workflowJob(doc, "release", "provider-release-worker.yml");
 		expect(valuesForKey(publish, "RUNLOOP_API_KEY")).toEqual([SCOPED_RUNLOOP_KEY]);
 	});
 });
 
 describe("toolchain bake base-image selection", () => {
 	test("threads one immutable source through every bake cell and the Vercel mirror", () => {
-		const worker = readWorkflow(`${WORKFLOWS_DIR}/provider-release.yml`);
-		const doc = { jobs: { bake: workflowJob(worker, "release", "provider-release.yml") } };
+		const worker = readWorkflow(`${WORKFLOWS_DIR}/provider-release-worker.yml`);
+		const doc = { jobs: { bake: workflowJob(worker, "release", "provider-release-worker.yml") } };
 		const pipeline = readWorkflow(`${WORKFLOWS_DIR}/${TOOLCHAIN_WORKFLOW}`);
 		for (const id of ["bake", "promote-providers"]) {
 			expect(

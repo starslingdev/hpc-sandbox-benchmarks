@@ -26,11 +26,6 @@ permissions:
 jobs:
   gpu:
     if: github.ref == 'refs/heads/main' && github.repository == 'starslingdev/hpc-sandbox-benchmarks'
-    secrets:
-      # >>> generated: environment-secret-arguments — bun run generate-provider-wiring
-      MODAL_TOKEN_ID: ''
-      MODAL_TOKEN_SECRET: ''
-      # <<< end generated: environment-secret-arguments
-    uses: ./.github/workflows/bench-gpu-worker.yml
+    uses: ./.github/workflows/bench-gpu-account.yml
     with:
       mode: ${{ inputs.mode }}

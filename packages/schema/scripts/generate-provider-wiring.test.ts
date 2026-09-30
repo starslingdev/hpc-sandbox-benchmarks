@@ -212,7 +212,7 @@ describe("provider wiring projections", () => {
 		const lanes = [
 			{ file: ".github/workflows/bench-suite.yml", job: "bench", lane: "batch" as const },
 			{
-				file: ".github/workflows/provider-release.yml",
+				file: ".github/workflows/provider-release-worker.yml",
 				job: "release",
 				lane: "worker" as const,
 			},

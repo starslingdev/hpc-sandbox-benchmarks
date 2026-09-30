@@ -6,13 +6,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-	accountSecretNames,
-	foreignCredentialExpression,
-	PROVIDER_SECRET_NAMES,
-	providerAccount,
-	WORKER_SECRET_NAMES,
-} from "../src/provider-ci.ts";
+import { foreignCredentialExpression, providerAccount } from "../src/provider-ci.ts";
 import type { ProviderId } from "../src/provider-ids.ts";
 import { PROVIDER_IDS } from "../src/provider-ids.ts";
 import { REGISTRY } from "../src/provider-meta/index.ts";
@@ -367,24 +361,12 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 			body: renderPreAuthCondition(preAuth, "batch"),
 		},
 		{
-			file: ".github/workflows/provider-release.yml",
+			file: ".github/workflows/provider-release-worker.yml",
 			label: `preauth-${preAuth}-release`,
 			body: renderPreAuthCondition(preAuth, "worker"),
 		},
 	]);
 	return [
-		...["bench-account.yml", "toolchain-image.yml", "bench-gpu.yml"].map((file) => ({
-			file: `.github/workflows/${file}`,
-			label: "environment-secret-arguments",
-			body: (file === "bench-gpu.yml" ? accountSecretNames("modal") : PROVIDER_SECRET_NAMES)
-				.map((name) => `      ${name}: ''`)
-				.join("\n"),
-		})),
-		...["bench-suite.yml", "provider-release.yml", "bench-gpu-worker.yml"].map((file) => ({
-			file: `.github/workflows/${file}`,
-			label: "provider-secret-declarations",
-			body: WORKER_SECRET_NAMES.map((name) => `      ${name}: { required: false }`).join("\n"),
-		})),
 		{
 			file: ".github/workflows/bench-smoke.yml",
 			label: "provider-options",
@@ -402,7 +384,7 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 			body: renderWorkflowInputs("batch"),
 		},
 		{
-			file: ".github/workflows/provider-release.yml",
+			file: ".github/workflows/provider-release-worker.yml",
 			label: "provider-inputs-release",
 			body: renderWorkflowInputs("worker"),
 		},
@@ -411,7 +393,7 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 			label: `provider-isolation-${job}`,
 			body: `          FOREIGN_CREDENTIALS: ${foreignCredentialExpression("modal")}`,
 		})),
-		...["bench-suite.yml", "provider-release.yml"].flatMap((file) =>
+		...["bench-suite.yml", "provider-release-worker.yml"].flatMap((file) =>
 			["provider-isolation-check"].map((label) => ({
 				file: `.github/workflows/${file}`,
 				label,

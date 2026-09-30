@@ -25,7 +25,6 @@ import {
 	accountSecretNames,
 	foreignCredentialExpression,
 	PROVIDER_ACCOUNTS,
-	PROVIDER_SECRET_NAMES,
 } from "@sandbox-benchmarks/schema/provider-ci";
 import { Glob } from "bun";
 import { findRepoRoot } from "./workspace.ts";
@@ -717,7 +716,14 @@ export function runHardeningCheck(root: string = findRepoRoot()): string[] {
 	return errors;
 }
 
-/** Job-level isolation: environment scopes credentials; reusable calls never inherit repo/org secrets. */
+// Only these secretless intermediaries may inherit into environment-bound workers.
+const SECRETLESS_BOUNDARIES: Readonly<Record<string, string>> = {
+	"bench-account.yml": "bench-suite.yml",
+	"bench-gpu-account.yml": "bench-gpu-worker.yml",
+	"provider-release.yml": "provider-release-worker.yml",
+};
+
+/** Entry workflows cut off repo/org secrets before the environment lookup inheritance hop. */
 export function checkProviderIsolation(doc: unknown, file: string): string[] {
 	const root = asRecord(doc, file);
 	const jobs = asRecord(root.jobs, `${file}: jobs`);
@@ -725,27 +731,24 @@ export function checkProviderIsolation(doc: unknown, file: string): string[] {
 	for (const [id, value] of Object.entries(jobs)) {
 		const job = asRecord(value, `${file}::${id}`);
 		const label = `${file}::${id}`;
-		const environmentWorker =
-			typeof job.uses === "string" &&
-			["bench-suite", "provider-release", "bench-gpu-worker"].some(
-				(name) => job.uses === `./.github/workflows/${name}.yml`,
-			);
-		if (job.secrets !== undefined) {
-			const bindings = job.secrets;
+		const boundary = SECRETLESS_BOUNDARIES[file];
+		if (boundary) {
+			const triggers = asRecord(root.on, `${file}: on`);
+			const call = asRecord(triggers.workflow_call, `${file}: workflow_call`);
 			if (
-				!environmentWorker ||
-				typeof bindings !== "object" ||
-				bindings === null ||
-				Array.isArray(bindings) ||
-				Object.entries(bindings).some(
-					([name, value]) => !PROVIDER_SECRET_NAMES.includes(name) || value !== "",
-				)
+				Object.keys(triggers).join(",") !== "workflow_call" ||
+				call.secrets !== undefined ||
+				job.environment !== undefined
 			)
 				errors.push(
-					`${label}: secret forwarding is forbidden; only empty environment-key bindings are allowed`,
+					`${label}: intermediary must be reusable-only with no secret inputs or environment`,
 				);
-		} else if (environmentWorker)
-			errors.push(`${label}: environment workers require empty secret argument bindings`);
+		}
+		if (
+			job.secrets !== undefined &&
+			!(boundary && job.secrets === "inherit" && job.uses === `./.github/workflows/${boundary}`)
+		)
+			errors.push(`${label}: secret forwarding is forbidden outside a secretless intermediary`);
 		const environment = jobEnvironmentName(job);
 		const fixedAccount = environment?.startsWith("provider-") ? environment.slice(9) : undefined;
 		const strings = [...envStrings(root.env), ...jobSecretStrings(job, file, id)];
@@ -760,6 +763,8 @@ export function checkProviderIsolation(doc: unknown, file: string): string[] {
 			}
 		}
 		const dynamic = environment === `\${{ format('provider-{0}', inputs.account) }}`;
+		if (boundary && strings.some((text) => customSecretsIn(text).length > 0))
+			errors.push(`${label}: intermediary cannot read custom secrets`);
 		if (names.size > 0 && !dynamic && !PROVIDER_ACCOUNTS.includes(fixedAccount ?? ""))
 			errors.push(`${label}: custom secrets require a provider environment`);
 		if (!dynamic && fixedAccount === undefined) continue;
@@ -771,7 +776,7 @@ export function checkProviderIsolation(doc: unknown, file: string): string[] {
 			Object.keys(triggers).join(",") !== "workflow_call"
 		)
 			errors.push(`${label}: provider execution must be a reusable-only worker`);
-		if (dynamic && !["bench-suite.yml", "provider-release.yml"].includes(file))
+		if (dynamic && !["bench-suite.yml", "provider-release-worker.yml"].includes(file))
 			errors.push(`${label}: unrecognized dynamic provider environment`);
 		if (!job.permissions || typeof job.permissions !== "object")
 			errors.push(`${label}: provider worker must declare explicit permissions`);

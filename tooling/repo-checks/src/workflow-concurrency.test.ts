@@ -38,7 +38,7 @@ test("all current allocating workflows share account queues across variants and 
 	const bench = jobQueue("bench-suite.yml", "bench").group;
 	expect(bench).toBe(`benchmark-account-\${{ inputs.account }}`);
 	for (const job of ["release", "namespace"])
-		expect(jobQueue("provider-release.yml", job).group).toBe(bench);
+		expect(jobQueue("provider-release-worker.yml", job).group).toBe(bench);
 	expect(jobQueue("bench-suite.yml", "namespace").group).toBe(bench);
 	// The GPU lane is Modal-only and names the account directly: the registry's domain, not a literal
 	// that could survive a rename.

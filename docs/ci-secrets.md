@@ -11,9 +11,10 @@ The former shared `privileged` environment is retained only while old main workf
 
 ## Execution boundary
 
-- CPU batches, GPU jobs and provider bake/promotion jobs run in reusable-only workflows, called
-  **without `secrets: inherit` or any secret forwarding**. Repository and organization secrets
-  therefore are not passed into these workers. Their own environment supplies the account credentials.
+- Entry workflows call a reusable intermediary **without any secret forwarding**. The intermediary
+  has no secret inputs or environment. Only its call to the provider worker uses `secrets: inherit`,
+  allowing GitHub to resolve that worker's environment secrets while the incoming secret context is empty.
+  CPU, GPU and provider release workers obtain credentials from their own account environment.
 - Provider jobs use fresh `ubuntu-24.04` runners, disable persisted checkout credentials and declare
   explicit token permissions. Only the Namespace job grants `id-token: write`; Vercel obtains its
   project OIDC token through the pinned Vercel CLI using its own bootstrap credentials.
@@ -28,7 +29,7 @@ The former shared `privileged` environment is retained only while old main workf
   a fallback for ordinary configuration.
 
 The workflow hardening and generated wiring gates reject shared credential environments, secret
-forwarding, dynamic/whole secret context extraction, unknown secret references, provider execution
+forwarding outside these secretless intermediaries, dynamic/whole secret context extraction, unknown secret references, provider execution
 outside reusable workers, nonstandard provider runners and unnecessary write/OIDC permissions.
 Keep provider environment contents aligned with the registry using the administrator audit below.
 
