@@ -141,3 +141,41 @@ It does not call a provider. Vendor create failures, retained `allocation.json`,
 cleanup are refused; use `recover-allocated-intent` when the raw tree retained a sandbox identity.
 The original attempt stays failed and is not rewritten. See
 [ADR-0019](../../docs/adr/0019-not-allocated-intent-recovery.md).
+
+
+### Retry failed and missing cells with an explicit repair
+
+After merging the recovery workflow to main, resolve all owned allocations and correct provider
+credentials (Boat requires delete permission; Vercel requires access to the configured project).
+Dispatch **Recover benchmark**, not GitHub's **Re-run failed jobs**:
+
+```sh
+gh workflow run recover-benchmark.yml --ref main -f run_id=36796890905 \
+  -f reason='Retry all original failed and missing cells after correcting provider credentials' \
+  -f allow_partial=true
+```
+
+Approve the protected environment for planning, execution and publication. Planning freezes every
+failed/cancelled/missing cell; successful and excluded cells are never measured again. The new workers
+use the original benchmark source and identical workload/artifact/resource/trial policies. Code fixes
+require a fresh ordinary experiment. A measured failure may be retried only through this explicit
+repair policy ([ADR-0022](../../docs/adr/0022-explicit-experiment-repair.md)).
+
+The final job recollects both workflows and journals, verifies their receipts independently, selects
+replacement whole attempts, and promotes the repaired dataset under the original run ID. It keeps
+`experiment.repair`, all planned coverage and original successes. Remaining verified failures are
+published only with `allow_partial=true`; missing replacement artifacts and unresolved cleanup always
+block. A failed replacement replaces the original attempt too: there is no best-score selection or
+metric stitching. The original evidence remains immutable.
+
+If only publication failed after all workers ended, backfill without allocating more sandboxes:
+
+```sh
+gh workflow run commit-dataset.yml --ref main -f run_id=36796890905 \
+  -f recovery_run_id=RECOVERY_WORKFLOW_RUN_ID -f allow_partial=true
+```
+
+After the dataset PR is merged, dispatch **Update leaderboard** with the original `run_id`.
+Do not rerun jobs of the recovery workflow; a new dispatch freezes a new repair manifest. Expired or
+changed original evidence is refused. Very large repair selections exceeding 256 batches or 64 batches
+for one account are refused rather than overflowing GitHub's bounded matrix/account queues.

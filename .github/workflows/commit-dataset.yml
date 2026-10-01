@@ -31,6 +31,11 @@ on:
         description: 'Bench matrix run id whose experiment plan + attempt artifacts to aggregate + commit.'
         required: true
         type: string
+      recovery_run_id:
+        description: 'Optional completed or currently publishing recover-benchmark workflow run supplying frozen replacements.'
+        required: false
+        type: string
+        default: ''
       allow_partial:
         description: 'Publish an incomplete experiment as an explicitly partial Run (ADR-0012). Default: strict completeness.'
         required: false
@@ -42,6 +47,11 @@ on:
         description: 'Previous Bench matrix run id to backfill the dataset from (its experiment plan + attempt artifacts must still be retained).'
         required: true
         type: string
+      recovery_run_id:
+        description: 'Optional completed or currently publishing recover-benchmark workflow run supplying frozen replacements.'
+        required: false
+        type: string
+        default: ''
       allow_partial:
         description: 'Publish an incomplete experiment as an explicitly partial Run (ADR-0012): keeps every verified measurement, records each failed cell under experiment.partial, and labels the leaderboard partial. Leave off for strict completeness.'
         required: false
@@ -87,6 +97,8 @@ jobs:
     # the candidate was built with, and a flag on only one side would fail that verification.
     env:
       RUN_ID: ${{ inputs.run_id }}
+      SOURCE_RUN_ID: ${{ inputs.run_id }}
+      RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
       ALLOW_PARTIAL_FLAG: ${{ inputs.allow_partial && '--allow-partial' || '' }}
     steps:
       # Unlike the read-only bench jobs, this one commits + `git push`es the promoted dataset, so it
@@ -101,14 +113,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BENCH_EXPERIMENT_ID: ${{ inputs.run_id }}
-        run: bun apps/cli/src/bin/workflow-experiment.ts collect
+        run: |
+          if [ -n "$RECOVERY_RUN_ID" ]; then
+            bun apps/cli/src/bin/workflow-repair.ts collect
+          else
+            bun apps/cli/src/bin/workflow-experiment.ts collect
+          fi
 
       # `${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"}` expands to the one flag when set and to nothing
       # (not an empty argument) when the default strict policy applies.
       - name: Aggregate
         id: aggregate
         run: |
-          bun apps/cli/src/bin/aggregate-experiment.ts experiment/manifest/plan.json experiment/attempts data/candidate ${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"}
+          bun apps/cli/src/bin/aggregate-experiment.ts experiment/manifest/plan.json experiment/attempts data/candidate ${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"} ${RECOVERY_RUN_ID:+--repair recovery}
 
       # Always retain coverage.json when aggregation writes it, including incomplete experiments.
       # Promotion below still requires a complete Run unless allow_partial was set; this artifact is
@@ -124,7 +141,7 @@ jobs:
       - name: Promote
         if: success()
         run: |
-          bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset experiment/manifest/plan.json experiment/attempts ${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"}
+          bun apps/cli/src/bin/promote.ts "data/candidate/runs/$RUN_ID.json" data/dataset experiment/manifest/plan.json experiment/attempts ${ALLOW_PARTIAL_FLAG:+"$ALLOW_PARTIAL_FLAG"} ${RECOVERY_RUN_ID:+--repair recovery}
 
       # Canonicalize the promoted dataset to Biome's format before the gate + commit. The promote
       # writer emits `JSON.stringify(run, null, 2)` (every array element on its own line), but Biome's
@@ -176,7 +193,7 @@ jobs:
           branch="dataset/publish-${RUN_ID}"
           # Say in the commit/PR title when the Run was published under the partial policy, so the
           # dataset history is honest at a glance (the Run itself carries experiment.partial).
-          title="chore(dataset): commit run ${RUN_ID}${ALLOW_PARTIAL_FLAG:+ (partial)}"
+          title="chore(dataset): commit run ${RUN_ID}${RECOVERY_RUN_ID:+ (repaired)}${ALLOW_PARTIAL_FLAG:+ (partial)}"
           # Always (re)build the bot branch from the freshly promoted dataset and force-push FIRST, so a
           # re-run (retried matrix run, or a re-dispatched backfill) refreshes an already-open PR rather
           # than leaving it stale if the aggregated content changed since it was opened. `-C` resets the

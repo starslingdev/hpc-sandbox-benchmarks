@@ -11,6 +11,9 @@ The inventory admission condition is refined by
 Later cleanup attestations are refined by [ADR-0014](./0014-post-run-cleanup-recovery.md).
 A lost `not-allocated` release is recovered by [ADR-0019](./0019-not-allocated-intent-recovery.md).
 
+An explicit repair experiment is proposed in [ADR-0022](./0022-explicit-experiment-repair.md).
+It extends the measured-rerun prohibition only through a separately frozen operator dispatch.
+
 ## Decision
 
 An experiment plan owns the expected provider, suite, replicate, metric, revision, artifact, resource,

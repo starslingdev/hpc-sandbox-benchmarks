@@ -301,7 +301,7 @@ test("the integrated workflow gate rejects parallel waves, serialised batches, d
 		],
 		[
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansion under test
-			'experiment/attempts ${ALLOW_PARTIAL_FLAG:+\\"$ALLOW_PARTIAL_FLAG\\"}\\n',
+			'experiment/attempts ${ALLOW_PARTIAL_FLAG:+\\"$ALLOW_PARTIAL_FLAG\\"} ${RECOVERY_RUN_ID:+--repair recovery}\\n',
 			"experiment/attempts\\n",
 		],
 	] as const) {
@@ -321,4 +321,36 @@ describe("checkJobCeiling", () => {
 		expect(errors[0]).toContain("180");
 		expect(errors[0]).toContain("330");
 	});
+});
+
+test("recovery preserves frozen-source execution, ordered waves and verified publication", () => {
+	const doc = JSON.parse(JSON.stringify(readWorkflow(".github/workflows/recover-benchmark.yml")));
+	const jobs = doc.jobs;
+	if (typeof jobs !== "object" || jobs === null) throw new Error("recovery workflow has no jobs");
+	const parsed = JSON.parse(JSON.stringify(jobs));
+	expect(parsed.plan.environment).toBe("privileged");
+	expect(parsed.plan.if).toContain("refs/heads/main");
+	for (const [name, previous, wave] of [
+		["retry-memory", null, "synthetic-memory"],
+		["retry-system", "retry-memory", "synthetic-system"],
+		["retry-realworld", "retry-system", "realworld"],
+	] as const) {
+		const job = parsed[name];
+		expect(job.uses).toBe("./.github/workflows/bench-suite.yml");
+		expect(job.strategy["fail-fast"]).toBe(false);
+		expect(job.strategy["max-parallel"]).toBeUndefined();
+		expect(job.if).toContain("!cancelled()");
+		expect(job.if).toContain(wave);
+		if (previous) expect(job.needs).toContain(previous);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: GitHub expression under test
+		expect(job.with.execution_sha).toBe("${{ needs.plan.outputs.source_sha }}");
+	}
+	expect(parsed.publish.needs).toEqual(["plan", "retry-memory", "retry-system", "retry-realworld"]);
+	expect(parsed.publish.uses).toBe("./.github/workflows/commit-dataset.yml");
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: GitHub expression under test
+	expect(parsed.publish.with.recovery_run_id).toBe("${{ github.run_id }}");
+	const worker = readWorkflow(".github/workflows/bench-suite.yml");
+	const encoded = JSON.stringify(worker);
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: GitHub expression under test
+	expect(encoded).toContain("${{ inputs.execution_sha || github.sha }}");
 });

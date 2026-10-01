@@ -31,7 +31,8 @@
     "recover-not-allocated-intent": "./src/bin/recover-not-allocated-intent.ts",
     "recover-experiment-cleanup": "./src/bin/recover-experiment-cleanup.ts",
     "audit-account-journals": "./src/bin/audit-account-journals.ts",
-    "dataset-impact": "./src/bin/dataset-impact.ts"
+    "dataset-impact": "./src/bin/dataset-impact.ts",
+    "workflow-repair": "./src/bin/workflow-repair.ts"
   },
   "scripts": {
     "test": "bun test",

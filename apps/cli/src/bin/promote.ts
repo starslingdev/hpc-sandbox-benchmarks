@@ -8,7 +8,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as core from "@actions/core";
 import {
-	aggregateExperiment,
 	describeIncompleteExperiment,
 	evidenceDigest,
 	writeRunDocument,
@@ -23,17 +22,14 @@ import {
 	withGroup,
 	writeJobSummary,
 } from "../lib/actions-log.ts";
-import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-artifacts.ts";
+import { aggregatePublication, publicationArgs } from "../lib/publication.ts";
 
 if (import.meta.main) {
-	const args = process.argv.slice(2);
-	const allowPartial = args.includes("--allow-partial");
-	const [runFile, datasetDir, planFile, attemptsRoot] = args.filter(
-		(arg) => arg !== "--allow-partial",
-	);
+	const { positionals, ...options } = publicationArgs(process.argv.slice(2));
+	const [runFile, datasetDir, planFile, attemptsRoot] = positionals;
 	if (!runFile) {
 		fail(
-			"usage: promote <candidateRun.json> [datasetDir plan.json attemptsRoot] [--allow-partial]",
+			"usage: promote <candidateRun.json> [datasetDir plan.json attemptsRoot] [--allow-partial] [--repair <recovery-directory>]",
 			{
 				properties: { title: "promote usage" },
 				exitCode: 2,
@@ -87,11 +83,7 @@ if (import.meta.main) {
 				"publication requires an immutable experiment plan and original attempt artifacts; historical completeness is unverified",
 			);
 		}
-		const verified = aggregateExperiment(
-			readExperimentPlan(planFile),
-			readExperimentAttempts(attemptsRoot),
-			{ allowPartial },
-		);
+		const verified = aggregatePublication(planFile, attemptsRoot, options);
 		if (!verified.run) {
 			fail(["experiment is incomplete", ...describeIncompleteExperiment(verified)].join("\n"));
 		}

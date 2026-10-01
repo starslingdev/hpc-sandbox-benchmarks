@@ -1,0 +1,133 @@
+name: Recover benchmark
+
+# A fresh, explicitly approved repair preserves originals and fixes the entire frozen failed set.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Completed CPU benchmark run to repair.'
+        required: true
+        type: string
+      reason:
+        description: 'Operator reason for replacing all failed/missing cells, including measured failures.'
+        required: true
+        type: string
+      allow_partial:
+        description: 'Publish verified partial results if some replacement cells still fail.'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Share the CPU producer lock; per-account locks are inherited from bench-suite.
+concurrency:
+  group: bench-matrix-${{ github.ref }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main' && github.repository == 'starslingdev/hpc-sandbox-benchmarks'
+    runs-on: ubuntu-24.04
+    environment: privileged
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      waves: ${{ steps.plan.outputs.waves }}
+      memory_axis: ${{ steps.plan.outputs.memory_axis }}
+      system_axis: ${{ steps.plan.outputs.system_axis }}
+      realworld_axis: ${{ steps.plan.outputs.realworld_axis }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+      - uses: ./.github/actions/artifact-runtime
+      - name: Freeze source evidence and all replacement cells
+        id: plan
+        env:
+          SOURCE_RUN_ID: ${{ inputs.run_id }}
+          REPAIR_REASON: ${{ inputs.reason }}
+          GH_TOKEN: ${{ github.token }}
+        run: bun apps/cli/src/bin/workflow-repair.ts plan
+
+  retry-memory:
+    needs: plan
+    if: >-
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-memory')
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.memory_axis) }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/bench-suite.yml
+    with:
+      account: ${{ matrix.account }}
+      providers: ${{ matrix.providers }}
+      suite: ${{ matrix.suite }}
+      batch_id: ${{ matrix.batch_id }}
+      execution_sha: ${{ needs.plan.outputs.source_sha }}
+    secrets: inherit
+
+  retry-system:
+    needs: [plan, retry-memory]
+    if: >-
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'synthetic-system')
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.system_axis) }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/bench-suite.yml
+    with:
+      account: ${{ matrix.account }}
+      providers: ${{ matrix.providers }}
+      suite: ${{ matrix.suite }}
+      batch_id: ${{ matrix.batch_id }}
+      execution_sha: ${{ needs.plan.outputs.source_sha }}
+    secrets: inherit
+
+  retry-realworld:
+    needs: [plan, retry-system]
+    if: >-
+      !cancelled() && needs.plan.result == 'success' &&
+      contains(fromJSON(needs.plan.outputs.waves), 'realworld')
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.realworld_axis) }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/bench-suite.yml
+    with:
+      account: ${{ matrix.account }}
+      providers: ${{ matrix.providers }}
+      suite: ${{ matrix.suite }}
+      batch_id: ${{ matrix.batch_id }}
+      execution_sha: ${{ needs.plan.outputs.source_sha }}
+    secrets: inherit
+
+  publish:
+    needs: [plan, retry-memory, retry-system, retry-realworld]
+    # Failed attempts are terminal evidence; cancellations/missing artifacts remain blockers.
+    if: always() && needs.plan.result == 'success' && !cancelled()
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    uses: ./.github/workflows/commit-dataset.yml
+    with:
+      run_id: ${{ inputs.run_id }}
+      recovery_run_id: ${{ github.run_id }}
+      allow_partial: ${{ inputs.allow_partial }}
+    secrets: inherit

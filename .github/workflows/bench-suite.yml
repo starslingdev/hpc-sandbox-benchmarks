@@ -15,6 +15,11 @@ on:
         description: 'Suite to run — the bench-suite.ts arg and the artifact-name key. A registered SUITE_NAMES value.'
         required: true
         type: string
+      execution_sha:
+        description: 'Frozen benchmark source revision for an explicitly planned repair (blank uses workflow SHA).'
+        required: false
+        type: string
+        default: ''
       batch_id:
         description: 'Immutable experiment batch identity.'
         type: string
@@ -43,6 +48,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.execution_sha || github.sha }}
           persist-credentials: false
 
       - name: Set up workspace
@@ -97,7 +103,8 @@ jobs:
 
       - name: Run suite and normalize
         env:
-          BENCH_REPO_REF: ${{ github.sha }}
+          BENCH_REPO_REF: ${{ inputs.execution_sha || github.sha }}
+          EXECUTION_SHA: ${{ inputs.execution_sha || github.sha }}
           BENCH_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENCH_ACCOUNT: ${{ inputs.account }}
           BENCH_BATCH_PROVIDERS: ${{ inputs.providers }}
@@ -143,7 +150,7 @@ jobs:
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}
           # <<< end generated: provider-runner-lifetime
-        run: bun apps/cli/src/bin/workflow-experiment.ts execute
+        run: GITHUB_SHA="$EXECUTION_SHA" bun apps/cli/src/bin/workflow-experiment.ts execute
 
       - name: Upload Run + raw results
         if: always()

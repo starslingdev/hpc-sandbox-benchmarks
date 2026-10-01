@@ -56,3 +56,5 @@ export function parseRawRun(value: unknown): RawRun {
 	}
 	return out;
 }
+
+export { type ExperimentRepair, experimentRepairSchema } from "./experiment-repair.ts";

@@ -193,7 +193,9 @@ export function checkExperimentNesting(docs: Record<string, unknown>): string[] 
 	);
 	const step = stepByName(worker, RUN_STEP, "bench-suite.yml");
 	expect(
-		step?.run === "bun apps/cli/src/bin/workflow-experiment.ts execute",
+		step?.run ===
+			'GITHUB_SHA="$EXECUTION_SHA" bun apps/cli/src/bin/workflow-experiment.ts execute' &&
+			asRecord(step?.env, "worker").EXECUTION_SHA === "${{ inputs.execution_sha || github.sha }}",
 		"worker must use managed batch executor",
 	);
 	expect(

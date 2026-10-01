@@ -33,3 +33,9 @@ that must agree for scores to be compared.
 A provider artifact captured from a VM after installing the shared pinned toolchain directly in it.
 Its immutable provider ID identifies the captured environment; a mutable release alias does not.
 Sharing toolchain pins does not imply identical operating-system packages or kernels.
+
+
+**Repair experiment**:
+An explicitly authorized experiment that replaces every failed or missing logical replicate of an
+original experiment as a whole attempt. Its frozen manifest preserves original and replacement
+provenance; it never selects measurements based on scores or adds logical replicates.

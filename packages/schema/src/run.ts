@@ -12,6 +12,7 @@ import { aggregatesSchema } from "./analysis.ts";
 import { effectiveArtifact, providerArtifactEvidenceSchema } from "./artifact-evidence.ts";
 import { cleanupRecoverySchema } from "./cleanup-recovery.ts";
 import { providerCostCellKey, providerCostEvidenceSchema } from "./cost-evidence.ts";
+import { experimentRepairSchema } from "./experiment-repair.ts";
 import { runIdSchema } from "./identifiers.ts";
 import { directionSchema } from "./metrics.ts";
 import type { TargetSpec } from "./target-spec.ts";
@@ -898,6 +899,7 @@ export const runSchema = type({
 		"cohortDigest?": /^sha256:[a-f0-9]{64}$/,
 		attemptIds: "string[] >= 1",
 		"cleanupRecoveries?": cleanupRecoverySchema.array().atLeastLength(1),
+		"repair?": experimentRepairSchema,
 		"partial?": {
 			status: "'partial'",
 			planned: "number.integer >= 1",
@@ -936,6 +938,16 @@ export const runSchema = type({
 	if (version >= 7 !== (run.experiment !== undefined)) {
 		return ctx.mustBe("experiment linkage exactly on Run v7 or newer");
 	}
+	const repair = run.experiment?.repair;
+	if (
+		repair &&
+		(repair.sourceRun !== run.runId ||
+			repair.sourceSha !== run.sha ||
+			repair.sourcePlanDigest !== run.experiment?.planDigest ||
+			repair.sourceRun === repair.recoveryRun ||
+			new Set(repair.cells.map((cell) => cell.id)).size !== repair.cells.length)
+	)
+		return ctx.mustBe("repair bound to the original experiment and a distinct recovery run");
 	const partial = run.experiment?.partial;
 	const recoveries = run.experiment?.cleanupRecoveries;
 	if (recoveries) {
@@ -944,9 +956,11 @@ export const runSchema = type({
 			new Set(recoveries.map((r) => r.attemptId)).size !== recoveries.length ||
 			recoveries.some((r) => {
 				const cell = partial.cells.find((c) => c.attemptId === r.attemptId);
+				const replacement = repair?.cells.some((c) => c.id === r.cellId);
 				return (
-					r.planDigest !== run.experiment?.planDigest ||
-					r.workflowRun !== run.runId ||
+					r.planDigest !==
+						(replacement ? repair?.recoveryPlanDigest : run.experiment?.planDigest) ||
+					r.workflowRun !== (replacement ? repair?.recoveryRun : run.runId) ||
 					r.sourceSha !== run.sha ||
 					cell?.id !== r.cellId ||
 					cell.status !== "failed" ||

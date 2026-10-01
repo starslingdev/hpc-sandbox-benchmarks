@@ -734,3 +734,273 @@ test("different allocation requirements stay in separate account batches", () =>
 		expect(result.batches).toHaveLength(2);
 	}
 });
+
+// Repair exercises the real source verifier and merger, including measured failures.
+import {
+	aggregateRepairedExperiment,
+	buildLeaderboard,
+	renderLeaderboardMarkdown,
+} from "@sandbox-benchmarks/results";
+import { planExperimentRepair } from "./experiment-repair.ts";
+
+function replacementFor(recovery: ReturnType<typeof plan>, replicate = 0): AttemptWithRun {
+	const a = successful();
+	a.evidence.id = `replacement-${replicate}`;
+	a.evidence.cellId = cell(replicate).id;
+	a.evidence.workflowRun = recovery.id;
+	a.evidence.planDigest = recovery.digest;
+	if (!a.run || !a.execution) throw new Error("incomplete fixture");
+	a.run.runId = recovery.id;
+	a.run.replicateIndex = replicate;
+	for (const p of a.run.providers)
+		for (const e of p.artifactEvidence ?? []) {
+			e.cell.runId = recovery.id;
+			e.cell.replicateIndex = replicate;
+			e.sandboxId = `sandbox-${recovery.id}-${replicate}`;
+		}
+	a.execution.runId = recovery.id;
+	a.execution.replicateIndex = replicate;
+	a.execution.sandboxId = `sandbox-${recovery.id}-${replicate}`;
+	a.evidence.runDigest = evidenceDigest(a.run);
+	return a;
+}
+const repairIdentity = {
+	run: "recovery-2",
+	operator: "operator",
+	reason: "Explicitly replace all failed cells",
+	createdOn: "2026-10-01",
+};
+function measuredFailure() {
+	const a = successful();
+	a.evidence.outcome = "failed";
+	a.evidence.completion = "known-failure";
+	if (!a.execution) throw new Error("missing fixture execution");
+	a.execution.steps[0] = { phase: "benchmark", label: "memory", ms: 1, exitCode: 1 };
+	return a;
+}
+
+test("repair freezes all failures and missing cells, never successful cells", () => {
+	const source = plan(3);
+	const success = successful();
+	success.evidence.planDigest = source.digest;
+	const failed = replacementFor(source, 1);
+	failed.evidence.id = "original-failed";
+	failed.evidence.outcome = "failed";
+	failed.evidence.completion = "known-failure";
+	const { plan: recovery, repair } = planExperimentRepair(
+		source,
+		[failed, success],
+		repairIdentity,
+	);
+	expect(repair.cells.map((c) => c.id)).toEqual([cell(1).id, cell(2).id]);
+	expect(repair.cells[0]?.previousAttempt).toBe("original-failed");
+	expect(repair.cells[1]?.previousAttempt).toBeUndefined();
+	const result = aggregateRepairedExperiment(
+		source,
+		[success, failed],
+		recovery,
+		[replacementFor(recovery, 2), replacementFor(recovery, 1)],
+		repair,
+	);
+	expect(result.coverage.complete).toBe(true);
+	expect(result.run?.runId).toBe(source.id);
+	expect(result.run?.experiment?.attemptIds).toContain(success.evidence.id);
+	expect(result.run?.experiment?.attemptIds).not.toContain(failed.evidence.id);
+	expect(result.run?.experiment?.repair).toEqual(repair);
+	if (!result.run) throw new Error("repair fixture must publish");
+	expect(renderLeaderboardMarkdown(buildLeaderboard(result.run), [])).toContain(
+		"**Repaired experiment.** 2 originally failed or missing cells",
+	);
+	expect(success.run?.runId).toBe(source.id);
+	expect(result.run?.providers[0]?.metrics[0]?.replicates?.length).toBe(3);
+});
+
+test("explicit repair replaces measured failures without modifying their evidence", () => {
+	const original = measuredFailure();
+	const before = evidenceDigest(original);
+	const { plan: recovery, repair } = planExperimentRepair(plan(), [original], repairIdentity);
+	const next = replacementFor(recovery);
+	const rawNext = evidenceDigest(next);
+	const result = aggregateRepairedExperiment(plan(), [original], recovery, [next], repair);
+	expect(result.coverage.complete).toBe(true);
+	expect(result.run?.experiment?.attemptIds).toEqual([next.evidence.id]);
+	expect(evidenceDigest(original)).toBe(before);
+	expect(evidenceDigest(next)).toBe(rawNext);
+});
+
+test("repair refuses unresolved ownership, complete-cell reruns and changed policy", () => {
+	const original = measuredFailure();
+	original.evidence.cleanup = "unresolved";
+	expect(() => planExperimentRepair(plan(), [original], repairIdentity)).toThrow(
+		"unresolved cleanup",
+	);
+	expect(() => planExperimentRepair(plan(), [successful()], repairIdentity)).toThrow(
+		"no failed or missing",
+	);
+	original.evidence.cleanup = "confirmed";
+	const { plan: recovery, repair } = planExperimentRepair(plan(), [original], repairIdentity);
+	const changed = structuredClone(recovery);
+	const c = changed.cells[0];
+	if (!c) throw new Error("fixture");
+	c.passes = 3;
+	const { digest: _digest, ...body } = changed;
+	changed.digest = evidenceDigest(body);
+	const altered = { ...repair, recoveryPlanDigest: changed.digest };
+	const { digest: _repairDigest, ...binding } = altered;
+	altered.digest = evidenceDigest(binding);
+	expect(() =>
+		aggregateRepairedExperiment(plan(), [original], changed, [], altered, { allowPartial: true }),
+	).toThrow("execution policy");
+});
+
+test("missing replacement artifacts, stale originals and forged binding block repair", () => {
+	const original = measuredFailure();
+	const { plan: recovery, repair } = planExperimentRepair(plan(), [original], repairIdentity);
+	const missing = aggregateRepairedExperiment(plan(), [original], recovery, [], repair, {
+		allowPartial: true,
+	});
+	expect(missing.run).toBeUndefined();
+	expect(missing.publicationBlockers).toContain("missing attempts: 1 cell(s)");
+	const forged = { ...repair, reason: "changed after approval" };
+	expect(() =>
+		aggregateRepairedExperiment(plan(), [original], recovery, [replacementFor(recovery)], forged),
+	).toThrow("digest mismatch");
+	const stale = structuredClone(original);
+	stale.evidence.diagnostic = "new original evidence";
+	expect(() => aggregateRepairedExperiment(plan(), [stale], recovery, [], repair)).toThrow(
+		"frozen selection mismatch",
+	);
+});
+
+test("partial repair selects the replacement wholesale, rather than best scores or old metrics", () => {
+	const source = plan(2);
+	const good = successful();
+	good.evidence.planDigest = source.digest;
+	const failed = replacementFor(source, 1);
+	failed.evidence.id = "original-failed";
+	failed.evidence.outcome = "failed";
+	failed.evidence.completion = "known-failure";
+	const { plan: recovery, repair } = planExperimentRepair(source, [good, failed], repairIdentity);
+	const retry = replacementFor(recovery, 1);
+	retry.evidence.outcome = "failed";
+	retry.evidence.completion = "known-failure";
+	if (!retry.execution) throw new Error("fixture");
+	retry.execution.steps[0] = { phase: "benchmark", label: "memory", ms: 1, exitCode: 1 };
+	const result = aggregateRepairedExperiment(source, [good, failed], recovery, [retry], repair, {
+		allowPartial: true,
+	});
+	expect(result.run?.experiment?.partial?.planned).toBe(2);
+	expect(result.run?.experiment?.partial?.incomplete).toBe(1);
+	expect(result.run?.experiment?.attemptIds).toContain(retry.evidence.id);
+	expect(result.run?.experiment?.attemptIds).not.toContain(failed.evidence.id);
+	expect(
+		aggregateRepairedExperiment(source, [good, failed], recovery, [retry], repair).run,
+	).toBeUndefined();
+});
+
+test("repair CLI aggregate and promote independently verify replacements and the manifest", () => {
+	const root = mkdtempSync(join(tmpdir(), "experiment-repair-promotion-"));
+	try {
+		const source = plan();
+		const { plan: recovery, repair } = planExperimentRepair(source, [], repairIdentity);
+		const attempt = replacementFor(recovery);
+		const recoveryRoot = join(root, "recovery");
+		const dir = join(recoveryRoot, "attempts", attempt.evidence.id);
+		const raw = join(dir, "raw");
+		mkdirSync(join(raw, "e2b", "memory"), { recursive: true });
+		writeFileSync(
+			join(raw, "e2b", "memory", "pts_stream.xml"),
+			`<PhoronixTestSuite>${["Copy", "Scale"].map((kind) => `<Result><Identifier>pts/stream-1.3.4</Identifier><Title>STREAM</Title><Description>Type: ${kind}</Description><Scale>MB/s</Scale><Proportion>HIB</Proportion><Data><Entry><Value>1.5</Value><RawString>1:2</RawString></Entry></Data></Result>`).join("")}</PhoronixTestSuite>`,
+		);
+		writeImmutableJson(join(raw, "execution-execution-1.json"), attempt.execution);
+		writeImmutableJson(join(raw, "cleanup-execution-1.json"), attempt.cleanup);
+		attempt.evidence.rawDigest = rawTreeDigest(raw);
+		writeImmutableJson(join(dir, "attempt.json"), attempt.evidence);
+		writeImmutableJson(join(dir, "run.json"), attempt.run);
+		writeImmutableJson(join(recoveryRoot, "plan.json"), recovery);
+		writeImmutableJson(join(recoveryRoot, "repair.json"), repair);
+		writeImmutableJson(join(root, "plan.json"), source);
+		mkdirSync(join(root, "originals"));
+		const invoke = (bin: string, args: string[]) =>
+			Bun.spawnSync([process.execPath, resolve(import.meta.dir, "../bin", `${bin}.ts`), ...args], {
+				stdout: "pipe",
+				stderr: "pipe",
+				env: { ...process.env, GITHUB_ACTIONS: "false" },
+			});
+		const candidate = join(root, "candidate");
+		const args = [join(root, "plan.json"), join(root, "originals")];
+		const aggregate = invoke("aggregate-experiment", [
+			...args,
+			candidate,
+			"--repair",
+			recoveryRoot,
+		]);
+		expect(aggregate.stderr.toString()).toBe("");
+		expect(aggregate.exitCode).toBe(0);
+		const runFile = join(candidate, "runs", "experiment-1.json");
+		expect(
+			invoke("promote", [runFile, join(root, "dataset"), ...args, "--repair", recoveryRoot])
+				.exitCode,
+		).toBe(0);
+		expect(
+			JSON.parse(readFileSync(join(root, "dataset", "runs", "experiment-1.json"), "utf8"))
+				.experiment.repair.digest,
+		).toBe(repair.digest);
+		writeFileSync(
+			join(recoveryRoot, "repair.json"),
+			JSON.stringify({ ...repair, operator: "forged" }),
+		);
+		expect(
+			invoke("promote", [runFile, join(root, "forged"), ...args, "--repair", recoveryRoot])
+				.exitCode,
+		).not.toBe(0);
+		writeFileSync(join(recoveryRoot, "repair.json"), JSON.stringify(repair));
+		writeFileSync(join(raw, "cleanup-execution-1.json"), "{}");
+		expect(
+			invoke("promote", [runFile, join(root, "tampered"), ...args, "--repair", recoveryRoot])
+				.exitCode,
+		).not.toBe(0);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}, 20_000);
+
+test("replacement cleanup recovery keeps its own workflow provenance in the repaired dataset", () => {
+	const source = plan(2);
+	const good = successful();
+	good.evidence.planDigest = source.digest;
+	const failed = replacementFor(source, 1);
+	failed.evidence.id = "original-failed";
+	failed.evidence.outcome = "failed";
+	failed.evidence.completion = "known-failure";
+	const { plan: recovery, repair } = planExperimentRepair(source, [good, failed], repairIdentity);
+	const retry = replacementFor(recovery, 1);
+	retry.evidence.outcome = "failed";
+	retry.evidence.cleanup = "unresolved";
+	retry.evidence.completion = "known-failure";
+	if (!retry.execution) throw new Error("fixture");
+	retry.execution.steps[0] = { phase: "benchmark", label: "memory", ms: 1, exitCode: 1 };
+	retry.cleanupRecovery = {
+		kind: "post-run-cleanup",
+		attemptId: retry.evidence.id,
+		cellId: retry.evidence.cellId,
+		planDigest: recovery.digest,
+		attemptDigest: evidenceDigest(retry.evidence),
+		workflowRun: recovery.id,
+		sourceSha: recovery.sha,
+		confirmedAt: "2026-10-01T01:00:00Z",
+		operator: "operator",
+		observation: {
+			kind: "sandbox",
+			provider: "e2b",
+			sandboxId: retry.execution.sandboxId,
+			state: "absent",
+		},
+	};
+	const result = aggregateRepairedExperiment(source, [good, failed], recovery, [retry], repair, {
+		allowPartial: true,
+	});
+	expect(result.run?.experiment?.cleanupRecoveries?.[0]?.workflowRun).toBe(recovery.id);
+	expect(result.run?.experiment?.cleanupRecoveries?.[0]?.planDigest).toBe(recovery.digest);
+	expect(result.run?.runId).toBe(source.id);
+});

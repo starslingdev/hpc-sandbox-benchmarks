@@ -351,6 +351,7 @@ interface LeaderboardFields {
 	runId: string;
 	comparisonCohort?: string;
 	partial?: NonNullable<Run["experiment"]>["partial"];
+	repair?: NonNullable<Run["experiment"]>["repair"];
 	sha: string;
 	generatedAt: string;
 	/** The requested comparison target recorded on this Run — never substituted from global config. */
@@ -835,6 +836,7 @@ export function buildLeaderboard(
 	const fields: LeaderboardFields = {
 		runId: run.runId,
 		...(run.experiment?.partial ? { partial: run.experiment.partial } : {}),
+		...(run.experiment?.repair ? { repair: run.experiment.repair } : {}),
 		...(run.experiment?.cohortDigest ? { comparisonCohort: run.experiment.cohortDigest } : {}),
 		sha: run.sha,
 		generatedAt: run.generatedAt,
@@ -1281,6 +1283,12 @@ export function renderLeaderboardMarkdown(
 					`Run ${runSourceLinks(board.runId)} · commit ${commitSourceLink(board.sha)} ·`,
 					`dataset ${datasetSourceLink(board.runId)} · generated ${board.generatedAt}`,
 				]),
+		...(board.repair
+			? [
+					"",
+					`**Repaired experiment.** ${board.repair.cells.length} originally failed or missing cells were replaced by whole attempts from ${runSourceLinks(board.repair.recoveryRun)}. Original successful cells were preserved. This dataset includes remeasurement selected by original failure; it is not a first-attempt-only comparison.`,
+				]
+			: []),
 		...(board.partial
 			? [
 					"",

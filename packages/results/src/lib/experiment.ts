@@ -6,6 +6,7 @@ import type {
 	ExecutionReceipt,
 	ExperimentAttempt,
 	ExperimentPlan,
+	ExperimentRepair,
 	RetainedAllocation,
 	Run,
 } from "@sandbox-benchmarks/schema";
@@ -21,6 +22,7 @@ import {
 	executionReceiptSchema,
 	experimentAttemptSchema,
 	experimentPlanSchema,
+	experimentRepairSchema,
 	getMetric,
 	getProvider,
 	MODAL_CREATED_REQUEST_REVISION,
@@ -620,6 +622,16 @@ export function aggregateExperiment(
 		if (!partial || publicationBlockers.length > 0)
 			return { coverage, ...(publicationBlockers.length > 0 ? { publicationBlockers } : {}) };
 	}
+	return renderExperiment(plan, attempts, coverage, partial);
+}
+
+function renderExperiment(
+	plan: ExperimentPlan,
+	attempts: readonly AttemptWithRun[],
+	coverage: CoverageReport,
+	partial: boolean,
+	repair?: ExperimentRepair,
+): ExperimentAggregation {
 	const selectedIds = partial
 		? coverage.cells.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : []))
 		: coverage.selectedAttempts;
@@ -646,8 +658,17 @@ export function aggregateExperiment(
 				) ?? [];
 			return {
 				...run,
+				runId: plan.id,
 				providers: run.providers.map((provider) => ({
 					...provider,
+					costEvidence: provider.costEvidence?.map((e) => ({
+						...e,
+						cell: { ...e.cell, runId: plan.id },
+					})),
+					artifactEvidence: provider.artifactEvidence?.map((e) => ({
+						...e,
+						cell: { ...e.cell, runId: plan.id },
+					})),
 					metrics:
 						provider.providerId === cell?.provider
 							? provider.metrics.filter((metric) => eligible.has(metric.metricId))
@@ -723,11 +744,12 @@ export function aggregateExperiment(
 		schemaVersion: partial ? "8" : "7",
 		experiment: {
 			planDigest: plan.digest,
+			...(repair ? { repair } : {}),
 			cohortDigest: evidenceDigest(cohorts),
 			attemptIds: selectedIds,
-			...(attempts.some((attempt) => attempt.cleanupRecovery)
+			...(selectedAttempts.some((attempt) => attempt.cleanupRecovery)
 				? {
-						cleanupRecoveries: attempts
+						cleanupRecoveries: selectedAttempts
 							.flatMap((attempt) => (attempt.cleanupRecovery ? [attempt.cleanupRecovery] : []))
 							.toSorted((a, b) => a.attemptId.localeCompare(b.attemptId)),
 					}
@@ -845,4 +867,103 @@ export function verifiedRetainedAllocation(
 	)
 		throw new Error("retained allocation does not bind the original attempt");
 	return allocation;
+}
+
+/** Bind original terminal receipts (and later cleanup attestations) without depending on download order. */
+export function repairAttemptsDigest(attempts: readonly AttemptWithRun[]): string {
+	return evidenceDigest(
+		attempts
+			.map((a) => ({
+				evidence: a.evidence,
+				...(a.cleanupRecovery ? { cleanupRecovery: a.cleanupRecovery } : {}),
+			}))
+			.toSorted((a, b) => a.evidence.id.localeCompare(b.evidence.id)),
+	);
+}
+
+/** Missing cells may be repaired; conflicting evidence or unresolved ownership may not. */
+export function repairableCoverage(
+	plan: ExperimentPlan,
+	attempts: readonly AttemptWithRun[],
+): CoverageReport {
+	const result = aggregateExperiment(plan, attempts, { allowPartial: true });
+	const blockers = (result.publicationBlockers ?? []).filter(
+		(b) => !b.startsWith("missing attempts:") && b !== "no verified measurements",
+	);
+	if (blockers.length) throw new Error(`repair blocked: ${blockers.join("; ")}`);
+	return result.coverage;
+}
+
+/** Verify each source independently, then replace every frozen target as a whole cell, even on failure. */
+export function aggregateRepairedExperiment(
+	source: ExperimentPlan,
+	originals: readonly AttemptWithRun[],
+	recovery: ExperimentPlan,
+	replacements: readonly AttemptWithRun[],
+	input: unknown,
+	options: { allowPartial?: boolean } = {},
+): ExperimentAggregation {
+	const repair = experimentRepairSchema.assert(input);
+	const { digest, ...body } = repair;
+	if (evidenceDigest(body) !== digest) throw new Error("repair manifest digest mismatch");
+	verifyExperimentPlan(source);
+	verifyExperimentPlan(recovery);
+	const originalCoverage = repairableCoverage(source, originals);
+	const targets = originalCoverage.cells.filter(
+		(c) => !["complete", "excluded"].includes(c.status),
+	);
+	if (
+		repair.sourceRun !== source.id ||
+		repair.sourceSha !== source.sha ||
+		repair.sourcePlanDigest !== source.digest ||
+		repair.sourceAttemptsDigest !== repairAttemptsDigest(originals) ||
+		repair.recoveryRun !== recovery.id ||
+		repair.recoveryPlanDigest !== recovery.digest ||
+		source.id === recovery.id ||
+		source.sha !== recovery.sha ||
+		repair.cells.length !== targets.length ||
+		recovery.cells.length !== targets.length ||
+		new Set(repair.cells.map((c) => c.id)).size !== targets.length
+	)
+		throw new Error("repair source or frozen selection mismatch");
+	for (const target of targets) {
+		const binding = repair.cells.find((c) => c.id === target.id);
+		const cell = source.cells.find((c) => c.id === target.id);
+		const next = recovery.cells.find((c) => c.id === target.id);
+		if (
+			!binding ||
+			binding.previousAttempt !== target.attemptId ||
+			!cell ||
+			!next ||
+			evidenceDigest(cell) !== evidenceDigest(next)
+		)
+			throw new Error(`repair changes cell execution policy: ${target.id}`);
+	}
+	const result = aggregateExperiment(recovery, replacements, { allowPartial: true });
+	// No verified recovery metric is okay when every replacement failed; original successes may remain.
+	const blockers = (result.publicationBlockers ?? []).filter(
+		(b) => b !== "no verified measurements",
+	);
+	if (blockers.length) return { ...result, run: undefined, publicationBlockers: blockers };
+	const replaced = new Set(repair.cells.map((c) => c.id));
+	const cells = originalCoverage.cells.map((c) => {
+		if (!replaced.has(c.id)) return c;
+		const replacement = result.coverage.cells.find((n) => n.id === c.id);
+		if (!replacement) throw new Error(`recovery coverage missing cell: ${c.id}`);
+		return replacement;
+	});
+	const coverage: CoverageReport = {
+		planDigest: source.digest,
+		cells,
+		conflicts: [],
+		selectedAttempts: cells
+			.filter((c) => c.status === "complete")
+			.flatMap((c) => (c.attemptId ? [c.attemptId] : [])),
+		complete: cells.every((c) => ["complete", "excluded"].includes(c.status)),
+	};
+	const selected = [...originals.filter((a) => !replaced.has(a.evidence.cellId)), ...replacements];
+	const finalBlockers = partialPublicationBlockers(coverage, selected);
+	if (finalBlockers.length || (!coverage.complete && !options.allowPartial))
+		return { coverage, publicationBlockers: finalBlockers };
+	return renderExperiment(source, selected, coverage, !coverage.complete, repair);
 }

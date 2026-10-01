@@ -20,12 +20,15 @@ export type {
 } from "./lib/experiment.ts";
 export {
 	aggregateExperiment,
+	aggregateRepairedExperiment,
 	describeCoverageShortfall,
 	describeIncompleteExperiment,
 	evaluateExperiment,
 	evidenceDigest,
 	failedBeforeExecution,
 	originalSandboxId,
+	repairAttemptsDigest,
+	repairableCoverage,
 	verifiedRetainedAllocation,
 	verifyCleanupRecovery,
 	verifyExperimentPlan,
