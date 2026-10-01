@@ -130,4 +130,3 @@ jobs:
       run_id: ${{ inputs.run_id }}
       recovery_run_id: ${{ github.run_id }}
       allow_partial: ${{ inputs.allow_partial }}
-    secrets: inherit

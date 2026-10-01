@@ -27,3 +27,7 @@ rules:
       - bench-matrix.yml
       - bench-smoke.yml
       - bench-account.yml
+      # Recovery delegates its three ordered waves to the same privileged worker and frozen
+      # provider credential scoping. Its main-only plan validates the original main revision before
+      # workers check it out. The publication call inherits no secrets (it uses github.token only).
+      - recover-benchmark.yml
