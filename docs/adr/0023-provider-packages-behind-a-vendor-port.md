@@ -64,7 +64,7 @@ interface designs across the three candidates, compared on depth, locality and s
 | | `refused` | optional; the vendor refused before allocating |
 | | `transient` | optional; retryable once the kit proved nothing remains allocated |
 | | `admit` | optional |
-| Data | `attach`, `exec` | |
+| Data | `attach`, `exec` | `attach` runs straight after `create`, so a vendor whose create takes no marker applies it there (a rename); a failure is torn down by id |
 | | `launch`, `files` | optional |
 | | `prepare` | optional; post-readiness preparation and the allocation's reported-resource proof |
 
@@ -72,7 +72,12 @@ Both planes speak in provider-neutral `VendorRecord`s carrying a `Phase`. A prov
 supplies an adapter, which translates only. Where the vendor spells the ownership marker its own
 way (the attempt's UUID under a vendor prefix in a sandbox name or a documented purpose), the
 module declares one `markerSpelling`; the adapter builds its create request and parses records
-with it, and the recovery locator prints it, so a cleanup diagnostic names what the vendor shows. `defineVendorDriver` derives everything else:
+with it, and the recovery locator prints it, so a cleanup diagnostic names what the vendor shows.
+A record also states what only the vendor knows about it: that it is `stopped` (holds no compute),
+the vendor's `detail` of a failed phase, and whether a failed boot is worth a fresh create
+(`retryCreate`). A module whose marker lookups cannot prove an ambiguous create absent declares
+`recovery.provesAbsence: false`, and the kit keeps such an attempt as a cleanup failure.
+`defineVendorDriver` derives everything else:
 - readiness
 - cleanup confirmation
 - destroy-by-id

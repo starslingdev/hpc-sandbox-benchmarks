@@ -114,19 +114,26 @@ speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once fo
 
 - readiness — skipped when `create` returns a `ready` record, otherwise polled through `get`, or
   through the vendor's server-side wait (`settle`, a long poll) where it has one, still under the
-  kit's deadline, phase classification and teardown;
+  kit's deadline, phase classification and teardown. A boot failure carries the record's vendor
+  `detail`, and one marked `retryCreate` (a host that gave up on the boot) is retryable once
+  teardown is proven;
 - cleanup confirmation — request removal once, then observe removal; an `accepted` delete is not
   removal. A session the kit holds is sent its delete first; destroy-by-id and recovery observe
-  first, and a record already observed gone is never sent a delete;
+  first, and a record already observed gone is never sent a delete. Removal is read every `pollMs`,
+  or every `deletePollMs` where the module's cleanup cadence differs from its readiness cadence;
 - destroy-by-id, probes (`observe`/`describe` from `get`, a one-page `list`), and inventory (the
-  owned/foreign partition by the kit-minted `benchmark-` ownership marker, draining pages and
+  owned/foreign partition by the kit-minted `benchmark-` ownership marker, where a `stopped` foreign
+  record holds no compute and is not counted while a `stopped` owned one is a leftover, draining pages and
   failing closed on a repeated, omitted or runaway cursor: 100 pages unless the module declares a
   larger `pageCap`, as Runloop and Namespace do for listings that keep terminal history);
 - ambiguous-create recovery — by marker lookup, rejecting unrelated records on a shared account, or
   by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces.
   `refused` failures skip recovery; `transient` failures are reconciled and then marked retryable.
   The locator names the marker under the vendor's own `markerKey`, spelled as the vendor shows it
-  (`markerSpelling`, the same spelling the adapter creates and parses with);
+  (`markerSpelling`, the same spelling the adapter creates and parses with). A module whose lookups
+  cannot prove an ambiguous create absent (`recovery.provesAbsence: false`: the marker is set after
+  create, or a create can land after every lookup) keeps such an attempt as a cleanup failure until
+  its marker finds the allocation;
 - the request proof: the artifact guard and the module's `unsupported` cross-axis refusal before
   any vendor call; after readiness, `admit`, the vendor's `prepare` (a keepalive, or the
   allocation's reported resources, refusing a shape it does not honour), and the `df` disk proof for
@@ -146,9 +153,11 @@ timing })` lowers the same module against a stubbed transport for provider tests
 Brezel (a dedicated account recovered by idempotent replay, over an injected `fetch`), Novita
 (a shared account recovered by a server-side marker query, over the loaded SDK), Blaxel, Vercel and
 Microsandbox Cloud (name-keyed: the sandbox name carries the marker's attempt UUID and is the
-recovery lookup), and Namespace and Runloop (recovered by matching the marker over the drained
-account) are written this way: `src/vendor.ts` is the adapter, `src/index.ts` binds the real
-transport once.
+recovery lookup), Namespace and Runloop (recovered by matching the marker over the drained
+account), E2B (Novita's SDK family: a server-side metadata query), run.cloud (name-keyed, with a
+lost create response adopted by reading its name) and boat (renamed to its marker on `attach`,
+since its create takes no name) are written this way: `src/vendor.ts` is the adapter,
+`src/index.ts` binds the real transport once.
 
 `@sandbox-benchmarks/driver/vendor/testing` holds `memoryVendor` (an in-memory account with a fault
 script, a guest shell that answers the kit's commands, and leak detectors) and `vendorContract`

@@ -1,24 +1,33 @@
 # @sandbox-benchmarks/boat
 
-Owns the boat (https://boat.dev) driver implementation, SDK dependencies, and behavioral tests.
-The fleet loader selects this package lazily; shared session mechanics live in
-`@sandbox-benchmarks/driver`. SDK versions are pinned in the root catalog.
+Owns the boat (https://boat.dev) driver, its `@boatdev/sdk` dependency, and their tests. The fleet
+loader selects this package lazily. SDK versions are pinned in the root catalog.
 
-Boat quirks the driver is built around:
+The driver is written against the vendor port (ADR-0023):
 
-- Boat snapshots every running sandbox about once a minute, and `stop` archives the sandbox with
-  that snapshot chain. Teardown is therefore `deleteSandbox`, which removes the sandbox and its
-  snapshots. Its deletion operation settles at `blocked` rather than `completed`, so the driver
-  proves teardown by observing the sandbox 404, not by the operation status.
-- Create pins `machineProvider: "baremetal"` (the fastest machine boat offers). `@boatdev/sdk`
-  1.0.0's create serializer drops unknown fields, so the driver merges it into create's JSON body
-  with a per-call init override. No other SDK call gets it; a real-SDK wire test asserts that.
-- Create takes no name, so the sandbox is renamed to its `sandbox-benchmarks-<uuid>` recovery name
-  in the post-create hook, where any failure is torn down by the returned id.
-- Exec is accepted before the guest's outbound network is up; readiness also waits for DNS plus a
-  TCP connect to boat.dev.
-- Inventory owns every row with the recovery prefix, stopped or errored ones included, and ignores
-  stopped foreign rows (they hold no compute). A live foreign sandbox blocks admission, so use a
-  Boat account dedicated to the benchmark.
+- `src/vendor.ts` is the adapter. It receives a `BoatApi` client and translates it:
+  - Create pins `machineProvider: "baremetal"` (the fastest machine boat offers). `@boatdev/sdk`
+    1.0.0's create serializer drops unknown fields, so the adapter merges it into create's JSON body
+    with a per-call init override; no other SDK call gets it (a real-SDK wire test asserts that).
+  - Create is idempotent under the marker's spelling, `sandbox-benchmarks-<uuid>`: a lost or
+    transient response is retried with the same key (2 s apart, a 429 a fresh minute later, five
+    attempts). Create takes no name, so `attach` (which the kit runs straight after create, tearing
+    the allocation down by id if it fails) renames the sandbox to that spelling.
+  - Statuses become phases: `ready`/`idle`/`running` are ready; `error`, `archiving` and `archived`
+    fail a boot. A stopped (`archived`) row holds no compute, so a foreign one is not counted, but an
+    owned one still holds the benchmark's disk and is deleted.
+  - Teardown is `deleteSandbox`, never stop: boat snapshots every running sandbox about once a
+    minute and `stop` archives the sandbox with that snapshot chain. A delete conflicting with a
+    running operation is asked again (5 s apart, six attempts); its operation settles at `blocked`
+    rather than `completed`, so removal is the sandbox's 404, observed by the kit.
+  - `prepare` waits for outbound network (exec is accepted before it is up: DNS plus a TCP connect
+    to boat.dev) and checks the allocation's reported vCPU and memory.
+- `src/index.ts` binds the SDK in `defineVendorDriver`: the default SKU (the target size, refused
+  otherwise before any call), a `df` proof of the user disk, readiness read every 2 s within 8
+  minutes, removal read every second, and `recovery.provesAbsence: false`, because a create whose
+  response was lost was never renamed and no lookup can find it. Use a Boat account dedicated to
+  the benchmark: a live foreign sandbox blocks admission.
 
-Run `bun run --filter @sandbox-benchmarks/boat test` or `typecheck` from the repo root.
+`src/index.test.ts` tests the translation, runs `vendorContract` over a fake account, drives
+sessions through the module's `specFor` seam, and runs one wire test over the real SDK. Run
+`bun run --filter @sandbox-benchmarks/boat test` or `typecheck` from the repo root.

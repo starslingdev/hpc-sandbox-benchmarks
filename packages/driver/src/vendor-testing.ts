@@ -296,6 +296,8 @@ export function vendorContract<Raw, Native>(
 		const { vendor, account } = make();
 		const marker = mint();
 		const created = await create(vendor, marker);
+		// The kit attaches every create's record at once, so a vendor may mark it there (a rename).
+		await vendor.data.attach(created, op);
 		const observed = await vendor.control.get(created.id, op);
 		expect(observed?.id).toBe(created.id);
 		const listed = (await drain((cursor) => vendor.control.page(cursor, op))).filter(
@@ -348,14 +350,15 @@ export function vendorContract<Raw, Native>(
 		expect(after === null || after.phase === "gone").toBe(true);
 	});
 
-	test(`${name}: a ready sandbox attaches, executes, and round-trips files`, async () => {
+	test(`${name}: a created sandbox attaches, and once ready executes and round-trips files`, async () => {
 		const { vendor } = make();
+		// As in the kit: attach the create's own record, then wait for readiness.
 		let current: VendorRecord<Raw> | null = await create(vendor, mint());
+		const native = await vendor.data.attach(current, op);
 		for (let polls = 0; current?.phase === "pending" && polls < 20; polls++)
 			current = await vendor.control.get(current.id, op);
 		if (current === null) throw new Error("the created sandbox disappeared before readiness");
 		expect(current.phase).toBe("ready");
-		const native = await vendor.data.attach(current, op);
 		const seven = await vendor.data.exec(native, "sh -c 'exit 7'");
 		expect(seven.exitCode).toBe(7);
 		const files = vendor.data.files;

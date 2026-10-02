@@ -187,11 +187,15 @@ Metrics come from three sources:
 - **Harness-measured** — lifecycle (spawn/exec/snapshot/teardown) and control-plane (info/list)
   timings PTS can't see, measured directly around the provider SDK calls.
   For drivers written against the vendor port (ADR-0023: Brezel, Novita, Blaxel, Namespace,
-  Vercel, Runloop and Microsandbox Cloud), spawn ends when readiness is observed: by the create
-  response itself, by the vendor's server-side wait where it has one (Runloop's `awaitRunning` long
-  poll, as in earlier runs, so no poll interval inflates it), or otherwise by the first status read
-  that sees it ready (Namespace reads every 2 s, as before). Teardown starts with the delete request and ends when
-  removal is observed or proven. Novita's teardown is one `kill`; Runloop's is one forced shutdown
+  Vercel, Runloop, Microsandbox Cloud, E2B, boat and run.cloud), spawn ends when readiness is
+  observed: by the create response itself (E2B, as before), by the vendor's server-side wait where
+  it has one (Runloop's `awaitRunning` long poll, as in earlier runs, so no poll interval inflates
+  it), or otherwise by the first status read that sees it ready (Namespace, boat and run.cloud read
+  every 2 s, as before; boat's spawn still includes its rename, outbound-network wait and disk
+  probe). Teardown starts with the delete request and ends when removal is observed or proven.
+  Novita's and E2B's teardown is one `kill`; boat's is its delete followed by reads every second
+  until the sandbox 404s, and run.cloud's its DELETE followed by reads every 2 s until the
+  `destroyed` tombstone or a 404 (both as before). Runloop's is one forced shutdown
   when its response is already the `shutdown` tombstone, and otherwise the shutdown counts as
   acknowledged only and teardown ends when a retrieve observes the tombstone. The tombstone is the
   expected response: the Devbox status enum has no intermediate shutting-down state, and the SDK's
@@ -205,9 +209,12 @@ Metrics come from three sources:
   filtered to live (`running`, `paused`) sandboxes (earlier runs timed one unfiltered page, whose
   server-side default the SDK does not document); Namespace's now includes completed runs, Blaxel's
   now excludes terminated records, Vercel's is no longer filtered to benchmark names nor
-  drained across pages, and Microsandbox Cloud's is one explicit 100-record page
+  drained across pages, Microsandbox Cloud's is one explicit 100-record page
   (`listWith(l => l.limit(100))`; earlier runs timed `Sandbox.list()`, the first page at the
-  server's default size, which the SDK does not document).
+  server's default size, which the SDK does not document), and run.cloud's is one raw 200-row
+  inventory page (earlier runs timed the SDK's `list()`, the first page at the API's default 50
+  rows). E2B now records a list timing (one page of live `running`/`paused` sandboxes) where earlier
+  runs recorded none; its info timing is the same `getInfo` call as before.
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).
 
 ## Economics ($/run)

@@ -1,862 +1,108 @@
-// run.cloud is a native SDK module. Four vendor facts shape everything below, each reproduced live:
-// create returns as soon as the control plane accepts the sandbox while the OCI pull/boot continues
-// asynchronously (`building_image`, exec 4409 until `running`); overload can stall a create (matrix
-// run 30960125032) or explicitly refuse quota with 429 (run 34781421576); an ambiguous create leaks
-// a sandbox that never auto-pauses; and the API keeps `destroyed` tombstones in every listing. Every control-plane
-// call is individually bounded, the create name is a recovery handle chosen before the request, a
-// lost response is reconciled by READING (never by replaying the create), readiness is owned here,
-// and nothing is ever reported as gone until the control plane has said so.
+// The run.cloud DriverModule: the kit's driver over run.cloud's adapter, bound to the real SDK
+// here and nowhere else. Tests lower the same module over a fake transport through `specFor`.
 
-import { randomUUID } from "node:crypto";
-import type { CreateSandboxOptions, Sandbox } from "@run-cloud/sdk";
-import { Client, RunCloudError } from "@run-cloud/sdk";
-import type { CreateRequest, DriverContext, SandboxObservation } from "@sandbox-benchmarks/driver";
-import { DriverError, isDriverError } from "@sandbox-benchmarks/driver";
-import type {
-	ComputeSdkCreatedRequestVerification,
-	ComputeSdkCreateRequestCoverage,
-} from "@sandbox-benchmarks/driver/computesdk";
-import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
-import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
-import { type } from "arktype";
+import { Client } from "@run-cloud/sdk";
+import { defineVendorDriver, mapped } from "@sandbox-benchmarks/driver/vendor";
 import { runcloudCostEvidence } from "./cost.ts";
 import { RUNCLOUD_PROVENANCE } from "./provenance.ts";
+import type { RuncloudTransport } from "./vendor.ts";
+import {
+	RUNCLOUD_CONTROL_TIMEOUT_MS,
+	RUNCLOUD_NAME,
+	RUNCLOUD_RECONCILE_ATTEMPTS,
+	RUNCLOUD_RECONCILE_RETRY_MS,
+	RUNCLOUD_SANDBOX_ID,
+	runcloudVendor,
+} from "./vendor.ts";
 
-export { RUNCLOUD_PROVENANCE };
+export { RUNCLOUD_PROVENANCE, RUNCLOUD_SANDBOX_ID };
 
-/** Poll cadence while a create sits in `building_image`/`starting`. */
-export const RUNCLOUD_READY_POLL_MS = 2_000;
+/** Poll cadence while a create sits in `building_image`/`starting`, and while a delete settles. */
+export const RUNCLOUD_POLL_MS = 2_000;
 /** Cold pulls of the ~1.5 GiB toolchain image on a first-use host can take several minutes. */
 export const RUNCLOUD_READY_TIMEOUT_MS = 20 * 60_000;
-/** A destroy can fail transiently after allocation succeeded; retry it here, because the kit has no
- *  handle (and so no generic cleanup path) until create resolves. */
-export const RUNCLOUD_CLEANUP_ATTEMPTS = 5;
-export const RUNCLOUD_CLEANUP_RETRY_MS = 2_000;
 /**
  * How long one destroy (the DELETE plus watching for `destroyed`/404) may take. run.cloud deletes
  * asynchronously and a record can sit in `destroying` well past a few polls: in run 36356024651 two
- * sandboxes failed cleanup after the old 5-poll (~8 s) window and were found absent at recovery.
- * 50 s keeps the whole destroy inside the harness's 60 s destroy timeout.
+ * sandboxes failed cleanup after an ~8 s window and were found absent at recovery. 50 s keeps the
+ * whole destroy inside the harness's 60 s destroy timeout.
  */
 export const RUNCLOUD_REMOVAL_DEADLINE_MS = 50_000;
-/** Bound each REST control-plane call independently: a fetch that never settles must not suspend a
- *  deadline check or a failed-create cleanup. */
-export const RUNCLOUD_CONTROL_TIMEOUT_MS = 30_000;
-/** An allocation can take a moment to become visible to `list()`; an ambiguous create polls before
- *  concluding nothing was allocated. Guessing "absent" too early is what leaks a sandbox. */
-export const RUNCLOUD_RECONCILE_ATTEMPTS = 5;
-export const RUNCLOUD_RECONCILE_RETRY_MS = 2_000;
 /**
- * The caller-owned name stamped on every create. Chosen locally BEFORE the request, so a create
- * whose response is lost still leaves an allocation the control plane can be queried for by name;
- * it also makes every benchmark sandbox identifiable to the account inventory.
- */
-export const RUNCLOUD_RECOVERY_NAME_PREFIX = "sandbox-benchmarks";
-/** Lifetime and idle-pause window, both above the longest suite so a detached benchmark is never
- *  paused while the harness polls its done file. */
-export const RUNCLOUD_SANDBOX_LIFETIME_SECS = 3 * 60 * 60;
-export const RUNCLOUD_SANDBOX_ID = type(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
-/**
- * run.cloud honours the requested disk as a block-device quota and formats it; the guest's
- * filesystem then reports the device minus its own metadata (measured live: a 40 GiB request
- * exposes 39.30 GiB, 1.75 %). Verification allows that formatting overhead and nothing more — a
- * genuinely smaller allocation still fails the request.
- */
-export const RUNCLOUD_DISK_FILESYSTEM_OVERHEAD = 0.03;
-export const RUNCLOUD_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
-/**
- * The native WebSocket exec streams stdout/stderr, but long-lived streams are unvalidated, so the
- * repository's conservative 60s policy applies. The SDK has no truthful background launch, so the
- * durable route is the kit's shell detach over the same exec channel.
- */
-export const RUNCLOUD_EXECUTION = Object.freeze({
-	syncCapMs: 60_000,
-	durable: "shell-detach" as const,
-});
-
-/**
- * Worst-case wall time ONE create can spend before it settles, summed over every bound this module
- * enforces on its longest path: the create POST, reconciling an ambiguous response, the readiness
- * wait, and destroying an allocation that failed readiness. Derived from the constants so tightening
- * any one tightens this in the same edit. A CEILING, not an expectation: the observed create is
- * seconds.
- *
- * The legacy adapter turned the harness's per-attempt race OFF and handed this ceiling over as the
- * attempt bound, so an in-flight cleanup was never abandoned. A ComputeSDK module can only declare a
- * harness-owned budget, so the ceiling IS that budget: every internal bound settles strictly inside
- * it, which means the harness race can only fire after this module has already finished (including
- * its cleanup) — it never abandons a teardown mid-flight — while the retry loop still knows what one
- * attempt can cost.
+ * Worst-case wall time one create can spend: the create POST, reconciling a lost response, the
+ * readiness wait, the disk probe, and removing an allocation that failed. A ceiling, not an
+ * expectation (the observed create is seconds): every internal bound settles inside it, so the
+ * harness race never abandons a teardown mid-flight.
  */
 export const RUNCLOUD_CREATE_CEILING_MS =
 	RUNCLOUD_CONTROL_TIMEOUT_MS +
 	RUNCLOUD_RECONCILE_ATTEMPTS * RUNCLOUD_CONTROL_TIMEOUT_MS +
 	(RUNCLOUD_RECONCILE_ATTEMPTS - 1) * RUNCLOUD_RECONCILE_RETRY_MS +
 	RUNCLOUD_READY_TIMEOUT_MS +
+	RUNCLOUD_POLL_MS +
 	RUNCLOUD_CONTROL_TIMEOUT_MS +
-	RUNCLOUD_READY_POLL_MS +
-	RUNCLOUD_CLEANUP_ATTEMPTS * (RUNCLOUD_CLEANUP_ATTEMPTS + 2) * RUNCLOUD_CONTROL_TIMEOUT_MS +
-	RUNCLOUD_CLEANUP_ATTEMPTS * (RUNCLOUD_CLEANUP_ATTEMPTS - 1) * RUNCLOUD_CLEANUP_RETRY_MS +
-	(RUNCLOUD_CLEANUP_ATTEMPTS - 1) * RUNCLOUD_CLEANUP_RETRY_MS;
-export const RUNCLOUD_CREATE_BUDGET = Object.freeze({
-	owner: "harness" as const,
-	timeoutMs: RUNCLOUD_CREATE_CEILING_MS,
-});
+	RUNCLOUD_REMOVAL_DEADLINE_MS;
 
-export const RUNCLOUD_REQUEST_COVERAGE = {
-	spec: { vcpus: "mapped", memoryGb: "mapped", diskGb: "mapped" },
-	artifact: "context",
-	deadlineMs: "harness",
-	gpu: { model: "unsupported", count: "unsupported" },
-	env: "unsupported",
-} as const satisfies ComputeSdkCreateRequestCoverage;
-
-type RuncloudCreateOptions = CreateSandboxOptions & { name: string };
-const inventoryRows = type({
-	id: "string >= 1",
-	state: "string",
-	"name?": "string | null",
-}).array();
-const inventoryPage = type({ items: inventoryRows, nextCursor: "string >= 1 | null" });
-type InventoryPageReader = (cursor?: string, signal?: AbortSignal) => Promise<unknown>;
-// A live 566-row account takes about 100 seconds at the API's default 50 rows per page.
-// Request its supported 200-row maximum and allow several minutes for the whole scan.
-const INVENTORY_TIMEOUT_MS = 5 * 60_000;
-const INVENTORY_PAGE_SIZE = 200;
-const INVENTORY_MAX_PAGES = 1_000;
-
-type RuncloudSandboxClient = Pick<
-	Client["sandboxes"],
-	"create" | "get" | "list" | "destroy" | "exec"
->;
-
-/** Test seams; production keeps the defaults and constructs the SDK client from the registry env. */
-export interface RuncloudSpecOptions {
-	readonly client?: RuncloudSandboxClient;
-	readonly inventoryPage?: InventoryPageReader;
-	readonly inventoryTimeoutMs?: number;
-	readonly fetch?: typeof fetch;
-	readonly readyPollMs?: number;
-	readonly readyTimeoutMs?: number;
-	readonly cleanupAttempts?: number;
-	readonly cleanupRetryMs?: number;
-	readonly removalDeadlineMs?: number;
-	readonly controlPlaneTimeoutMs?: number;
-	readonly reconcileAttempts?: number;
-	readonly reconcileRetryMs?: number;
-	readonly recoveryAbsenceConfirmationMs?: number;
-	readonly sleep?: (ms: number) => Promise<void>;
-	readonly now?: () => number;
-}
-
-interface Timing {
-	readonly readyPollMs: number;
-	readonly readyTimeoutMs: number;
-	readonly cleanupAttempts: number;
-	readonly cleanupRetryMs: number;
-	readonly removalDeadlineMs: number;
-	readonly controlPlaneTimeoutMs: number;
-	readonly inventoryTimeoutMs: number;
-	readonly reconcileAttempts: number;
-	readonly reconcileRetryMs: number;
-	readonly sleep: (ms: number) => Promise<void>;
-	readonly now: () => number;
-}
-
-function timingOf(options: RuncloudSpecOptions): Timing {
-	return {
-		inventoryTimeoutMs: Math.max(1, Math.floor(options.inventoryTimeoutMs ?? INVENTORY_TIMEOUT_MS)),
-		readyPollMs: options.readyPollMs ?? RUNCLOUD_READY_POLL_MS,
-		readyTimeoutMs: options.readyTimeoutMs ?? RUNCLOUD_READY_TIMEOUT_MS,
-		cleanupAttempts: Math.max(1, Math.floor(options.cleanupAttempts ?? RUNCLOUD_CLEANUP_ATTEMPTS)),
-		cleanupRetryMs: Math.max(0, options.cleanupRetryMs ?? RUNCLOUD_CLEANUP_RETRY_MS),
-		removalDeadlineMs: Math.max(1, options.removalDeadlineMs ?? RUNCLOUD_REMOVAL_DEADLINE_MS),
-		controlPlaneTimeoutMs: Math.max(
-			1,
-			Math.floor(options.controlPlaneTimeoutMs ?? RUNCLOUD_CONTROL_TIMEOUT_MS),
-		),
-		reconcileAttempts: Math.max(
-			1,
-			Math.floor(options.reconcileAttempts ?? RUNCLOUD_RECONCILE_ATTEMPTS),
-		),
-		reconcileRetryMs: Math.max(0, options.reconcileRetryMs ?? RUNCLOUD_RECONCILE_RETRY_MS),
-		sleep: options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
-		now: options.now ?? Date.now,
-	};
-}
-
-/** A native call that did not settle within its bound. A create timeout leaves allocation
- * uncertain even when the server is overloaded; it is not a definitive rejection. */
-export class RuncloudCallTimeoutError extends Error {
-	constructor(
-		readonly operation: string,
-		readonly timeoutMs: number,
-	) {
-		super(`run.cloud ${operation} did not settle within ${timeoutMs}ms`);
-		this.name = "RuncloudCallTimeoutError";
-	}
-}
-
-/**
- * Readiness ended in a terminal state. `hostGaveUp` marks the states worth re-issuing: run.cloud
- * rebuilds the image into an ext4 rootfs per sandbox and that build corrupts non-deterministically
- * under a concurrent burst (27 failed boots of run 33712242440, the same pinned image failing at a
- * different path every time), so a fresh create lands on a fresh build. `teardownConfirmed` is the
- * other half of any retry mark: the control plane has said the allocation is going away.
- */
-export class RuncloudBootFailureError extends Error {
-	constructor(
-		readonly sandboxId: string,
-		readonly state: string,
-		readonly hostGaveUp: boolean,
-		readonly teardownConfirmed: boolean,
-		readonly vendorDetail?: string,
-	) {
-		super(
-			`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting${vendorDetail ? `: ${vendorDetail}` : ""}`,
-		);
-		this.name = "RuncloudBootFailureError";
-	}
-}
-
-/** No positive allocation or rejection verdict followed an ambiguous create. Empty lookups do not
- * cancel an accepted POST; the recovery name remains necessary for later cleanup. */
-export class RuncloudAmbiguousCreateError extends AggregateError {
-	constructor(
-		readonly recoveryName: string,
-		createError: unknown,
-		lookupError: unknown,
-	) {
-		super(
-			[createError, lookupError],
-			`run.cloud create failed ambiguously (${errorMessage(createError)}) and reconciliation ` +
-				`could not establish its outcome (${errorMessage(lookupError)}), so it is unknown whether a sandbox was ` +
-				`allocated; if one was it carries the name ${recoveryName} and manual cleanup may be required`,
-		);
-		this.name = "RuncloudAmbiguousCreateError";
-	}
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function isNotFound(error: unknown): boolean {
-	return error instanceof RunCloudError && error.status === 404;
-}
-
-function runcloudCreateHttpStatus(error: unknown): number | undefined {
-	if (error instanceof RunCloudError) return error.status;
-	if (isDriverError(error) && error.provider === "runcloud" && error.code === "create-failed")
-		return error.vendorHttpStatus;
-	return undefined;
-}
-
-/**
- * A non-timeout 4xx is a definitive rejection: the create endpoint itself said no allocation was
- * accepted. 409 is excluded because a conflict asserts the OPPOSITE of absence — something already
- * exists under this request's identity — so it gets the full reconciliation window.
- */
-export function isRuncloudDefinitiveCreateRejection(error: unknown): boolean {
-	const status = runcloudCreateHttpStatus(error);
-	return status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 409;
-}
-
-/** Terminal boot states where the HOST gave up, so re-issuing the create is worth it. */
-function hostGaveUp(state: string): boolean {
-	return ["failed", "interrupted", "destroyed", "destroying"].includes(state);
-}
-
-/** `stopped` also ends the wait, but says nothing about the host giving up, so it is never retried. */
-function isTerminalBootState(state: string): boolean {
-	return state === "stopped" || hostGaveUp(state);
-}
-
-function isTombstone(state: string): boolean {
-	return state === "destroyed";
-}
-
-/** Race one native call with a local deadline (and the caller's signal). Production's fetch signal
- *  also cancels the socket; the race remains necessary for injected clients and runtimes whose
- *  fetch ignores abort. */
-async function bounded<T>(
-	operation: string,
-	call: () => Promise<T>,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<T> {
-	signal?.throwIfAborted();
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let unsubscribe = () => {};
-	try {
-		return await Promise.race([
-			Promise.resolve().then(call),
-			new Promise<never>((_, reject) => {
-				timer = setTimeout(
-					() => reject(new RuncloudCallTimeoutError(operation, timing.controlPlaneTimeoutMs)),
-					timing.controlPlaneTimeoutMs,
-				);
-				if (signal !== undefined) {
-					const abort = () => reject(signal.reason ?? new Error("run.cloud operation aborted"));
-					signal.addEventListener("abort", abort, { once: true });
-					unsubscribe = () => signal.removeEventListener("abort", abort);
-				}
-			}),
-		]);
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-		unsubscribe();
-	}
-}
-
-function createdAt(value: string | undefined): number {
-	if (!value) return 0;
-	const parsed = new Date(value).getTime();
-	return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-/** Poll until the sandbox can accept execs; returns the freshest record, never the stale create
- *  response. A terminal state throws the internal boot verdict for the create path to classify. */
-class BootTerminalState extends Error {
-	constructor(
-		readonly sandboxId: string,
-		readonly state: string,
-		readonly vendorDetail?: string,
-	) {
-		super(
-			`run.cloud sandbox ${sandboxId} entered terminal state "${state}" while booting${vendorDetail ? `: ${vendorDetail}` : ""}`,
-		);
-	}
-}
-
-async function waitUntilRunning(
-	sdk: RuncloudSandboxClient,
-	sandboxId: string,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<Sandbox> {
-	const deadline = timing.now() + timing.readyTimeoutMs;
-	let last: Sandbox | undefined;
-	while (timing.now() < deadline) {
-		last = await bounded(
-			`readiness get for sandbox ${sandboxId}`,
-			() => sdk.get(sandboxId),
-			timing,
-			signal,
-		);
-		if (last.state === "running") return last;
-		if (isTerminalBootState(last.state)) {
-			// Snapshot the failure before teardown changes the record. Diagnostic rendering redacts
-			// credentials before truncation; ignore malformed provider detail here.
-			const detail = typeof last.last_error === "string" ? last.last_error.trim() : undefined;
-			throw new BootTerminalState(sandboxId, last.state, detail);
-		}
-		await timing.sleep(timing.readyPollMs);
-		signal?.throwIfAborted();
-	}
-	throw new Error(
-		`run.cloud sandbox ${sandboxId} not running after ${timing.readyTimeoutMs}ms (last state: ${last?.state ?? "unknown"})`,
-	);
-}
-
-/** An accepted DELETE whose removal the deadline never confirmed. Retrying would only re-send the
- *  DELETE and restart the same watch, so failed-create cleanup stops on it. */
-class RuncloudRemovalUnconfirmed extends Error {}
-
-async function destroySandbox(
-	sdk: RuncloudSandboxClient,
-	sandboxId: string,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<void> {
-	// One deadline for the DELETE and the watch after it: run.cloud removes asynchronously, so
-	// `destroying` can outlast any fixed number of polls. Only `destroyed`/404 confirms removal.
-	const deadline = timing.now() + timing.removalDeadlineMs;
-	try {
-		await bounded(`destroy sandbox ${sandboxId}`, () => sdk.destroy(sandboxId), timing, signal);
-	} catch (error) {
-		if (isNotFound(error)) return;
-		throw error;
-	}
-	let last: string | undefined;
-	for (;;) {
-		try {
-			// Cap each read at the time left, so a hung read cannot carry the destroy past its deadline.
-			const remaining = Math.max(1, deadline - timing.now());
-			const current = await bounded(
-				`observe destroy ${sandboxId}`,
-				() => sdk.get(sandboxId),
-				{ ...timing, controlPlaneTimeoutMs: Math.min(timing.controlPlaneTimeoutMs, remaining) },
-				signal,
-			);
-			if (isTombstone(current.state)) return;
-			last = current.state;
-		} catch (error) {
-			if (isNotFound(error)) return;
-			throw error;
-		}
-		if (timing.now() + timing.cleanupRetryMs >= deadline) break;
-		await timing.sleep(timing.cleanupRetryMs);
-		signal?.throwIfAborted();
-	}
-	throw new RuncloudRemovalUnconfirmed(
-		`run.cloud sandbox ${sandboxId} has not confirmed removal after destroy (last state: ${last} after ${timing.removalDeadlineMs}ms)`,
-	);
-}
-
-/**
- * Only destroyed/404 confirms removal. A pending delete can race image preparation and return
- * to running, so destroying must remain visible to inventory and cannot release an allocation.
- * A read that cannot answer returns false; the caller does not claim the allocation is released.
- */
-async function teardownConfirmed(
-	sdk: RuncloudSandboxClient,
-	sandboxId: string,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<boolean> {
-	try {
-		const current = await bounded(
-			`confirm teardown for sandbox ${sandboxId}`,
-			() => sdk.get(sandboxId),
-			timing,
-			signal,
-		);
-		return isTombstone(current.state);
-	} catch (error) {
-		return isNotFound(error);
-	}
-}
-
-/** Tear down an allocation whose readiness wait failed. A rejected destroy is ambiguous (the request
- *  may have landed before the response was lost), so confirm through get() before retrying. */
-async function cleanupFailedCreate(
-	sdk: RuncloudSandboxClient,
-	sandboxId: string,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<void> {
-	let lastError: unknown;
-	for (let attempt = 1; attempt <= timing.cleanupAttempts; attempt++) {
-		try {
-			await destroySandbox(sdk, sandboxId, timing, signal);
-			return;
-		} catch (error) {
-			// The DELETE was accepted and the full removal deadline already watched it.
-			if (error instanceof RuncloudRemovalUnconfirmed) throw error;
-			lastError = error;
-			if (await teardownConfirmed(sdk, sandboxId, timing, signal)) return;
-			if (attempt < timing.cleanupAttempts) await timing.sleep(timing.cleanupRetryMs);
-		}
-	}
-	throw lastError;
-}
-
-/** One exact-name lookup: never a prefix/fuzzy match, never a tombstone. */
-async function liveSandboxesNamed(
-	sdk: RuncloudSandboxClient,
-	name: string,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<Sandbox[]> {
-	const rows = await bounded(`reconcile create ${name}`, () => sdk.list({ name }), timing, signal);
-	if (!Array.isArray(rows)) throw new Error("run.cloud list returned a non-array result");
-	return rows
-		.filter((sandbox) => sandbox.name === name && !isTombstone(sandbox.state))
-		.sort((a, b) => createdAt(a.createdAt) - createdAt(b.createdAt));
-}
-
-type ReconcileOutcome =
-	| { readonly status: "adopted"; readonly sandbox: Sandbox }
-	| { readonly status: "absent" }
-	| { readonly status: "unanswered"; readonly lastError: unknown };
-
-/**
- * Resolve what a failed create actually DID by querying the control plane for the name stamped on
- * the request. A failed lookup costs an attempt rather than ending the search. An answered empty
- * window is distinguished from an unanswered window for diagnostics; neither cancels a POST that
- * can still finish later. Only a matching allocation can be adopted here.
- */
-async function reconcileAmbiguousCreate(
-	sdk: RuncloudSandboxClient,
-	name: string,
-	timing: Timing,
-	attempts: number,
-	signal?: AbortSignal,
-): Promise<ReconcileOutcome> {
-	let answered = false;
-	let lastError: unknown;
-	for (let attempt = 1; attempt <= attempts; attempt++) {
-		try {
-			const [oldest] = await liveSandboxesNamed(sdk, name, timing, signal);
-			answered = true;
-			// One unique name per create, so a second match means the server allocated twice; adopting
-			// the oldest keeps the original from being orphaned.
-			if (oldest) return { status: "adopted", sandbox: oldest };
-		} catch (error) {
-			lastError = error;
-		}
-		if (attempt < attempts) await timing.sleep(timing.reconcileRetryMs);
-	}
-	return answered ? { status: "absent" } : { status: "unanswered", lastError };
-}
-
-async function allocate(
-	sdk: RuncloudSandboxClient,
-	options: RuncloudCreateOptions,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<Sandbox> {
-	const input = { ...options, idempotencyKey: options.name };
-	let created: Sandbox;
-	try {
-		created = await bounded("create", () => sdk.create(input), timing, signal);
-	} catch (error) {
-		// Ask what the request actually did rather than assuming. A definitive 4xx says no allocation
-		// was accepted, so one confirming pass is enough — but never zero, because even a rejection
-		// can sit on top of a real allocation. A 409 gets the full window.
-		const definitive = isRuncloudDefinitiveCreateRejection(error);
-		const reconciled = await reconcileAmbiguousCreate(
-			sdk,
-			options.name,
-			timing,
-			definitive ? 1 : timing.reconcileAttempts,
-			signal,
-		);
-		if (reconciled.status !== "adopted") {
-			// A definitive rejection supplied its own verdict; an empty or unanswered confirming lookup
-			// does not put it back in doubt. Anything else stays unknown: a lookup miss does not cancel
-			// a POST that may still finish on the server.
-			if (definitive) throw error;
-			throw new RuncloudAmbiguousCreateError(
-				options.name,
-				error,
-				reconciled.status === "unanswered"
-					? reconciled.lastError
-					: new Error("no allocation visible during reconciliation"),
-			);
-		}
-		// The create SUCCEEDED and only its response was lost. Adopt it: destroying a healthy
-		// sandbox to honour a lost HTTP response would throw away a slow cold pull for no reason.
-		created = reconciled.sandbox;
-	}
-	// Do not return until the guest can accept commands — exec during `building_image` fails 4409.
-	try {
-		return await waitUntilRunning(sdk, created.id, timing, signal);
-	} catch (error) {
-		// Allocation already succeeded, but the kit has no handle until create resolves. Own the
-		// cleanup (with transient-destroy retries) rather than leaving a billable sandbox behind.
-		try {
-			await cleanupFailedCreate(sdk, created.id, timing, signal);
-		} catch (destroyError) {
-			throw new AggregateError(
-				[error, destroyError],
-				`run.cloud sandbox ${created.id} failed readiness (${errorMessage(error)}) and could not ` +
-					`be destroyed after retries (${errorMessage(destroyError)}); manual cleanup may be required`,
-			);
-		}
-		if (!(error instanceof BootTerminalState)) throw error;
-		// A resolved destroy is a request accepted, not a microVM removed (~800 ms vs ~4 s live). Ask
-		// the control plane before letting the verdict carry the "nothing remains allocated" half.
-		throw new RuncloudBootFailureError(
-			created.id,
-			error.state,
-			hostGaveUp(error.state),
-			await teardownConfirmed(sdk, created.id, timing, signal),
-			error.vendorDetail,
-		);
-	}
-}
-
-async function execCommand(
-	sdk: RuncloudSandboxClient,
-	sandboxId: string,
-	command: string,
-	signal?: AbortSignal,
-): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> {
-	signal?.throwIfAborted();
-	// A string command runs via `/bin/sh -c`; the signal closes the command's WebSocket on abort.
-	const result = await sdk.exec(sandboxId, command, signal === undefined ? {} : { signal });
-	return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
-}
-
-/**
- * Control-plane state → port observation. `destroyed` is ABSENT, not terminal: the API keeps that
- * row as a tombstone forever, and account recovery waits for absence after a destroy — reading the
- * tombstone as a live terminal allocation would block admission on every leftover it removed.
- */
-export function runcloudObservation(state: string): SandboxObservation {
-	if (state === "destroyed") return { state: "absent" };
-	if (state === "stopped" || state === "failed" || state === "interrupted")
-		return { state: "terminal" };
-	return { state: "running" };
-}
-
-function controlPlaneFetch(
-	timeoutMs: number,
-	signal?: AbortSignal,
-	fetchImpl: typeof fetch = fetch,
-): typeof fetch {
+/** Every fetch bounded by the control-plane timeout and, for an inventory page, the caller. */
+function boundedFetch(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
 	return Object.assign(
-		(...args: Parameters<typeof fetch>) =>
-			fetchImpl(args[0], {
-				...args[1],
+		(...[input, init]: Parameters<typeof fetch>) =>
+			fetchImpl(input, {
+				...init,
 				signal: AbortSignal.any([
-					AbortSignal.timeout(timeoutMs),
+					AbortSignal.timeout(RUNCLOUD_CONTROL_TIMEOUT_MS),
 					...(signal ? [signal] : []),
-					...(args[1]?.signal ? [args[1].signal] : []),
+					...(init?.signal ? [init.signal] : []),
 				]),
 			}),
 		{ preconnect: fetch.preconnect },
 	);
 }
 
-/** The SDK drops nextCursor from its array return. Whole-account admission must read every page,
- * including old stopped allocations hidden behind newer destroyed tombstones. Never return a
- * partial inventory after a failed, malformed, repeated, or over-budget page. */
-async function completeInventory(
-	readPage: InventoryPageReader,
-	timing: Timing,
-	signal?: AbortSignal,
-): Promise<typeof inventoryRows.infer> {
-	const deadline = timing.now() + timing.inventoryTimeoutMs;
-	const inventorySignal = AbortSignal.any([
-		AbortSignal.timeout(timing.inventoryTimeoutMs),
-		...(signal ? [signal] : []),
-	]);
-	const rows: typeof inventoryRows.infer = [];
-	const cursors = new Set<string>();
-	const ids = new Set<string>();
-	let cursor: string | undefined;
-	for (let index = 0; index < INVENTORY_MAX_PAGES; index++) {
-		const remaining = deadline - timing.now();
-		if (remaining <= 0)
-			throw new RuncloudCallTimeoutError("list sandbox inventory", timing.inventoryTimeoutMs);
-		const page = inventoryPage.assert(
-			await bounded(
-				"list sandbox inventory page",
-				() => readPage(cursor, inventorySignal),
-				{ ...timing, controlPlaneTimeoutMs: Math.min(remaining, timing.controlPlaneTimeoutMs) },
-				inventorySignal,
+/**
+ * The real transport. Inventory reads the raw envelope at the API's 200-row maximum, because the
+ * SDK's `list` drops `nextCursor` and admission must read every page, including old allocations
+ * hidden behind newer `destroyed` tombstones.
+ */
+export function runcloudTransport(
+	apiKey: string,
+	fetchImpl: typeof fetch = fetch,
+): RuncloudTransport {
+	const client = (signal?: AbortSignal) =>
+		new Client({ apiKey, fetch: boundedFetch(fetchImpl, signal) });
+	return {
+		sandboxes: client().sandboxes,
+		page: (cursor, signal) =>
+			client(signal).request(
+				"GET",
+				`/run-cloud/sandboxes?limit=200${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
 			),
-		);
-		inventorySignal.throwIfAborted();
-		if (timing.now() >= deadline)
-			throw new RuncloudCallTimeoutError("list sandbox inventory", timing.inventoryTimeoutMs);
-		for (const row of page.items) {
-			if (ids.has(row.id)) throw new Error("run.cloud inventory returned a duplicate sandbox id");
-			ids.add(row.id);
-			rows.push(row);
-		}
-		if (page.nextCursor === null) return rows;
-		if (cursors.has(page.nextCursor)) throw new Error("run.cloud inventory repeated a page cursor");
-		cursors.add(page.nextCursor);
-		cursor = page.nextCursor;
-	}
-	throw new Error("run.cloud inventory exceeded its page limit before reaching the end");
-}
-
-export function runcloudSpec(
-	{ env, resolvedArtifact }: DriverContext<"runcloud">,
-	options: RuncloudSpecOptions = {},
-) {
-	const timing = timingOf(options);
-	// A timed-out POST can finish after every bounded lookup. Empty inventory cannot prove
-	// cancellation; retain uncertainty until a matching resource is positively removed.
-	const unresolvedCreates = new Set<string>();
-	let cached: RuncloudSandboxClient | undefined;
-	let nativeClient: Client | undefined;
-	const api = (): Client =>
-		(nativeClient ??= new Client({
-			apiKey: env.RUN_CLOUD_API_KEY,
-			fetch: controlPlaneFetch(timing.controlPlaneTimeoutMs, undefined, options.fetch),
-		}));
-	// Lazy: importing the fleet must never construct a vendor client or need credentials.
-	const sdk = (): RuncloudSandboxClient => {
-		cached ??= options.client ?? api().sandboxes;
-		return cached;
 	};
-	const readInventoryPage: InventoryPageReader =
-		options.inventoryPage ??
-		(options.client
-			? async () => ({ items: await sdk().list(), nextCursor: null })
-			: (cursor, signal) =>
-					new Client({
-						apiKey: env.RUN_CLOUD_API_KEY,
-						fetch: controlPlaneFetch(timing.controlPlaneTimeoutMs, signal, options.fetch),
-					}).request(
-						"GET",
-						`/run-cloud/sandboxes?limit=${INVENTORY_PAGE_SIZE}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
-					));
-	const compute = nativeSdkCompute(
-		async (createOptions: RuncloudCreateOptions, operation) => {
-			try {
-				return await allocate(sdk(), createOptions, timing, operation.signal);
-			} catch (error) {
-				// allocate() folds every non-definitive create failure, timeouts included, into this type.
-				if (error instanceof RuncloudAmbiguousCreateError)
-					unresolvedCreates.add(createOptions.name);
-				if (!(error instanceof RunCloudError)) throw error;
-				// The generic bridge deliberately does not infer vendor metadata. Preserve this SDK's
-				// typed status so account admission can distinguish quota refusal from other failures.
-				throw new DriverError("create-failed", error.message, {
-					provider: "runcloud",
-					vendorHttpStatus: error.status,
-					vendorMessage: error.detail,
-					cause: error,
-				});
-			}
-		},
-		(native) => ({
-			sandboxId: native.id,
-			runCommand: (command, commandOptions) =>
-				execCommand(sdk(), native.id, command, commandOptions?.signal),
-			destroy: () => destroySandbox(sdk(), native.id, timing),
-		}),
-	);
-	return computeSdkSpec(compute, {
-		sandboxId: RUNCLOUD_SANDBOX_ID,
-		createOptions: {
-			coverage: RUNCLOUD_REQUEST_COVERAGE,
-			map: (request, unsupported) => {
-				if (request.artifact.kind !== "image" || request.artifact.ref !== resolvedArtifact.ref) {
-					unsupported("the request artifact does not match the resolved run.cloud image");
-				}
-				return {
-					name: `${RUNCLOUD_RECOVERY_NAME_PREFIX}-${randomUUID()}`,
-					image: resolvedArtifact.ref,
-					cpu: request.spec.vcpus,
-					memory: request.spec.memoryGb * 1024,
-					...(request.spec.diskGb === undefined ? {} : { disk: request.spec.diskGb }),
-					idlePauseSeconds: RUNCLOUD_SANDBOX_LIFETIME_SECS,
-					timeoutSeconds: RUNCLOUD_SANDBOX_LIFETIME_SECS,
-				} satisfies RuncloudCreateOptions;
-			},
-		},
-		lifecycle: {
-			destroy: async (sandbox, ref, operation) =>
-				destroySandbox(sdk(), ref?.id ?? sandbox.getInstance().id, timing, operation.signal),
-		},
-		createRecovery: {
-			absenceConfirmationMs: options.recoveryAbsenceConfirmationMs ?? 2_000,
-			maxAttempts: 4,
-			locator: (createOptions) => ({
-				kind: "name",
-				value: createOptions.name,
-			}),
-			isDefinitive: (error) =>
-				isRuncloudDefinitiveCreateRejection(error) ||
-				(error instanceof RuncloudBootFailureError && error.teardownConfirmed),
-			isRetryableCreate: (error) =>
-				runcloudCreateHttpStatus(error) === 429 ||
-				(error instanceof RuncloudBootFailureError && error.hostGaveUp && error.teardownConfirmed),
-			cleanup: async (_compute, locator, operation) => {
-				const matches = await liveSandboxesNamed(sdk(), locator.value, timing, operation.signal);
-				if (matches.length === 0) {
-					if (unresolvedCreates.has(locator.value))
-						throw new Error(
-							"timed-out create has no terminal allocation verdict; empty lookups cannot confirm cancellation",
-						);
-					return { status: "absent" };
-				}
-				for (const match of matches) {
-					await destroySandbox(sdk(), match.id, timing, operation.signal);
-				}
-				for (const match of matches) {
-					if (!(await teardownConfirmed(sdk(), match.id, timing, operation.signal))) {
-						throw new Error(
-							`run.cloud sandbox ${match.id} has not confirmed teardown after create recovery`,
-						);
-					}
-				}
-				unresolvedCreates.delete(locator.value);
-				return { status: "destroyed" };
-			},
-		},
-		prepareAndVerifyCreatedRequest: async (_sandbox, native, request, operation) =>
-			verifyRuncloudAllocation(sdk(), native, request, operation.signal),
-		// The SDK's readFile/writeFile exist, but the harness never needed a filesystem here; the kit's
-		// direct-exec fallback keeps one fewer vendor surface in the measurement path.
-		hasWorkingFilesystem: false,
-		probes: {
-			observe: async (_compute, ref) => {
-				try {
-					const current = await bounded(`get sandbox ${ref.id}`, () => sdk().get(ref.id), timing);
-					return runcloudObservation(current.state);
-				} catch (error) {
-					if (isNotFound(error)) return { state: "absent" };
-					throw error;
-				}
-			},
-			describe: (_compute, ref) =>
-				bounded(`get sandbox ${ref.id}`, () => sdk().get(ref.id), timing),
-			// This is the single-request control-plane latency probe; account admission uses the
-			// complete paginated inventory below.
-			list: () => bounded("list sandboxes", () => sdk().list(), timing),
-		},
-		inventory: {
-			list: async (_compute, operation) => {
-				const rows = await completeInventory(readInventoryPage, timing, operation.signal);
-				const owned: string[] = [];
-				let foreignCount = 0;
-				for (const row of rows) {
-					if (isTombstone(row.state)) continue;
-					if (row.name?.startsWith(`${RUNCLOUD_RECOVERY_NAME_PREFIX}-`)) owned.push(row.id);
-					else foreignCount += 1;
-				}
-				return { owned, foreignCount };
-			},
-		},
-		destroyById: (_compute, ref, operation) =>
-			destroySandbox(sdk(), ref.id, timing, operation.signal),
-	});
 }
 
-/** The control plane reports the allocated CPU/RAM on the record; disk is a quota the guest must
- *  prove, so read it back the same way the harness's own disk gate does. */
-async function verifyRuncloudAllocation(
-	sdk: RuncloudSandboxClient,
-	native: Sandbox,
-	request: CreateRequest,
-	signal?: AbortSignal,
-): Promise<ComputeSdkCreatedRequestVerification> {
-	if (typeof native.milliCpu === "number" && native.milliCpu < request.spec.vcpus * 1000) {
-		return {
-			status: "unsupported",
-			detail: `requested ${request.spec.vcpus} vCPU but the allocation reports ${native.milliCpu / 1000}`,
-		};
-	}
-	if (typeof native.memMb === "number" && native.memMb < request.spec.memoryGb * 1024) {
-		return {
-			status: "unsupported",
-			detail: `requested ${request.spec.memoryGb} GiB but the allocation reports ${native.memMb} MiB`,
-		};
-	}
-	if (request.spec.diskGb === undefined) return { status: "honored" };
-	const result = await execCommand(sdk, native.id, "df -Pk / | awk 'NR==2 {print $2}'", signal);
-	if (result.exitCode !== 0) {
-		throw new Error(`run.cloud disk capacity probe exited ${result.exitCode}`);
-	}
-	const output = result.stdout.trim();
-	if (!/^\d+$/.test(output))
-		throw new Error("run.cloud disk capacity probe returned malformed output");
-	const capacityGb = Number(output) / 1024 / 1024;
-	if (!Number.isFinite(capacityGb) || capacityGb <= 0) {
-		throw new Error("run.cloud disk capacity probe returned an invalid capacity");
-	}
-	return capacityGb >= request.spec.diskGb * (1 - RUNCLOUD_DISK_FILESYSTEM_OVERHEAD)
-		? { status: "honored" }
-		: {
-				status: "unsupported",
-				detail: `requested ${request.spec.diskGb} GiB but the allocation exposes ${capacityGb.toFixed(2)} GiB`,
-			};
-}
-
-export default defineComputeSdkDriver("runcloud", {
+export default defineVendorDriver("runcloud", {
 	provenance: RUNCLOUD_PROVENANCE,
-	readiness: RUNCLOUD_READINESS,
-	execution: RUNCLOUD_EXECUTION,
-	createBudget: RUNCLOUD_CREATE_BUDGET,
+	sandboxId: RUNCLOUD_SANDBOX_ID,
+	// The requested disk is a block-device quota the guest formats; its filesystem then reports the
+	// device minus its own metadata (a 40 GiB request exposed 39.30 GiB live), so the proof allows
+	// 3% of the 40 GiB target and nothing more.
+	coverage: mapped(),
+	diskProof: { allowanceGb: 1.2 },
+	createBudget: { owner: "harness", timeoutMs: RUNCLOUD_CREATE_CEILING_MS },
 	costEvidence: runcloudCostEvidence,
-	spec: (context) => runcloudSpec(context),
+	timing: {
+		pollMs: RUNCLOUD_POLL_MS,
+		readyTimeoutMs: RUNCLOUD_READY_TIMEOUT_MS,
+		deleteTimeoutMs: RUNCLOUD_REMOVAL_DEADLINE_MS,
+		controlTimeoutMs: RUNCLOUD_CONTROL_TIMEOUT_MS,
+	},
+	// A live 566-row account spans a few pages, most of them tombstones.
+	pageCap: 1_000,
+	markerKey: "name",
+	markerSpelling: RUNCLOUD_NAME,
+	// A timed-out POST can finish after every bounded lookup: empty lookups cannot prove it absent.
+	recovery: { provesAbsence: false },
+	// Lazy: the client is built only when a driver is bound, never on import.
+	vendor: ({ env, resolvedArtifact }) =>
+		runcloudVendor({ resolvedArtifact }, runcloudTransport(env.RUN_CLOUD_API_KEY)),
 });

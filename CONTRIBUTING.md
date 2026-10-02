@@ -60,7 +60,7 @@ bun run check:providers                                        # fail if any gen
    onto the vendor port, and `src/index.ts`, which binds the real transport once in
    `defineVendorDriver` (`packages/brezel` and `packages/novita` are the references; `packages/vercel`
    and `packages/microsandbox-cloud` show a name-keyed vendor, `packages/blaxel` a post-readiness
-   `prepare`). Its tests cover
+   `prepare`, `packages/boat` a vendor marked on `attach` whose lookups cannot prove absence). Its tests cover
    the adapter's translation, run `vendorContract` over a stubbed transport, and drive a few sessions
    through `module.specFor`; kit behaviour is already tested in `packages/driver`. Its `execution`
    policy (synchronous cap and durable route) is the only declaration of the provider's exec

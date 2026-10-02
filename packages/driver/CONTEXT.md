@@ -37,6 +37,9 @@ The per-attempt value a create carries (label, metadata, name, or idempotency ke
 an allocation to the benchmark. Inventory and ambiguous-create recovery rest on it; it is never
 inferred from timing or resource shape. A vendor may spell it its own way (the attempt's UUID under
 a vendor prefix); recovery diagnostics print that spelling, the value the vendor's console shows.
+Where a vendor's create cannot carry it (it is set after create), or a create can land after every
+lookup, an empty lookup does not prove an ambiguous create absent: the attempt stays a cleanup
+failure until the marker finds its allocation.
 
 **Dedicated account**:
 A credential whose vendor account holds only benchmark allocations. Every live record is owned,

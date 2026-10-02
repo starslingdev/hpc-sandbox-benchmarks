@@ -25,7 +25,7 @@ import type {
 	SandboxObservation,
 	SnapshotRetention,
 } from "@sandbox-benchmarks/driver";
-import { isDriverError, pollUntilReady, shellQuote } from "@sandbox-benchmarks/driver";
+import { DriverError, isDriverError, pollUntilReady, shellQuote } from "@sandbox-benchmarks/driver";
 import type {
 	ComputeSdkCreateRequestCoverage,
 	ComputeSdkSandboxIdSchema,
@@ -60,6 +60,18 @@ export interface VendorRecord<Raw = unknown> {
 	readonly phase: Phase;
 	/** The create-time ownership marker the vendor echoes back (shared accounts). */
 	readonly marker?: string;
+	/**
+	 * Holds no compute (a stopped sandbox). An owned one is still a leftover the kit tears down; a
+	 * foreign one is not capacity the benchmark competes with, so inventory does not count it.
+	 */
+	readonly stopped?: boolean;
+	/** The vendor's own account of a `failed` phase (its last error), carried into a boot failure. */
+	readonly detail?: string;
+	/**
+	 * A boot failure the vendor's host gave up on (a per-sandbox build that corrupts under load): a
+	 * fresh create lands elsewhere, so the failed create is retryable once the kit has torn it down.
+	 */
+	readonly retryCreate?: boolean;
 	readonly raw: Raw;
 }
 
@@ -174,6 +186,8 @@ export interface VendorTiming {
 	readonly pollMs: number;
 	readonly readyTimeoutMs: number;
 	readonly deleteTimeoutMs: number;
+	/** The interval between cleanup-confirmation reads, where it differs from `pollMs`. */
+	readonly deletePollMs?: number;
 	/** The bound on one control-plane call outside a poll: a probe or one listing page. */
 	readonly controlTimeoutMs: number;
 	/** The bound on one snapshot capture or delete. */
@@ -197,7 +211,16 @@ export interface VendorTraits {
 	 */
 	readonly execution?: ExecutionPolicy;
 	readonly timing?: Partial<VendorTiming>;
-	readonly recovery?: { readonly absenceConfirmationMs?: number; readonly maxAttempts?: number };
+	readonly recovery?: {
+		readonly absenceConfirmationMs?: number;
+		readonly maxAttempts?: number;
+		/**
+		 * `false`: an empty marker lookup cannot prove an ambiguous create absent (the vendor attaches
+		 * the marker only after create, or a create can still land after every lookup). Recovery then
+		 * tears down what the marker finds and otherwise keeps the attempt as a cleanup failure.
+		 */
+		readonly provesAbsence?: boolean;
+	};
 	/** The name the ownership marker travels under at the vendor (default `<provider>-marker`). */
 	readonly markerKey?: string;
 	/**
@@ -400,6 +423,9 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	const spelling = traits.markerSpelling ?? markerSpelling(MARKER_PREFIX);
 	const timing: VendorTiming = { ...DEFAULT_TIMING, ...traits.timing };
 	const dedicated = traits.account === "dedicated";
+	const provesAbsence = traits.recovery?.provesAbsence ?? true;
+	// Markers of attempts whose allocation may exist although no lookup can show it yet.
+	const unresolved = new Set<string>();
 	if (dedicated && !control.find)
 		throw new Error(`${provider}: a dedicated account recovers by replay and needs control.find`);
 	executionOf(provider, traits, launch !== undefined);
@@ -455,13 +481,14 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		outer: AbortSignal | undefined,
 		poll: (o: Op) => Promise<T | null>,
 		expired: () => Error,
+		intervalMs = timing.pollMs,
 	): Promise<T> {
 		const o = op(bounded(deadlineMs, outer));
 		try {
 			return await pollUntilReady({
 				provider,
 				deadlineMs,
-				intervalMs: timing.pollMs,
+				intervalMs,
 				signal: o.signal,
 				poll: () => poll(o),
 			});
@@ -519,6 +546,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				new Error(
 					`${provider} sandbox ${id} was not observed removed within ${timing.deleteTimeoutMs}ms`,
 				),
+			timing.deletePollMs,
 		);
 		observedGone.add(id);
 		return requested;
@@ -535,8 +563,14 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				if (isGone(current)) observedGone.add(record.id);
 				if (current === null) throw new Error(`${provider} sandbox disappeared before readiness`);
 				if (current.phase === "ready") return current;
+				// A boot the vendor's host gave up on is marked retryable; the bridge honours the mark
+				// only once teardown has proven nothing remains allocated.
 				if (current.phase !== "pending")
-					throw new Error(`${provider} sandbox entered ${current.phase} before readiness`);
+					throw new DriverError(
+						"create-failed",
+						`${provider} sandbox entered ${current.phase} before readiness${current.detail ? `: ${current.detail}` : ""}`,
+						{ provider, ...(current.retryCreate && { retryable: true }) },
+					);
 				return null;
 			},
 			() =>
@@ -575,7 +609,10 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	const compute = nativeSdkCompute(
 		async (attempt: CreateAttempt, operation): Promise<VendorHandle<Raw, Native>> => {
 			const o = op(operation.signal);
-			const record = await control.create(attempt, o);
+			const record = await control.create(attempt, o).catch((error: unknown) => {
+				if (!provesAbsence && refused?.(error) === undefined) unresolved.add(attempt.marker);
+				throw error;
+			});
 			try {
 				o.signal.throwIfAborted();
 				return { record, native: await data.attach(record, o) };
@@ -590,7 +627,9 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 					},
 				);
 				allocatedFailures.add(failure);
-				await release(record.id).catch(() => undefined);
+				await release(record.id).catch(() => {
+					if (!provesAbsence) unresolved.add(attempt.marker);
+				});
 				throw failure;
 			}
 		},
@@ -663,7 +702,13 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				if (marker === undefined)
 					throw new Error(`${provider} recovery locator spells no ownership marker`);
 				const ids = await recoveryIds(marker, operation.signal);
-				if (ids.length === 0) return { status: "absent" };
+				if (ids.length === 0) {
+					if (unresolved.has(marker))
+						throw new Error(
+							`${provider} create has no allocation verdict; an empty lookup cannot prove it absent`,
+						);
+					return { status: "absent" };
+				}
 				// Each teardown is independently bounded; run them together, then surface every failure.
 				const outcomes = await Promise.allSettled(ids.map((id) => destroy(id, operation.signal)));
 				const failures = outcomes.flatMap((outcome) =>
@@ -674,6 +719,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 						failures,
 						`${provider} recovery could not tear down ${failures.length} of ${ids.length} sandboxes`,
 					);
+				unresolved.delete(marker);
 				// Listed but already gone by the time teardown observed them: the account was not empty
 				// a moment ago, so the bridge restarts its absence-confirmation clock.
 				return outcomes.some((outcome) => outcome.status === "fulfilled" && outcome.value)
@@ -721,7 +767,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				let foreignCount = 0;
 				for (const record of await liveRecords(operation.signal)) {
 					if (owned(record)) ownedIds.push(record.id);
-					else foreignCount += 1;
+					else if (!record.stopped) foreignCount += 1;
 				}
 				return { owned: ownedIds, foreignCount };
 			},

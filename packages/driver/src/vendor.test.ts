@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import {
 	describeDriverFailure,
+	FailedCreateCleanupError,
 	isRetryableDriverCreate,
 	launchDetached,
 	nvidiaAccelerator,
@@ -108,6 +109,32 @@ describe("readiness, continued", () => {
 		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
 		expect(calls).toContain("remove");
 		expect(allocations()).toBe(0);
+	});
+
+	test("a boot failure carries the vendor's detail; one its host gave up on is retryable once torn down", async () => {
+		for (const retryCreate of [false, true]) {
+			const world = memoryVendor({ readyAfterGets: 1, faults: { failsDuringReadiness: true } });
+			const vendor: Vendor<MemoryRow, MemoryRow> = {
+				...world.vendor,
+				control: {
+					...world.vendor.control,
+					get: async (id, op) => {
+						const record = await world.vendor.control.get(id, op);
+						return record?.phase === "failed"
+							? { ...record, detail: "rootfs build corrupted", retryCreate }
+							: record;
+					},
+				},
+			};
+			const failure = await moduleOver(() => vendor)
+				.driver(context)
+				.create(request)
+				.catch((caught) => caught);
+			expect(failure).toMatchObject({ code: "create-failed" });
+			expect(describeDriverFailure(failure)).toContain("rootfs build corrupted");
+			expect(isRetryableDriverCreate(failure)).toBe(retryCreate);
+			expect(world.allocations()).toBe(0);
+		}
 	});
 
 	test("a held sandbox observed gone during readiness is never sent a delete", async () => {
@@ -289,6 +316,19 @@ describe("cleanup confirmation", () => {
 		expect(calls).toEqual(["remove"]);
 	});
 
+	test("removal is read at the module's own cleanup interval, apart from readiness", async () => {
+		const { driver } = bind(
+			{ readyAfterGets: 3, removalAfterGets: 2 },
+			{ timing: { pollMs: 0, deletePollMs: 40, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 } },
+		);
+		const booting = performance.now();
+		const session = await driver.create(request);
+		expect(performance.now() - booting).toBeLessThan(40);
+		const deleting = performance.now();
+		await session.destroy();
+		expect(performance.now() - deleting).toBeGreaterThanOrEqual(75);
+	});
+
 	test("never issues a delete for a sandbox already observed gone", async () => {
 		const { driver, calls } = bind();
 		const session = await driver.create(request);
@@ -365,6 +405,29 @@ describe("inventory", () => {
 		await expect(driver.inventory?.list()).rejects.toThrow();
 		const { driver: wider } = bind({ pageSize: 1, foreign: 3 }, { pageCap: 3 });
 		expect((await wider.inventory?.list())?.foreignCount).toBe(3);
+	});
+
+	test("a stopped foreign sandbox is not capacity; a stopped owned one is still a leftover", async () => {
+		const world = memoryVendor({ foreign: 2 });
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				page: async (cursor, op) => {
+					const page = await world.vendor.control.page(cursor, op);
+					return {
+						...page,
+						records: page.records.map((record) => ({ ...record, stopped: record.id !== "mem-2" })),
+					};
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor).driver(context);
+		const session = await driver.create(request);
+		expect(await driver.inventory?.list()).toEqual({
+			owned: [session.sandboxRef],
+			foreignCount: 1,
+		});
 	});
 
 	test("a dedicated account owns every live sandbox", async () => {
@@ -491,6 +554,50 @@ describe("ambiguous-create recovery", () => {
 		expect(() => module.driver(context)).toThrow(
 			expect.objectContaining({ code: "vendor-contract-violation" }),
 		);
+	});
+
+	test("where a lookup cannot prove absence, an ambiguous create no lookup finds stays held", async () => {
+		const hidden = { faults: { createAmbiguous: true, ambiguousHiddenForListings: 1_000 } };
+		const unproven = { recovery: { absenceConfirmationMs: 1, provesAbsence: false } };
+		// The default reads an empty lookup as absence; a vendor that cannot prove it keeps the attempt.
+		await expect(bind(hidden).driver.create(request)).rejects.toMatchObject({
+			code: "create-failed",
+		});
+		await expect(bind(hidden, unproven).driver.create(request)).rejects.toBeInstanceOf(
+			FailedCreateCleanupError,
+		);
+		// An allocation the lookup does find is torn down, which resolves the attempt.
+		const found = bind({ faults: { createAmbiguous: true } }, unproven);
+		await expect(found.driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
+		expect(found.allocations()).toBe(0);
+		// A refusal before allocation proves there is nothing to find.
+		const refused = bind({ faults: { createRefused: { retryable: false } } }, unproven);
+		await expect(refused.driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
+		expect(refused.calls).toEqual(["create"]);
+	});
+
+	test("an allocation whose attach and teardown both failed stays held where absence is unprovable", async () => {
+		const world = memoryVendor();
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			control: {
+				...world.vendor.control,
+				remove: async () => {
+					throw new Error("delete refused");
+				},
+				// The attach step is what would have made the allocation findable (a rename).
+				page: async () => ({ records: [] }),
+			},
+			data: {
+				...world.vendor.data,
+				attach: () => {
+					throw new Error("rename failed");
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor, {
+			recovery: { absenceConfirmationMs: 1, provesAbsence: false },
+		}).driver(context);
+		await expect(driver.create(request)).rejects.toBeInstanceOf(FailedCreateCleanupError);
 	});
 
 	test("a refusal before allocation skips recovery and carries retryability", async () => {
