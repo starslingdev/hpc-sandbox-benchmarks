@@ -1,6 +1,6 @@
 // Drift gate: the GitHub workflows that dispatch live benchmarks must stay in lockstep with the
 // suite registry and retain their safe delegation/timeout shape. Provider choices and provider-input
-// wiring are generated from metadata and gated separately by check:provider-wiring. It mirrors
+// wiring are generated from metadata and gated separately by check:providers. It mirrors
 // runner-benchmarking's check-workflow-{env,suite}-sync.ts, adapted to this repo's workflows.
 //
 // Two workflows dispatch live benchmarks — bench-matrix.yml (the full provider × suite matrix, ending

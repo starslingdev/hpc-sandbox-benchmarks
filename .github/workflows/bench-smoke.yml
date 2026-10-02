@@ -8,7 +8,7 @@ on:
         type: choice
         default: daytona-vm
         options:
-          # >>> generated: provider-options — bun run generate-provider-wiring
+          # >>> generated: provider-options — bun run generate-providers
           - 'e2b'
           - 'daytona-vm'
           - 'daytona-container'

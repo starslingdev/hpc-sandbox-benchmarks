@@ -6,7 +6,7 @@ contract, and the gates that hold them. For how a *measurement* is produced, see
 
 ## Provider sandbox evidence (Run v5 and v6)
 
-The provider adapter owns billing API interaction. After the harness attempts and awaits sandbox
+The provider's driver module owns billing API interaction. After the harness attempts and awaits sandbox
 teardown, its optional hook returns one validated sandbox-scoped observed/missing record. The harness
 persists it under the existing raw `data/` tree as `provider-cost-evidence.json`; normalization and
 aggregation carry it through using only `@sandbox-benchmarks/schema`, with no provider SDK dependency.
@@ -15,8 +15,8 @@ The sandbox collection archive cannot supply that reserved filename: collection 
 copying any entry, and only the post-teardown host writer may create it. Schema validation establishes a
 bounded, structurally valid provider-observed record; it does not authenticate the provider response.
 
-Run v6 adds one host-owned `provider-artifact-evidence.json` per benchmark cell. The provider adapter
-records the exact artifact adjacent to the create options that boot it, and the harness writes that
+Run v6 adds one host-owned `provider-artifact-evidence.json` per benchmark cell. The composition root
+records the exact artifact the selected driver boots, and the harness writes that
 request fallback before its first sandbox operation. For a canonical release artifact, the harness
 then reads the bounded `/toolchain-manifest.json` from the ready guest and atomically upgrades the
 record to `guest-fingerprint`. The expected image name/version is never supplied by the producer: the
@@ -42,7 +42,7 @@ workspace sources natively. There is no compile step: `bun install` → `typeche
 ```text
 packages/   importable libraries   — scope @sandbox-benchmarks/*
   schema/       shared types + arktype schemas, vendored PTS profiles + generated metric catalog (bottom of the DAG)
-  providers/    provider adapters → schema + computesdk
+  providers/    release-lane config + evidence helpers (being dissolved, ADR-0023) → schema
   templates/    per-provider template builders + toolchain Docker images (images/)
   harness/      benchmark timing → providers + schema
   results/      normalization + the comparison surface → schema, figures
@@ -66,9 +66,9 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/driver`     | schema                                          | `arktype`                           |
 | `@sandbox-benchmarks/drivers`    | driver, provider workspace packages              | — |
 | `@sandbox-benchmarks/<provider>` | driver                                          | `arktype`, that provider's SDKs |
-| `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, computesdk packages (`catalog:computesdk`) |
+| `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, `novita-sandbox` (types only) |
 | `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
-| `@sandbox-benchmarks/harness`    | providers, schema                               | —                                   |
+| `@sandbox-benchmarks/harness`    | driver, providers, schema                       | —                                   |
 | `@sandbox-benchmarks/figures`    | schema                                          | `arktype`, fonts (`@fontsource/*`)  |
 | `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
 | `@sandbox-benchmarks/cli` (app)  | schema, driver, drivers, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
@@ -93,6 +93,27 @@ status. Only the HTTP field participates in the 429 retry rule. CLI readiness ca
 `{ terminal, retryable }`; the kit releases a retry mark only after failed-create cleanup succeeds.
 Tama 0.1.17 exposes a status and diagnostic detail, but no documented capacity reason code. Its
 terminal rows explicitly decline retry rather than interpreting `status_detail` as a typed signal.
+
+## The provider registry
+
+`packages/schema` owns provider identity (`PROVIDER_IDS`) and one inert metadata module per provider.
+Everything else that names providers is derived from that registry rather than restated:
+
+- pure Tier-1 projections in `@sandbox-benchmarks/schema/providers` — `providerPackage` (where a
+  driver module lives; isolation variants declare `package`), `provenanceConstant`,
+  `candidateArtifact` (what a release validates), `releaseUnscopable`, `figureLabel` (chart labels;
+  `figureLabel` metadata only where it differs from the derived default) and
+  `declaredIsolationClass` (the class a guest probe can contradict);
+- one generator, `bun run generate-providers`, which validates the metadata (including that an npm
+  `sdkPackage` is a runtime dependency of its own provider package and that a `{ cli }` vendor has a
+  setup action pinning an exact version) and writes the registry assembly, the driver loader, each
+  package's provenance, and the managed workflow, env and docs regions. `bun run check:providers` is
+  its drift check.
+
+Exec transport is not metadata: each driver module's `execution` policy declares its synchronous cap
+and durable route, and the composition root projects it onto the harness's `ProviderTransport`.
+`packages/schema/src/provider-registry.test.ts` holds the registry invariants and the one reviewed
+snapshot of every projection, so a new provider is reviewed as one snapshot diff.
 
 ## Driver end-to-end validation (`driver-check`)
 
@@ -124,9 +145,8 @@ is rejected so an intentionally retained sandbox cannot produce passing release 
 `--report-file <path>` for machine-readable JSON: StepRunner emits workload logs to stdout, so the
 default stdout stream contains those logs followed by the final report.
 
-A provider whose credentials are absent SKIPS with exit 0. A provider that has not migrated yet
-(see `packages/drivers/migration-waivers.json`) is rejected outright rather than silently falling
-back to the legacy adapter.
+A provider whose credentials are absent SKIPS with exit 0. An id with no driver module is rejected
+as a usage error.
 
 ## Driver conformance (`@sandbox-benchmarks/driver/conformance`)
 
@@ -193,7 +213,8 @@ the Run model or builds a document never spawns a browser.
 | `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
 | `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
 | `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
-| `bun run check:provider-registry-drift` | Fails if the correlated provider metadata index drifted from `PROVIDER_IDS`. |
+| `bun run generate-providers` | Regenerates every output derived from provider metadata (registry assembly, driver loader, provenance, managed workflow/env/docs regions). |
+| `bun run check:providers` | Fails if any generated provider output drifted from the metadata registry. |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 
@@ -213,7 +234,7 @@ install-time postinstall.
 `.github/workflows/ci.yml` runs the command contract on every pull request and every push to
 `main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
 `bun run lint:shell` → `bun run lint:docker` → `bun run typecheck` → browser-free `bun run test` →
-`bun run check:catalog-drift` → `bun run check:provider-registry-drift` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
+`bun run check:catalog-drift` → `bun run check:providers` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
 A second `figures` job runs pinned-Chrome `bun run test:figures` on a hosted `ubuntu-24.04` runner —
 the same image that renders the committed figures, and the one where Chrome can keep its sandbox.
 A separate `ci-lint.yml` lints the workflows themselves (actionlint + zizmor). The browser-free

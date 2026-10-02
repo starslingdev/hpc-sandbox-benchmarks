@@ -1,36 +1,19 @@
 # @sandbox-benchmarks/providers
 
-Provider adapters may own a post-teardown cost-evidence hook. Billing API calls belong here, never in
-the SDK-free results package, and observed evidence must identify the benchmark sandbox itself;
-organization/account/workspace/shared-app totals are context only. The run.cloud hook does not call
-or delta its organization-wide usage API and returns `not_sandbox_scoped`. Modal cost evidence lives
-on the Modal DriverModule (`packages/modal/src/shared.ts`), not on a leftover adapter.
+**Role:** release-lane configuration and evidence helpers. Every provider runs through its
+DriverModule (`packages/drivers`); this package no longer holds provider adapters, and ADR-0023
+dissolves what remains into schema, the harness, and the provider packages.
 
-**Role:** provider wiring — binds each schema provider to a computesdk runtime.
+**Public surface (`.`):** the validated `config` gatekeeper (toolchain and artifact names, vendor
+namespaces and targets the release lane reads), the cost-evidence sanitizers and hook types the
+harness persists through, and Novita's pinned regional connection for the template bake.
+`./config` and `./support` expose the gatekeeper and the sanitizers without the rest.
 
-**Public surface (`.`):** `ProviderAdapter`, `ProviderConfig`, `DirectProvider` (types), the
-assembled `providers` registry, and the toolchain image constants (`TOOLCHAIN_IMAGE`,
-`TOOLCHAIN_VERSION`, `DAYTONA_SNAPSHOT_DEFAULT`).
+**Depends on:** `@sandbox-benchmarks/schema` and `arktype`; `novita-sandbox` for types only.
 
-**Depends on:** `@sandbox-benchmarks/schema` (provider identity / `PROVIDERS`), `computesdk` and the
-`@computesdk/*` wrappers where they preserve the required surface, plus focused compatibility
-adapters over raw vendor SDKs only where required.
-
-**What lives here:** provider factories and focused compatibility adapters. Most `@computesdk/*`
-packages adapt their vendor SDK directly; Microsandbox uses a local `defineProvider` implementation.
-Vercel's local provider starts from ComputeSDK's upstream adapter but uses pinned `@vercel/sandbox`
-v2, because the published wrapper still pins a pre-VCR SDK. run.cloud also uses a local
-`defineProvider` adapter over `@run-cloud/sdk`, for which no `@computesdk/*` wrapper is published.
-e2b, tama, modal-gvisor, and modal-vm are registered DriverModules (`packages/drivers`); this
-package keeps only the remaining waived adapters. The package also owns benchmark create-time
-policy — the pinned `TARGET_SPEC` and toolchain image. The assembled `providers` registry joins
-schema metadata with `Record<LegacyAdapterId, ProviderAdapter>`; a waived provider without an
-adapter is a compile error. Private glue lives in `src/lib/` and is never imported across a
-package boundary.
-
-The join also carries each provider's schema-owned `transport` capability (`ProviderTransport`:
-streaming, synchronous cap, detached+poll) onto the `ProviderConfig`, so the harness selects a
-per-step exec transport from the declared capability instead of hardcoding one provider's quirks.
+Cost-evidence hooks live on DriverModules (for example `packages/modal/src/shared.ts`). Billing API
+calls never belong in the SDK-free results package, and observed evidence must identify the
+benchmark sandbox itself; organization/account/workspace/shared-app totals are context only.
 
 ## Validate Vercel locally
 
@@ -75,8 +58,8 @@ GitHub repository and the Vercel project is required. `VERCEL_PROJECT_NAME` must
 publishing where nothing pulls from.
 
 The VCR path is rooted at the configured human-readable namespace. The `EXIT` trap removes the
-temporary environment file and Docker credential even if validation fails. The local ComputeSDK
-provider uses the v2 SDK's name-keyed lifecycle, detached current-session execution, non-resuming
+temporary environment file and Docker credential even if validation fails. The Vercel driver
+(`packages/vercel`) uses the v2 SDK's name-keyed lifecycle, detached current-session execution, non-resuming
 reconnects, and permanent delete cleanup. A conservative 60-second synchronous policy cap routes
 longer setup and suite steps through native detached execution. Filesystem methods are intentionally
 omitted because Vercel's high-level filesystem wrapper can auto-resume a stopped sandbox; the harness

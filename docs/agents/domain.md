@@ -24,10 +24,10 @@ terms belong in `packages/schema/CONTEXT.md` and other contexts refer to them.
 
 | Context root | Vocabulary and responsibility |
 | --- | --- |
-| `packages/schema/` | Provider identity and variants, target and observed specs, suites, dimensions, metrics, samples, replicates, Run documents, gaps, pricing, and evidence contracts. |
+| `packages/schema/` | Provider identity, variants and registry projections, target and observed specs, suites, dimensions, metrics, samples, replicates, Run documents, gaps, pricing, and evidence contracts. |
 | `packages/driver/` | Provider-neutral sandbox behavior: driver, session, sandbox reference, command exit, capabilities, execution/readiness policy, teardown, and conformance. |
 | `packages/drivers/` | Provider-specific DriverModules: translate vendor behavior into the driver contract and declare provider inputs, policies, and capabilities. |
-| `packages/providers/` | Remaining legacy provider adapters and their configuration, compatibility behavior, and runtime metadata join during migration. |
+| `packages/providers/` | Release-lane configuration gatekeeper and cost-evidence helpers, pending dissolution into schema, harness, and provider packages (ADR-0023). |
 | `packages/templates/` | Toolchain images and provider template builders, pinned tools, manifests, and build recipes. |
 | `packages/harness/` | Sandbox ownership, lifecycle timing, readiness, suite execution, transport selection, raw collection, and host-owned evidence persistence. |
 | `packages/results/` | Raw extraction and normalization, shard aggregation, host attribution, economics derivation, Run writing, comparison, and leaderboard output. |
@@ -41,11 +41,12 @@ Decisions affecting multiple contexts stay in the existing root `docs/adr/`.
 
 ## Routes across contexts
 
-- **Provider onboarding or migration:** read schema identity/metadata, the driver contract and
-  conformance, the selected driver implementation or legacy adapter, and CLI composition.
-  Consult ADR-0006, ADR-0007, and ADR-0008. Determine migration status from
-  `packages/drivers/src/index.ts`, `packages/drivers/migration-waivers.json`, and CLI routing.
-  The harness still consumes legacy shapes through CLI bridges; distinguish today's wiring
+- **Provider onboarding or migration:** read schema identity/metadata and its registry projections,
+  the driver contract and conformance, the selected provider package, and CLI composition.
+  Consult ADR-0006, ADR-0007, ADR-0008, and ADR-0023. Every registered provider runs through its
+  DriverModule (`packages/drivers/src/index.ts` is the generated loader); the registry snapshot in
+  `packages/schema/src/provider-registry.test.ts` records what the registry answers for each one.
+  The harness still consumes `SandboxHandle` shapes through CLI bridges; distinguish today's wiring
   from the intended driver-port architecture.
 - **Workload, suite, or metric changes:** read schema suites/catalog, harness execution and
   collection, then results extraction. Follow the actual workload into `.mise/tasks/`, `lib/`,

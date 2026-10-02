@@ -55,6 +55,7 @@ export const RUNLOOP_SYNC_EXEC_TIMEOUT_MS = 10 * 60_000;
 export const RUNLOOP_RECOVERY_CONFIRMATION_MS = 2_000;
 export const RUNLOOP_RECOVERY_MAX_ATTEMPTS = 4;
 export const RUNLOOP_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
+/** Long steps leave the single control-plane request for background exec plus done-file polling. */
 export const RUNLOOP_EXECUTION = Object.freeze({
 	syncCapMs: 60_000,
 	durable: "native-launch" as const,

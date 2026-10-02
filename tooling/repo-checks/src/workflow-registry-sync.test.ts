@@ -1,6 +1,6 @@
 // Invariant: the GitHub workflows that dispatch live benchmarks stay in lockstep with the suite
 // registry and retain their safe delegation/timeout shape. Provider choices and provider input env are
-// generated from metadata and owned by check:provider-wiring, so this gate deliberately does not
+// generated from metadata and owned by check:providers, so this gate deliberately does not
 // compare those managed regions a second time. Both dispatch lanes — bench-matrix.yml (the full
 // matrix, ending in a dataset commit) and
 // bench-smoke.yml (the same pipeline narrowed to one provider × suite and stopped before that commit) —

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
-import { usesDriverSuite } from "./driver-run.ts";
 import { forEachProviderWithCreds } from "./providers-run.ts";
 
 describe("forEachProviderWithCreds `only`", () => {
@@ -20,10 +19,10 @@ describe("forEachProviderWithCreds `only`", () => {
 	});
 
 	test("runs the body for a selected provider whose creds are present", async () => {
-		const kinds: string[] = [];
+		const visited: string[] = [];
 		const runs = await forEachProviderWithCreds(
 			async (target) => {
-				kinds.push(target.kind);
+				visited.push(target.id);
 				return "smoked";
 			},
 			{
@@ -34,7 +33,7 @@ describe("forEachProviderWithCreds `only`", () => {
 		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm"]);
 		expect(runs[0]?.status).toBe("ok");
 		expect(runs[0]?.value).toBe("smoked");
-		expect(kinds).toEqual(["driver"]);
+		expect(visited).toEqual(["daytona-vm"]);
 	});
 
 	test("without `only`, drives every schema provider in registry order", async () => {
@@ -51,22 +50,7 @@ describe("forEachProviderWithCreds `only`", () => {
 		);
 	});
 
-	test("a registered DriverModule id is visited on the driver lane, not thrown", async () => {
-		const kinds: string[] = [];
-		const runs = await forEachProviderWithCreds(
-			async (target) => {
-				kinds.push(`${target.kind}:${target.id}`);
-				return "driver";
-			},
-			{ only: ["e2b"], env: { E2B_API_KEY: "e2b_test" } },
-		);
-		expect(runs.map((r) => r.provider)).toEqual(["e2b"]);
-		expect(runs[0]?.status).toBe("ok");
-		expect(kinds).toEqual(["driver:e2b"]);
-		expect(usesDriverSuite("e2b")).toBe(true);
-	});
-
-	test("a registered id without creds skips rather than inventing a leftover adapter", async () => {
+	test("a registered id without creds skips and names the missing input", async () => {
 		const bodyRan: string[] = [];
 		const runs = await forEachProviderWithCreds(
 			async (target) => {
@@ -81,12 +65,12 @@ describe("forEachProviderWithCreds `only`", () => {
 		expect(bodyRan).toEqual([]);
 	});
 
-	test("mixed only keeps registry order and splits driver vs leftover lanes", async () => {
-		const kinds: Record<string, string> = {};
+	test("a multi-provider `only` keeps registry order, not request order", async () => {
+		const visited: string[] = [];
 		const runs = await forEachProviderWithCreds(
 			async (target) => {
-				kinds[target.id] = target.kind;
-				return target.kind;
+				visited.push(target.id);
+				return null;
 			},
 			{
 				only: ["tama", "daytona-vm"],
@@ -94,8 +78,6 @@ describe("forEachProviderWithCreds `only`", () => {
 			},
 		);
 		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm", "tama"]);
-		expect(kinds).toEqual({ "daytona-vm": "driver", tama: "driver" });
-		expect(usesDriverSuite("tama")).toBe(true);
-		expect(usesDriverSuite("daytona-vm")).toBe(true);
+		expect(visited).toEqual(["daytona-vm", "tama"]);
 	});
 });

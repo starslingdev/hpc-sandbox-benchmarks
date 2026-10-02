@@ -34,9 +34,9 @@ import {
 	SandboxNotFoundError,
 	withDefaultBackend,
 } from "microsandbox";
-import { MICROSANDBOX_PROVENANCE } from "./provenance.ts";
+import { MICROSANDBOX_CLOUD_PROVENANCE } from "./provenance.ts";
 
-export { MICROSANDBOX_PROVENANCE };
+export { MICROSANDBOX_CLOUD_PROVENANCE };
 
 type MicrosandboxCompute = ReturnType<typeof microsandboxCompute>;
 
@@ -65,6 +65,10 @@ export const MICROSANDBOX_INVENTORY_MAX_PAGES = 100;
  */
 export const MICROSANDBOX_STOP_WAIT_MS = 10_000;
 export const MICROSANDBOX_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
+/**
+ * The SDK exposes no streaming callbacks. Benchmark-length steps detach and poll the done file so a
+ * long-lived remote WebSocket is not the durability boundary.
+ */
 export const MICROSANDBOX_EXECUTION = Object.freeze({
 	syncCapMs: 60_000,
 	durable: "shell-detach" as const,
@@ -448,7 +452,7 @@ export function microsandboxCloudSpec({
 }
 
 export default defineComputeSdkDriver("microsandbox-cloud", {
-	provenance: MICROSANDBOX_PROVENANCE,
+	provenance: MICROSANDBOX_CLOUD_PROVENANCE,
 	readiness: MICROSANDBOX_READINESS,
 	execution: MICROSANDBOX_EXECUTION,
 	createBudget: MICROSANDBOX_CREATE_BUDGET,

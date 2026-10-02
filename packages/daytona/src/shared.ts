@@ -310,6 +310,9 @@ export function defineDaytonaDriver<P extends DaytonaId>(id: P) {
 	return defineComputeSdkDriver(id, {
 		provenance: DAYTONA_PROVENANCE,
 		readiness: { startup: "create-returns-ready" },
+		// Daytona returns HTTP 408 on a multi-minute synchronous executeCommand while the process
+		// keeps running (docs/evidence/daytona-exec-transport.md). The threshold is unmeasured, so
+		// anything past a conservative 60s takes native background launch plus done-file polling.
 		execution: { syncCapMs: 60000, durable: "native-launch" },
 		spec: (context) => daytonaSpec(context),
 	});

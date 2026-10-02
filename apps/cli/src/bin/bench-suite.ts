@@ -123,9 +123,6 @@ usage: bench-suite [provider] [suite] [runId]
                           un-suffixed data/runs/<runId>.json — the single-sandbox/local form.
   --require <ids>         Comma-separated providers that MUST reach "validated"; exit 1 otherwise.
                           Also read from REQUIRE_PROVIDERS. CI sets this so a missing secret fails loudly.
-  --driver-path           Force the DriverModule path. Registered ids (e2b, tama, modal-gvisor,
-                          modal-vm) already use it by default; unmigrated providers fail as a
-                          usage error rather than falling back to packages/providers.
   --list-providers        List the registered providers.
   --list-suites           List the registered suites and their dimensions/metrics.
   --json                  Emit --list-* output as JSON instead of human-readable lines.
@@ -138,8 +135,7 @@ examples:
   bench-suite daytona-vm cpu-node                 # one suite locally, auto runId
   bench-suite modal-vm memory ci-1234             # a specific cell + runId
   bench-suite e2b memory --require e2b            # fail (don't skip) if E2B_API_KEY is absent
-  bench-suite e2b system spike-1                  # registered ids use DriverModule by default
-  bench-suite e2b system spike-1 --driver-path    # redundant for registered ids; errors if unmigrated
+  bench-suite e2b system spike-1                  # every provider runs through its DriverModule
   bench-suite e2b memory ci-1 --replicates 0,1,2  # 3 replicate sandboxes from this one process
   bench-suite --list-suites                       # discover the suite names first
 
@@ -454,7 +450,6 @@ if (import.meta.main) {
 	const provider = positionals[0] ?? "daytona-vm";
 	const suite = positionals[1] ?? "cpu-node";
 	const runId = positionals[2] ?? `local-${Date.now()}`;
-	const driverPath = argv.includes("--driver-path");
 	const sha = process.env.GITHUB_SHA ?? "local";
 	const cell = cellTitle(suite, provider);
 
@@ -554,7 +549,6 @@ if (import.meta.main) {
 				sha,
 				replicates: replicateIndices ?? [singleReplicate ?? null],
 				maxConcurrency: Number.isFinite(maxConcurrency) ? maxConcurrency : "unbounded",
-				driverPath,
 				// Per-mode, because a fan-out has no single pair to report: name every shard it will
 				// write, so a missing artifact can be traced to the path that was expected.
 				...(replicateIndices
@@ -623,7 +617,6 @@ if (import.meta.main) {
 			outFile: singleOutFile,
 			indexFile,
 			...(singleReplicate !== undefined ? { replicateIndex: singleReplicate } : {}),
-			driverPath,
 			required,
 		});
 		await reportCell({
@@ -687,7 +680,6 @@ if (import.meta.main) {
 					outFile: paths.outFile,
 					indexFile,
 					replicateIndex,
-					driverPath,
 					required,
 				}),
 			);

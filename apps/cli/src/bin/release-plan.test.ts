@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { config } from "@sandbox-benchmarks/providers";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
-import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
-import {
-	buildReleasePlan,
-	planOutputs,
-	RELEASE_REQUIRED_PROVIDERS,
-	RELEASE_UNSCOPABLE_PROVIDERS,
-} from "./release-plan.ts";
+import { bakedArtifactName, releaseUnscopable } from "@sandbox-benchmarks/schema/providers";
+import { buildReleasePlan, planOutputs, RELEASE_REQUIRED_PROVIDERS } from "./release-plan.ts";
 
 const base = { sourceRef: "abc123", forceRepublish: false, alreadyPublished: false };
 const backfillBase = { ...base, build: "skip" as const };
@@ -64,24 +59,7 @@ describe("buildReleasePlan mode + skip", () => {
 describe("buildReleasePlan matrix", () => {
 	test("fans out over every provider in registry order", () => {
 		const plan = buildReleasePlan(base);
-		expect(plan.matrix.include.map((c) => c.provider)).toEqual([
-			"e2b",
-			"daytona-vm",
-			"daytona-container",
-			"blaxel",
-			"microsandbox-cloud",
-			"modal-gvisor",
-			"modal-vm",
-			"novita",
-			"runloop",
-			"namespace",
-			"vercel",
-			"runcloud",
-			"tama",
-			"boat",
-			"freestyle",
-			"brezel",
-		]);
+		expect(plan.matrix.include.map((c) => c.provider)).toEqual(ALL_PROVIDERS);
 	});
 
 	test("marks exactly the required providers as gating cells", () => {
@@ -117,6 +95,9 @@ describe("buildReleasePlan matrix", () => {
 	// The flip side of "everything you name is required": validating a stock provider does not create
 	// an artifact a scoped backfill can ship. The plan refuses that impossible request before approval.
 	test("refuses a scope naming a provider the release lane cannot ship", () => {
+		for (const id of Object.keys(releaseUnscopable())) {
+			expect(() => buildReleasePlan({ ...base, providers: id })).toThrow(/cannot ship/);
+		}
 		expect(() => buildReleasePlan({ ...base, providers: "boat" })).toThrow(/boat/);
 		expect(() => buildReleasePlan({ ...base, providers: "brezel" })).toThrow(/brezel/);
 		expect(() => buildReleasePlan({ ...base, providers: "e2b,boat" })).toThrow(/cannot ship/);
@@ -146,7 +127,6 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.required).toContain("blaxel");
 		expect(plan.required).not.toContain("boat");
 		expect(plan.required).not.toContain("runloop");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat", "brezel"]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the

@@ -36,13 +36,13 @@ The Chrome-backed figures screenshot suite is intentionally separate from the no
 CI's `figures` job provisions its pinned headless Chrome on a hosted runner and runs
 `bun run test:figures` explicitly.
 
-PTS-catalog changes also have a drift gate:
+PTS-catalog and provider-metadata changes also have drift gates:
 
 ```sh
 bun run --filter @sandbox-benchmarks/schema generate-catalog   # regenerate from vendored profiles
 bun run check:catalog-drift                                    # fail if the committed draft drifted
-bun run check:provider-registry-drift                           # fail if provider metadata assembly drifted
-bun run check:provider-wiring                                   # fail if generated CI/docs/env wiring drifted
+bun run generate-providers                                     # regenerate everything provider metadata projects
+bun run check:providers                                        # fail if any generated provider output drifted
 ```
 
 ## Add a provider
@@ -50,15 +50,20 @@ bun run check:provider-wiring                                   # fail if genera
 1. **Identity + metadata** — append the id to `PROVIDER_IDS` in
    [`packages/schema/src/provider-ids.ts`](./packages/schema/src/provider-ids.ts), then add the one
    hand-authored `packages/schema/src/provider-meta/<id>.ts` module. Declare display/vendor identity,
-   inputs, artifact lifecycle, isolation, vetted pricing, maturity, spec pinning, and transport there.
-   Run `bun run generate-provider-registry` and `bun run generate-provider-wiring`, then review the
-   generated correlated index plus managed workflow/docs/env regions. Filename, tuple key, and
-   declared id disagreement is a compile error; malformed descriptor semantics fail the generator's
-   Tier-3 arktype gate. Keep the independent hardcoded provider oracle in `providers.test.ts` current.
-2. **Adapter** — add a matching entry to the adapter map in
-   [`packages/providers`](./packages/providers): how to `createCompute()` and the create-time
-   `createOptions` (the pinned target spec + toolchain image). The two registries are joined by id, so a
-   one-sided provider is a compile error.
+   inputs, artifact lifecycle, isolation, vetted pricing, maturity, and spec pinning there, plus the
+   vendor library its package pins as `sdkPackage`: an npm package name, `{ cli }` for a CLI pinned
+   by `.github/actions/setup-<cli>/action.yml`, or `{ http }` for an HTTP-only API version. Declare
+   `package` only for an isolation variant sharing another provider's package, and `figureLabel`
+   only when the chart label differs from the derived default.
+2. **Driver package** — add `packages/<id>` with a default-exported DriverModule. Its `execution`
+   policy (synchronous cap and durable route) is the only declaration of the provider's exec
+   transport, and its `package.json` must depend on the `sdkPackage` library. Run
+   `bun run generate-providers`, then review the generated registry index, driver loader,
+   provenance, and managed workflow/docs/env regions. Filename, tuple key, and declared id
+   disagreement is a compile error; malformed descriptor semantics, a missing driver module, and an
+   `sdkPackage` the package does not depend on fail the generator. Then update and review the one
+   registry snapshot (`bun test -u src/provider-registry.test.ts` in `packages/schema`), which records
+   every fact the registry answers for the new provider.
 3. **Artifact implementation** — only when the descriptor's `artifact.kind` requires one, add the
    provider-specific bake/template implementation. Providers using a stock or shared image do not get
    no-op bakers.

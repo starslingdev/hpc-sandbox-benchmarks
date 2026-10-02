@@ -9,7 +9,7 @@ import { type } from "arktype";
 import type { App, Image, SandboxCreateParams } from "modal";
 import { ModalClient, Sandbox } from "modal";
 import type { ClientMiddleware } from "nice-grpc";
-import { MODAL_NATIVE_PROVENANCE } from "./provenance.ts";
+import { MODAL_PROVENANCE } from "./provenance.ts";
 import {
 	createModalControlRunner,
 	execModalCommand,
@@ -162,7 +162,7 @@ export function createModalAllocation(configuration: ModalAllocationConfiguratio
 	return {
 		module: {
 			id: "modal-gvisor" as const,
-			provenance: MODAL_NATIVE_PROVENANCE,
+			provenance: MODAL_PROVENANCE,
 			createBudget: { owner: "harness" as const, timeoutMs: 300_000 },
 			readiness: { startup: "create-returns-ready" as const },
 			execution: { syncCapMs: null, durable: "none" as const },

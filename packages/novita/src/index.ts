@@ -251,6 +251,8 @@ export function novitaSpec({ env, resolvedArtifact }: DriverContext<"novita">) {
 export default defineComputeSdkDriver("novita", {
 	provenance: NOVITA_PROVENANCE,
 	readiness: { startup: "create-returns-ready" },
+	// The E2B-compatible SDK applies E2B's default 60s command timeout, so long steps take the
+	// compat API's background launch plus done-file polling.
 	execution: { syncCapMs: 60000, durable: "native-launch" },
 	spec: novitaSpec,
 });

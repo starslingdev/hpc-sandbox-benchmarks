@@ -30,9 +30,13 @@
 // (a plain rerun is refused at step 1, since the base image is still there).
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers/config";
-import type { ProviderId } from "@sandbox-benchmarks/schema";
-import { PROVIDERS } from "@sandbox-benchmarks/schema";
-import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
+import type {
+	BakedProviderId,
+	CandidateArtifactRefs,
+	MirroredProviderId,
+	ProviderId,
+} from "@sandbox-benchmarks/schema";
+import { bakedArtifactName, baseImageUse, PROVIDERS } from "@sandbox-benchmarks/schema";
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
@@ -52,8 +56,6 @@ import {
 	promoteMirroredProviderArtifact,
 } from "./provider-artifacts.ts";
 import type { BakeReport, Log } from "./types.ts";
-import type { CandidateRefs } from "./validate.ts";
-import { baseImageUse } from "./validate.ts";
 import { validateCandidates } from "./validate-run.ts";
 
 export interface PromoteOptions {
@@ -252,24 +254,19 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 			);
 		}
 	}
-	const candidateRefs: CandidateRefs = {
-		e2bTemplateCandidate: config.e2bTemplateCandidate,
-		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
-		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
-		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		runloopBlueprintCandidate: config.runloopBlueprintCandidate,
-		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
-		toolchainImageCandidate: pinnedBaseImage,
-		vercelImageCandidate: config.vercelImageCandidate,
-		daytonaVmTarget: config.daytonaVm.target,
-		daytonaContainerTarget: config.daytonaContainer.target,
+	// Native snapshots boot the immutable id resolved below, not a derived name.
+	const buildResults: Partial<Record<BakedProviderId, string>> = {};
+	const candidateRefs: CandidateArtifactRefs = {
+		toolchainImage: pinnedBaseImage,
+		mirrored: { vercel: config.vercelImageCandidate } satisfies Record<MirroredProviderId, string>,
+		buildResults,
 	};
 	if (
 		(only ?? PROVIDERS.map((provider) => provider.id)).includes("freestyle") &&
 		process.env.FREESTYLE_API_KEY
 	)
 		try {
-			candidateRefs.freestyleSnapshotCandidate = await resolveFreestyleSnapshotId(
+			buildResults.freestyle = await resolveFreestyleSnapshotId(
 				bakedArtifactName("freestyle", "candidate"),
 			);
 		} catch (error) {
@@ -316,9 +313,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 							const artifactRef = await buildBakedProviderArtifact(
 								target.id,
 								"version",
-								target.id === "freestyle"
-									? (candidateRefs.freestyleSnapshotCandidate ?? "")
-									: pinnedBaseImage,
+								target.id === "freestyle" ? (buildResults.freestyle ?? "") : pinnedBaseImage,
 								(m) => log(`    ${m}`),
 							);
 							return typeof artifactRef === "string" ? artifactRef : undefined;

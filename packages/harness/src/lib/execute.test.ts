@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ProviderTransport } from "@sandbox-benchmarks/schema";
-import { getProvider, PTS_STATE_SELECT_SH } from "@sandbox-benchmarks/schema";
+import { PTS_STATE_SELECT_SH } from "@sandbox-benchmarks/schema";
 import type { SandboxHandle } from "./execute.ts";
 import {
 	buildPreamble,
@@ -87,28 +87,6 @@ describe("selectTransport", () => {
 
 	it("stays synchronous past the cap when the provider can't detach (no durable alternative)", () => {
 		expect(selectTransport(CAPPED_NO_DETACH, 5 * MIN)).toBe("sync");
-	});
-
-	it("detaches a suite-length step on namespace, whose sync exec is capped in practice", () => {
-		// Regression guard against the declaration this fixes, read from the REAL registry rather than a
-		// fixture — a fixture would keep passing if the registry regressed. namespace was declared
-		// uncapped + detachedPoll:false, which routed a 55-minute benchmark through one synchronous exec;
-		// live run 30314097333 lost it at 4m18.8s with two of three PTS profiles done. A suite-length step
-		// must detach here, while a short step must still take the cheap synchronous path.
-		// getProvider's literal-id overload returns non-optional, so there is no `if (!x) return` guard —
-		// which matters: such a guard would make this regression test silently PASS if the entry vanished.
-		const { transport } = getProvider("namespace");
-		expect(selectTransport(transport, 55 * MIN)).toBe("detached");
-		expect(selectTransport(transport, MIN)).toBe("sync");
-	});
-
-	it("detaches 20+ minute Vercel suites instead of holding one synchronous connection", () => {
-		const { transport } = getProvider("vercel");
-		for (const minutes of [20, 30]) {
-			expect(selectTransport(transport, minutes * MIN)).toBe("detached");
-		}
-		expect(selectTransport(transport, MIN)).toBe("detached");
-		expect(selectTransport(transport, MIN - 1)).toBe("sync");
 	});
 });
 

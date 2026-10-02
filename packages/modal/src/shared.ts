@@ -30,9 +30,9 @@ import { type } from "arktype";
 import { ModalClient, NotFoundError, Sandbox } from "modal";
 import type { ClientMiddleware } from "nice-grpc";
 import { ClientError, Status } from "nice-grpc";
-import { MODAL_NATIVE_PROVENANCE, MODAL_PROVENANCE } from "./provenance.ts";
+import { MODAL_PROVENANCE } from "./provenance.ts";
 
-export { MODAL_NATIVE_PROVENANCE, MODAL_PROVENANCE };
+export { MODAL_PROVENANCE };
 
 export type ModalProviderId = "modal-gvisor" | "modal-vm";
 export type ModalVariant = "gvisor" | "vm";
@@ -83,15 +83,15 @@ export interface ModalControlRunner<Control = ModalControlPlane> {
 
 export const MODAL_APP_NAME = "sandbox-benchmarks";
 /**
- * Native Modal SDK identity for cost-evidence records (not the `@computesdk/modal` wrapper).
+ * Native Modal SDK identity for cost-evidence records: the package provenance, typed for the hook.
  *
  * This module imports `modal` directly for its control plane, so the SDK whose public surface was
  * searched for a sandbox-scoped usage endpoint is the catalog-pinned copy this package resolves —
  * NOT the older one the wrapper vendors. Generated from that same pin so the recorded version
- * cannot drift from the installed one; `_modal.test.ts` asserts it against the resolved package.
+ * cannot drift from the installed one; `shared.test.ts` asserts it against the resolved package.
  */
 export const MODAL_COST_SDK_PROVENANCE =
-	MODAL_NATIVE_PROVENANCE satisfies ProviderCostEvidenceCapability["sdk"];
+	MODAL_PROVENANCE satisfies ProviderCostEvidenceCapability["sdk"];
 export const MODAL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
 /**
@@ -105,6 +105,14 @@ export const MODAL_INVENTORY_TIMEOUT_MS = 60_000;
 export const MODAL_RECOVERY_CONFIRMATION_MS = 2_000;
 export const MODAL_RECOVERY_MAX_ATTEMPTS = 4;
 export const MODAL_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
+/**
+ * `sandbox.exec([...])` waits for the result with no separate per-exec timeout and no hard gateway
+ * cap, but its stdio stream is not reliable over benchmark-length execs: a ~66-minute better-auth
+ * run completed in-sandbox (manifest exit_code 0) while the harness-side stream died with gRPC
+ * INTERNAL "Failed to read exec stdio stream" (ZEHA3277, 2026-07-10), losing the step result.
+ * Suite-length steps therefore detach past 30 minutes, which survives a dropped stream; short setup
+ * steps keep the cheaper direct exec.
+ */
 export const MODAL_EXECUTION = Object.freeze({
 	syncCapMs: 30 * 60_000,
 	durable: "shell-detach" as const,

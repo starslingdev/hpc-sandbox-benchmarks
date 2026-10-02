@@ -2,8 +2,11 @@ import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DirectProvider, ProviderConfig } from "@sandbox-benchmarks/providers";
-import { markRetryableCreate } from "@sandbox-benchmarks/providers";
+import {
+	DriverError,
+	isRetryableDriverCreate,
+	markRetryableDriverCreate,
+} from "@sandbox-benchmarks/driver";
 import type { ProviderCostEvidence, Suite } from "@sandbox-benchmarks/schema";
 import {
 	bakedArtifactName,
@@ -13,19 +16,11 @@ import {
 } from "@sandbox-benchmarks/schema";
 import type { SuiteRunContext } from "./index.ts";
 import {
-	benchmarkLifecycle,
 	benchmarkLifecycleCompute,
-	createSuiteSandbox,
 	createSuiteSandboxFromPlan,
-	hasRequiredCreds,
-	missingCreds,
 	requiredProviders,
-	runSuite,
 	runSuiteOnSandbox,
-	SuiteUsageError,
-	timeOperation,
 	unmetRequirements,
-	withSandbox,
 } from "./index.ts";
 import type { CommandResult, SandboxHandle } from "./lib/execute.ts";
 import type { LifecycleCompute } from "./lib/lifecycle.ts";
@@ -36,135 +31,11 @@ import { cleanupOwnedSandboxes } from "./lib/sandbox-owner.ts";
 // provider; none of these tests exercise real exec, so the exact values are inert here.
 const fixtureTransport = { streaming: false, syncCapMs: 60_000, detachedPoll: true } as const;
 
-// timeOperation only reads identity, never calls createCompute — a throwing stub keeps this unit
-// test free of any real SDK while staying fully typed.
-const config: ProviderConfig = {
-	name: "e2b",
-	artifact: { kind: "baked", ref: "test-template" },
-	requiredEnvVars: [],
-	transport: fixtureTransport,
-	createCompute: () => {
-		throw new Error("not exercised");
-	},
-};
-
-// A fake provider that records its lifecycle calls, so withSandbox can be exercised offline with no
-// real SDK. Only the methods withSandbox touches are implemented; the cast recovers the full type.
-function fakeProvider(calls: string[], opts: { destroyFails?: boolean } = {}): ProviderConfig {
-	let remainingDestroyFailures = opts.destroyFails ? 1 : 0;
-	const sandbox = {
-		sandboxId: "sb-1",
-		provider: "e2b",
-		runCommand: (cmd: string) => {
-			calls.push(`run:${cmd}`);
-			return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
-		},
-		destroy: () => {
-			calls.push("destroy");
-			if (remainingDestroyFailures > 0) {
-				remainingDestroyFailures--;
-				return Promise.reject(new Error("destroy failed"));
-			}
-			return Promise.resolve();
-		},
-	};
-	const compute = {
-		sandbox: {
-			create: () => {
-				calls.push("create");
-				return Promise.resolve(sandbox);
-			},
-		},
-	} as unknown as DirectProvider;
-	return {
-		name: "e2b",
-		artifact: { kind: "baked", ref: "test-template" },
-		requiredEnvVars: [],
-		transport: fixtureTransport,
-		createCompute: () => compute,
-	};
-}
-
 afterEach(async () => {
 	expect(await cleanupOwnedSandboxes()).toEqual([]);
 });
 
 describe("@sandbox-benchmarks/harness", () => {
-	it("times an operation and emits a raw run for the provider", async () => {
-		const run = await timeOperation(config, "spawn", () => {});
-		expect(run.provider).toBe("e2b");
-		expect(run.operation).toBe("spawn");
-		expect(run.durationMs).toBeGreaterThan(0);
-	});
-
-	it("withSandbox creates, runs the body, then destroys", async () => {
-		const calls: string[] = [];
-		const out = await withSandbox(fakeProvider(calls), async (sb) => {
-			await sb.runCommand("echo hi");
-			return "result";
-		});
-		expect(out).toBe("result");
-		expect(calls).toEqual(["create", "run:echo hi", "destroy"]);
-	});
-
-	it("withSandbox destroys even when the body throws", async () => {
-		const calls: string[] = [];
-		await expect(
-			withSandbox(fakeProvider(calls), async () => {
-				throw new Error("boom");
-			}),
-		).rejects.toThrow("boom");
-		expect(calls).toEqual(["create", "destroy"]);
-	});
-
-	it("withSandbox surfaces the body error, not a teardown error, when both fail", async () => {
-		const calls: string[] = [];
-		// destroy also rejects — the original "boom" must win so the root cause isn't masked, and
-		// destroy must be attempted exactly once (no double-teardown).
-		await expect(
-			withSandbox(fakeProvider(calls, { destroyFails: true }), async () => {
-				throw new Error("boom");
-			}),
-		).rejects.toThrow("boom");
-		expect(calls).toEqual(["create", "destroy"]);
-	});
-
-	it("withSandbox surfaces a teardown failure on the success path", async () => {
-		const calls: string[] = [];
-		// fn succeeded but destroy fails — a leaked sandbox is worth failing on, so it surfaces.
-		await expect(
-			withSandbox(fakeProvider(calls, { destroyFails: true }), async () => "ok"),
-		).rejects.toThrow("destroy failed");
-		expect(calls).toEqual(["create", "destroy"]);
-	});
-
-	// Named "modal-gvisor", so it carries modal's real (uncapped) transport rather than the capped
-	// fixtureTransport — these creds tests never read transport, but keeping the fixture faithful to
-	// the name stops a future transport-aware test from exercising E2B/Daytona semantics under a
-	// modal-named config.
-	const credsCfg: ProviderConfig = {
-		name: "modal-gvisor",
-		artifact: { kind: "image", ref: "test-image" },
-		requiredEnvVars: ["A", "B"],
-		transport: { streaming: false, syncCapMs: null, detachedPoll: true },
-		createCompute: () => {
-			throw new Error("not exercised");
-		},
-	};
-
-	it("missingCreds lists the required vars that are unset or empty", () => {
-		expect(missingCreds(credsCfg, { A: "1", B: "2" })).toEqual([]);
-		expect(missingCreds(credsCfg, { A: "1", B: "" })).toEqual(["B"]);
-		expect(missingCreds(credsCfg, {})).toEqual(["A", "B"]);
-	});
-
-	it("hasRequiredCreds is true only when every required var is present and non-empty", () => {
-		expect(hasRequiredCreds(credsCfg, { A: "1", B: "2" })).toBe(true);
-		expect(hasRequiredCreds(credsCfg, { A: "1", B: "" })).toBe(false);
-		expect(hasRequiredCreds(credsCfg, { A: "1" })).toBe(false);
-		expect(hasRequiredCreds({ ...credsCfg, requiredEnvVars: [] }, {})).toBe(true);
-	});
-
 	it("requiredProviders parses --require, --require=, and the env fallback (empty by default)", () => {
 		expect(requiredProviders([], {})).toEqual([]);
 		expect(requiredProviders(["--require", "e2b,daytona,modal"], {})).toEqual([
@@ -183,11 +54,11 @@ describe("@sandbox-benchmarks/harness", () => {
 		]);
 	});
 
-	// A lifecycle-capable fake provider: createCompute returns a structural LifecycleCompute (cast to the
-	// SDK's DirectProvider, as the real adapters do), letting benchmarkLifecycle run with no real SDK.
-	function lifecycleConfig(
+	// A lifecycle-capable fake: the structural slice the composition root projects a driver onto,
+	// letting the lifecycle loop run with no real SDK.
+	function lifecycleCompute(
 		opts: { withSnapshot?: boolean; withList?: boolean; failCreateOnCycle?: number } = {},
-	): ProviderConfig {
+	): LifecycleCompute {
 		let created = 0;
 		const sandbox = {
 			create: async () => {
@@ -209,18 +80,13 @@ describe("@sandbox-benchmarks/harness", () => {
 				delete: async () => undefined,
 			};
 		}
-		return {
-			name: "e2b",
-			artifact: { kind: "baked", ref: "test-template" },
-			requiredEnvVars: [],
-			transport: fixtureTransport,
-			createCompute: () => compute as unknown as DirectProvider,
-		};
+		return compute;
 	}
 
-	it("benchmarkLifecycle runs N cold-start cycles and aggregates Samples per Metric", async () => {
-		const result = await benchmarkLifecycle(
-			lifecycleConfig({ withSnapshot: true, withList: true }),
+	it("benchmarkLifecycleCompute runs N cold-start cycles and aggregates Samples per Metric", async () => {
+		const result = await benchmarkLifecycleCompute(
+			"e2b",
+			lifecycleCompute({ withSnapshot: true, withList: true }),
 			{
 				iterations: 3,
 				controlPlaneSamples: 2,
@@ -235,8 +101,8 @@ describe("@sandbox-benchmarks/harness", () => {
 		expect(result.gaps).toEqual([]);
 	});
 
-	it("benchmarkLifecycle dedups a repeated unsupported-op skip across cycles", async () => {
-		const result = await benchmarkLifecycle(lifecycleConfig(), { iterations: 4 });
+	it("benchmarkLifecycleCompute dedups a repeated unsupported-op skip across cycles", async () => {
+		const result = await benchmarkLifecycleCompute("e2b", lifecycleCompute(), { iterations: 4 });
 		// No snapshot/list support → one skip each, not four, despite four cycles.
 		const snapshotSkips = result.gaps.filter((g) => g.id === "lifecycle_snapshot_ms");
 		const listSkips = result.gaps.filter((g) => g.id === "control_plane_list_ms");
@@ -248,10 +114,14 @@ describe("@sandbox-benchmarks/harness", () => {
 		);
 	});
 
-	it("benchmarkLifecycle records a mid-run spawn failure as a failed gap and keeps the surviving cycles", async () => {
-		const result = await benchmarkLifecycle(lifecycleConfig({ failCreateOnCycle: 2 }), {
-			iterations: 3,
-		});
+	it("benchmarkLifecycleCompute records a mid-run spawn failure as a failed gap and keeps the surviving cycles", async () => {
+		const result = await benchmarkLifecycleCompute(
+			"e2b",
+			lifecycleCompute({ failCreateOnCycle: 2 }),
+			{
+				iterations: 3,
+			},
+		);
 		// Cycle 2 fails to spawn; cycles 1 and 3 still produce spawn/teardown Samples (not discarded).
 		expect(result.aggregates.find((a) => a.metricId === "lifecycle_spawn_ms")?.aggregates.n).toBe(
 			2,
@@ -266,7 +136,7 @@ describe("@sandbox-benchmarks/harness", () => {
 		expect(spawnGap?.outcome).toBe("failed");
 	});
 
-	it("benchmarkLifecycle skips control-plane info when the sandbox exposes no getInfo", async () => {
+	it("benchmarkLifecycleCompute skips control-plane info when the sandbox exposes no getInfo", async () => {
 		const compute: LifecycleCompute = {
 			sandbox: {
 				create: async () => ({
@@ -286,8 +156,10 @@ describe("@sandbox-benchmarks/harness", () => {
 		);
 	});
 
-	it("benchmarkLifecycle clamps a non-finite iterations to a single cycle", async () => {
-		const result = await benchmarkLifecycle(lifecycleConfig(), { iterations: Number.NaN });
+	it("benchmarkLifecycleCompute clamps a non-finite iterations to a single cycle", async () => {
+		const result = await benchmarkLifecycleCompute("e2b", lifecycleCompute(), {
+			iterations: Number.NaN,
+		});
 		// NaN must not make `i < iterations` never run (zero Samples) — it falls back to one cold start.
 		expect(result.aggregates.find((a) => a.metricId === "lifecycle_spawn_ms")?.aggregates.n).toBe(
 			1,
@@ -433,43 +305,12 @@ const ctx = (s: Suite, resultsDir: string): SuiteRunContext => ({
 	transport: fixtureTransport,
 });
 
-describe("runSuite (resolution + credential gate)", () => {
-	it("rejects an unknown suite as a usage error", async () => {
-		await expect(
-			runSuite({
-				runId: "test",
-				providerName: "daytona-vm",
-				suiteName: "nope",
-				resultsDir: freshDir(),
-			}),
-		).rejects.toBeInstanceOf(SuiteUsageError);
+describe("createSuiteSandboxFromPlan (creation-failure marker)", () => {
+	// The plan the driver composition root builds: typed retry policy, never vendor-message guesses.
+	const planOf = (compute: { sandbox: { create(): Promise<SandboxHandle> } }) => ({
+		create: () => compute.sandbox.create(),
+		isRetryable: isRetryableDriverCreate,
 	});
-
-	it("rejects an unknown provider as a usage error", async () => {
-		await expect(
-			runSuite({
-				runId: "test",
-				providerName: "nope",
-				suiteName: "cpu-node",
-				resultsDir: freshDir(),
-			}),
-		).rejects.toBeInstanceOf(SuiteUsageError);
-	});
-
-	it("rejects migrated providers on the retired legacy entry point", async () => {
-		await expect(
-			runSuite({
-				runId: "test",
-				providerName: "namespace",
-				suiteName: "cpu-node",
-				resultsDir: freshDir(),
-				env: {},
-			}),
-		).rejects.toBeInstanceOf(SuiteUsageError);
-	});
-});
-
-describe("createSuiteSandbox (creation-failure marker)", () => {
 	// The daytona-container incident shape: creation itself throws, so no sandbox — and no result —
 	// ever exists for the cell. The marker is the shard's ONLY record of the failure.
 	const createCtx = (
@@ -495,7 +336,9 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		const resultsDir = freshDir();
 		const handle = makeSandbox({ destroyed: { hit: false } });
 		const compute = { sandbox: { create: async () => handle } };
-		await expect(createSuiteSandbox(() => compute, createCtx(resultsDir))).resolves.toBe(handle);
+		await expect(createSuiteSandboxFromPlan(planOf(compute), createCtx(resultsDir))).resolves.toBe(
+			handle,
+		);
 		expect(existsSync(join(resultsDir, MARKER))).toBe(false);
 	});
 
@@ -507,9 +350,9 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 					Promise.reject(new Error("Snapshot toolchain-v3-container is not available")),
 			},
 		};
-		await expect(createSuiteSandbox(() => compute, createCtx(resultsDir))).rejects.toThrow(
-			/Snapshot .* is not available/,
-		);
+		await expect(
+			createSuiteSandboxFromPlan(planOf(compute), createCtx(resultsDir)),
+		).rejects.toThrow(/Snapshot .* is not available/);
 		// The marker carries the WHY into the raw tree the caller normalizes — without it the shard's
 		// Run document is empty (no result, no gap) while the job log claims a gap was recorded.
 		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8"))).toEqual({
@@ -526,7 +369,7 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		});
 	});
 
-	it("retries a create the adapter marked retryable, then returns the sandbox", async () => {
+	it("retries a create the driver marked retryable, then returns the sandbox", async () => {
 		const resultsDir = freshDir();
 		const handle = makeSandbox({ destroyed: { hit: false } });
 		let attempts = 0;
@@ -537,14 +380,16 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 					// A stalled control plane: the message names no quota, rate limit or 429, so only the
 					// adapter's explicit mark can keep this cell alive.
 					if (attempts < 3) {
-						throw markRetryableCreate(new Error("run.cloud create did not settle within 30000ms"));
+						throw markRetryableDriverCreate(
+							new DriverError("create-failed", "run.cloud create did not settle within 30000ms"),
+						);
 					}
 					return handle;
 				},
 			},
 		};
 		await expect(
-			createSuiteSandbox(() => compute, createCtx(resultsDir, { retryDelayMs: 1 })),
+			createSuiteSandboxFromPlan(planOf(compute), createCtx(resultsDir, { retryDelayMs: 1 })),
 		).resolves.toBe(handle);
 		expect(attempts).toBe(3);
 		// The cell recovered, so nothing failed and no marker belongs in the shard.
@@ -565,46 +410,8 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			},
 		};
 		await expect(
-			createSuiteSandbox(() => compute, createCtx(resultsDir, { retryDelayMs: 1 })),
+			createSuiteSandboxFromPlan(planOf(compute), createCtx(resultsDir, { retryDelayMs: 1 })),
 		).rejects.toThrow("did not settle");
-		expect(attempts).toBe(1);
-		expect(existsSync(join(resultsDir, MARKER))).toBe(true);
-	});
-
-	it("still retries on the message match, for adapters that do not set the mark", async () => {
-		const resultsDir = freshDir();
-		const handle = makeSandbox({ destroyed: { hit: false } });
-		let attempts = 0;
-		const compute = {
-			sandbox: {
-				create: async (): Promise<SandboxHandle> => {
-					attempts++;
-					if (attempts < 2) throw new Error("429 Too Many Requests");
-					return handle;
-				},
-			},
-		};
-		await expect(
-			createSuiteSandbox(() => compute, createCtx(resultsDir, { retryDelayMs: 1 })),
-		).resolves.toBe(handle);
-		expect(attempts).toBe(2);
-	});
-
-	it("does not leak the legacy message matcher into an explicit create plan", async () => {
-		const resultsDir = freshDir();
-		let attempts = 0;
-		await expect(
-			createSuiteSandboxFromPlan(
-				{
-					create: async () => {
-						attempts++;
-						throw new Error("429 Too Many Requests");
-					},
-					isRetryable: () => false,
-				},
-				createCtx(resultsDir, { retryDelayMs: 1 }),
-			),
-		).rejects.toThrow("429 Too Many Requests");
 		expect(attempts).toBe(1);
 		expect(existsSync(join(resultsDir, MARKER))).toBe(true);
 	});
@@ -619,14 +426,17 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			sandbox: {
 				create: async (): Promise<SandboxHandle> => {
 					attempts++;
-					throw markRetryableCreate(new Error("no slot right now"));
+					throw markRetryableDriverCreate(new DriverError("create-failed", "no slot right now"));
 				},
 			},
 		};
 		// A budget smaller than one delay leaves no room for another attempt, so the first failure is
 		// also the last: patience is bounded, and the cell still records why it produced nothing.
 		await expect(
-			createSuiteSandbox(() => compute, createCtx(resultsDir, { retryDelayMs: 50, retryBudgetMs })),
+			createSuiteSandboxFromPlan(
+				planOf(compute),
+				createCtx(resultsDir, { retryDelayMs: 50, retryBudgetMs }),
+			),
 		).rejects.toThrow("no slot right now");
 		expect(attempts).toBe(1);
 		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8")).outcome).toBe("failed");
@@ -639,7 +449,9 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			sandbox: {
 				create: async (): Promise<SandboxHandle> => {
 					attempts++;
-					throw markRetryableCreate(new Error("create did not settle"));
+					throw markRetryableDriverCreate(
+						new DriverError("create-failed", "create did not settle"),
+					);
 				},
 			},
 		};
@@ -647,8 +459,8 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		// adapter declares. Room for the 10ms backoff but not the 5s attempt behind it — starting one
 		// would put the failure marker (and the matrix cell) seconds past the budget it promised.
 		await expect(
-			createSuiteSandbox(
-				() => compute,
+			createSuiteSandboxFromPlan(
+				planOf(compute),
 				createCtx(resultsDir, {
 					createTimeoutMs: null,
 					createAttemptCeilingMs: 5_000,
@@ -668,7 +480,9 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			sandbox: {
 				create: async (): Promise<SandboxHandle> => {
 					attempts++;
-					throw markRetryableCreate(new Error("create did not settle"));
+					throw markRetryableDriverCreate(
+						new DriverError("create-failed", "create did not settle"),
+					);
 				},
 			},
 		};
@@ -676,8 +490,8 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		// after it was asked to. The pre-sleep reservation was arithmetic on a clock reading that is now
 		// stale, so without the recheck this late sleep would start an attempt the budget cannot cover.
 		await expect(
-			createSuiteSandbox(
-				() => compute,
+			createSuiteSandboxFromPlan(
+				planOf(compute),
 				createCtx(resultsDir, {
 					createTimeoutMs: null,
 					createAttemptCeilingMs: 10,
@@ -699,7 +513,10 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			sandbox: {
 				create: async (): Promise<SandboxHandle> => {
 					attempts++;
-					if (attempts < 2) throw markRetryableCreate(new Error("create did not settle"));
+					if (attempts < 2)
+						throw markRetryableDriverCreate(
+							new DriverError("create-failed", "create did not settle"),
+						);
 					return handle;
 				},
 			},
@@ -707,8 +524,8 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		// Same shape, ample budget: reserving one attempt's worth must not collapse the retry loop into
 		// a single try for the adapters that need it most.
 		await expect(
-			createSuiteSandbox(
-				() => compute,
+			createSuiteSandboxFromPlan(
+				planOf(compute),
 				createCtx(resultsDir, {
 					createTimeoutMs: null,
 					createAttemptCeilingMs: 5_000,
@@ -721,14 +538,17 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		expect(existsSync(join(resultsDir, MARKER))).toBe(false);
 	});
 
-	it("writes a FAILED marker when adapter construction (the factory) throws before create", async () => {
+	it("writes a FAILED marker when the plan throws before issuing any create request", async () => {
 		const resultsDir = freshDir();
-		// A computesdk provider can throw while BUILDING the adapter — before `sandbox.create` is ever
-		// reached. That path produced the same empty Run this marker guards against, so it must be recorded.
-		const factory = (): { sandbox: { create(): Promise<SandboxHandle> } } => {
-			throw new Error("provider config invalid: DAYTONA_REGION unset");
+		// A driver can throw while BUILDING its request — before the vendor is ever reached. That path
+		// produced the same empty Run this marker guards against, so it must be recorded.
+		const plan = {
+			create: (): Promise<SandboxHandle> => {
+				throw new Error("provider config invalid: DAYTONA_REGION unset");
+			},
+			isRetryable: isRetryableDriverCreate,
 		};
-		await expect(createSuiteSandbox(factory, createCtx(resultsDir))).rejects.toThrow(
+		await expect(createSuiteSandboxFromPlan(plan, createCtx(resultsDir))).rejects.toThrow(
 			/DAYTONA_REGION unset/,
 		);
 		expect(JSON.parse(readFileSync(join(resultsDir, MARKER), "utf8"))).toEqual({
@@ -758,7 +578,7 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 			},
 		};
 		await expect(
-			createSuiteSandbox(() => compute, createCtx(resultsDir, { createTimeoutMs: 5 })),
+			createSuiteSandboxFromPlan(planOf(compute), createCtx(resultsDir, { createTimeoutMs: 5 })),
 		).rejects.toThrow(/Sandbox creation timed out/);
 		// Let the late create settle and the attached cleanup run.
 		await new Promise((r) => setTimeout(r, 60));
@@ -776,7 +596,7 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		};
 
 		await expect(
-			createSuiteSandbox(() => compute, createCtx(resultsDir, { createTimeoutMs: null })),
+			createSuiteSandboxFromPlan(planOf(compute), createCtx(resultsDir, { createTimeoutMs: null })),
 		).resolves.toBe(handle);
 		expect(existsSync(join(resultsDir, MARKER))).toBe(false);
 	});
@@ -786,7 +606,9 @@ describe("createSuiteSandbox (creation-failure marker)", () => {
 		const compute = {
 			sandbox: { create: (): Promise<SandboxHandle> => Promise.reject(new Error("boom")) },
 		};
-		await expect(createSuiteSandbox(() => compute, createCtx(resultsDir))).rejects.toThrow("boom");
+		await expect(
+			createSuiteSandboxFromPlan(planOf(compute), createCtx(resultsDir)),
+		).rejects.toThrow("boom");
 		// parseGapMarker is the single reader the results extractor routes every marker through, so
 		// this proves the written bytes normalize into the suite-scope failed gap on the shard Run.
 		const gap = parseGapMarker(

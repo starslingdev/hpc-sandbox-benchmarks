@@ -46,6 +46,13 @@ export const NAMESPACE_CREATE_BUDGET = {
 	owner: "harness",
 	timeoutMs: NAMESPACE_READY_WAIT_MS + 5 * 60_000,
 } as const;
+/**
+ * RunCommandSync awaits the full response. It was once treated as uncapped until run 30314097333
+ * lost `mise run benchmark:system:all` at 4m18.8s to a bare "The operation timed out." after two of
+ * the suite's three PTS profiles had completed. 120s, not the ~259s observed: one data point, and
+ * the bare message cannot distinguish a vendor cap from a client fetch timeout. Detaching makes the
+ * distinction moot, because every exec, including each done-file poll, becomes short.
+ */
 export const NAMESPACE_EXECUTION = { syncCapMs: 120_000, durable: "shell-detach" } as const;
 
 const diskCapacitySchema = type("string.integer.parse").to("number > 0");

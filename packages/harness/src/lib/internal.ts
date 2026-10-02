@@ -14,7 +14,7 @@ export interface Timed<T> {
 /**
  * Time an async (or sync) operation, flooring to a strictly-positive duration. `rawRunSchema` requires
  * `durationMs > 0`, and a sub-tick op can observe two equal `now()` readings (a 0 delta) — so the floor
- * to EPSILON lives here, the single home for the contract `timeOperation` and the lifecycle driver share.
+ * to EPSILON lives here, the single home for the contract every lifecycle timing shares.
  */
 export async function time<T>(run: () => Promise<T> | T): Promise<Timed<T>> {
 	const start = now();

@@ -19,7 +19,6 @@ import type { DriverProviderId } from "@sandbox-benchmarks/drivers";
 import { DRIVERS } from "@sandbox-benchmarks/drivers";
 import type { SandboxHandle } from "@sandbox-benchmarks/harness";
 import { cleanupOwnedSandboxes, createSuiteSandboxFromPlan } from "@sandbox-benchmarks/harness";
-import type { LegacyAdapterId } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS, REGISTRY, SUITES, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema";
 import {
@@ -37,7 +36,6 @@ import {
 	openedDriverCreateRequest,
 	resolveDriverArtifact,
 	sessionHandle,
-	usesDriverSuite,
 } from "./driver-run.ts";
 
 /** A session with only the three required members; `files` and `launch` are deliberately absent. */
@@ -80,61 +78,13 @@ type Equal<Left, Right> =
 		: false;
 type Expect<Condition extends true> = Condition;
 
-describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
-	test("registered DriverModule ids and leftover adapters partition ProviderId", async () => {
-		const { isLegacyAdapterId, providers } = await import("@sandbox-benchmarks/providers");
-		type _complete = Expect<Equal<ProviderId, DriverProviderId | LegacyAdapterId>>;
-		type _disjoint = Expect<
-			Extract<DriverProviderId, LegacyAdapterId> extends never ? true : false
-		>;
-		const driverIds = Object.keys(DRIVERS);
-		const adapterIds: string[] = providers.map((provider) => provider.name);
-		expect(driverIds.sort()).toEqual([
-			"blaxel",
-			"boat",
-			"brezel",
-			"daytona-container",
-			"daytona-vm",
-			"e2b",
-			"freestyle",
-			"microsandbox-cloud",
-			"modal-gvisor",
-			"modal-vm",
-			"namespace",
-			"novita",
-			"runcloud",
-			"runloop",
-			"tama",
-			"vercel",
-		]);
-		expect([...driverIds, ...adapterIds].sort()).toEqual(PROVIDERS.map((meta) => meta.id).sort());
-		expect(driverIds.filter((id) => adapterIds.includes(id))).toEqual([]);
-		for (const id of driverIds) {
-			expect(isDriverProviderId(id)).toBe(true);
-			expect(isLegacyAdapterId(id)).toBe(false);
-		}
-		for (const id of adapterIds) {
-			expect(isDriverProviderId(id)).toBe(false);
-			expect(isLegacyAdapterId(id)).toBe(true);
-		}
-	});
-
-	test("registered ids select runDriverSuite without --driver-path", () => {
-		for (const id of Object.keys(DRIVERS)) {
-			expect(usesDriverSuite(id)).toBe(true);
-			expect(usesDriverSuite(id, false)).toBe(true);
-			expect(usesDriverSuite(id, true)).toBe(true);
-		}
-	});
-
-	test("the final Namespace migration uses the driver lane by default", () => {
-		expect(usesDriverSuite("namespace")).toBe(true);
-		expect(isDriverProviderId("namespace")).toBe(true);
-	});
-
-	test("an unknown id does not invent a DriverModule", () => {
-		expect(usesDriverSuite("nope")).toBe(false);
+describe("driver selection", () => {
+	test("every registered provider has a DriverModule and nothing else does", () => {
+		type _complete = Expect<Equal<ProviderId, DriverProviderId>>;
+		for (const { id } of PROVIDERS) expect(isDriverProviderId(id)).toBe(true);
 		expect(isDriverProviderId("nope")).toBe(false);
+		// A retired id resolves for historical data only; it never opens a driver.
+		expect(isDriverProviderId("modal")).toBe(false);
 	});
 });
 
@@ -335,6 +285,23 @@ describe("driverTransport", () => {
 			syncCapMs: null,
 			detachedPoll: false,
 		});
+	});
+
+	// Regression guards read from the REAL driver modules rather than a fixture — a fixture would keep
+	// passing if a module regressed. Namespace was once declared uncapped without a durable route,
+	// which routed a 55-minute benchmark through one synchronous exec; live run 30314097333 lost it at
+	// 4m18.8s. The harness detaches a step whose budget reaches `syncCapMs` when `detachedPoll` holds.
+	test("namespace detaches a suite-length step and keeps a one-minute step synchronous", async () => {
+		const transport = driverTransport((await DRIVERS.namespace()).execution);
+		expect(transport.detachedPoll).toBe(true);
+		expect(transport.syncCapMs).not.toBeNull();
+		expect(transport.syncCapMs).toBeGreaterThan(60_000);
+		expect(transport.syncCapMs).toBeLessThanOrEqual(55 * 60_000);
+	});
+
+	test("vercel detaches anything budgeted at a minute instead of holding one connection", async () => {
+		const transport = driverTransport((await DRIVERS.vercel()).execution);
+		expect(transport).toEqual({ streaming: false, syncCapMs: 60_000, detachedPoll: true });
 	});
 });
 

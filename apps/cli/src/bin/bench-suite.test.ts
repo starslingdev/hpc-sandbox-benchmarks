@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { PROVIDERS, SUITE_NAMES } from "@sandbox-benchmarks/schema";
 import { formatDuration, HELP, parseReplicateFlag, runtimeUserSummary } from "./bench-suite.ts";
 
-/** The ids `runSuite` actually matches on: it compares against the schema-joined adapter names
+/** The ids `runDriverSuite` actually matches on: it compares against the generated loader's keys
  *  EXACTLY, so `LEGACY_PROVIDER_ALIASES` ("daytona", "modal") does not rescue a copied example.
  *  Widened to `string[]` because the values under test are parsed out of the help text — the whole
  *  point is to check an arbitrary string against the registry, which the literal union forbids. */

@@ -18,13 +18,8 @@
       "computesdk": {
         "@blaxel/core": "0.3.5",
         "@infercrane/brezel": "0.1.1",
-        "@computesdk/blaxel": "1.6.16",
-        "@computesdk/daytona": "1.7.31",
         "@computesdk/e2b": "1.7.51",
         "@computesdk/modal": "1.9.3",
-        "@computesdk/namespace": "1.6.12",
-        "@computesdk/provider": "2.1.3",
-        "@computesdk/runloop": "1.3.53",
         "@runloop/api-client": "1.28.0",
         "@run-cloud/sdk": "0.9.0",
         "@daytona/api-client": "0.211.2",
@@ -70,10 +65,8 @@
     "spell": "mise exec -- typos",
     "spell:fix": "mise exec -- typos --write-changes",
     "check:catalog-drift": "bun --filter '@sandbox-benchmarks/schema' check:catalog-drift",
-    "generate-provider-registry": "bun --filter '@sandbox-benchmarks/schema' generate-provider-registry",
-    "check:provider-registry-drift": "bun --filter '@sandbox-benchmarks/schema' check:provider-registry-drift",
-    "generate-provider-wiring": "bun --filter '@sandbox-benchmarks/schema' generate-provider-wiring",
-    "check:provider-wiring": "bun --filter '@sandbox-benchmarks/schema' check:provider-wiring",
+    "generate-providers": "bun --filter '@sandbox-benchmarks/schema' generate-providers",
+    "check:providers": "bun --filter '@sandbox-benchmarks/schema' check:providers",
     "prepare": "lefthook install"
   },
   "devDependencies": {

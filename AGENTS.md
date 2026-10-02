@@ -39,7 +39,9 @@ on this host VM install it on demand (the update script does not).
 The command contract lives in the root `package.json` and `docs/architecture.md`; run those scripts
 directly:
 - `bun run lint`, `bun run typecheck`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
-  `bun run lint:shell`, `bun run lint:docker`.
+  `bun run check:providers`, `bun run lint:shell`, `bun run lint:docker`.
+- Provider metadata edits are followed by `bun run generate-providers` (the one generator for the
+  registry assembly, driver loader, provenance and managed workflow/env/docs regions).
 - Run a CLI bin directly, e.g. `bun apps/cli/src/bin/plan-matrix.ts --list-providers` or
   `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json`. Bins are listed under
   `apps/cli/package.json` `bin`.

@@ -15,9 +15,13 @@ import {
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers";
-import type { ProviderId } from "@sandbox-benchmarks/schema";
-import { PROVIDERS } from "@sandbox-benchmarks/schema";
-import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
+import type {
+	BakedProviderId,
+	CandidateArtifactRefs,
+	MirroredProviderId,
+	ProviderId,
+} from "@sandbox-benchmarks/schema";
+import { bakedArtifactName, baseImageUse, PROVIDERS } from "@sandbox-benchmarks/schema";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import {
@@ -26,8 +30,6 @@ import {
 	nonBakedArtifactAction,
 } from "../lib/bake/provider-artifacts.ts";
 import type { BakeReport, Log } from "../lib/bake/types.ts";
-import type { CandidateRefs } from "../lib/bake/validate.ts";
-import { baseImageUse } from "../lib/bake/validate.ts";
 import { bootAndSmokeCandidate } from "../lib/bake/validate-run.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
@@ -196,17 +198,12 @@ if (import.meta.main) {
 	} else {
 		log(`>>> no provider in scope reads ${baseImageRef} — not resolving it`);
 	}
-	const candidateRefs: CandidateRefs = {
-		e2bTemplateCandidate: config.e2bTemplateCandidate,
-		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
-		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
-		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		runloopBlueprintCandidate: config.runloopBlueprintCandidate,
-		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
-		toolchainImageCandidate: pinnedBaseImage,
-		vercelImageCandidate: config.vercelImageCandidate,
-		daytonaVmTarget: config.daytonaVm.target,
-		daytonaContainerTarget: config.daytonaContainer.target,
+	// Mutable: a native-snapshot build reports its boot ref only once it has run.
+	const buildResults: Partial<Record<BakedProviderId, string>> = {};
+	const candidateRefs: CandidateArtifactRefs = {
+		toolchainImage: pinnedBaseImage,
+		mirrored: { vercel: config.vercelImageCandidate } satisfies Record<MirroredProviderId, string>,
+		buildResults,
 	};
 
 	const runs = await forEachProviderWithCreds(
@@ -222,7 +219,7 @@ if (import.meta.main) {
 				if (target.id === "freestyle") {
 					if (typeof builtRef !== "string")
 						throw new Error("Freestyle bake did not return its immutable snapshot ID");
-					candidateRefs.freestyleSnapshotCandidate = builtRef;
+					buildResults.freestyle = builtRef;
 				}
 			} else {
 				log(`>>> ${target.id}: ${nonBakedArtifactAction(target.id, "candidate")}`);
@@ -260,7 +257,7 @@ if (import.meta.main) {
 
 	writeReport({
 		candidate: {
-			freestyleSnapshotId: candidateRefs.freestyleSnapshotCandidate,
+			freestyleSnapshotId: buildResults.freestyle,
 			image: pinnedBaseImage,
 			e2bTemplate: config.e2bTemplateCandidate,
 			daytonaSnapshot: config.daytonaSnapshotCandidate,

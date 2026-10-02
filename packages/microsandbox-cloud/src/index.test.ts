@@ -10,11 +10,11 @@ import {
 } from "microsandbox";
 import microsandboxCloud, {
 	isMicrosandboxOwned,
+	MICROSANDBOX_CLOUD_PROVENANCE,
 	MICROSANDBOX_CREATE_BUDGET,
 	MICROSANDBOX_CREATE_TIMEOUT_MS,
 	MICROSANDBOX_EXECUTION,
 	MICROSANDBOX_LABEL_MARKER,
-	MICROSANDBOX_PROVENANCE,
 	MICROSANDBOX_READINESS,
 	MICROSANDBOX_SANDBOX_ID,
 	MICROSANDBOX_SANDBOX_LIFETIME_MS,
@@ -134,8 +134,8 @@ function fakeHandle(name: string, status = "running", stops = true) {
 describe("Microsandbox Cloud module policy", () => {
 	test("declares integration, readiness, shell-detach execution, and a pull-sized create budget", () => {
 		expect(microsandboxCloud.id).toBe("microsandbox-cloud");
-		expect(microsandboxCloud.provenance).toEqual(MICROSANDBOX_PROVENANCE);
-		expect(MICROSANDBOX_PROVENANCE.packageName).toBe("microsandbox");
+		expect(microsandboxCloud.provenance).toEqual(MICROSANDBOX_CLOUD_PROVENANCE);
+		expect(MICROSANDBOX_CLOUD_PROVENANCE.packageName).toBe("microsandbox");
 		expect(microsandboxCloud.readiness).toEqual(MICROSANDBOX_READINESS);
 		expect(microsandboxCloud.execution).toEqual(MICROSANDBOX_EXECUTION);
 		expect(microsandboxCloud.createBudget).toEqual(MICROSANDBOX_CREATE_BUDGET);

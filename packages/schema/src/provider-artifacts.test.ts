@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { CandidateArtifactRefs } from "./provider-artifacts.ts";
 import {
 	bakedArtifactName,
 	baseImageUse,
+	candidateArtifact,
 	isBakedProviderId,
 	isMirroredProviderId,
+	releaseUnscopable,
 } from "./provider-artifacts.ts";
 import { PROVIDER_IDS } from "./provider-ids.ts";
 import { REGISTRY } from "./provider-meta/index.ts";
@@ -70,5 +73,58 @@ describe("artifact projections", () => {
 		expect(bakedArtifactName("novita", "candidate")).toBe(`${canonical}-candidate`);
 		expect(bakedArtifactName("daytona-container", "version")).toBe(`${canonical}-container`);
 		expect(bakedArtifactName("blaxel", "candidate")).toBe(`${canonical}-candidate`);
+	});
+});
+
+describe("candidate artifacts", () => {
+	const refs: CandidateArtifactRefs = {
+		toolchainImage: "ghcr.io/o/tc@sha256:candidate",
+		mirrored: Object.fromEntries(
+			PROVIDER_IDS.filter(isMirroredProviderId).map((id) => [id, `mirror/${id}:candidate`]),
+		),
+		buildResults: Object.fromEntries(
+			PROVIDER_IDS.filter(isBakedProviderId).map((id) => [id, `built-${id}`]),
+		),
+	};
+
+	test("boots the declared artifact kind, and the base image exactly when it boots the base", () => {
+		for (const id of PROVIDER_IDS) {
+			const candidate = candidateArtifact(id, refs);
+			expect(candidate.kind).toBe(REGISTRY[id].artifact.kind);
+			const bootsBase = candidate.kind !== "none" && candidate.ref === refs.toolchainImage;
+			expect(`${id}:${bootsBase}`).toBe(`${id}:${baseImageUse(id) === "boots"}`);
+		}
+	});
+
+	test("boots a baker's derived candidate name, unless its builder returns the boot ref", () => {
+		for (const id of PROVIDER_IDS.filter(isBakedProviderId)) {
+			const artifact = REGISTRY[id].artifact;
+			const nativeSnapshot = "source" in artifact && artifact.source === "native-snapshot";
+			expect(candidateArtifact(id, refs)).toEqual({
+				kind: "baked",
+				ref: nativeSnapshot ? `built-${id}` : bakedArtifactName(id, "candidate"),
+			});
+		}
+	});
+
+	test("refuses an unresolved mirror or native-snapshot ref instead of booting the published one", () => {
+		const unresolved = { ...refs, mirrored: {}, buildResults: {} };
+		for (const id of PROVIDER_IDS.filter(isMirroredProviderId)) {
+			expect(() => candidateArtifact(id, unresolved)).toThrow(/mirrored candidate ref/);
+		}
+		for (const id of PROVIDER_IDS.filter(isBakedProviderId)) {
+			if (baseImageUse(id) === "none") {
+				expect(() => candidateArtifact(id, unresolved)).toThrow(/candidate snapshot ID/);
+			}
+		}
+	});
+
+	test("a scoped release refuses exactly the providers with nothing to publish", () => {
+		const unscopable = releaseUnscopable();
+		for (const id of PROVIDER_IDS) {
+			expect(`${id}:${unscopable[id] !== undefined}`).toBe(
+				`${id}:${REGISTRY[id].artifact.kind === "none"}`,
+			);
+		}
 	});
 });

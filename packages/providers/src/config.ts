@@ -86,7 +86,7 @@ export const ENV_KEYS = [
 //    would crash EVERY provider's bench job at module load the moment one optional secret is
 //    unsynced — the exact hazard the workflows' `DAYTONA_TARGET || 'us-west-2'` default papered
 //    over. Empty ⇒ unset keeps a missing credential what it is everywhere else in the harness
-//    (missingCreds treats "" as missing): a downstream skip decision, never an import-time crash.
+//    (the driver env gate treats "" as missing): a downstream skip decision, never an import-time crash.
 const rawEnv: Record<string, string> = {};
 for (const key of ENV_KEYS) {
 	const value = process.env[key];

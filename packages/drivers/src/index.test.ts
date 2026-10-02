@@ -11,27 +11,18 @@ type Equal<Left, Right> =
 type Expect<Condition extends true> = Condition;
 
 describe("generated driver loader", () => {
-	test("exposes exactly the unwaived provider modules without eager vendor evaluation", () => {
-		expect(Object.keys(DRIVERS)).toEqual([
-			"e2b",
-			"daytona-vm",
-			"daytona-container",
-			"blaxel",
-			"microsandbox-cloud",
-			"modal-gvisor",
-			"modal-vm",
-			"novita",
-			"runloop",
-			"namespace",
-			"vercel",
-			"runcloud",
-			"tama",
-			"boat",
-			"freestyle",
-			"brezel",
-		]);
+	test("is a frozen table of lazy loaders, so importing it evaluates no vendor SDK", () => {
 		expect(Object.values(DRIVERS).every((load) => typeof load === "function")).toBe(true);
 		expect(Object.isFrozen(DRIVERS)).toBe(true);
+	});
+
+	// The generated type assertions prove the key set equals ProviderId; this proves each lazy
+	// specifier resolves at runtime to the module registered under that key.
+	test("every loader resolves the DriverModule registered under its key", async () => {
+		for (const id of Object.keys(DRIVERS) as DriverProviderId[]) {
+			const module_: { readonly id: string } = await loadDriverModule(id);
+			expect(module_.id).toBe(id);
+		}
 	});
 
 	test("retains the literal module and native-handle type through a correlated load", async () => {
@@ -50,8 +41,8 @@ describe("generated driver loader", () => {
 
 	test("rejects unregistered provider ids", () => {
 		// @ts-expect-error — Unknown ids cannot enter the driver loader
-		const loadWaivedProvider = () => loadDriverModule("not-a-provider");
-		void loadWaivedProvider;
+		const loadUnknownProvider = () => loadDriverModule("not-a-provider");
+		void loadUnknownProvider;
 		expect(true).toBe(true);
 	});
 });

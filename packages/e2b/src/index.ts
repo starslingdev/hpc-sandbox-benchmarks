@@ -50,6 +50,10 @@ export const E2B_BENCHMARK_MARKER_PREFIX = "benchmark-";
 /** Live states an account sweep must see: a paused sandbox is still an allocation the account owns. */
 export const E2B_INVENTORY_STATES = ["running", "paused"] as const;
 export const E2B_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
+/**
+ * The native driver returns completed command envelopes. Commands budgeted at or beyond the 60s
+ * synchronous cap take the durable route: native background launch plus done-file polling.
+ */
 export const E2B_EXECUTION = Object.freeze({
 	syncCapMs: 60_000,
 	durable: "native-launch" as const,

@@ -181,7 +181,7 @@ describe("installLineTagging end to end (subprocess)", () => {
 	});
 
 	// The shape the harness actually uses on the tagged path: a message plus an Error
-	// (`console.error(msg, err)` in withSandbox). Bun.inspect renders the Error, uncoloured.
+	// (`console.error(msg, err)` in withDriverSandbox). Bun.inspect renders the Error, uncoloured.
 	it("renders a message plus a non-string argument", async () => {
 		const stdout = await runScript(
 			`await withLineTag("[r2] ", async () => console.log("destroy failed:", { code: 7 }));`,

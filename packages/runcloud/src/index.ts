@@ -64,8 +64,11 @@ export const RUNCLOUD_SANDBOX_ID = type(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
  */
 export const RUNCLOUD_DISK_FILESYSTEM_OVERHEAD = 0.03;
 export const RUNCLOUD_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
-/** The registry declares detached polling; the SDK has no truthful background launch, so the durable
- *  route is the kit's shell detach over the same exec channel. */
+/**
+ * The native WebSocket exec streams stdout/stderr, but long-lived streams are unvalidated, so the
+ * repository's conservative 60s policy applies. The SDK has no truthful background launch, so the
+ * durable route is the kit's shell detach over the same exec channel.
+ */
 export const RUNCLOUD_EXECUTION = Object.freeze({
 	syncCapMs: 60_000,
 	durable: "shell-detach" as const,

@@ -71,18 +71,14 @@ function usage(): string {
 		"usage: driver-check --provider <id> [--phase candidate|version] [--artifact-ref <ref>]",
 		"                    [--workload-seconds <n>] [--keep] [--require-pass] [--report-file <path>]",
 		"",
-		`migrated providers: ${DRIVER_IDS.join(", ")}`,
-		"",
-		"Providers still on packages/providers carry a migration waiver and are not drivable here;",
-		"see packages/drivers/migration-waivers.json.",
+		`providers: ${DRIVER_IDS.join(", ")}`,
 	].join("\n");
 }
 
 /**
  * Parse argv into options, rejecting anything ambiguous rather than guessing.
  *
- * An unmigrated provider is rejected here rather than at load time: driving one would exercise the
- * legacy `packages/providers` adapter and report the result as driver-path evidence.
+ * An unknown provider is rejected here rather than at load time, naming the providers it can drive.
  */
 function parseArgs(argv: readonly string[]): Options {
 	const values = new Map<string, string>();
@@ -116,7 +112,7 @@ function parseArgs(argv: readonly string[]): Options {
 	const provider = values.get("provider");
 	if (provider === undefined) throw new Error("--provider is required");
 	if (!DRIVER_IDS.includes(provider as DriverProviderId)) {
-		throw new Error(`${provider} has no driver module (migrated: ${DRIVER_IDS.join(", ")})`);
+		throw new Error(`${provider} has no driver module (providers: ${DRIVER_IDS.join(", ")})`);
 	}
 
 	const phase = values.get("phase") ?? "version";

@@ -223,7 +223,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    without it.
 4. Add these **environment** secrets (then delete repository-level copies if present):
 
-   <!-- >>> generated: provider-secrets — bun run generate-provider-wiring -->
+   <!-- >>> generated: provider-secrets — bun run generate-providers -->
    | Secret | Used by |
    | --- | --- |
    | `E2B_API_KEY` | E2B provider runtime and validation |
@@ -287,7 +287,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    Secrets and variables → Actions → Variables), *not* secrets. The generated workflow accepts the
    legacy secret location as a migration fallback, but new configuration should use variables:
 
-   <!-- >>> generated: provider-variables — bun run generate-provider-wiring -->
+   <!-- >>> generated: provider-variables — bun run generate-providers -->
    | Variable | Used by | Default |
    | --- | --- | --- |
    | `E2B_TEMPLATE` | E2B | — |

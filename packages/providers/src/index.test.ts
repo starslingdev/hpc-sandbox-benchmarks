@@ -1,22 +1,8 @@
 import { describe, expect, it } from "bun:test";
-// The stock wrapper factory, imported so the novita test can prove the connection methods were
-// actually REPLACED (identity inequality against an unpatched instance's methods table).
-import { e2b } from "@computesdk/e2b";
-import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { normalizeProviderInput } from "@sandbox-benchmarks/schema/provider-meta";
 import { REGISTRY } from "@sandbox-benchmarks/schema/providers";
 import { ENV_KEYS } from "./config.ts";
-import {
-	isLegacyAdapterId,
-	MIGRATED_DRIVER_IDS,
-	NOVITA_E2B_DOMAIN,
-	novitaCompute,
-	novitaConnection,
-	providers,
-} from "./index.ts";
-import { adapters } from "./lib/adapters.ts";
-import { runE2bCommandAsRoot } from "./lib/e2b-root.ts";
-import { assertCreateCeilingDeclared, assertProviderJoin } from "./lib/join.ts";
+import { NOVITA_E2B_DOMAIN, novitaConnection } from "./index.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
 	// The failure this prevents is not hypothetical: TAMA_CLI was declared in the registry as an
@@ -29,7 +15,7 @@ describe("@sandbox-benchmarks/providers", () => {
 	// The gatekeeper is where that empty-is-unset rule lives, so every optional variable has to pass
 	// through it. A subset assertion rather than deriving ENV_KEYS outright: the list legitimately
 	// carries keys with no registry input (BENCH_TOOLCHAIN_IMAGE, VERCEL_CANDIDATE_IMAGE, and the
-	// API keys re-exposed as config). Required inputs need no coverage — missingCreds already treats
+	// API keys re-exposed as config). Required inputs need no coverage — the driver env gate already treats
 	// "" as missing, which is why a raw process.env read of a TOKEN is safe and a variable is not.
 	it("routes every optional provider variable through the config gatekeeper", () => {
 		const optionalVariables = Object.values(REGISTRY)
@@ -45,64 +31,6 @@ describe("@sandbox-benchmarks/providers", () => {
 		}
 	});
 
-	it("wires every unmigrated schema provider through to a computesdk factory", () => {
-		// Migrated DriverModule ids are omitted from this join on purpose.
-		expect(providers.map((p) => p.name).sort()).toEqual(
-			PROVIDERS.map((m) => m.id)
-				.filter(isLegacyAdapterId)
-				.sort(),
-		);
-		for (const p of providers) {
-			expect(typeof p.createCompute).toBe("function");
-			expect(p.requiredEnvVars.length).toBeGreaterThan(0);
-		}
-	});
-
-	it("has no legacy adapters after the final driver migration", () => {
-		expect(providers).toEqual([]);
-		expect(Object.keys(adapters)).toEqual([]);
-		expect([...MIGRATED_DRIVER_IDS].sort()).toEqual(PROVIDERS.map(({ id }) => id).sort());
-	});
-
-	it("re-points the e2b wrapper at Novita without the e2b_ key-format guard", () => {
-		// Construction must accept an nvta_-prefixed key and still expose the universal manager surface
-		// the harness drives, with the mispointed snapshot/template managers removed (their every call
-		// would reconnect to e2b.dev). This also exercises the patch's runtime shape assertion, so a
-		// wrapper upgrade that moves the internal methods table fails here instead of mid-run.
-		const compute = novitaCompute("nvta_unit-test-key");
-		expect(typeof compute.sandbox.create).toBe("function");
-		expect(typeof compute.sandbox.destroy).toBe("function");
-		expect(typeof compute.sandbox.list).toBe("function");
-		// The stock wrapper's connection methods (whose create() enforces the e2b_ prefix and whose
-		// every call omits the domain) must have been REPLACED, not just still-callable — a stock
-		// `create` is also `typeof "function"`, so compare the internal methods table against an
-		// unpatched wrapper's by identity. Reaches the same internal seam the patch itself asserts.
-		const methodsOf = (p: unknown) =>
-			(p as { sandbox: { methods: Record<string, unknown> } }).sandbox.methods;
-		const stock = methodsOf(e2b({ apiKey: "e2b_unit-test-key" }));
-		const patched = methodsOf(compute);
-		for (const method of ["create", "getById", "destroy", "list"] as const) {
-			// Precondition that makes the inequality below meaningful: the wrapper hands every instance
-			// the SAME module-level methods object (defineProvider passes it by reference). If an upgrade
-			// switches to per-instance closures, this fails loudly instead of the patch check passing
-			// vacuously against a never-shared function.
-			expect(methodsOf(e2b({ apiKey: "e2b_unit-test-key" }))[method]).toBe(stock[method]);
-			expect(patched[method]).not.toBe(stock[method]);
-		}
-		expect(patched.runCommand).toBe(runE2bCommandAsRoot);
-		expect(patched.runCommand).not.toBe(stock.runCommand);
-		expect(compute.snapshot).toBeUndefined();
-		// `template` is a runtime property of the generated provider (computesdk's type doesn't model
-		// it), so reach through a structural cast to pin its removal too.
-		expect((compute as { template?: unknown }).template).toBeUndefined();
-	});
-
-	it("refuses construction without a key, unconditionally", () => {
-		// The factory (not env state) owns the missing-credential error, so this holds even in an
-		// environment where NOVITA_API_KEY is set.
-		expect(() => novitaCompute(undefined)).toThrow(/NOVITA_API_KEY/);
-	});
-
 	it("keeps the account key in the SDK's apiKey channel — never in connection headers", () => {
 		// SECURITY PIN: the SDK replays connection `headers` into the envd RPC transport, so a
 		// credential riding `headers` is delivered to the daemon INSIDE the guest on every
@@ -116,197 +44,5 @@ describe("@sandbox-benchmarks/providers", () => {
 			domain: NOVITA_E2B_DOMAIN,
 		});
 		expect(connection).not.toHaveProperty("headers");
-	});
-
-	it("passes E2B-compatible cwd and env options through envd's structured root channel", async () => {
-		const calls: Array<{ command: string; options?: Record<string, unknown> }> = [];
-		const sandbox = {
-			commands: {
-				run: async (command: string, options?: Record<string, unknown>) => {
-					calls.push({ command, options });
-					return { stdout: "ok", stderr: "", exitCode: 0 };
-				},
-			},
-		};
-		const result = await runE2bCommandAsRoot(sandbox as never, "echo hi", {
-			cwd: "/work dir",
-			env: { TOKEN: "not a shell; value" },
-			timeout: 1234,
-		});
-
-		expect(result).toMatchObject({ stdout: "ok", stderr: "", exitCode: 0 });
-		expect(calls).toHaveLength(1);
-		expect(calls[0]).toEqual({
-			command: "echo hi",
-			options: {
-				user: "root",
-				cwd: "/work dir",
-				envs: { TOKEN: "not a shell; value" },
-				timeoutMs: 1234,
-				background: false,
-			},
-		});
-	});
-
-	it("forwards ComputeSDK stream callbacks through the patched E2B command path", async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const sandbox = {
-			commands: {
-				run: async (
-					_command: string,
-					options?: {
-						onStdout?: (chunk: string) => void;
-						onStderr?: (chunk: string) => void;
-					},
-				) => {
-					options?.onStdout?.("live stdout");
-					options?.onStderr?.("live stderr");
-					return { stdout: "live stdout", stderr: "live stderr", exitCode: 0 };
-				},
-			},
-		};
-
-		await runE2bCommandAsRoot(sandbox as never, "echo hi", {
-			onStdout: (chunk) => stdout.push(chunk),
-			onStderr: (chunk) => stderr.push(chunk),
-		});
-
-		expect(stdout).toEqual(["live stdout"]);
-		expect(stderr).toEqual(["live stderr"]);
-	});
-
-	it("translates a native background handle into ComputeSDK's completed launch result", async () => {
-		const calls: Array<{ command: string; options?: Record<string, unknown> }> = [];
-		const sandbox = {
-			commands: {
-				run: async (command: string, options?: Record<string, unknown>) => {
-					calls.push({ command, options });
-					return { pid: 42 };
-				},
-			},
-		};
-		const result = await runE2bCommandAsRoot(sandbox as never, "long command", {
-			background: true,
-		});
-
-		expect(result).toMatchObject({ stdout: "", stderr: "", exitCode: 0 });
-		expect(calls).toEqual([
-			{ command: "long command", options: { user: "root", background: true } },
-		]);
-	});
-
-	it("recovers a failed command's structured result when the SDK throws it", async () => {
-		const sandbox = {
-			commands: {
-				run: async () => {
-					throw { result: { stdout: "partial", stderr: "boom", exitCode: 2 } };
-				},
-			},
-		};
-		const result = await runE2bCommandAsRoot(sandbox as never, "false", {});
-		expect(result).toMatchObject({ stdout: "partial", stderr: "boom", exitCode: 2 });
-	});
-
-	it("defaults a thrown result's missing fields rather than crashing", async () => {
-		const sandbox = {
-			commands: {
-				run: async () => {
-					throw { result: {} };
-				},
-			},
-		};
-		const result = await runE2bCommandAsRoot(sandbox as never, "false", {});
-		expect(result).toMatchObject({ stdout: "", stderr: "", exitCode: 1 });
-	});
-});
-
-describe("assertProviderJoin", () => {
-	it("passes silently when the schema ids and the adapter ids are the same set", () => {
-		// The real registries are already index-aligned, so the live module load (above) exercises the
-		// happy path; assert it explicitly here too, including when order differs between the two sides.
-		expect(() =>
-			assertProviderJoin(["e2b", "daytona", "modal"], ["modal", "e2b", "daytona"]),
-		).not.toThrow();
-		expect(() =>
-			assertProviderJoin(
-				PROVIDERS.map((m) => m.id).filter(isLegacyAdapterId),
-				providers.map((p) => p.name),
-			),
-		).not.toThrow();
-	});
-
-	it("throws naming a provider that's in the schema but missing an adapter", () => {
-		// A provider added to the schema registry without a matching harness adapter — the compile-time
-		// Record can't catch this across a version drift, so the runtime guard must.
-		expect(() => assertProviderJoin(["e2b", "daytona", "modal"], ["e2b", "daytona"])).toThrow(
-			/missing a harness adapter: modal/,
-		);
-	});
-
-	it("throws naming an adapter that has no schema entry", () => {
-		expect(() => assertProviderJoin(["e2b", "daytona"], ["e2b", "daytona", "modal"])).toThrow(
-			/no schema PROVIDERS entry: modal/,
-		);
-	});
-
-	it("reports both one-sided directions at once", () => {
-		const err = (() => {
-			try {
-				assertProviderJoin(["e2b", "ghost"], ["e2b", "modal"]);
-			} catch (e) {
-				return e as Error;
-			}
-		})();
-		expect(err?.message).toContain("missing a harness adapter: ghost");
-		expect(err?.message).toContain("no schema PROVIDERS entry: modal");
-	});
-});
-
-describe("assertCreateCeilingDeclared", () => {
-	it("passes for adapters the harness bounds itself, whether or not they set a timeout", () => {
-		expect(() =>
-			assertCreateCeilingDeclared({ e2b: {}, modal: { createTimeoutMs: 10 * 60 * 1000 } }),
-		).not.toThrow();
-	});
-
-	it("passes when an adapter that disables the race declares its own ceiling", () => {
-		expect(() =>
-			assertCreateCeilingDeclared({
-				runcloud: { createTimeoutMs: null, createAttemptCeilingMs: 20 * 60 * 1000 },
-			}),
-		).not.toThrow();
-	});
-
-	it("throws naming an adapter that disabled the race without declaring a ceiling", () => {
-		// The pairing the create-retry budget depends on: with the harness race off and no ceiling, the
-		// loop has nothing to subtract and can start an attempt that outlives the budget.
-		expect(() =>
-			assertCreateCeilingDeclared({ e2b: {}, runcloud: { createTimeoutMs: null } }),
-		).toThrow(/runcloud disabled the harness create timeout/);
-	});
-
-	it("throws on a ceiling that is present but cannot bound anything", () => {
-		// Zero, negative, and NaN (arithmetic over an unset constant) all reserve nothing, so they are
-		// the same overrun wearing a declared field — and a declared value reads as compliance, which
-		// makes it the more dangerous shape of the two.
-		for (const createAttemptCeilingMs of [0, -1, Number.NaN]) {
-			expect(() =>
-				assertCreateCeilingDeclared({
-					runcloud: { createTimeoutMs: null, createAttemptCeilingMs },
-				}),
-			).toThrow(/without declaring a positive createAttemptCeilingMs/);
-		}
-	});
-
-	it("holds for the real registry, so every race-disabling provider is budgetable", () => {
-		// run.cloud, the live instance of this shape, now declares its ceiling as a DriverModule create
-		// budget; assert against the registry rather than naming anyone, so a future adapter that
-		// disables the race is covered by the same test.
-		expect(() =>
-			assertCreateCeilingDeclared(Object.fromEntries(providers.map((p) => [p.name, p]))),
-		).not.toThrow();
-		for (const p of providers.filter((p) => p.createTimeoutMs === null))
-			expect(p.createAttemptCeilingMs).toBeGreaterThan(0);
 	});
 });

@@ -23,10 +23,8 @@
     "fetch-profiles": "bun run scripts/fetch-profiles.ts",
     "generate-catalog": "bun run scripts/generate-catalog.ts",
     "check:catalog-drift": "bun run scripts/check-catalog-drift.ts",
-    "generate-provider-registry": "bun run scripts/generate-provider-registry.ts",
-    "check:provider-registry-drift": "bun run scripts/check-provider-registry-drift.ts",
-    "generate-provider-wiring": "bun run scripts/generate-provider-wiring.ts",
-    "check:provider-wiring": "bun run scripts/check-provider-wiring-drift.ts"
+    "generate-providers": "bun run scripts/generate-providers.ts",
+    "check:providers": "bun run scripts/generate-providers.ts --check"
   },
   "dependencies": {
     "arktype": "catalog:"

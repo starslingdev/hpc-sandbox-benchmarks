@@ -25,13 +25,10 @@ const describeDriverFailure = (error: unknown): string =>
 	projectDriverFailure(error, diagnosticSecretsFromEnv(process.env));
 
 import type {
-	DirectProvider,
-	ProviderConfig,
 	ProviderCostEvidenceCapability,
 	SandboxTeardownResult,
 } from "@sandbox-benchmarks/providers";
 import {
-	isRetryableCreateError,
 	sanitizeEvidenceDetail,
 	sanitizeProviderResponse,
 } from "@sandbox-benchmarks/providers/support";
@@ -56,7 +53,6 @@ import {
 	isPtsResultFile,
 	PROVIDER_EVIDENCE_JSON_LIMITS,
 	parseProviderCostEvidence,
-	SUITE_NAMES,
 	SUITES,
 } from "@sandbox-benchmarks/schema";
 import type { DriverResolvedArtifact } from "@sandbox-benchmarks/schema/driver-schemas";
@@ -75,18 +71,13 @@ import {
 	withTimeout,
 } from "./lib/execute.ts";
 import { gapCauseOf } from "./lib/gap-cause.ts";
-import { time } from "./lib/internal.ts";
 import type { LifecycleAggregate, LifecycleCompute } from "./lib/lifecycle.ts";
 import { aggregateLifecycle, measureDriverLifecycle, measureLifecycle } from "./lib/lifecycle.ts";
 import type { WaitUntilReadyOptions } from "./lib/readiness.ts";
 import { neverReadyReason, waitUntilReady } from "./lib/readiness.ts";
 import type { OwnedSandboxOptions } from "./lib/sandbox-owner.ts";
-import {
-	createOwnedSandbox,
-	withCleanupPreservingPrimaryError,
-	withOwnedSandbox,
-} from "./lib/sandbox-owner.ts";
-import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
+import { createOwnedSandbox, withCleanupPreservingPrimaryError } from "./lib/sandbox-owner.ts";
+import { DIR, OBSERVED_SPECS_SCRIPT, setupSteps } from "./lib/setup.ts";
 
 export { collectResults } from "./lib/collect.ts";
 // The sandbox shape `StepRunner` drives. Exported so a caller that builds one from a driver session
@@ -120,25 +111,6 @@ export {
 	withOwnedSandbox,
 } from "./lib/sandbox-owner.ts";
 
-/**
- * The universal sandbox a provider's `sandbox.create` returns (computesdk's `Sandbox`). Derived from
- * {@link DirectProvider} so the harness depends only on providers — it never imports computesdk
- * directly — while still being exactly typed (runCommand/destroy/filesystem).
- */
-export type Sandbox = Awaited<ReturnType<DirectProvider["sandbox"]["create"]>>;
-
-/** Time a single operation against a provider, producing a {@link RawRun}. */
-export async function timeOperation(
-	config: ProviderConfig,
-	operation: string,
-	run: () => Promise<void> | void,
-): Promise<RawRun> {
-	// NOTE: a rejected `run` currently propagates and no sample is recorded. Capturing failed-run
-	// duration as an error sample lands when `rawRunSchema` grows an error shape.
-	const { ms } = await time(run);
-	return { provider: config.name, operation, durationMs: ms };
-}
-
 export interface BenchmarkLifecycleOptions {
 	/** Full cold-start cycles to run, each a fresh sandbox — the cold-start/teardown Sample count. Default `5`. */
 	iterations?: number;
@@ -165,15 +137,6 @@ export interface LifecycleBenchmark {
 	gaps: ResultGap[];
 }
 
-export interface BenchmarkLifecycleComputeOptions extends BenchmarkLifecycleOptions {
-	/**
-	 * Vendor create options forwarded verbatim to `compute.sandbox.create`. A leftover adapter passes
-	 * its registry policy here; a DriverModule projection pins the create request inside its own
-	 * `create` and leaves this unset.
-	 */
-	readonly createOptions?: unknown;
-}
-
 /**
  * Benchmark a provider's lifecycle and control-plane timings: run `iterations` cold-start cycles
  * (spawn → readiness probe → exec → control-plane probes → payload exec → snapshot → teardown) via
@@ -181,16 +144,15 @@ export interface BenchmarkLifecycleComputeOptions extends BenchmarkLifecycleOpti
  * sandbox, so spawn/cold-start/teardown yield one Sample per iteration; the cheap control-plane reads
  * are sampled within each sandbox.
  *
- * `compute` is the minimal create/list/snapshot/destroy slice this loop times — satisfied structurally
- * by a computesdk `DirectProvider` and by the composition root's DriverModule projection, so both
- * lanes share one spawn-failure and gap-accounting policy rather than drifting apart. A spawn failure
+ * `compute` is the minimal create/list/snapshot/destroy slice this loop times — the composition
+ * root's DriverModule projection satisfies it structurally. A spawn failure
  * rejects (no sandbox to tear down); every other per-op failure is recorded as a FAILED gap, so a
  * single flaky probe can't sink the whole benchmark — while still being published as the outage it is.
  */
 export async function benchmarkLifecycleCompute(
 	provider: string,
 	compute: LifecycleCompute,
-	options: BenchmarkLifecycleComputeOptions = {},
+	options: BenchmarkLifecycleOptions = {},
 ): Promise<LifecycleBenchmark> {
 	return benchmarkCycles(provider, options, () =>
 		measureLifecycle(compute, {
@@ -278,25 +240,10 @@ async function benchmarkCycles(
 	};
 }
 
-/**
- * {@link benchmarkLifecycleCompute} for a leftover `packages/providers` adapter: construct the
- * adapter's computesdk provider and hand the loop its registry-owned create policy. Registered
- * DriverModule ids do not come through here — the composition root projects them onto the same loop.
- */
-export async function benchmarkLifecycle(
-	config: ProviderConfig,
-	options: BenchmarkLifecycleOptions = {},
-): Promise<LifecycleBenchmark> {
-	return benchmarkLifecycleCompute(config.name, config.createCompute(), {
-		...options,
-		createOptions: config.createOptions,
-	});
-}
-
 /** An unknown provider or suite is a usage error, distinct from an operational failure mid-run. */
 export class SuiteUsageError extends Error {}
 
-/** Persist one suite-scoped gap at the same boundary used by the legacy and driver create paths. */
+/** Persist one suite-scoped gap at the same boundary the driver create path uses. */
 export function recordSuiteGap(options: {
 	readonly resultsDir: string;
 	readonly providerName: string;
@@ -348,121 +295,39 @@ async function destroySandbox(
 	}
 }
 
-/**
- * Run a benchmark suite inside a provider sandbox: clone the repo (carrying the in-sandbox producer),
- * run the suite's mise commands, and pull benchmark-results/ back to `resultsDir`. Uses the sandbox
- * as a CI runner — it does NOT measure the sandbox lifecycle itself (that's the lifecycle path).
- * Missing credentials or insufficient disk are recorded as skip markers, not failures.
- */
-export async function runSuite(options: RunSuiteOptions): Promise<void> {
-	const { providerName, suiteName, env = process.env } = options;
-	const resultsDir = resolve(options.resultsDir);
-
-	const knownSuiteName = SUITE_NAMES.find((name) => name === suiteName);
-	if (!knownSuiteName) {
-		throw new SuiteUsageError(
-			`Unknown suite "${suiteName}". Known suites: ${Object.keys(SUITES).join(", ")}`,
-		);
-	}
-	const suite = SUITES[knownSuiteName];
-
-	const { providers } = await import("@sandbox-benchmarks/providers");
-	const config = providers.find((p) => p.name === providerName);
-	if (!config) {
-		throw new SuiteUsageError(
-			`Unknown provider "${providerName}". Known providers: ${providers.map((p) => p.name).join(", ")}`,
-		);
-	}
-
-	const missingVars = config.requiredEnvVars.filter((v) => !env[v]);
-	if (missingVars.length > 0) {
-		const reason = `Missing credentials: ${missingVars.join(", ")}`;
-		console.log(`SKIPPED ${providerName}/${suiteName}: ${reason}`);
-		writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason, {
-			kind: "missing-credentials",
-			variables: missingVars,
-		});
-		return;
-	}
-
-	console.log(`\n--- Sandbox suite: ${suiteName} on ${providerName} (${REPO_URL}@${REPO_REF}) ---`);
-
-	// Pass the adapter as a factory, not an already-built compute: `createCompute()` can itself throw
-	// (bad provider config, a missing SDK) BEFORE `sandbox.create` is ever reached, and that path must
-	// record the same failed marker — otherwise the exact incident this guards (an empty Run for a dead
-	// provider config) slips through the one seam creation-failure handling would otherwise leave open.
-	const sandbox = await createSuiteSandbox(() => config.createCompute(), {
-		suite,
-		suiteName: knownSuiteName,
-		providerName: config.name,
-		resultsDir,
-		createOptions: config.createOptions,
-		createTimeoutMs: config.createTimeoutMs,
-		createAttemptCeilingMs: config.createAttemptCeilingMs,
-	});
-
-	await runSuiteOnSandbox(sandbox, {
-		runId: options.runId,
-		replicateIndex: options.replicateIndex,
-		suite,
-		suiteName: knownSuiteName,
-		providerName: config.name,
-		artifact: config.artifact,
-		resultsDir,
-		transport: config.transport,
-		costEvidence: config.costEvidence,
-	});
-}
-
-/** A provider's pinned create-time options ({@link ProviderConfig.createOptions}), recovered
- *  structurally so the harness keeps importing only from providers, never computesdk directly. */
-type SandboxCreateOptions = NonNullable<ProviderConfig["createOptions"]>;
-
-/** The create slice of a computesdk provider that {@link createSuiteSandbox} drives — structural
- *  (like `LifecycleCompute`) so the marker-on-throw contract is testable against a fake compute. */
-export interface SuiteSandboxCompute {
-	sandbox: {
-		create(options?: SandboxCreateOptions): Promise<SandboxHandle>;
-	};
-}
-
 // Allocation retries require explicit composition policy; never hide attempts inside a suite run.
 const CREATE_RETRY_BUDGET_MS = 0;
 const CREATE_RETRY_DELAY_MS = 2 * MIN;
-/** How long a single `sandbox.create` may run before the attempt is abandoned (and any late handle
+/** How long a single create may run before the attempt is abandoned (and any late handle
  *  destroyed). Generous: a cold provider image can take minutes to provision. Adequate only for
- *  providers whose `create` returns once the control plane ACCEPTS the sandbox, with the image pull
- *  absorbed by a readiness probe afterwards; one that boots the image inline needs its own budget via
- *  {@link ProviderConfig.createTimeoutMs}, or `null` when its adapter owns readiness + cleanup and its
- *  create promise must never be abandoned. */
+ *  providers whose create returns once the control plane ACCEPTS the sandbox, with the image pull
+ *  absorbed by a readiness probe afterwards; a driver module that boots the image inline declares its
+ *  own create budget, or owns the bound outright when its create promise must never be abandoned. */
 export const SUITE_CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
 
 /**
  * Prefix on a creation-failure gap marker's reason. The single source of truth for BOTH sides of the
- * contract: {@link createSuiteSandbox} builds the marker reason from it, and bench-suite matches on it
+ * contract: {@link createSuiteSandboxFromPlan} builds the marker reason from it, and bench-suite matches on it
  * to confirm the marker it expected actually survived. Exported so a wording change can't drift the two
  * apart silently — an edit here moves both the writer and the verifier at once.
  */
 export const CREATE_FAILURE_PREFIX = "Failed to create sandbox: ";
 
-/** The cell {@link createSuiteSandbox} creates for, plus where a creation failure must be recorded. */
+/** The cell {@link createSuiteSandboxFromPlan} creates for, plus where a creation failure must be recorded. */
 export interface CreateSuiteSandboxContext {
 	suite: Suite;
 	suiteName: string;
 	providerName: string;
 	/** Host results dir the FAILED marker lands in when creation ultimately throws. */
 	resultsDir: string;
-	/** The provider's pinned create-time options; the suite's lifetime is layered on top. */
-	createOptions?: SandboxCreateOptions;
-	/** Per-attempt create timeout, ms. Defaults to {@link SUITE_CREATE_ATTEMPT_TIMEOUT_MS}; set per provider
-	 *  (see {@link ProviderConfig.createTimeoutMs}) for adapters whose `create` boots the image inline,
-	 *  or `null` when the adapter owns readiness + failed-allocation cleanup and abandoning its promise
-	 *  would terminate that cleanup. Injectable so both paths are exercisable in tests. */
+	/** Per-attempt create timeout, ms. Defaults to {@link SUITE_CREATE_ATTEMPT_TIMEOUT_MS}; set from the
+	 *  module's create budget for drivers whose create boots the image inline, or `null` when the
+	 *  driver owns readiness + failed-allocation cleanup and abandoning its promise would terminate
+	 *  that cleanup. Injectable so both paths are exercisable in tests. */
 	createTimeoutMs?: number | null;
-	/** Worst case one attempt can cost when `createTimeoutMs` is `null` — the ceiling the ADAPTER
-	 *  enforces (see {@link ProviderConfig.createAttemptCeilingMs}), which the registry requires such an
-	 *  adapter to declare. Ignored when the harness bounds the attempt itself: `createTimeoutMs` is then
-	 *  the ceiling. */
+	/** Worst case one attempt can cost when `createTimeoutMs` is `null` — the ceiling a driver-owned
+	 *  create budget declares. Ignored when the harness bounds the attempt itself: `createTimeoutMs` is
+	 *  then the ceiling. */
 	createAttemptCeilingMs?: number;
 	/** Test seams for the capacity-retry loop. Production always uses the module constants; a test that
 	 *  had to spend the real 2-minute delay to reach the second attempt would not be written, and an
@@ -477,22 +342,21 @@ export interface CreateSuiteSandboxContext {
 
 /**
  * Create the sandbox a suite will run on, retrying patiently through capacity errors. Any error that
- * ESCAPES — a factory (adapter-construction) throw, a non-capacity create failure, the per-attempt
+ * ESCAPES — a plan construction throw, a non-capacity create failure, the per-attempt
  * timeout, or the capacity-retry budget exhausting — writes a FAILED gap marker before rethrowing:
  * creation failed BEFORE any result could exist, so without the marker the shard normalizes into an
  * empty Run (no result, no gap) and the published Run cannot tell "the provider refused a sandbox"
  * from "this cell was never scheduled" (the same contract as the post-run failure marker in
  * {@link runSuiteOnSandbox}). Capacity errors are unchanged: each retry stays unmarked, and only the
- * throw that finally spends the budget records the failure. Split from {@link runSuite} (the
- * runSuiteOnSandbox precedent) so this is testable against a fake compute.
+ * throw that finally spends the budget records the failure. Split from {@link executeSuite} (the
+ * runSuiteOnSandbox precedent) so this is testable against a fake plan.
  *
  * The retry budget bounds the whole call, not just the sleeps between attempts: a new attempt starts
  * only while the budget can still cover the backoff PLUS that attempt's worst case, so the failure
  * marker lands inside the budget rather than one attempt past it.
  *
- * The plan owns one attempt and is invoked again for each capacity retry. Both the legacy provider
- * wrapper and the DriverModule path use this boundary, so timeout ownership, late-handle teardown,
- * retry budgeting, and failure-marker semantics cannot drift between the two transports.
+ * The plan owns one attempt and is invoked again for each capacity retry, so timeout ownership,
+ * late-handle teardown, retry budgeting, and failure-marker semantics live at this one boundary.
  */
 export interface SuiteSandboxCreatePlan<
 	Session extends Pick<SandboxHandle, "destroy"> = SandboxHandle,
@@ -514,10 +378,10 @@ export async function createSuiteSandboxFromPlan<Session extends Pick<SandboxHan
 		ctx.createTimeoutMs === undefined ? SUITE_CREATE_ATTEMPT_TIMEOUT_MS : ctx.createTimeoutMs;
 	const retryDelayMs = ctx.retryDelayMs ?? CREATE_RETRY_DELAY_MS;
 	// What one more attempt can cost, so the loop only starts an attempt the budget can still absorb.
-	// When the harness races the create, its own timeout IS that ceiling; when the adapter owns the
-	// bound (`createTimeoutMs: null`) it declares the ceiling instead, and the provider registry refuses
-	// an adapter that disables the race without a POSITIVE one. Zero only for a hand-built context that
-	// disables the race and declares nothing — nothing can be reserved for an attempt of unknown cost.
+	// When the harness races the create, its own timeout IS that ceiling; when the driver owns the
+	// bound (`createTimeoutMs: null`) its create budget declares the ceiling instead. Zero only for a
+	// hand-built context that disables the race and declares nothing — nothing can be reserved for an
+	// attempt of unknown cost.
 	const attemptCeilingMs = createTimeoutMs ?? ctx.createAttemptCeilingMs ?? 0;
 	const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	const createDeadline = Date.now() + (ctx.retryBudgetMs ?? CREATE_RETRY_BUDGET_MS);
@@ -533,8 +397,8 @@ export async function createSuiteSandboxFromPlan<Session extends Pick<SandboxHan
 	 * The write is best-effort: a marker-write failure (full/read-only results dir) must not REPLACE the
 	 * provider error — the creation failure is the fact worth propagating, the marker is its paper
 	 * trail. Log the write failure and rethrow the original either way. The ORIGINAL error propagates
-	 * unwrapped: bench-suite matches on the provider's own message, and `createSuiteSandbox` is called
-	 * outside {@link runSuiteOnSandbox}, so this throw never reaches the suite-level marker writer that
+	 * unwrapped: bench-suite matches on the provider's own message, and this create runs outside
+	 * {@link runSuiteOnSandbox}, so this throw never reaches the suite-level marker writer that
 	 * reads a classification. The marker written here already carries the cause as a plain value, which
 	 * is the only place it is read.
 	 */
@@ -586,9 +450,8 @@ export async function createSuiteSandboxFromPlan<Session extends Pick<SandboxHan
 				);
 			}
 			const message = describeDriverFailure(err);
-			// Classification belongs to the selected plan. The legacy wrapper below preserves its explicit
-			// marker plus narrow prose fallback; a DriverModule plan can instead require typed policy without
-			// inheriting any legacy vendor-message guesses.
+			// Classification belongs to the selected plan: a DriverModule plan requires typed retry policy
+			// rather than guessing from vendor messages.
 			const retryable =
 				err !== allocationTimeout && !isFailedCreateCleanupError(err) && plan.isRetryable(err);
 			// The budget bounds the CELL, not just the sleeps: an attempt is only started when the backoff
@@ -609,32 +472,6 @@ export async function createSuiteSandboxFromPlan<Session extends Pick<SandboxHan
 			if (!fitsInBudget(0)) giveUp(err, message);
 		}
 	}
-}
-
-/** Legacy ProviderConfig create path, expressed as one shared suite-create plan. */
-export function createSuiteSandbox(
-	computeFactory: () => SuiteSandboxCompute,
-	ctx: CreateSuiteSandboxContext,
-): Promise<SandboxHandle> {
-	return createSuiteSandboxFromPlan(
-		{
-			create: () => {
-				const compute = computeFactory();
-				return compute.sandbox.create({
-					...ctx.createOptions,
-					// Ask for a sandbox lifetime covering setup + the suite, where supported.
-					timeout: ctx.suite.timeoutMinutes * MIN,
-				});
-			},
-			isRetryable: (error) => {
-				const message = describeDriverFailure(error);
-				return (
-					isRetryableCreateError(error) || /quota|rate.?limit|too many|capacity|429/i.test(message)
-				);
-			},
-		},
-		ctx,
-	);
 }
 
 /**
@@ -658,8 +495,8 @@ export interface SuiteRunContext {
 	replicateIndex?: number;
 	suite: Suite;
 	suiteName: SuiteName;
-	providerName: ProviderConfig["name"];
-	/** Exact create input the adjacent provider adapter booted. */
+	providerName: ProviderId;
+	/** Exact create input the selected driver booted. */
 	artifact: DriverResolvedArtifact;
 	/** Control-plane observation retained by the driver at create time. */
 	reportedArtifact?: DriverResolvedArtifact;
@@ -668,7 +505,7 @@ export interface SuiteRunContext {
 	transport: ProviderTransport;
 	costEvidence?: ProviderCostEvidenceCapability;
 	/** Port-native readiness plan supplied by the selected DriverModule composition root. When
-	 *  present, the harness enforces its policy budget and does not run the legacy generic exec poll. */
+	 *  present, the harness enforces its policy budget and does not run the generic exec poll. */
 	driverReadiness?: SuiteDriverReadinessPlan;
 	/** Readiness budget override. Defaults to {@link SUITE_READINESS}; tests inject a fast one so a
 	 *  never-ready case doesn't really sleep out the live budget. */
@@ -758,7 +595,7 @@ function manifestFingerprint(data: string): GuestFingerprint {
 
 /**
  * Run a suite against an already-created sandbox, then tear it down (run-and-dispose). Split from
- * {@link runSuite} so the orchestration — disk gate, setup, benchmark, result collection, the
+ * {@link executeSuite} so the orchestration — disk gate, setup, benchmark, result collection, the
  * benchmark-vs-collect error precedence, and the always-runs teardown — is testable against a fake
  * sandbox without provisioning a real one. Long steps (setup installs, the benchmark, result
  * collection) run through the capability-driven {@link StepRunner.step}, which picks the detached
@@ -1255,44 +1092,6 @@ async function runSuiteWork(
 		throw suiteError;
 	}
 	console.log(`\nDone: ${suiteName} on ${providerName}`);
-}
-
-/**
- * Run `fn` against a freshly created sandbox and guarantee teardown. Constructs the provider lazily
- * (so importing the registry needs no credentials), creates a sandbox with the adapter's pinned
- * {@link ProviderConfig.createOptions}, and always destroys it — even if `fn` throws. This is the
- * boot→exec→teardown chain the benchmarks and bench-smoke drive.
- */
-export async function withSandbox<T>(
-	config: ProviderConfig,
-	fn: (sandbox: Sandbox) => Promise<T>,
-): Promise<T> {
-	const compute = config.createCompute();
-	return withOwnedSandbox(
-		() => compute.sandbox.create(config.createOptions),
-		fn,
-		`withSandbox (${config.name})`,
-	);
-}
-
-/**
- * The credentials a provider needs that are missing (unset/empty) from `env`. A runner can both
- * decide to skip and report exactly which vars are absent from this one list — the e2e surface is
- * CI-with-secrets. `env` is injectable so this stays unit-testable without touching `process.env`.
- */
-export function missingCreds(
-	config: ProviderConfig,
-	env: Record<string, string | undefined> = process.env,
-): string[] {
-	return config.requiredEnvVars.filter((name) => (env[name]?.length ?? 0) === 0);
-}
-
-/** Whether every credential a provider needs is present (non-empty) in `env`. */
-export function hasRequiredCreds(
-	config: ProviderConfig,
-	env: Record<string, string | undefined> = process.env,
-): boolean {
-	return missingCreds(config, env).length === 0;
 }
 
 /**

@@ -376,7 +376,7 @@ jobs:
   bake:
     name: Bake + verify (${{ matrix.provider }})
     concurrency:
-      # >>> generated: provider-account-group-bake — bun run generate-provider-wiring
+      # >>> generated: provider-account-group-bake — bun run generate-providers
       group: benchmark-account-${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}
       # <<< end generated: provider-account-group-bake
       cancel-in-progress: false
@@ -429,7 +429,7 @@ jobs:
       # id/output identical is what lets provider metadata describe this input without lane-specific
       # generator exceptions. A failed federation still degrades to the normal missing-input skip.
       - name: Set up Namespace credentials
-        # >>> generated: preauth-namespace-token-bake — bun run generate-provider-wiring
+        # >>> generated: preauth-namespace-token-bake — bun run generate-providers
         if: matrix.provider == 'namespace'
         # <<< end generated: preauth-namespace-token-bake
         continue-on-error: true
@@ -439,7 +439,7 @@ jobs:
           tenant-id: ${{ secrets.NAMESPACE_TENANT_ID }}
           token-name: sandbox-benchmarks-toolchain-bake-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Authenticate with Vercel and VCR
-        # >>> generated: preauth-vercel-auth-bake — bun run generate-provider-wiring
+        # >>> generated: preauth-vercel-auth-bake — bun run generate-providers
         if: matrix.provider == 'vercel'
         # <<< end generated: preauth-vercel-auth-bake
         continue-on-error: true
@@ -508,7 +508,7 @@ jobs:
           # immutable output digest; a build-skipped scoped backfill supplies the published version,
           # never the mutable candidate that may already contain the next release's bytes.
           BASE_IMAGE_REF: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
-          # >>> generated: provider-inputs-bake — bun run generate-provider-wiring
+          # >>> generated: provider-inputs-bake — bun run generate-providers
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           E2B_TEMPLATE: ${{ matrix.provider == 'e2b' && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
           DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
@@ -662,7 +662,7 @@ jobs:
       # Namespace best-effort; the scope test uses matrix element equality because string contains
       # would also match a future provider id that merely contains `namespace`.
       - name: Set up Namespace credentials
-        # >>> generated: preauth-namespace-token-promote — bun run generate-provider-wiring
+        # >>> generated: preauth-namespace-token-promote — bun run generate-providers
         if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'namespace')
         # <<< end generated: preauth-namespace-token-promote
         continue-on-error: true
@@ -674,7 +674,7 @@ jobs:
       # Same scope gate as the Namespace mint above: a release that isn't promoting vercel has no reason
       # to pull a project OIDC token or log docker into VCR.
       - name: Authenticate with Vercel and VCR
-        # >>> generated: preauth-vercel-auth-promote — bun run generate-provider-wiring
+        # >>> generated: preauth-vercel-auth-promote — bun run generate-providers
         if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'vercel')
         # <<< end generated: preauth-vercel-auth-promote
         continue-on-error: true
@@ -707,7 +707,7 @@ jobs:
           # CLIs inherit stdout, so a redirect would splice their chatter into the payload. bake.ts
           # writes the file even when promote aborts (it records the structured reports before exiting).
           BAKE_REPORT_FILE: promote-payload.json
-          # >>> generated: provider-inputs-promote — bun run generate-provider-wiring
+          # >>> generated: provider-inputs-promote — bun run generate-providers
           E2B_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && secrets.E2B_API_KEY || '' }}
           E2B_TEMPLATE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
           DAYTONA_API_KEY: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container')) && secrets.DAYTONA_API_KEY || '' }}

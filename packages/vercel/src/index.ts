@@ -54,8 +54,10 @@ export const VERCEL_MEMORY_GB_PER_VCPU = 2;
 /** `Sandbox.create` resolves with a running session; the conformance gate proves it on every run. */
 export const VERCEL_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
 /**
- * A detached native command is the durable route: the current session accepts it and returns a
- * handle while the guest keeps running it, and the kit observes completion through the done file.
+ * No hard vendor cap is claimed: long synchronous transport is unvalidated, so the conservative 60s
+ * policy applies. A detached native command is the durable route: the current session accepts it
+ * and returns a handle while the guest keeps running it, and the kit observes completion through
+ * the done file.
  */
 export const VERCEL_EXECUTION = Object.freeze({
 	syncCapMs: 60_000,

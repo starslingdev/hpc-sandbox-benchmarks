@@ -20,7 +20,7 @@ This is an implementation status record, not a claim that the live fleet meets t
   with `queue: max` and no cancellation of running work. The CPU worker binds its group directly to
   the frozen batch's account, verifies the complete provider list before admission, and schedules
   compatible variants in one pool. The bake lane resolves that same account through the provider
-  registry (`bun run generate-provider-wiring`); both use the domain naming the journal branch.
+  registry (`bun run generate-providers`); both use the domain naming the journal branch.
 - Required-provider admission in the shared benchmark workflow. A failed Namespace credential setup
   can still reach normalization, but cannot produce a green all-skipped provider job.
 - Separate workflow-attempt artifact names, unconditional diagnostic upload, and upload paths limited

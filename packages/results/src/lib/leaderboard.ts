@@ -43,6 +43,7 @@ import {
 	clusterSeparation,
 	DEFAULT_ALPHA,
 	DIMENSIONS,
+	declaredIsolationClass,
 	getProvider,
 	kolmogorovSmirnov,
 	METRIC_CATALOG,
@@ -704,21 +705,6 @@ function rankMetric(run: LeaderboardDataset, metric: MetricDef): LeaderboardRow[
 	return candidates.map((candidate) => candidate.row);
 }
 
-/**
- * Collapse a declared isolation technology to the coarse class the probe can speak in: "gvisor",
- * "container", or "vm" (or `undefined` when it doesn't map). Order matters — Modal's "gVisor
- * container" contains both "gvisor" and "container", so gVisor is checked first; "microVM" contains
- * "vm", so VM is checked before the bare container fallback.
- */
-function isolationClass(declared: string | undefined): "gvisor" | "container" | "vm" | undefined {
-	if (!declared) return undefined;
-	const lower = declared.toLowerCase();
-	if (lower.includes("gvisor")) return "gvisor";
-	if (lower.includes("vm")) return "vm";
-	if (lower.includes("container")) return "container";
-	return undefined;
-}
-
 function formatIsolation(
 	runtime: string | undefined,
 	boundaryClass: string | undefined,
@@ -784,7 +770,7 @@ function buildRoster(run: LeaderboardDataset): ProviderRosterEntry[] {
 				observed.machineVmm,
 			) ??
 			observed.detectedIsolation;
-		const declaredClass = isolationClass(declaredIsolation);
+		const declaredClass = meta === undefined ? undefined : declaredIsolationClass(meta.id);
 		// Only the gVisor-versus-visible-VM contradiction is robust enough to flag. The old
 		// coarse values remain readable for historical runs.
 		const detectedClass = observed.isolationClass ?? observed.detectedIsolation;

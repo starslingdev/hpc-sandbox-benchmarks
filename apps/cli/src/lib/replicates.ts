@@ -14,12 +14,7 @@
  * Host-side concurrency was already safe: the harness names every temp archive/staging dir with a
  * `randomUUID` precisely so concurrent collects can't collide (packages/harness/src/lib/collect.ts),
  * and each replicate here gets its own raw tree + shard file, so nothing is shared but the process and
- * its environment. The environment caveat is real but currently harmless: the Daytona adapter pins
- * `DAYTONA_TARGET` process-globally around each client-constructing call
- * (packages/providers/src/lib/daytona-target.ts), so concurrent replicates interleave those
- * set/restore pairs. Every replicate of a cell is the SAME provider and suite and therefore pins the
- * SAME value, so the interleaving can only leave the variable holding the value it was already going
- * to hold; a cell that mixed targets in one process would need that pin reworked first.
+ * its environment, which each driver reads once, through its parsed env, when it is opened.
  */
 import { WORKFLOW_TIMEOUT_MARGIN_MINUTES } from "@sandbox-benchmarks/schema";
 

@@ -32,9 +32,4 @@ export default defineProviderMeta("brezel", {
 	// The qualified environment executes commands as its unprivileged guest user.
 	runtimeIdentity: "unprivileged",
 	specPinning: "fixed",
-	transport: {
-		streaming: false,
-		syncCapMs: 60_000,
-		detachedPoll: true,
-	},
 });

@@ -4,12 +4,7 @@
 
 import type { ProviderId } from "./provider-ids.ts";
 import type { ProviderPricing } from "./provider-pricing.ts";
-import type {
-	ProviderMaturity,
-	ProviderRuntimeIdentity,
-	ProviderTransport,
-	SpecPinning,
-} from "./providers.ts";
+import type { ProviderMaturity, ProviderRuntimeIdentity, SpecPinning } from "./providers.ts";
 
 export type IsolationClass = "vm" | "microVM" | "container" | "userspace" | "unknown";
 
@@ -85,6 +80,26 @@ export interface ProviderRunnerPolicy {
 	readonly lifetimeMinutes?: number;
 }
 
+/**
+ * The vendor library a provider package pins, which generated provenance reports at runtime.
+ *
+ * A string is an npm package that must be a runtime dependency of the provider's own package (the
+ * generator checks it). `cli` names a vendor CLI whose exact version is pinned by its setup action
+ * (`.github/actions/setup-<cli>/action.yml`); `http` names the API version of a vendor reached over
+ * plain HTTP with no library to pin.
+ */
+export type ProviderSdkPackage = string | { readonly cli: string } | { readonly http: string };
+
+/**
+ * Where an isolation variant's driver lives: `packages/<directory>/src/<entry>.ts`, exported as
+ * `@sandbox-benchmarks/<directory>/<entry>`. Omitted means the provider owns
+ * `packages/<id>/src/index.ts`; ids that share a directory are variants of one provider package.
+ */
+export interface ProviderPackageLocation {
+	readonly directory: string;
+	readonly entry: string;
+}
+
 /** The inert object authored in `provider-meta/<id>.ts`. */
 export interface ProviderMetaSource {
 	readonly displayName: string;
@@ -97,7 +112,14 @@ export interface ProviderMetaSource {
 	 */
 	readonly quotaDomain?: string;
 	readonly website: string;
-	readonly sdkPackage: string;
+	readonly sdkPackage: ProviderSdkPackage;
+	/** Declared only for isolation variants that share one provider package. */
+	readonly package?: ProviderPackageLocation;
+	/**
+	 * Chart label, declared only where it differs from the derived default: the vendor for isolation
+	 * variants sharing a package (one vendor on a chart), otherwise the display name.
+	 */
+	readonly figureLabel?: string;
 	readonly artifact: ProviderArtifact;
 	readonly inputs: readonly ProviderInput[];
 	readonly isolation: {
@@ -108,7 +130,6 @@ export interface ProviderMetaSource {
 	readonly pricing: ProviderPricing;
 	readonly maturity: ProviderMaturity;
 	readonly specPinning: SpecPinning;
-	readonly transport: ProviderTransport;
 	readonly runtimeIdentity?: ProviderRuntimeIdentity;
 	readonly runner?: ProviderRunnerPolicy;
 	readonly preAuth?: ProviderPreAuth;

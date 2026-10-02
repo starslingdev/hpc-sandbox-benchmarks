@@ -29,6 +29,11 @@ export const TAMA_MACHINE_NOT_FOUND =
 
 /** `tama new` includes the cold image pull and owns failed-create reconciliation. */
 export const TAMA_CREATE_CEILING_MS = 25 * 60_000;
+/**
+ * The CLI's stdout/stderr pipes are forwarded as chunks, and a 10-minute synchronous exec was
+ * validated end to end, but sustained synchronous transport keeps the conservative 60s policy:
+ * longer work daemonizes and polls the harness-owned done file.
+ */
 export const TAMA_EXECUTION = Object.freeze({
 	syncCapMs: 60_000,
 	durable: "shell-detach" as const,

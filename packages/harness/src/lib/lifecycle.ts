@@ -18,7 +18,7 @@ import { succeeded } from "@sandbox-benchmarks/driver";
  * (a failure has nothing to tear down, so it rejects); every middle step is best-effort (a flaky
  * exec/probe records a FAILED gap, never losing the spawn/teardown samples); teardown always runs in
  * `finally` and never throws out of it. Repeat the cycle for a cold-start distribution — that is what
- * {@link benchmarkLifecycle} (in index.ts) does.
+ * `benchmarkLifecycleCompute` (in index.ts) does.
  */
 import type {
 	Aggregates,
@@ -101,10 +101,10 @@ export interface LifecycleSnapshots {
 	delete(snapshotId: string): Promise<unknown>;
 }
 
-/** The slice of a computesdk provider the driver needs (its `DirectProvider` satisfies this). */
+/** The create/list/snapshot slice the lifecycle loop times; the composition root projects a driver onto it. */
 export interface LifecycleCompute {
 	sandbox: {
-		create(options?: unknown): Promise<LifecycleSandbox>;
+		create(): Promise<LifecycleSandbox>;
 		/** Present on providers whose SDK can enumerate sandboxes — the control-plane list probe. */
 		list?(): Promise<unknown[]>;
 	};
@@ -115,8 +115,6 @@ export interface LifecycleCompute {
 export interface MeasureLifecycleOptions {
 	/** Provider id stamped onto every emitted {@link RawRun}. */
 	provider: string;
-	/** Create-time options forwarded verbatim to `sandbox.create` (the pinned spec/image). */
-	createOptions?: unknown;
 	/** Trivial command timed for the exec round-trip floor. Default `"true"`. */
 	execCommand?: string;
 	/** How many times to probe each control-plane read within the one sandbox. Default `1`. */
@@ -163,7 +161,7 @@ export async function measureLifecycle(
 	const snapshots = compute.snapshot;
 	return measureCycle(
 		{
-			create: () => compute.sandbox.create(options.createOptions),
+			create: () => compute.sandbox.create(),
 			exec: (sandbox, command) => sandbox.runCommand(command),
 			ready: async (sandbox) => (await sandbox.runCommand("echo ok")).exitCode === 0,
 			info: (sandbox) => sandbox.getInfo?.bind(sandbox),
@@ -184,7 +182,7 @@ export async function measureLifecycle(
 export function measureDriverLifecycle(
 	driver: SandboxDriver,
 	request: CreateRequest,
-	options: Omit<MeasureLifecycleOptions, "createOptions">,
+	options: MeasureLifecycleOptions,
 ): Promise<LifecycleMeasurement> {
 	const probes = driver.probes;
 	const info = (probes?.describe ?? probes?.observe)?.bind(probes);
@@ -230,7 +228,7 @@ interface CycleOperations<Session extends { destroy(): Promise<unknown> }> {
 
 async function measureCycle<Session extends { destroy(): Promise<unknown> }>(
 	operations: CycleOperations<Session>,
-	options: Omit<MeasureLifecycleOptions, "createOptions">,
+	options: MeasureLifecycleOptions,
 ): Promise<LifecycleMeasurement> {
 	const { provider } = options;
 	const execCommand = options.execCommand ?? "true";

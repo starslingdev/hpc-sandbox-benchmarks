@@ -26,6 +26,7 @@ import {
 	isBakedProviderId,
 	isMirroredProviderId,
 	REGISTRY,
+	releaseUnscopable,
 } from "@sandbox-benchmarks/schema/providers";
 import { validatedPins } from "@sandbox-benchmarks/templates/pins";
 import { imageExistsInRegistry, imageName, imageRepo, releaseBaseTag } from "../lib/bake/image.ts";
@@ -49,27 +50,6 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
 	"blaxel",
 	"modal-gvisor",
 ];
-
-/**
- * Providers a SCOPED release cannot name, with the reason. An unscoped release simply skips these (a
- * missing credential is a skip, and they are not in {@link RELEASE_REQUIRED_PROVIDERS}); naming one in
- * `providers` says "make this ship", which the lane then cannot do — and every provider a scoped
- * dispatch names is required, so the cell fails on missing credentials AFTER a `privileged` approval
- * and, on a `build: full` dispatch, an hour of rebuild. Refusing in the plan turns that into a
- * fail-fast with an explanation.
- *
- * Keyed by provider so the reason travels with the refusal. Boat still boots a stock vendor image,
- * so its bake/promote publishes nothing even though an unscoped release can validate it best-effort.
- */
-const STOCK_IMAGE_UNSCOPABLE =
-	"it boots the vendor's stock image rather than the toolchain and has no artifact to publish; " +
-	"credentialed validation alone cannot produce a scoped backfill";
-
-export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, string>>> = {
-	boat: STOCK_IMAGE_UNSCOPABLE,
-	brezel:
-		"it boots an externally prepared environment revision that this repository cannot build or publish; credentialed validation alone cannot produce a scoped backfill",
-};
 
 const MIRRORED_CANDIDATE_REFS = {
 	vercel: config.vercelImageCandidate,
@@ -180,13 +160,15 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	const partial = isPartialScope(scope);
 
 	// Refuse a scope naming a provider the lane cannot ship, before the release spends an approval and
-	// a build on a cell that is guaranteed to fail (see RELEASE_UNSCOPABLE_PROVIDERS).
+	// a build on a cell that is guaranteed to fail: every provider a scoped dispatch names is required,
+	// so one with no artifact to publish would fail on credentials after a privileged approval.
 	if (partial) {
-		const unscopable = scope.filter((id) => RELEASE_UNSCOPABLE_PROVIDERS[id]);
+		const reasons = releaseUnscopable();
+		const unscopable = scope.filter((id) => reasons[id] !== undefined);
 		if (unscopable.length > 0) {
 			throw new Error(
 				`the release lane cannot ship ${unscopable.join(", ")}: ${unscopable
-					.map((id) => `${id} — ${RELEASE_UNSCOPABLE_PROVIDERS[id]}`)
+					.map((id) => `${id} — ${reasons[id]}`)
 					.join("; ")}. Drop it from \`providers\` (an unscoped release skips it).`,
 			);
 		}

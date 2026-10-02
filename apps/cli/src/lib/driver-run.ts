@@ -277,10 +277,8 @@ export async function createOwnedDriverSession(
 /**
  * Registry inputs whose value replaces the resolved artifact ref for a registered DriverModule.
  *
- * The leftover lane honors the same variable through its config gatekeeper (`config.e2bTemplate`),
- * and CI forwards it on every e2b cell, so defaulting e2b to the driver lane must not quietly drop
- * it: an ignored override boots the published template while the operator believes they pinned a
- * debug one. Keyed by id on purpose — "this input names an artifact" is a fact about the provider's
+ * CI forwards these variables on every cell, so an open must not quietly drop them: an ignored
+ * override boots the published template while the operator believes they pinned a debug one. Keyed by id on purpose — "this input names an artifact" is a fact about the provider's
  * artifact descriptor, not something the registry's input descriptors declare, so there is nothing
  * honest to infer it from.
  */
@@ -363,15 +361,6 @@ export function isDriverProviderId(value: string): value is DriverProviderId {
 	return Object.hasOwn(DRIVERS, value);
 }
 
-/**
- * Default lane selection: a registered DriverModule id uses {@link loadDriverModule} /
- * {@link runDriverSuite} / {@link withDriverSandbox} without `--driver-path`. Waived/unknown ids stay on the legacy `packages/providers` path
- * unless the flag forces the driver lane (which then errors rather than inventing a module).
- */
-export function usesDriverSuite(providerId: string, driverPathFlag = false): boolean {
-	return driverPathFlag || isDriverProviderId(providerId);
-}
-
 /** Providers whose consumers have moved to declarative session operations in the migration stack. */
 export function usesSessionOperations(_id: DriverProviderId): boolean {
 	return true;
@@ -382,7 +371,7 @@ export function usesSessionOperations(_id: DriverProviderId): boolean {
  *
  * A module that owns its bound (`owner: "driver"`) turns the harness race OFF (`timeoutMs: null`) and
  * declares the ceiling instead, so the retry loop can still subtract one attempt's worst case before
- * starting another — the same pair `assertCreateCeilingDeclared` enforces on leftover adapters.
+ * starting another.
  * Either way the request deadline is whatever actually bounds an attempt, so the driver and the loop
  * cannot disagree about how long one create may take.
  */
@@ -506,10 +495,9 @@ export async function benchmarkDriverLifecycle(
 /**
  * Run one real benchmark cell through a registered DriverModule.
  *
- * Default `bench-suite <id>` selects this for every registered DriverModule id. An unregistered
- * (waived) provider is rejected here instead of inventing a driver or falling back — the legacy
- * `runSuite` path still serves those ids. The shared harness still owns create retry budgeting,
- * failure markers, result collection, teardown, and Run v6 artifact evidence.
+ * `bench-suite <id>` selects this for every provider. An unknown id is rejected here as a usage
+ * error instead of inventing a driver. The shared harness owns create retry budgeting, failure
+ * markers, result collection, teardown, and Run v6 artifact evidence.
  */
 export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 	const suiteName = SUITE_NAMES.find((name) => name === options.suiteName);
@@ -520,7 +508,7 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 	}
 	if (!isDriverProviderId(options.providerName)) {
 		throw new SuiteUsageError(
-			`${options.providerName} has no DriverModule (migrated: ${Object.keys(DRIVERS).join(", ")})`,
+			`${options.providerName} has no DriverModule (providers: ${Object.keys(DRIVERS).join(", ")})`,
 		);
 	}
 
@@ -547,10 +535,10 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 		opened = await openDriver(providerName, { env });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		// This matches the legacy boundary: constructing the selected adapter is part of sandbox create,
-		// and a failure here must leave a raw-tree fact rather than normalize as "never scheduled". Like
-		// the shared create boundary, marker persistence is best-effort: a read-only/full results tree
-		// must not replace the driver-construction error that explains why the cell failed.
+		// Constructing the selected driver is part of sandbox create, and a failure here must leave a
+		// raw-tree fact rather than normalize as "never scheduled". Like the shared create boundary,
+		// marker persistence is best-effort: a read-only/full results tree must not replace the
+		// driver-construction error that explains why the cell failed.
 		try {
 			recordSuiteGap({
 				resultsDir,

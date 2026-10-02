@@ -257,9 +257,10 @@ provider) and its empty-`<Identifier>` `<Result>` nodes would abort extraction â
 
 ## Transport model
 
-Providers differ in how their `@computesdk/*` adapter executes a command. Each declares a
-[`ProviderTransport`](../packages/schema/src/providers.ts) capability (`streaming`, `syncCapMs`,
-`detachedPoll`), and the harness selects a transport per step: a step that could reach the integration's
+Providers differ in how their driver executes a command. Each driver module declares an `execution`
+policy (its synchronous cap and durable route), which the composition root projects onto the
+harness's [`ProviderTransport`](../packages/schema/src/providers.ts) (`syncCapMs`, `detachedPoll`),
+and the harness selects a transport per step: a step that could reach the integration's
 synchronous durability threshold runs **detached + poll** where supported, everything else runs directly.
 That threshold may be a measured/vendor limit (for example Daytona's server-side HTTP 408) or a
 conservative policy where one long connection is unvalidated. Vercel uses a 60-second policy threshold,

@@ -3,7 +3,6 @@ import { describeDriverFailure as projectDriverFailure } from "@sandbox-benchmar
 import { diagnosticSecretsFromEnv } from "@sandbox-benchmarks/driver/env";
 import {
 	CREATE_FAILURE_PREFIX,
-	runSuite,
 	SuiteUsageError,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
@@ -11,7 +10,7 @@ import { writeNormalizedRun } from "@sandbox-benchmarks/results";
 import type { Run } from "@sandbox-benchmarks/schema";
 import { logInfo, logProviderStatuses, logWarning, withGroup } from "./actions-log.ts";
 import { isConcurrentSandboxAdmissionError } from "./admission-capacity.ts";
-import { runDriverSuite, usesDriverSuite } from "./driver-run.ts";
+import { runDriverSuite } from "./driver-run.ts";
 
 const describeDriverFailure = (error: unknown): string =>
 	projectDriverFailure(error, diagnosticSecretsFromEnv(process.env));
@@ -45,7 +44,7 @@ export function replicateLabel(index: number | undefined): string {
 
 /** Everything one replicate needs; `replicateIndex` undefined is the single un-indexed run. */
 interface ReplicateContext {
-	execute?: typeof runSuite;
+	execute?: typeof runDriverSuite;
 	provider: string;
 	suite: string;
 	runId: string;
@@ -54,8 +53,6 @@ interface ReplicateContext {
 	outFile: string;
 	indexFile?: string;
 	replicateIndex?: number;
-	/** Force the DriverModule path. Registered ids already take that path; waived ids error. */
-	driverPath?: boolean;
 	/** Providers that must reach "validated" for this replicate to count as a success. */
 	required: readonly string[];
 }
@@ -95,9 +92,7 @@ export async function runReplicate(ctx: ReplicateContext): Promise<ReplicateOutc
 	let usageError: string | undefined;
 	await withGroup(`Run suite ${suite} on ${provider}`, async () => {
 		try {
-			const executeSuite =
-				ctx.execute ??
-				(usesDriverSuite(provider, ctx.driverPath === true) ? runDriverSuite : runSuite);
+			const executeSuite = ctx.execute ?? runDriverSuite;
 			await executeSuite({
 				runId,
 				replicateIndex,

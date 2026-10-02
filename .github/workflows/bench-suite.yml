@@ -33,14 +33,14 @@ permissions:
 jobs:
   bench:
     concurrency:
-      # >>> generated: provider-account-group-bench — bun run generate-provider-wiring
+      # >>> generated: provider-account-group-bench — bun run generate-providers
       group: benchmark-account-${{ inputs.account }}
       # <<< end generated: provider-account-group-bench
       cancel-in-progress: false
       queue: max
     name: ${{ join(fromJSON(inputs.providers), ' + ') }}
     environment: privileged
-    # >>> generated: provider-runner — bun run generate-provider-wiring
+    # >>> generated: provider-runner — bun run generate-providers
     runs-on: ${{ 'ubuntu-24.04' }}
     # <<< end generated: provider-runner
     timeout-minutes: 330
@@ -54,7 +54,7 @@ jobs:
       - name: Set up workspace
         uses: ./.github/actions/setup-workspace
         with:
-          # >>> generated: provider-runner-cache — bun run generate-provider-wiring
+          # >>> generated: provider-runner-cache — bun run generate-providers
           no-cache: ${{ false && 'true' || 'false' }}
           # <<< end generated: provider-runner-cache
 
@@ -65,7 +65,7 @@ jobs:
         uses: ./.github/actions/artifact-runtime
 
       - name: Set up Namespace credentials
-        # >>> generated: preauth-namespace-token-bench — bun run generate-provider-wiring
+        # >>> generated: preauth-namespace-token-bench — bun run generate-providers
         if: contains(fromJSON(inputs.providers), 'namespace')
         # <<< end generated: preauth-namespace-token-bench
         id: namespace
@@ -91,7 +91,7 @@ jobs:
         uses: ./.github/actions/setup-tama
 
       - name: Authenticate with Vercel
-        # >>> generated: preauth-vercel-auth-bench — bun run generate-provider-wiring
+        # >>> generated: preauth-vercel-auth-bench — bun run generate-providers
         if: contains(fromJSON(inputs.providers), 'vercel')
         # <<< end generated: preauth-vercel-auth-bench
         id: vercel-auth
@@ -112,7 +112,7 @@ jobs:
           BENCH_CELL_BUDGET_MINUTES: '330'
           BENCH_BATCH_ID: ${{ inputs.batch_id }}
           GH_TOKEN: ${{ github.token }}
-          # >>> generated: provider-inputs-bench — bun run generate-provider-wiring
+          # >>> generated: provider-inputs-bench — bun run generate-providers
           E2B_API_KEY: ${{ contains(fromJSON(inputs.providers), 'e2b') && secrets.E2B_API_KEY || '' }}
           E2B_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
           DAYTONA_API_KEY: ${{ (contains(fromJSON(inputs.providers), 'daytona-vm') || contains(fromJSON(inputs.providers), 'daytona-container')) && secrets.DAYTONA_API_KEY || '' }}
@@ -147,7 +147,7 @@ jobs:
           BREZEL_PROJECT_ID: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
           BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
           # <<< end generated: provider-inputs-bench
-          # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
+          # >>> generated: provider-runner-lifetime — bun run generate-providers
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}
           # <<< end generated: provider-runner-lifetime
         run: GITHUB_SHA="$EXECUTION_SHA" bun apps/cli/src/bin/workflow-experiment.ts execute

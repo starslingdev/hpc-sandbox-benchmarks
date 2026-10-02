@@ -83,15 +83,11 @@ jobs:
       - name: Catalog drift
         run: bun run check:catalog-drift
 
-      # Provider registry drift gate — the tuple owns identity, provider files own metadata, and the
-      # generated correlated index must be the exact mechanical join of the two.
-      - name: Provider registry drift
-        run: bun run check:provider-registry-drift
-
-      # Provider wiring drift gate — metadata owns provider inputs/runner/pre-auth declarations;
-      # committed workflow, local-env, docs, and setup regions are reviewed generated projections.
-      - name: Provider wiring drift
-        run: bun run check:provider-wiring
+      # Provider generation drift gate — the tuple owns identity and provider files own metadata;
+      # the correlated registry index, workflow/local-env/docs/setup regions, provenance, and the
+      # driver loader are reviewed generated projections that must match a fresh generator run.
+      - name: Provider generation drift
+        run: bun run check:providers
 
       # Spelling gate — typos (pinned in mise.toml); misspellings fail the build.
       - name: Spell (typos)

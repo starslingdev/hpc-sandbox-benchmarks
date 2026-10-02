@@ -21,8 +21,8 @@ if (import.meta.main) {
 		console.error(
 			[
 				"usage: account-inventory [provider...]",
-				`unknown or unmigrated provider(s): ${unknown.join(", ")}`,
-				`migrated providers: ${Object.keys(DRIVERS).join(", ")}`,
+				`unknown provider(s): ${unknown.join(", ")}`,
+				`providers: ${Object.keys(DRIVERS).join(", ")}`,
 			].join("\n"),
 		);
 		process.exit(2);

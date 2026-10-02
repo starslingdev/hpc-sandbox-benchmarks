@@ -10,6 +10,7 @@ import {
 	providerPricingSchema,
 	TARGET_SPEC,
 } from "./index.ts";
+import { PROVIDER_IDS } from "./provider-ids.ts";
 
 const published = (id: string) => {
 	const pricing = getProvider(id)?.pricing;
@@ -62,39 +63,16 @@ const fixture: ProviderMeta = {
 };
 
 describe("@sandbox-benchmarks/schema providers", () => {
-	it("pins the registered provider id set", () => {
-		expect(PROVIDERS.map((provider) => provider.id).sort()).toEqual([
-			"blaxel",
-			"boat",
-			"brezel",
-			"daytona-container",
-			"daytona-vm",
-			"e2b",
-			"freestyle",
-			"microsandbox-cloud",
-			"modal-gvisor",
-			"modal-vm",
-			"namespace",
-			"novita",
-			"runcloud",
-			"runloop",
-			"tama",
-			"vercel",
-		]);
+	it("is the identity tuple, in registry order", () => {
+		expect(PROVIDERS.map((provider) => provider.id)).toEqual([...PROVIDER_IDS]);
 	});
 
-	it("keeps identity and transport records well formed", () => {
+	it("keeps identity records well formed", () => {
 		const ids = PROVIDERS.map((provider) => provider.id);
 		expect(new Set(ids).size).toBe(ids.length);
 		for (const provider of PROVIDERS) {
 			expect(provider.requiredEnvVars.length).toBeGreaterThan(0);
 			expect(getProvider(provider.id)?.id).toBe(provider.id);
-			expect(typeof provider.transport.streaming).toBe("boolean");
-			if (provider.transport.syncCapMs !== null) {
-				expect(Number.isFinite(provider.transport.syncCapMs)).toBe(true);
-				expect(provider.transport.syncCapMs).toBeGreaterThan(0);
-				expect(provider.transport.detachedPoll).toBe(true);
-			}
 		}
 	});
 
