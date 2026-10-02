@@ -96,12 +96,19 @@ CLI vendors keep `defineCliDriver`, whose `CliRunner` is already a transport por
 
 Each provider package exposes:
 - `.`, its driver (variants keep their subpaths);
-- `./artifact`, exactly when the registry says it bakes an image from the OCI base. This is a
+- `./artifact`, exactly when the provider bakes from the OCI base. This is a
   `defineArtifactBuilder` from `@sandbox-benchmarks/driver/artifact`.
 
+A native-snapshot baker (Freestyle) has no `./artifact`: it gets the builder that
+`snapshotArtifactBuilder(module)` derives from its driver's snapshot capability.
+
 The builder's contract:
-- It receives a derived name, a digest-pinned base, parsed credentials and the target spec.
-- It returns the exact ref its driver boots.
+- An OCI baker receives a derived name, a digest-pinned base, parsed credentials and the target
+  spec.
+- A native-snapshot baker receives no base. It receives an injected `prepare(session)` seam,
+  through which the release lane supplies the recipe and smoke, so provider packages never import
+  harness or templates code. On a version build it also receives the revalidated candidate.
+- Either way it returns the exact ref its driver boots.
 
 A generated `ARTIFACT_BUILDERS` join sits beside `DRIVERS`, and the generator checks `./artifact`
 exactness against the registry.

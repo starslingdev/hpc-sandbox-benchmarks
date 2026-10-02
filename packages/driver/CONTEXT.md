@@ -46,6 +46,8 @@ A provider's only importer of its vendor libraries. It exposes a driver and, whe
 bakes an image from the toolchain base, an artifact builder.
 
 **Artifact builder**:
-A provider package's build of its boot artifact from a digest-pinned toolchain base. It returns
-exactly the reference its driver boots and states how a same-name predecessor was replaced; a
-destructive replace (delete, then create) leaves the name unresolvable until the create succeeds.
+The build of a provider's boot artifact. An OCI baker turns the digest-pinned toolchain base into a
+vendor image in its provider package; a native-snapshot baker is derived from the driver's snapshot
+capability and captures a sandbox the release lane prepared. Either returns exactly the reference
+its driver boots and states how a same-name predecessor was replaced; a destructive replace
+(delete, then create) leaves the name unresolvable until the create succeeds.

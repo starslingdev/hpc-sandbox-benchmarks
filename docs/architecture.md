@@ -106,7 +106,11 @@ speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once fo
 - the artifact guard, the `df` disk proof for a `runtime-verified` disk axis, and `admit`.
 
 It lowers onto the ComputeSDK bridge, so coverage proof, id parsing, cleanup double faults,
-redaction and output caps are reused. Vendor-family behaviour stays on typed passthroughs:
+redaction and output caps are reused. Every port call outside a poll is bounded
+(`controlTimeoutMs` for probes and listing pages, `snapshotTimeoutMs` for snapshots), and a response
+arriving after its bound is rejected. A failure after `create` allocated (an abort, a failed
+`attach`) tears the known record down and is never classified as a refusal. Vendor-family behaviour
+stays on typed passthroughs:
 `snapshots` (on the bound vendor), `accelerator`, `costEvidence`, a harness-owned `createBudget`,
 and `execution` (default `{ syncCapMs: 60_000, durable: "shell-detach" }`; `durable:
 "native-launch"` and `data.launch` must be declared together). `module.specFor(context, { vendor,
@@ -117,12 +121,18 @@ script, a guest shell that answers the kit's commands, and leak detectors) and `
 (the port contract every adapter passes). Kit behaviour is tested once against `memoryVendor`,
 including ADR-0008's kit tier, which admits a module built over it.
 
-`@sandbox-benchmarks/driver/artifact` (arktype-free) is the release lane's build seam:
-`defineArtifactBuilder(id, build)` takes a derived name, a digest-pinned base, the toolchain images
-directory, parsed credentials, the target spec and a `replace` permission, and returns the exact
-`ref` its driver boots plus how a same-name predecessor was replaced (`none`, `atomic`, or
-`destructive` for Daytona's delete-then-create). A version build also receives the revalidated
-candidate's ref, which a native-snapshot builder (Freestyle) promotes instead of rebuilding.
+`@sandbox-benchmarks/driver/artifact` (arktype-free) is the release lane's build seam. Its request
+is a union by how the provider bakes:
+
+- an **OCI baker** (`defineArtifactBuilder(id, build)`, a provider package's `./artifact`) takes a
+  derived name, a digest-pinned base, the toolchain images directory, parsed credentials, the target
+  spec and a `replace` permission. It returns the exact `ref` its driver boots plus how a same-name
+  predecessor was replaced (`none`, `atomic`, or `destructive` for Daytona's delete-then-create);
+- a **native-snapshot baker** gets no base and no `./artifact`: `snapshotArtifactBuilder(module,
+  { stockBase })` derives it from the driver's snapshot capability. It boots the stock base (or, on a
+  version build, the revalidated candidate), awaits the lane's injected `prepare(session)` (recipe
+  and smoke), captures a snapshot, and destroys the sandbox with cleanup confirmation. A snapshot
+  captured by a failed build is deleted.
 
 `DriverError.vendorHttpStatus` carries HTTP response status; `vendorExitCode` carries process exit
 status. Only the HTTP field participates in the 429 retry rule. CLI readiness can return

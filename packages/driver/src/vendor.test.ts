@@ -98,6 +98,91 @@ describe("readiness", () => {
 	});
 });
 
+describe("readiness, continued", () => {
+	test("a sandbox that fails during readiness is torn down", async () => {
+		const { driver, calls, allocations } = bind({
+			readyAfterGets: 1,
+			faults: { failsDuringReadiness: true },
+		});
+		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
+		expect(calls).toContain("remove");
+		expect(allocations()).toBe(0);
+	});
+
+	test("does not accept readiness observed beyond its deadline", async () => {
+		const { driver, allocations } = bind(
+			{ readyAfterGets: 1, latencyMs: 30 },
+			{ timing: { pollMs: 0, readyTimeoutMs: 5, deleteTimeoutMs: 1_000 } },
+		);
+		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
+		expect(allocations()).toBe(0);
+	});
+
+	test("the caller's cancellation ends a readiness wait and the allocation is still removed", async () => {
+		const { driver, allocations } = bind(
+			{ readyAfterGets: 1_000 },
+			{ timing: { pollMs: 5, readyTimeoutMs: 10_000, deleteTimeoutMs: 1_000 } },
+		);
+		const control = new AbortController();
+		setTimeout(() => control.abort(new Error("caller gave up")), 20);
+		const started = performance.now();
+		const failure = await driver.create(request, { signal: control.signal }).catch((e) => e);
+		expect(failure).toBeInstanceOf(Error);
+		expect(performance.now() - started).toBeLessThan(5_000);
+		expect(allocations()).toBe(0);
+	});
+});
+
+describe("allocation before attach", () => {
+	class QuotaError extends Error {}
+	const refusing = (
+		world: ReturnType<typeof memoryVendor>,
+		attach: Vendor<MemoryRow, MemoryRow>["data"]["attach"],
+	) => ({
+		...world.vendor,
+		control: {
+			...world.vendor.control,
+			refused: (error: unknown) =>
+				instanceOfAny(QuotaError)(error) ? { retryable: true } : undefined,
+		},
+		data: { ...world.vendor.data, attach },
+	});
+
+	test("an attach failure the vendor would call a refusal still tears the allocation down", async () => {
+		const world = memoryVendor();
+		const driver = moduleOver(() =>
+			refusing(world, () => {
+				throw new QuotaError("quota exceeded while attaching");
+			}),
+		).driver(context);
+		const failure = await driver.create(request).catch((e) => e);
+		expect(failure).toMatchObject({ code: "create-failed" });
+		// Never classified as a refusal: something was allocated.
+		expect(isRetryableDriverCreate(failure)).toBe(false);
+		expect(world.calls).toContain("remove");
+		expect(world.allocations()).toBe(0);
+	});
+
+	test("an attempt aborted right after create tears the allocation down", async () => {
+		const world = memoryVendor();
+		const control = new AbortController();
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				create: async (attempt, op) => {
+					const created = await world.vendor.control.create(attempt, op);
+					control.abort(new Error("caller gave up"));
+					return created;
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor).driver(context);
+		await expect(driver.create(request, { signal: control.signal })).rejects.toBeInstanceOf(Error);
+		expect(world.allocations()).toBe(0);
+	});
+});
+
 describe("cleanup confirmation", () => {
 	test("an acknowledged delete is not removal: teardown observes the sandbox gone", async () => {
 		const { driver, calls, allocations } = bind();
@@ -122,6 +207,52 @@ describe("cleanup confirmation", () => {
 	});
 });
 
+describe("cleanup confirmation, continued", () => {
+	test("a sandbox already deleting is observed to removal, never deleted again", async () => {
+		const { driver, vendor, calls } = bind({ removalAfterGets: 1 });
+		const session = await driver.create(request);
+		await vendor.control.remove(session.sandboxRef.id, { signal: new AbortController().signal });
+		calls.length = 0;
+		await session.destroy();
+		expect(calls).toEqual(["get", "get"]);
+	});
+
+	test("bounds deletion from the first control request", async () => {
+		const { driver, calls } = bind(
+			{ latencyMs: 30 },
+			{ timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 5 } },
+		);
+		const session = await driver.create(request);
+		calls.length = 0;
+		await expect(driver.destroyById?.(session.sandboxRef)).rejects.toThrow();
+		expect(calls).not.toContain("remove");
+	});
+
+	test("rejects a removal response beyond the budget before the timeout callback runs", async () => {
+		const world = memoryVendor({ removal: "removed" });
+		const busy: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				get: async (id, op) => {
+					// Block the event loop past the budget, so the timer cannot fire first.
+					const until = Date.now() + 20;
+					while (Date.now() < until) {}
+					return world.vendor.control.get(id, op);
+				},
+			},
+		};
+		const driver = moduleOver(() => busy, {
+			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 5 },
+		}).driver(context);
+		const session = await driver.create(request);
+		await world.vendor.control.remove(session.sandboxRef.id, {
+			signal: new AbortController().signal,
+		});
+		await expect(driver.destroyById?.(session.sandboxRef)).rejects.toThrow();
+	});
+});
+
 describe("inventory", () => {
 	test("drains every page and partitions owned from foreign sandboxes", async () => {
 		const { driver } = bind({ pageSize: 1, foreign: 2 });
@@ -135,6 +266,13 @@ describe("inventory", () => {
 	test("fails closed on a repeated cursor instead of reporting a partial account", async () => {
 		const { driver } = bind({ pageSize: 1, foreign: 3, faults: { pageRepeatsCursor: true } });
 		await expect(driver.inventory?.list()).rejects.toThrow();
+	});
+
+	test("a listing longer than the vendor's page cap fails closed", async () => {
+		const { driver } = bind({ pageSize: 1, foreign: 3 }, { pageCap: 2 });
+		await expect(driver.inventory?.list()).rejects.toThrow();
+		const { driver: wider } = bind({ pageSize: 1, foreign: 3 }, { pageCap: 3 });
+		expect((await wider.inventory?.list())?.foreignCount).toBe(3);
 	});
 
 	test("a dedicated account owns every live sandbox", async () => {
@@ -164,6 +302,94 @@ describe("ambiguous-create recovery", () => {
 		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
 		expect(calls).toContain("find");
 		expect(live()).toHaveLength(0);
+	});
+
+	test("an allocation that becomes visible only after a delay is still found and removed", async () => {
+		const { driver, calls, allocations } = bind(
+			{ faults: { createAmbiguous: true, ambiguousHiddenForListings: 1 } },
+			{ recovery: { absenceConfirmationMs: 20 } },
+		);
+		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
+		expect(calls.filter((call) => call === "page").length).toBeGreaterThanOrEqual(2);
+		expect(allocations()).toBe(0);
+	});
+
+	test("recovery tears down every attributed sandbox together and surfaces every failure", async () => {
+		const world = memoryVendor();
+		const op = { signal: new AbortController().signal };
+		const marker = `${MARKER_PREFIX}twice`;
+		await world.vendor.control.create({ request, marker }, op);
+		await world.vendor.control.create({ request, marker }, op);
+		const refusing: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				remove: async (id) => {
+					throw new Error(`delete of ${id} refused`);
+				},
+			},
+		};
+		const spec = moduleOver(() => refusing).specFor(context);
+		const failure = await spec.createRecovery
+			?.cleanup(spec.compute, { kind: "marker", key: "novita-marker", value: marker }, {})
+			.catch((e) => e);
+		expect(failure).toBeInstanceOf(AggregateError);
+		expect((failure as AggregateError).errors.map((error: Error) => error.message).sort()).toEqual([
+			"delete of mem-1 refused",
+			"delete of mem-2 refused",
+		]);
+	});
+
+	test("a listed allocation already gone at teardown contradicts the prior absence", async () => {
+		const world = memoryVendor();
+		const marker = `${MARKER_PREFIX}vanished`;
+		const vanishing: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				page: async () => ({
+					records: [{ id: "mem-9", phase: "ready", marker, raw: {} as MemoryRow }],
+				}),
+				get: async () => null,
+			},
+		};
+		const spec = moduleOver(() => vanishing).specFor(context);
+		expect(
+			await spec.createRecovery?.cleanup(
+				spec.compute,
+				{ kind: "marker", key: "novita-marker", value: marker },
+				{},
+			),
+		).toEqual({ status: "absent", contradictedPriorAbsence: true });
+	});
+
+	test("recovery refuses a differently marked or unparseable record, even on a dedicated account", async () => {
+		const world = memoryVendor({ account: "dedicated" });
+		const marker = `${MARKER_PREFIX}mine`;
+		const answering = (
+			records: { id: string; marker?: string }[],
+		): Vendor<MemoryRow, MemoryRow> => ({
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				find: async () => ({
+					records: records.map((record) => ({ ...record, phase: "ready", raw: {} as MemoryRow })),
+				}),
+			},
+		});
+		const cleanup = (vendor: Vendor<MemoryRow, MemoryRow>) => {
+			const spec = moduleOver(() => vendor, { account: "dedicated" }).specFor(context);
+			return spec.createRecovery?.cleanup(
+				spec.compute,
+				{ kind: "marker", key: "novita-marker", value: marker },
+				{},
+			);
+		};
+		await expect(
+			cleanup(answering([{ id: "mem-1", marker: `${MARKER_PREFIX}other` }])),
+		).rejects.toThrow(/unrelated/);
+		await expect(cleanup(answering([{ id: "not a sandbox id" }]))).rejects.toThrow();
+		expect(world.calls).not.toContain("remove");
 	});
 
 	test("a dedicated account without a marker lookup is refused when bound", () => {
@@ -227,9 +453,12 @@ describe("typed passthroughs", () => {
 		expect(bind().module.execution).toEqual({ syncCapMs: 60_000, durable: "shell-detach" });
 	});
 
-	test("an uncapped execution policy with no durable route passes through unchanged", () => {
-		const { module } = bind({}, { execution: { syncCapMs: null, durable: "none" } });
+	test("an uncapped execution policy with no durable route passes through unchanged", async () => {
+		const { module, driver } = bind({}, { execution: { syncCapMs: null, durable: "none" } });
 		expect(module.execution).toEqual({ syncCapMs: null, durable: "none" });
+		const session = await driver.create(request);
+		expect((await session.exec("sh -c 'exit 0'")).exit).toEqual({ kind: "exited", code: 0 });
+		await session.destroy();
 	});
 
 	test("native launch and data.launch must be declared together", () => {
@@ -301,10 +530,11 @@ describe("typed passthroughs", () => {
 		await session.destroy();
 	});
 
-	test("a harness-owned create budget and cost evidence pass through to the module", async () => {
+	test("cost evidence and a harness-owned budget reach the policy as checked snapshots", async () => {
 		const captured: string[] = [];
+		const sdk = { ...provenance };
 		const costEvidence = {
-			sdk: provenance,
+			sdk,
 			captureAfterTeardown: async (input: { sandboxId: string }) => {
 				captured.push(input.sandboxId);
 				return { status: "unavailable", reason: "memory vendor has no billing" } as never;
@@ -314,10 +544,19 @@ describe("typed passthroughs", () => {
 			{},
 			{ createBudget: { owner: "harness", timeoutMs: 300_000 }, costEvidence },
 		);
-		expect(module.createBudget).toEqual({ owner: "harness", timeoutMs: 300_000 });
+		// The harness reads the module's policy, which the driver boundary snapshotted and froze:
+		// a later mutation of the author's record cannot change it.
+		sdk.version = "mutated-after-definition";
+		expect(module.costEvidence).not.toBe(costEvidence);
+		expect(Object.isFrozen(module.costEvidence)).toBe(true);
 		expect(module.costEvidence?.sdk).toEqual(provenance);
+		expect(module.createBudget).toEqual({ owner: "harness", timeoutMs: 300_000 });
 		await module.costEvidence?.captureAfterTeardown({ sandboxId: "mem-1" } as never);
 		expect(captured).toEqual(["mem-1"]);
+		// …and the boundary refuses a capability the harness could not invoke.
+		expect(() =>
+			moduleOver(() => memoryVendor().vendor, { costEvidence: { sdk: provenance } as never }),
+		).toThrow(/cost evidence/);
 	});
 
 	test("a create budget the driver would own is refused at definition", () => {
@@ -372,6 +611,45 @@ describe("typed passthroughs", () => {
 	});
 });
 
+describe("bounded control calls", () => {
+	test("a hung control plane cannot stall a probe or a snapshot past its bound", async () => {
+		const world = memoryVendor();
+		const hung: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: { ...world.vendor.control, get: () => new Promise(() => {}) },
+			snapshots: { create: () => new Promise(() => {}), delete: () => new Promise(() => {}) },
+		};
+		const driver = moduleOver(() => hung, {
+			timing: {
+				pollMs: 0,
+				readyTimeoutMs: 1_000,
+				deleteTimeoutMs: 1_000,
+				controlTimeoutMs: 20,
+				snapshotTimeoutMs: 20,
+			},
+		}).driver(context);
+		const ref = { provider: "novita" as const, id: "mem-1" };
+		const started = performance.now();
+		await expect(driver.probes?.observe(ref)).rejects.toThrow();
+		await expect(driver.probes?.describe?.(ref)).rejects.toThrow();
+		await expect(driver.snapshots?.delete("sh-1")).rejects.toThrow();
+		expect(performance.now() - started).toBeLessThan(1_000);
+	});
+});
+
+describe("the data plane without native files", () => {
+	test("files fall back to the kit's shell and the filesystem is not claimed", async () => {
+		const world = memoryVendor();
+		const { attach, exec } = world.vendor.data;
+		const driver = moduleOver(() => ({ ...world.vendor, data: { attach, exec } })).driver(context);
+		const session = await driver.create(request);
+		expect(session.files).toBeUndefined();
+		await writeTextFile(session, "/tmp/through-the-shell", "fallback payload");
+		expect(await readTextFile(session, "/tmp/through-the-shell")).toBe("fallback payload");
+		await session.destroy();
+	});
+});
+
 describe("port contract", () => {
 	vendorContract("memoryVendor (shared)", () => ({
 		vendor: memoryVendor().vendor,
@@ -381,6 +659,25 @@ describe("port contract", () => {
 		vendor: memoryVendor({ account: "dedicated" }).vendor,
 		account: "dedicated",
 	}));
+	vendorContract("memoryVendor (shared, with a marker lookup)", () => ({
+		vendor: memoryVendor({ lookup: true, readyAfterGets: 2 }).vendor,
+		account: "shared",
+	}));
+
+	test("memoryVendor's dedicated replay is idempotent, even once the resource is gone", async () => {
+		const { vendor } = memoryVendor({ account: "dedicated" });
+		const op = { signal: new AbortController().signal };
+		const marker = `${MARKER_PREFIX}replay`;
+		const first = await vendor.control.find?.(marker, undefined, op);
+		const id = first?.records[0]?.id ?? "";
+		expect((await vendor.control.find?.(marker, undefined, op))?.records.map((r) => r.id)).toEqual([
+			id,
+		]);
+		await vendor.control.remove(id, op);
+		await vendor.control.get(id, op);
+		const replayed = await vendor.control.find?.(marker, undefined, op);
+		expect(replayed?.records.map((record) => [record.id, record.phase])).toEqual([[id, "gone"]]);
+	});
 });
 
 describe("end to end through the module's entry point", () => {

@@ -11,8 +11,11 @@ function localRuntimeDependency(importer: string, specifier: string): string | u
 	throw new Error(`${importer} pulls package ${specifier} into the driver root runtime graph`);
 }
 
-async function rootRuntimeGraph(): Promise<Set<string>> {
-	const pending = [resolve(SRC, "index.ts")];
+/** The fenced root entry, which an arktype-free subpath may import by its package name. */
+const ROOT = "@sandbox-benchmarks/driver";
+
+async function rootRuntimeGraph(entry = "index.ts"): Promise<Set<string>> {
+	const pending = [resolve(SRC, entry)];
 	const visited = new Set<string>();
 	while (pending.length > 0) {
 		const file = pending.pop();
@@ -20,6 +23,7 @@ async function rootRuntimeGraph(): Promise<Set<string>> {
 		visited.add(file);
 		const source = await Bun.file(file).text();
 		for (const imported of transpiler.scanImports(source)) {
+			if (imported.path === ROOT && entry !== "index.ts") continue;
 			const local = localRuntimeDependency(file, imported.path);
 			if (local !== undefined) pending.push(local);
 		}
@@ -44,6 +48,11 @@ describe("driver package boundaries", () => {
 			"lib/shell.ts",
 			"lib/table.ts",
 		]);
+	});
+
+	test("the artifact subpath reaches no package but the fenced root", async () => {
+		const graph = await rootRuntimeGraph("artifact.ts");
+		expect([...graph].map((file) => file.slice(SRC.length + 1))).toEqual(["artifact.ts"]);
 	});
 
 	test("package subpaths cannot bypass the root-runtime fence", () => {
