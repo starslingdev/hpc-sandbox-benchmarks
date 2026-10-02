@@ -1,5 +1,5 @@
 // The Runloop DriverModule: the kit's driver over Runloop's adapter, bound to the real SDK here and
-// nowhere else. Tests lower the same module over a fake client through `specFor`.
+// nowhere else. Tests lower the same module over a fake client through `vendorDriver`.
 
 import { RunloopSDK } from "@runloop/api-client";
 import { defineVendorDriver, mapped } from "@sandbox-benchmarks/driver/vendor";

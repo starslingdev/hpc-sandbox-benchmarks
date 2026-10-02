@@ -7,9 +7,8 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { SandboxInstance } from "@blaxel/core";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import blaxel, { BLAXEL_SANDBOX_ID } from "./index.ts";
 import type { BlaxelSdk } from "./vendor.ts";
 import {
@@ -182,15 +181,10 @@ function blaxelWorkspace(
 
 /** The package's own module, lowered over a stub SDK instead of the real one. */
 function driverOver(workspace: ReturnType<typeof blaxelWorkspace>) {
-	return driverFromComputeSpec(
-		"blaxel",
-		blaxel.specFor(context, {
-			vendor: blaxelVendor(workspace.sdk, context),
-			timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
-		}),
-		context.resolvedArtifact,
-		[context.env.BL_API_KEY],
-	);
+	return vendorDriver(blaxel, context, {
+		vendor: blaxelVendor(workspace.sdk, context),
+		timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+	});
 }
 
 describe("Blaxel translation", () => {
@@ -239,8 +233,10 @@ describe("Blaxel translation", () => {
 			[BLAXEL_ATTEMPT_LABEL]: NAMED,
 		});
 		expect(labelledAttempt?.marker).toBe(NAMED);
-		expect(await control.get("missing", op())).toBeNull();
-		expect(await control.remove("missing", op())).toBe("removed");
+		// The control plane's 404 is the adapter's declared not-found, which the kit reads as absence.
+		const kit = kitPort(blaxelVendor(workspace.sdk, context)).control;
+		expect(await kit.get("missing", op())).toBeNull();
+		expect(await kit.remove("missing", op())).toBe("removed");
 	});
 
 	test("classifies structured refusals by control-plane code only; 429 is retryable", () => {
@@ -263,10 +259,9 @@ describe("Blaxel translation", () => {
 	});
 });
 
-vendorContract("blaxel adapter", () => ({
-	vendor: blaxelVendor(blaxelWorkspace({ pageSize: 1 }).sdk, context),
-	account: "shared",
-}));
+vendorContract("blaxel adapter", blaxel, () =>
+	blaxelVendor(blaxelWorkspace({ pageSize: 1 }).sdk, context),
+);
 
 describe("Blaxel end to end through its module", () => {
 	test("declares identity and native-launch durability", () => {

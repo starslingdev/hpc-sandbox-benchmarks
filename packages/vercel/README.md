@@ -18,7 +18,7 @@ The driver is written against the vendor port (ADR-0023):
   name) and the root disk proof come from `@sandbox-benchmarks/driver/vendor`.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over a stub SDK, and drives
-sessions through the module's `specFor` seam. Run `bun run --filter @sandbox-benchmarks/vercel test`
+sessions through the kit's `vendorDriver`. Run `bun run --filter @sandbox-benchmarks/vercel test`
 or `typecheck` from the repo root.
 
 ## Validate Vercel locally

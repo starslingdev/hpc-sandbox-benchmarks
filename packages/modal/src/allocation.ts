@@ -159,6 +159,6 @@ export function createModalAllocation(configuration: ModalAllocationConfiguratio
 	} as unknown as DriverContext<"modal-gvisor">;
 	const driver = module.driver(context);
 	// The allocation owns its one driver; a GPU allocation records no cost evidence.
-	const { specFor: _, costEvidence: __, ...policy } = module;
+	const { specFor: _, traits: __, costEvidence: ___, ...policy } = module;
 	return { module: { ...policy, driver: () => driver }, driver, request };
 }

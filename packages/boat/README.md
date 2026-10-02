@@ -32,5 +32,5 @@ The driver is written against the vendor port (ADR-0023):
   the benchmark: a live foreign sandbox blocks admission.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over a fake account, drives
-sessions through the module's `specFor` seam, and runs one wire test over the real SDK. Run
+sessions through the kit's `vendorDriver`, and runs one wire test over the real SDK. Run
 `bun run --filter @sandbox-benchmarks/boat test` or `typecheck` from the repo root.

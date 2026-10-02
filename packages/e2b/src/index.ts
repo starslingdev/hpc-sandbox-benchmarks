@@ -1,5 +1,5 @@
 // The E2B DriverModule: the kit's driver over E2B's adapter, bound to the real SDK here and
-// nowhere else. Tests lower the same module over a stub SDK through `specFor`.
+// nowhere else. Tests lower the same module over a stub SDK through `vendorDriver`.
 
 import { defineVendorDriver, pinned } from "@sandbox-benchmarks/driver/vendor";
 import { E2B_ATTEMPT_KEY } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";

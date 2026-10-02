@@ -10,16 +10,20 @@
 
 import { Buffer } from "node:buffer";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
-import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import {
+	httpStatus,
+	LEAK_EXPIRY_MS,
+	markerSpelling,
+	refusedOn,
+} from "@sandbox-benchmarks/driver/vendor";
 import type { Sandbox } from "@vercel/sandbox";
 import { APIError } from "@vercel/sandbox";
 import { type } from "arktype";
 
 /** The SDK surface the adapter translates; the package entry passes the real `Sandbox` class. */
 export type VercelSdk = Pick<typeof Sandbox, "create" | "get" | "list">;
-export type VercelCredentials = Required<
+type VercelCredentials = Required<
 	Pick<NonNullable<Parameters<VercelSdk["list"]>[0]>, "token" | "teamId" | "projectId">
 >;
 
@@ -33,15 +37,13 @@ export const VERCEL_OWNER_VALUE = "vercel";
 export const VERCEL_SANDBOX_ID = type(
 	/^sandbox-benchmarks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
 );
-/** The longest suite budgets 155 minutes; leave setup/collection margin while a leak self-expires. */
-export const VERCEL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 /** Per-call ceiling on control-plane requests, independent of the operation signal. */
 export const VERCEL_CONTROL_TIMEOUT_MS = 20_000;
 /** Vercel derives memory at a fixed 2048 MB per vCPU; the target's 4 vCPU × 8 GiB is that ratio. */
 export const VERCEL_MEMORY_GB_PER_VCPU = 2;
 
 /** One record: a list row, or a looked-up or created sandbox carrying its SDK handle. */
-export interface VercelRow {
+interface VercelRow {
 	readonly name: string;
 	readonly status: string;
 	readonly sandbox?: Sandbox;
@@ -76,22 +78,8 @@ export function vercelCredentials(oidcToken: string): VercelCredentials {
 	return { token: oidcToken, teamId: claims.owner_id, projectId: claims.project_id };
 }
 
-/** The API's typed status, never message text; a hostile error object proves nothing. */
-function apiStatus(error: unknown): number | undefined {
-	let status: number | undefined;
-	matchesAnyCause(error, (link) => {
-		try {
-			if (link instanceof APIError) {
-				status = link.response.status;
-				return true;
-			}
-		} catch {
-			// Keep walking the cause chain.
-		}
-		return false;
-	});
-	return status;
-}
+/** The API's typed status, never message text. */
+const apiStatus = httpStatus(APIError, (error) => error.response.status);
 
 /**
  * A record that holds (or is about to hold) a VM, or a stopped record that can still be resumed,
@@ -138,18 +126,8 @@ export function vercelVendor(
 	const credentials = vercelCredentials(env.VERCEL_OIDC_TOKEN);
 	const bounded = (signal: AbortSignal) =>
 		AbortSignal.any([signal, AbortSignal.timeout(VERCEL_CONTROL_TIMEOUT_MS)]);
-	const getByName = async (name: string, signal: AbortSignal) => {
-		try {
-			return await sdk.get({ ...credentials, name, resume: false, signal: bounded(signal) });
-		} catch (error) {
-			if (apiStatus(error) === 404) return null;
-			throw error;
-		}
-	};
-	const get = async (name: string, { signal }: { signal: AbortSignal }) => {
-		const sandbox = await getByName(name, signal);
-		return sandbox && fromSandbox(sandbox);
-	};
+	const getByName = (name: string, signal: AbortSignal) =>
+		sdk.get({ ...credentials, name, resume: false, signal: bounded(signal) });
 
 	return {
 		control: {
@@ -163,26 +141,22 @@ export function vercelVendor(
 						resources: { vcpus: request.spec.vcpus },
 						persistent: false,
 						tags: { [VERCEL_OWNER_TAG]: VERCEL_OWNER_VALUE },
-						timeout: VERCEL_SANDBOX_LIFETIME_MS,
+						timeout: LEAK_EXPIRY_MS,
 						signal,
 					}),
 				),
-			get,
+			get: async (name, { signal }) => fromSandbox(await getByName(name, signal)),
 			// `stop()` only ends the current VM session and leaves the named record resumable;
 			// `delete()` removes the record with all its sessions and snapshots, whatever its status.
 			remove: async (name, { signal }) => {
 				const sandbox = await getByName(name, signal);
-				if (sandbox === null) return "removed";
 				if (sandbox.name !== name)
 					throw new Error("Vercel returned a sandbox other than the one requested");
-				try {
-					await sandbox.delete({ signal: bounded(signal) });
-				} catch (error) {
-					if (apiStatus(error) === 404) return "removed";
-					throw error;
-				}
+				await sandbox.delete({ signal: bounded(signal) });
 				return "accepted";
 			},
+			// Only the API's 404 proves removal.
+			absent: (error) => apiStatus(error) === 404,
 			// The project is the account boundary the credential names: one cursor page of it.
 			page: async (cursor, { signal }) => {
 				const page = await sdk.list({
@@ -195,18 +169,8 @@ export function vercelVendor(
 					? { records }
 					: { records, next: page.pagination.next };
 			},
-			// The create name is the lookup: an accepted create whose response was lost is findable.
-			find: async (marker, _cursor, op) => {
-				const found = await get(VERCEL_NAME.toVendor(marker), op);
-				return { records: found ? [found] : [] };
-			},
 			// Typed rejections before allocation; only the API's rate limit is worth waiting out.
-			refused: (error) => {
-				const status = apiStatus(error);
-				return status !== undefined && [400, 401, 403, 404, 422, 429].includes(status)
-					? { retryable: status === 429 }
-					: undefined;
-			},
+			refused: refusedOn(apiStatus, [400, 401, 403, 404, 422, 429]),
 		},
 		data: {
 			attach: ({ raw }) => {
@@ -214,7 +178,6 @@ export function vercelVendor(
 				return raw.sandbox;
 			},
 			exec: async (sandbox, command, options?: ExecOptions) => {
-				options?.signal?.throwIfAborted();
 				const finished = await currentSession(sandbox).runCommand({
 					cmd: "/bin/sh",
 					args: ["-lc", command],
@@ -226,8 +189,7 @@ export function vercelVendor(
 				return { exitCode: finished.exitCode, stdout, stderr };
 			},
 			// Accepted only once the current session has returned a handle for the detached command.
-			launch: async (sandbox, command, options) => {
-				options?.signal?.throwIfAborted();
+			launch: async (sandbox, command) => {
 				const handle: unknown = await currentSession(sandbox).runCommand({
 					cmd: "/bin/sh",
 					args: ["-lc", command],

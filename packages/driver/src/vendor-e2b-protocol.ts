@@ -7,13 +7,11 @@
 
 import type { ExecOptions } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorPage, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { instanceOfAny } from "@sandbox-benchmarks/driver/vendor";
+import { instanceOfAny, LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 /** The metadata key every benchmark create writes its ownership marker under. */
 export const E2B_ATTEMPT_KEY = "sandbox-benchmarks-attempt";
-/** A suite-length lifetime, so a leaked sandbox still expires on its own. */
-export const E2B_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 /** The bound on one control-plane request. */
 export const E2B_CONTROL_TIMEOUT_MS = 5_000;
 /** Live states an account sweep must see: a paused sandbox is still an allocation the account owns. */
@@ -96,8 +94,8 @@ export interface E2bProtocolOptions {
 	/** The vendor's control-plane domain, where it is not the SDK's default. */
 	readonly domain?: string;
 	/**
-	 * `true`: the SDK honours the caller's signal on every call. `false`: it does not, so exec and
-	 * launch check the signal first and every guest call is bounded by the control-plane timeout.
+	 * `true`: the SDK honours the caller's signal on every call. `false`: it does not, so every
+	 * guest call is bounded by the control-plane timeout (the kit starts none on a cancelled signal).
 	 */
 	readonly signals: boolean;
 	/** The create request's own bound, where the SDK's default does not serve. */
@@ -148,12 +146,11 @@ export function e2bProtocolVendor<Native extends E2bProtocolSandbox>(
 		user: "root",
 		...(!signals && { requestTimeoutMs: E2B_CONTROL_TIMEOUT_MS }),
 	};
-	/** A guest command's options; without signal support the signal is checked before the call. */
-	const guest = (execOptions: ExecOptions | undefined) => {
-		if (!signals) execOptions?.signal?.throwIfAborted();
-		return { ...asRoot, ...(signals && execOptions?.signal && { signal: execOptions.signal }) };
-	};
-	const notFound = instanceOfAny(sdk.SandboxNotFoundError);
+	/** A guest command's options, carrying the caller's signal where the SDK honours it. */
+	const guest = (execOptions: ExecOptions | undefined) => ({
+		...asRoot,
+		...(signals && execOptions?.signal && { signal: execOptions.signal }),
+	});
 	const refusal = instanceOfAny(
 		sdk.AuthenticationError,
 		sdk.InvalidArgumentError,
@@ -192,30 +189,21 @@ export function e2bProtocolVendor<Native extends E2bProtocolSandbox>(
 					...(options.createRequestTimeoutMs !== undefined && {
 						requestTimeoutMs: options.createRequestTimeoutMs,
 					}),
-					timeoutMs: E2B_SANDBOX_LIFETIME_MS,
+					timeoutMs: LEAK_EXPIRY_MS,
 					metadata,
 					...(signals && { signal }),
 				});
 				return record({ sandboxId: native.sandboxId, metadata, native });
 			},
-			get: async (id, { signal }) => {
-				try {
-					// The whole getInfo payload stays the raw record (the describe probe returns it).
-					return record(row.assert(await sdk.Sandbox.getInfo(id, bound(signal))));
-				} catch (error) {
-					if (notFound(error)) return null;
-					throw error;
-				}
-			},
+			// The whole getInfo payload stays the raw record (the describe probe returns it).
+			get: async (id, { signal }) =>
+				record(row.assert(await sdk.Sandbox.getInfo(id, bound(signal)))),
 			// kill resolves once the sandbox is removed, so removal is proven, not acknowledged.
 			remove: async (id, { signal }) => {
-				try {
-					await sdk.Sandbox.kill(id, bound(signal));
-				} catch (error) {
-					if (!notFound(error)) throw error;
-				}
+				await sdk.Sandbox.kill(id, bound(signal));
 				return "removed";
 			},
+			absent: instanceOfAny(sdk.SandboxNotFoundError),
 			page: (cursor, { signal }) => page({ state: [...E2B_LIVE_STATES] }, cursor, signal),
 			// A server-side metadata query; the kit still rejects any row another attempt owns.
 			find: (marker, cursor, { signal }) =>

@@ -8,9 +8,8 @@ import type { Sandbox } from "@boatdev/sdk";
 import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { FailedCreateCleanupError, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import boat, { BOAT_CREATE_CEILING_MS, BOAT_PROVENANCE, BOAT_SANDBOX_ID } from "./index.ts";
 import type { BoatClient, BoatVendorOptions } from "./vendor.ts";
@@ -175,15 +174,10 @@ const fast: BoatVendorOptions = {
 
 /** The package's own module, lowered over a fake account instead of the real SDK. */
 function driverOver(client: BoatClient) {
-	return driverFromComputeSpec(
-		"boat",
-		boat.specFor(context, {
-			vendor: boatVendor(client, fast),
-			timing: { pollMs: 0, deletePollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
-		}),
-		context.resolvedArtifact,
-		[KEY],
-	);
+	return vendorDriver(boat, context, {
+		vendor: boatVendor(client, fast),
+		timing: { pollMs: 0, deletePollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
+	});
 }
 
 describe("boat translation", () => {
@@ -204,7 +198,7 @@ describe("boat translation", () => {
 
 	test("reads boat's states as phases; a stopped sandbox holds no compute but is still owned", async () => {
 		const account = boatAccount();
-		const { control } = boatVendor(account.client, fast);
+		const { control } = kitPort(boatVendor(account.client, fast));
 		const read = (state: Sandbox["state"], name = BOAT_NAME.toVendor(marker)) =>
 			control.get(account.allocate(name, state), op());
 		for (const state of ["ready", "idle", "running"] as const)
@@ -280,10 +274,7 @@ describe("boat translation", () => {
 	});
 });
 
-vendorContract("boat adapter", () => ({
-	vendor: boatVendor(boatAccount({ pageSize: 1 }).client, fast),
-	account: "shared",
-}));
+vendorContract("boat adapter", boat, () => boatVendor(boatAccount({ pageSize: 1 }).client, fast));
 
 describe("boat end to end through its module", () => {
 	test("declares identity, native-launch durability, and the harness-owned create ceiling", () => {

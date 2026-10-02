@@ -3,10 +3,10 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
+import { FailedCreateCleanupError } from "@sandbox-benchmarks/driver";
 import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { BENCH_JOB_CEILING_MINUTES } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import { FreestyleApiError } from "freestyle";
@@ -78,14 +78,11 @@ function fixture(
 		{ preconnect: fetch.preconnect },
 	);
 	// The package's own module, lowered over the fake transport instead of the real API.
-	const spec = freestyle.specFor(driverContext, {
+	const driver = vendorDriver(freestyle, driverContext, {
 		vendor: freestyleVendor(driverContext, mockFetch),
 		timing: { deletePollMs: 0, ...timing },
 	});
-	const driver = driverFromComputeSpec("freestyle", spec, driverContext.resolvedArtifact, [
-		context.env.FREESTYLE_API_KEY,
-	]);
-	return { calls, spec, driver };
+	return { calls, driver };
 }
 
 /**
@@ -155,10 +152,9 @@ function freestyleAccount() {
 	return { fetch: fetchImpl, vms };
 }
 
-vendorContract("freestyle adapter", () => ({
-	vendor: freestyleVendor(context, freestyleAccount().fetch),
-	account: "shared",
-}));
+vendorContract("freestyle adapter", freestyle, () =>
+	freestyleVendor(context, freestyleAccount().fetch),
+);
 
 describe("Freestyle end to end through its module", () => {
 	test("a session boots, runs, round-trips files, inventories, and is deleted then read absent", async () => {
@@ -171,15 +167,10 @@ describe("Freestyle end to end through its module", () => {
 			},
 			{ preconnect: fetch.preconnect },
 		);
-		const driver = driverFromComputeSpec(
-			"freestyle",
-			freestyle.specFor(context, {
-				vendor: freestyleVendor(context, traced),
-				timing: { deletePollMs: 0 },
-			}),
-			context.resolvedArtifact,
-			[context.env.FREESTYLE_API_KEY],
-		);
+		const driver = vendorDriver(freestyle, context, {
+			vendor: freestyleVendor(context, traced),
+			timing: { deletePollMs: 0 },
+		});
 		const leftover = `${MARKER_PREFIX}00000000-0000-0000-0000-000000000000`;
 		await freestyleVendor(context, account.fetch).control.create(
 			{ request, marker: leftover },
@@ -323,50 +314,46 @@ describe("Freestyle native SDK driver", () => {
 
 	test("does not turn a lost allocation followed by 404 into confirmed absence", async () => {
 		let appeared = false;
-		const { spec, calls } = fixture((path, method) => {
-			if (path === "/v5/vms" && method === "POST") throw new Error("lost response");
-			if (path === "/v5/vms/sandbox-benchmarks-test")
-				return appeared ? Response.json(row()) : missing();
+		let created: Record<string, unknown> = {};
+		const { driver, calls } = fixture((path, method, body) => {
+			if (path === "/v5/vms" && method === "POST") {
+				created = body;
+				throw new Error("lost response");
+			}
+			const marker = (created.metadata as Record<string, string>)?.[FREESTYLE_OWNER_KEY];
+			if (path === `/v5/vms/${created.slug}`)
+				return appeared ? Response.json(row("vm-test", "running", marker)) : missing();
 		});
-		await expect(
-			spec.compute.sandbox.create({ request, marker: "benchmark-test" }),
-		).rejects.toThrow("lost response");
-		const locator = { kind: "marker", key: FREESTYLE_OWNER_KEY, value: "benchmark-test" } as const;
-		for (let attempt = 0; attempt < 2; attempt++)
-			await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).rejects.toThrow(
-				"cannot prove it absent",
-			);
+		const failure = await driver.create(request).catch((caught: unknown) => caught);
+		expect(failure).toBeInstanceOf(FailedCreateCleanupError);
+		// The held cleanup's diagnostic stays opaque (it can carry vendor errors); its effect is checked.
+		const held = failure as FailedCreateCleanupError;
+		await expect(held.cleanup()).rejects.toMatchObject({ code: "destroy-failed" });
 		expect(calls.some((call) => call.method === "DELETE")).toBe(false);
 		appeared = true;
-		await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).resolves.toEqual({
-			status: "destroyed",
-		});
+		await held.cleanup();
+		expect(calls.some((call) => call.method === "DELETE")).toBe(true);
+		// Torn down, the attempt has its verdict: a later empty lookup is absence.
 		appeared = false;
-		await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).resolves.toEqual({
-			status: "absent",
-		});
+		await held.cleanup();
 	});
 
 	test("does not treat a missing background poll record as allocation rejection", async () => {
-		const { spec } = fixture((path, method) => {
+		const { driver } = fixture((path, method) => {
 			if (path === "/v5/vms" && method === "POST")
 				return Response.json({ requestId: "request-lost" }, { status: 202 });
 			if (
 				path === "/v5/background-requests/request-lost" ||
-				path === "/v5/vms/sandbox-benchmarks-test"
+				path.startsWith("/v5/vms/sandbox-benchmarks-")
 			)
 				return missing();
 		});
-		await expect(
-			spec.compute.sandbox.create({ request, marker: "benchmark-test" }),
-		).rejects.toThrow();
-		await expect(
-			spec.createRecovery?.cleanup(
-				spec.compute,
-				{ kind: "marker", key: FREESTYLE_OWNER_KEY, value: "benchmark-test" },
-				{},
-			),
-		).rejects.toThrow("cannot prove it absent");
+		const failure = await driver.create(request).catch((caught: unknown) => caught);
+		// Held as a cleanup failure, not reported as a create the vendor refused.
+		expect(failure).toBeInstanceOf(FailedCreateCleanupError);
+		await expect((failure as FailedCreateCleanupError).cleanup()).rejects.toMatchObject({
+			code: "destroy-failed",
+		});
 	});
 
 	test("session files do not retain an expired create signal", async () => {
@@ -512,46 +499,45 @@ describe("Freestyle native SDK driver", () => {
 	});
 
 	test("recovers a lost create response only when its exact attempt marker matches", async () => {
-		for (const marker of ["benchmark-test", "someone-else"]) {
-			const { spec, calls } = fixture((path) =>
-				path === "/v5/vms/sandbox-benchmarks-test"
-					? Response.json(row("vm-test", "running", marker))
-					: undefined,
-			);
-			const recovery = spec.createRecovery;
-			if (!recovery) throw new Error("missing recovery");
-			const result = recovery.cleanup(
-				spec.compute,
-				{ kind: "marker", key: FREESTYLE_OWNER_KEY, value: "benchmark-test" },
-				{},
-			);
-			if (marker === "benchmark-test")
-				await expect(result).resolves.toEqual({ status: "destroyed" });
-			else {
-				await expect(result).rejects.toThrow("unrelated sandbox");
+		for (const owner of ["attempt", "someone-else"]) {
+			let created: { slug?: unknown; marker?: unknown } = {};
+			const { driver, calls } = fixture((path, method, body) => {
+				if (path === "/v5/vms" && method === "POST") {
+					created = {
+						slug: body.slug,
+						marker: (body.metadata as Record<string, unknown>)[FREESTYLE_OWNER_KEY],
+					};
+					throw new Error("lost response");
+				}
+				if (path === `/v5/vms/${created.slug}`)
+					return Response.json(
+						row("vm-test", "running", owner === "attempt" ? String(created.marker) : owner),
+					);
+			});
+			const failure = await driver.create(request).catch((caught: unknown) => caught);
+			if (owner === "attempt") {
+				// Recovered and torn down: the create fails plainly, holding nothing.
+				expect(failure).not.toBeInstanceOf(FailedCreateCleanupError);
+				expect(calls.some((call) => call.method === "DELETE")).toBe(true);
+			} else {
+				expect(failure).toBeInstanceOf(FailedCreateCleanupError);
 				expect(calls.some((call) => call.method === "DELETE")).toBe(false);
 			}
 		}
 	});
 
 	test("classifies API refusals without interpreting arbitrary error prose", () => {
-		const recovery = fixture().spec.createRecovery;
+		const { refused } = freestyleVendor(context).control;
 		expect(
-			recovery?.isRetryableCreate?.(
-				new FreestyleApiError(429, { code: "RATE_LIMITED", message: "wait" }),
-			),
-		).toBe(true);
+			refused?.(new FreestyleApiError(429, { code: "RATE_LIMITED", message: "wait" })),
+		).toEqual({ retryable: true });
 		expect(
-			recovery?.isDefinitive?.(
-				new FreestyleApiError(401, { code: "UNAUTHORIZED", message: "bad key" }),
-			),
-		).toBe(true);
-		expect(recovery?.isDefinitive?.(new Error("401 429"))).toBe(false);
+			refused?.(new FreestyleApiError(401, { code: "UNAUTHORIZED", message: "bad key" })),
+		).toEqual({ retryable: false });
+		expect(refused?.(new Error("401 429"))).toBeUndefined();
 		expect(
-			recovery?.isDefinitive?.(
-				new FreestyleApiError(500, { code: "INTERNAL_ERROR", message: "lost" }),
-			),
-		).toBe(false);
+			refused?.(new FreestyleApiError(500, { code: "INTERNAL_ERROR", message: "lost" })),
+		).toBeUndefined();
 	});
 
 	test("drains inventory pages, owns stopped VMs, and counts live foreign allocations", async () => {

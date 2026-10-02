@@ -1,9 +1,9 @@
 // The Modal DriverModules: the kit's driver over Modal's adapter, bound to the real SDK here and
 // nowhere else. Each isolation variant is the same module over its own sandbox generation.
-// Tests lower the same module over a stub control plane through `specFor`.
+// Tests lower the same module over a stub control plane through `vendorDriver`.
 
 import type { CreateAttempt, Op } from "@sandbox-benchmarks/driver/vendor";
-import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
+import { coverage, defineVendorDriver, LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";
 import { ModalClient } from "modal";
 import type { ClientMiddleware } from "nice-grpc";
 import { modalCostEvidence } from "./cost.ts";
@@ -13,13 +13,12 @@ import {
 	MODAL_APP_NAME,
 	MODAL_DESTROY_TIMEOUT_MS,
 	MODAL_INVENTORY_TIMEOUT_MS,
-	MODAL_SANDBOX_LIFETIME_MS,
 	modalControlPlane,
 	modalSandboxId,
 	modalVendor,
 } from "./vendor.ts";
 
-export type ModalProviderId = "modal-gvisor" | "modal-vm";
+type ModalProviderId = "modal-gvisor" | "modal-vm";
 
 /**
  * `sandbox.exec([...])` waits for the result with no separate per-exec timeout and no hard gateway
@@ -48,7 +47,7 @@ export function modalAllocate(
 			const app = await client.apps.fromName(MODAL_APP_NAME, { createIfMissing: true });
 			const params = {
 				name: marker,
-				timeoutMs: MODAL_SANDBOX_LIFETIME_MS,
+				timeoutMs: LEAK_EXPIRY_MS,
 				// Modal's docs describe physical cores, but live behavior contradicts that reading:
 				// cpu=1 exposes nproc=1 and delivered 264 MB hashed/worker/8s versus 512 at cpu=2
 				// (2026-07-10). `cpu` is the guest-schedulable vCPU count, so pass it unhalved.

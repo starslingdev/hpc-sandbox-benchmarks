@@ -15,7 +15,6 @@ import {
 	readTextFile,
 	writeTextFile,
 } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { admissionFailures, runConformance } from "@sandbox-benchmarks/driver/conformance";
 import type { Vendor, VendorDriverSpec, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import {
@@ -23,14 +22,22 @@ import {
 	DISK_PROBE,
 	defineVendorDriver,
 	drainPages,
+	httpClassifiers,
+	httpStatus,
 	instanceOfAny,
+	isMintedMarker,
 	MARKER_PREFIX,
 	mapped,
 	markerSpelling,
 	pinned,
+	refusedOn,
 } from "@sandbox-benchmarks/driver/vendor";
 import type { MemoryRow, MemoryVendorOptions } from "@sandbox-benchmarks/driver/vendor/testing";
-import { memoryVendor, vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import {
+	memoryVendor,
+	vendorContract,
+	vendorDriver,
+} from "@sandbox-benchmarks/driver/vendor/testing";
 import { type } from "arktype";
 
 const SECRET = "nvta_sentinel-credential";
@@ -831,6 +838,49 @@ describe("ambiguous-create recovery", () => {
 		expect(world.live()).toHaveLength(0);
 	});
 
+	test("HTTP status classifiers read a typed status anywhere in the cause chain, never prose", () => {
+		class ApiError extends Error {
+			constructor(readonly status: number) {
+				super(`HTTP ${status}`);
+			}
+		}
+		const status = httpStatus(ApiError, (error) => error.status);
+		const wrapped = (code: number) => new Error("lost", { cause: new ApiError(code) });
+		expect(status(wrapped(404))).toBe(404);
+		expect(status(new Error("HTTP 404"))).toBeUndefined();
+		const hostile = Object.defineProperty(new ApiError(0), "status", {
+			get: () => {
+				throw new Error("hostile");
+			},
+		});
+		expect(status(hostile)).toBeUndefined();
+		const refused = refusedOn(status, [401, 429]);
+		expect([refused(wrapped(401)), refused(wrapped(429)), refused(wrapped(500))]).toEqual([
+			{ retryable: false },
+			{ retryable: true },
+			undefined,
+		]);
+		const rest = httpClassifiers(status);
+		expect([400, 404, 408, 409, 429, 503].map((code) => rest.refused(wrapped(code)))).toEqual([
+			{ retryable: false },
+			{ retryable: false },
+			undefined,
+			undefined,
+			{ retryable: true },
+			undefined,
+		]);
+		expect([400, 408, 409, 429, 500].map((code) => rest.transient(wrapped(code)))).toEqual([
+			false,
+			true,
+			true,
+			true,
+			true,
+		]);
+		expect([rest.absent(wrapped(404)), rest.absent(wrapped(410))]).toEqual([true, false]);
+		expect(isMintedMarker(`${MARKER_PREFIX}${crypto.randomUUID()}`)).toBe(true);
+		expect(isMintedMarker(`${MARKER_PREFIX}not-a-uuid`)).toBe(false);
+	});
+
 	test("instanceOfAny classifies a typed vendor error anywhere in the cause chain", () => {
 		class QuotaError extends Error {}
 		const refusedByQuota = instanceOfAny(QuotaError);
@@ -1194,16 +1244,11 @@ describe("typed passthroughs", () => {
 		expect(bind().driver.snapshots).toBeUndefined();
 	});
 
-	test("specFor lowers the same module against another vendor and timing", async () => {
+	test("vendorDriver lowers the same module against another vendor and timing", async () => {
 		const bound = memoryVendor();
 		const stub = memoryVendor({ readyAfterGets: 2 });
 		const module = moduleOver(() => bound.vendor);
-		const driver = driverFromComputeSpec(
-			"novita",
-			module.specFor(context, { vendor: stub.vendor, timing: { pollMs: 0 } }),
-			resolvedArtifact,
-			[],
-		);
+		const driver = vendorDriver(module, context, { vendor: stub.vendor, timing: { pollMs: 0 } });
 		await (await driver.create(request)).destroy();
 		expect(bound.calls).toEqual([]);
 		expect(stub.calls).toContain("create");
@@ -1249,23 +1294,137 @@ describe("the data plane without native files", () => {
 	});
 });
 
+describe("the vendor's not-found and a cancelled call", () => {
+	const named = markerSpelling("bench-");
+	const namedId = type(/^bench-[0-9a-f-]{36}$/);
+
+	test("a declared not-found reads as absence everywhere the kit observes", async () => {
+		const { driver, allocations, calls } = bind({ notFound: "throws", readyAfterGets: 1 });
+		const session = await driver.create(request);
+		await session.destroy();
+		expect(allocations()).toBe(0);
+		// Destroy-by-id and the observe probe of an id the vendor no longer knows converge.
+		await driver.destroyById?.(session.sandboxRef);
+		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
+		expect(calls.filter((call) => call === "remove")).toHaveLength(1);
+	});
+
+	test("only the declared not-found is absence; any other failure still throws", async () => {
+		const world = memoryVendor({ notFound: "throws" });
+		const failing: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				get: async () => {
+					throw new Error("gateway timeout");
+				},
+				remove: async () => {
+					throw new Error("gateway timeout");
+				},
+			},
+		};
+		const driver = moduleOver(() => failing).driver(context);
+		const ref = { provider: "novita", id: "mem-1" } as const;
+		await expect(driver.probes?.observe(ref)).rejects.toMatchObject({ code: "probe-failed" });
+		await expect(driver.destroyById?.(ref)).rejects.toMatchObject({ code: "destroy-failed" });
+	});
+
+	test("recovery looks an ambiguous create up by get of the marker's spelling", async () => {
+		const { driver, allocations, calls } = bind(
+			{ names: named, notFound: "throws", faults: { createAmbiguous: true } },
+			{
+				sandboxId: namedId,
+				markerSpelling: named,
+				recovery: { absenceConfirmationMs: 1, lookup: named },
+			},
+		);
+		const failure = await driver.create(request).catch((caught: unknown) => caught);
+		expect(failure).not.toBeInstanceOf(FailedCreateCleanupError);
+		expect(allocations()).toBe(0);
+		expect(calls).not.toContain("page");
+		expect(calls).toContain("remove");
+		// The name lookup's not-found is an empty lookup: a lost create that allocated nothing is
+		// confirmed absent, so the create fails plainly rather than holding a cleanup.
+		const world = memoryVendor({ names: named, notFound: "throws" });
+		const lost: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				create: async () => {
+					throw new TypeError("connection reset before the vendor allocated");
+				},
+			},
+		};
+		const empty = moduleOver(() => lost, {
+			sandboxId: namedId,
+			recovery: { absenceConfirmationMs: 1, lookup: named },
+		}).driver(context);
+		const absent = await empty.create(request).catch((caught: unknown) => caught);
+		expect(absent).not.toBeInstanceOf(FailedCreateCleanupError);
+		expect(world.calls.filter((call) => call === "get").length).toBeGreaterThan(0);
+		expect(() =>
+			moduleOver(() => memoryVendor({ lookup: true }).vendor, {
+				recovery: { lookup: named },
+			}).specFor(context),
+		).toThrow(/find or by get, not both/);
+	});
+
+	test("no port call starts on an already-cancelled signal", async () => {
+		const world = memoryVendor();
+		let execs = 0;
+		const counting: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			data: {
+				...world.vendor.data,
+				exec: (native, command, options) => {
+					execs += 1;
+					return world.vendor.data.exec(native, command, options);
+				},
+			},
+		};
+		const driver = moduleOver(() => counting).driver(context);
+		const session = await driver.create(request);
+		const before = execs;
+		const cancelled = new AbortController();
+		cancelled.abort(new Error("cancelled"));
+		await expect(session.exec("true", { signal: cancelled.signal })).rejects.toThrow();
+		expect(execs).toBe(before);
+		const creates = world.calls.filter((call) => call === "create").length;
+		await expect(driver.create(request, { signal: cancelled.signal })).rejects.toThrow();
+		expect(world.calls.filter((call) => call === "create")).toHaveLength(creates);
+		await session.destroy();
+	});
+});
+
 describe("port contract", () => {
-	vendorContract("memoryVendor (shared)", () => ({
-		vendor: memoryVendor().vendor,
-		account: "shared",
-	}));
-	vendorContract("memoryVendor (dedicated)", () => ({
-		vendor: memoryVendor({ account: "dedicated" }).vendor,
-		account: "dedicated",
-	}));
-	vendorContract("memoryVendor (shared, with a marker lookup)", () => ({
-		vendor: memoryVendor({ lookup: true, readyAfterGets: 2 }).vendor,
-		account: "shared",
-	}));
-	vendorContract("memoryVendor (shared, with a server-side readiness wait)", () => ({
-		vendor: memoryVendor({ settles: true, readyAfterGets: 2 }).vendor,
-		account: "shared",
-	}));
+	const named = markerSpelling("bench-");
+	const shared = moduleOver(() => memoryVendor().vendor);
+	vendorContract(
+		"memoryVendor (shared, with a typed not-found)",
+		shared,
+		() => memoryVendor({ notFound: "throws" }).vendor,
+	);
+	vendorContract(
+		"memoryVendor (shared, looked up by name)",
+		moduleOver(() => memoryVendor().vendor, { recovery: { lookup: named } }),
+		() => memoryVendor({ names: named, notFound: "throws", readyAfterGets: 2 }).vendor,
+	);
+	vendorContract("memoryVendor (shared)", shared, () => memoryVendor().vendor);
+	vendorContract(
+		"memoryVendor (dedicated)",
+		moduleOver(() => memoryVendor({ account: "dedicated" }).vendor, { account: "dedicated" }),
+		() => memoryVendor({ account: "dedicated" }).vendor,
+	);
+	vendorContract(
+		"memoryVendor (shared, with a marker lookup)",
+		shared,
+		() => memoryVendor({ lookup: true, readyAfterGets: 2 }).vendor,
+	);
+	vendorContract(
+		"memoryVendor (shared, with a server-side readiness wait)",
+		shared,
+		() => memoryVendor({ settles: true, readyAfterGets: 2 }).vendor,
+	);
 
 	test("memoryVendor's dedicated replay is idempotent, even once the resource is gone", async () => {
 		const { vendor } = memoryVendor({ account: "dedicated" });

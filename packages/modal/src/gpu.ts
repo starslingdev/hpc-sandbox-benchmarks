@@ -49,7 +49,7 @@ export interface ModalGpuPlatform {
 	close(): void;
 }
 
-export interface ModalGpuPlatformOptions {
+interface ModalGpuPlatformOptions {
 	readonly appName: string;
 	/** The registry image the runtime image builds from. */
 	readonly registryImage: string;

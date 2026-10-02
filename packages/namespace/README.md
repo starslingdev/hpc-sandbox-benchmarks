@@ -25,5 +25,5 @@ The driver is written against the vendor port (ADR-0023):
 
 `src/index.test.ts` tests the translation over the real generated clients and protobuf
 serialization (only service behaviour replaced), runs `vendorContract`, and drives sessions through
-the module's `specFor` seam. Run `bun run --filter @sandbox-benchmarks/namespace test` or
+the kit's `vendorDriver`. Run `bun run --filter @sandbox-benchmarks/namespace test` or
 `typecheck` from the repo root.

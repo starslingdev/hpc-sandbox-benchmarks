@@ -27,5 +27,5 @@ The driver is written against the vendor port (ADR-0023):
 same-name predecessors only after the successor is built.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over a fake client, and drives
-sessions through the module's `specFor` seam. Run `bun run --filter @sandbox-benchmarks/runloop test`
+sessions through the kit's `vendorDriver`. Run `bun run --filter @sandbox-benchmarks/runloop test`
 or `typecheck` from the repo root.

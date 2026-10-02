@@ -25,7 +25,7 @@ terms belong in `packages/schema/CONTEXT.md` and other contexts refer to them.
 | Context root | Vocabulary and responsibility |
 | --- | --- |
 | `packages/schema/` | Provider identity, variants and registry projections, target and observed specs, suites, dimensions, metrics, samples, replicates, Run documents, gaps, pricing, and evidence contracts. |
-| `packages/driver/` | Provider-neutral sandbox behavior: driver, session, sandbox reference, command exit, capabilities, execution/readiness policy, teardown, and conformance. |
+| `packages/driver/` | Provider-neutral sandbox behavior: driver, session, sandbox reference, command exit, capabilities, execution/readiness policy, teardown, and conformance; the vendor kit (`./vendor`, `./vendor/testing`, `./vendor/e2b-protocol`) every SDK or HTTP provider package is written against, lowered onto an internal ComputeSDK bridge. |
 | `packages/drivers/` | The generated joins over provider packages: `DRIVERS` and `ARTIFACT_BUILDERS`, the only route to a provider package besides its named subpaths. |
 | `packages/<provider>/` | Provider packages: each translates one vendor into the driver contract (DriverModule, optional `./artifact` builder) and is that vendor's only importer. `packages/modal` also owns the Modal-only GPU platform (`./gpu`) and App cleanup observation (`./cleanup-observation`). |
 | `packages/templates/` | Toolchain images and provider template builders, pinned tools, manifests, and build recipes. |

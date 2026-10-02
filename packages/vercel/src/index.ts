@@ -1,5 +1,5 @@
 // The Vercel Sandbox DriverModule: the kit's driver over Vercel's adapter, bound to the real SDK
-// here and nowhere else. Tests lower the same module over a stub SDK through `specFor`.
+// here and nowhere else. Tests lower the same module over a stub SDK through `vendorDriver`.
 
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
 import { Sandbox } from "@vercel/sandbox";
@@ -28,8 +28,10 @@ export default defineVendorDriver("vercel", {
 	// 60s policy applies. A detached current-session command is the durable route.
 	execution: { syncCapMs: 60_000, durable: "native-launch" },
 	timing: { controlTimeoutMs: VERCEL_CONTROL_TIMEOUT_MS },
-	// The attempt's UUID travels in the sandbox name.
+	// The attempt's UUID travels in the sandbox name, so a create whose response was lost is found
+	// by it.
 	markerKey: "name",
 	markerSpelling: VERCEL_NAME,
+	recovery: { lookup: VERCEL_NAME },
 	vendor: (context) => vercelVendor(Sandbox, context),
 });

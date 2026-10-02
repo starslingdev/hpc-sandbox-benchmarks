@@ -22,7 +22,7 @@ The driver is written against the vendor port (ADR-0023):
 - `src/index.ts` binds `globalThis.fetch` in `defineVendorDriver`. Readiness, cleanup confirmation,
   inventory, ambiguous-create recovery and the disk proof come from `@sandbox-benchmarks/driver/vendor`.
 - `src/index.test.ts` tests the translation, runs `vendorContract` over a fake HTTP router, and
-  drives sessions through the module's `specFor` seam.
+  drives sessions through the kit's `vendorDriver`.
 
 ## Ownership and evidence
 

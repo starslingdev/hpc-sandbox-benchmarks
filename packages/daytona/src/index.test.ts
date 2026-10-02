@@ -15,9 +15,8 @@ import {
 } from "@daytona/sdk";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import container from "./container.ts";
 import type { DaytonaClient } from "./vendor.ts";
 import { DAYTONA_SANDBOX_ID, daytonaCommands, daytonaVendor } from "./vendor.ts";
@@ -153,16 +152,10 @@ const vendorOver = (org: ReturnType<typeof daytonaOrg>, sandboxClass = "linux-vm
 /** Each variant's own module, lowered over a fake org instead of the real SDK. */
 function driverOver(org: ReturnType<typeof daytonaOrg>, module: typeof vm | typeof container = vm) {
 	const sandboxClass = module === vm ? "linux-vm" : "container";
-	return driverFromComputeSpec(
-		module.id,
-		// One module type: both variants lower the same vendor binding.
-		(module as typeof vm).specFor(context, {
-			vendor: daytonaVendor(context, sandboxClass, org.client),
-			timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
-		}),
-		context.resolvedArtifact,
-		[KEY],
-	);
+	return vendorDriver(module as typeof vm, context, {
+		vendor: daytonaVendor(context, sandboxClass, org.client),
+		timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
+	});
 }
 
 describe("Daytona translation", () => {
@@ -179,7 +172,7 @@ describe("Daytona translation", () => {
 
 	test("reads destroyed as gone, destroying as a dying leftover, and only benchmark names as owned", async () => {
 		const org = daytonaOrg();
-		const { control } = vendorOver(org);
+		const { control } = kitPort(vendorOver(org));
 		const read = async (name: string, state: string) =>
 			control.get(org.allocate(name, state).id, op());
 		const owned = marker();
@@ -321,7 +314,7 @@ describe("Daytona session commands", () => {
 	});
 });
 
-vendorContract("daytona adapter", () => ({ vendor: vendorOver(daytonaOrg()), account: "shared" }));
+vendorContract("daytona adapter", vm, () => vendorOver(daytonaOrg()));
 
 describe("Daytona end to end through each variant's module", () => {
 	test("declares identity, native launch, and the snapshot-pinned shape", () => {

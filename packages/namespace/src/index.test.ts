@@ -19,9 +19,8 @@ import {
 } from "@namespacelabs/sdk/proto/namespace/cloud/compute/v1beta/compute_pb";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import namespace from "./index.ts";
 import type { NamespaceClient } from "./vendor.ts";
 import {
@@ -170,15 +169,10 @@ function namespaceWorld(
 
 /** The package's own module, lowered over a fake account instead of the real API. */
 function driverOver(world: ReturnType<typeof namespaceWorld>) {
-	return driverFromComputeSpec(
-		"namespace",
-		namespace.specFor(context, {
-			vendor: namespaceVendor(context, world.client),
-			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
-		}),
-		context.resolvedArtifact,
-		[],
-	);
+	return vendorDriver(namespace, context, {
+		vendor: namespaceVendor(context, world.client),
+		timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
+	});
 }
 
 describe("Namespace translation", () => {
@@ -220,7 +214,7 @@ describe("Namespace translation", () => {
 
 	test("reads every lifecycle enum as a phase; suspended and errored instances stay owned", async () => {
 		const world = namespaceWorld();
-		const { control } = namespaceVendor(context, world.client);
+		const { control } = kitPort(namespaceVendor(context, world.client));
 		const phases: Record<string, string | undefined> = {};
 		for (const [name, status] of Object.entries({
 			PENDING: Status.PENDING,
@@ -295,10 +289,9 @@ describe("Namespace translation", () => {
 	});
 });
 
-vendorContract("namespace adapter", () => ({
-	vendor: namespaceVendor(context, namespaceWorld({ pageSize: 1, readyAfterDescribes: 2 }).client),
-	account: "shared",
-}));
+vendorContract("namespace adapter", namespace, () =>
+	namespaceVendor(context, namespaceWorld({ pageSize: 1, readyAfterDescribes: 2 }).client),
+);
 
 describe("Namespace end to end through its module", () => {
 	test("declares identity, a harness-owned create budget, and the 120s shell-detach cap", () => {

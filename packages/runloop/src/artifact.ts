@@ -6,9 +6,9 @@ import { RunloopSDK } from "@runloop/api-client";
 import type { EnvOf, TargetSpec } from "@sandbox-benchmarks/driver";
 import { defineArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
 
-export type RunloopBlueprintParams = Parameters<RunloopSDK["blueprint"]["create"]>[0];
+type RunloopBlueprintParams = Parameters<RunloopSDK["blueprint"]["create"]>[0];
 /** The SDK surface the builder translates onto. */
-export type RunloopBlueprintClient = {
+type RunloopBlueprintClient = {
 	readonly blueprint: Pick<RunloopSDK["blueprint"], "create" | "list">;
 };
 

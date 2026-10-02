@@ -10,9 +10,8 @@
 
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { shellQuote } from "@sandbox-benchmarks/driver";
-import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Vendor, VendorPage, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import { httpStatus, markerSpelling, refusedOn } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 import type { Vm } from "freestyle";
 import { Freestyle, FreestyleApiError } from "freestyle";
@@ -65,11 +64,7 @@ const durableSnapshotResult = type({
 	snapshot: { "ttlSeconds?": "number | null", "autoDeleteSeconds?": "number | null" },
 });
 
-const hasStatus = (error: unknown, statuses: readonly number[]) =>
-	matchesAnyCause(
-		error,
-		(cause) => cause instanceof FreestyleApiError && statuses.includes(cause.status),
-	);
+const status = httpStatus(FreestyleApiError, (error) => error.status);
 
 /** A create's own response carries only the VM id; every read carries the whole record. */
 type Raw = Pick<FreestyleRow, "id"> & Partial<FreestyleRow>;
@@ -94,17 +89,8 @@ export function freestyleVendor(
 			apiKey: env.FREESTYLE_API_KEY,
 			fetch: freestyleFetch(fetchImpl, timeoutMs, signal),
 		});
-	const get = async (idOrSlug: string, signal: AbortSignal) => {
-		try {
-			return record(vmRecord.assert(await api(signal).vms.get(idOrSlug)));
-		} catch (error) {
-			if (hasStatus(error, [404])) return null;
-			throw error;
-		}
-	};
 
 	async function exec(vm: Vm, command: string, options?: ExecOptions) {
-		options?.signal?.throwIfAborted();
 		// Native file writes belong to ubuntu. Root cannot overwrite those files in sticky /tmp
 		// with fs.protected_regular=2; use the same user and let harness setup elevate with sudo.
 		const result = execResult.assert(
@@ -142,17 +128,15 @@ export function freestyleVendor(
 				const id = FREESTYLE_SANDBOX_ID.assert(created.vm.id);
 				return { id, phase: "ready", marker, raw: { id } };
 			},
-			get: (id, { signal }) => get(id, signal),
+			// A read by id, or by the attempt's slug (recovery's lookup).
+			get: async (idOrSlug, { signal }) =>
+				record(vmRecord.assert(await api(signal).vms.get(idOrSlug))),
 			// DELETE is acknowledgement only; a later 404 is removal.
 			remove: async (id, { signal }) => {
-				try {
-					await api(signal).vms.delete(id);
-					return "accepted";
-				} catch (error) {
-					if (hasStatus(error, [404])) return "removed";
-					throw error;
-				}
+				await api(signal).vms.delete(id);
+				return "accepted";
 			},
+			absent: (error) => status(error) === 404,
 			// Offset pagination: the cursor carries the offset and the total the first page reported,
 			// so a total that moves under the scan fails closed instead of skipping a VM.
 			page: async (cursor, { signal }): Promise<VendorPage<Raw>> => {
@@ -167,15 +151,7 @@ export function freestyleVendor(
 					throw new Error("Freestyle inventory is incomplete");
 				return { records, next: `${next}:${page.totalCount}` };
 			},
-			// A get by the attempt's slug; the kit refuses a VM whose metadata names another attempt.
-			find: async (marker, _cursor, { signal }) => {
-				const found = await get(FREESTYLE_SLUG.toVendor(marker), signal);
-				return { records: found ? [found] : [] };
-			},
-			refused: (error) =>
-				hasStatus(error, [400, 401, 403, 404, 422, 429])
-					? { retryable: hasStatus(error, [429]) }
-					: undefined,
+			refused: refusedOn(status, [400, 401, 403, 404, 422, 429]),
 		},
 		data: {
 			// Do not retain the create signal in the session's native filesystem transport.
@@ -246,7 +222,7 @@ export function freestyleVendor(
 				try {
 					await api(signal).vms.snapshots.delete(snapshotId);
 				} catch (error) {
-					if (!hasStatus(error, [404])) throw error;
+					if (status(error) !== 404) throw error;
 				}
 			},
 		},

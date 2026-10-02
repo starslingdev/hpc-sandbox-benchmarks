@@ -52,7 +52,7 @@ export function pinE2bBaseImage(template: string, baseImage: string): string {
 }
 
 /** The template manifest the e2b CLI expects on disk, naming the template being built. */
-export function e2bTemplateManifest(
+function e2bTemplateManifest(
 	name: string,
 	spec: { readonly vcpus: number; readonly memoryGb: number },
 ): string {

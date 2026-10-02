@@ -1,20 +1,13 @@
-// The ComputeSDK bridge (ADR-0007 §6): computesdk keeps all its real value — maintained vendor
-// translations — as ONE driver among several. Native SDK modules reuse this structural session
-// machinery through _native.ts, preserving their own native handle and typed errors.
+// The ComputeSDK bridge (ADR-0007 §6), internal to the driver package: the session machinery the
+// vendor kit (`../vendor.ts`) lowers every vendor driver onto. ADR-0023 §1 made the kit its only
+// caller, so nothing here is an authoring surface; it keeps the request-coverage proof, sandbox-id
+// parsing, ambiguous-create reconciliation, cleanup double faults and credential redaction.
 //
-// The bridge is a MethodTable, not a hand-assembled driver, so it flows through the same
-// assembly layer as every other driver (table.ts) and inherits its session invariants for free:
-// central output capping, the use-after-destroy guard, and artifact reconciliation. It is also
-// deliberately STRUCTURAL: this private bridge declares the shape it consumes instead of importing
-// computesdk itself. Two rules from ADR-0007 are load-bearing:
-//
-//   - `hasWorkingFilesystem` is EXPLICIT, because computesdk's UnsupportedFileSystem is a
-//     truthy stub whose every method throws — the sentinel that killed a namespace step. The
-//     stub is filtered here and never reaches a consumer.
-//   - `native` is the WRAPPER's getInstance() value, typed by the wrapper's own vendored SDK —
-//     never cast to this repo's copy of a vendor SDK. Wrappers vendor their own builds; the
-//     classes are nominally different. Code that needs the repo's SDK types is code that
-//     should be a native driver.
+// The bridge is a MethodTable, not a hand-assembled driver, so it flows through the same assembly
+// layer as every other driver (table.ts) and inherits its session invariants: central output
+// capping, the use-after-destroy guard, and artifact reconciliation. It consumes a structural
+// sandbox shape (`ComputeSdkSandboxLike`), whose `getInstance()` value becomes
+// `SandboxSession.native`, and an explicit `hasWorkingFilesystem`.
 
 import type {
 	CreateBudget,
@@ -54,7 +47,6 @@ import { type } from "arktype";
 export interface ComputeSdkLike<TSandbox extends ComputeSdkSandboxLike = ComputeSdkSandboxLike> {
 	readonly sandbox: {
 		create(options?: object, operationOptions?: DriverOperationOptions): Promise<TSandbox>;
-		list?(): Promise<unknown>;
 	};
 }
 
@@ -79,12 +71,12 @@ export type ComputeSdkNativeOf<TSandbox extends ComputeSdkSandboxLike> = ReturnT
 >;
 
 /** Preserve native SDK create parameters through mapping and recovery without reparsing. */
-export type ComputeSdkOptionsOf<TCompute extends ComputeSdkLike> =
+type ComputeSdkOptionsOf<TCompute extends ComputeSdkLike> =
 	Parameters<TCompute["sandbox"]["create"]> extends []
 		? Readonly<Record<string, unknown>>
 		: NonNullable<Parameters<TCompute["sandbox"]["create"]>[0]>;
 
-export type ComputeSdkSandboxOf<TCompute extends ComputeSdkLike> = Awaited<
+type ComputeSdkSandboxOf<TCompute extends ComputeSdkLike> = Awaited<
 	ReturnType<TCompute["sandbox"]["create"]>
 >;
 
@@ -94,7 +86,7 @@ export type ComputeSdkSandboxOf<TCompute extends ComputeSdkLike> = Awaited<
  * exact inferred sandbox type. Its result stays unknown until the bridge validates the external
  * command envelope, so malformed vendor values cannot be blessed by an author-side assertion.
  */
-export interface ComputeSdkCommands<TCompute extends ComputeSdkLike> {
+interface ComputeSdkCommands<TCompute extends ComputeSdkLike> {
 	exec(
 		sandbox: ComputeSdkSandboxOf<TCompute>,
 		command: string,
@@ -110,11 +102,11 @@ export interface ComputeSdkCommands<TCompute extends ComputeSdkLike> {
 	): Promise<void>;
 }
 
-export type ComputeSdkRecoveryLocator =
+type ComputeSdkRecoveryLocator =
 	| { readonly kind: "name"; readonly value: string }
 	| { readonly kind: "marker"; readonly key: string; readonly value: string };
 
-export interface ComputeSdkLifecycle<TCompute extends ComputeSdkLike> {
+interface ComputeSdkLifecycle<TCompute extends ComputeSdkLike> {
 	/**
 	 * Idempotent teardown that must surface transport/auth failures instead of swallowing them.
 	 * `ref` is the bridge-validated canonical identity when validation reached that boundary. When
@@ -139,9 +131,9 @@ const computeSdkInventorySchema = type({
 	foreignCount: "number.integer >= 0",
 }).narrow((snapshot) => Number.isSafeInteger(snapshot.foreignCount));
 
-export type ComputeSdkInventorySnapshot = typeof computeSdkInventorySchema.infer;
+type ComputeSdkInventorySnapshot = typeof computeSdkInventorySchema.infer;
 
-export interface ComputeSdkInventory<TCompute extends ComputeSdkLike> {
+interface ComputeSdkInventory<TCompute extends ComputeSdkLike> {
 	/**
 	 * Drain the whole account. A partial or unavailable listing must reject: an empty result is a
 	 * positive claim that the account holds nothing, and account reconciliation deletes on the
@@ -156,18 +148,18 @@ export interface ComputeSdkInventory<TCompute extends ComputeSdkLike> {
  * Converges silently only on the vendor's typed not-found; every other failure must surface so a
  * leaked, billable sandbox is never reported as removed.
  */
-export type ComputeSdkDestroyById<TCompute extends ComputeSdkLike> = (
+type ComputeSdkDestroyById<TCompute extends ComputeSdkLike> = (
 	compute: TCompute,
 	ref: SandboxRef,
 	options: DriverOperationOptions,
 ) => Promise<void>;
 
-export type ComputeSdkCreateRecoveryObservation =
+type ComputeSdkCreateRecoveryObservation =
 	| { readonly status: "destroyed" }
 	| { readonly status: "absent"; readonly contradictedPriorAbsence?: boolean };
 
 /** Reconcile a create whose remote acceptance is unknown because no wrapper handle was returned. */
-export interface ComputeSdkCreateRecovery<TCompute extends ComputeSdkLike> {
+interface ComputeSdkCreateRecovery<TCompute extends ComputeSdkLike> {
 	readonly absenceConfirmationMs: number;
 	/** Transaction-wide ceiling, including observations that contradict an earlier absence. */
 	readonly maxAttempts: number;
@@ -281,7 +273,7 @@ export interface ComputeSdkCreateRequestMapper<Options = Readonly<Record<string,
 	readonly map: (request: CreateRequest, unsupported: (detail: string) => never) => Options;
 }
 
-export type ComputeSdkCreatedRequestVerification =
+type ComputeSdkCreatedRequestVerification =
 	| { readonly status: "honored"; readonly reportedArtifact?: ResolvedArtifact }
 	| { readonly status: "unsupported"; readonly detail: string };
 
@@ -355,46 +347,20 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 	readonly destroyById?: ComputeSdkDestroyById<TCompute>;
 }
 
-/**
- * Preserve the installed wrapper's complete type while contextually typing capability callbacks.
- * TypeScript cannot infer one object property's type and use it to type a sibling callback in the
- * same literal, so the compute value is deliberately the first argument to this tiny authoring
- * helper rather than being widened to the bridge's structural minimum.
- */
-export function computeSdkSpec<TCompute extends ComputeSdkLike>(
-	compute: TCompute,
-	spec: Omit<ComputeSdkDriverSpec<TCompute>, "compute">,
-): ComputeSdkDriverSpec<TCompute> {
-	return { ...spec, compute };
-}
+type ComputeSdkPolicy<P extends ProviderId, TCompute extends ComputeSdkLike> = DriverPolicy<
+	P,
+	ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
+>;
 
-/** One registry-joined ComputeSDK provider module. The id exists only in defineComputeSdkDriver. */
-export interface ComputeSdkDriverModuleSpec<P extends ProviderId, TCompute extends ComputeSdkLike> {
-	readonly provenance: DriverPolicy<
-		P,
-		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-	>["provenance"];
-	readonly readiness: DriverPolicy<
-		P,
-		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-	>["readiness"];
-	readonly execution: DriverPolicy<
-		P,
-		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-	>["execution"];
-	readonly accelerator?: DriverPolicy<
-		P,
-		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-	>["accelerator"];
-	readonly costEvidence?: DriverPolicy<
-		P,
-		ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-	>["costEvidence"];
-	/** ComputeSDK exposes no cancellable hard ceiling, so only the harness may own this budget. */
+/** One registry-joined module: its policy and the binding built from its resolved context. */
+type ComputeSdkDriverModuleSpec<P extends ProviderId, TCompute extends ComputeSdkLike> = Pick<
+	ComputeSdkPolicy<P, TCompute>,
+	"provenance" | "readiness" | "execution" | "accelerator" | "costEvidence"
+> & {
+	/** The bridge exposes no cancellable hard ceiling, so only the harness may own this budget. */
 	readonly createBudget?: Extract<CreateBudget, { readonly owner: "harness" }>;
-	/** Builds the wrapper binding from exactly this provider's resolved input slice. */
 	readonly spec: (context: DriverContext<P>) => ComputeSdkDriverSpec<TCompute>;
-}
+};
 
 type BoundComputeSdkDriverSpec<TCompute extends ComputeSdkLike> = Omit<
 	ComputeSdkDriverSpec<TCompute>,
@@ -804,85 +770,6 @@ async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends Compute
 	);
 }
 
-function snapshotComputeSdkCoverage(value: unknown): ComputeSdkCreateRequestCoverage {
-	if ((typeof value !== "object" && typeof value !== "function") || value === null) {
-		throw new Error("request coverage is not an object");
-	}
-	const defineOwn = (target: Record<string, unknown>, key: string, entry: unknown): void => {
-		Object.defineProperty(target, key, {
-			value: entry,
-			enumerable: true,
-			writable: false,
-			configurable: false,
-		});
-	};
-	const copyRecord = (candidate: unknown, copyDispositions = false): Record<string, unknown> => {
-		if (
-			(typeof candidate !== "object" && typeof candidate !== "function") ||
-			candidate === null ||
-			Array.isArray(candidate)
-		) {
-			throw new Error("request coverage member is not an object");
-		}
-		const copy = Object.create(null) as Record<string, unknown>;
-		for (const [key, entry] of Object.entries(candidate)) {
-			const copied =
-				copyDispositions &&
-				(typeof entry === "object" || typeof entry === "function") &&
-				entry !== null &&
-				!Array.isArray(entry)
-					? copyRecord(entry)
-					: entry;
-			defineOwn(copy, key, copied);
-		}
-		return copy;
-	};
-	const outer = Object.create(null) as Record<string, unknown>;
-	let spec: unknown;
-	let gpu: unknown;
-	let hasSpec = false;
-	let hasGpu = false;
-	for (const [key, entry] of Object.entries(value)) {
-		if (key === "spec") {
-			spec = entry;
-			hasSpec = true;
-		} else if (key === "gpu") {
-			gpu = entry;
-			hasGpu = true;
-		} else {
-			defineOwn(outer, key, entry);
-		}
-	}
-	if (!hasSpec || !hasGpu) throw new Error("request coverage is missing a required member");
-	defineOwn(outer, "spec", copyRecord(spec, true));
-	defineOwn(outer, "gpu", copyRecord(gpu));
-	return outer as unknown as ComputeSdkCreateRequestCoverage;
-}
-
-function normalizeComputeSdkObservation(
-	provider: ProviderId,
-	value: unknown,
-	ref: SandboxRef,
-): SandboxObservation {
-	let state: unknown;
-	try {
-		if ((typeof value !== "object" && typeof value !== "function") || value === null) {
-			throw new Error("non-object observation");
-		}
-		state = Reflect.get(value, "state");
-	} catch {
-		throw providerCallbackFailure(provider, "probe observe result", {
-			code: "probe-failed",
-			ref,
-		});
-	}
-	if (state === "running" || state === "terminal" || state === "absent") return { state };
-	throw providerCallbackFailure(provider, "probe observe result", {
-		code: "probe-failed",
-		ref,
-	});
-}
-
 function normalizeComputeSdkSnapshot(
 	provider: ProviderId,
 	value: unknown,
@@ -955,47 +842,12 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 	TCompute,
 	ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
 > {
+	const { probes, snapshots, inventory, destroyById, commands, lifecycle, createRecovery } =
+		options;
 	const wantsFiles = options.hasWorkingFilesystem;
-	const rawProbes = options.probes;
-	const probes =
-		rawProbes === undefined
-			? undefined
-			: {
-					observe: rawProbes.observe,
-					list: rawProbes.list,
-					describe: rawProbes.describe,
-				};
 	const probeList = probes?.list;
 	const probeDescribe = probes?.describe;
-	const rawSnapshots = options.snapshots;
-	const snapshots =
-		rawSnapshots === undefined
-			? undefined
-			: { create: rawSnapshots.create, delete: rawSnapshots.delete };
-	const rawInventory = options.inventory;
-	const inventory = rawInventory === undefined ? undefined : { list: rawInventory.list };
-	const destroyById = options.destroyById;
-	const rawCommands = options.commands;
-	const commands =
-		rawCommands === undefined ? undefined : { exec: rawCommands.exec, launch: rawCommands.launch };
-	const rawLifecycle = options.lifecycle;
-	const lifecycle = rawLifecycle === undefined ? undefined : { destroy: rawLifecycle.destroy };
-	const rawCreateRecovery = options.createRecovery;
-	const createRecovery =
-		rawCreateRecovery === undefined
-			? undefined
-			: {
-					absenceConfirmationMs: rawCreateRecovery.absenceConfirmationMs,
-					maxAttempts: rawCreateRecovery.maxAttempts,
-					locator: rawCreateRecovery.locator,
-					cleanup: rawCreateRecovery.cleanup,
-					isDefinitive: rawCreateRecovery.isDefinitive,
-					isRetryableCreate: rawCreateRecovery.isRetryableCreate,
-				};
-	const createRequestMapper: ComputeSdkCreateRequestMapper<ComputeSdkOptionsOf<TCompute>> = {
-		coverage: snapshotComputeSdkCoverage(options.createOptions.coverage),
-		map: options.createOptions.map,
-	};
+	const createRequestMapper = options.createOptions;
 	const prepareAndVerifyCreatedRequest = options.prepareAndVerifyCreatedRequest;
 	const sensitiveValuesDefault = options.sensitiveValues;
 	const resolvedArtifact = options.resolvedArtifact;
@@ -1037,6 +889,23 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 		const id = handleRefIds.get(sandbox);
 		return id === undefined ? undefined : sandboxRef(provider, id);
 	};
+	const fileCall = <T>(
+		sandbox: ComputeSdkSandboxOf<TCompute>,
+		operation: string,
+		run: (filesystem: NonNullable<ComputeSdkSandboxOf<TCompute>["filesystem"]>) => Promise<T>,
+	) =>
+		wrapperCapability(
+			"filesystem-failed",
+			provider,
+			operation,
+			sensitiveFor(sandbox),
+			async () => {
+				// Declared working only when the sandbox carries one, so its absence is a kit defect.
+				if (sandbox.filesystem === undefined) throw new Error("the sandbox exposes no filesystem");
+				return run(sandbox.filesystem);
+			},
+			refFor(sandbox),
+		);
 	const destroySandbox = async (
 		sandbox: ComputeSdkSandboxOf<TCompute>,
 		ref: SandboxRef | undefined,
@@ -1070,7 +939,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			const recoveryLocator =
 				createRecovery === undefined
 					? undefined
-					: readRecoveryLocator(provider, createRecovery, createOptions, sensitiveValues);
+					: Object.freeze({ ...createRecovery.locator(createOptions) });
 			const rejectWithRecovery = async (primary: unknown): Promise<never> => {
 				if (
 					isFailedCreateCleanupError(primary) ||
@@ -1131,15 +1000,6 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				}
 				return rejectWithRecovery(primary);
 			}
-			if ((typeof created !== "object" && typeof created !== "function") || created === null) {
-				return rejectWithRecovery(
-					new DriverError(
-						"vendor-contract-violation",
-						"computesdk wrapper returned a non-object sandbox handle",
-						{ provider },
-					),
-				);
-			}
 			handleSensitiveValues.set(created, sensitiveValues);
 
 			let parsedId: string | undefined;
@@ -1147,7 +1007,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				if (operationOptions?.signal?.aborted) {
 					throw wrapperAborted(provider, operationOptions.signal.reason);
 				}
-				const id = readSandboxId(created, provider, sensitiveValues);
+				const id = created.sandboxId;
 				if (typeof id !== "string" || id.length === 0) {
 					throw vendorContractFailure(
 						provider,
@@ -1160,19 +1020,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				const ref = sandboxRef(provider, parsedId);
 				handleRefIds.set(created, parsedId);
 				refSensitiveValues.set(parsedId, sensitiveValues);
-				if (wantsFiles) requireFilesystem(created, provider, sensitiveValues, ref);
-				let native: ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>;
-				try {
-					native = created.getInstance() as ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>;
-				} catch {
-					throw vendorContractFailure(
-						provider,
-						"getInstance",
-						"wrapper getInstance threw; original diagnostic omitted to protect credentials",
-						sensitiveValues,
-						ref,
-					);
-				}
+				const native = created.getInstance() as ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>;
 				let reportedArtifact: ResolvedArtifact | undefined;
 				if (prepareAndVerifyCreatedRequest !== undefined) {
 					reportedArtifact = await prepareAndVerifyComputeSdkCreatedRequest(
@@ -1402,62 +1250,16 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				);
 			}
 		},
-		// The stub never escapes: create verifies that a declared filesystem is present, and the
-		// per-operation guards catch a wrapper that later withdraws the capability.
-		...(wantsFiles
-			? {
-					files: {
-						readFile: (_compute, sandbox, path) => {
-							const filesystem = requireFilesystem(
-								sandbox,
-								provider,
-								sensitiveFor(sandbox),
-								refFor(sandbox),
-							);
-							return wrapperCapability(
-								"filesystem-failed",
-								provider,
-								"filesystem read",
-								sensitiveFor(sandbox),
-								() => filesystem.readFile(path),
-								refFor(sandbox),
-							);
-						},
-						exists: (_compute, sandbox, path) => {
-							const filesystem = requireFilesystem(
-								sandbox,
-								provider,
-								sensitiveFor(sandbox),
-								refFor(sandbox),
-							);
-							return wrapperCapability(
-								"filesystem-failed",
-								provider,
-								"filesystem exists",
-								sensitiveFor(sandbox),
-								() => filesystem.exists(path),
-								refFor(sandbox),
-							);
-						},
-						writeText: (_compute, sandbox, path, text) => {
-							const filesystem = requireFilesystem(
-								sandbox,
-								provider,
-								sensitiveFor(sandbox),
-								refFor(sandbox),
-							);
-							return wrapperCapability(
-								"filesystem-failed",
-								provider,
-								"filesystem write",
-								sensitiveFor(sandbox),
-								() => filesystem.writeFile(path, text),
-								refFor(sandbox),
-							);
-						},
-					},
-				}
-			: {}),
+		...(wantsFiles && {
+			files: {
+				readFile: (_compute, sandbox, path) =>
+					fileCall(sandbox, "filesystem read", (filesystem) => filesystem.readFile(path)),
+				exists: (_compute, sandbox, path) =>
+					fileCall(sandbox, "filesystem exists", (filesystem) => filesystem.exists(path)),
+				writeText: (_compute, sandbox, path, text) =>
+					fileCall(sandbox, "filesystem write", (filesystem) => filesystem.writeFile(path, text)),
+			},
+		}),
 		...(inventory === undefined
 			? {}
 			: {
@@ -1517,15 +1319,11 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 								ref,
 								sensitiveForRef(ref),
 							);
-							return normalizeComputeSdkObservation(
+							return invokeComputeSdkProviderCallbackAsync(
 								provider,
-								await invokeComputeSdkProviderCallbackAsync(
-									provider,
-									"probe observe",
-									() => probes.observe(compute, canonical),
-									{ code: "probe-failed", ref: canonical },
-								),
-								canonical,
+								"probe observe",
+								() => probes.observe(compute, canonical),
+								{ code: "probe-failed", ref: canonical },
 							);
 						},
 						...(probeList === undefined
@@ -1687,45 +1485,6 @@ function mapCreateRequest<Options>(
 	return mapped;
 }
 
-function readRecoveryLocator<TCompute extends ComputeSdkLike>(
-	provider: ProviderId,
-	recovery: ComputeSdkCreateRecovery<TCompute>,
-	createOptions: ComputeSdkOptionsOf<TCompute>,
-	sensitiveValues: readonly string[],
-): ComputeSdkRecoveryLocator {
-	const locator: unknown = invokeComputeSdkProviderCallback(
-		provider,
-		"failed-create recovery locator",
-		() => recovery.locator(createOptions),
-	);
-	try {
-		if ((typeof locator !== "object" && typeof locator !== "function") || locator === null) {
-			throw new Error("invalid locator");
-		}
-		const kind: unknown = Reflect.get(locator, "kind");
-		const value: unknown = Reflect.get(locator, "value");
-		if (typeof value !== "string" || value.length === 0) {
-			throw new Error("invalid locator");
-		}
-		if (locatorExposesSensitiveValue(value, sensitiveValues)) throw new Error("invalid locator");
-		if (kind === "name") return Object.freeze({ kind, value });
-		if (kind === "marker") {
-			const key: unknown = Reflect.get(locator, "key");
-			if (typeof key !== "string" || key.length === 0) throw new Error("invalid locator");
-			if (locatorExposesSensitiveValue(key, sensitiveValues)) throw new Error("invalid locator");
-			return Object.freeze({ kind, key, value });
-		}
-		throw new Error("invalid locator");
-	} catch {
-		throw vendorContractFailure(
-			provider,
-			"failed-create recovery locator",
-			"recovery locator must be a readable nonempty name or keyed marker",
-			sensitiveValues,
-		);
-	}
-}
-
 /** The two independent questions a module may answer about its own create rejection. */
 type ComputeSdkCreateClassifier = "isDefinitive" | "isRetryableCreate";
 
@@ -1761,13 +1520,6 @@ function classifiesCreateRejection(
 	}
 }
 
-function locatorExposesSensitiveValue(
-	candidate: string,
-	sensitiveValues: readonly string[],
-): boolean {
-	return sensitiveValues.some((sensitive) => sensitive.length > 0 && candidate.includes(sensitive));
-}
-
 async function reconcileAmbiguousCreate<TCompute extends ComputeSdkLike>(
 	provider: ProviderId,
 	compute: TCompute,
@@ -1790,15 +1542,11 @@ async function reconcileAmbiguousCreate<TCompute extends ComputeSdkLike>(
 		}
 		let observation: ComputeSdkCreateRecoveryObservation;
 		try {
-			observation = normalizeRecoveryObservation(
+			observation = await invokeComputeSdkProviderCallbackAsync(
 				provider,
-				await invokeComputeSdkProviderCallbackAsync(
-					provider,
-					"failed-create recovery cleanup",
-					() => recovery.cleanup(compute, locator, operationOptions),
-					{ code: "destroy-failed" },
-				),
-				sensitiveValues,
+				"failed-create recovery cleanup",
+				() => recovery.cleanup(compute, locator, operationOptions),
+				{ code: "destroy-failed" },
 			);
 		} catch (caught) {
 			throw wrapperFailure(
@@ -1833,57 +1581,6 @@ async function reconcileAmbiguousCreate<TCompute extends ComputeSdkLike>(
 		`computesdk failed-create reconciliation did not converge after ${recovery.maxAttempts} attempts`,
 		{ provider },
 	);
-}
-
-function normalizeRecoveryObservation(
-	provider: ProviderId,
-	value: unknown,
-	sensitiveValues: readonly string[],
-): ComputeSdkCreateRecoveryObservation {
-	if (value === null || (typeof value !== "object" && typeof value !== "function")) {
-		throw vendorContractFailure(
-			provider,
-			"failed-create reconciliation",
-			"cleanup returned a non-object observation",
-			sensitiveValues,
-		);
-	}
-	let status: unknown;
-	let contradictedPriorAbsence: unknown;
-	try {
-		status = Reflect.get(value, "status");
-		contradictedPriorAbsence = Reflect.get(value, "contradictedPriorAbsence");
-	} catch {
-		throw vendorContractFailure(
-			provider,
-			"failed-create reconciliation",
-			"cleanup returned an unreadable observation",
-			sensitiveValues,
-		);
-	}
-	if (status === "destroyed" && contradictedPriorAbsence === undefined) {
-		return { status: "destroyed" };
-	}
-	if (status !== "absent") {
-		throw vendorContractFailure(
-			provider,
-			"failed-create reconciliation",
-			"cleanup returned an invalid observation status",
-			sensitiveValues,
-		);
-	}
-	if (contradictedPriorAbsence !== undefined && typeof contradictedPriorAbsence !== "boolean") {
-		throw vendorContractFailure(
-			provider,
-			"failed-create reconciliation",
-			"cleanup returned an invalid contradictedPriorAbsence flag",
-			sensitiveValues,
-		);
-	}
-	return {
-		status: "absent",
-		...(contradictedPriorAbsence === true ? { contradictedPriorAbsence: true } : {}),
-	};
 }
 
 function abortableComputeSdkDelay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -2106,198 +1803,27 @@ function normalizeCommandResult(
 	};
 }
 
-function readSandboxId(
-	sandbox: ComputeSdkSandboxLike,
-	provider: ProviderId,
-	sensitiveValues: readonly string[],
-): unknown {
-	try {
-		return (sandbox as unknown as { readonly sandboxId?: unknown }).sandboxId;
-	} catch {
-		throw vendorContractFailure(
-			provider,
-			"sandbox identity",
-			"wrapper returned an unreadable sandboxId",
-			sensitiveValues,
-		);
-	}
-}
-
-function requireFilesystem<TSandbox extends ComputeSdkSandboxLike>(
-	sandbox: TSandbox,
-	provider: ProviderId,
-	sensitiveValues: readonly string[],
-	ref?: SandboxRef,
-): NonNullable<TSandbox["filesystem"]> {
-	let filesystem: TSandbox["filesystem"];
-	let readFile: unknown;
-	let exists: unknown;
-	let writeFile: unknown;
-	try {
-		filesystem = sandbox.filesystem;
-		readFile = filesystem?.readFile;
-		exists = filesystem?.exists;
-		writeFile = filesystem?.writeFile;
-	} catch {
-		throw vendorContractFailure(
-			provider,
-			"filesystem accessor",
-			"wrapper returned an unreadable filesystem",
-			sensitiveValues,
-			ref,
-		);
-	}
-	if (
-		!filesystem ||
-		typeof readFile !== "function" ||
-		typeof exists !== "function" ||
-		typeof writeFile !== "function"
-	) {
-		throw vendorContractFailure(
-			provider,
-			"filesystem accessor",
-			"wrapper declared a filesystem without every required callable method",
-			sensitiveValues,
-			ref,
-		);
-	}
-	return filesystem;
-}
-
 /**
- * Define a ComputeSDK-backed provider from one registry id.
- *
- * The raw bridge is intentionally private: exposing a separate `provider` option would let a copied
- * module compile with two disagreeing ids. This joined helper is the only authoring surface.
+ * Join one registry id to the bridge. The vendor kit is the only caller: its typed module spec has
+ * already fixed the policy, and the policy boundary (`defineDriver`) normalizes it once.
  */
 export function defineComputeSdkDriver<P extends ProviderId, TCompute extends ComputeSdkLike>(
 	id: P,
-	module: ComputeSdkDriverModuleSpec<NoInfer<P>, TCompute>,
+	{ spec, ...policy }: ComputeSdkDriverModuleSpec<NoInfer<P>, TCompute>,
 ): DriverModule<P, ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>> {
-	const normalized = invokeComputeSdkProviderCallback(id, "module normalization", () => {
-		const provenance: unknown = Reflect.get(module, "provenance");
-		const readiness: unknown = Reflect.get(module, "readiness");
-		const execution: unknown = Reflect.get(module, "execution");
-		const accelerator: unknown = Reflect.get(module, "accelerator");
-		const costEvidence: unknown = Reflect.get(module, "costEvidence");
-		const rawBudget: unknown = Reflect.get(module, "createBudget");
-		const spec: unknown = Reflect.get(module, "spec");
-		const policy = { provenance, readiness, execution, accelerator, costEvidence };
-		if (rawBudget === undefined) return { ...policy, createBudget: undefined, spec };
-		if (typeof rawBudget !== "object" || rawBudget === null || Array.isArray(rawBudget)) {
-			throw new Error("create budget is not an object");
-		}
-		const createBudget = Object.create(null) as Record<string, unknown>;
-		for (const [key, value] of Object.entries(rawBudget)) {
-			Object.defineProperty(createBudget, key, {
-				value,
-				enumerable: true,
-				writable: false,
-				configurable: false,
-			});
-		}
-		Object.freeze(createBudget);
-		return { ...policy, createBudget, spec };
+	return defineDriver(id, {
+		...policy,
+		driver: (context) =>
+			driverFromComputeSpec(
+				id,
+				invokeComputeSdkProviderCallback(id, "module spec factory", () => spec(context)),
+				context.resolvedArtifact,
+				sensitiveEnvValuesFor(id, context.env),
+			),
 	});
-	if (typeof normalized.spec !== "function") {
-		throw new DriverError("vendor-contract-violation", "ComputeSDK module spec must be callable", {
-			provider: id,
-		});
-	}
-	const specFactory = normalized.spec as ComputeSdkDriverModuleSpec<NoInfer<P>, TCompute>["spec"];
-	const budgetRecord = normalized.createBudget;
-	if (budgetRecord !== undefined) {
-		for (const key of Object.keys(budgetRecord)) {
-			if (key !== "owner" && key !== "timeoutMs") {
-				throw new DriverError(
-					"vendor-contract-violation",
-					`ComputeSDK create budget declares unknown field ${key}`,
-					{ provider: id },
-				);
-			}
-		}
-	}
-	if (budgetRecord !== undefined && budgetRecord.owner !== "harness") {
-		throw new DriverError(
-			"vendor-contract-violation",
-			"ComputeSDK create budgets must be owned by the harness",
-			{ provider: id },
-		);
-	}
-	if (
-		budgetRecord !== undefined &&
-		budgetRecord.timeoutMs !== undefined &&
-		(!Number.isSafeInteger(budgetRecord.timeoutMs) || (budgetRecord.timeoutMs as number) <= 0)
-	) {
-		throw new DriverError(
-			"vendor-contract-violation",
-			`ComputeSDK create budget timeoutMs must be a positive safe integer, received ${runtimeNumberLabel(budgetRecord.timeoutMs)}`,
-			{ provider: id },
-		);
-	}
-	const createBudget = budgetRecord as
-		| Extract<CreateBudget, { readonly owner: "harness" }>
-		| undefined;
-	let joined: DriverModule<P, ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>>;
-	joined = defineDriver(id, {
-		provenance: normalized.provenance as DriverPolicy<
-			P,
-			ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-		>["provenance"],
-		...(createBudget === undefined ? {} : { createBudget }),
-		readiness: normalized.readiness as DriverPolicy<
-			P,
-			ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-		>["readiness"],
-		execution: normalized.execution as DriverPolicy<
-			P,
-			ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-		>["execution"],
-		...(normalized.accelerator === undefined
-			? {}
-			: {
-					accelerator: normalized.accelerator as DriverPolicy<
-						P,
-						ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-					>["accelerator"],
-				}),
-		...(normalized.costEvidence === undefined
-			? {}
-			: {
-					costEvidence: normalized.costEvidence as DriverPolicy<
-						P,
-						ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>
-					>["costEvidence"],
-				}),
-		driver: (context) => {
-			const sensitiveValues = sensitiveEnvValuesFor(id, context.env);
-			return invokeComputeSdkProviderCallback(id, "module spec factory", () => {
-				const { compute, ...spec } = specFactory(context);
-				if (
-					joined.execution.durable === "native-launch" &&
-					typeof spec.commands?.launch !== "function"
-				) {
-					throw new DriverError(
-						"vendor-contract-violation",
-						"native-launch execution requires a ComputeSDK launch command",
-						{ provider: id },
-					);
-				}
-				return driverFromTable(
-					computeSdkMethodTable<TCompute>(id, {
-						...spec,
-						resolvedArtifact: context.resolvedArtifact,
-						sensitiveValues,
-					}),
-					() => Promise.resolve(compute),
-				);
-			});
-		},
-	});
-	return joined;
 }
 
-/** Bind an explicitly prepared artifact without inventing a registry artifact for custom work. */
+/** Lower one binding to a driver over an explicitly resolved artifact and credential set. */
 export function driverFromComputeSpec<TCompute extends ComputeSdkLike>(
 	id: ProviderId,
 	binding: ComputeSdkDriverSpec<TCompute>,

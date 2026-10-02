@@ -11,7 +11,7 @@ import { posix as posixPath } from "node:path";
 import type { DriverContext } from "@sandbox-benchmarks/driver";
 import { shellQuote } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import { LEAK_EXPIRY_MS, markerSpelling } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 import type {
 	DefaultBackend,
@@ -35,7 +35,7 @@ export interface MicrosandboxSdk {
 }
 
 /** Every benchmark sandbox is named this way; the name IS the vendor id and the ownership marker. */
-export const MICROSANDBOX_NAME_PREFIX = "bench-cloud-";
+const MICROSANDBOX_NAME_PREFIX = "bench-cloud-";
 /** The sandbox name spells the kit marker's attempt UUID under the benchmark prefix. */
 export const MICROSANDBOX_NAME = markerSpelling(MICROSANDBOX_NAME_PREFIX);
 export const MICROSANDBOX_SANDBOX_ID = type(
@@ -43,8 +43,6 @@ export const MICROSANDBOX_SANDBOX_ID = type(
 );
 /** Vendor-console label written on every create; ownership keys on the name shape. */
 export const MICROSANDBOX_LABEL_MARKER = "sandbox-benchmarks.provider";
-/** The longest suite budgets 155 minutes; leave setup and teardown margin, keep leaks self-expiring. */
-export const MICROSANDBOX_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 /**
  * How long teardown waits for a requested stop before removing anyway. A guest whose agent died
  * never finishes stopping (observed live: records held `draining` for 19 h, past their maxDuration),
@@ -53,7 +51,7 @@ export const MICROSANDBOX_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 export const MICROSANDBOX_STOP_WAIT_MS = 10_000;
 
 /** One record; a create's record also carries the connected sandbox it returned. */
-export interface MicrosandboxRow {
+interface MicrosandboxRow {
 	readonly name: string;
 	readonly status: string;
 	readonly sandbox?: MsbSandbox;
@@ -120,20 +118,10 @@ export function microsandboxVendor(
 	const inBackend = <T>(work: () => Promise<T>) => sdk.withDefaultBackend(backend, work);
 	const lookup = (name: string) =>
 		inBackend(async () => {
-			try {
-				const handle = await Sandbox.get(name);
-				if (handle.name !== name) throw new Error("Microsandbox returned an unrelated sandbox");
-				return handle;
-			} catch (error) {
-				if (error instanceof SandboxNotFoundError) return null;
-				throw error;
-			}
+			const handle = await Sandbox.get(name);
+			if (handle.name !== name) throw new Error("Microsandbox returned an unrelated sandbox");
+			return handle;
 		});
-	const get = async (name: string, { signal }: { signal: AbortSignal }) => {
-		signal.throwIfAborted();
-		const handle = await lookup(name);
-		return handle && record(handle);
-	};
 
 	/**
 	 * The create returns a connected agent session. A connection that dies mid-run must not silently
@@ -216,8 +204,7 @@ export function microsandboxVendor(
 	const vendor: Vendor<MicrosandboxRow, ReturnType<typeof connection>> = {
 		control: {
 			// `create` returns only once the sandbox is RUNNING (the image pull happens inside it).
-			create: ({ request, marker }, { signal }) => {
-				signal.throwIfAborted();
+			create: ({ request, marker }) => {
 				const name = MICROSANDBOX_NAME.toVendor(marker);
 				return inBackend(async () => {
 					let builder = Sandbox.builder(name).image(resolvedArtifact.ref);
@@ -226,7 +213,7 @@ export function microsandboxVendor(
 					builder = builder
 						.cpus(request.spec.vcpus)
 						.memory(request.spec.memoryGb * 1024)
-						.maxDuration(Math.ceil(MICROSANDBOX_SANDBOX_LIFETIME_MS / 1000))
+						.maxDuration(LEAK_EXPIRY_MS / 1000)
 						.detached(true)
 						// Ephemeral: state is deleted when the sandbox stops, so a stopped leftover holds nothing.
 						.ephemeral(true)
@@ -236,7 +223,7 @@ export function microsandboxVendor(
 					return record({ name, status: "running", sandbox: await builder.create() });
 				});
 			},
-			get,
+			get: async (name) => record(await lookup(name)),
 			/**
 			 * Stop, then remove. Microsandbox Cloud can persist a status=error record before create
 			 * rejects, remove() is documented for STOPPED sandboxes only, and transitional or
@@ -246,37 +233,28 @@ export function microsandboxVendor(
 			 * converges on the SDK's typed absence: an ephemeral record disappears the moment its stop
 			 * completes, so any step can be the one that first sees not-found.
 			 */
-			remove: (name, { signal }) =>
-				inBackend(async () => {
-					signal.throwIfAborted();
-					try {
-						const handle = await Sandbox.get(name);
-						if (handle.name !== name) throw new Error("Microsandbox returned an unrelated sandbox");
-						if (handle.status !== "stopped") {
-							if (handle.status !== "draining") await handle.requestStop();
-							await waitForStop(handle);
-						}
-						await Sandbox.remove(name);
-					} catch (error) {
-						if (!(error instanceof SandboxNotFoundError)) throw error;
+			remove: async (name) => {
+				const handle = await lookup(name);
+				await inBackend(async () => {
+					if (handle.status !== "stopped") {
+						if (handle.status !== "draining") await handle.requestStop();
+						await waitForStop(handle);
 					}
-					return "removed" as const;
-				}),
+					await Sandbox.remove(name);
+				});
+				return "removed";
+			},
+			// The SDK's typed absence, at any step of the remove sequence.
+			absent: (error) => error instanceof SandboxNotFoundError,
 			// A stopped record is still an account resource (ours to remove, theirs to block on).
-			page: (cursor, { signal }) =>
+			page: (cursor) =>
 				inBackend(async () => {
-					signal.throwIfAborted();
 					const page = await Sandbox.listWith((list) =>
 						cursor === undefined ? list.limit(100) : list.limit(100).cursor(cursor),
 					);
 					const records = page.sandboxes.map(record);
 					return page.nextCursor ? { records, next: page.nextCursor } : { records };
 				}),
-			// The create name is the lookup: an accepted create whose response was lost is findable.
-			find: async (marker, _cursor, op) => {
-				const found = await get(MICROSANDBOX_NAME.toVendor(marker), op);
-				return { records: found ? [found] : [] };
-			},
 			// Only a configuration the SDK refused before contacting the control plane proves nothing
 			// was allocated. The SDK types no capacity refusal, so no create is ever marked retryable:
 			// vendor prose must never manufacture a retry decision.
@@ -293,8 +271,7 @@ export function microsandboxVendor(
 			 * rather than an in-guest `df`: a managed root disk of N MiB formats to slightly less than N
 			 * MiB of filesystem, so a capacity probe would refuse every correctly-sized allocation.
 			 */
-			prepare: async ({ native }, { spec }, { signal }) => {
-				signal.throwIfAborted();
+			prepare: async ({ native }, { spec }) => {
 				const config = allocatedResources.assert(await native.config());
 				const vcpus = config.resources.cpus ?? config.resources.vcpus;
 				const { memoryMib } = config.resources;
@@ -317,10 +294,7 @@ export function microsandboxVendor(
 							detail: `requested ${spec.diskGb} GiB but the allocation reports a ${diskSizeMib} MiB root disk`,
 						};
 			},
-			exec: (native, command, options) => {
-				options?.signal?.throwIfAborted();
-				return native.exec(command);
-			},
+			exec: (native, command) => native.exec(command),
 			files: {
 				read: (native, path) => native.read(path),
 				exists: (native, path) => native.exists(path),

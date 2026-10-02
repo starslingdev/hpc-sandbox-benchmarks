@@ -80,11 +80,11 @@ Each provider family owns a workspace package: for example, `packages/blaxel` ex
 subpaths. Implementations, SDK dependencies, behavioral tests, and generated SDK provenance stay
 in that provider package. `packages/drivers` contains only the generated, correlated lazy loader.
 
-The SDK-free kit exposes `@sandbox-benchmarks/driver/computesdk`, `/native`, `/errors`, `/vendor`,
-`/vendor/testing`, `/vendor/e2b-protocol` and `/artifact` as explicit subpaths. Native SDK request and handle types flow
-through the declarative mapper without a second request schema. External values are parsed at their
-trust boundaries; trusted requests are passed internally without revalidation. SDK errors reach the
-provider's retry predicate before the kit normalizes and redacts them.
+The SDK-free kit exposes `@sandbox-benchmarks/driver/vendor`, `/vendor/testing`,
+`/vendor/e2b-protocol`, `/errors` and `/artifact` as explicit subpaths; the ComputeSDK bridge the
+vendor kit lowers onto is internal to `packages/driver`. External values are parsed at their trust
+boundaries; trusted requests are passed internally without revalidation. Vendor errors reach the
+adapter's classifiers (`refused`, `transient`, `absent`) before the kit normalizes and redacts them.
 
 ### The vendor seam
 
@@ -109,8 +109,16 @@ specifiers; adding a named subpath means editing its allowlist and saying why in
 
 ADR-0023 §1: a provider package writes an adapter against two ports and `defineVendorDriver`
 derives the DriverModule. The **control plane** (`create`, `get`, `remove`, `page`, optionally
-`settle`, `find`, `refused`, `transient`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`, `prepare`)
-speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once for every provider:
+`settle`, `find`, `refused`, `transient`, `absent`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`, `prepare`)
+speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit starts no port call on an
+already-cancelled signal, and where the control plane declares `absent` (the vendor's own
+not-found, as narrow as the vendor's rule: Modal's counts only sandbox RPCs) it reads such an error
+from `get` or `settle` as `null` and from `remove` as `"removed"`, so no adapter hand-writes that
+rule. What adapters would otherwise restate is shared from `/vendor` too: `httpStatus` (a typed
+error's status anywhere in its cause chain), `refusedOn` (refusal over listed statuses, retryable
+only on 429), `httpClassifiers` (the REST reading of a status as `refused`, `transient` and
+`absent`), `LEAK_EXPIRY_MS` (the vendor-side lifetime every create that can state one states) and
+`isMintedMarker`. The kit owns, once for every provider:
 
 - readiness — skipped when `create` returns a `ready` record, otherwise polled through `get`, or
   through the vendor's server-side wait (`settle`, a long poll) where it has one, still under the
@@ -130,8 +138,9 @@ speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once fo
   failing closed on a repeated, omitted or runaway cursor, or a sandbox listed twice: 100 pages
   unless the module declares a larger `pageCap`, as Runloop and Namespace do for listings that keep
   terminal history);
-- ambiguous-create recovery — by marker lookup, rejecting unrelated records on a shared account, or
-  by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces.
+- ambiguous-create recovery — by marker lookup (`find`, or, where the module declares
+  `recovery.lookup`, a `get` of the marker's spelling: the create named the sandbox by it),
+  rejecting unrelated records on a shared account, or by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces.
   `refused` failures skip recovery; `transient` failures are reconciled and then marked retryable.
   The locator names the marker under the vendor's own `markerKey`, spelled as the vendor shows it
   (`markerSpelling`, the same spelling the adapter creates and parses with). A module whose lookups
@@ -160,8 +169,8 @@ stays on typed passthroughs:
 `snapshots` (on the bound vendor), `accelerator`, `costEvidence`, a harness-owned `createBudget`,
 and `execution` (default `{ syncCapMs: 60_000, durable: "shell-detach" }`; `durable:
 "native-launch"` requires `data.launch`; a `shell-detach` vendor may supply one to bound the kit's
-`detachedShellCommand`). `module.specFor(context, { vendor,
-timing })` lowers the same module against a stubbed transport for provider tests.
+`detachedShellCommand`). `vendorDriver(module, context, { vendor, timing })` (from
+`/vendor/testing`) lowers the same module against a stubbed transport for provider tests.
 Brezel (a dedicated account recovered by idempotent replay, over an injected `fetch`), Novita
 (a shared account recovered by a server-side marker query, over the loaded SDK), Blaxel, Vercel and
 Microsandbox Cloud (name-keyed: the sandbox name carries the marker's attempt UUID and is the
@@ -173,8 +182,8 @@ name), Daytona (both isolation variants, named by the marker and found by a get 
 boundary, and a listing's first page is the App's own generation) and Freestyle (marked in
 metadata, found by the attempt's slug, with native snapshots on the `snapshots` passthrough) are
 written this way: `src/vendor.ts` is the adapter, `src/index.ts` (or a variant family's
-`src/shared.ts`) binds the real transport once. Every ComputeSDK-lowered driver is now a vendor
-adapter; Tama alone stays on `defineCliDriver`. Modal's GPU allocation (`./gpu`) is the same
+`src/shared.ts`) binds the real transport once. Every SDK or HTTP driver is a vendor adapter; Tama
+alone stays on `defineCliDriver`. Modal's GPU allocation (`./gpu`) is the same
 adapter over the caller's App and image, whose teardown also waits until the environment stops
 listing the sandbox. E2B and Novita speak one protocol through different SDKs, so both adapters are
 `@sandbox-benchmarks/driver/vendor/e2b-protocol`'s `e2bProtocolVendor` over the package's own
@@ -182,8 +191,9 @@ injected SDK, stating only the vendor's differences (its domain, whether its SDK
 its create and command timeouts); the shared module imports no SDK, so the vendor seam holds.
 
 `@sandbox-benchmarks/driver/vendor/testing` holds `memoryVendor` (an in-memory account with a fault
-script, a guest shell that answers the kit's commands, and leak detectors) and `vendorContract`
-(the port contract every adapter passes). Kit behaviour is tested once against `memoryVendor`,
+script, a guest shell that answers the kit's commands, and leak detectors), `vendorContract`
+(the port contract every adapter passes, read as the module's kit calls it), `vendorDriver` and
+`kitPort` (an adapter as the kit sees it, for translation tests). Kit behaviour is tested once against `memoryVendor`,
 including ADR-0008's kit tier, which admits a module built over it.
 
 `@sandbox-benchmarks/driver/artifact` (arktype-free) is the release lane's build seam. Its request

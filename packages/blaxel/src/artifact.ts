@@ -10,7 +10,7 @@ import type { BuildCommandRunner } from "@sandbox-benchmarks/driver/artifact";
 import { defineArtifactBuilder, runBuildCommand } from "@sandbox-benchmarks/driver/artifact";
 
 /** The `bl` CLI version the release lane's setup action installs. */
-export const BLAXEL_CLI_VERSION = "0.1.100";
+const BLAXEL_CLI_VERSION = "0.1.100";
 
 /**
  * The `blaxel.toml` the remote builder reads out of the uploaded context.

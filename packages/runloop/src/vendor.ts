@@ -1,6 +1,5 @@
-// Runloop's vendor adapter: translation only. It receives a client over @runloop/api-client (the
-// published @computesdk/runloop wrapper swallows get/list/destroy errors and reports a stale create
-// response as live status) and states what the Devbox API means in the vendor port's terms.
+// Runloop's vendor adapter: translation only. It receives a client over @runloop/api-client and
+// states what the Devbox API means in the vendor port's terms.
 // Readiness, cleanup confirmation, recovery, inventory and the disk proof live in the driver kit
 // (`@sandbox-benchmarks/driver/vendor`).
 //
@@ -16,7 +15,7 @@ import {
 } from "@runloop/api-client";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { instanceOfAny, MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import { instanceOfAny, LEAK_EXPIRY_MS, MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 export type DevboxView = Runloop.Devboxes.DevboxView;
@@ -28,8 +27,6 @@ export const RUNLOOP_SANDBOX_ID = type(/^dbx_[A-Za-z0-9]+$/);
 /** Every benchmark create stamps both keys; the attempt key carries the kit's ownership marker. */
 export const RUNLOOP_OWNER_METADATA_KEY = "sandbox-benchmarks";
 export const RUNLOOP_ATTEMPT_METADATA_KEY = "sandbox-benchmarks-attempt";
-/** Past the longest suite plus setup/collection margin, so a leaked Devbox still self-expires. */
-export const RUNLOOP_KEEP_ALIVE_SECONDS = 3 * 60 * 60;
 /** One control-plane round-trip; the kit bounds each call by the same ceiling. */
 export const RUNLOOP_CONTROL_TIMEOUT_MS = 30_000;
 /**
@@ -42,7 +39,7 @@ export const RUNLOOP_CREATE_TIMEOUT_MS = 20 * 60_000;
  * every step budgeted at or past the sync cap to the durable path, so this ceiling only backstops
  * a command the harness already gave up on; the harness's own wait-cap binds first.
  */
-export const RUNLOOP_SYNC_EXEC_TIMEOUT_MS = 10 * 60_000;
+const RUNLOOP_SYNC_EXEC_TIMEOUT_MS = 10 * 60_000;
 /** Records stamped with the owner key alone are the benchmark's, under a marker no attempt mints. */
 const OWNER_KEY_MARKER = `${MARKER_PREFIX}owner-key`;
 
@@ -81,7 +78,6 @@ const requestOptions = (signal?: AbortSignal) => ({
 	timeout: RUNLOOP_CONTROL_TIMEOUT_MS,
 	...(signal && { signal }),
 });
-const notFound = instanceOfAny(NotFoundError);
 const refusal = instanceOfAny(AuthenticationError, BadRequestError, RateLimitError);
 const rateLimited = instanceOfAny(RateLimitError);
 
@@ -90,14 +86,8 @@ export function runloopVendor(
 	client: RunloopClient,
 ): Vendor<DevboxView, DevboxView> {
 	const { devboxes } = client.api;
-	const get = async (id: string, { signal }: { signal: AbortSignal }) => {
-		try {
-			return record(await devboxes.retrieve(id, requestOptions(signal)));
-		} catch (error) {
-			if (notFound(error)) return null;
-			throw error;
-		}
-	};
+	const get = async (id: string, { signal }: { signal: AbortSignal }) =>
+		record(await devboxes.retrieve(id, requestOptions(signal)));
 	return {
 		control: {
 			// The create acknowledgement is `provisioning`: readiness is observed by `settle`.
@@ -118,7 +108,7 @@ export function runloopVendor(
 								...(request.spec.diskGb !== undefined && {
 									custom_disk_size: request.spec.diskGb,
 								}),
-								keep_alive_time_seconds: RUNLOOP_KEEP_ALIVE_SECONDS,
+								keep_alive_time_seconds: LEAK_EXPIRY_MS / 1000,
 							},
 						},
 						requestOptions(signal),
@@ -147,14 +137,10 @@ export function runloopVendor(
 			},
 			// Forced shutdown is deterministic even while a snapshot finalizes (Runloop's 409 otherwise).
 			remove: async (id, { signal }) => {
-				try {
-					const devbox = await devboxes.shutdown(id, { force: "true" }, requestOptions(signal));
-					return phaseOf(devbox.status) === "gone" ? "removed" : "accepted";
-				} catch (error) {
-					if (notFound(error)) return "removed";
-					throw error;
-				}
+				const devbox = await devboxes.shutdown(id, { force: "true" }, requestOptions(signal));
+				return phaseOf(devbox.status) === "gone" ? "removed" : "accepted";
 			},
+			absent: instanceOfAny(NotFoundError),
 			// One Stainless cursor page; no server-side metadata filter exists, so recovery matches
 			// the attempt marker over the drained account.
 			page: async (cursor, { signal }) => {
@@ -173,7 +159,6 @@ export function runloopVendor(
 			// A missing exit status is an unknown exit, never a fabricated zero; truncated output is a
 			// failure, because a synchronous step whose stdout carries data cannot be trusted once cut.
 			exec: async ({ id }, command, options?: ExecOptions) => {
-				options?.signal?.throwIfAborted();
 				const result = await devboxes.executeAndAwaitCompletion(
 					id,
 					{ command },
@@ -197,7 +182,6 @@ export function runloopVendor(
 			},
 			// Background execution is accepted only once Runloop returns a genuine execution handle.
 			launch: async ({ id }, command, options) => {
-				options?.signal?.throwIfAborted();
 				const execution = await devboxes.executeAsync(
 					id,
 					{ command },

@@ -6,9 +6,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import {
 	InvalidConfigError,
 	IoError,
@@ -20,7 +19,6 @@ import microsandboxCloud, { MICROSANDBOX_CREATE_TIMEOUT_MS } from "./index.ts";
 import type { MicrosandboxSdk } from "./vendor.ts";
 import {
 	MICROSANDBOX_LABEL_MARKER,
-	MICROSANDBOX_SANDBOX_LIFETIME_MS,
 	MICROSANDBOX_STOP_WAIT_MS,
 	microsandboxVendor,
 } from "./vendor.ts";
@@ -228,15 +226,10 @@ function microsandboxAccount(
 
 /** The package's own module, lowered over a stub SDK instead of the real one. */
 function driverOver(account: ReturnType<typeof microsandboxAccount>) {
-	return driverFromComputeSpec(
-		"microsandbox-cloud",
-		microsandboxCloud.specFor(context, {
-			vendor: microsandboxVendor(account.sdk, context),
-			timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
-		}),
-		context.resolvedArtifact,
-		[KEY],
-	);
+	return vendorDriver(microsandboxCloud, context, {
+		vendor: microsandboxVendor(account.sdk, context),
+		timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+	});
 }
 
 describe("Microsandbox Cloud translation", () => {
@@ -258,7 +251,7 @@ describe("Microsandbox Cloud translation", () => {
 			["rootDisk", [40960]],
 			["cpus", [4]],
 			["memory", [8192]],
-			["maxDuration", [MICROSANDBOX_SANDBOX_LIFETIME_MS / 1000]],
+			["maxDuration", [(3 * 60 * 60_000) / 1000]],
 			["detached", [true]],
 			["ephemeral", [true]],
 			["label", [MICROSANDBOX_LABEL_MARKER, "microsandbox-cloud"]],
@@ -270,7 +263,7 @@ describe("Microsandbox Cloud translation", () => {
 
 	test("only a running record is usable; ownership is exactly the generated name shape", async () => {
 		const account = microsandboxAccount();
-		const { control } = microsandboxVendor(account.sdk, context);
+		const { control } = kitPort(microsandboxVendor(account.sdk, context));
 		const read = (name: string, status = "running") =>
 			control.get(account.allocate(name, status), op());
 		expect(await read(OWNED_A)).toMatchObject({
@@ -287,7 +280,7 @@ describe("Microsandbox Cloud translation", () => {
 
 	test("removes stop-first, and removes a wedged draining record without re-stopping it", async () => {
 		const account = microsandboxAccount();
-		const { control } = microsandboxVendor(account.sdk, context);
+		const { control } = kitPort(microsandboxVendor(account.sdk, context));
 		const running = account.allocate(OWNED_A);
 		const events = account.rows.get(running)?.events;
 		expect(await control.remove(running, op())).toBe("removed");
@@ -311,10 +304,9 @@ describe("Microsandbox Cloud translation", () => {
 	});
 });
 
-vendorContract("microsandbox-cloud adapter", () => ({
-	vendor: microsandboxVendor(microsandboxAccount({ pageSize: 1 }).sdk, context),
-	account: "shared",
-}));
+vendorContract("microsandbox-cloud adapter", microsandboxCloud, () =>
+	microsandboxVendor(microsandboxAccount({ pageSize: 1 }).sdk, context),
+);
 
 describe("Microsandbox Cloud end to end through its module", () => {
 	test("declares identity, shell-detach execution, and a pull-sized create budget", () => {
@@ -416,15 +408,10 @@ describe("Microsandbox Cloud end to end through its module", () => {
 				},
 			},
 		} as unknown as MicrosandboxSdk;
-		const failure = await driverFromComputeSpec(
-			"microsandbox-cloud",
-			microsandboxCloud.specFor(context, {
-				vendor: microsandboxVendor(sdk, context),
-				timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
-			}),
-			context.resolvedArtifact,
-			[KEY],
-		)
+		const failure = await vendorDriver(microsandboxCloud, context, {
+			vendor: microsandboxVendor(sdk, context),
+			timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+		})
 			.create(request)
 			.catch((caught) => caught);
 		const [name = ""] = account.rows.keys();

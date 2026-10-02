@@ -113,7 +113,7 @@ describe("provider metadata authoring", () => {
 		for (const specifier of [
 			"arktype",
 			"arktype/internal",
-			"@computesdk/e2b",
+			"e2b",
 			"microsandbox",
 			"some-sdk-wrapper",
 		]) {

@@ -8,9 +8,8 @@ import type { CreateSandboxOptions, Sandbox } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { FailedCreateCleanupError, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import runcloud, {
 	RUNCLOUD_CREATE_CEILING_MS,
 	RUNCLOUD_PROVENANCE,
@@ -18,12 +17,7 @@ import runcloud, {
 	runcloudTransport,
 } from "./index.ts";
 import type { RuncloudTransport } from "./vendor.ts";
-import {
-	RUNCLOUD_NAME,
-	RUNCLOUD_RECONCILE_ATTEMPTS,
-	RUNCLOUD_SANDBOX_LIFETIME_SECS,
-	runcloudVendor,
-} from "./vendor.ts";
+import { RUNCLOUD_NAME, RUNCLOUD_RECONCILE_ATTEMPTS, runcloudVendor } from "./vendor.ts";
 
 const KEY = "rc_test-key";
 const context: DriverContext<"runcloud"> = {
@@ -172,15 +166,10 @@ const vendorOver = (account: ReturnType<typeof runcloudAccount>) =>
 
 /** The package's own module, lowered over a fake account instead of the real SDK. */
 function driverOver(account: ReturnType<typeof runcloudAccount>) {
-	return driverFromComputeSpec(
-		"runcloud",
-		runcloud.specFor(context, {
-			vendor: vendorOver(account),
-			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
-		}),
-		context.resolvedArtifact,
-		[KEY],
-	);
+	return vendorDriver(runcloud, context, {
+		vendor: vendorOver(account),
+		timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
+	});
 }
 
 describe("run.cloud translation", () => {
@@ -196,14 +185,14 @@ describe("run.cloud translation", () => {
 			cpu: 4,
 			memory: 8 * 1024,
 			disk: 40,
-			idlePauseSeconds: RUNCLOUD_SANDBOX_LIFETIME_SECS,
-			timeoutSeconds: RUNCLOUD_SANDBOX_LIFETIME_SECS,
+			idlePauseSeconds: 3 * 60 * 60,
+			timeoutSeconds: 3 * 60 * 60,
 		});
 	});
 
 	test("reads tombstones as gone, a pending delete as live, and marks boots the host gave up on", async () => {
 		const account = runcloudAccount({ readyAfterGets: 1_000 });
-		const { control } = vendorOver(account);
+		const { control } = kitPort(vendorOver(account));
 		const read = (state: string) => control.get(account.allocate("x", state), op());
 		expect(await read("running")).toMatchObject({ phase: "ready" });
 		expect(await read("building_image")).toMatchObject({ phase: "pending" });
@@ -267,10 +256,9 @@ describe("run.cloud translation", () => {
 	});
 });
 
-vendorContract("runcloud adapter", () => ({
-	vendor: vendorOver(runcloudAccount({ pageSize: 1, readyAfterGets: 2 })),
-	account: "shared",
-}));
+vendorContract("runcloud adapter", runcloud, () =>
+	vendorOver(runcloudAccount({ pageSize: 1, readyAfterGets: 2 })),
+);
 
 describe("run.cloud end to end through its module", () => {
 	test("declares identity, the shell-detach policy, the create ceiling, and cost evidence", async () => {

@@ -6,15 +6,50 @@
 
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { ProviderId } from "@sandbox-benchmarks/driver";
-import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
+import type { DriverContext, ProviderId, SandboxDriver } from "@sandbox-benchmarks/driver";
+import { sensitiveEnvValuesFor } from "@sandbox-benchmarks/driver/env";
+import type {
+	MarkerSpelling,
+	Phase,
+	Vendor,
+	VendorDriverModule,
+	VendorHandle,
+	VendorOverrides,
+	VendorRecord,
+	VendorTraits,
+} from "@sandbox-benchmarks/driver/vendor";
 import {
 	DISK_PROBE,
 	diskProbe,
 	drainPages,
 	MARKER_PREFIX,
 } from "@sandbox-benchmarks/driver/vendor";
+import { driverFromComputeSpec } from "./lib/computesdk.ts";
 import { guestShell } from "./lib/guest.fixture.ts";
+import { kitPort } from "./lib/vendor-port.ts";
+
+/**
+ * An adapter as the kit calls it: its declared not-found read as absence, a `recovery.lookup` as
+ * its marker lookup, no call started on a cancelled signal. Translation tests read through it.
+ */
+export { kitPort };
+
+/**
+ * A provider's own module lowered over another vendor or timing (its adapter over a stubbed
+ * transport) into the driver its `driver(context)` would build, credentials redacted the same way.
+ */
+export function vendorDriver<P extends ProviderId, Raw, Native>(
+	module: VendorDriverModule<P, Raw, Native>,
+	context: DriverContext<P>,
+	overrides: VendorOverrides<Raw, Native> = {},
+): SandboxDriver<VendorHandle<Raw, Native>> {
+	return driverFromComputeSpec(
+		module.id,
+		module.specFor(context, overrides),
+		context.resolvedArtifact,
+		sensitiveEnvValuesFor(module.id, context.env),
+	);
+}
 
 export interface MemoryRow {
 	readonly id: string;
@@ -46,6 +81,13 @@ export interface MemoryVendorOptions {
 	readonly lookup?: boolean;
 	/** Serve a server-side readiness wait (`settle`) that answers once a sandbox leaves pending. */
 	readonly settles?: boolean;
+	/**
+	 * `throws`: the vendor reports an unknown sandbox as a typed not-found error, which the adapter
+	 * declares as `control.absent`, instead of answering `null`.
+	 */
+	readonly notFound?: "null" | "throws";
+	/** Name each sandbox by its marker's spelling, which `get` resolves (a vendor-chosen name). */
+	readonly names?: MarkerSpelling;
 	/** Every control-plane call answers this late, ignoring its signal (a slow or hung transport). */
 	readonly latencyMs?: number;
 	readonly faults?: {
@@ -64,6 +106,13 @@ export interface MemoryVendorOptions {
 		/** The vendor acknowledges every delete but never removes the sandbox. */
 		readonly removalStalls?: boolean;
 	};
+}
+
+/** The in-memory vendor's typed not-found. */
+export class MemoryNotFound extends Error {
+	constructor(id: string) {
+		super(`sandbox ${id} not found`);
+	}
 }
 
 class Refused extends Error {
@@ -89,8 +138,9 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 		...Object.entries(options.mounts ?? {}).map(([path, gb]) => [diskProbe(path), gb] as const),
 	]);
 	const allocate = (marker?: string, state: Phase = "pending"): MemoryRow => {
+		next += 1;
 		const row: MemoryRow = {
-			id: `mem-${++next}`,
+			id: marker && options.names ? options.names.toVendor(marker) : `mem-${next}`,
 			...(marker && { marker }),
 			state,
 			gets: 0,
@@ -156,6 +206,11 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 		if (options.latencyMs) await Bun.sleep(options.latencyMs);
 	};
 	let ambiguousPending = faults.createAmbiguous ?? false;
+	/** An unknown sandbox: `null`, or the vendor's typed not-found. */
+	const missing = (id: string): null => {
+		if (options.notFound === "throws") throw new MemoryNotFound(id);
+		return null;
+	};
 
 	const vendor: Vendor<MemoryRow, MemoryRow> = {
 		control: {
@@ -173,7 +228,7 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 			get: async (id) => {
 				await control("get");
 				const row = rows.get(id);
-				if (!row) return null;
+				if (!row) return missing(id);
 				row.gets += 1;
 				if (row.state === "pending" && row.gets >= readyAfter)
 					row.state = faults.failsDuringReadiness ? "failed" : "ready";
@@ -187,7 +242,7 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 				settle: async (id: string) => {
 					await control("settle");
 					const row = rows.get(id);
-					if (!row) return null;
+					if (!row) return missing(id);
 					if (row.state === "pending") row.state = faults.failsDuringReadiness ? "failed" : "ready";
 					return record(row);
 				},
@@ -195,7 +250,8 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 			remove: async (id) => {
 				await control("remove");
 				const row = rows.get(id);
-				if (!row || row.state === "gone") return "removed";
+				if (!row) return missing(id) ?? "removed";
+				if (row.state === "gone") return "removed";
 				if (options.removal === "removed" && !faults.removalStalls) {
 					row.state = "gone";
 					return "removed";
@@ -223,6 +279,9 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 				},
 			}),
 			refused: (error) => (error instanceof Refused ? { retryable: error.retryable } : undefined),
+			...(options.notFound === "throws" && {
+				absent: (error: unknown) => error instanceof MemoryNotFound,
+			}),
 		},
 		data: {
 			attach: (value) => value.raw,
@@ -258,14 +317,19 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 }
 
 /**
- * The port contract, runnable against any adapter. `make` returns a fresh adapter over a stubbed
- * transport whose sandboxes become ready within a few gets and answer `sh -c 'exit 7'` with exit 7.
- * On a shared account every record must carry the create-time marker the kit attributes it by.
+ * The port contract, runnable against any adapter, as the module's kit calls it (its declared
+ * not-found read as absence, its `recovery.lookup` as the marker lookup, on its declared account).
+ * `make` returns a fresh adapter over a stubbed transport whose sandboxes become ready within a few
+ * gets and answer `sh -c 'exit 7'` with exit 7. On a shared account every record must carry the
+ * create-time marker the kit attributes it by.
  */
 export function vendorContract<Raw, Native>(
 	name: string,
-	make: () => { vendor: Vendor<Raw, Native>; account: "shared" | "dedicated" },
+	module: { readonly traits: Pick<VendorTraits, "account" | "recovery"> },
+	make: () => Vendor<Raw, Native>,
 ) {
+	const account = module.traits.account ?? "shared";
+	const bound = () => ({ vendor: kitPort(make(), module.traits.recovery?.lookup), account });
 	const op = { signal: new AbortController().signal };
 	const request = {
 		spec: { vcpus: 4, memoryGb: 8 },
@@ -285,15 +349,15 @@ export function vendorContract<Raw, Native>(
 		drainPages(name as ProviderId, fetch, op);
 
 	test(`${name}: get of an unknown id is null, not an error`, async () => {
-		expect(await make().vendor.control.get("does-not-exist", op)).toBeNull();
+		expect(await bound().vendor.control.get("does-not-exist", op)).toBeNull();
 	});
 
 	test(`${name}: removing an unknown id is already removed`, async () => {
-		expect(await make().vendor.control.remove("does-not-exist", op)).toBe("removed");
+		expect(await bound().vendor.control.remove("does-not-exist", op)).toBe("removed");
 	});
 
 	test(`${name}: a created sandbox is observable, listable and attributable`, async () => {
-		const { vendor, account } = make();
+		const { vendor, account } = bound();
 		const marker = mint();
 		const created = await create(vendor, marker);
 		// The kit attaches every create's record before readiness, so a vendor may mark it there (a
@@ -310,7 +374,7 @@ export function vendorContract<Raw, Native>(
 	});
 
 	test(`${name}: a marker lookup returns only what the marker attributes`, async () => {
-		const { vendor, account } = make();
+		const { vendor, account } = bound();
 		const find = vendor.control.find;
 		if (!find) {
 			expect(account).toBe("shared"); // a dedicated account recovers by replay, through find
@@ -326,7 +390,7 @@ export function vendorContract<Raw, Native>(
 	});
 
 	test(`${name}: a server-side readiness wait answers like get`, async () => {
-		const { vendor, account } = make();
+		const { vendor, account } = bound();
 		const settle = vendor.control.settle;
 		if (!settle) return;
 		expect(await settle("does-not-exist", op)).toBeNull();
@@ -339,7 +403,7 @@ export function vendorContract<Raw, Native>(
 	});
 
 	test(`${name}: removal is eventually observed, and "removed" means gone`, async () => {
-		const { vendor } = make();
+		const { vendor } = bound();
 		const created = await create(vendor, mint());
 		let outcome = await vendor.control.remove(created.id, op);
 		for (let polls = 0; outcome !== "removed" && polls < 20; polls++) {
@@ -352,7 +416,7 @@ export function vendorContract<Raw, Native>(
 	});
 
 	test(`${name}: a created sandbox attaches, and once ready executes and round-trips files`, async () => {
-		const { vendor } = make();
+		const { vendor } = bound();
 		// As in the kit: attach the create's own record, then wait for readiness.
 		let current: VendorRecord<Raw> | null = await create(vendor, mint());
 		const native = await vendor.data.attach(current, op);

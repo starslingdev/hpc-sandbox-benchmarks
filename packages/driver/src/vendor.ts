@@ -1,12 +1,13 @@
 // @sandbox-benchmarks/driver/vendor — the driver authoring module (ADR-0023 §1).
 //
 // A provider package states what is true about its vendor through two ports, the control plane
-// (create/get/remove/page, optionally settle/find/refused/admit) and the data plane (attach/exec,
-// optionally launch/files). This module owns everything provider-neutral, once: readiness,
-// cleanup confirmation, destroy-by-id, probes, the owned/foreign inventory partition,
-// ambiguous-create recovery, the artifact guard, the disk proof and the execution policy. It lowers
-// onto the ComputeSDK bridge, so coverage proof, sandbox-id parsing, cleanup double faults,
-// redaction and output caps are reused rather than reimplemented.
+// (create/get/remove/page, optionally settle/find/refused/transient/absent/admit) and the data plane
+// (attach/exec, optionally launch/files/prepare). This module owns everything provider-neutral,
+// once: readiness, cleanup confirmation, destroy-by-id, probes, the owned/foreign inventory
+// partition, ambiguous-create recovery, the artifact guard, the disk proof and the execution policy.
+// It lowers onto the package's internal ComputeSDK bridge (`lib/computesdk.ts`), so coverage proof,
+// sandbox-id parsing, cleanup double faults, redaction and output caps are reused rather than
+// reimplemented.
 //
 // Behaviour unique to one vendor family stays on explicit, typed passthroughs (snapshots,
 // accelerator, cost evidence, a harness-owned create budget, a non-default execution policy) and
@@ -18,6 +19,7 @@ import type {
 	CreateBudget,
 	CreateRequest,
 	DriverContext,
+	DriverOperationOptions,
 	ExecOptions,
 	ExecutionPolicy,
 	ProviderCostEvidenceCapability,
@@ -26,15 +28,22 @@ import type {
 	SandboxObservation,
 	SnapshotRetention,
 } from "@sandbox-benchmarks/driver";
-import { DriverError, isDriverError, pollUntilReady, shellQuote } from "@sandbox-benchmarks/driver";
+import {
+	DriverError,
+	detachedShellCommand,
+	isDriverError,
+	pollUntilReady,
+	shellQuote,
+} from "@sandbox-benchmarks/driver";
+import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
+import type { SdkProvenance } from "@sandbox-benchmarks/schema";
 import type {
 	ComputeSdkCreateRequestCoverage,
+	ComputeSdkDriverSpec,
 	ComputeSdkSandboxIdSchema,
-} from "@sandbox-benchmarks/driver/computesdk";
-import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
-import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
-import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
-import type { SdkProvenance } from "@sandbox-benchmarks/schema";
+} from "./lib/computesdk.ts";
+import { defineComputeSdkDriver } from "./lib/computesdk.ts";
+import { kitPort } from "./lib/vendor-port.ts";
 
 /* ------------------------------------ the ports ------------------------------------ */
 
@@ -103,6 +112,13 @@ export interface ControlPlane<Raw = unknown> {
 	settle?(id: string, op: Op): Promise<VendorRecord<Raw> | null>;
 	/** `removed`: the vendor proved removal (or reported not-found). `accepted`: acknowledgement only. */
 	remove(id: string, op: Op): Promise<"removed" | "accepted">;
+	/**
+	 * The vendor's own not-found. Declared, the kit reads such an error from `get` or `settle` as
+	 * `null` and from `remove` as `"removed"`, so the adapter states the rule once instead of in
+	 * every call. A vendor whose not-found is narrower (one endpoint's, not an auth or parent
+	 * resource's) states exactly that rule here.
+	 */
+	absent?(error: unknown): boolean;
 	/** One page of the whole account. The kit drains, caps, and fails closed on a bad cursor. */
 	page(cursor: string | undefined, op: Op): Promise<VendorPage<Raw>>;
 	/**
@@ -234,6 +250,12 @@ export interface VendorTraits {
 		 * tears down what the marker finds and otherwise keeps the attempt as a cleanup failure.
 		 */
 		readonly provesAbsence?: boolean;
+		/**
+		 * The spelling under which `control.get` resolves an attempt's marker (the create named the
+		 * sandbox by it): recovery looks an ambiguous create up by that `get`, so the adapter needs
+		 * no `find`.
+		 */
+		readonly lookup?: MarkerSpelling;
 	};
 	/** The name the ownership marker travels under at the vendor (default `<provider>-marker`). */
 	readonly markerKey?: string;
@@ -263,8 +285,19 @@ export interface DiskProof {
 	readonly allowanceRatio?: number;
 }
 
+/**
+ * A suite-length sandbox lifetime (the longest suite budgets 155 minutes, plus setup and collection
+ * margin), so an allocation every teardown missed still expires on its own. A create that can state
+ * a vendor-side lifetime states this one.
+ */
+export const LEAK_EXPIRY_MS = 3 * 60 * 60_000;
+
 /** The create-time prefix every kit-minted ownership marker carries. */
 export const MARKER_PREFIX = "benchmark-";
+const MINTED = new RegExp(`^${MARKER_PREFIX}[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`);
+
+/** Whether a vendor value is exactly a kit-minted marker (a sandbox the create named by it). */
+export const isMintedMarker = (value: string): boolean => MINTED.test(value);
 
 /**
  * The vendor-visible spelling of an ownership marker: the attempt's UUID under the vendor's own
@@ -288,6 +321,9 @@ export function markerSpelling(prefix: string): MarkerSpelling {
 				: undefined,
 	});
 }
+/** The marker as the kit mints it, unchanged: the default spelling. */
+export const VERBATIM_MARKER: MarkerSpelling = markerSpelling(MARKER_PREFIX);
+
 const DEFAULT_EXECUTION: ExecutionPolicy = { syncCapMs: 60_000, durable: "shell-detach" };
 const DEFAULT_TIMING: VendorTiming = {
 	pollMs: 250,
@@ -340,6 +376,57 @@ export const instanceOfAny =
 	(...classes: ReadonlyArray<abstract new (...args: never[]) => unknown>) =>
 	(error: unknown): boolean =>
 		matchesAnyCause(error, (cause) => classes.some((errorClass) => cause instanceof errorClass));
+
+/**
+ * The HTTP status a typed vendor error carries anywhere in its cause chain, read through `read`.
+ * A status that cannot be read (a hostile getter) proves nothing.
+ */
+export const httpStatus =
+	<E>(errorClass: abstract new (...args: never[]) => E, read: (error: E) => unknown) =>
+	(error: unknown): number | undefined => {
+		let status: number | undefined;
+		matchesAnyCause(error, (cause) => {
+			if (!(cause instanceof errorClass)) return false;
+			try {
+				const value = read(cause);
+				if (typeof value === "number") status = value;
+			} catch {
+				// Keep walking the cause chain.
+			}
+			return status !== undefined;
+		});
+		return status;
+	};
+
+/** `refused` over listed HTTP statuses: each refuses before allocation; only a 429 is retryable. */
+export const refusedOn =
+	(status: (error: unknown) => number | undefined, statuses: readonly number[]) =>
+	(error: unknown): { readonly retryable: boolean } | undefined => {
+		const code = status(error);
+		return code !== undefined && statuses.includes(code) ? { retryable: code === 429 } : undefined;
+	};
+
+/**
+ * The REST reading of a status, for a vendor that documents no narrower one: a 4xx other than a
+ * timeout (408) or conflict (409, which asserts that something already exists) refused before
+ * allocating, retryable only on 429; a timeout, conflict, rate limit or 5xx is transient; a 404 is
+ * the vendor's not-found.
+ */
+export function httpClassifiers(status: (error: unknown) => number | undefined) {
+	return {
+		refused: (error: unknown) => {
+			const code = status(error);
+			return code !== undefined && code >= 400 && code < 500 && code !== 408 && code !== 409
+				? { retryable: code === 429 }
+				: undefined;
+		},
+		transient: (error: unknown) => {
+			const code = status(error);
+			return code === 408 || code === 409 || code === 429 || (code !== undefined && code >= 500);
+		},
+		absent: (error: unknown) => status(error) === 404,
+	} satisfies Pick<ControlPlane, "refused" | "transient" | "absent">;
+}
 
 /* ------------------------------------ mechanics ------------------------------------ */
 
@@ -450,16 +537,16 @@ class Allocation<Raw, Native> implements VendorHandle<Raw, Native> {
 }
 
 /** Lower one bound vendor onto the ComputeSDK bridge. */
-export function vendorSpec<P extends ProviderId, Raw, Native>(
+function vendorSpec<P extends ProviderId, Raw, Native>(
 	provider: P,
 	context: DriverContext<P>,
 	traits: VendorTraits,
 	vendor: Vendor<Raw, Native>,
 ) {
-	const { control, data, snapshots } = vendor;
+	const { control, data, snapshots } = kitPort(vendor, traits.recovery?.lookup);
 	const { files, launch } = data;
 	const { refused, transient } = control;
-	const spelling = traits.markerSpelling ?? markerSpelling(MARKER_PREFIX);
+	const spelling = traits.markerSpelling ?? VERBATIM_MARKER;
 	const timing: VendorTiming = { ...DEFAULT_TIMING, ...traits.timing };
 	const dedicated = traits.account === "dedicated";
 	const provesAbsence = traits.recovery?.provesAbsence ?? true;
@@ -467,6 +554,8 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	const unresolved = new Set<string>();
 	if (dedicated && !control.find)
 		throw new Error(`${provider}: a dedicated account recovers by replay and needs control.find`);
+	if (vendor.control.find && traits.recovery?.lookup)
+		throw new Error(`${provider}: recovery looks a marker up by control.find or by get, not both`);
 	if (traits.diskProof === "reported" && !data.prepare)
 		throw new Error(`${provider}: a reported disk proof is proven by data.prepare`);
 	executionOf(provider, traits, launch !== undefined);
@@ -657,33 +746,48 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	// Create is only the vendor call: once it returns an id, every later step (attach, readiness,
 	// admission, preparation, the disk proof) runs on the bridge's post-create path, which tears the
 	// allocation down by that id and, if teardown fails, retains a cleanup that retries by id.
-	const compute = nativeSdkCompute(
-		async (attempt: CreateAttempt, operation) =>
-			new Allocation<Raw, Native>(
-				await control.create(attempt, op(operation.signal)).catch((error: unknown) => {
-					if (!provesAbsence && refused?.(error) === undefined) unresolved.add(attempt.marker);
-					throw error;
-				}),
-			),
-		(handle) => ({
-			sandboxId: handle.record.id,
-			runCommand: (command: string, options?: ExecOptions) =>
-				data.exec(handle.native, command, options),
-			destroy: () => release(handle.record.id),
-			...(files && {
-				filesystem: {
-					readFile: (path: string) => files.read(handle.native, path),
-					exists: async (path: string) =>
-						files.exists
-							? files.exists(handle.native, path)
-							: (await data.exec(handle.native, `test -e ${shellQuote(path)}`)).exitCode === 0,
-					writeFile: (path: string, text: string) => files.write(handle.native, path, text),
-				},
-			}),
-		}),
-	);
+	const compute = {
+		sandbox: {
+			async create(attempt: CreateAttempt, operation: DriverOperationOptions = {}) {
+				operation.signal?.throwIfAborted();
+				const handle = new Allocation<Raw, Native>(
+					await control.create(attempt, op(operation.signal)).catch((error: unknown) => {
+						if (!provesAbsence && refused?.(error) === undefined) unresolved.add(attempt.marker);
+						throw error;
+					}),
+				);
+				return {
+					sandboxId: handle.record.id,
+					getInstance: () => handle,
+					// The plain exec is synchronous; a background request runs through the kit's shell
+					// launcher, and `data.launch` (bound below as the bridge's commands) owns native ones.
+					runCommand: (
+						command: string,
+						options?: ExecOptions & { readonly background?: boolean },
+					) =>
+						data.exec(
+							handle.native,
+							options?.background ? detachedShellCommand(command) : command,
+							options?.signal ? { signal: options.signal } : undefined,
+						),
+					destroy: () => release(handle.record.id),
+					...(files && {
+						filesystem: {
+							readFile: (path: string) => files.read(handle.native, path),
+							exists: async (path: string) =>
+								files.exists
+									? files.exists(handle.native, path)
+									: (await data.exec(handle.native, `test -e ${shellQuote(path)}`)).exitCode === 0,
+							writeFile: (path: string, text: string) => files.write(handle.native, path, text),
+						},
+					}),
+				};
+			},
+		},
+	};
 
-	return computeSdkSpec(compute, {
+	const spec: ComputeSdkDriverSpec<typeof compute> = {
+		compute,
 		sandboxId: traits.sandboxId,
 		createOptions: {
 			coverage: traits.coverage,
@@ -826,7 +930,8 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 					),
 			},
 		}),
-	});
+	};
+	return spec;
 }
 
 /* ---------------------------------- module entry ---------------------------------- */
@@ -842,6 +947,12 @@ export interface VendorDriverSpec<P extends ProviderId, Raw, Native> extends Ven
 	readonly vendor: (context: DriverContext<P>) => Vendor<Raw, Native>;
 }
 
+/** Another vendor or timing to lower a module against (a stubbed transport in tests). */
+export interface VendorOverrides<Raw, Native> {
+	readonly vendor?: Vendor<Raw, Native>;
+	readonly timing?: Partial<VendorTiming>;
+}
+
 /**
  * Define a provider's DriverModule from its vendor. `specFor` lowers the same module against
  * another vendor or timing (a stubbed transport in tests), so packages never restate their binding.
@@ -851,13 +962,14 @@ export function defineVendorDriver<P extends ProviderId, Raw, Native>(
 	module: VendorDriverSpec<NoInfer<P>, Raw, Native>,
 ) {
 	const { provenance, vendor, createBudget, accelerator, costEvidence, ...traits } = module;
-	const specFor = (
-		context: DriverContext<P>,
-		overrides: {
-			readonly vendor?: Vendor<Raw, Native>;
-			readonly timing?: Partial<VendorTiming>;
-		} = {},
-	) =>
+	// The bridge has no cancellable hard ceiling, so only the harness may own the create budget.
+	if (createBudget !== undefined && createBudget.owner !== "harness")
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} create budget must be owned by the harness`,
+			{ provider },
+		);
+	const specFor = (context: DriverContext<P>, overrides: VendorOverrides<Raw, Native> = {}) =>
 		vendorSpec(
 			provider,
 			context,
@@ -874,6 +986,12 @@ export function defineVendorDriver<P extends ProviderId, Raw, Native>(
 		...(costEvidence && { costEvidence }),
 		spec: (context) => specFor(context),
 	});
-	// DriverModules are frozen; the test seam travels beside the module, not inside it.
-	return Object.freeze({ ...driver, specFor });
+	// DriverModules are frozen; the test seams (the lowering and the declared traits the port
+	// contract reads) travel beside the module, not inside it.
+	return Object.freeze({ ...driver, specFor, traits: Object.freeze(traits) as VendorTraits });
 }
+
+/** A module `defineVendorDriver` returned. */
+export type VendorDriverModule<P extends ProviderId, Raw, Native> = ReturnType<
+	typeof defineVendorDriver<P, Raw, Native>
+>;

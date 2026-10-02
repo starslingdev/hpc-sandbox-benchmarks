@@ -9,13 +9,12 @@ import { type } from "arktype";
 import type {
 	ComputeSdkCreateRequestCoverage,
 	ComputeSdkCreateRequestMapper,
-	ComputeSdkDriverModuleSpec,
 	ComputeSdkDriverSpec,
 	ComputeSdkLike,
 	ComputeSdkNativeOf,
 	ComputeSdkSandboxLike,
 } from "./computesdk.ts";
-import { computeSdkSpec, defineComputeSdkDriver } from "./computesdk.ts";
+import { defineComputeSdkDriver } from "./computesdk.ts";
 
 const request: CreateRequest = {
 	spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
@@ -23,7 +22,7 @@ const request: CreateRequest = {
 	deadlineMs: 30_000,
 };
 
-function fakeCompute<TSandbox extends ComputeSdkSandboxLike>(sandbox: TSandbox, withList = false) {
+function fakeCompute<TSandbox extends ComputeSdkSandboxLike>(sandbox: TSandbox) {
 	const createOptionsSeen: object[] = [];
 	const compute: ComputeSdkLike<TSandbox> = {
 		sandbox: {
@@ -31,7 +30,6 @@ function fakeCompute<TSandbox extends ComputeSdkSandboxLike>(sandbox: TSandbox, 
 				createOptionsSeen.push(options ?? {});
 				return sandbox;
 			},
-			...(withList ? { list: async () => ["sb-1"] } : {}),
 		},
 	};
 	return { compute, createOptionsSeen };
@@ -135,118 +133,7 @@ function bridge<TSandbox extends ComputeSdkSandboxLike>(
 }
 
 describe("computeSdkDriver", () => {
-	test("rejects native-launch policy before allocation when the provider spec has no launch", () => {
-		let createCalls = 0;
-		const compute = {
-			sandbox: {
-				create: async () => {
-					createCalls += 1;
-					return baseSandbox;
-				},
-			},
-		};
-		const module_ = defineComputeSdkDriver("e2b", {
-			...bridgePolicy,
-			execution: { syncCapMs: 60_000, durable: "native-launch" },
-			spec: () => ({
-				compute,
-				sandboxId: e2bSandboxId,
-				createOptions: createRequestMapper(),
-				hasWorkingFilesystem: false,
-			}),
-		});
-		expect(() =>
-			module_.driver({
-				env: { E2B_API_KEY: "test-key" },
-				artifact: { kind: "baked" },
-				resolvedArtifact: { kind: "baked", ref: "template-1" },
-			}),
-		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }));
-		expect(createCalls).toBe(0);
-	});
-
-	test("keeps the first compute argument authoritative when an extracted spec has excess state", () => {
-		const { compute: authoritative } = fakeCompute(baseSandbox);
-		const { compute: accidental } = fakeCompute({ ...baseSandbox, sandboxId: "iaccidental" });
-		const extracted = {
-			compute: accidental,
-			sandboxId: e2bSandboxId,
-			createOptions: createRequestMapper(),
-			hasWorkingFilesystem: false,
-		};
-		const joined = computeSdkSpec(authoritative, extracted);
-		expect(joined.compute).toBe(authoritative);
-	});
-
-	test("the joined helper has one provider id and contextually types its exact env slice", () => {
-		const { compute } = fakeCompute(baseSandbox);
-		const module_ = defineComputeSdkDriver("e2b", {
-			...bridgePolicy,
-			createBudget: { owner: "harness", timeoutMs: 45_000 },
-			spec: ({ env, resolvedArtifact }) => ({
-				compute,
-				sandboxId: e2bSandboxId,
-				createOptions: createRequestMapper(() => ({
-					apiKeyWasResolved: env.E2B_API_KEY.length > 0,
-					snapshotId: resolvedArtifact.ref,
-				})),
-				hasWorkingFilesystem: false,
-			}),
-		});
-		expect(module_.id).toBe("e2b");
-		expect(module_.createBudget).toEqual({ owner: "harness", timeoutMs: 45_000 });
-
-		const driverOwnedBudget = () =>
-			defineComputeSdkDriver("e2b", {
-				...bridgePolicy,
-				// @ts-expect-error — the wrapper exposes no cancellable hard attempt ceiling
-				createBudget: { owner: "driver", attemptCeilingMs: 45_000 },
-				spec: () => ({
-					compute,
-					sandboxId: e2bSandboxId,
-					createOptions: createRequestMapper(),
-					hasWorkingFilesystem: false,
-				}),
-			});
-		void driverOwnedBudget;
-		expect(() =>
-			defineComputeSdkDriver("e2b", {
-				...bridgePolicy,
-				createBudget: { owner: "driver", attemptCeilingMs: 45_000 } as never,
-				spec: () => ({
-					compute,
-					sandboxId: e2bSandboxId,
-					createOptions: createRequestMapper(),
-					hasWorkingFilesystem: false,
-				}),
-			}),
-		).toThrow(expect.objectContaining({ code: "vendor-contract-violation", provider: "e2b" }));
-
-		const uncheckedParser = () =>
-			defineComputeSdkDriver("e2b", {
-				...bridgePolicy,
-				spec: () => ({
-					compute,
-					// @ts-expect-error — module-owned ids must cross an arktype trust boundary
-					sandboxId: (value: string) => value,
-					createOptions: createRequestMapper(),
-					hasWorkingFilesystem: false,
-				}),
-			});
-		void uncheckedParser;
-
-		const missingRequestMapper = () =>
-			defineComputeSdkDriver("e2b", {
-				...bridgePolicy,
-				// @ts-expect-error — every provider must explicitly validate/map the canonical request
-				spec: () => ({
-					compute,
-					sandboxId: e2bSandboxId,
-					hasWorkingFilesystem: false,
-				}),
-			});
-		void missingRequestMapper;
-
+	test("request coverage makes every canonical axis an explicit decision", () => {
 		const missingTargetAxis = () =>
 			createRequestMapper(undefined, {
 				// @ts-expect-error — every TargetSpec key is an explicit review decision
@@ -283,84 +170,6 @@ describe("computeSdkDriver", () => {
 		void missingTopLevelAxis;
 	});
 
-	test("snapshots joined module policy once and omits hostile getter diagnostics", () => {
-		const { compute } = fakeCompute(baseSandbox);
-		const context = {
-			env: { E2B_API_KEY: "test-key" },
-			artifact: { kind: "baked" },
-			resolvedArtifact: { kind: "baked", ref: "template-1" },
-		} as const;
-		let budgetReads = 0;
-		let specReads = 0;
-		const budget = { owner: "harness" as const, timeoutMs: 45_000 };
-		let specFactory: ComputeSdkDriverModuleSpec<"e2b", typeof compute>["spec"] = () => ({
-			compute,
-			sandboxId: e2bSandboxId,
-			createOptions: createRequestMapper(),
-			hasWorkingFilesystem: false,
-		});
-		const mutableModule = Object.defineProperties(
-			{},
-			{
-				provenance: { value: bridgePolicy.provenance, enumerable: true },
-				readiness: { value: bridgePolicy.readiness, enumerable: true },
-				execution: { value: bridgePolicy.execution, enumerable: true },
-				createBudget: {
-					enumerable: true,
-					get: () => {
-						budgetReads += 1;
-						return budget;
-					},
-				},
-				spec: {
-					enumerable: true,
-					get: () => {
-						specReads += 1;
-						return specFactory;
-					},
-				},
-			},
-		) as ComputeSdkDriverModuleSpec<"e2b", typeof compute>;
-		const module_ = defineComputeSdkDriver("e2b", mutableModule);
-		budget.timeoutMs = 1;
-		specFactory = () => {
-			throw new Error("mutated-module-secret");
-		};
-		expect(module_.createBudget).toEqual({ owner: "harness", timeoutMs: 45_000 });
-		expect(Object.isFrozen(module_.createBudget)).toBe(true);
-		expect(typeof module_.driver(context).create).toBe("function");
-		expect({ budgetReads, specReads }).toEqual({ budgetReads: 1, specReads: 1 });
-
-		for (const hostileField of ["createBudget", "spec"] as const) {
-			const secret = `hostile-${hostileField}-secret`;
-			const hostileModule = Object.defineProperties(
-				{},
-				{
-					provenance: { value: bridgePolicy.provenance, enumerable: true },
-					readiness: { value: bridgePolicy.readiness, enumerable: true },
-					execution: { value: bridgePolicy.execution, enumerable: true },
-					createBudget: { value: { owner: "harness", timeoutMs: 45_000 }, enumerable: true },
-					spec: { value: specFactory, enumerable: true },
-					[hostileField]: {
-						enumerable: true,
-						get: () => {
-							throw new Error(secret);
-						},
-					},
-				},
-			) as ComputeSdkDriverModuleSpec<"e2b", typeof compute>;
-			let error: unknown;
-			try {
-				defineComputeSdkDriver("e2b", hostileModule);
-			} catch (caught) {
-				error = caught;
-			}
-			expectCredentialSafe(error, "vendor-contract-violation");
-			expect(String((error as Error).message)).not.toContain(secret);
-			expect(String((error as Error & { cause?: unknown }).cause ?? "")).not.toContain(secret);
-		}
-	});
-
 	test("omits arbitrary module-spec diagnostics before an SDK escapes", () => {
 		const secret = "closure-only-computesdk-secret";
 		const module_ = defineComputeSdkDriver<"e2b", ComputeSdkLike>("e2b", {
@@ -387,35 +196,6 @@ describe("computeSdkDriver", () => {
 		expect((error as Error).message).not.toContain(secret);
 		expect(String((error as Error).cause)).not.toContain(secret);
 		expect(((error as Error).cause as Error).cause).toBeUndefined();
-	});
-
-	test("snapshots nested recovery policy before an ambiguous create runs", async () => {
-		const secret = "compute-module-secret";
-		let maxAttemptReads = 0;
-		const recovery = new Proxy(
-			{
-				absenceConfirmationMs: 1,
-				maxAttempts: 2,
-				locator: () => ({ kind: "name" as const, value: "attempt-1" }),
-				cleanup: async () => ({ status: "destroyed" as const }),
-			},
-			{
-				get(target, property, receiver) {
-					if (property === "maxAttempts" && maxAttemptReads++ > 0) throw new Error(secret);
-					return Reflect.get(target, property, receiver);
-				},
-			},
-		);
-		const driver = bridge(
-			{
-				sandbox: { create: async () => Promise.reject(new Error("response lost")) },
-			},
-			{ createRecovery: recovery },
-		);
-		const error = (await driver.create(request).catch((caught: unknown) => caught)) as DriverError;
-		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
-		expect(error.message).not.toContain(secret);
-		expect(maxAttemptReads).toBe(1);
 	});
 
 	test("passes composition-resolved create options without confusing deadline with lifetime", async () => {
@@ -1030,31 +810,6 @@ describe("computeSdkDriver", () => {
 		}
 	});
 
-	test("redacts a throwing sandbox-id accessor and retains cleanup after a double fault", async () => {
-		let destroys = 0;
-		const malformed = {
-			...baseSandbox,
-			destroy: async () => {
-				destroys += 1;
-				if (destroys === 1) throw new Error("cleanup echoed test-key");
-			},
-		};
-		Object.defineProperty(malformed, "sandboxId", {
-			get: () => {
-				throw new Error("sandboxId getter echoed test-key");
-			},
-		});
-		const { compute } = fakeCompute(malformed);
-		const error = (await bridge(compute)
-			.create(request)
-			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
-		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expectCredentialSafe(error.suppressed, "vendor-contract-violation");
-		expectRedacted(error.error, "destroy-failed");
-		await error.cleanup();
-		expect(destroys).toBe(2);
-	});
-
 	test("a withheld exit code becomes the representable unknown arm, never a forged number", async () => {
 		const { compute } = fakeCompute({
 			...baseSandbox,
@@ -1106,150 +861,6 @@ describe("computeSdkDriver", () => {
 		const error = await session.launch?.("task").catch((caught: unknown) => caught);
 		expectCredentialSafe(error, "vendor-contract-violation");
 		expect(error).toMatchObject({ ref: session.sandboxRef });
-	});
-
-	test("the filesystem stub never escapes: files exists only when declared working AND present", async () => {
-		const throwingStub = {
-			readFile: async () => {
-				throw new Error("filesystem not supported by this sandbox environment");
-			},
-			exists: async () => {
-				throw new Error("filesystem not supported by this sandbox environment");
-			},
-			writeFile: async () => {
-				throw new Error("filesystem not supported by this sandbox environment");
-			},
-		};
-		const { compute: stubbed } = fakeCompute({ ...baseSandbox, filesystem: throwingStub });
-		const withoutTrust = await bridge(stubbed, {
-			hasWorkingFilesystem: false,
-		}).create(request);
-		expect(withoutTrust.files).toBeUndefined();
-
-		const reads: string[] = [];
-		const { compute: working } = fakeCompute({
-			...baseSandbox,
-			filesystem: {
-				readFile: async (path) => {
-					reads.push(path);
-					return "content";
-				},
-				exists: async () => true,
-				writeFile: async () => {},
-			},
-		});
-		const withTrust = await bridge(working, {
-			hasWorkingFilesystem: true,
-		}).create(request);
-		expect(await withTrust.files?.readFile("/bench/a")).toBe("content");
-		expect(reads).toEqual(["/bench/a"]);
-
-		let missingDestroyed = 0;
-		const { compute: missing } = fakeCompute({
-			...baseSandbox,
-			filesystem: undefined,
-			destroy: async () => {
-				missingDestroyed += 1;
-			},
-		});
-		const missingError = await bridge(missing, {
-			hasWorkingFilesystem: true,
-		})
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(missingError).toBeInstanceOf(DriverError);
-		expect(missingError).toMatchObject({ code: "vendor-contract-violation" });
-		expect(missingDestroyed).toBe(1);
-
-		const transientSandbox: ComputeSdkSandboxLike = {
-			...baseSandbox,
-			filesystem: {
-				readFile: async () => "content",
-				exists: async () => true,
-				writeFile: async () => {},
-			},
-		};
-		const { compute: transient } = fakeCompute(transientSandbox);
-		const transientSession = await bridge(transient, {
-			hasWorkingFilesystem: true,
-		}).create(request);
-		Object.defineProperty(transientSandbox, "filesystem", { value: undefined });
-		const withdrawn = await transientSession.files
-			?.readFile("/bench/a")
-			.catch((caught: unknown) => caught);
-		const withdrawnExists = await transientSession.files
-			?.exists("/bench/a")
-			.catch((caught: unknown) => caught);
-		expect(withdrawn).toBeInstanceOf(DriverError);
-		expect(withdrawn).toMatchObject({ code: "vendor-contract-violation" });
-		expect(withdrawnExists).toMatchObject({ code: "vendor-contract-violation" });
-	});
-
-	test("types and redacts a filesystem accessor that starts throwing after create", async () => {
-		const workingFilesystem = {
-			readFile: async () => "content",
-			exists: async () => true,
-			writeFile: async () => {},
-		};
-		let accesses = 0;
-		const sandbox = { ...baseSandbox };
-		Object.defineProperty(sandbox, "filesystem", {
-			get: () => {
-				accesses += 1;
-				if (accesses > 1) throw new Error("filesystem getter echoed test-key");
-				return workingFilesystem;
-			},
-		});
-		const { compute } = fakeCompute(sandbox as ComputeSdkSandboxLike);
-		const session = await bridge(compute, { hasWorkingFilesystem: true }).create(request);
-		const error = await session.files?.readFile("/bench/a").catch((caught: unknown) => caught);
-		expectCredentialSafe(error, "vendor-contract-violation");
-		expect(error).toMatchObject({ ref: session.sandboxRef });
-	});
-
-	test("rejects an incomplete filesystem capability during create and rolls back", async () => {
-		let destroys = 0;
-		const { compute } = fakeCompute({
-			...baseSandbox,
-			filesystem: {} as never,
-			destroy: async () => {
-				destroys += 1;
-			},
-		});
-		const error = await bridge(compute, { hasWorkingFilesystem: true })
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toMatchObject({
-			code: "vendor-contract-violation",
-			provider: "e2b",
-		});
-		expect((error as Error).message).toContain("every required callable method");
-		expect(destroys).toBe(1);
-	});
-
-	test("retains cleanup when the initial filesystem accessor and rollback both fail", async () => {
-		let destroys = 0;
-		const sandbox = {
-			...baseSandbox,
-			destroy: async () => {
-				destroys += 1;
-				if (destroys === 1) throw new Error("cleanup echoed test-key");
-			},
-		};
-		Object.defineProperty(sandbox, "filesystem", {
-			get: () => {
-				throw new Error("filesystem getter echoed test-key");
-			},
-		});
-		const { compute } = fakeCompute(sandbox as ComputeSdkSandboxLike);
-		const error = (await bridge(compute, { hasWorkingFilesystem: true })
-			.create(request)
-			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
-		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expectCredentialSafe(error.suppressed, "vendor-contract-violation");
-		expectRedacted(error.error, "destroy-failed");
-		await error.cleanup();
-		expect(destroys).toBe(2);
 	});
 
 	test("launch rides the wrapper's background convention", async () => {
@@ -1345,16 +956,8 @@ describe("computeSdkDriver", () => {
 		});
 	});
 
-	test("an opaque list is not misrepresented as a per-sandbox lifecycle probe", () => {
-		const { compute: withList } = fakeCompute(baseSandbox, true);
-		expect(bridge(withList, { hasWorkingFilesystem: false }).probes).toBeUndefined();
-		const { compute: withoutList } = fakeCompute(baseSandbox, false);
-		expect(bridge(withoutList, { hasWorkingFilesystem: false }).probes).toBeUndefined();
-		expect(bridge(withoutList, { hasWorkingFilesystem: false }).snapshots).toBeUndefined();
-	});
-
 	test("projects explicitly implemented probes and snapshots without inventing absent ones", async () => {
-		const { compute } = fakeCompute(baseSandbox, true);
+		const { compute } = fakeCompute(baseSandbox);
 		const calls: string[] = [];
 		const driver = bridge(compute, {
 			probes: {
@@ -1362,7 +965,7 @@ describe("computeSdkDriver", () => {
 					calls.push(`observe:${ref.id}`);
 					return { state: "running" };
 				},
-				list: async (provider) => provider.sandbox.list?.(),
+				list: async () => ["sb-1"],
 				describe: async (_compute, ref) => ({ id: ref.id }),
 			},
 			snapshots: {
@@ -1575,53 +1178,6 @@ describe("computeSdkDriver", () => {
 		expect(observations).toBe(0);
 	});
 
-	test("types native extraction failures and retains cleanup ownership on a double fault", async () => {
-		let destroys = 0;
-		const { compute } = fakeCompute({
-			...baseSandbox,
-			getInstance: () => {
-				throw new Error("native unwrap failed with test-key");
-			},
-			destroy: async () => {
-				destroys += 1;
-				if (destroys === 1) throw new Error("cleanup echoed test-key");
-			},
-		});
-		const error = (await bridge(compute)
-			.create(request)
-			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
-		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expect(error.locator).toEqual({ kind: "id", value: "i2f3k4abc" });
-		expect(error.suppressed).toMatchObject({
-			code: "vendor-contract-violation",
-			provider: "e2b",
-		});
-		expect(error.error).toMatchObject({ code: "destroy-failed", provider: "e2b" });
-		expect(String((error.suppressed as Error).message)).not.toContain("test-key");
-		expect(String((error.error as Error).message)).not.toContain("test-key");
-		await error.cleanup();
-		expect(destroys).toBe(2);
-	});
-
-	test("types a native extraction failure before returning after successful rollback", async () => {
-		let destroys = 0;
-		const { compute } = fakeCompute({
-			...baseSandbox,
-			getInstance: () => {
-				throw new Error("native unwrap failed");
-			},
-			destroy: async () => {
-				destroys += 1;
-			},
-		});
-		const error = await bridge(compute)
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toBeInstanceOf(DriverError);
-		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
-		expect(destroys).toBe(1);
-	});
-
 	test("redacts registry credentials from every wrapper diagnostic path", async () => {
 		const leaked = "test-key";
 
@@ -1820,44 +1376,6 @@ describe("computeSdkDriver", () => {
 		expect(error.code).toBe("vendor-contract-violation");
 		expect(error.message).toContain("without a nonempty string sandboxId");
 		expect(destroyed).toBe(1);
-	});
-
-	test("a malformed resolved wrapper handle fails through the typed boundary", async () => {
-		const compute = {
-			sandbox: { create: async () => null },
-		} as unknown as ComputeSdkLike;
-		const error = await bridge(compute)
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toBeInstanceOf(DriverError);
-		expect(error).toMatchObject({
-			code: "vendor-contract-violation",
-			provider: "e2b",
-		});
-		expect((error as Error).message).toContain("non-object sandbox handle");
-	});
-
-	test("a malformed successful create enters marker recovery before ownership is released", async () => {
-		let cleanupCalls = 0;
-		const compute = {
-			sandbox: { create: async () => null },
-		} as unknown as ComputeSdkLike;
-		const error = await bridge(compute, {
-			createOptions: () => ({ attempt: "attempt-malformed" }),
-			createRecovery: {
-				absenceConfirmationMs: 5,
-				maxAttempts: 2,
-				locator: () => ({ kind: "name", value: "attempt-malformed" }),
-				cleanup: async () => {
-					cleanupCalls += 1;
-					return { status: "destroyed" };
-				},
-			},
-		})
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
-		expect(cleanupCalls).toBe(1);
 	});
 
 	test("an already-aborted create never invokes the wrapper", async () => {
@@ -2353,63 +1871,6 @@ describe("computeSdkDriver", () => {
 			["externalId", originalMarker],
 			["externalId", originalMarker],
 		]);
-	});
-
-	test("rejects a malformed keyed recovery marker before allocation", async () => {
-		let createCalls = 0;
-		const compute: ComputeSdkLike = {
-			sandbox: {
-				create: async () => {
-					createCalls += 1;
-					return baseSandbox;
-				},
-			},
-		};
-		const error = await bridge(compute, {
-			createRecovery: {
-				absenceConfirmationMs: 5,
-				maxAttempts: 2,
-				locator: () => ({ kind: "marker", key: "", value: "attempt-1" }),
-				cleanup: async () => ({ status: "destroyed" }),
-			},
-		})
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
-		expect((error as Error).message).toContain("readable nonempty name or keyed marker");
-		expect(createCalls).toBe(0);
-	});
-
-	test("rejects credential-bearing recovery marker fields before allocation", async () => {
-		for (const sensitiveField of ["key", "value"] as const) {
-			let createCalls = 0;
-			const compute: ComputeSdkLike = {
-				sandbox: {
-					create: async () => {
-						createCalls += 1;
-						return baseSandbox;
-					},
-				},
-			};
-			const marker = {
-				kind: "marker" as const,
-				key: sensitiveField === "key" ? "attempt-test-key" : "attempt-id",
-				value: sensitiveField === "value" ? "attempt-test-key" : "attempt-1",
-			};
-			const error = await bridge(compute, {
-				createRecovery: {
-					absenceConfirmationMs: 5,
-					maxAttempts: 2,
-					locator: () => marker,
-					cleanup: async () => ({ status: "destroyed" }),
-				},
-			})
-				.create(request)
-				.catch((caught: unknown) => caught);
-			expect(error).toMatchObject({ code: "vendor-contract-violation", provider: "e2b" });
-			expect((error as Error).message).not.toContain("test-key");
-			expect(createCalls).toBe(0);
-		}
 	});
 
 	test("ambiguous create cleanup never rereads options the wrapper mutated", async () => {

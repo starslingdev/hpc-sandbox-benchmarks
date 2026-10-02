@@ -1,5 +1,5 @@
 // The run.cloud DriverModule: the kit's driver over run.cloud's adapter, bound to the real SDK
-// here and nowhere else. Tests lower the same module over a fake transport through `specFor`.
+// here and nowhere else. Tests lower the same module over a fake transport through `vendorDriver`.
 
 import { Client } from "@run-cloud/sdk";
 import { defineVendorDriver, mapped } from "@sandbox-benchmarks/driver/vendor";
@@ -18,16 +18,16 @@ import {
 export { RUNCLOUD_PROVENANCE, RUNCLOUD_SANDBOX_ID };
 
 /** Poll cadence while a create sits in `building_image`/`starting`, and while a delete settles. */
-export const RUNCLOUD_POLL_MS = 2_000;
+const RUNCLOUD_POLL_MS = 2_000;
 /** Cold pulls of the ~1.5 GiB toolchain image on a first-use host can take several minutes. */
-export const RUNCLOUD_READY_TIMEOUT_MS = 20 * 60_000;
+const RUNCLOUD_READY_TIMEOUT_MS = 20 * 60_000;
 /**
  * How long one destroy (the DELETE plus watching for `destroyed`/404) may take. run.cloud deletes
  * asynchronously and a record can sit in `destroying` well past a few polls: in run 36356024651 two
  * sandboxes failed cleanup after an ~8 s window and were found absent at recovery. 50 s keeps the
  * whole destroy inside the harness's 60 s destroy timeout.
  */
-export const RUNCLOUD_REMOVAL_DEADLINE_MS = 50_000;
+const RUNCLOUD_REMOVAL_DEADLINE_MS = 50_000;
 /**
  * Worst-case wall time one create can spend: the create POST, reconciling a lost response, the
  * readiness wait, the disk probe, and removing an allocation that failed. A ceiling, not an

@@ -22,5 +22,5 @@ The control-plane credential lives only in the backend selected around each call
 create options, labels, or the guest environment.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over a stub SDK, and drives
-sessions through the module's `specFor` seam. Run
+sessions through the kit's `vendorDriver`. Run
 `bun run --filter @sandbox-benchmarks/microsandbox-cloud test` or `typecheck` from the repo root.

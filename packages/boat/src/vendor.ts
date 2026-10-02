@@ -21,7 +21,7 @@ import type { ExecOptions } from "@sandbox-benchmarks/driver";
 import { DriverError, isDriverError, pollUntilReady } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { abortableDelay, markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import { abortableDelay, httpClassifiers, markerSpelling } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 export type BoatClient = Pick<
@@ -34,7 +34,7 @@ export const BOAT_SANDBOX_ID = type(/^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/)
 export const BOAT_NAME = markerSpelling("sandbox-benchmarks-");
 export const BOAT_MACHINE_TYPE = "default" as const;
 export const BOAT_MACHINE_PROVIDER = "baremetal" as const;
-export const BOAT_COMMAND_TIMEOUT_SECONDS = 600;
+const BOAT_COMMAND_TIMEOUT_SECONDS = 600;
 export const BOAT_CONTROL_TIMEOUT_MS = 30_000;
 export const BOAT_CREATE_ATTEMPTS = 5;
 export const BOAT_CREATE_RETRY_MS = 2_000;
@@ -45,9 +45,9 @@ export const BOAT_CREATE_RETRY_MS = 2_000;
 export const BOAT_CREATE_RATE_LIMIT_RETRY_MS = 60_000;
 // Exec is accepted before the guest's outbound network is up: a clone issued ~1s after boot was
 // refused in 6ms on one of 30 sandboxes. Preparation therefore waits for DNS plus a TCP connect.
-export const BOAT_EGRESS_PROBE_HOST = "boat.dev";
+const BOAT_EGRESS_PROBE_HOST = "boat.dev";
 export const BOAT_EGRESS_TIMEOUT_MS = 90_000;
-export const BOAT_EGRESS_POLL_MS = 1_000;
+const BOAT_EGRESS_POLL_MS = 1_000;
 const EGRESS_PROBE = `getent hosts ${BOAT_EGRESS_PROBE_HOST} >/dev/null 2>&1 && timeout 3 bash -c 'exec 3<>/dev/tcp/${BOAT_EGRESS_PROBE_HOST}/443'`;
 
 const sandboxSchema = type({
@@ -75,7 +75,7 @@ const deletionResponse = type({
 const errorBody = type("string.json.parse").to({ "code?": "string", "message?": "string" });
 const jsonBody = type({ "[string]": "unknown" });
 
-export type BoatSandbox = typeof sandboxSchema.infer;
+type BoatSandbox = typeof sandboxSchema.infer;
 
 /**
  * Stopped (`archived`) rows hold no compute ("a stopped sandbox costs nothing") but still hold the
@@ -109,12 +109,12 @@ function boatHttpStatus(error: unknown): number | undefined {
 	return status;
 }
 
-/** A 4xx other than a timeout or conflict refused the create before anything was allocated. */
-const definitive = (status: number | undefined) =>
-	status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 409;
-/** A delete can conflict with a running operation, an automatic snapshot included: asked again. */
-const transient = (status: number | undefined) =>
-	status === 408 || status === 409 || status === 429 || (status !== undefined && status >= 500);
+/**
+ * The REST reading of the status: a 4xx other than a timeout or conflict refused the create before
+ * anything was allocated, and a delete that conflicts with a running operation (an automatic
+ * snapshot included) is asked again.
+ */
+const http = httpClassifiers(boatHttpStatus);
 
 /** The vendor's typed error code and message, so a refusal such as a trial policy is diagnosable. */
 async function errorDetail(error: ResponseError): Promise<{ code?: string; message?: string }> {
@@ -144,16 +144,6 @@ export function boatVendor(
 	client: BoatClient,
 	{ delay = abortableDelay, egressPollMs = BOAT_EGRESS_POLL_MS }: BoatVendorOptions = {},
 ): Vendor<BoatSandbox, BoatSandbox> {
-	const get = async (id: string, signal?: AbortSignal) => {
-		try {
-			return record(
-				sandboxResponse.assert(await client.get({ sandboxId: id }, init(signal))).sandbox,
-			);
-		} catch (error) {
-			if (boatHttpStatus(error) === 404) return null;
-			throw error;
-		}
-	};
 	const command = async (
 		sandboxId: string,
 		commandText: string,
@@ -210,7 +200,7 @@ export function boatVendor(
 						return { ...record(sandboxResponse.assert(created).sandbox), marker };
 					} catch (error) {
 						const status = boatHttpStatus(error);
-						if (attempt >= BOAT_CREATE_ATTEMPTS || (definitive(status) && status !== 429)) {
+						if (attempt >= BOAT_CREATE_ATTEMPTS || (http.refused(error) && status !== 429)) {
 							if (!(error instanceof ResponseError)) throw error;
 							const { code, message } = await errorDetail(error);
 							const detail =
@@ -234,7 +224,8 @@ export function boatVendor(
 					}
 				}
 			},
-			get: (id, { signal }) => get(id, signal),
+			get: async (id, { signal }) =>
+				record(sandboxResponse.assert(await client.get({ sandboxId: id }, init(signal))).sandbox),
 			// Accepted only: the sandbox is observed gone (404) by the kit, which also asks a
 			// transient refusal again. A refusal names boat's error code, so it is diagnosable.
 			remove: async (id, { signal }) => {
@@ -248,7 +239,6 @@ export function boatVendor(
 				} catch (error) {
 					if (!(error instanceof ResponseError)) throw error;
 					const status = error.response.status;
-					if (status === 404) return "removed";
 					const { code } = await errorDetail(error);
 					const named = code && /^[a-z0-9_]{1,80}$/i.test(code) ? ` ${code}` : "";
 					throw new Error(`boat delete HTTP ${status}${named}; removal unconfirmed`, {
@@ -264,11 +254,7 @@ export function boatVendor(
 				const records = page.sandboxes.map(record);
 				return next === null || page.pageInfo?.hasMore === false ? { records } : { records, next };
 			},
-			refused: (error) => {
-				const status = boatHttpStatus(error);
-				return definitive(status) ? { retryable: status === 429 } : undefined;
-			},
-			transient: (error) => transient(boatHttpStatus(error)),
+			...http,
 		},
 		data: {
 			// The rename that makes the allocation attributable: the kit deletes it by id on failure.

@@ -16,7 +16,7 @@ import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { shellQuote } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { instanceOfAny } from "@sandbox-benchmarks/driver/vendor";
+import { instanceOfAny, isMintedMarker } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 export type DaytonaId = "daytona-vm" | "daytona-container";
@@ -26,7 +26,6 @@ export const DAYTONA_CONTROL_TIMEOUT_MS = 10_000;
 /** The create and waited-delete bounds the SDK takes, in seconds. */
 const CREATE_TIMEOUT_SECS = 300;
 const DELETE_TIMEOUT_SECS = 30;
-const BENCHMARK_NAME = /^benchmark-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** The SDK client surface the adapter translates; the package entry passes the real client. */
 export type DaytonaClient = Pick<Daytona, "create" | "get" | "list" | "delete" | "snapshot">;
@@ -109,7 +108,7 @@ function phaseOf(state: Sandbox["state"]): Phase {
 }
 
 function record(sandbox: Sandbox): VendorRecord<Sandbox> {
-	const marker = BENCHMARK_NAME.test(sandbox.name) ? sandbox.name : undefined;
+	const marker = isMintedMarker(sandbox.name) ? sandbox.name : undefined;
 	return {
 		id: sandbox.id,
 		phase: phaseOf(sandbox.state),
@@ -142,18 +141,10 @@ export function daytonaVendor(
 		handles.set(sandbox.id, sandbox);
 		return record(sandbox);
 	};
-	const lookup = async (idOrName: string) => {
-		try {
-			return read(await client.get(idOrName));
-		} catch (error) {
-			if (notFound(error)) return null;
-			throw error;
-		}
-	};
 	// The SDK's get resolves a name as well as an id: a sandbox named like the id is not that one.
 	const byId = async (id: string) => {
-		const found = await lookup(id);
-		if (found && found.id !== id) throw new Error("Daytona returned an unrelated sandbox");
+		const found = read(await client.get(id));
+		if (found.id !== id) throw new Error("Daytona returned an unrelated sandbox");
 		return found;
 	};
 
@@ -187,15 +178,11 @@ export function daytonaVendor(
 			},
 			get: (id) => byId(id),
 			remove: async (id) => {
-				const sandbox = handles.get(id) ?? (await byId(id))?.raw;
-				try {
-					if (sandbox) await client.delete(sandbox, DELETE_TIMEOUT_SECS, true);
-				} catch (error) {
-					if (!notFound(error)) throw error;
-				}
+				await client.delete(handles.get(id) ?? (await byId(id)).raw, DELETE_TIMEOUT_SECS, true);
 				handles.delete(id);
 				return "removed";
 			},
+			absent: notFound,
 			// The SDK drains its own cursor; the whole account is one page.
 			page: async (_cursor, { signal }) => {
 				const records = [];
@@ -207,8 +194,12 @@ export function daytonaVendor(
 			},
 			// A get by name: the marker is the sandbox name.
 			find: async (marker) => {
-				const found = await lookup(marker);
-				return { records: found ? [found] : [] };
+				try {
+					return { records: [read(await client.get(marker))] };
+				} catch (error) {
+					if (notFound(error)) return { records: [] };
+					throw error;
+				}
 			},
 			refused: (error) =>
 				definitive(error)

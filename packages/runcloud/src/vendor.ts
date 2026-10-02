@@ -15,7 +15,7 @@ import { RunCloudError } from "@run-cloud/sdk";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { DriverError, isDriverError } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import { httpClassifiers, LEAK_EXPIRY_MS, markerSpelling } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 /** The SDK's sandbox calls plus one raw inventory page (the SDK's `list` drops its cursor). */
@@ -30,9 +30,9 @@ export const RUNCLOUD_SANDBOX_ID = type(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
  * is lost still leaves an allocation the control plane can be queried for by name.
  */
 export const RUNCLOUD_NAME = markerSpelling("sandbox-benchmarks-");
-/** Lifetime and idle-pause window, both above the longest suite so a detached benchmark is never
- *  paused while the harness polls its done file. */
-export const RUNCLOUD_SANDBOX_LIFETIME_SECS = 3 * 60 * 60;
+/** Lifetime and idle-pause window, both the kit's leak expiry: above the longest suite, so a
+ *  detached benchmark is never paused while the harness polls its done file. */
+const LIFETIME_SECS = LEAK_EXPIRY_MS / 1000;
 /** Bound each SDK call independently: a call that never settles must not suspend a create. */
 export const RUNCLOUD_CONTROL_TIMEOUT_MS = 30_000;
 /** An allocation can take a moment to become visible to `list()`; an ambiguous create looks this
@@ -45,10 +45,7 @@ const page = type({
 	nextCursor: "string >= 1 | null",
 });
 /** A sandbox as the SDK returns it, or the slice of it an inventory page is checked for. */
-export type RuncloudRow = Pick<
-	Sandbox,
-	"id" | "state" | "name" | "milliCpu" | "memMb" | "createdAt"
->;
+type RuncloudRow = Pick<Sandbox, "id" | "state" | "name" | "milliCpu" | "memMb" | "createdAt">;
 
 /**
  * `destroyed` is a tombstone the API keeps forever. A pending delete can race image preparation
@@ -96,14 +93,8 @@ const status = (error: unknown) =>
 		: isDriverError(error) && error.provider === "runcloud"
 			? error.vendorHttpStatus
 			: undefined;
-/**
- * A non-timeout 4xx says no allocation was accepted. 409 is excluded because a conflict asserts the
- * OPPOSITE of absence: something already exists under this request's identity.
- */
-const definitive = (error: unknown) => {
-	const code = status(error);
-	return code !== undefined && code >= 400 && code < 500 && code !== 408 && code !== 409;
-};
+/** The REST reading of the status: refused, transient, and the 404 that is absence. */
+const http = httpClassifiers(status);
 /**
  * The SDK passes fetch failures through raw: a connection error (a TypeError, or a Bun error carrying
  * a string `code`) or the per-call control-plane timeout reached no HTTP status at all. A caller's
@@ -115,11 +106,8 @@ const network = (error: unknown) =>
 		error.name !== "AbortError" &&
 		(error.name === "TimeoutError" || typeof (error as { code?: unknown }).code === "string"));
 /** A network failure, timeout, conflict, rate limit or outage: a DELETE refused this way is asked again. */
-const transient = (error: unknown) => {
-	const code = status(error);
-	if (code === undefined) return !isDriverError(error) && network(error);
-	return code === 408 || code === 409 || code === 429 || code >= 500;
-};
+const transient = (error: unknown) =>
+	status(error) === undefined ? !isDriverError(error) && network(error) : http.transient(error);
 
 /** One SDK call raced against its bound and the caller: the SDK's create and list take no signal. */
 function bounded<T>(label: string, work: () => Promise<T>, signal: AbortSignal): Promise<T> {
@@ -178,8 +166,8 @@ export function runcloudVendor(
 					cpu: spec.vcpus,
 					memory: spec.memoryGb * 1024,
 					...(spec.diskGb !== undefined && { disk: spec.diskGb }),
-					idlePauseSeconds: RUNCLOUD_SANDBOX_LIFETIME_SECS,
-					timeoutSeconds: RUNCLOUD_SANDBOX_LIFETIME_SECS,
+					idlePauseSeconds: LIFETIME_SECS,
+					timeoutSeconds: LIFETIME_SECS,
 				};
 				try {
 					return record(await bounded("create", () => sandboxes.create(options), signal));
@@ -189,7 +177,7 @@ export function runcloudVendor(
 					// SUCCEEDED and only lost its response is adopted, so a slow cold pull is not wasted.
 					const found = await reconcile(
 						name,
-						definitive(error) ? 1 : RUNCLOUD_RECONCILE_ATTEMPTS,
+						http.refused(error) ? 1 : RUNCLOUD_RECONCILE_ATTEMPTS,
 						signal,
 					);
 					if (found) return record(found);
@@ -203,24 +191,13 @@ export function runcloudVendor(
 					});
 				}
 			},
-			get: async (id) => {
-				try {
-					return record(await sandboxes.get(id));
-				} catch (error) {
-					if (status(error) === 404) return null;
-					throw error;
-				}
-			},
+			get: async (id) => record(await sandboxes.get(id)),
 			// run.cloud deletes asynchronously: only `destroyed` or a 404 is removal.
 			remove: async (id) => {
-				try {
-					await sandboxes.destroy(id);
-					return "accepted";
-				} catch (error) {
-					if (status(error) === 404) return "removed";
-					throw error;
-				}
+				await sandboxes.destroy(id);
+				return "accepted";
 			},
+			absent: http.absent,
 			page: async (cursor, { signal }) => {
 				const { items, nextCursor } = page.assert(await transport.page(cursor, signal));
 				const records = items.map(record);
@@ -229,7 +206,8 @@ export function runcloudVendor(
 			find: async (marker, _cursor, { signal }) => ({
 				records: (await named(RUNCLOUD_NAME.toVendor(marker), signal)).map(record),
 			}),
-			refused: (error) => (definitive(error) ? { retryable: status(error) === 429 } : undefined),
+			// A conflict (409) is no refusal: it asserts something already exists under this identity.
+			refused: http.refused,
 			transient,
 		},
 		data: {
@@ -250,7 +228,6 @@ export function runcloudVendor(
 			},
 			// A string command runs via `/bin/sh -c`; the signal closes the command's WebSocket.
 			exec: async ({ id }, command, options?: ExecOptions) => {
-				options?.signal?.throwIfAborted();
 				const { exitCode, stdout, stderr } = await sandboxes.exec(
 					id,
 					command,

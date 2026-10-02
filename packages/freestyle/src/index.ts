@@ -1,6 +1,6 @@
 // The Freestyle DriverModule: the kit's driver over Freestyle's adapter, bound to the real SDK
 // here and nowhere else, plus the options its native-snapshot artifact builder is derived with.
-// Tests lower the same module over a fake transport through `specFor`.
+// Tests lower the same module over a fake transport through `vendorDriver`.
 
 import type { SandboxSession } from "@sandbox-benchmarks/driver";
 import type { SnapshotBuildOptions } from "@sandbox-benchmarks/driver/artifact";
@@ -13,6 +13,7 @@ import {
 	FREESTYLE_BASE_SNAPSHOT,
 	FREESTYLE_OWNER_KEY,
 	FREESTYLE_SANDBOX_ID,
+	FREESTYLE_SLUG,
 	freestyleVendor,
 	IMMUTABLE_SNAPSHOT_ID,
 } from "./vendor.ts";
@@ -20,7 +21,7 @@ import {
 export { FREESTYLE_PROVENANCE };
 
 /** The session handle a Freestyle driver exposes as `SandboxSession.native`. */
-export type FreestyleHandle = VendorHandle<{ readonly id: string }, Vm>;
+type FreestyleHandle = VendorHandle<{ readonly id: string }, Vm>;
 
 const freestyle = defineVendorDriver("freestyle", {
 	provenance: FREESTYLE_PROVENANCE,
@@ -42,7 +43,8 @@ const freestyle = defineVendorDriver("freestyle", {
 	},
 	markerKey: FREESTYLE_OWNER_KEY,
 	// A lost create response stays uncertain: repeated 404s alone do not prove allocation failed.
-	recovery: { provesAbsence: false },
+	// It is looked up by its slug; the kit refuses a VM whose metadata names another attempt.
+	recovery: { provesAbsence: false, lookup: FREESTYLE_SLUG },
 	timing: { deletePollMs: 500 },
 	// 100-VM pages; the account cap is the earlier 100,000-VM scan.
 	pageCap: 1_000,

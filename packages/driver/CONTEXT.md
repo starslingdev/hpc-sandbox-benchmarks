@@ -23,8 +23,10 @@ separately. Launch acceptance is not command completion or success.
 
 **Vendor port**:
 The control-plane and data-plane operations a provider package translates from its vendor
-(create, get, remove, page, and optionally find, refused, transient, and admit; attach and exec, and
-optionally launch, files, and prepare). It is not a driver: the driver kit derives the driver from it.
+(create, get, remove, page, and optionally settle, find, refused, transient, absent, and admit;
+attach and exec, and optionally launch, files, and prepare). It is not a driver: the driver kit
+derives the driver from it. `absent` names the vendor's own not-found, which the kit reads as
+absence.
 Snapshots, accelerators, and cost evidence are passthroughs beside the port, not port operations.
 
 **Phase**:

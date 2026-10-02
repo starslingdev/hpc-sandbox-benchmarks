@@ -29,7 +29,7 @@ export const NAMESPACE_PURPOSE = markerSpelling(NAMESPACE_PURPOSE_PREFIX);
 export const NAMESPACE_CONTAINER = "main-container";
 export const NAMESPACE_EXIT_SENTINEL = "__sandbox_benchmarks_exit__:";
 export const NAMESPACE_CONTROL_TIMEOUT_MS = 20_000;
-export const NAMESPACE_INSTANCE_LIFETIME_MS = 195 * 60_000;
+const NAMESPACE_INSTANCE_LIFETIME_MS = 195 * 60_000;
 
 const tokenFileSchema = type("string.json.parse")
 	.to({ bearer_token: "string >= 1" })
@@ -63,13 +63,13 @@ export function namespaceClient(tokenFile: string, baseUrl?: string) {
 export type NamespaceClient = ReturnType<typeof namespaceClient>;
 
 /** One instance; a create or describe also carries the command endpoint the data plane attaches to. */
-export interface NamespaceRow {
+interface NamespaceRow {
 	readonly instance: InstanceMetadata;
 	readonly commandEndpoint?: string;
 }
 
 /** The connected data plane of one instance. */
-export interface NamespaceNative {
+interface NamespaceNative {
 	readonly instanceId: string;
 	readonly commands: ReturnType<NamespaceClient["command"]>;
 }
@@ -100,7 +100,6 @@ function phaseOf(status: Status): Phase {
 
 const codeIn = (codes: readonly Code[]) => (error: unknown) =>
 	matchesAnyCause(error, (cause) => cause instanceof ConnectError && codes.includes(cause.code));
-const notFound = codeIn([Code.NotFound]);
 const refusal = codeIn([
 	Code.InvalidArgument,
 	Code.Unauthenticated,
@@ -169,32 +168,23 @@ export function namespaceVendor(
 				return { ...record({ instance: metadata, commandEndpoint }), phase: "pending" };
 			},
 			get: async (instanceId, { signal }) => {
-				try {
-					const { metadata, extendedMetadata } = await client.compute.describeInstance(
-						{ instanceId },
-						control(signal),
-					);
-					if (metadata?.instanceId !== instanceId)
-						throw new Error("Namespace describe returned no matching instance metadata");
-					const commandEndpoint = extendedMetadata?.commandServiceEndpoint;
-					return record({ instance: metadata, ...(commandEndpoint && { commandEndpoint }) });
-				} catch (error) {
-					if (notFound(error)) return null;
-					throw error;
-				}
+				const { metadata, extendedMetadata } = await client.compute.describeInstance(
+					{ instanceId },
+					control(signal),
+				);
+				if (metadata?.instanceId !== instanceId)
+					throw new Error("Namespace describe returned no matching instance metadata");
+				const commandEndpoint = extendedMetadata?.commandServiceEndpoint;
+				return record({ instance: metadata, ...(commandEndpoint && { commandEndpoint }) });
 			},
 			remove: async (instanceId, { signal }) => {
-				try {
-					await client.compute.destroyInstance(
-						{ instanceId, reason: "sandbox-benchmarks teardown" },
-						control(signal),
-					);
-					return "accepted";
-				} catch (error) {
-					if (notFound(error)) return "removed";
-					throw error;
-				}
+				await client.compute.destroyInstance(
+					{ instanceId, reason: "sandbox-benchmarks teardown" },
+					control(signal),
+				);
+				return "accepted";
 			},
+			absent: codeIn([Code.NotFound]),
 			// The SDK's byte cursor travels as base64. Completed runs are listed so no retained
 			// allocation is hidden: without them the server returns only PENDING, CREATING and
 			// RUNNING, which would hide an ERROR instance that still holds resources.

@@ -18,7 +18,7 @@ import { defineArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
 import { NOVITA_DOMAIN } from "./vendor.ts";
 
 /** The SDK surface the builder translates onto. */
-export type NovitaTemplateSdk = Pick<typeof import("novita-sandbox"), "Template">;
+type NovitaTemplateSdk = Pick<typeof import("novita-sandbox"), "Template">;
 
 /**
  * Mask the PTS phoromatic units at template-build time, mirroring the base image's own mask

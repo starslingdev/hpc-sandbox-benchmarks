@@ -66,7 +66,8 @@ bun run check:providers                                        # fail if any gen
    vendor of the E2B protocol, like `packages/e2b`, passes its own SDK to `e2bProtocolVendor` from
    `@sandbox-benchmarks/driver/vendor/e2b-protocol` and states only its differences). Its tests cover
    the adapter's translation, run `vendorContract` over a stubbed transport, and drive a few sessions
-   through `module.specFor`; kit behaviour is already tested in `packages/driver`. Its `execution`
+   through `vendorDriver` from `@sandbox-benchmarks/driver/vendor/testing`; kit behaviour is
+   already tested in `packages/driver`. Its `execution`
    policy (synchronous cap and durable route) is the only declaration of the provider's exec
    transport, and its `package.json` must depend on the `sdkPackage` library. Every vendor library
    the package uses goes in the root `catalogs.vendors` and is declared as `catalog:vendors` by this

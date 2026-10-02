@@ -1,17 +1,19 @@
-// Blaxel's vendor adapter: translation only, over @blaxel/core's `SandboxInstance`. The published
-// @computesdk/blaxel wrapper cannot carry this provider through account admission: its `list()`
-// maps over a PaginatedList (a TypeError against @blaxel/core 0.3.5) and its `destroy` swallows
-// every failure, so a leaked, billable sandbox would read as removed. This states what Blaxel means
-// in the vendor port's terms: the memory-coupled shape, the disk-backed volume and keepalive a
-// benchmark needs on Blaxel's RAM-overlay root, the sandbox name as identity and marker, and
-// statuses as phases. Readiness, cleanup confirmation, recovery, inventory and the disk proof live
-// in the driver kit (`@sandbox-benchmarks/driver/vendor`).
+// Blaxel's vendor adapter: translation only, over @blaxel/core's `SandboxInstance`. It states what
+// Blaxel means in the vendor port's terms: the memory-coupled shape, the disk-backed volume and
+// keepalive a benchmark needs on Blaxel's RAM-overlay root, the sandbox name as identity and
+// marker, and statuses as phases. Readiness, cleanup confirmation, recovery, inventory and the disk
+// proof live in the driver kit (`@sandbox-benchmarks/driver/vendor`).
 
 import { randomUUID } from "node:crypto";
 import type { SandboxInstance } from "@blaxel/core";
-import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
+import type { DriverContext } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import {
+	isMintedMarker,
+	LEAK_EXPIRY_MS,
+	MARKER_PREFIX,
+	refusedOn,
+} from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 /** The SDK surface the adapter translates; the package entry passes the real `SandboxInstance`. */
@@ -23,7 +25,6 @@ export const BLAXEL_SANDBOX_ID = type(/^[a-z0-9][a-z0-9-]{0,48}$/);
 export const BLAXEL_REGION = "us-was-1";
 /** Blaxel couples CPU to RAM (measured: cores = memory MB / 2048) and exposes no independent knob. */
 export const BLAXEL_MEMORY_MB_PER_VCPU = 2048;
-export const BLAXEL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 /** The image entrypoint links PTS and HOME into this disk-backed ephemeral volume. */
 export const BLAXEL_VOLUME_MOUNT_DIR = "/mnt/benchmark-volume";
 export const BLAXEL_PTS_DATA_DIR = "/var/lib/phoronix-test-suite";
@@ -37,12 +38,11 @@ export const BLAXEL_VOLUME_HEADROOM_MB = 256;
 export const BLAXEL_OWNER_LABEL = "sandbox-benchmarks";
 export const BLAXEL_ATTEMPT_LABEL = "sandbox-benchmarks-attempt";
 export const BLAXEL_KEEPALIVE_PROCESS = "benchmark-keepalive";
-const BENCHMARK_NAME = /^benchmark-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Records carrying the owner label alone are the benchmark's, under a marker no attempt mints. */
 const OWNER_LABEL_MARKER = `${MARKER_PREFIX}owner-label`;
 
 /** Blaxel resolves this workspace image name to the most recently completed remote build. */
-export const blaxelImageRef = (name: string) => `${name}:latest`;
+const blaxelImageRef = (name: string) => `${name}:latest`;
 
 /**
  * The control plane's structured error code. With `throwOnError` the generated client throws the
@@ -103,7 +103,7 @@ function phaseOf(status: string | undefined): Phase {
  * An owned record's marker is its attempt label, else its name, else the owner-label marker.
  */
 function markerOf(name: string, labels: Readonly<Record<string, string>> = {}): string | undefined {
-	const named = BENCHMARK_NAME.test(name);
+	const named = isMintedMarker(name);
 	if (!named && labels[BLAXEL_OWNER_LABEL] !== "blaxel") return undefined;
 	const attempt = labels[BLAXEL_ATTEMPT_LABEL];
 	if (attempt?.startsWith(MARKER_PREFIX)) return attempt;
@@ -132,8 +132,7 @@ function commandOutcome(result: BlaxelProcess) {
 }
 
 /** Foreground execution through the native process API, waiting for the command to settle. */
-async function exec(native: SandboxInstance, command: string, options?: ExecOptions) {
-	options?.signal?.throwIfAborted();
+async function exec(native: SandboxInstance, command: string) {
 	// timeout 0: the harness owns every step deadline; the vendor must not kill a command mid-wait.
 	return commandOutcome(
 		await native.process.exec({ command, waitForCompletion: true, timeout: 0 }),
@@ -144,32 +143,17 @@ export function blaxelVendor(
 	sdk: BlaxelSdk,
 	{ resolvedArtifact }: Pick<DriverContext<"blaxel">, "resolvedArtifact">,
 ): Vendor<SandboxInstance, SandboxInstance> {
-	const absent = async <T>(work: () => Promise<T>): Promise<T | null> => {
-		try {
-			return await work();
-		} catch (caught) {
-			if (controlPlaneCode(caught) === 404) return null;
-			throw caught;
-		}
-	};
-	const get = async (name: string, { signal }: { signal: AbortSignal }) => {
-		signal.throwIfAborted();
-		const instance = await absent(() => sdk.get(name));
-		return instance && record(instance);
-	};
-
 	return {
 		control: {
 			// The SDK's create resolves a usable sandbox (its `wait()` is deprecated as unnecessary).
-			create: async ({ request, marker }, { signal }) => {
-				signal.throwIfAborted();
+			create: async ({ request, marker }) => {
 				const diskGb = request.spec.diskGb;
 				const instance = await sdk.create({
 					name: marker,
 					image: blaxelImageRef(resolvedArtifact.ref),
 					memory: request.spec.memoryGb * 1024,
 					region: BLAXEL_REGION,
-					ttl: `${Math.ceil(BLAXEL_SANDBOX_LIFETIME_MS / 1000)}s`,
+					ttl: `${LEAK_EXPIRY_MS / 1000}s`,
 					labels: { [BLAXEL_OWNER_LABEL]: "blaxel", [BLAXEL_ATTEMPT_LABEL]: marker },
 					volumes:
 						diskGb === undefined
@@ -185,14 +169,15 @@ export function blaxelVendor(
 				});
 				return { ...record(instance), phase: "ready" };
 			},
-			get,
-			remove: async (name, { signal }) => {
-				signal.throwIfAborted();
-				return (await absent(() => sdk.delete(name))) === null ? "removed" : "accepted";
+			get: async (name) => record(await sdk.get(name)),
+			remove: async (name) => {
+				await sdk.delete(name);
+				return "accepted";
 			},
+			// Only the control plane's 404 proves absence.
+			absent: (error) => controlPlaneCode(error) === 404,
 			// One cursor page; showTerminated keeps deleted history out of the listing.
-			page: async (cursor, { signal }) => {
-				signal.throwIfAborted();
+			page: async (cursor) => {
 				const page = await sdk.list({
 					limit: 100,
 					showTerminated: false,
@@ -201,19 +186,9 @@ export function blaxelVendor(
 				const records = page.data.map(record);
 				return page.nextCursor === undefined ? { records } : { records, next: page.nextCursor };
 			},
-			// The create name is the marker: an accepted create whose response was lost is findable.
-			find: async (marker, _cursor, op) => {
-				const found = await get(marker, op);
-				return { records: found ? [found] : [] };
-			},
 			// A structured refusal before allocation proves nothing was created; 429 is also the one
 			// transient refusal worth retrying. Anything without a control-plane code stays ambiguous.
-			refused: (error) => {
-				const code = controlPlaneCode(error);
-				return code !== undefined && [400, 401, 403, 422, 429].includes(code)
-					? { retryable: code === 429 }
-					: undefined;
-			},
+			refused: refusedOn(controlPlaneCode, [400, 401, 403, 422, 429]),
 		},
 		data: {
 			attach: ({ raw }) => raw,
@@ -224,8 +199,7 @@ export function blaxelVendor(
 			 * harness calls alike. A keepalive that never started fails the create, so the kit tears the
 			 * allocation down rather than leak a suspended one.
 			 */
-			prepare: async ({ native }, request, { signal }) => {
-				signal.throwIfAborted();
+			prepare: async ({ native }, request) => {
 				const keepalive = await native.process.exec({
 					name: BLAXEL_KEEPALIVE_PROCESS,
 					command: "sleep infinity",
@@ -246,8 +220,7 @@ export function blaxelVendor(
 			exec,
 			// Sync execs cross the sandbox gateway unvalidated past a minute; long steps run as native
 			// processes, accepted only once Blaxel returns a genuine handle that has not already ended.
-			launch: async (native, command, options) => {
-				options?.signal?.throwIfAborted();
+			launch: async (native, command) => {
 				const handle = await native.process.exec({
 					name: `benchmark-job-${randomUUID()}`,
 					command,

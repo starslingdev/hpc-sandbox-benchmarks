@@ -30,5 +30,5 @@ The driver is written against the vendor port (ADR-0023):
   shell detach; there is no filesystem API in the measurement path.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over a fake account, drives
-sessions through the module's `specFor` seam, and checks the real transport's inventory envelope.
+sessions through the kit's `vendorDriver`, and checks the real transport's inventory envelope.
 Run `bun run --filter @sandbox-benchmarks/runcloud test` or `typecheck` from the repo root.

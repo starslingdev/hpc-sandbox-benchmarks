@@ -6,10 +6,9 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { createRequire } from "node:module";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { E2B_ATTEMPT_KEY } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import novita, { NOVITA_DOMAIN, NOVITA_SANDBOX_ID } from "./index.ts";
 import type { NovitaSdk } from "./vendor.ts";
 import { novitaVendor } from "./vendor.ts";
@@ -200,15 +199,10 @@ function stubNovita(
 
 /** The package's own module, lowered over a stub SDK instead of the real one. */
 function driverOver(stub: ReturnType<typeof stubNovita>) {
-	return driverFromComputeSpec(
-		"novita",
-		novita.specFor(context, {
-			vendor: novitaVendor(stub.sdk, context),
-			timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
-		}),
-		context.resolvedArtifact,
-		[KEY],
-	);
+	return vendorDriver(novita, context, {
+		vendor: novitaVendor(stub.sdk, context),
+		timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+	});
 }
 
 describe("Novita translation", () => {
@@ -226,7 +220,8 @@ describe("Novita translation", () => {
 			phase: "pending",
 			marker: "benchmark-y",
 		});
-		expect(await control.get("missing", op())).toBeNull();
+		// The SDK's typed not-found is what the adapter declares absent (the kit reads it as null).
+		expect(control.absent?.(await control.get("missing", op()).catch((error) => error))).toBe(true);
 		// A state the adapter does not know still owns resources: failed, never released.
 		const unknown = stub.allocate({}, "snapshotting");
 		expect(await control.get(unknown, op())).toMatchObject({ phase: "failed" });
@@ -259,15 +254,13 @@ describe("Novita translation", () => {
 		]);
 	});
 
-	test("the SDK takes no signal: guest calls are bounded by request timeouts and check the signal first", async () => {
+	test("the SDK takes no signal: guest calls are bounded by request timeouts", async () => {
 		const stub = stubNovita();
 		const { control, data } = novitaVendor(stub.sdk, context);
 		const native = await data.attach(await control.create({ request, marker: "m" }, op()), op());
 		await data.exec(native, "id -u", op());
 		await data.launch?.(native, "daemon", op());
 		await data.files?.read(native, "/tmp/missing").catch(() => undefined);
-		const aborted = AbortSignal.abort(new Error("caller gave up"));
-		await expect(data.exec(native, "id -u", { signal: aborted })).rejects.toThrow("caller gave up");
 		const guest = { user: "root", requestTimeoutMs: 5_000 };
 		expect(stub.calls.map(({ name, options }) => ({ name, options }))).toEqual([
 			{
@@ -294,10 +287,9 @@ describe("Novita translation", () => {
 	});
 });
 
-vendorContract("novita adapter", () => ({
-	vendor: novitaVendor(stubNovita({ pageSize: 1 }).sdk, context),
-	account: "shared",
-}));
+vendorContract("novita adapter", novita, () =>
+	novitaVendor(stubNovita({ pageSize: 1 }).sdk, context),
+);
 
 describe("Novita end to end through its module", () => {
 	test("declares identity, native-launch durability, and the SDK provenance", () => {

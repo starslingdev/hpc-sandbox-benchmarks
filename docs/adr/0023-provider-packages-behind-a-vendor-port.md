@@ -59,8 +59,9 @@ interface designs across the three candidates, compared on depth, locality and s
 | | `get` | returns `null` only on the vendor's own not-found |
 | | `settle` | optional; the vendor's server-side readiness wait (a long poll) with `get`'s contract, used in place of the kit's readiness poll; the kit still owns its deadline, the classification of the phase it settles on, and teardown |
 | | `remove` | returns `"removed"` when the vendor proved removal, `"accepted"` when it only acknowledged |
+| | `absent` | optional; classifies the vendor's own not-found, which the kit reads as `null` from `get` and `settle` and as `"removed"` from `remove` |
 | | `page` | one page of the whole account; the kit drains it and fails closed on a bad cursor |
-| | `find` | optional |
+| | `find` | optional; or `recovery.lookup`, a `get` of the marker's spelling where the create named the sandbox by it |
 | | `refused` | optional; the vendor refused before allocating |
 | | `transient` | optional; retryable once the kit proved nothing remains allocated |
 | | `admit` | optional |
@@ -94,6 +95,12 @@ redaction and output caps are reused, not reimplemented.
 `@sandbox-benchmarks/driver/vendor/testing` provides the test adapters:
 - `memoryVendor`, the in-memory adapter that makes the seam real;
 - `vendorContract`, the port contract every adapter must pass.
+
+> **Amendment (legacy removal).** Once every SDK and HTTP driver was a vendor adapter, the bridge
+> became internal to `packages/driver`: its `./computesdk` and `./native` subpaths and authoring
+> helpers were removed, and `vendorDriver` in `/vendor/testing` lowers a module over a stubbed
+> transport. The port gained `absent` and `recovery.lookup` (table above), and the kit starts no port
+> call on a cancelled signal, so adapters no longer hand-write those rules.
 
 Behaviour unique to one vendor family stays on explicit, typed passthroughs and does not become a
 port knob:

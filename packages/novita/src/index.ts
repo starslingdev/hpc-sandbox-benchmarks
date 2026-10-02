@@ -1,5 +1,5 @@
 // The Novita DriverModule: the kit's driver over Novita's adapter, bound to the real SDK here and
-// nowhere else. Tests lower the same module over a stub SDK through `specFor`.
+// nowhere else. Tests lower the same module over a stub SDK through `vendorDriver`.
 
 import { createRequire } from "node:module";
 import { defineVendorDriver, pinned } from "@sandbox-benchmarks/driver/vendor";

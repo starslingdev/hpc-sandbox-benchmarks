@@ -1,6 +1,6 @@
 // The Namespace DriverModule: the kit's driver over Namespace's adapter, bound to the generated
 // clients and the explicit CI token file here and nowhere else. Tests lower the same module over a
-// Connect router transport through `specFor`.
+// Connect router transport through `vendorDriver`.
 
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
 import { NAMESPACE_PROVENANCE } from "./provenance.ts";
@@ -15,7 +15,7 @@ import {
 export { NAMESPACE_INSTANCE_ID, NAMESPACE_PROVENANCE };
 
 /** Readiness can take a cold image pull; it is observed inside create, within the harness budget. */
-export const NAMESPACE_READY_WAIT_MS = 15 * 60_000;
+const NAMESPACE_READY_WAIT_MS = 15 * 60_000;
 /**
  * RunCommandSync awaits the full response. It was once treated as uncapped until run 30314097333
  * lost `mise run benchmark:system:all` at 4m18.8s to a bare "The operation timed out." after two of
@@ -23,7 +23,7 @@ export const NAMESPACE_READY_WAIT_MS = 15 * 60_000;
  * the bare message cannot distinguish a vendor cap from a client fetch timeout. Detaching makes the
  * distinction moot, because every exec, including each done-file poll, becomes short.
  */
-export const NAMESPACE_EXECUTION = { syncCapMs: 120_000, durable: "shell-detach" } as const;
+const NAMESPACE_EXECUTION = { syncCapMs: 120_000, durable: "shell-detach" } as const;
 
 export default defineVendorDriver("namespace", {
 	provenance: NAMESPACE_PROVENANCE,

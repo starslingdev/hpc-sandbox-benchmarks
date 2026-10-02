@@ -11,14 +11,12 @@ import {
 } from "@runloop/api-client";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import runloop, { RUNLOOP_CREATE_TIMEOUT_MS, RUNLOOP_SANDBOX_ID } from "./index.ts";
 import type { DevboxView, RunloopClient } from "./vendor.ts";
 import {
 	RUNLOOP_ATTEMPT_METADATA_KEY,
-	RUNLOOP_KEEP_ALIVE_SECONDS,
 	RUNLOOP_OWNER_METADATA_KEY,
 	runloopVendor,
 } from "./vendor.ts";
@@ -182,15 +180,10 @@ function runloopAccount(
 
 /** The package's own module, lowered over a fake account instead of the real SDK. */
 function driverOver(account: ReturnType<typeof runloopAccount>) {
-	return driverFromComputeSpec(
-		"runloop",
-		runloop.specFor(context, {
-			vendor: runloopVendor(context, account.client),
-			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
-		}),
-		context.resolvedArtifact,
-		[KEY],
-	);
+	return vendorDriver(runloop, context, {
+		vendor: runloopVendor(context, account.client),
+		timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
+	});
 }
 
 describe("Runloop translation", () => {
@@ -209,14 +202,14 @@ describe("Runloop translation", () => {
 				custom_cpu_cores: 4,
 				custom_gb_memory: 8,
 				custom_disk_size: 40,
-				keep_alive_time_seconds: RUNLOOP_KEEP_ALIVE_SECONDS,
+				keep_alive_time_seconds: 3 * 60 * 60,
 			},
 		});
 	});
 
 	test("reads tombstones as gone, suspension as owned, and ownership from either metadata key", async () => {
 		const account = runloopAccount();
-		const { control } = runloopVendor(context, account.client);
+		const { control } = kitPort(runloopVendor(context, account.client));
 		const read = async (metadata: Record<string, string>, status: DevboxView["status"]) =>
 			control.get(account.allocate(metadata, status), op());
 		expect(await read({}, "shutdown")).toMatchObject({ phase: "gone" });
@@ -236,7 +229,7 @@ describe("Runloop translation", () => {
 
 	test("readiness is Runloop's long poll; a Devbox that settled elsewhere is read back by retrieve", async () => {
 		const account = runloopAccount({ readyAfterRetrieves: 1_000 });
-		const { control } = runloopVendor(context, account.client);
+		const { control } = kitPort(runloopVendor(context, account.client));
 		const settle = control.settle;
 		if (!settle) throw new Error("the adapter declares no server-side readiness wait");
 		const booting = account.allocate({}, "provisioning");
@@ -287,10 +280,9 @@ describe("Runloop translation", () => {
 	});
 });
 
-vendorContract("runloop adapter", () => ({
-	vendor: runloopVendor(context, runloopAccount({ pageSize: 1, readyAfterRetrieves: 2 }).client),
-	account: "shared",
-}));
+vendorContract("runloop adapter", runloop, () =>
+	runloopVendor(context, runloopAccount({ pageSize: 1, readyAfterRetrieves: 2 }).client),
+);
 
 describe("Runloop end to end through its module", () => {
 	test("declares identity, native-launch durability, and a harness-owned create budget", () => {

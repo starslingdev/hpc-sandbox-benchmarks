@@ -22,7 +22,6 @@ import type { ClientMiddleware } from "nice-grpc";
 import { ClientError, Status } from "nice-grpc";
 
 export const MODAL_APP_NAME = "sandbox-benchmarks";
-export const MODAL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
 /**
  * Waited teardown must fit under the harness destroy ceiling (60s) without racing it.
@@ -229,7 +228,7 @@ export function modalControlPlane(client: ModalClient): ModalControlPlane {
 	};
 }
 
-export interface ModalControlRunner<Control = ModalControlPlane> {
+interface ModalControlRunner<Control = ModalControlPlane> {
 	run<T>(
 		options: { readonly signal?: AbortSignal },
 		operation: (control: Control) => Promise<T>,
@@ -427,41 +426,34 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 			},
 			// A null poll is a running sandbox; an exit code is one that holds nothing any more.
 			get: async (id, { signal }) => {
-				try {
-					const exitCode = await attached(
-						runner,
-						signal,
-						(control) => control.sandboxes.fromId(id),
-						async (sandbox) => {
-							try {
-								return await sandbox.poll();
-							} finally {
-								sandbox.detach();
-							}
-						},
-					);
-					if (exitCode !== null && !Number.isSafeInteger(exitCode))
-						throw new Error("Modal poll returned a malformed exit code");
-					return record({ id }, exitCode === null ? "ready" : "gone");
-				} catch (caught) {
-					if (isModalNotFound(caught)) return null;
-					throw caught;
-				}
+				const exitCode = await attached(
+					runner,
+					signal,
+					(control) => control.sandboxes.fromId(id),
+					async (sandbox) => {
+						try {
+							return await sandbox.poll();
+						} finally {
+							sandbox.detach();
+						}
+					},
+				);
+				if (exitCode !== null && !Number.isSafeInteger(exitCode))
+					throw new Error("Modal poll returned a malformed exit code");
+				return record({ id }, exitCode === null ? "ready" : "gone");
 			},
 			// The waited terminate resolves once the sandbox has exited: removal is proven.
 			remove: async (id, { signal }) => {
-				try {
-					await attached(
-						destroyRunner,
-						signal,
-						(control) => control.sandboxes.fromId(id),
-						(sandbox) => sandbox.terminate({ wait: true }),
-					);
-				} catch (caught) {
-					if (!isModalNotFound(caught)) throw caught;
-				}
+				await attached(
+					destroyRunner,
+					signal,
+					(control) => control.sandboxes.fromId(id),
+					(sandbox) => sandbox.terminate({ wait: true }),
+				);
 				return "removed";
 			},
+			// Only a sandbox RPC's NOT_FOUND is absence.
+			absent: isModalNotFound,
 			// Two pages: the App's own generation (owned by name), then everything outside the App
 			// (foreign). The second carries the App's id, so the sibling generation in the App, which
 			// the other variant owns, is in neither.

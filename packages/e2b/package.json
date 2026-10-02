@@ -20,7 +20,6 @@
     "e2b": "catalog:vendors"
   },
   "devDependencies": {
-    "@computesdk/e2b": "catalog:vendors",
     "@repo/tsconfig": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"

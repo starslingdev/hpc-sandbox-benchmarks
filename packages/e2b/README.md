@@ -24,6 +24,4 @@ The driver is written against the vendor port (ADR-0023):
 the pinned `@e2b/cli`, over an injectable build-command transport.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over a stub SDK, and drives sessions
-through the module's `specFor` seam and its production binding. `src/compatibility.test.ts` pins the
-ComputeSDK bridge's type inference over the published `@computesdk/e2b` wrapper. Run
-`bun run --filter @sandbox-benchmarks/e2b test` or `typecheck` from the repo root.
+through the kit's `vendorDriver` and its production binding. Run `bun run --filter @sandbox-benchmarks/e2b test` or `typecheck` from the repo root.

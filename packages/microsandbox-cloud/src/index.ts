@@ -1,5 +1,5 @@
 // The Microsandbox Cloud DriverModule: the kit's driver over the Microsandbox adapter, bound to the
-// real SDK here and nowhere else. Tests lower the same module over a stub SDK through `specFor`.
+// real SDK here and nowhere else. Tests lower the same module over a stub SDK through `vendorDriver`.
 
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
 import { Sandbox, withDefaultBackend } from "microsandbox";
@@ -28,8 +28,10 @@ export default defineVendorDriver("microsandbox-cloud", {
 	// a long-lived remote WebSocket is not the durability boundary.
 	execution: { syncCapMs: 60_000, durable: "shell-detach" },
 	createBudget: { owner: "harness", timeoutMs: MICROSANDBOX_CREATE_TIMEOUT_MS },
-	// The attempt's UUID travels in the sandbox name.
+	// The attempt's UUID travels in the sandbox name, so a create whose response was lost is found
+	// by it.
 	markerKey: "name",
 	markerSpelling: MICROSANDBOX_NAME,
+	recovery: { lookup: MICROSANDBOX_NAME },
 	vendor: (context) => microsandboxVendor({ Sandbox, withDefaultBackend }, context),
 });

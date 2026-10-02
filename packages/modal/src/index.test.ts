@@ -13,10 +13,9 @@ import {
 	FailedCreateCleanupError,
 	isRetryableDriverCreate,
 } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import type { CreateAttempt } from "@sandbox-benchmarks/driver/vendor";
 import { DISK_PROBE, MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import type { ModalClient } from "modal";
 import type { ClientMiddleware, ServiceDefinition } from "nice-grpc";
 import { ClientError, createServer, Status } from "nice-grpc";
@@ -30,7 +29,6 @@ import {
 	MODAL_APP_NAME,
 	MODAL_CONTROL_TIMEOUT_MS,
 	MODAL_DESTROY_TIMEOUT_MS,
-	MODAL_SANDBOX_LIFETIME_MS,
 	MODAL_V1_SANDBOX_ID,
 	MODAL_V2_SANDBOX_ID,
 	modalControlPlane,
@@ -174,15 +172,10 @@ function modalAccount(options: { readonly appExists?: boolean; readonly diskGb?:
 
 /** Each variant's own module, lowered over a fake environment instead of the real SDK. */
 function driverOver(account: ReturnType<typeof modalAccount>, module = modalVm) {
-	return driverFromComputeSpec(
-		module.id,
-		(module as typeof modalVm).specFor(context, {
-			vendor: account.vendor(module === modalVm ? "v1" : "v2") as never,
-			timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
-		}),
-		context.resolvedArtifact,
-		[context.env.MODAL_TOKEN_SECRET],
-	);
+	return vendorDriver(module as typeof modalVm, context, {
+		vendor: account.vendor(module === modalVm ? "v1" : "v2") as never,
+		timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
+	});
 }
 
 /** The version of `packageName` as this package resolves it — the copy the driver actually loads. */
@@ -317,7 +310,7 @@ describe("Modal modules", () => {
 				IMAGE,
 				{
 					name: NAME,
-					timeoutMs: MODAL_SANDBOX_LIFETIME_MS,
+					timeoutMs: 3 * 60 * 60_000,
 					cpu: 4,
 					cpuLimit: 4,
 					memoryMiB: 8192,
@@ -363,7 +356,7 @@ describe("Modal modules", () => {
 describe("Modal translation", () => {
 	it("reads a running sandbox as ready, an exited one as gone, and only a sandbox-RPC miss as absent", async () => {
 		const account = modalAccount();
-		const { control } = account.vendor("v1");
+		const { control } = kitPort(account.vendor("v1"));
 		const id = account.allocate(false, NAME);
 		expect(await control.get(id, op())).toMatchObject({ id, phase: "ready" });
 		Object.assign(account.rows.get(id) ?? {}, { exitCode: 137 });
@@ -383,7 +376,7 @@ describe("Modal translation", () => {
 
 	it("terminates and waits, converging only on a sandbox-RPC not-found", async () => {
 		const account = modalAccount();
-		const { control } = account.vendor("v1");
+		const { control } = kitPort(account.vendor("v1"));
 		const id = account.allocate(false, NAME);
 		expect(await control.remove(id, op())).toBe("removed");
 		expect(account.calls).toEqual([`terminate ${id}`]);
@@ -940,14 +933,8 @@ describe("Modal command results", () => {
 	});
 });
 
-vendorContract("modal-vm adapter", () => ({
-	vendor: modalAccount().vendor("v1"),
-	account: "shared",
-}));
-vendorContract("modal-gvisor adapter", () => ({
-	vendor: modalAccount().vendor("v2"),
-	account: "shared",
-}));
+vendorContract("modal-vm adapter", modalVm, () => modalAccount().vendor("v1"));
+vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor("v2"));
 
 describe("Modal end to end through each variant's module", () => {
 	it("a session boots, proves its disk, runs, launches, inventories and is terminated once", async () => {
@@ -998,12 +985,7 @@ describe("Modal end to end through each variant's module", () => {
 				},
 			},
 		};
-		const driver = driverFromComputeSpec(
-			"modal-vm",
-			modalVm.specFor(context, { vendor: lost as never, timing: { pollMs: 0 } }),
-			context.resolvedArtifact,
-			[],
-		);
+		const driver = vendorDriver(modalVm, context, { vendor: lost as never, timing: { pollMs: 0 } });
 		const failure = await driver.create(request()).catch((caught: unknown) => caught);
 		expect(failure).not.toBeInstanceOf(FailedCreateCleanupError);
 		expect(isRetryableDriverCreate(failure)).toBe(false);
@@ -1028,12 +1010,10 @@ describe("Modal end to end through each variant's module", () => {
 				},
 			},
 		};
-		const driver = driverFromComputeSpec(
-			"modal-gvisor",
-			modalGvisor.specFor(context as never, { vendor: crossed as never, timing: { pollMs: 0 } }),
-			context.resolvedArtifact,
-			[],
-		);
+		const driver = vendorDriver(modalGvisor, context as never, {
+			vendor: crossed as never,
+			timing: { pollMs: 0 },
+		});
 		const error = await driver.create(request()).catch((caught: unknown) => caught);
 		expect(error).toMatchObject({ code: "invalid-sandbox-ref", provider: "modal-gvisor" });
 		expect([...account.rows.values()].map((row) => row.exitCode)).toEqual([0]);

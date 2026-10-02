@@ -5,9 +5,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import vercel, { VERCEL_SANDBOX_ID } from "./index.ts";
 import type { VercelSdk } from "./vendor.ts";
@@ -15,7 +14,6 @@ import {
 	VERCEL_NAME_PREFIX,
 	VERCEL_OWNER_TAG,
 	VERCEL_OWNER_VALUE,
-	VERCEL_SANDBOX_LIFETIME_MS,
 	vercelCredentials,
 	vercelVendor,
 } from "./vendor.ts";
@@ -149,15 +147,10 @@ function vercelProject(
 
 /** The package's own module, lowered over a stub SDK instead of the real one. */
 function driverOver(project: ReturnType<typeof vercelProject>) {
-	return driverFromComputeSpec(
-		"vercel",
-		vercel.specFor(context, {
-			vendor: vercelVendor(project.sdk, context),
-			timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
-		}),
-		context.resolvedArtifact,
-		[OIDC_TOKEN],
-	);
+	return vendorDriver(vercel, context, {
+		vendor: vercelVendor(project.sdk, context),
+		timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+	});
 }
 
 describe("Vercel translation", () => {
@@ -194,13 +187,13 @@ describe("Vercel translation", () => {
 			resources: { vcpus: 4 },
 			persistent: false,
 			tags: { [VERCEL_OWNER_TAG]: VERCEL_OWNER_VALUE },
-			timeout: VERCEL_SANDBOX_LIFETIME_MS,
+			timeout: 3 * 60 * 60_000,
 		});
 	});
 
 	test("reads statuses as phases: a dead record is the benchmark's to delete, nobody else's allocation", async () => {
 		const project = vercelProject();
-		const { control } = vercelVendor(project.sdk, context);
+		const { control } = kitPort(vercelVendor(project.sdk, context));
 		const phase = async (name: string, status: string) =>
 			(await control.get(project.allocate(name, status), op()))?.phase;
 		const ours = (n: number) =>
@@ -235,10 +228,9 @@ describe("Vercel translation", () => {
 	});
 });
 
-vendorContract("vercel adapter", () => ({
-	vendor: vercelVendor(vercelProject({ pageSize: 1 }).sdk, context),
-	account: "shared",
-}));
+vendorContract("vercel adapter", vercel, () =>
+	vercelVendor(vercelProject({ pageSize: 1 }).sdk, context),
+);
 
 describe("Vercel end to end through its module", () => {
 	test("declares identity and native-launch durability", () => {
@@ -300,15 +292,10 @@ describe("Vercel end to end through its module", () => {
 				throw apiError(503);
 			},
 		} as unknown as VercelSdk;
-		const failure = await driverFromComputeSpec(
-			"vercel",
-			vercel.specFor(context, {
-				vendor: vercelVendor(sdk, context),
-				timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
-			}),
-			context.resolvedArtifact,
-			[OIDC_TOKEN],
-		)
+		const failure = await vendorDriver(vercel, context, {
+			vendor: vercelVendor(sdk, context),
+			timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+		})
 			.create(request)
 			.catch((caught) => caught);
 		const [name] = project.rows.keys();

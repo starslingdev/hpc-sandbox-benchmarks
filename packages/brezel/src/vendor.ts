@@ -6,8 +6,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Sandbox } from "@infercrane/brezel";
 import { BrezelClient, BrezelError } from "@infercrane/brezel";
 import type { DriverContext } from "@sandbox-benchmarks/driver";
-import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
+import { httpStatus, refusedOn } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 export const BREZEL_SANDBOX_ID = type(/^sbx_[A-Za-z0-9_-]+$/);
@@ -23,7 +23,7 @@ const resource = type({
 	environment_revision: "string >= 1",
 	"failure?": type({ code: "string" }).onUndeclaredKey("ignore"),
 }).onUndeclaredKey("ignore");
-export type BrezelResource = typeof resource.infer;
+type BrezelResource = typeof resource.infer;
 const created = type({ resource }).onUndeclaredKey("ignore");
 
 /**
@@ -42,18 +42,7 @@ export function brezelPhase(row: BrezelResource): Phase {
 	return row.state === "running" ? "ready" : "pending";
 }
 
-const statusIn = (statuses: readonly number[]) => (error: unknown) =>
-	matchesAnyCause(
-		error,
-		(cause) => cause instanceof BrezelError && statuses.includes(cause.status),
-	);
-const notFound = statusIn([404]);
-// Rejected before provisioning (quota and backend capacity included); only a rate limit is worth
-// a harness retry.
-const refusal = statusIn([400, 401, 403, 404, 429]);
-const rateLimited = statusIn([429]);
-// Gateway failures prove nothing about allocation: reconciled first, then retryable.
-const transient = statusIn([429, 502, 503, 504]);
+const status = httpStatus(BrezelError, (error) => error.status);
 const decoder = new TextDecoder();
 
 /**
@@ -89,8 +78,8 @@ export function brezelVendor(
 		timeoutMs: BREZEL_CONTROL_TIMEOUT_MS,
 		fetch,
 	});
+	// The kit starts no call on a cancelled signal; one cancelled in flight is not answered.
 	async function call<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
-		signal.throwIfAborted();
 		const result = await signals.run(signal, work);
 		signal.throwIfAborted();
 		return result;
@@ -120,31 +109,21 @@ export function brezelVendor(
 				...record(await post(marker, signal)),
 				phase: "pending",
 			}),
-			get: async (id, { signal }) => {
-				try {
-					return record(
-						resource.assert(
-							await call(signal, () => client.requestJSON("GET", `/v1/sandboxes/${id}`)),
-						),
-					);
-				} catch (error) {
-					if (notFound(error)) return null;
-					throw error;
-				}
-			},
+			get: async (id, { signal }) =>
+				record(
+					resource.assert(
+						await call(signal, () => client.requestJSON("GET", `/v1/sandboxes/${id}`)),
+					),
+				),
 			remove: async (id, { signal }) => {
-				try {
-					await call(signal, () =>
-						client.requestJSON("DELETE", `/v1/sandboxes/${id}`, {
-							idempotencyKey: `benchmark-delete-${id}`,
-						}),
-					);
-					return "accepted";
-				} catch (error) {
-					if (notFound(error)) return "removed";
-					throw error;
-				}
+				await call(signal, () =>
+					client.requestJSON("DELETE", `/v1/sandboxes/${id}`, {
+						idempotencyKey: `benchmark-delete-${id}`,
+					}),
+				);
+				return "accepted";
 			},
+			absent: (error) => status(error) === 404,
 			// One unpaged listing of the dedicated project, terminal records included.
 			page: async (_cursor, { signal }) => ({
 				records: (await call(signal, () => client.listSandboxes({ includeTerminal: true }))).map(
@@ -155,8 +134,11 @@ export function brezelVendor(
 			find: async (marker, _cursor, { signal }) => ({
 				records: [record(await post(marker, signal))],
 			}),
-			refused: (error) => (refusal(error) ? { retryable: rateLimited(error) } : undefined),
-			transient,
+			// Rejected before provisioning (quota and backend capacity included); only a rate limit is
+			// worth a harness retry.
+			refused: refusedOn(status, [400, 401, 403, 404, 429]),
+			// Gateway failures prove nothing about allocation: reconciled first, then retryable.
+			transient: (error) => [429, 502, 503, 504].includes(status(error) ?? 0),
 			admit: (ready) =>
 				ready.raw.environment_revision === env.BREZEL_ENVIRONMENT_REVISION
 					? undefined
@@ -165,7 +147,6 @@ export function brezelVendor(
 		data: {
 			attach: (row, { signal }) => call(signal, () => client.sandbox(row.id)),
 			exec: async (native, command, options) => {
-				options?.signal?.throwIfAborted();
 				// The pinned workload preamble uses Bash features (`source`, `pipefail`); Ubuntu's dash
 				// would silently skip those controls. An accepted command runs to its bounded completion
 				// before cancellation is reported.

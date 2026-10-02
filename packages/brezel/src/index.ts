@@ -1,5 +1,5 @@
 // The Brezel DriverModule: the kit's driver over Brezel's adapter, bound to the real transport here
-// and nowhere else. Tests lower the same module over a fake transport through `specFor`.
+// and nowhere else. Tests lower the same module over a fake transport through `vendorDriver`.
 
 import { defineVendorDriver, pinned } from "@sandbox-benchmarks/driver/vendor";
 import { BREZEL_PROVENANCE } from "./provenance.ts";

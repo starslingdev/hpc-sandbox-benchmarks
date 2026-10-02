@@ -1,6 +1,6 @@
 // The Daytona DriverModules: the kit's driver over Daytona's adapter, bound to the real SDK here
 // and nowhere else. Each isolation variant is the same module with its own target and class.
-// Tests lower the same module over a stub client through `specFor`.
+// Tests lower the same module over a stub client through `vendorDriver`.
 
 import { Daytona } from "@daytona/sdk";
 import { defineVendorDriver, pinned } from "@sandbox-benchmarks/driver/vendor";

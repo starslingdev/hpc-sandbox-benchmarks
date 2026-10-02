@@ -1,8 +1,8 @@
 // The Blaxel DriverModule: the kit's driver over Blaxel's adapter, bound to @blaxel/core here and
-// nowhere else. Tests lower the same module over a stub SDK through `specFor`.
+// nowhere else. Tests lower the same module over a stub SDK through `vendorDriver`.
 
 import { initialize, SandboxInstance } from "@blaxel/core";
-import { defineVendorDriver, mapped } from "@sandbox-benchmarks/driver/vendor";
+import { defineVendorDriver, mapped, VERBATIM_MARKER } from "@sandbox-benchmarks/driver/vendor";
 import { BLAXEL_PROVENANCE } from "./provenance.ts";
 import {
 	BLAXEL_MEMORY_MB_PER_VCPU,
@@ -28,8 +28,9 @@ export default defineVendorDriver("blaxel", {
 	diskProof: { path: BLAXEL_PTS_DATA_DIR },
 	// Sync execs cross the sandbox gateway unvalidated past a minute; long steps use native processes.
 	execution: { syncCapMs: 60_000, durable: "native-launch" },
-	// The attempt's marker is the sandbox name.
+	// The attempt's marker is the sandbox name, so a create whose response was lost is found by it.
 	markerKey: "name",
+	recovery: { lookup: VERBATIM_MARKER },
 	vendor: (context) => {
 		// The core SDK is configured process-wide. One benchmark cell drives one provider, so the
 		// registry's parsed input slice is the only configuration this process ever applies.

@@ -5,9 +5,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import brezel, { BREZEL_SANDBOX_ID } from "./index.ts";
 import { brezelPhase, brezelVendor } from "./vendor.ts";
@@ -185,15 +184,10 @@ const FAST: Partial<VendorTiming> = { pollMs: 0, readyTimeoutMs: 500, deleteTime
 
 /** The package's own module, lowered over the fake API instead of the real transport. */
 function driverOver(server: ReturnType<typeof brezelServer>, timing: Partial<VendorTiming> = {}) {
-	return driverFromComputeSpec(
-		"brezel",
-		brezel.specFor(context, {
-			vendor: brezelVendor(context, server.fetch),
-			timing: { ...FAST, ...timing },
-		}),
-		context.resolvedArtifact,
-		[TOKEN],
-	);
+	return vendorDriver(brezel, context, {
+		vendor: brezelVendor(context, server.fetch),
+		timing: { ...FAST, ...timing },
+	});
 }
 
 describe("Brezel translation", () => {
@@ -303,10 +297,9 @@ describe("Brezel translation", () => {
 	});
 });
 
-vendorContract("brezel adapter", () => ({
-	vendor: brezelVendor(context, brezelServer({ readyAfterGets: 2 }).fetch),
-	account: "dedicated",
-}));
+vendorContract("brezel adapter", brezel, () =>
+	brezelVendor(context, brezelServer({ readyAfterGets: 2 }).fetch),
+);
 
 describe("Brezel end to end through its module", () => {
 	test("declares strict identity, shell-detach durability, and the public SDK provenance", () => {

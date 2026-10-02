@@ -22,12 +22,9 @@ The driver is written against the vendor port (ADR-0023):
   recovery (a lookup by the create's name) and the disk proof come from
   `@sandbox-benchmarks/driver/vendor`.
 
-The published `@computesdk/blaxel` wrapper is not used: its `list()` fails against
-`@blaxel/core` 0.3.5 and its `destroy` swallows every failure.
-
 `src/artifact.ts` (`./artifact`) pushes the digest-pinned toolchain base to Blaxel's remote builder
 with `bl push` (`slim = false`), over an injectable build-command transport.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over a stub SDK, and drives
-sessions through the module's `specFor` seam. Run `bun run --filter @sandbox-benchmarks/blaxel test`
+sessions through the kit's `vendorDriver`. Run `bun run --filter @sandbox-benchmarks/blaxel test`
 or `typecheck` from the repo root.

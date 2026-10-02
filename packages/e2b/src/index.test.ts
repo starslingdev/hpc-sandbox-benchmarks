@@ -5,15 +5,13 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import {
 	E2B_ATTEMPT_KEY,
 	E2B_CONTROL_TIMEOUT_MS,
 	E2B_LIVE_STATES,
-	E2B_SANDBOX_LIFETIME_MS,
 } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
-import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import {
 	AuthenticationError,
 	CommandExitError,
@@ -198,15 +196,10 @@ function stubE2b(
 
 /** The package's own module, lowered over a stub SDK instead of the real one. */
 function driverOver(stub: ReturnType<typeof stubE2b>) {
-	return driverFromComputeSpec(
-		"e2b",
-		e2b.specFor(context, {
-			vendor: e2bVendor(stub.sdk, context),
-			timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
-		}),
-		context.resolvedArtifact,
-		[KEY],
-	);
+	return vendorDriver(e2b, context, {
+		vendor: e2bVendor(stub.sdk, context),
+		timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+	});
 }
 
 describe("E2B translation", () => {
@@ -219,7 +212,7 @@ describe("E2B translation", () => {
 		expect(stub.calls[0]?.options).toEqual({
 			template: context.resolvedArtifact.ref,
 			apiKey: KEY,
-			timeoutMs: E2B_SANDBOX_LIFETIME_MS,
+			timeoutMs: 3 * 60 * 60_000,
 			metadata: { [E2B_ATTEMPT_KEY]: "benchmark-x" },
 			signal,
 		});
@@ -236,7 +229,10 @@ describe("E2B translation", () => {
 		expect(await control.get(stub.allocate({}, "snapshotting"), op())).toMatchObject({
 			phase: "failed",
 		});
-		expect(await control.get("imissing", op())).toBeNull();
+		// The SDK's typed not-found is what the adapter declares absent (the kit reads it as null).
+		expect(control.absent?.(await control.get("imissing", op()).catch((error) => error))).toBe(
+			true,
+		);
 		expect(await control.remove("imissing", op())).toBe("removed");
 	});
 
@@ -307,10 +303,7 @@ describe("E2B translation", () => {
 	});
 });
 
-vendorContract("e2b adapter", () => ({
-	vendor: e2bVendor(stubE2b({ pageSize: 1 }).sdk, context),
-	account: "shared",
-}));
+vendorContract("e2b adapter", e2b, () => e2bVendor(stubE2b({ pageSize: 1 }).sdk, context));
 
 describe("E2B end to end through its module", () => {
 	test("declares identity, native-launch durability, and the SDK provenance", () => {
