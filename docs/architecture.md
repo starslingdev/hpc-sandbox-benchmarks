@@ -42,16 +42,15 @@ workspace sources natively. There is no compile step: `bun install` → `typeche
 ```text
 packages/   importable libraries   — scope @sandbox-benchmarks/*
   schema/       shared types + arktype schemas, vendored PTS profiles + generated metric catalog (bottom of the DAG)
-  providers/    release-lane config + evidence helpers (being dissolved, ADR-0023) → schema
   templates/    per-provider template builders + toolchain Docker images (images/)
-  harness/      benchmark timing → providers + schema
+  harness/      benchmark timing, evidence persistence → driver + schema
   results/      normalization + the comparison surface → schema, figures
   figures/      realworld charts: Run → figure model → HTML → WebP (headless Chrome) → schema
 apps/
   cli/          entrypoint with bin commands → every packages/* library
 tooling/        dev-only            — scope @repo/*
   tsconfig/     shared source-first TS configs (config-only)
-  repo-checks/  boundary + package-meta invariant tests
+  repo-checks/  boundary, vendor-seam and package-meta invariant tests
 lib/        in-sandbox benchmark runner (bench.sh), realworld PTS runner overlay, isolation probe
 data/       committed benchmark dataset (published run results)
 scripts/    maintainer scripts (dataset backfill, leaderboard update)
@@ -65,13 +64,12 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/schema`     | —                                               | `arktype`                           |
 | `@sandbox-benchmarks/driver`     | schema                                          | `arktype`                           |
 | `@sandbox-benchmarks/drivers`    | driver, provider workspace packages              | — |
-| `@sandbox-benchmarks/<provider>` | driver                                          | `arktype`, that provider's SDKs |
-| `@sandbox-benchmarks/providers`  | schema                                          | `arktype`, `novita-sandbox` (types only) |
-| `@sandbox-benchmarks/templates`  | providers, schema                               | `computesdk` (`catalog:computesdk`) |
-| `@sandbox-benchmarks/harness`    | driver, providers, schema                       | —                                   |
+| `@sandbox-benchmarks/<provider>` | driver (schema where needed)                    | `arktype`, that provider's vendor libraries (`catalog:vendors`) |
+| `@sandbox-benchmarks/templates`  | schema                                          | —                                   |
+| `@sandbox-benchmarks/harness`    | driver, schema                                  | —                                   |
 | `@sandbox-benchmarks/figures`    | schema                                          | `arktype`, fonts (`@fontsource/*`)  |
 | `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
-| `@sandbox-benchmarks/cli` (app)  | schema, driver, drivers, providers, templates, harness, results, figures | `dotenv`, `@actions/core`, provider SDKs (`catalog:computesdk`) |
+| `@sandbox-benchmarks/cli` (app)  | schema, driver, drivers, modal (named subpaths only), templates, harness, results, figures | `dotenv`, `@actions/core`, `arktype` — no vendor library |
 | `@repo/tsconfig`            | —                                               | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
 
@@ -87,6 +85,25 @@ The SDK-free kit exposes `@sandbox-benchmarks/driver/computesdk`, `/native`, `/e
 through the declarative mapper without a second request schema. External values are parsed at their
 trust boundaries; trusted requests are passed internally without revalidation. SDK errors reach the
 provider's retry predicate before the kit normalizes and redacts them.
+
+### The vendor seam
+
+A provider package is its vendor's only importer (ADR-0023 §2). Every vendor library is an entry of
+the root `catalogs.vendors`; provider-neutral libraries sit in the default catalog. Each vendor
+library is declared by, and referenced from, exactly one provider package (a library declared only to
+satisfy another owned vendor library's peer dependency counts as owned). Everything else reaches a
+provider package through the generated loaders in `@sandbox-benchmarks/drivers`, except vendor code
+with a single implementation, which the CLI imports by name:
+
+- `@sandbox-benchmarks/modal/gpu` — the Modal GPU platform (client, App, CUDA runtime image, Volumes,
+  prepared allocations, tags and filesystem snapshots); the CLI keeps workload staging, harness
+  lifetime and reporting in `apps/cli/src/lib/gpu/`;
+- `@sandbox-benchmarks/modal/cleanup-observation` — read-only clearance of the Modal benchmark App for
+  retained-allocation recovery.
+
+`tooling/repo-checks/src/vendor-seam.test.ts` enforces this over all workspace source (`apps/`,
+`packages/`, `tooling/`, `scripts/`), counting type-only imports, dynamic imports and `require`
+specifiers; adding a named subpath means editing its allowlist and saying why in the ADR.
 
 ### Driver authoring (`@sandbox-benchmarks/driver/vendor`)
 
@@ -189,7 +206,7 @@ snapshot of every projection, so a new provider is reviewed as one snapshot diff
 `apps/cli/src/lib/driver-run.ts` is the ADR-0007 composition root: it loads a driver module, parses
 that provider's declared env slice, resolves the lane's artifact, and constructs the driver. It also
 holds the two adapters that let a port `SandboxSession` drive today's `StepRunner`; both are
-temporary and disappear when `harness` flips from `providers` to `driver`.
+temporary and disappear when the harness consumes driver sessions directly.
 
 `driver-check` is the local lane that exercises the whole path against a real sandbox:
 

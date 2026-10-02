@@ -40,6 +40,9 @@ The command contract lives in the root `package.json` and `docs/architecture.md`
 directly:
 - `bun run lint`, `bun run typecheck`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
   `bun run check:providers`, `bun run lint:shell`, `bun run lint:docker`.
+- A vendor SDK is declared (as `catalog:vendors`) and imported by exactly one provider package; the CLI
+  reaches providers through `@sandbox-benchmarks/drivers` or the allowlisted `@sandbox-benchmarks/modal/gpu`
+  and `/cleanup-observation` subpaths. `tooling/repo-checks/src/vendor-seam.test.ts` enforces it.
 - Provider metadata edits are followed by `bun run generate-providers` (the one generator for the
   registry assembly, driver loader, provenance and managed workflow/env/docs regions).
 - Run a CLI bin directly, e.g. `bun apps/cli/src/bin/plan-matrix.ts --list-providers` or

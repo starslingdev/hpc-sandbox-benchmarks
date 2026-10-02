@@ -7,7 +7,7 @@ import {
 	driverReadinessBudgetMs,
 	verifyDriverReadiness,
 } from "@sandbox-benchmarks/driver/conformance";
-import e2bModule from "@sandbox-benchmarks/e2b";
+import { loadDriverModule } from "@sandbox-benchmarks/drivers";
 import { runSuiteOnSandbox } from "@sandbox-benchmarks/harness";
 import { writeNormalizedRun } from "@sandbox-benchmarks/results";
 import type { ProviderId, Suite } from "@sandbox-benchmarks/schema";
@@ -91,7 +91,7 @@ describe("DriverModule benchmark path", () => {
 		expect(readFileSync(resultsDir, "utf8")).toBe("not a directory");
 	});
 
-	test("rejects an unknown provider instead of falling back to packages/providers", async () => {
+	test("rejects an unknown provider instead of falling back to another lane", async () => {
 		await expect(
 			runDriverSuite({
 				runId: "driver-spike-no-fallback",
@@ -104,6 +104,7 @@ describe("DriverModule benchmark path", () => {
 	});
 
 	test("persists verified E2B artifact evidence and normalizes a valid Run v6", async () => {
+		const e2bModule = await loadDriverModule("e2b");
 		const root = freshRoot();
 		const rawRoot = join(root, "raw");
 		const resultsDir = join(rawRoot, "e2b", "cpu-node");

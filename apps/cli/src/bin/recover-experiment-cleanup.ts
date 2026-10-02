@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { observeModalCleanupApp } from "@sandbox-benchmarks/modal/cleanup-observation";
 import { type } from "arktype";
 import { recoverExperimentCleanup } from "../lib/cleanup-recovery.ts";
 import { isDriverProviderId, openDriver } from "../lib/driver-run.ts";
 import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-artifacts.ts";
 import { githubAccountJournal, githubGitRequest } from "../lib/github-account-journal.ts";
-import { observeModalCleanupApp } from "../lib/modal-cleanup-observation.ts";
 
 const { values, positionals } = parseArgs({
 	args: process.argv.slice(2),

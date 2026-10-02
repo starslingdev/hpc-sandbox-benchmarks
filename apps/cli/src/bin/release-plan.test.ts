@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { config } from "@sandbox-benchmarks/providers";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { bakedArtifactName, releaseUnscopable } from "@sandbox-benchmarks/schema/providers";
+import { releaseConfig } from "../lib/release-config.ts";
 import { buildReleasePlan, planOutputs, RELEASE_REQUIRED_PROVIDERS } from "./release-plan.ts";
 
 const base = { sourceRef: "abc123", forceRepublish: false, alreadyPublished: false };
@@ -107,14 +107,14 @@ describe("buildReleasePlan matrix", () => {
 		const plan = buildReleasePlan({ ...backfillBase, providers: "blaxel", alreadyPublished: true });
 		expect(plan.required).toEqual(["blaxel"]);
 		expect(plan.providers[0]?.artifact).toBe(bakedArtifactName("blaxel", "candidate"));
-		expect(plan.image.source).toBe(config.toolchainImageVersion);
+		expect(plan.image.source).toBe(releaseConfig.toolchainImageVersion);
 	});
 
 	test("accepts a scoped Runloop release and makes it required", () => {
 		const plan = buildReleasePlan({ ...backfillBase, providers: "runloop" });
 		expect(plan.matrix.include).toEqual([{ provider: "runloop", required: true }]);
 		expect(plan.required).toEqual(["runloop"]);
-		expect(plan.providers[0]?.artifact).toBe(config.runloopBlueprintCandidate);
+		expect(plan.providers[0]?.artifact).toBe(bakedArtifactName("runloop", "candidate"));
 	});
 
 	// Unscoped, the same providers are simply skipped — they are not in the required set, so a missing

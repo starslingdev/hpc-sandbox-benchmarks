@@ -8,8 +8,7 @@
 - `./daytona` — `buildDaytonaTemplate()`
 - `./modal` — `buildModalTemplate()`
 
-**Depends on:** `@sandbox-benchmarks/providers`, `@sandbox-benchmarks/schema`, `computesdk`
-(`catalog:computesdk`).
+**Depends on:** `@sandbox-benchmarks/schema` only (toolchain identity and baked artifact names).
 
 **What lives here:** one module per provider, exposed at its own export subpath — the
 **one-subpath-one-module** policy, so importing `@sandbox-benchmarks/templates/e2b` pulls in only the

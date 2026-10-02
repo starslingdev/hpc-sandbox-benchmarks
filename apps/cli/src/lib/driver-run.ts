@@ -310,7 +310,7 @@ export function driverArtifactResolution(
 	if (typeof override === "string" && override.length > 0) return { ...resolution, ref: override };
 	if (id === "vercel") {
 		// A mirrored artifact has no registry constant: its ref is the VCR path under the configured
-		// team/project namespace — the same projection the plan, the bake and the config gatekeeper use
+		// team/project namespace — the same projection the plan, the bake and the release config use
 		// — so a worker can open the driver with only its registry inputs. An explicit ref (a candidate
 		// digest from the bake) still wins above; the plan's artifact identity check catches drift.
 		const teamSlug = env.VERCEL_TEAM_SLUG;

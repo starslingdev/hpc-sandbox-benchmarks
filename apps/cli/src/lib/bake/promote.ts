@@ -30,7 +30,6 @@
 // so. Recovery is a rerun with force_republish (a plain rerun is refused at step 1, since the base
 // image is still there).
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
-import { config } from "@sandbox-benchmarks/providers/config";
 import type {
 	BakedProviderId,
 	CandidateArtifactRefs,
@@ -41,6 +40,7 @@ import { bakedArtifactName, baseImageUse, PROVIDERS } from "@sandbox-benchmarks/
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
+import { releaseConfig } from "../release-config.ts";
 import {
 	imageDigest,
 	imageExistsInRegistry,
@@ -181,17 +181,17 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	//    posture — an unreadable registry is not evidence either way, so we decline rather than act blind.
 	if (force) {
 		log(
-			`>>> force-republish: regenerating ${config.toolchainImageVersion}, overwriting if present ` +
+			`>>> force-republish: regenerating ${releaseConfig.toolchainImageVersion}, overwriting if present ` +
 				"(a provider artifact replaced destructively is absent until its rebuild lands, and stays " +
 				"absent if the rebuild fails; each build below reports how it replaced its name)",
 		);
 	} else {
 		let alreadyPublished: boolean;
 		try {
-			alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
+			alreadyPublished = await imageExistsInRegistry(releaseConfig.toolchainImageVersion);
 		} catch (err) {
 			return refuse(
-				`could not verify whether ${config.toolchainImageVersion} is published, so refusing to ` +
+				`could not verify whether ${releaseConfig.toolchainImageVersion} is published, so refusing to ` +
 					`${partial ? "backfill onto it" : "publish"}: ${err instanceof Error ? err.message : String(err)}`,
 			);
 		}
@@ -202,13 +202,13 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		if (alreadyPublished !== expectsPublishedBase) {
 			return refuse(
 				partial
-					? `${config.toolchainImageVersion} is not published, so there is nothing to backfill ${scope} onto — a scoped promote adds providers to an existing version and never writes the base; run a full release first`
-					: `${config.toolchainImageVersion} already exists — the public version is immutable; bump the version or dispatch with force_republish to publish again`,
+					? `${releaseConfig.toolchainImageVersion} is not published, so there is nothing to backfill ${scope} onto — a scoped promote adds providers to an existing version and never writes the base; run a full release first`
+					: `${releaseConfig.toolchainImageVersion} already exists — the public version is immutable; bump the version or dispatch with force_republish to publish again`,
 			);
 		}
 		if (partial) {
 			log(
-				`>>> partial promote: backfilling ${scope} onto the published ${config.toolchainImageVersion}; ` +
+				`>>> partial promote: backfilling ${scope} onto the published ${releaseConfig.toolchainImageVersion}; ` +
 					"the public base is NOT rewritten and no other provider's artifact is touched",
 			);
 		}
@@ -245,10 +245,10 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	if (partial && bakesFromBase.length > 0) {
 		let pinnedCandidate: string;
 		try {
-			pinnedCandidate = await resolveImageDigestRef(config.toolchainImageCandidate);
+			pinnedCandidate = await resolveImageDigestRef(releaseConfig.toolchainImageCandidate);
 		} catch (err) {
 			return refuse(
-				`could not resolve immutable digest for ${config.toolchainImageCandidate}, which ${bakesFromBase.join(", ")} bake their version artifact from: ${err instanceof Error ? err.message : String(err)}`,
+				`could not resolve immutable digest for ${releaseConfig.toolchainImageCandidate}, which ${bakesFromBase.join(", ")} bake their version artifact from: ${err instanceof Error ? err.message : String(err)}`,
 				"aborted",
 			);
 		}
@@ -263,7 +263,10 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	// missing from the bake reports fails that provider's re-validation as unresolved.
 	const candidateRefs: CandidateArtifactRefs = {
 		toolchainImage: pinnedBaseImage,
-		mirrored: { vercel: config.vercelImageCandidate } satisfies Record<MirroredProviderId, string>,
+		mirrored: { vercel: releaseConfig.vercelImageCandidate } satisfies Record<
+			MirroredProviderId,
+			string
+		>,
 		buildResults: candidates,
 	};
 	log(`>>> re-validating ${scope} against ${pinnedBaseImage} before promote…`);
@@ -352,7 +355,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	// Both aborts below stop before step 4. On a partial promote there is no step 4 to stop before, so
 	// say what is actually true rather than implying the base was about to move.
 	const baseUntouched = partial
-		? `the public base ${config.toolchainImageVersion} is untouched (a scoped promote never writes it).`
+		? `the public base ${releaseConfig.toolchainImageVersion} is untouched (a scoped promote never writes it).`
 		: "the public base was NOT written.";
 
 	// A REQUIRED provider's artifact failed → do NOT publish the base. The version tag stays unwritten,
@@ -361,7 +364,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	// replacement can leave its published artifact absent (the report's `reason` says so).
 	if (reports.some(blocks)) {
 		log(
-			`!!! promote aborted before publish: a required ${config.toolchainImageVersion} provider artifact failed; ` +
+			`!!! promote aborted before publish: a required ${releaseConfig.toolchainImageVersion} provider artifact failed; ` +
 				`${baseUntouched} ` +
 				(force
 					? "This was a forced republish, so the failed provider's already-published artifact may have " +
@@ -398,12 +401,12 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	//    from touching the fleet everyone else is already running on.
 	if (partial) {
 		log(
-			`>>> partial promote complete: ${scope} now published for ${config.toolchainImageVersion}; ` +
+			`>>> partial promote complete: ${scope} now published for ${releaseConfig.toolchainImageVersion}; ` +
 				"the public base and every other provider's artifact are unchanged",
 		);
 		return { reports, ok: true };
 	}
-	log(`>>> promoting image ${pinnedBaseImage} → ${config.toolchainImageVersion}…`);
+	log(`>>> promoting image ${pinnedBaseImage} → ${releaseConfig.toolchainImageVersion}…`);
 	const imageStart = performance.now();
 	try {
 		await promoteImage(log, pinnedBaseImage);

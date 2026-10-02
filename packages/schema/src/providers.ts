@@ -182,7 +182,7 @@ export interface ProviderMeta {
  * `resources.disk`); Modal has no disk knob but its gVisor root reports effectively unbounded disk,
  * so it clears the gate anyway. Blaxel's sandbox root is a RAM-derived tmpfs with no independent disk
  * knob, so it mounts a 40 GiB volume at the PTS data dir where the heavy suites write (see
- * packages/providers/src/lib/blaxel-volume.ts) — clearing the gate like the others. Only e2b/novita
+ * BLAXEL_VOLUME_MOUNT_DIR in packages/blaxel/src/index.ts) — clearing the gate like the others. Only e2b/novita
  * (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`), namespace
  * (`NamespaceConfig` has no disk field at all), and Vercel (resources exposes only vCPUs) still
  * CANNOT express disk:

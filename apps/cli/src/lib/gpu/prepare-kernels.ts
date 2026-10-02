@@ -2,19 +2,24 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { succeeded, writeTextFile } from "@sandbox-benchmarks/driver";
-import type { App, Image, ModalClient, Volume } from "modal";
+import type {
+	ModalGpuImage,
+	ModalGpuPlatform,
+	ModalGpuVolume,
+} from "@sandbox-benchmarks/modal/gpu";
+import { snapshotModalGpuSandbox, tagModalGpuSandbox } from "@sandbox-benchmarks/modal/gpu";
 import type { GpuArgs } from "./args.ts";
 import { GPU_BENCHMARK, readSource } from "./config.ts";
 import { cudaGraphEvidenceFromLog, cudaGraphEvidencePassed } from "./cuda-graphs.ts";
-import type { GpuSandbox } from "./modal.ts";
+import { validateModelAssets } from "./prepare-models.ts";
+import type { GpuSandbox } from "./sandbox.ts";
 import {
 	gpuSandboxResources,
 	readGpuFile,
 	stageGpuProducer,
 	vllmEnvironment,
 	withGpuSandbox,
-} from "./modal.ts";
-import { validateModelAssets } from "./prepare-models.ts";
+} from "./sandbox.ts";
 
 const registryPointerPath = `${GPU_BENCHMARK.paths.kernelRegistryMount}/current.json`;
 const seedManifestPath = `${GPU_BENCHMARK.paths.kernelCache}/seed-manifest.json`;
@@ -84,38 +89,31 @@ export function kernelSnapshotPointerFromText(
 }
 
 export async function resolveKernelSnapshot(options: {
-	client: ModalClient;
-	app: App;
-	baseImage: Image;
-	registryVolume: Volume;
-	registryVolumeName: string;
+	platform: ModalGpuPlatform;
+	registryVolume: ModalGpuVolume;
 	args: GpuArgs;
-}): Promise<Image | undefined> {
-	const expectedSeed = kernelSeedManifest(options.baseImage.imageId, options.args);
+}): Promise<ModalGpuImage | undefined> {
+	const { platform } = options;
+	const expectedSeed = kernelSeedManifest(platform.baseImage.imageId, options.args);
 	const pointer = await withGpuSandbox(
+		platform,
 		{
-			client: options.client,
-			app: options.app,
-			image: options.baseImage,
-			options: {
+			image: platform.baseImage,
+			resources: {
 				cpu: 0.25,
 				cpuLimit: 1,
 				memoryMiB: 128,
 				memoryLimitMiB: 512,
 				timeoutMs: 5 * 60_000,
 				blockNetwork: true,
-				volumes: {
-					[GPU_BENCHMARK.paths.kernelRegistryMount]: options.registryVolume.withMountOptions({
-						readOnly: true,
-					}),
-				},
 			},
+			mounts: { [GPU_BENCHMARK.paths.kernelRegistryMount]: { volume: options.registryVolume } },
 		},
 		async (registry) => {
 			try {
-				await registry.session.native.setTags({
+				await tagModalGpuSandbox(registry.session, {
 					"gpu-benchmark-role": "kernel-snapshot-registry-check",
-					"kernel-snapshot-registry-volume": options.registryVolumeName,
+					"kernel-snapshot-registry-volume": options.registryVolume.name,
 				});
 				return kernelSnapshotPointerFromText(
 					await readGpuFile(registry.session, registryPointerPath),
@@ -129,18 +127,13 @@ export async function resolveKernelSnapshot(options: {
 	);
 	if (!pointer) return undefined;
 
-	let candidate: Image;
-	try {
-		candidate = await options.client.images.fromId(pointer.snapshotImageId);
-	} catch {
-		return undefined;
-	}
+	const candidate = await platform.restoreImage(pointer.snapshotImageId);
+	if (!candidate) return undefined;
 	return await withGpuSandbox(
+		platform,
 		{
-			client: options.client,
-			app: options.app,
 			image: candidate,
-			options: {
+			resources: {
 				cpu: 0.25,
 				cpuLimit: 1,
 				memoryMiB: 128,
@@ -151,7 +144,7 @@ export async function resolveKernelSnapshot(options: {
 		},
 		async (probe) => {
 			try {
-				await probe.session.native.setTags({
+				await tagModalGpuSandbox(probe.session, {
 					"gpu-benchmark-role": "kernel-snapshot-check",
 					"kernel-snapshot-image": pointer.snapshotImageId,
 				});
@@ -180,42 +173,36 @@ async function installProfile(sandbox: GpuSandbox): Promise<void> {
 }
 
 export async function prepareKernelSnapshot(options: {
-	client: ModalClient;
-	app: App;
-	baseImage: Image;
-	modelVolume: Volume;
-	modelVolumeName: string;
-	registryVolume: Volume;
-	registryVolumeName: string;
+	platform: ModalGpuPlatform;
+	modelVolume: ModalGpuVolume;
+	registryVolume: ModalGpuVolume;
 	args: GpuArgs;
 }): Promise<KernelSnapshotPointer> {
-	const { args } = options;
-	const expectedSeed = kernelSeedManifest(options.baseImage.imageId, args);
+	const { args, platform } = options;
+	const expectedSeed = kernelSeedManifest(platform.baseImage.imageId, args);
 	const outputDirectory = resolve(args.outputDirectory);
 	mkdirSync(outputDirectory, { recursive: true });
 	return withGpuSandbox(
+		platform,
 		{
-			client: options.client,
-			app: options.app,
-			image: options.baseImage,
-			options: {
-				...gpuSandboxResources(args),
-				env: vllmEnvironment(args),
-				volumes: {
-					[GPU_BENCHMARK.paths.modelMount]: options.modelVolume.withMountOptions({
-						readOnly: true,
-					}),
-					[GPU_BENCHMARK.paths.kernelRegistryMount]: options.registryVolume,
+			image: platform.baseImage,
+			resources: gpuSandboxResources(args),
+			env: vllmEnvironment(args),
+			mounts: {
+				[GPU_BENCHMARK.paths.modelMount]: { volume: options.modelVolume },
+				[GPU_BENCHMARK.paths.kernelRegistryMount]: {
+					volume: options.registryVolume,
+					writable: true,
 				},
 			},
 		},
 		async (sandbox) => {
-			await sandbox.session.native.setTags({
+			await tagModalGpuSandbox(sandbox.session, {
 				"gpu-benchmark-role": "kernel-cache-seed",
 				profile: GPU_BENCHMARK.profile.name,
 				gpu: args.gpu,
-				"model-volume": options.modelVolumeName,
-				"kernel-snapshot-registry-volume": options.registryVolumeName,
+				"model-volume": options.modelVolume.name,
+				"kernel-snapshot-registry-volume": options.registryVolume.name,
 			});
 			console.error(`Modal GPU kernel-seed sandbox: ${sandbox.session.sandboxRef.id}`);
 			await validateModelAssets(sandbox);
@@ -245,7 +232,7 @@ export async function prepareKernelSnapshot(options: {
 				throw new Error("kernel-cache seed reached no verified CUDA-graph capture");
 			}
 			await writeTextFile(sandbox.session, seedManifestPath, encode(expectedSeed));
-			const snapshot = await sandbox.session.native.snapshotFilesystem({
+			const snapshot = await snapshotModalGpuSandbox(sandbox.session, {
 				timeoutMs: 5 * 60_000,
 				ttlMs: GPU_BENCHMARK.kernelSnapshotTtlDays * 24 * 60 * 60_000,
 			});

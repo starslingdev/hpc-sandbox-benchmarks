@@ -1,9 +1,11 @@
 // `@sandbox-benchmarks/templates/daytona` — one subpath, one module (the template policy).
-import { config } from "@sandbox-benchmarks/providers/config";
+import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
 import type { TemplateSpec } from "./lib/internal.ts";
 import { makeTemplateSpec } from "./lib/internal.ts";
 
-/** Build the Daytona sandbox template — defaults to the pre-baked toolchain snapshot (config). */
-export function buildDaytonaTemplate(tag: string = config.daytonaSnapshotDefault): TemplateSpec {
+/** Build the Daytona sandbox template — defaults to the version-scoped daytona-vm snapshot name. */
+export function buildDaytonaTemplate(
+	tag: string = bakedArtifactName("daytona-vm", "version"),
+): TemplateSpec {
 	return makeTemplateSpec("daytona", tag);
 }

@@ -6,9 +6,11 @@ import { resolve } from "node:path";
 import type {
 	CreateRequest,
 	DriverModule,
+	ProviderCostEvidenceCapability,
 	ProviderId,
 	SandboxDriver,
 	SandboxSession,
+	SandboxTeardownResult,
 } from "@sandbox-benchmarks/driver";
 import {
 	isFailedCreateCleanupError,
@@ -24,14 +26,6 @@ import { diagnosticSecretsFromEnv } from "@sandbox-benchmarks/driver/env";
 const describeDriverFailure = (error: unknown): string =>
 	projectDriverFailure(error, diagnosticSecretsFromEnv(process.env));
 
-import type {
-	ProviderCostEvidenceCapability,
-	SandboxTeardownResult,
-} from "@sandbox-benchmarks/providers";
-import {
-	sanitizeEvidenceDetail,
-	sanitizeProviderResponse,
-} from "@sandbox-benchmarks/providers/support";
 import type {
 	GapCause,
 	GuestFingerprint,
@@ -62,6 +56,7 @@ import {
 	writeProviderArtifactEvidence,
 	writeProviderCostEvidence,
 } from "./lib/collect.ts";
+import { sanitizeEvidenceDetail, sanitizeProviderResponse } from "./lib/cost-evidence.ts";
 import type { SandboxHandle } from "./lib/execute.ts";
 import {
 	MIN,
@@ -279,9 +274,17 @@ export interface RunSuiteOptions {
 	env?: Record<string, string | undefined>;
 }
 
+/** The teardown result the cost-evidence hook receives, still open to a downgrade: the harness marks
+ *  it incomplete when post-destroy confirmation fails. */
+type HarnessTeardown = {
+	-readonly [K in keyof SandboxTeardownResult]: SandboxTeardownResult[K];
+} & {
+	diagnostic?: string;
+};
+
 async function destroySandbox(
 	sandbox: Pick<SandboxHandle, "destroy"> | undefined,
-): Promise<SandboxTeardownResult & { diagnostic?: string }> {
+): Promise<HarnessTeardown> {
 	const attemptedAt = new Date().toISOString();
 	if (!sandbox) return { completed: false, attemptedAt };
 	try {

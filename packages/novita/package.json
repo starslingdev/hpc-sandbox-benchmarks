@@ -17,7 +17,7 @@
   "dependencies": {
     "@sandbox-benchmarks/driver": "workspace:*",
     "arktype": "catalog:",
-    "novita-sandbox": "catalog:computesdk"
+    "novita-sandbox": "catalog:vendors"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

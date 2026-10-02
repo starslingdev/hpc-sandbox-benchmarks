@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boatdev/sdk": "catalog:computesdk",
+    "@boatdev/sdk": "catalog:vendors",
     "@sandbox-benchmarks/driver": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:"

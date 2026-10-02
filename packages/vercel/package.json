@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@sandbox-benchmarks/driver": "workspace:*",
-    "@vercel/sandbox": "catalog:computesdk",
+    "@vercel/sandbox": "catalog:vendors",
     "arktype": "catalog:"
   },
   "devDependencies": {

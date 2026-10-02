@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@infercrane/brezel": "catalog:computesdk",
+    "@infercrane/brezel": "catalog:vendors",
     "@sandbox-benchmarks/driver": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:"

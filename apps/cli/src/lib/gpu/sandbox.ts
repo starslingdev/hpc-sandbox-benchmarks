@@ -4,9 +4,12 @@ import type { SandboxSession } from "@sandbox-benchmarks/driver";
 import { readTextFile, writeTextFile } from "@sandbox-benchmarks/driver";
 import type { SandboxWork } from "@sandbox-benchmarks/harness";
 import { withSandboxWork } from "@sandbox-benchmarks/harness";
-import type { ModalAllocationConfiguration } from "@sandbox-benchmarks/modal/allocation";
-import { createModalAllocation } from "@sandbox-benchmarks/modal/allocation";
-import type { Sandbox, SandboxCreateParams } from "modal";
+import type {
+	ModalGpuAllocationRequest,
+	ModalGpuHandle,
+	ModalGpuPlatform,
+	ModalGpuResources,
+} from "@sandbox-benchmarks/modal/gpu";
 import type { GpuArgs } from "./args.ts";
 import {
 	GPU_BENCHMARK,
@@ -17,11 +20,12 @@ import {
 	readSource,
 } from "./config.ts";
 
-export type GpuSandbox = SandboxWork<Sandbox>;
+export type GpuSandbox = SandboxWork<ModalGpuHandle>;
 
 /** Native allocation and shared harness lifetime, with optional GPU-specific teardown evidence. */
 export async function withGpuSandbox<T>(
-	configuration: ModalAllocationConfiguration,
+	platform: ModalGpuPlatform,
+	request: ModalGpuAllocationRequest,
 	work: (sandbox: GpuSandbox) => Promise<T>,
 	evidence?: { readonly path: string; readonly replicateIndex: number },
 ): Promise<T> {
@@ -30,7 +34,7 @@ export async function withGpuSandbox<T>(
 	let sandboxId: string | undefined;
 	try {
 		await withSandboxWork(
-			createModalAllocation(configuration),
+			platform.allocation(request),
 			async (sandbox) => {
 				sandboxId = sandbox.session.sandboxRef.id;
 				try {
@@ -60,7 +64,7 @@ export async function withGpuSandbox<T>(
 }
 
 /** Resource and lifetime policy shared by the kernel seed and measured benchmark allocations. */
-export function gpuSandboxResources(args: GpuArgs) {
+export function gpuSandboxResources(args: GpuArgs): ModalGpuResources {
 	return {
 		gpu: args.gpu,
 		cpu: args.cpuRequested,
@@ -69,7 +73,7 @@ export function gpuSandboxResources(args: GpuArgs) {
 		memoryLimitMiB: args.memoryLimitMiB,
 		timeoutMs: args.timeoutMinutes * 60_000,
 		blockNetwork: true,
-	} satisfies SandboxCreateParams;
+	};
 }
 
 /** vLLM runtime policy shared by cache seeding and measured runs. */

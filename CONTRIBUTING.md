@@ -62,7 +62,9 @@ bun run check:providers                                        # fail if any gen
    the adapter's translation, run `vendorContract` over a stubbed transport, and drive a few sessions
    through `module.specFor`; kit behaviour is already tested in `packages/driver`. Its `execution`
    policy (synchronous cap and durable route) is the only declaration of the provider's exec
-   transport, and its `package.json` must depend on the `sdkPackage` library. Run
+   transport, and its `package.json` must depend on the `sdkPackage` library. Every vendor library
+   the package uses goes in the root `catalogs.vendors` and is declared as `catalog:vendors` by this
+   package alone; no other workspace member may declare or import it (the vendor-seam check). Run
    `bun run generate-providers`, then review the generated registry index, driver and
    artifact-builder loaders, provenance, and managed workflow/docs/env regions. Filename, tuple key, and declared id
    disagreement is a compile error; malformed descriptor semantics, a missing driver module, and an
@@ -140,3 +142,6 @@ don't trip the drift gate.
   plain throws at module load over typed in-repo constants — fail fast at import.
 - Keep packages within the [dependency DAG](./docs/architecture.md#dependency-dag-enforced); `@repo/repo-checks`
   fails CI on a boundary violation.
+- A provider package is its vendor's only importer ([the vendor seam](./docs/architecture.md#the-vendor-seam)):
+  reach a provider through `@sandbox-benchmarks/drivers`, never by importing its package, except the
+  allowlisted Modal-only subpaths (`@sandbox-benchmarks/modal/gpu`, `/cleanup-observation`).

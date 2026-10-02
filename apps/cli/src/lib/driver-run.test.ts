@@ -203,7 +203,7 @@ describe("driverArtifactResolution", () => {
 	});
 
 	test("honors the operator's registry-declared artifact override", () => {
-		// The leftover lane read E2B_TEMPLATE through its config gatekeeper and CI still forwards it on
+		// The retired adapter lane read E2B_TEMPLATE through a config gatekeeper and CI still forwards it on
 		// every e2b cell, so defaulting e2b to the driver lane must not silently boot the published
 		// template instead of the one the operator pinned.
 		const env = parseDriverEnv("e2b", { E2B_API_KEY: "key", E2B_TEMPLATE: "debug-template" });

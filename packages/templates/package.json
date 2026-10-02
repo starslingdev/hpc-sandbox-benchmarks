@@ -18,9 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sandbox-benchmarks/providers": "workspace:*",
-    "@sandbox-benchmarks/schema": "workspace:*",
-    "computesdk": "catalog:computesdk"
+    "@sandbox-benchmarks/schema": "workspace:*"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

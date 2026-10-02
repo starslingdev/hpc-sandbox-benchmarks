@@ -32,8 +32,8 @@ documents for reporting/promotion.
 reading are package-internal under `src/lib/`.
 
 **Depends on:** `@sandbox-benchmarks/schema` and an XML parser (`@nodable/*`) **only**. By design this
-package must normalize results *without* any provider SDK — the boundary test enforces that it never
-reaches into `@sandbox-benchmarks/providers` or a vendor SDK.
+package must normalize results *without* any provider SDK — the vendor-seam check enforces that it
+never reaches into a provider package or a vendor library.
 
 **What lives here:** the typed `composite.xml` parser, the raw-directory extractor, sample
 aggregation into the `Run` model, and the Run writer/index. Implementation modules live in `src/lib/`

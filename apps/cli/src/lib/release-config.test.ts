@@ -1,7 +1,8 @@
-// The VCR namespace is resolved once, at config module load, from the environment. `config` freezes
-// at import time, so these run the resolution in a FRESH subprocess per case — the same mechanism CI
-// uses (`bun -e 'import { config } …'` inside the toolchain workflow's mirror step), rather than a
-// mutate-and-reimport trick that would prove nothing about the real entrypoint.
+// The VCR namespace is resolved once, at release-config module load, from the environment.
+// `releaseConfig` freezes at import time, so these run the resolution in a FRESH subprocess per case —
+// the same mechanism CI uses (`bun -e 'import { releaseConfig } …'` inside the toolchain workflow's
+// mirror step), rather than a mutate-and-reimport trick that would prove nothing about the real
+// entrypoint.
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import {
@@ -10,14 +11,14 @@ import {
 	VERCEL_VCR_REPOSITORY,
 } from "@sandbox-benchmarks/schema";
 
-const CONFIG_PATH = join(import.meta.dir, "..", "config.ts");
+const CONFIG_PATH = join(import.meta.dir, "release-config.ts");
 const NAMESPACE_KEYS = ["VERCEL_TEAM_SLUG", "VERCEL_PROJECT_NAME"] as const;
 
-const PROBE = `const { config } = await import(${JSON.stringify(CONFIG_PATH)});
+const PROBE = `const { releaseConfig } = await import(${JSON.stringify(CONFIG_PATH)});
 console.log(JSON.stringify({
-  teamSlug: config.vercelTeamSlug,
-  projectName: config.vercelProjectName,
-  image: config.vercelImage,
+  teamSlug: releaseConfig.vercelTeamSlug,
+  projectName: releaseConfig.vercelProjectName,
+  image: releaseConfig.vercelImageVersion,
 }));`;
 
 interface Resolved {
@@ -55,7 +56,7 @@ async function resolveNamespace(
 }
 
 // `describe.concurrent` because each case is one `bun -e` boot whose cost is almost entirely loading
-// config.ts's module graph; the resolution being probed is a handful of string checks. The six probes
+// release-config.ts's module graph; the resolution being probed is a handful of string checks. The six probes
 // differ only in environment and share nothing, so overlapping them turns six serial module loads into
 // one batch. The runner's own construct, rather than launching at collection time and awaiting later:
 // `resolveNamespace` does `JSON.parse(stdout)` inside the promise, so a hoisted rejection would be
@@ -97,7 +98,7 @@ describe.concurrent("Vercel VCR namespace resolution", () => {
 	it("treats an unconfigured CI variable (set-but-empty) as unset", async () => {
 		// `VERCEL_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}` materializes as "" when the variable does not
 		// exist. That must take the default path, not crash config load — a throw here would break every
-		// provider's job at import time, not just Vercel's.
+		// release job at import time, not just Vercel's.
 		const { exitCode, resolved } = await resolveNamespace({
 			VERCEL_TEAM_SLUG: "",
 			VERCEL_PROJECT_NAME: "",

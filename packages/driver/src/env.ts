@@ -46,7 +46,8 @@ export function envSchemaFor<P extends ProviderId>(id: P): ProviderEnvSchema<P> 
  *
  * Only DECLARED keys are picked before validation — the ambient environment legitimately holds
  * hundreds of undeclared variables, so undeclared-key rejection would be wrong here; the slice
- * boundary is the pick itself. Empty values count as unset (the config gatekeeper's rule).
+ * boundary is the pick itself. Empty values count as unset: GitHub Actions materializes an
+ * unconfigured secret or variable as "", which must read as missing, never as a value.
  * Failures carry the repo's one error grammar: `TAMA_TOKEN must be a string (was missing)`.
  */
 export function parseDriverEnv<P extends ProviderId>(

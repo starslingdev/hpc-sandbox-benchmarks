@@ -18,7 +18,7 @@
     "@sandbox-benchmarks/driver": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
-    "freestyle": "catalog:computesdk"
+    "freestyle": "catalog:vendors"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

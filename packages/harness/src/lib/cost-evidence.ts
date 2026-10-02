@@ -1,5 +1,5 @@
-// The sanitizers every cost-evidence sink shares; provider-specific capture hooks live beside their
-// driver modules in packages/drivers.
+// The sanitizers the harness applies before persisting cost evidence. Capture hooks live on each
+// provider's DriverModule (`costEvidence`); whatever they return is untrusted until it passes here.
 import { types as utilTypes } from "node:util";
 import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "@sandbox-benchmarks/schema";
 

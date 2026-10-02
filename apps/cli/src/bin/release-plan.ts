@@ -1,21 +1,4 @@
 #!/usr/bin/env bun
-// `release-plan` — the FIRST job of the toolchain release. Resolve the toolchain identity from the
-// arktype-validated config, decide the release mode, and emit ONE machine-checkable release plan that
-// every downstream job (build, the provider bake matrix, promote) consumes instead of re-deriving the
-// refs and gates from the raw workflow inputs (the "make the plan an artifact" contract).
-//
-// Two outputs, one invocation:
-//   • the full plan as pretty JSON, written to the path in argv[1] (uploaded as the release-plan.json
-//     diagnostic artifact), and
-//   • the consumed `key=value` lines written straight to $GITHUB_OUTPUT (skip, mode, matrix, refs, …)
-//     via emitStepOutputs — never a stdout redirect, so no subprocess chatter can corrupt them.
-//
-// Credential posture: importing `config`/`validatedPins` validates env + pins with NO cloud creds
-// (the fail-fast gate). The one privileged call is the immutability probe (`imageExistsInRegistry`,
-// a `docker manifest inspect` that needs the GHCR login the plan job does first). That probe is only
-// a best-effort EARLY skip — the authoritative immutable-version guard lives in `promote` (which
-// REFUSES on an uncertain check), so an inconclusive probe here proceeds rather than blocks.
-import { config } from "@sandbox-benchmarks/providers/config";
 import type {
 	MirroredProviderId,
 	ProviderArtifact,
@@ -32,6 +15,23 @@ import { validatedPins } from "@sandbox-benchmarks/templates/pins";
 import { imageExistsInRegistry, imageName, imageRepo, releaseBaseTag } from "../lib/bake/image.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
+// `release-plan` — the FIRST job of the toolchain release. Resolve the toolchain identity from the
+// arktype-validated release config, decide the release mode, and emit ONE machine-checkable release plan that
+// every downstream job (build, the provider bake matrix, promote) consumes instead of re-deriving the
+// refs and gates from the raw workflow inputs (the "make the plan an artifact" contract).
+//
+// Two outputs, one invocation:
+//   • the full plan as pretty JSON, written to the path in argv[1] (uploaded as the release-plan.json
+//     diagnostic artifact), and
+//   • the consumed `key=value` lines written straight to $GITHUB_OUTPUT (skip, mode, matrix, refs, …)
+//     via emitStepOutputs — never a stdout redirect, so no subprocess chatter can corrupt them.
+//
+// Credential posture: importing `releaseConfig`/`validatedPins` validates env + pins with NO cloud creds
+// (the fail-fast gate). The one privileged call is the immutability probe (`imageExistsInRegistry`,
+// a `docker manifest inspect` that needs the GHCR login the plan job does first). That probe is only
+// a best-effort EARLY skip — the authoritative immutable-version guard lives in `promote` (which
+// REFUSES on an uncertain check), so an inconclusive probe here proceeds rather than blocks.
+import { releaseConfig } from "../lib/release-config.ts";
 import type { ReleaseBuildMode } from "../lib/release-inputs.ts";
 import { isBuildMode } from "../lib/release-inputs.ts";
 
@@ -52,7 +52,7 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
 ];
 
 const MIRRORED_CANDIDATE_REFS = {
-	vercel: config.vercelImageCandidate,
+	vercel: releaseConfig.vercelImageCandidate,
 } as const satisfies Record<MirroredProviderId, string>;
 
 /** Per-provider artifact name (what a cell produces), or a lifecycle-derived note. */
@@ -149,7 +149,7 @@ export interface ReleasePlan {
 /**
  * Build the release plan from resolved inputs + the config refs. Pure (no env, no I/O) so the mode /
  * skip / matrix logic is unit-testable without a registry or a real config — the bin injects the live
- * `config`-derived values below.
+ * `releaseConfig`-derived values below.
  */
 export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 	// A blank `providers` input means "every provider" (the default full release); a non-blank one is
@@ -210,7 +210,7 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 		artifact: providerArtifact(provider),
 	}));
 
-	const { vcpus, memoryGb, diskGb } = config.targetSpec;
+	const { vcpus, memoryGb, diskGb } = releaseConfig.targetSpec;
 
 	return {
 		mode,
@@ -221,20 +221,20 @@ export function buildReleasePlan(inputs: ReleasePlanInputs): ReleasePlan {
 		sourceRef: inputs.sourceRef,
 		sizeTier: `${vcpus} vCPU / ${memoryGb} GiB / ${diskGb} GB`,
 		image: {
-			repo: imageRepo(config.toolchainImageVersion),
-			name: imageName(config.toolchainImageVersion),
-			version: config.toolchainImageVersion,
-			candidate: config.toolchainImageCandidate,
-			toolchainVersion: config.toolchainVersion,
+			repo: imageRepo(releaseConfig.toolchainImageVersion),
+			name: imageName(releaseConfig.toolchainImageVersion),
+			version: releaseConfig.toolchainImageVersion,
+			candidate: releaseConfig.toolchainImageCandidate,
+			toolchainVersion: releaseConfig.toolchainVersion,
 			source: releaseBaseTag(partial),
 		},
-		packages: [imageName(config.toolchainImageVersion)],
+		packages: [imageName(releaseConfig.toolchainImageVersion)],
 		providers,
 		required,
 		gates: {
 			alreadyPublished: inputs.alreadyPublished,
 			forceRepublish: inputs.forceRepublish,
-			publishTarget: config.toolchainImageVersion,
+			publishTarget: releaseConfig.toolchainImageVersion,
 		},
 		matrix: {
 			include: providers.map((p) => ({ provider: p.provider, required: p.required })),
@@ -297,11 +297,11 @@ if (import.meta.main) {
 	let alreadyPublished = false;
 	let probeConclusive = true;
 	try {
-		alreadyPublished = await imageExistsInRegistry(config.toolchainImageVersion);
+		alreadyPublished = await imageExistsInRegistry(releaseConfig.toolchainImageVersion);
 	} catch (err) {
 		probeConclusive = false;
 		console.error(
-			`::warning::could not probe whether ${config.toolchainImageVersion} is already published ` +
+			`::warning::could not probe whether ${releaseConfig.toolchainImageVersion} is already published ` +
 				`(${err instanceof Error ? err.message : String(err)}); proceeding — promote does the authoritative guard.`,
 		);
 	}
@@ -321,7 +321,7 @@ if (import.meta.main) {
 	// does the authoritative refuse-on-uncertain check before anything is written.
 	if (plan.partial && !alreadyPublished && plan.promote) {
 		console.error(
-			`::warning::${config.toolchainImageVersion} does not look published yet, but this is a scoped ` +
+			`::warning::${releaseConfig.toolchainImageVersion} does not look published yet, but this is a scoped ` +
 				`release (${plan.providers.map((p) => p.provider).join(", ")}) — a scoped promote backfills ` +
 				"providers onto an existing version and never writes the base, so it will refuse. Run a full " +
 				"release first, or dispatch with promote disabled to bake + verify only.",
@@ -335,7 +335,7 @@ if (import.meta.main) {
 	// probe, so a registry blip degrades to an honest downstream failure rather than a false refusal.
 	if (plan.partial && plan.build === "skip" && probeConclusive && !alreadyPublished) {
 		console.error(
-			`::error title=No published base to backfill onto::${config.toolchainImageVersion} is not ` +
+			`::error title=No published base to backfill onto::${releaseConfig.toolchainImageVersion} is not ` +
 				"published, and a scoped `build: skip` release derives its artifacts from that base without " +
 				"building anything — there is nothing to derive from. Cut this version with a full release " +
 				"first; a scoped backfill adds a provider to a version that already shipped.",

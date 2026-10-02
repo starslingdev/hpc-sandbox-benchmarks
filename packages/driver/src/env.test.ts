@@ -37,7 +37,7 @@ describe("parseDriverEnv", () => {
 		);
 	});
 
-	test("empty string counts as unset (the config gatekeeper's rule)", () => {
+	test("empty string counts as unset (how CI materializes an unconfigured input)", () => {
 		expect(() => parseDriverEnv("tama", { TAMA_TOKEN: "" })).toThrow(/TAMA_TOKEN/);
 	});
 

@@ -15,7 +15,7 @@
       "dotenv": "17.4.2"
     },
     "catalogs": {
-      "computesdk": {
+      "vendors": {
         "@blaxel/core": "0.3.5",
         "@infercrane/brezel": "0.1.1",
         "@computesdk/e2b": "1.7.51",
@@ -23,7 +23,6 @@
         "@run-cloud/sdk": "0.9.0",
         "@daytona/api-client": "0.211.2",
         "@daytona/sdk": "0.211.2",
-        "computesdk": "4.1.3",
         "e2b": "2.27.1",
         "microsandbox": "0.6.8",
         "modal": "0.9.0",

@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@run-cloud/sdk": "catalog:computesdk",
+    "@run-cloud/sdk": "catalog:vendors",
     "@sandbox-benchmarks/driver": "workspace:*",
     "arktype": "catalog:"
   },

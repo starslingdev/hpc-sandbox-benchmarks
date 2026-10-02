@@ -26,14 +26,14 @@ terms belong in `packages/schema/CONTEXT.md` and other contexts refer to them.
 | --- | --- |
 | `packages/schema/` | Provider identity, variants and registry projections, target and observed specs, suites, dimensions, metrics, samples, replicates, Run documents, gaps, pricing, and evidence contracts. |
 | `packages/driver/` | Provider-neutral sandbox behavior: driver, session, sandbox reference, command exit, capabilities, execution/readiness policy, teardown, and conformance. |
-| `packages/drivers/` | Provider-specific DriverModules: translate vendor behavior into the driver contract and declare provider inputs, policies, and capabilities. |
-| `packages/providers/` | Release-lane configuration gatekeeper and cost-evidence helpers, pending dissolution into schema, harness, and provider packages (ADR-0023). |
+| `packages/drivers/` | The generated joins over provider packages: `DRIVERS` and `ARTIFACT_BUILDERS`, the only route to a provider package besides its named subpaths. |
+| `packages/<provider>/` | Provider packages: each translates one vendor into the driver contract (DriverModule, optional `./artifact` builder) and is that vendor's only importer. `packages/modal` also owns the Modal-only GPU platform (`./gpu`) and App cleanup observation (`./cleanup-observation`). |
 | `packages/templates/` | Toolchain images and provider template builders, pinned tools, manifests, and build recipes. |
-| `packages/harness/` | Sandbox ownership, lifecycle timing, readiness, suite execution, transport selection, raw collection, and host-owned evidence persistence. |
+| `packages/harness/` | Sandbox ownership, lifecycle timing, readiness, suite execution, transport selection, raw collection, and host-owned evidence persistence (including cost-evidence sanitization). |
 | `packages/results/` | Raw extraction and normalization, shard aggregation, host attribution, economics derivation, Run writing, comparison, and leaderboard output. |
 | `packages/figures/` | Chart-specific models, pipeline phases, chartability, per-chart scales, HTML documents, and rasterization. |
-| `apps/cli/` | Command composition: planning, provider selection, environment and artifact resolution, replicates, benchmark execution, release lanes, and dataset publication. |
-| `tooling/repo-checks/` | Repository invariants: package boundaries, metadata, generated-file alignment, dataset integrity, and workflow checks. |
+| `apps/cli/` | Command composition: planning, provider selection, environment and artifact resolution, replicates, benchmark execution, release lanes (and their release config), GPU orchestration, and dataset publication. Declares no vendor library. |
+| `tooling/repo-checks/` | Repository invariants: package boundaries, the vendor seam, metadata, generated-file alignment, dataset integrity, and workflow checks. |
 
 `tooling/tsconfig/` is shared compiler configuration; consult it for toolchain changes rather than
 inventing benchmark vocabulary for it. Package-local ADRs live in `<package>/docs/adr/`.
@@ -51,7 +51,8 @@ Decisions affecting multiple contexts stay in the existing root `docs/adr/`.
 - **Workload, suite, or metric changes:** read schema suites/catalog, harness execution and
   collection, then results extraction. Follow the actual workload into `.mise/tasks/`, `lib/`,
   and `packages/schema/src/pts-profiles/`. Consult ADR-0003 and `docs/methodology.md`;
-  for GPU workloads also read `docs/gpu-benchmark-methodology.md` and the CLI GPU path.
+  for GPU workloads also read `docs/gpu-benchmark-methodology.md`, the CLI GPU path, and the
+  Modal GPU platform it drives (`packages/modal/src/gpu.ts`).
 - **Resource comparability or host attribution:** read schema target/observed specs, harness
   probes, and results spec/mixture handling. Consult ADR-0005 and methodology. Preserve the
   distinction between requested resources, effective sandbox resources, and observed host hardware.
@@ -67,7 +68,9 @@ Decisions affecting multiple contexts stay in the existing root `docs/adr/`.
   Results owns non-chart derivations and captions; figures owns chart models and rendering.
   Browser capture is a separate figures entry point invoked by the CLI.
 - **Dependency or workspace changes:** consult ADR-0001/0002, affected package manifests and
-  exports, and `tooling/repo-checks/src/boundary.test.ts` plus `package-meta.test.ts`.
+  exports, and `tooling/repo-checks/src/boundary.test.ts`, `vendor-seam.test.ts` and
+  `package-meta.test.ts`. A vendor library belongs in the root `catalogs.vendors` and in exactly one
+  provider package (ADR-0023 §2).
   Read actual declared dependencies instead of copying a dependency table into a glossary.
 
 ## Vocabulary and evidence

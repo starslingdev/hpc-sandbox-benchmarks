@@ -18,8 +18,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@daytona/api-client": "catalog:computesdk",
-    "@daytona/sdk": "catalog:computesdk",
+    "@daytona/api-client": "catalog:vendors",
+    "@daytona/sdk": "catalog:vendors",
     "@sandbox-benchmarks/driver": "workspace:*",
     "arktype": "catalog:"
   },

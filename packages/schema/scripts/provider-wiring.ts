@@ -422,7 +422,7 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 interface RootWorkspaceManifest {
 	readonly workspaces?: {
 		readonly catalogs?: {
-			readonly computesdk?: Readonly<Record<string, string>>;
+			readonly vendors?: Readonly<Record<string, string>>;
 		};
 	};
 }
@@ -450,15 +450,15 @@ function providerCatalog(root: string): Readonly<Record<string, string>> {
 	const rootManifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as
 		| RootWorkspaceManifest
 		| undefined;
-	const catalog = rootManifest?.workspaces?.catalogs?.computesdk;
+	const catalog = rootManifest?.workspaces?.catalogs?.vendors;
 	if (catalog === undefined || Object.keys(catalog).length === 0) {
-		throw new Error("package.json: workspaces.catalogs.computesdk must be a non-empty mapping");
+		throw new Error("package.json: workspaces.catalogs.vendors must be a non-empty mapping");
 	}
 	for (const [name, version] of Object.entries(catalog)) {
 		if (name.length === 0) {
 			throw new Error("package.json: provider catalog package names must be non-empty");
 		}
-		exactVersion(version, `package.json: workspaces.catalogs.computesdk[${JSON.stringify(name)}]`);
+		exactVersion(version, `package.json: workspaces.catalogs.vendors[${JSON.stringify(name)}]`);
 	}
 	return catalog;
 }
@@ -470,10 +470,10 @@ function dependencyVersion(
 	packageName: string,
 	specifier: string,
 ): string {
-	if (specifier === "catalog:computesdk") {
+	if (specifier === "catalog:vendors") {
 		return exactVersion(
 			catalog[packageName],
-			`package.json: workspaces.catalogs.computesdk[${JSON.stringify(packageName)}]`,
+			`package.json: workspaces.catalogs.vendors[${JSON.stringify(packageName)}]`,
 		);
 	}
 	return exactVersion(specifier, `${manifestFile}: dependencies[${JSON.stringify(packageName)}]`);

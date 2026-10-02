@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./gvisor": "./src/gvisor.ts",
     "./vm": "./src/vm.ts",
-    "./allocation": "./src/allocation.ts",
+    "./cleanup-observation": "./src/cleanup-observation.ts",
+    "./gpu": "./src/gpu.ts",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -18,9 +19,10 @@
   },
   "dependencies": {
     "@sandbox-benchmarks/driver": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
-    "modal": "catalog:computesdk",
-    "nice-grpc": "catalog:computesdk"
+    "modal": "catalog:vendors",
+    "nice-grpc": "catalog:vendors"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

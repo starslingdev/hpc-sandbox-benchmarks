@@ -50,7 +50,7 @@ outputs:
   token-file:
     description: >-
       Path to the minted {"bearer_token": "…"} JSON file, or empty if the mint did not complete.
-      Wire it straight into NSC_TOKEN_FILE — empty reads as "unset" to the config gatekeeper.
+      Wire it straight into NSC_TOKEN_FILE — empty reads as "unset" to the driver env gate.
     value: ${{ steps.mint.outputs.token-file }}
 
 runs:

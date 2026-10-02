@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@blaxel/core": "catalog:computesdk",
+    "@blaxel/core": "catalog:vendors",
     "@sandbox-benchmarks/driver": "workspace:*",
     "arktype": "catalog:"
   },

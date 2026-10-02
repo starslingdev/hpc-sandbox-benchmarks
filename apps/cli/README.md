@@ -27,7 +27,14 @@
   versions/timestamps and does not rewrite the index; the overall operation is not dataset-atomic.
 - `bake` / `bench-smoke` / `stability` — toolchain bake, single-cell smoke, cross-run stability gate.
 
-**Depends on:** all five packages (`workspace:*`) + `dotenv` (`catalog:`).
+**Depends on:** the workspace libraries (`workspace:*`) + `dotenv` (`catalog:`). It declares no
+vendor library: providers are reached through the generated loaders in `@sandbox-benchmarks/drivers`,
+except two Modal-only modules imported by name — `@sandbox-benchmarks/modal/gpu` (the `bench-gpu`
+platform: client, App, CUDA image, Volumes, allocations, tags, snapshots; workload staging and
+reporting stay in `src/lib/gpu/`) and `@sandbox-benchmarks/modal/cleanup-observation` (the Modal App
+clearance `recover-experiment-cleanup` applies). The vendor-seam repo check enforces both rules. The
+release lane's toolchain refs and VCR namespace overrides are validated once in
+`src/lib/release-config.ts`.
 
 **What lives here:** thin command wrappers under `src/bin/`; shared command helpers under
 `src/lib/` (never imported across a package boundary). As an app it has **no `exports`** — nothing

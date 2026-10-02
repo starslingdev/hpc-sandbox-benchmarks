@@ -8,7 +8,6 @@ import { join } from "node:path";
 import type { ArtifactBuildResult } from "@sandbox-benchmarks/driver/artifact";
 import { parseDriverEnv } from "@sandbox-benchmarks/driver/env";
 import { loadArtifactBuilder } from "@sandbox-benchmarks/drivers";
-import { config } from "@sandbox-benchmarks/providers/config";
 import type {
 	ArtifactPhase,
 	BakedProviderId,
@@ -23,6 +22,7 @@ import {
 	isNativeSnapshotProviderId,
 	REGISTRY,
 } from "@sandbox-benchmarks/schema/providers";
+import { releaseConfig } from "../release-config.ts";
 import { promoteImage } from "./image.ts";
 import { nativeSnapshotPreparation } from "./native-snapshot.ts";
 import type { Log } from "./types.ts";
@@ -57,7 +57,7 @@ export async function buildProviderArtifact(
 	const name = bakedArtifactName(id, phase);
 	const common = {
 		name,
-		spec: config.targetSpec,
+		spec: releaseConfig.targetSpec,
 		replace: "allowed",
 		log,
 		signal: new AbortController().signal,
@@ -110,7 +110,8 @@ type PromoteMirror = (log: Log) => Promise<void>;
 
 /** Mirrored artifacts publish by retagging an already-staged candidate, not by baking the base. */
 const MIRRORED_ARTIFACT_PROMOTERS = {
-	vercel: (log) => promoteImage(log, config.vercelImageCandidate, config.vercelImageVersion),
+	vercel: (log) =>
+		promoteImage(log, releaseConfig.vercelImageCandidate, releaseConfig.vercelImageVersion),
 } as const satisfies Record<MirroredProviderId, PromoteMirror>;
 
 export function promoteMirroredProviderArtifact(id: MirroredProviderId, log: Log): Promise<void> {

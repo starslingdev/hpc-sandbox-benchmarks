@@ -1,5 +1,5 @@
 // Private implementation detail of @sandbox-benchmarks/templates.
-import { config } from "@sandbox-benchmarks/providers/config";
+import { toolchainImageRef } from "@sandbox-benchmarks/schema/toolchain";
 
 /**
  * The image variants under `images/`, which are NOT provider ids.
@@ -34,6 +34,6 @@ export function makeTemplateSpec(provider: TemplateVariant, tag: string): Templa
 		provider,
 		tag,
 		dockerfile: `${IMAGES_DIR}/${provider}/Dockerfile`,
-		baseImage: config.toolchainImage,
+		baseImage: toolchainImageRef("version"),
 	};
 }

@@ -15,7 +15,6 @@ import {
 	requiredProviders,
 	unmetRequirements,
 } from "@sandbox-benchmarks/harness";
-import { config } from "@sandbox-benchmarks/providers";
 import type {
 	BakedProviderId,
 	CandidateArtifactRefs,
@@ -35,6 +34,7 @@ import type { BakeReport, Log } from "../lib/bake/types.ts";
 import { bootAndSmokeCandidate } from "../lib/bake/validate-run.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
 import { anyFailed, forEachProviderWithCreds } from "../lib/providers-run.ts";
+import { releaseConfig } from "../lib/release-config.ts";
 import { logChecks, smokeFailureReason, smokeOk } from "../lib/smoke-run.ts";
 
 /**
@@ -154,11 +154,11 @@ if (import.meta.main) {
 	// provider); on the promote path it scopes the transaction to a backfill. Parsed before any build
 	// or registry call so a typo'd id fails fast (clean message, no stack) before anything is touched.
 	let only: ProviderId[] | undefined;
-	let baseImageRef: string = config.toolchainImageCandidate;
+	let baseImageRef: string = releaseConfig.toolchainImageCandidate;
 	let recordedCandidates: Partial<Record<BakedProviderId, string>> = {};
 	try {
 		only = requestedProviders(process.argv);
-		baseImageRef = requestedBaseImage(process.argv) ?? config.toolchainImageCandidate;
+		baseImageRef = requestedBaseImage(process.argv) ?? releaseConfig.toolchainImageCandidate;
 		recordedCandidates = candidateBuildResults(process.argv);
 	} catch (err) {
 		log(`error: ${err instanceof Error ? err.message : String(err)}`);
@@ -189,7 +189,7 @@ if (import.meta.main) {
 			scope: only ?? PROVIDERS.map((p) => p.id),
 			partial: isPartialScope(only),
 			version: {
-				image: config.toolchainImageVersion,
+				image: releaseConfig.toolchainImageVersion,
 				artifacts: Object.fromEntries(
 					promoted.reports.flatMap((report) =>
 						report.artifactRef === undefined ? [] : [[report.provider, report.artifactRef]],
@@ -240,7 +240,10 @@ if (import.meta.main) {
 	const buildResults: Partial<Record<BakedProviderId, string>> = {};
 	const candidateRefs: CandidateArtifactRefs = {
 		toolchainImage: pinnedBaseImage,
-		mirrored: { vercel: config.vercelImageCandidate } satisfies Record<MirroredProviderId, string>,
+		mirrored: { vercel: releaseConfig.vercelImageCandidate } satisfies Record<
+			MirroredProviderId,
+			string
+		>,
 		buildResults,
 	};
 

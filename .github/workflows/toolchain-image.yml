@@ -104,7 +104,7 @@ env:
   # a team slug and a project name are not credentials, and keeping them out of the secret store means
   # they stay readable in job logs when a mirror lands in the wrong repository.
   #
-  # Unset vars materialize as "", which the providers config gatekeeper treats as unset and falls back
+  # Unset vars materialize as "", which the CLI's release config treats as unset and falls back
   # to the schema defaults — so this passthrough never has to repeat the default. That is deliberately
   # the opposite of a `|| 'fallback'` expression here: one default, owned by
   # packages/schema/src/toolchain.ts, instead of two that can drift.
@@ -472,8 +472,8 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
-          target_ref="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
-          project="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelProjectName)')"
+          target_ref="$(bun -e 'import { releaseConfig } from "./apps/cli/src/lib/release-config.ts"; console.log(releaseConfig.vercelImageCandidate)')"
+          project="$(bun -e 'import { releaseConfig } from "./apps/cli/src/lib/release-config.ts"; console.log(releaseConfig.vercelProjectName)')"
           target_name="${target_ref##*/}"
           echo ">>> mirroring $SOURCE_REF into VCR as $target_ref"
           docker pull "$SOURCE_REF"
@@ -690,7 +690,7 @@ jobs:
         id: vercel-vcr
         run: |
           set -euo pipefail
-          candidate="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
+          candidate="$(bun -e 'import { releaseConfig } from "./apps/cli/src/lib/release-config.ts"; console.log(releaseConfig.vercelImageCandidate)')"
           digest="$(docker buildx imagetools inspect "$candidate" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${candidate%:*}@${digest}" >> "$GITHUB_OUTPUT"
       # A native snapshot boots the immutable ID its bake cell returned, which no name derives. Promote

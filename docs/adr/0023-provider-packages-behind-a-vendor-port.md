@@ -121,6 +121,9 @@ is imported by name, not through a generated join:
 
 `packages/providers` is removed. A repo check enforces that every vendor library is a dependency
 of, and imported by, exactly one provider package. Type-only imports and `require` strings count.
+A vendor library is an entry of the root `catalogs.vendors`, so the vendor set is defined by catalog
+structure rather than an exception list. A library declared only to satisfy a peer dependency of
+another vendor library the same package owns counts as imported by that package.
 
 ### 3. The registry answers derived facts
 

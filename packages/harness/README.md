@@ -17,9 +17,9 @@ un-normalized timing runs.
 `unmetRequirements()`); and the lifecycle/control-plane measurement (`benchmarkLifecycleCompute()`,
 `measureLifecycleOperation()`, `measureLifecycle()`, `aggregateLifecycle()`).
 
-**Depends on:** `@sandbox-benchmarks/driver` (the session port), `@sandbox-benchmarks/providers`
-(cost-evidence hook types and sanitizers), `@sandbox-benchmarks/schema` (`RawRun`, the harness Metric
-ids).
+**Depends on:** `@sandbox-benchmarks/driver` (the session port and the cost-evidence hook contract),
+`@sandbox-benchmarks/schema` (`RawRun`, the harness Metric ids). The cost-evidence sanitizers that
+canonicalize and redact a hook's response before persistence live here (`src/lib/cost-evidence.ts`).
 
 **What lives here:** operation timing, suite orchestration, and the lifecycle & control-plane
 measurement PTS cannot see. Suite steps run through `StepRunner`, which exposes two transports — a
