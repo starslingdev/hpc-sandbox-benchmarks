@@ -307,6 +307,35 @@ describe("network probe artifacts", () => {
 		expect(extraction.contributions).toEqual([]);
 	});
 
+	it("keeps all 30 responding time_total values and ignores the median", () => {
+		const expectedMs = [
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+			27, 28, 29, 30,
+		];
+		write("network-latency.json", {
+			probe: { samples_per_endpoint: 30 },
+			endpoints: [
+				{
+					url: "https://github.com/",
+					timing_ms: { total: { median: 999 } },
+					curl_records: expectedMs.map((ms) => ({
+						time_total: ms / 1000,
+						response_code: 200,
+						exitcode: 0,
+					})),
+				},
+			],
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.contributions).toEqual([
+			{
+				metricId: "network_https_github_com_total_ms",
+				samples: expectedMs,
+				sourceFile: "network-latency.json",
+			},
+		]);
+	});
+
 	it("keeps two responding totals around one failure, in record order", () => {
 		write("network-latency.json", {
 			endpoints: [

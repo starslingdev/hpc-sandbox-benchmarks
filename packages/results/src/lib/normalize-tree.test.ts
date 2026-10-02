@@ -1031,4 +1031,61 @@ describe("normalizeProviderDir catalogues a network probe artifact", () => {
 		expect(metric.sourceFile).toBe("network/network-latency.json");
 		expect(metric.ptsSampleSource).toBeUndefined();
 	});
+
+	it("keeps all 30 responding curl samples on the validated Run", () => {
+		const expectedMs = [
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+			27, 28, 29, 30,
+		];
+		const suiteDir = join(root, "daytona-vm", "network");
+		mkdirSync(suiteDir, { recursive: true });
+		writeFileSync(
+			join(suiteDir, "provider-artifact-evidence.json"),
+			JSON.stringify({
+				cell: { runId: "run-latency-30", providerId: "daytona-vm", suite: "network" },
+				sandboxId: "sb-1",
+				provenance: {
+					source: "request-fallback",
+					requested: { kind: "baked", ref: "sandbox-benchmarks-toolchain-v8" },
+				},
+			}),
+		);
+		writeFileSync(
+			join(suiteDir, "network-latency.json"),
+			JSON.stringify({
+				probe: { samples_per_endpoint: 30 },
+				endpoints: [
+					{
+						url: "https://github.com/",
+						timing_ms: { total: { median: 999, mean: 999, min: 999, max: 999 } },
+						curl_records: expectedMs.map((ms) => ({
+							time_total: ms / 1000,
+							response_code: 200,
+							exitcode: 0,
+						})),
+					},
+				],
+			}),
+		);
+
+		const run = normalizeResultsTree({
+			rawRoot: root,
+			runId: "run-latency-30",
+			sha: "abc",
+			generatedAt: "2026-10-02T00:00:00.000Z",
+		});
+		const metric = run.providers
+			.find((provider) => provider.providerId === "daytona-vm")
+			?.metrics.find((entry) => entry.metricId === "network_https_github_com_total_ms");
+		if (!metric) throw new Error("missing network probe metric");
+		expect(metric.samples).toEqual(expectedMs);
+		expect(metric.samples).toHaveLength(30);
+		expect(metric.aggregates.n).toBe(30);
+		expect(metric.aggregates.min).toBe(1);
+		expect(metric.aggregates.max).toBe(30);
+		expect(metric.aggregates.p50).toBe(15.5);
+		expect(metric.aggregates.mean).toBe(15.5);
+		expect(metric.samples).not.toContain(999);
+		expect(metric.ptsSampleSource).toBeUndefined();
+	});
 });

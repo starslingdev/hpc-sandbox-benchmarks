@@ -25,7 +25,7 @@
 # auth challenge is a fully measured round trip, and the ENDPOINTS comment records which codes are
 # the expected answer so a reader never mistakes one for a fault.
 #
-# An endpoint whose FIRST sample never gets a response gives up its remaining samples. Three
+# An endpoint whose FIRST sample never gets a response gives up its remaining samples. Thirty
 # identical connect-timeouts say nothing the first did not, and on a blackholed network that
 # restraint is the difference between a probe that finishes in a minute and one that spends
 # endpoints x samples x connect-timeout doing it. The aggregate keeps this honest: `attempted` stays
@@ -34,7 +34,7 @@ set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
-SAMPLES=3
+SAMPLES=30
 CONNECT_TIMEOUT_SECONDS=5
 MAX_TIME_SECONDS=20
 # The endpoints a CI job actually talks to, one URL per host, using each service's real entry point
