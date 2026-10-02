@@ -442,7 +442,6 @@
       "@boatdev/sdk": "1.0.0",
       "@bufbuild/protobuf": "2.14.1",
       "@computesdk/e2b": "1.7.51",
-      "@computesdk/modal": "1.9.3",
       "@connectrpc/connect": "2.2.0",
       "@connectrpc/connect-node": "2.2.0",
       "@daytona/api-client": "0.211.2",

@@ -19,7 +19,6 @@
         "@blaxel/core": "0.3.5",
         "@infercrane/brezel": "0.1.1",
         "@computesdk/e2b": "1.7.51",
-        "@computesdk/modal": "1.9.3",
         "@runloop/api-client": "1.28.0",
         "@run-cloud/sdk": "0.9.0",
         "@daytona/api-client": "0.211.2",

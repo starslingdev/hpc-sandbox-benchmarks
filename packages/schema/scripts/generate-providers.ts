@@ -5,7 +5,7 @@
 // registry into workflows, docs, env examples, provenance and the driver loader.
 //
 // `--check` renders the same files and fails when any committed byte differs, which is the drift
-// check CI and the pre-commit hook run. Comparing content rather than `git diff` also catches a
+// check CI runs. Comparing content rather than `git diff` also catches a
 // newly created, still-untracked output.
 //
 // The wiring renderers import the generated registry, so they are loaded only after the registry

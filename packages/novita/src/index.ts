@@ -10,8 +10,8 @@ import { type } from "arktype";
 import type { Sandbox as NativeSandbox } from "novita-sandbox";
 import { NOVITA_PROVENANCE } from "./provenance.ts";
 
-// Match the CJS format used by the still-unmigrated legacy adapter to avoid Bun's mixed chalk
-// module-load race. This remains the native SDK; no wrapper internals are patched.
+// Load the SDK's CJS build: mixing its ESM build with CJS dependents makes Bun's require(chalk)
+// race. This remains the native SDK; no wrapper internals are patched.
 const { Sandbox, SandboxNotFoundError, AuthenticationError, InvalidArgumentError, RateLimitError } =
 	createRequire(import.meta.url)("novita-sandbox") as typeof import("novita-sandbox");
 export const NOVITA_DOMAIN = "us-phx-1.sandbox.novita.ai";

@@ -843,7 +843,7 @@ describe("Modal truthful lifecycle and recovery projections", () => {
 			},
 		};
 		const module = defineComputeSdkDriver("modal-gvisor", {
-			provenance: { packageName: "@computesdk/modal", version: "1.9.3" },
+			provenance: { packageName: "modal", version: "0.9.0" },
 			readiness: { startup: "create-returns-ready" },
 			execution: { syncCapMs: null, durable: "none" },
 			spec: () => ({

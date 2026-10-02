@@ -30,7 +30,8 @@ function candidateBoots(id: (typeof PROVIDER_IDS)[number]): string {
 		mirrored: {},
 		buildResults: {},
 	});
-	if (candidate.kind === "none") return "nothing: the vendor's stock image";
+	if (candidate.kind === "none")
+		return "nothing: an image this repository does not build or publish";
 	return candidate.ref === "<toolchain>"
 		? "the toolchain image candidate"
 		: `the derived baked name${"nameSuffix" in artifact && artifact.nameSuffix ? ` (suffix ${artifact.nameSuffix})` : ""}`;

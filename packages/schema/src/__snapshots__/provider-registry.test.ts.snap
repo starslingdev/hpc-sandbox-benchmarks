@@ -28,7 +28,7 @@ exports[`registry projection (review this snapshot when adding or changing a pro
   },
   "boat": {
     "artifact": "none",
-    "candidateBoots": "nothing: the vendor's stock image",
+    "candidateBoots": "nothing: an image this repository does not build or publish",
     "figureLabel": "boat",
     "isolation": {
       "declared": "vm",
@@ -51,7 +51,7 @@ exports[`registry projection (review this snapshot when adding or changing a pro
   },
   "brezel": {
     "artifact": "none",
-    "candidateBoots": "nothing: the vendor's stock image",
+    "candidateBoots": "nothing: an image this repository does not build or publish",
     "figureLabel": "Brezel",
     "isolation": {
       "declared": "microVM",
