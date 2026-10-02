@@ -39,3 +39,8 @@ Sharing toolchain pins does not imply identical operating-system packages or ker
 An explicitly authorized experiment that replaces every failed or missing logical replicate of an
 original experiment as a whole attempt. Its frozen manifest preserves original and replacement
 provenance; it never selects measurements based on scores or adds logical replicates.
+
+**Unstarted batch receipt**:
+Platform evidence that a recovery batch failed authentication before its allocation step, with no
+attempt artifacts or account ownership records. It permits explicit partial publication while
+preserving those cells as missing; it contributes no execution attempt or measurement.

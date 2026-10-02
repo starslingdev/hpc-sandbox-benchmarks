@@ -50,6 +50,8 @@ queue. A standalone publication backfill must name a completed recovery run; in-
 runs after all replacement workers terminate. A recovery with no work or beyond the bounded Actions
 matrix/account queue limits fails before workers start.
 
+> ADR-0023 extends the missing-replacement gate for audited batches that never executed.
+
 ## Consequences
 
 A repair is an explicit conditional remeasurement, not an unbiased first-attempt-only experiment.

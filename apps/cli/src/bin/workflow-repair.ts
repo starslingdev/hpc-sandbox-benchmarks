@@ -10,6 +10,7 @@ import { planExperimentRepair, repairWorkflowAxes } from "../lib/experiment-repa
 import { githubExperimentStore } from "../lib/experiment-store.ts";
 import { downloadExperimentAttempts, downloadExperimentPlan } from "../lib/experiment-transfer.ts";
 import { githubAccountJournal, githubGitRequest } from "../lib/github-account-journal.ts";
+import { collectUnstartedBatches } from "../lib/unstarted-batches.ts";
 
 const identifier = type(/^[1-9][0-9]*$/);
 const sourceId = identifier.assert(process.env.SOURCE_RUN_ID);
@@ -95,4 +96,13 @@ if (command === "plan") {
 		plan,
 		join("recovery", "attempts"),
 	);
+	const receipts = await collectUnstartedBatches(
+		request,
+		githubAccountJournal(request),
+		plan,
+		readExperimentAttempts(join("recovery", "attempts")),
+		info,
+		repair.operator,
+	);
+	if (receipts.length) writeImmutableJson("recovery/unstarted-batches.json", receipts);
 } else throw new Error("usage: workflow-repair plan | collect");

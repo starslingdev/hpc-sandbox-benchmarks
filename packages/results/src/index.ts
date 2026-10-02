@@ -32,6 +32,7 @@ export {
 	verifiedRetainedAllocation,
 	verifyCleanupRecovery,
 	verifyExperimentPlan,
+	verifyUnstartedBatches,
 } from "./lib/experiment.ts";
 // The dataset↔figures seam: the registries the figure model is built from, the figure list the
 // Markdown links, where the charts land, the caption under each one — and the chart HTML itself. All of it pure and browser-free: `renderLeaderboardFigureHtml` builds

@@ -9,6 +9,7 @@ import type {
 	ExperimentRepair,
 	RetainedAllocation,
 	Run,
+	UnstartedBatch,
 } from "@sandbox-benchmarks/schema";
 import {
 	artifactVerified,
@@ -28,6 +29,9 @@ import {
 	MODAL_CREATED_REQUEST_REVISION,
 	parseRun,
 	providerReportedNothing,
+	UNSTARTED_BATCH_SOURCE_REVISION,
+	UNSTARTED_BATCH_WORKFLOW_REVISION,
+	unstartedBatchSchema,
 } from "@sandbox-benchmarks/schema";
 import { aggregateRuns } from "./aggregate.ts";
 import type { PtsTrialEvidence } from "./pts-trial-evidence.ts";
@@ -569,10 +573,13 @@ export function describeIncompleteExperiment({
 function partialPublicationBlockers(
 	coverage: CoverageReport,
 	attempts: readonly AttemptWithRun[],
+	unstarted = new Set<string>(),
 ): string[] {
 	// Conflicts and missing cells are counted: the coverage shortfall already names them, bounded.
 	const blockers: string[] = [];
-	const missing = coverage.cells.filter((cell) => cell.status === "missing").length;
+	const missing = coverage.cells.filter(
+		(cell) => cell.status === "missing" && !unstarted.has(cell.id),
+	).length;
 	if (coverage.conflicts.length > 0)
 		blockers.push(`conflicting evidence: ${coverage.conflicts.length} conflict(s)`);
 	if (missing > 0) blockers.push(`missing attempts: ${missing} cell(s)`);
@@ -631,6 +638,7 @@ function renderExperiment(
 	coverage: CoverageReport,
 	partial: boolean,
 	repair?: ExperimentRepair,
+	unstartedBatches: readonly UnstartedBatch[] = [],
 ): ExperimentAggregation {
 	const selectedIds = partial
 		? coverage.cells.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : []))
@@ -745,6 +753,7 @@ function renderExperiment(
 		experiment: {
 			planDigest: plan.digest,
 			...(repair ? { repair } : {}),
+			...(unstartedBatches.length ? { unstartedBatches: [...unstartedBatches] } : {}),
 			cohortDigest: evidenceDigest(cohorts),
 			attemptIds: selectedIds,
 			...(selectedAttempts.some((attempt) => attempt.cleanupRecovery)
@@ -894,6 +903,66 @@ export function repairableCoverage(
 	return result.coverage;
 }
 
+/** Reject lost executor evidence; only a verified failed Vercel prerequisite qualifies. */
+export function verifyUnstartedBatches(
+	plan: ExperimentPlan,
+	attempts: readonly AttemptWithRun[],
+	input: readonly unknown[],
+	operator: string,
+): { cells: Set<string>; receipts: UnstartedBatch[] } {
+	const cells = new Set<string>();
+	const batches = new Set<string>();
+	const receipts = input.map((entry) => {
+		const receipt = unstartedBatchSchema.assert(entry);
+		const { digest, ...body } = receipt;
+		const batch = plan.batches.find((b) => b.id === receipt.batchId);
+		const planned = plan.cells.filter((c) => batch?.cells.includes(c.id));
+		const suiteNames = [...new Set(planned.map((c) => c.suite))];
+		const suite = suiteNames.length === 1 ? suiteNames[0] : batch?.wave;
+		const wave =
+			batch?.wave === "synthetic-memory"
+				? "memory"
+				: batch?.wave === "synthetic-system"
+					? "system"
+					: "realworld";
+		const expected = `retry-${wave} (vercel, ["vercel"], ${suite}, ${batch?.id}) / vercel`;
+		const executor = receipt.job.steps.filter((s) => s.name === "Run suite and normalize");
+		const auth = receipt.job.steps.filter((s) => s.name === "Authenticate with Vercel");
+		if (
+			!batch ||
+			!planned.length ||
+			batches.has(batch.id) ||
+			receipt.workflow.head_sha !== UNSTARTED_BATCH_WORKFLOW_REVISION ||
+			evidenceDigest(receipt.cellIds) !== evidenceDigest(batch.cells) ||
+			planned.some((c) => c.provider !== "vercel" || c.quotaDomain !== "vercel") ||
+			receipt.planDigest !== plan.digest ||
+			receipt.sourceSha !== plan.sha ||
+			plan.sha !== UNSTARTED_BATCH_SOURCE_REVISION ||
+			String(receipt.workflow.id) !== plan.id ||
+			receipt.job.run_id !== receipt.workflow.id ||
+			receipt.job.run_attempt !== receipt.workflow.run_attempt ||
+			receipt.job.head_sha !== receipt.workflow.head_sha ||
+			receipt.job.name !== expected ||
+			receipt.operator !== operator ||
+			receipt.workflow.actor.login !== operator ||
+			receipt.journal.recordsDigest !== evidenceDigest([]) ||
+			evidenceDigest(body) !== digest ||
+			executor.length !== 1 ||
+			executor[0]?.conclusion !== "skipped" ||
+			auth.length !== 1 ||
+			auth[0]?.conclusion !== "failure" ||
+			(auth[0]?.number ?? Infinity) >= (executor[0]?.number ?? 0) ||
+			new Set(receipt.job.steps.map((s) => s.number)).size !== receipt.job.steps.length ||
+			attempts.some((a) => batch.cells.includes(a.evidence.cellId))
+		)
+			throw new Error("unstarted batch lacks verified pre-execution failure provenance");
+		batches.add(batch.id);
+		for (const id of batch.cells) cells.add(id);
+		return receipt;
+	});
+	return { cells, receipts };
+}
+
 /** Verify each source independently, then replace every frozen target as a whole cell, even on failure. */
 export function aggregateRepairedExperiment(
 	source: ExperimentPlan,
@@ -901,7 +970,7 @@ export function aggregateRepairedExperiment(
 	recovery: ExperimentPlan,
 	replacements: readonly AttemptWithRun[],
 	input: unknown,
-	options: { allowPartial?: boolean } = {},
+	options: { allowPartial?: boolean; unstartedBatches?: readonly unknown[] } = {},
 ): ExperimentAggregation {
 	const repair = experimentRepairSchema.assert(input);
 	const { digest, ...body } = repair;
@@ -939,10 +1008,23 @@ export function aggregateRepairedExperiment(
 		)
 			throw new Error(`repair changes cell execution policy: ${target.id}`);
 	}
+	const unstarted = verifyUnstartedBatches(
+		recovery,
+		replacements,
+		options.unstartedBatches ?? [],
+		repair.operator,
+	);
 	const result = aggregateExperiment(recovery, replacements, { allowPartial: true });
 	// No verified recovery metric is okay when every replacement failed; original successes may remain.
 	const blockers = (result.publicationBlockers ?? []).filter(
-		(b) => b !== "no verified measurements",
+		(b) =>
+			b !== "no verified measurements" &&
+			!(
+				b.startsWith("missing attempts:") &&
+				result.coverage.cells
+					.filter((c) => c.status === "missing")
+					.every((c) => unstarted.cells.has(c.id))
+			),
 	);
 	if (blockers.length) return { ...result, run: undefined, publicationBlockers: blockers };
 	const replaced = new Set(repair.cells.map((c) => c.id));
@@ -962,8 +1044,15 @@ export function aggregateRepairedExperiment(
 		complete: cells.every((c) => ["complete", "excluded"].includes(c.status)),
 	};
 	const selected = [...originals.filter((a) => !replaced.has(a.evidence.cellId)), ...replacements];
-	const finalBlockers = partialPublicationBlockers(coverage, selected);
+	const finalBlockers = partialPublicationBlockers(coverage, selected, unstarted.cells);
 	if (finalBlockers.length || (!coverage.complete && !options.allowPartial))
 		return { coverage, publicationBlockers: finalBlockers };
-	return renderExperiment(source, selected, coverage, !coverage.complete, repair);
+	return renderExperiment(
+		source,
+		selected,
+		coverage,
+		!coverage.complete,
+		repair,
+		unstarted.receipts,
+	);
 }

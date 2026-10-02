@@ -17,6 +17,11 @@ import { runIdSchema } from "./identifiers.ts";
 import { directionSchema } from "./metrics.ts";
 import type { TargetSpec } from "./target-spec.ts";
 import { targetSpecSchema } from "./target-spec-schema.ts";
+import {
+	UNSTARTED_BATCH_SOURCE_REVISION,
+	UNSTARTED_BATCH_WORKFLOW_REVISION,
+	unstartedBatchSchema,
+} from "./unstarted-batch.ts";
 
 export type { TargetSpec } from "./target-spec.ts";
 export { targetSpecSchema } from "./target-spec-schema.ts";
@@ -900,6 +905,7 @@ export const runSchema = type({
 		attemptIds: "string[] >= 1",
 		"cleanupRecoveries?": cleanupRecoverySchema.array().atLeastLength(1),
 		"repair?": experimentRepairSchema,
+		"unstartedBatches?": unstartedBatchSchema.array().atLeastLength(1),
 		"partial?": {
 			status: "'partial'",
 			planned: "number.integer >= 1",
@@ -949,6 +955,39 @@ export const runSchema = type({
 	)
 		return ctx.mustBe("repair bound to the original experiment and a distinct recovery run");
 	const partial = run.experiment?.partial;
+	const unstarted = run.experiment?.unstartedBatches;
+	if (
+		unstarted &&
+		(!repair ||
+			!partial ||
+			new Set(unstarted.map((r) => r.batchId)).size !== unstarted.length ||
+			new Set(unstarted.flatMap((r) => r.cellIds)).size !==
+				unstarted.flatMap((r) => r.cellIds).length ||
+			unstarted.some(
+				(r) =>
+					r.planDigest !== repair.recoveryPlanDigest ||
+					r.sourceSha !== run.sha ||
+					r.sourceSha !== UNSTARTED_BATCH_SOURCE_REVISION ||
+					String(r.workflow.id) !== repair.recoveryRun ||
+					r.job.run_id !== r.workflow.id ||
+					r.job.run_attempt !== r.workflow.run_attempt ||
+					r.job.head_sha !== r.workflow.head_sha ||
+					r.workflow.head_sha !== UNSTARTED_BATCH_WORKFLOW_REVISION ||
+					r.operator !== repair.operator ||
+					r.workflow.actor.login !== repair.operator ||
+					r.cellIds.some((id) => {
+						const cell = partial.cells.find((c) => c.id === id);
+						return (
+							!repair.cells.some((c) => c.id === id) ||
+							cell?.provider !== "vercel" ||
+							cell.status !== "missing" ||
+							cell.attemptId !== undefined ||
+							cell.retainedMetrics.length > 0
+						);
+					}),
+			))
+	)
+		return ctx.mustBe("unstarted batches bound to missing repair cells without measurements");
 	const recoveries = run.experiment?.cleanupRecoveries;
 	if (recoveries) {
 		if (

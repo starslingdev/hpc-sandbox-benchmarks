@@ -1036,3 +1036,271 @@ test("recovery workflow dispatches mixed realworld suites through their shared w
 		include: [{ account: "e2b", providers: '["e2b"]', suite: "memory", batch_id: "batch-0" }],
 	});
 });
+
+import { verifyUnstartedBatches } from "@sandbox-benchmarks/results";
+import {
+	UNSTARTED_BATCH_SOURCE_REVISION,
+	UNSTARTED_BATCH_WORKFLOW_REVISION,
+} from "@sandbox-benchmarks/schema";
+import { collectUnstartedBatches } from "./unstarted-batches.ts";
+
+function requiredFixture<T>(value: T | undefined): T {
+	if (value === undefined) throw new Error("missing fixture");
+	return value;
+}
+
+function unstartedFixture(extraMissing = false) {
+	const vercel: ExperimentCell = {
+		...cell(1),
+		id: "vercel-memory-r1",
+		provider: "vercel",
+		quotaDomain: "vercel",
+	};
+	const source = planExperiment({
+		id: "experiment-1",
+		sha: UNSTARTED_BATCH_SOURCE_REVISION,
+		createdOn: "2026-09-10",
+		cells: [cell(), vercel, ...(extraMissing ? [cell(2)] : [])],
+	});
+	const good = successful();
+	good.evidence.planDigest = source.digest;
+	good.evidence.sha = source.sha;
+	if (!good.run) throw new Error("fixture Run");
+	good.run.sha = source.sha;
+	good.evidence.runDigest = evidenceDigest(good.run);
+	const { plan: recovery, repair } = planExperimentRepair(source, [good], {
+		...repairIdentity,
+		run: "1234",
+	});
+	const batch = recovery.batches.find((b) => b.quotaDomain === "vercel");
+	if (!batch) throw new Error("fixture batch");
+	const workflow = {
+		id: 1234,
+		run_attempt: 1,
+		head_sha: UNSTARTED_BATCH_WORKFLOW_REVISION,
+		head_branch: "main",
+		path: ".github/workflows/recover-benchmark.yml",
+		event: "workflow_dispatch",
+		status: "completed",
+		actor: { login: "operator" },
+	};
+	const job = {
+		id: 5678,
+		run_id: 1234,
+		run_attempt: 1,
+		head_sha: workflow.head_sha,
+		name: `retry-memory (vercel, ["vercel"], memory, ${batch.id}) / vercel`,
+		status: "completed",
+		conclusion: "failure",
+		steps: [
+			{ number: 8, name: "Authenticate with Vercel", status: "completed", conclusion: "failure" },
+			{ number: 9, name: "Run suite and normalize", status: "completed", conclusion: "skipped" },
+		],
+	};
+	const collect = (changedJob = job, changedWorkflow = workflow) =>
+		collectUnstartedBatches(
+			async () => ({ total_count: 1, jobs: [changedJob] }),
+			{ read: async () => [], append: async () => {} },
+			recovery,
+			[],
+			changedWorkflow,
+			"operator",
+		);
+	return { source, good, recovery, repair, job, workflow, collect, batch };
+}
+
+test("verified authentication failure publishes partial repair with missing cells and no synthetic attempts", async () => {
+	const f = unstartedFixture();
+	const receipts = await f.collect();
+	expect(receipts).toHaveLength(1);
+	const result = aggregateRepairedExperiment(f.source, [f.good], f.recovery, [], f.repair, {
+		allowPartial: true,
+		unstartedBatches: receipts,
+	});
+	expect(result.run?.schemaVersion).toBe("8");
+	expect(result.run?.experiment?.partial?.planned).toBe(2);
+	expect(result.run?.experiment?.partial?.cells.find((c) => c.provider === "vercel")?.status).toBe(
+		"missing",
+	);
+	expect(result.run?.experiment?.attemptIds).toEqual([f.good.evidence.id]);
+	expect(result.run?.experiment?.unstartedBatches).toEqual(receipts);
+	expect(result.run?.providers.find((p) => p.providerId === "vercel")?.metrics ?? []).toEqual([]);
+	expect(
+		aggregateRepairedExperiment(f.source, [f.good], f.recovery, [], f.repair, {
+			unstartedBatches: receipts,
+		}).run,
+	).toBeUndefined();
+	expect(
+		aggregateRepairedExperiment(f.source, [f.good], f.recovery, [], f.repair, {
+			allowPartial: true,
+		}).run,
+	).toBeUndefined();
+	const unrelated = unstartedFixture(true);
+	expect(
+		aggregateRepairedExperiment(
+			unrelated.source,
+			[unrelated.good],
+			unrelated.recovery,
+			[],
+			unrelated.repair,
+			{ allowPartial: true, unstartedBatches: await unrelated.collect() },
+		).run,
+	).toBeUndefined();
+});
+
+test("unstarted collection rejects execution, stale workflows, duplicate jobs and ownership", async () => {
+	const f = unstartedFixture();
+	const executed = structuredClone(f.job);
+	requiredFixture(executed.steps[1]).conclusion = "failure";
+	expect(await f.collect(executed)).toEqual([]);
+	expect(await f.collect(f.job, { ...f.workflow, status: "in_progress" })).toEqual([]);
+	expect(await f.collect(f.job, { ...f.workflow, head_sha: sha })).toEqual([]);
+	await expect(f.collect({ ...f.job, run_attempt: 2 })).rejects.toThrow("stale");
+	await expect(
+		collectUnstartedBatches(
+			async () => ({ total_count: 2, jobs: [f.job, f.job] }),
+			{ read: async () => [], append: async () => {} },
+			f.recovery,
+			[],
+			f.workflow,
+			"operator",
+		),
+	).rejects.toThrow("ambiguous");
+	await expect(
+		collectUnstartedBatches(
+			async () => ({ total_count: 1, jobs: [f.job] }),
+			{
+				read: async () => [
+					{
+						version: "1",
+						kind: "intent",
+						account: "vercel",
+						attempt: "intent",
+						cellId: requiredFixture(f.batch.cells[0]),
+						planDigest: f.recovery.digest,
+					},
+				],
+				append: async () => {},
+			},
+			f.recovery,
+			[],
+			f.workflow,
+			"operator",
+		),
+	).rejects.toThrow("ownership");
+	let reads = 0;
+	await expect(
+		collectUnstartedBatches(
+			async () => ({ total_count: 2, jobs: reads++ ? [] : [f.job] }),
+			{ read: async () => [], append: async () => {} },
+			f.recovery,
+			[],
+			f.workflow,
+			"operator",
+		),
+	).rejects.toThrow("incomplete");
+});
+
+test("publication independently rejects altered receipts, false bindings and conflicting artifacts", async () => {
+	const f = unstartedFixture();
+	const receipts = await f.collect();
+	const receipt = requiredFixture(receipts[0]);
+	const altered = structuredClone(receipt);
+	requiredFixture(altered.job.steps[1]).conclusion = "failure";
+	expect(() => verifyUnstartedBatches(f.recovery, [], [altered], "operator")).toThrow();
+	for (const change of [
+		(r: typeof receipt) => {
+			r.job.run_id++;
+		},
+		(r: typeof receipt) => {
+			r.cellIds = ["unplanned"];
+		},
+		(r: typeof receipt) => {
+			r.workflow.actor.login = "other";
+		},
+		(r: typeof receipt) => {
+			requiredFixture(r.job.steps[1]).conclusion = "success";
+		},
+		(r: typeof receipt) => {
+			r.workflow.head_sha = sha;
+			r.job.head_sha = sha;
+		},
+		(r: typeof receipt) => {
+			r.journal.recordsDigest = digest;
+		},
+	]) {
+		const changed = structuredClone(receipt);
+		change(changed);
+		const { digest: _old, ...body } = changed;
+		changed.digest = evidenceDigest(body);
+		expect(() => verifyUnstartedBatches(f.recovery, [], [changed], "operator")).toThrow(
+			"provenance",
+		);
+	}
+	expect(() => verifyUnstartedBatches(f.recovery, [], [receipt, receipt], "operator")).toThrow();
+	const conflicting = structuredClone(f.good);
+	conflicting.evidence.cellId = requiredFixture(f.batch.cells[0]);
+	expect(() => verifyUnstartedBatches(f.recovery, [conflicting], receipts, "operator")).toThrow();
+	const run = aggregateRepairedExperiment(f.source, [f.good], f.recovery, [], f.repair, {
+		allowPartial: true,
+		unstartedBatches: receipts,
+	}).run;
+	if (!run) throw new Error("fixture publication");
+	requiredFixture(run.experiment?.unstartedBatches?.[0]).cellIds = [cell().id];
+	expect(() => parseRun(run)).toThrow("missing repair cells");
+});
+
+test("CLI promotion rereads the unstarted receipt after candidate aggregation", async () => {
+	const root = mkdtempSync(join(tmpdir(), "unstarted-promotion-"));
+	try {
+		const f = unstartedFixture();
+		const originals = join(root, "originals");
+		const dir = join(originals, f.good.evidence.id);
+		const raw = join(dir, "raw");
+		mkdirSync(join(raw, "e2b", "memory"), { recursive: true });
+		writeFileSync(
+			join(raw, "e2b", "memory", "pts_stream.xml"),
+			`<PhoronixTestSuite>${["Copy", "Scale"].map((kind) => `<Result><Identifier>pts/stream-1.3.4</Identifier><Title>STREAM</Title><Description>Type: ${kind}</Description><Scale>MB/s</Scale><Proportion>HIB</Proportion><Data><Entry><Value>1.5</Value><RawString>1:2</RawString></Entry></Data></Result>`).join("")}</PhoronixTestSuite>`,
+		);
+		writeImmutableJson(join(raw, "execution-execution-1.json"), f.good.execution);
+		writeImmutableJson(join(raw, "cleanup-execution-1.json"), f.good.cleanup);
+		f.good.evidence.rawDigest = rawTreeDigest(raw);
+		writeImmutableJson(join(dir, "attempt.json"), f.good.evidence);
+		writeImmutableJson(join(dir, "run.json"), f.good.run);
+		const { repair } = planExperimentRepair(f.source, [f.good], {
+			...repairIdentity,
+			run: f.recovery.id,
+		});
+		const recovery = join(root, "recovery");
+		mkdirSync(join(recovery, "attempts"), { recursive: true });
+		writeImmutableJson(join(recovery, "plan.json"), f.recovery);
+		writeImmutableJson(join(recovery, "repair.json"), repair);
+		const receipts = await f.collect();
+		writeImmutableJson(join(recovery, "unstarted-batches.json"), receipts);
+		writeImmutableJson(join(root, "plan.json"), f.source);
+		const invoke = (bin: string, args: string[]) =>
+			Bun.spawnSync([process.execPath, resolve(import.meta.dir, "../bin", `${bin}.ts`), ...args], {
+				stdout: "pipe",
+				stderr: "pipe",
+				env: { ...process.env, GITHUB_ACTIONS: "false" },
+			});
+		const args = [join(root, "plan.json"), originals];
+		const flags = ["--allow-partial", "--repair", recovery];
+		const candidate = join(root, "candidate");
+		const aggregate = invoke("aggregate-experiment", [...args, candidate, ...flags]);
+		expect(aggregate.stderr.toString()).toBe("");
+		expect(aggregate.exitCode).toBe(0);
+		const run = join(candidate, "runs", "experiment-1.json");
+		expect(invoke("promote", [run, join(root, "dataset"), ...args, ...flags]).exitCode).toBe(0);
+		const receipt = requiredFixture(receipts[0]);
+		requiredFixture(receipt.job.steps[1]).conclusion = "success";
+		const { digest: _old, ...body } = receipt;
+		receipt.digest = evidenceDigest(body);
+		writeFileSync(join(recovery, "unstarted-batches.json"), JSON.stringify(receipts));
+		const refused = invoke("promote", [run, join(root, "tampered"), ...args, ...flags]);
+		expect(refused.exitCode).not.toBe(0);
+		expect(refused.stderr.toString()).toContain("pre-execution failure provenance");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}, 20_000);

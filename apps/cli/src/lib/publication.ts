@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { aggregateExperiment, aggregateRepairedExperiment } from "@sandbox-benchmarks/results";
@@ -28,6 +28,15 @@ export function aggregatePublication(
 		readExperimentPlan(join(root, "plan.json")),
 		readExperimentAttempts(join(root, "attempts")),
 		JSON.parse(readFileSync(join(root, "repair.json"), "utf8")),
-		options,
+		{
+			...options,
+			...(existsSync(join(root, "unstarted-batches.json"))
+				? {
+						unstartedBatches: JSON.parse(
+							readFileSync(join(root, "unstarted-batches.json"), "utf8"),
+						),
+					}
+				: {}),
+		},
 	);
 }

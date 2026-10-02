@@ -164,8 +164,11 @@ repair policy ([ADR-0022](../../docs/adr/0022-explicit-experiment-repair.md)).
 The final job recollects both workflows and journals, verifies their receipts independently, selects
 replacement whole attempts, and promotes the repaired dataset under the original run ID. It keeps
 `experiment.repair`, all planned coverage and original successes. Remaining verified failures are
-published only with `allow_partial=true`; missing replacement artifacts and unresolved cleanup always
-block. A failed replacement replaces the original attempt too: there is no best-score selection or
+published only with `allow_partial=true`. Missing replacement artifacts and unresolved cleanup
+block publication. The reviewed historical Vercel batch that failed authentication before execution
+can instead carry an audited unstarted-batch receipt ([ADR-0023](../../docs/adr/0023-unstarted-recovery-batches.md)):
+the collector verifies the completed Actions job and complete account journal, and both publication
+commands verify the receipt. Its cells remain missing and contribute no measurements. A failed replacement replaces the original attempt too: there is no best-score selection or
 metric stitching. The original evidence remains immutable.
 
 If only publication failed after all workers ended, backfill without allocating more sandboxes:

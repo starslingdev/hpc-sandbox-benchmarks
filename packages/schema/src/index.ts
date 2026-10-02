@@ -59,3 +59,10 @@ export function parseRawRun(value: unknown): RawRun {
 }
 
 export { type ExperimentRepair, experimentRepairSchema } from "./experiment-repair.ts";
+
+export {
+	UNSTARTED_BATCH_SOURCE_REVISION,
+	UNSTARTED_BATCH_WORKFLOW_REVISION,
+	type UnstartedBatch,
+	unstartedBatchSchema,
+} from "./unstarted-batch.ts";
