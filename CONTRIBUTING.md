@@ -55,7 +55,12 @@ bun run check:providers                                        # fail if any gen
    by `.github/actions/setup-<cli>/action.yml`, or `{ http }` for an HTTP-only API version. Declare
    `package` only for an isolation variant sharing another provider's package, and `figureLabel`
    only when the chart label differs from the derived default.
-2. **Driver package** — add `packages/<id>` with a default-exported DriverModule. Its `execution`
+2. **Driver package** — add `packages/<id>` with a default-exported DriverModule. An SDK or HTTP
+   vendor writes `src/vendor.ts`, an adapter that receives its transport or SDK and translates it
+   onto the vendor port, and `src/index.ts`, which binds the real transport once in
+   `defineVendorDriver` (`packages/brezel` and `packages/novita` are the references). Its tests cover
+   the adapter's translation, run `vendorContract` over a stubbed transport, and drive a few sessions
+   through `module.specFor`; kit behaviour is already tested in `packages/driver`. Its `execution`
    policy (synchronous cap and durable route) is the only declaration of the provider's exec
    transport, and its `package.json` must depend on the `sdkPackage` library. Run
    `bun run generate-providers`, then review the generated registry index, driver loader,

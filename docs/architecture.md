@@ -115,6 +115,9 @@ stays on typed passthroughs:
 and `execution` (default `{ syncCapMs: 60_000, durable: "shell-detach" }`; `durable:
 "native-launch"` and `data.launch` must be declared together). `module.specFor(context, { vendor,
 timing })` lowers the same module against a stubbed transport for provider tests.
+Brezel (a dedicated account recovered by idempotent replay, over an injected `fetch`) and Novita
+(a shared account recovered by a server-side marker query, over the loaded SDK) are written this
+way: `src/vendor.ts` is the adapter, `src/index.ts` binds the real transport once.
 
 `@sandbox-benchmarks/driver/vendor/testing` holds `memoryVendor` (an in-memory account with a fault
 script, a guest shell that answers the kit's commands, and leak detectors) and `vendorContract`

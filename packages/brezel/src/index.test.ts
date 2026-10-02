@@ -1,56 +1,47 @@
+// Brezel tested at the vendor seam: the adapter's translation, the port contract over a fake HTTP
+// router, and a few sessions through the package's own module. Kit behaviour (convergence,
+// deadlines, the inventory partition, recovery mechanics) is tested once in the driver package.
+
 import { describe, expect, test } from "bun:test";
-import type { CreateRequest } from "@sandbox-benchmarks/driver";
+import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
+import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
+import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
-import type { BrezelSpecOptions } from "./index.ts";
-import brezel, { BREZEL_SANDBOX_ID, brezelSpec } from "./index.ts";
+import brezel, { BREZEL_SANDBOX_ID } from "./index.ts";
+import { brezelPhase, brezelVendor } from "./vendor.ts";
 
-const environmentRevision = "envr_9830e105167d5161682df50b";
-const context = {
+const REVISION = "envr_9830e105167d5161682df50b";
+const TOKEN = "brezel_test-token-111111111111111111111111";
+const context: DriverContext<"brezel"> = {
 	env: {
-		BREZEL_API_KEY: "brezel_test-token-111111111111111111111111",
+		BREZEL_API_KEY: TOKEN,
 		BREZEL_API_URL: "https://brezel.test",
 		BREZEL_PROJECT_ID: "benchmark-project",
-		BREZEL_ENVIRONMENT_REVISION: environmentRevision,
+		BREZEL_ENVIRONMENT_REVISION: REVISION,
 	},
-	artifact: { kind: "none" as const },
-	resolvedArtifact: { kind: "none" as const },
+	artifact: { kind: "none" },
+	resolvedArtifact: { kind: "none" },
 };
 const request: CreateRequest = {
 	spec: TARGET_SPEC,
 	artifact: { kind: "none" },
 	deadlineMs: 300_000,
 };
+const op = () => ({ signal: new AbortController().signal });
 
-function json(value: unknown, status = 200): Response {
-	return new Response(JSON.stringify(value), {
-		status,
-		headers: { "content-type": "application/json" },
-	});
-}
+const json = (value: unknown, status = 200) =>
+	new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 
-function command(stdout: string, stderr = "", exitCode = 0): Response {
+/** Brezel's NDJSON command stream for one finished command. */
+function commandStream(stdout: string, stderr: string, exitCode: number): Response {
+	const output = (type: string, text: string) =>
+		text ? [{ execution_id: "exec_test", type, data: Buffer.from(text).toString("base64") }] : [];
 	const events = [
 		{ execution_id: "exec_test", type: "started" },
-		...(stdout
-			? [
-					{
-						execution_id: "exec_test",
-						type: "stdout",
-						data: Buffer.from(stdout).toString("base64"),
-					},
-				]
-			: []),
-		...(stderr
-			? [
-					{
-						execution_id: "exec_test",
-						type: "stderr",
-						data: Buffer.from(stderr).toString("base64"),
-					},
-				]
-			: []),
+		...output("stdout", stdout),
+		...output("stderr", stderr),
 		{ execution_id: "exec_test", type: "exited", exit_code: exitCode },
 	];
 	return new Response(`${events.map((event) => JSON.stringify(event)).join("\n")}\n`, {
@@ -58,152 +49,262 @@ function command(stdout: string, stderr = "", exitCode = 0): Response {
 	});
 }
 
-function resource(id: string, state = "running") {
-	return {
-		id,
-		state,
-		environment_revision: environmentRevision,
-		created_at: "2026-09-28T00:00:00Z",
-		updated_at: "2026-09-28T00:00:00Z",
-	};
+interface Row {
+	state: string;
+	revision: string;
+	failureCode?: string;
+	gets: number;
+	readonly files: Map<string, string>;
 }
 
-function harnessFetch(
+/**
+ * A fake Brezel API for one dedicated project: idempotent creates keyed by Idempotency-Key, a
+ * DELETE that is acknowledged and then observed, an NDJSON command endpoint, and a file store.
+ */
+function brezelServer(
 	options: {
+		/** GETs that still observe `preparing` before a sandbox is `running`. */
+		readonly readyAfterGets?: number;
+		/** The first create allocates and then loses its response. */
 		readonly ambiguousFirstCreate?: boolean;
-		readonly refuseFirstCreate?: boolean;
-		readonly deleteState?: string;
-		readonly deleteStatus?: number;
+		/** The first create is refused with this status before allocating. */
+		readonly refuseFirstCreate?: number;
+		/** The environment revision the backend actually boots. */
+		readonly bootsRevision?: string;
 		readonly commandDelayMs?: number;
-		readonly failureCode?: string;
-		readonly controlBusyMs?: number;
 	} = {},
 ) {
-	const id = "sbx_11111111111111111111111111111111";
-	let state = "running";
+	const rows = new Map<string, Row>();
+	const keys = new Map<string, string>();
+	const calls: Array<{ method: string; path: string; headers: Headers; body: unknown }> = [];
 	let controlDelayMs = 0;
 	let firstCreate = true;
-	const createKeys: string[] = [];
-	const calls: Array<{ method: string; path: string; body: unknown }> = [];
-	const fetchImplementation = async (
-		input: Parameters<typeof globalThis.fetch>[0],
-		init: Parameters<typeof globalThis.fetch>[1] = {},
-	) => {
+	const resource = (id: string, row: Row) => ({
+		id,
+		state: row.state,
+		environment_revision: row.revision,
+		...(row.failureCode && { failure: { code: row.failureCode } }),
+		created_at: "2026-09-28T00:00:00Z",
+	});
+	const delay = (ms: number, signal?: AbortSignal | null) =>
+		new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(resolve, ms);
+			signal?.addEventListener("abort", () => {
+				clearTimeout(timer);
+				reject(signal.reason);
+			});
+		});
+	function run(row: Row, shell: string): Response {
+		if (shell.startsWith("df -Pk")) return commandStream(`${80 * 1024 * 1024}\n`, "", 0);
+		const probe = /^test -e '(.*)'$/.exec(shell);
+		if (probe) return commandStream("", "", row.files.has(probe[1] ?? "") ? 0 : 1);
+		if (shell === "sh -c 'exit 7'") return commandStream("", "", 7);
+		return commandStream("out\n", "err\n", 7);
+	}
+	const route = async (input: string | URL | Request, init: RequestInit = {}) => {
 		const url = new URL(String(input));
 		const method = init.method ?? "GET";
-		const body = typeof init.body === "string" ? JSON.parse(init.body) : init.body;
-		calls.push({ method, path: `${url.pathname}${url.search}`, body });
-		if (options.controlBusyMs && !url.pathname.endsWith("/commands")) {
-			const until = Date.now() + options.controlBusyMs;
-			while (Date.now() < until) {
-				/* Exercise a response that settles before the timeout callback. */
-			}
-		}
-		const waitMs = url.pathname.endsWith("/commands")
-			? (options.commandDelayMs ?? 0)
-			: controlDelayMs;
-		if (waitMs) {
-			await new Promise<void>((resolve, reject) => {
-				const timer = setTimeout(resolve, waitMs);
-				init.signal?.addEventListener(
-					"abort",
-					() => {
-						clearTimeout(timer);
-						reject(init.signal?.reason);
-					},
-					{ once: true },
-				);
-			});
-		}
+		const headers = new Headers(init.headers);
+		const body =
+			typeof init.body === "string"
+				? JSON.parse(init.body)
+				: init.body instanceof Uint8Array
+					? new TextDecoder().decode(init.body)
+					: undefined;
+		calls.push({ method, path: `${url.pathname}${url.search}`, headers, body });
+		const commands = url.pathname.endsWith("/commands");
+		const wait = commands ? (options.commandDelayMs ?? 0) : controlDelayMs;
+		if (wait) await delay(wait, init.signal);
+		const [, , , id = "", sub] = url.pathname.split("/");
+		const row = rows.get(id);
 		if (method === "POST" && url.pathname === "/v1/sandboxes") {
-			createKeys.push(new Headers(init.headers).get("Idempotency-Key") ?? "");
-			if (options.refuseFirstCreate && firstCreate) {
+			const key = headers.get("Idempotency-Key") ?? "";
+			if (firstCreate && options.refuseFirstCreate) {
 				firstCreate = false;
-				return json(
-					{ error: { code: "capacity_exhausted", message: "capacity unavailable" } },
-					429,
-				);
+				return json({ error: { code: "refused", message: "refused" } }, options.refuseFirstCreate);
 			}
-			if (options.ambiguousFirstCreate && firstCreate) {
+			let created = keys.get(key);
+			if (!created) {
+				created = `sbx_${String(rows.size + 1).padStart(32, "0")}`;
+				keys.set(key, created);
+				rows.set(created, {
+					state: (options.readyAfterGets ?? 0) > 0 ? "preparing" : "running",
+					revision: options.bootsRevision ?? body.environment_revision,
+					gets: 0,
+					files: new Map(),
+				});
+			}
+			if (firstCreate && options.ambiguousFirstCreate) {
 				firstCreate = false;
 				throw new TypeError("connection closed after remote acceptance");
 			}
-			return json({ resource: resource(id) });
+			firstCreate = false;
+			return json({ resource: resource(created, rows.get(created) as Row) });
 		}
-		if (method === "GET" && url.pathname === `/v1/sandboxes/${id}`) {
-			return json({
-				...resource(id, state),
-				...(options.failureCode ? { failure: { code: options.failureCode } } : {}),
-			});
+		if (method === "GET" && url.pathname === "/v1/sandboxes")
+			return json({ sandboxes: [...rows].map(([key, value]) => resource(key, value)) });
+		if (!row) return json({ error: { code: "not_found", message: "no such sandbox" } }, 404);
+		if (method === "GET" && sub === undefined) {
+			row.gets += 1;
+			if (row.state === "preparing" && row.gets >= (options.readyAfterGets ?? 0))
+				row.state = "running";
+			else if (row.state === "deleting") row.state = "deleted";
+			return json(resource(id, row));
 		}
-		if (method === "GET" && url.pathname === "/v1/sandboxes") {
-			return json({
-				sandboxes:
-					state === "deleted"
-						? []
-						: [
-								{
-									...resource(id, state),
-									...(options.failureCode ? { failure: { code: options.failureCode } } : {}),
-								},
-							],
-			});
+		if (method === "DELETE" && sub === undefined) {
+			if (row.state !== "deleted") row.state = "deleting";
+			return json({ resource: resource(id, row) });
 		}
-		if (method === "DELETE" && url.pathname === `/v1/sandboxes/${id}`) {
-			state = options.deleteState ?? "deleted";
-			return json({ resource: resource(id, state) }, options.deleteStatus ?? 200);
+		if (method === "POST" && sub === "commands")
+			return run(row, (body as { argv: string[] }).argv.at(-1) ?? "");
+		const path = url.searchParams.get("path") ?? "";
+		if (method === "PUT" && sub === "files") {
+			row.files.set(path, String(body));
+			return json({ path, size: String(body).length });
 		}
-		if (method === "POST" && url.pathname === `/v1/sandboxes/${id}/commands`) {
-			const argv = (body as { argv?: string[] }).argv ?? [];
-			const shell = argv.at(-1) ?? "";
-			if (shell.startsWith("df -Pk")) return command(`${80 * 1024 * 1024}\n`);
-			if (shell.startsWith("test -e")) return command("", "", 0);
-			return command("out\n", "err\n", 7);
+		if (method === "GET" && sub === "files") {
+			const text = row.files.get(path);
+			return text === undefined ? json({ error: { code: "not_found" } }, 404) : new Response(text);
 		}
-		if (method === "PUT" && url.pathname === `/v1/sandboxes/${id}/files`) {
-			return json({ path: url.searchParams.get("path"), size: 5 });
-		}
-		if (method === "GET" && url.pathname === `/v1/sandboxes/${id}/files`) {
-			return new Response("saved");
-		}
-		throw new Error(`unhandled test request ${method} ${url.pathname}${url.search}`);
+		throw new Error(`unhandled test request ${method} ${url.pathname}`);
 	};
-	const fetch = Object.assign(fetchImplementation, { preconnect() {} }) as typeof globalThis.fetch;
+	const fetch = Object.assign(route, { preconnect() {} }) as typeof globalThis.fetch;
 	return {
-		id,
 		fetch,
-		createKeys,
+		rows,
 		calls,
-		state: () => state,
-		setState: (value: string) => {
-			state = value;
-		},
-		setControlDelay: (value: number) => {
-			controlDelayMs = value;
+		creates: () => calls.filter((call) => call.method === "POST" && call.path === "/v1/sandboxes"),
+		deletes: () => calls.filter((call) => call.method === "DELETE"),
+		setControlDelay: (ms: number) => {
+			controlDelayMs = ms;
 		},
 	};
 }
 
-function testDriver(
-	fake: ReturnType<typeof harnessFetch>,
-	options: Partial<BrezelSpecOptions> = {},
-) {
+const FAST: Partial<VendorTiming> = { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 };
+
+/** The package's own module, lowered over the fake API instead of the real transport. */
+function driverOver(server: ReturnType<typeof brezelServer>, timing: Partial<VendorTiming> = {}) {
 	return driverFromComputeSpec(
 		"brezel",
-		brezelSpec(context, {
-			fetch: fake.fetch,
-			pollMs: 0,
-			readyTimeoutMs: 100,
-			deleteTimeoutMs: 500,
-			...options,
+		brezel.specFor(context, {
+			vendor: brezelVendor(context, server.fetch),
+			timing: { ...FAST, ...timing },
 		}),
 		context.resolvedArtifact,
-		[context.env.BREZEL_API_KEY],
+		[TOKEN],
 	);
 }
 
-describe("Brezel native integration", () => {
-	test("declares a strict identity, shell-detach durability, and the public SDK provenance", () => {
+describe("Brezel translation", () => {
+	test("reads every state as a phase; only deletion, expiry, or a backend-absence verdict is gone", () => {
+		const phase = (state: string, code?: string) =>
+			brezelPhase({
+				id: "sbx_1",
+				state: state as never,
+				environment_revision: REVISION,
+				...(code && { failure: { code } }),
+			});
+		expect(
+			["requested", "preparing", "pausing", "standby", "resuming", "unknown"].map((s) => phase(s)),
+		).toEqual(Array(6).fill("pending"));
+		expect(phase("running")).toBe("ready");
+		expect(phase("deleting")).toBe("deleting");
+		expect([phase("deleted"), phase("expired")]).toEqual(["gone", "gone"]);
+		expect(phase("failed")).toBe("failed");
+		expect(phase("failed", "backend_delete_unconfirmed")).toBe("failed");
+		expect(phase("failed", "backend_resource_missing")).toBe("gone");
+		expect(phase("failed", "backend_capacity_unavailable")).toBe("gone");
+	});
+
+	test("classifies refusals by status; only a rate limit is retryable", async () => {
+		/** The SDK's own error for a create the fake API answers with `status` (0: transport loss). */
+		const failure = (status: number) => {
+			const server = brezelServer(
+				status ? { refuseFirstCreate: status } : { ambiguousFirstCreate: true },
+			);
+			return brezelVendor(context, server.fetch)
+				.control.create({ request, marker: "m" }, op())
+				.catch((caught: unknown) => caught);
+		};
+		const { refused } = brezelVendor(context, brezelServer().fetch).control;
+		for (const status of [400, 401, 403, 404])
+			expect(refused?.(await failure(status))).toEqual({ retryable: false });
+		expect(refused?.(await failure(429))).toEqual({ retryable: true });
+		expect(refused?.(new Error("wrapped", { cause: await failure(429) }))).toEqual({
+			retryable: true,
+		});
+		for (const status of [0, 500, 503]) expect(refused?.(await failure(status))).toBeUndefined();
+	});
+
+	test("maps the create, delete, listing and exec requests and keeps the token in Authorization", async () => {
+		const server = brezelServer();
+		const { control, data } = brezelVendor(context, server.fetch);
+		// A running create acknowledgement is still not readiness evidence.
+		const created = await control.create({ request, marker: "benchmark-key" }, op());
+		expect(created.phase).toBe("pending");
+		const [post] = server.creates();
+		expect(post?.headers.get("Idempotency-Key")).toBe("benchmark-key");
+		expect(post?.body).toEqual({
+			environment_revision: REVISION,
+			lifecycle: { expires_after_seconds: 7_200 },
+			network: { allow_internet: true },
+		});
+		expect(post?.headers.get("Authorization")).toBe(`Bearer ${TOKEN}`);
+		expect(post?.headers.get("X-Project-ID")).toBe("benchmark-project");
+		expect(JSON.stringify(post?.body)).not.toContain(TOKEN);
+
+		await control.page(undefined, op());
+		expect(server.calls.at(-1)?.path).toBe("/v1/sandboxes?include_terminal=true");
+		expect(await control.remove(created.id, op())).toBe("accepted");
+		expect(server.deletes()[0]?.headers.get("Idempotency-Key")).toBe(
+			`benchmark-delete-${created.id}`,
+		);
+
+		const native = await data.attach(created, op());
+		await data.exec(native, "echo hi");
+		expect(server.calls.at(-1)?.body).toMatchObject({ argv: ["/bin/bash", "-lc", "echo hi"] });
+	});
+
+	test("admits only the pinned environment revision", async () => {
+		const { control } = brezelVendor(context, brezelServer().fetch);
+		const record = (revision: string) => ({
+			id: "sbx_1",
+			phase: "ready" as const,
+			raw: { id: "sbx_1", state: "running" as const, environment_revision: revision },
+		});
+		expect(control.admit?.(record(REVISION))).toBeUndefined();
+		expect(control.admit?.(record("envr_other"))).toContain("different environment revision");
+	});
+
+	test("forwards a control call's signal into the pending HTTP request", async () => {
+		const server = brezelServer();
+		server.setControlDelay(1_000);
+		const { control } = brezelVendor(context, server.fetch);
+		const started = performance.now();
+		await expect(control.page(undefined, { signal: AbortSignal.timeout(5) })).rejects.toThrow();
+		expect(performance.now() - started).toBeLessThan(500);
+	});
+
+	test("waits for an accepted command to complete before reporting cancellation", async () => {
+		const server = brezelServer({ commandDelayMs: 30 });
+		const { control, data } = brezelVendor(context, server.fetch);
+		const native = await data.attach(await control.create({ request, marker: "m" }, op()), op());
+		const started = performance.now();
+		await expect(
+			data.exec(native, "fixture", { signal: AbortSignal.timeout(5) }),
+		).rejects.toThrow();
+		expect(performance.now() - started).toBeGreaterThanOrEqual(25);
+	});
+});
+
+vendorContract("brezel adapter", () => ({
+	vendor: brezelVendor(context, brezelServer({ readyAfterGets: 2 }).fetch),
+	account: "dedicated",
+}));
+
+describe("Brezel end to end through its module", () => {
+	test("declares strict identity, shell-detach durability, and the public SDK provenance", () => {
 		expect(brezel.id).toBe("brezel");
 		expect(brezel.execution).toEqual({ syncCapMs: 60_000, durable: "shell-detach" });
 		expect(brezel.provenance).toEqual({ packageName: "@infercrane/brezel", version: "0.1.1" });
@@ -211,199 +312,89 @@ describe("Brezel native integration", () => {
 		expect(BREZEL_SANDBOX_ID.allows("other_1")).toBe(false);
 	});
 
-	test("preserves command streams and files, inventories the dedicated project, and converges delete", async () => {
-		const fake = harnessFetch();
-		const driver = testDriver(fake);
-		const session = await driver.create(request);
-		expect(session.sandboxRef).toEqual({ provider: "brezel", id: fake.id });
-		expect(fake.createKeys[0]).toMatch(/^benchmark-[0-9a-f-]{36}$/);
-		expect(fake.calls.find((call) => call.method === "POST")?.body).toEqual({
-			environment_revision: environmentRevision,
-			lifecycle: { expires_after_seconds: 7_200 },
-			network: { allow_internet: true },
-		});
+	test("a session creates, executes, round-trips files, is inventoried, and is destroyed", async () => {
+		const server = brezelServer({ readyAfterGets: 2 });
+		const driver = driverOver(server);
+		const controller = new AbortController();
+		const session = await driver.create(request, { signal: controller.signal });
+		// The create signal stays with control calls; the data plane keeps working without it.
+		controller.abort();
+		expect(server.creates()[0]?.headers.get("Idempotency-Key")).toMatch(
+			/^benchmark-[0-9a-f-]{36}$/,
+		);
 
 		const result = await session.exec("fixture");
 		expect(result.exit).toEqual({ kind: "exited", code: 7 });
-		expect(result.stdout).toBe("out\n");
-		expect(result.stderr).toBe("err\n");
-		expect(await session.files?.exists("/tmp/item")).toBe(true);
-		expect(
-			fake.calls.some(
-				(call) =>
-					call.method === "POST" &&
-					Array.isArray((call.body as { argv?: unknown }).argv) &&
-					(call.body as { argv: string[] }).argv.at(-1) === "test -e '/tmp/item'",
-			),
-		).toBe(true);
-		expect(
-			fake.calls
-				.filter((call) => call.method === "POST" && call.path.endsWith("/commands"))
-				.every((call) => (call.body as { argv: string[] }).argv[0] === "/bin/bash"),
-		).toBe(true);
+		expect([result.stdout, result.stderr]).toEqual(["out\n", "err\n"]);
+		expect(await session.files?.exists("/tmp/item")).toBe(false);
 		await session.files?.writeText("/tmp/item", "saved");
+		expect(await session.files?.exists("/tmp/item")).toBe(true);
 		expect(await session.files?.readFile("/tmp/item")).toBe("saved");
+
+		// A dedicated project: every record not yet removed is owned, failed ones included.
+		const [id] = [...server.rows.keys()];
 		expect(await driver.inventory?.list()).toEqual({
-			owned: [{ provider: "brezel", id: fake.id }],
+			owned: [session.sandboxRef],
 			foreignCount: 0,
 		});
-
 		await session.destroy();
-		expect(fake.state()).toBe("deleted");
+		expect(server.rows.get(id ?? "")?.state).toBe("deleted");
 		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
-	});
-
-	test("replays the same create identity after an ambiguous failure and deletes the canonical allocation", async () => {
-		const fake = harnessFetch({ ambiguousFirstCreate: true });
-		await expect(testDriver(fake).create(request)).rejects.toMatchObject({ code: "create-failed" });
-		expect(fake.createKeys).toHaveLength(2);
-		expect(fake.createKeys[1]).toBe(fake.createKeys[0]);
-		expect(fake.state()).toBe("deleted");
-	});
-
-	test("treats a pre-allocation capacity refusal as definitive and retryable", async () => {
-		const fake = harnessFetch({ refuseFirstCreate: true });
-		const error = await testDriver(fake)
-			.create(request)
-			.catch((caught) => caught);
-		expect(isRetryableDriverCreate(error)).toBe(true);
-		expect(fake.createKeys).toHaveLength(1);
-		expect(fake.state()).toBe("running");
-	});
-
-	test("rejects unsupported request dimensions before making a create call", async () => {
-		const fake = harnessFetch();
-		const driver = testDriver(fake);
-		for (const input of [
-			{ ...request, spec: { ...TARGET_SPEC, vcpus: 8 } },
-			{ ...request, env: { SECRET: "no" } },
-			{ ...request, artifact: { kind: "image" as const, ref: "example/image" } },
-		]) {
-			await expect(driver.create(input)).rejects.toMatchObject({ code: "invalid-create-request" });
-		}
-		expect(fake.createKeys).toHaveLength(0);
-	});
-});
-
-describe("Brezel ownership and deadline regressions", () => {
-	for (const state of ["standby", "preparing", "deleting", "unknown", "failed"]) {
-		test(`retains ownership while sandbox state is ${state}`, async () => {
-			const fake = harnessFetch();
-			fake.setState(state);
-			const driver = testDriver(fake);
-			expect(await driver.probes?.observe({ provider: "brezel", id: fake.id })).toEqual({
-				state: "running",
-			});
-		});
-	}
-
-	test("deletes failed allocations rather than accepting failure as removal", async () => {
-		const fake = harnessFetch();
-		fake.setState("failed");
-		const driver = testDriver(fake);
-		await driver.destroyById?.({ provider: "brezel", id: fake.id });
-		expect(fake.state()).toBe("deleted");
-		expect(fake.calls.some((call) => call.method === "DELETE")).toBe(true);
-	});
-
-	test("bounds deletion from the first control request", async () => {
-		const fake = harnessFetch();
-		fake.setControlDelay(30);
-		const driver = testDriver(fake, { deleteTimeoutMs: 5 });
-		await expect(driver.destroyById?.({ provider: "brezel", id: fake.id })).rejects.toThrow();
-		expect(fake.calls.some((call) => call.method === "DELETE")).toBe(false);
-	});
-
-	test("does not accept readiness observed beyond its deadline", async () => {
-		const fake = harnessFetch();
-		fake.setControlDelay(30);
-		const driver = testDriver(fake, { readyTimeoutMs: 5 });
-		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
-		expect(fake.state()).toBe("deleted");
-	});
-});
-
-describe("Brezel transport and removal evidence", () => {
-	test("includes failed records in inventory while excluding confirmed removals", async () => {
-		const fake = harnessFetch();
-		const driver = testDriver(fake);
-		fake.setState("failed");
-		expect(await driver.inventory?.list()).toEqual({
-			owned: [{ provider: "brezel", id: fake.id }],
-			foreignCount: 0,
-		});
-		expect(fake.calls.at(-1)?.path).toBe("/v1/sandboxes?include_terminal=true");
-		fake.setState("expired");
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 0 });
 	});
 
-	test("does not confirm a deletion that ends in failed state", async () => {
-		const fake = harnessFetch({ deleteState: "failed" });
-		const driver = testDriver(fake, { deleteTimeoutMs: 10 });
-		await expect(driver.destroyById?.({ provider: "brezel", id: fake.id })).rejects.toThrow();
-		expect(await driver.probes?.observe({ provider: "brezel", id: fake.id })).toEqual({
-			state: "running",
+	test("an ambiguous create is recovered by replaying its key and deleting the canonical allocation", async () => {
+		const server = brezelServer({ ambiguousFirstCreate: true });
+		await expect(driverOver(server).create(request)).rejects.toMatchObject({
+			code: "create-failed",
 		});
+		const keys = server.creates().map((call) => call.headers.get("Idempotency-Key"));
+		expect(keys.length).toBeGreaterThanOrEqual(2);
+		expect(new Set(keys).size).toBe(1);
+		expect(server.rows.size).toBe(1);
+		expect([...server.rows.values()].map((row) => row.state)).toEqual(["deleted"]);
 	});
 
-	test("accepts a missing record when deletion races with remote removal", async () => {
-		const fake = harnessFetch({ deleteStatus: 404 });
-		await testDriver(fake).destroyById?.({ provider: "brezel", id: fake.id });
-		expect(fake.state()).toBe("deleted");
+	test("a rate-limit refusal is retryable and never replayed", async () => {
+		const server = brezelServer({ refuseFirstCreate: 429 });
+		const error = await driverOver(server)
+			.create(request)
+			.catch((caught) => caught);
+		expect(isRetryableDriverCreate(error)).toBe(true);
+		expect(server.creates()).toHaveLength(1);
+		expect(server.rows.size).toBe(0);
 	});
 
-	test("forwards inventory cancellation to the pending HTTP request", async () => {
-		const fake = harnessFetch();
-		fake.setControlDelay(100);
-		const driver = testDriver(fake);
-		await expect(driver.inventory?.list({ signal: AbortSignal.timeout(5) })).rejects.toThrow();
-	});
-
-	test("does not retain the create signal in commands or file transport", async () => {
-		const fake = harnessFetch();
-		const controller = new AbortController();
-		const session = await testDriver(fake).create(request, { signal: controller.signal });
-		controller.abort();
-		expect((await session.exec("fixture")).stdout).toBe("out\n");
-		await session.files?.writeText("/tmp/item", "saved");
-		expect(await session.files?.readFile("/tmp/item")).toBe("saved");
-		await session.destroy();
-		expect(fake.state()).toBe("deleted");
-	});
-
-	test("waits for accepted command completion before reporting cancellation", async () => {
-		const fake = harnessFetch({ commandDelayMs: 30 });
-		const session = await testDriver(fake).create(request);
-		const before = Date.now();
-		await expect(session.exec("fixture", { signal: AbortSignal.timeout(5) })).rejects.toThrow();
-		expect(Date.now() - before).toBeGreaterThanOrEqual(25);
-		await session.destroy();
-	});
-});
-
-test("recognizes explicit backend absence without treating other failures as removal", async () => {
-	for (const failureCode of [
-		"backend_resource_missing",
-		"backend_capacity_unavailable",
-		"backend_delete_unconfirmed",
-	]) {
-		const fake = harnessFetch({ failureCode });
-		fake.setState("failed");
-		const driver = testDriver(fake);
-		const absent = failureCode !== "backend_delete_unconfirmed";
-		expect(await driver.probes?.observe({ provider: "brezel", id: fake.id })).toEqual({
-			state: absent ? "absent" : "running",
+	test("an allocation booted from another environment revision is rejected and deleted", async () => {
+		const server = brezelServer({ bootsRevision: "envr_other" });
+		await expect(driverOver(server).create(request)).rejects.toMatchObject({
+			code: "create-failed",
 		});
-		expect((await driver.inventory?.list())?.owned).toHaveLength(absent ? 0 : 1);
-		await driver.destroyById?.({ provider: "brezel", id: fake.id });
-		expect(fake.calls.some((call) => call.method === "DELETE")).toBe(!absent);
-	}
-});
+		expect([...server.rows.values()].map((row) => row.state)).toEqual(["deleted"]);
+	});
 
-test("rejects a removal response beyond the budget before the timeout callback runs", async () => {
-	const fake = harnessFetch({ controlBusyMs: 20 });
-	fake.setState("deleted");
-	await expect(
-		testDriver(fake, { deleteTimeoutMs: 5 }).destroyById?.({ provider: "brezel", id: fake.id }),
-	).rejects.toThrow();
+	test("a failed record is deleted, but a backend-absence verdict is never sent a delete", async () => {
+		for (const [failureCode, deletes] of [
+			["backend_delete_unconfirmed", 1],
+			["backend_resource_missing", 0],
+		] as const) {
+			const server = brezelServer();
+			const driver = driverOver(server);
+			const session = await driver.create(request);
+			const row = server.rows.get(session.sandboxRef.id);
+			if (!row) throw new Error("missing row");
+			Object.assign(row, { state: "failed", failureCode });
+			await driver.destroyById?.(session.sandboxRef);
+			expect(server.deletes()).toHaveLength(deletes);
+		}
+	});
+
+	test("deletion is bounded from its first control request", async () => {
+		const server = brezelServer();
+		const driver = driverOver(server, { deleteTimeoutMs: 5 });
+		const session = await driver.create(request);
+		server.setControlDelay(30);
+		await expect(driver.destroyById?.(session.sandboxRef)).rejects.toThrow();
+		expect(server.deletes()).toHaveLength(0);
+	});
 });
