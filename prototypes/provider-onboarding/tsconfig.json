@@ -1,4 +1,0 @@
-{
-  "extends": "@repo/tsconfig/library.json",
-  "include": ["packages", "registry", "tooling", "speculative", "scripts"]
-}
