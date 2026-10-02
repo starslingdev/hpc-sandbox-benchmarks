@@ -12,6 +12,7 @@ import type {
 	UncataloguedResult,
 } from "@sandbox-benchmarks/schema";
 import { isGapMarkerFile, isPtsResultFile, parseGapMarker } from "@sandbox-benchmarks/schema";
+import { isNetworkProbeFile, networkProbeContributions } from "./network-probes.ts";
 import { parsePtsComposite, ptsResultToMetric, resultMeasurement } from "./pts.ts";
 import { parseSystemHost } from "./system-specs.ts";
 
@@ -179,6 +180,13 @@ export function extractProviderDir(dir: string, providerId: string): ProviderExt
 		if (isGapMarkerFile(filename)) {
 			const marker = parseGapMarker(filename, readJson(readFileSync(fullPath, "utf8")), providerId);
 			if (marker) out.gaps.push(marker);
+		}
+
+		if (isNetworkProbeFile(filename)) {
+			const body = readJson(readFileSync(fullPath, "utf8"));
+			for (const contribution of networkProbeContributions(filename, body)) {
+				out.contributions.push({ ...contribution, sourceFile: filename });
+			}
 		}
 	}
 

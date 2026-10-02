@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { extractProviderDir } from "./extract.ts";
+import { isNetworkProbeFile } from "./network-probes.ts";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 
 const daytonaDir = join(import.meta.dir, "__fixtures__/daytona-vm");
@@ -244,5 +245,241 @@ describe("extractProviderDir", () => {
 		expect(kinds.filter(([, kind]) => kind !== "matched")).toEqual([
 			["Task: Test", "uncatalogued"],
 		]);
+	});
+});
+
+describe("network probe artifacts", () => {
+	let dir: string;
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "extract-network-"));
+	});
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	const write = (name: string, body: unknown): void => {
+		writeFileSync(join(dir, name), typeof body === "string" ? body : JSON.stringify(body));
+	};
+
+	it("recognizes probe artifacts and rejects gap markers and unknown hosts", () => {
+		expect(isNetworkProbeFile("network-latency.json")).toBe(true);
+		expect(isNetworkProbeFile("network-dns--github.com.json")).toBe(true);
+		expect(isNetworkProbeFile("network-download--speed.json")).toBe(true);
+		expect(isNetworkProbeFile("network-latency--skipped.json")).toBe(false);
+		expect(isNetworkProbeFile("network-dns--other.com.json")).toBe(false);
+	});
+
+	it("samples responding curl time_total in record order and ignores timing_ms", () => {
+		write("network-latency.json", {
+			endpoints: [
+				{
+					url: "https://index.crates.io/config.json",
+					host: "index.crates.io",
+					timing_ms: { total: { median: 999 } },
+					curl_records: [{ time_total: 0.050902, response_code: 200, exitcode: 0 }],
+				},
+			],
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([
+			{
+				metricId: "network_https_index_crates_io_config_total_ms",
+				samples: [50.902],
+				sourceFile: "network-latency.json",
+			},
+		]);
+	});
+
+	it("drops a curl record that got no response", () => {
+		write("network-latency.json", {
+			endpoints: [
+				{
+					url: "https://github.com/",
+					curl_records: [{ time_total: 1.5, response_code: 0, exitcode: 56 }],
+				},
+			],
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
+	});
+
+	it("keeps two responding totals around one failure, in record order", () => {
+		write("network-latency.json", {
+			endpoints: [
+				{
+					url: "https://github.com/",
+					curl_records: [
+						{ time_total: 0.012, response_code: 200, exitcode: 0 },
+						{ time_total: 9.999, response_code: 0, exitcode: 56 },
+						{ time_total: 0.0345, response_code: 200, exitcode: 0 },
+					],
+				},
+			],
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([
+			{
+				metricId: "network_https_github_com_total_ms",
+				samples: [12, 34.5],
+				sourceFile: "network-latency.json",
+			},
+		]);
+	});
+
+	it("reads one cold dig query_time when the question name matches the filename", () => {
+		write("network-dns--github.com.json", [
+			{ query_time: 14, status: "NOERROR", question: { name: "github.com." } },
+		]);
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([
+			{
+				metricId: "network_dns_cold_github_com_ms",
+				samples: [14],
+				sourceFile: "network-dns--github.com.json",
+			},
+		]);
+	});
+
+	it("reads a single jc object whose query_time is zero", () => {
+		write("network-dns--pypi.org.json", {
+			query_time: 0,
+			status: "NOERROR",
+			question: { name: "pypi.org." },
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([
+			{
+				metricId: "network_dns_cold_pypi_org_ms",
+				samples: [0],
+				sourceFile: "network-dns--pypi.org.json",
+			},
+		]);
+	});
+
+	it("admits no DNS sample from a multi-row dig", () => {
+		write("network-dns--github.com.json", [
+			{ query_time: 14, status: "NOERROR", question: { name: "github.com." } },
+			{ query_time: 1, status: "NOERROR", question: { name: "github.com." } },
+		]);
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
+	});
+
+	it("admits no DNS sample when the question name is a different domain", () => {
+		write("network-dns--github.com.json", [
+			{ query_time: 14, status: "NOERROR", question: { name: "example.com" } },
+		]);
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
+	});
+
+	it("converts a pinned download's bytes/sec into decimal Mbits/sec", () => {
+		write("network-download--speed.json", {
+			http_code: 200,
+			size_download: 54000000,
+			speed_download: 12500000,
+			exitcode: 0,
+			url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([
+			{
+				metricId: "network_download_node_v22_23_1_linux_x64_mbits_per_sec",
+				samples: [100],
+				sourceFile: "network-download--speed.json",
+			},
+		]);
+	});
+
+	it("omits an HTTP error body", () => {
+		write("network-download--speed.json", {
+			http_code: 403,
+			size_download: 54000000,
+			speed_download: 12500000,
+			exitcode: 0,
+			url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
+	});
+
+	it("keeps a max-time exit 28 when bytes arrived", () => {
+		write("network-download--speed.json", {
+			http_code: 200,
+			size_download: 1000,
+			speed_download: 1250000,
+			exitcode: 28,
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([
+			{
+				metricId: "network_download_node_v22_23_1_linux_x64_mbits_per_sec",
+				samples: [10],
+				sourceFile: "network-download--speed.json",
+			},
+		]);
+	});
+
+	it("drops a download whose curl exit is neither success nor the time cap", () => {
+		write("network-download--speed.json", {
+			http_code: 200,
+			size_download: 1000,
+			speed_download: 1250000,
+			exitcode: 18,
+			url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
+	});
+
+	it("leaves an overridden download URL raw", () => {
+		write("network-download--speed.json", {
+			http_code: 200,
+			size_download: 54000000,
+			speed_download: 12500000,
+			exitcode: 0,
+			url: "https://example.com/other",
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
+	});
+
+	it("keeps a latency skip marker as a gap and not a probe sample", () => {
+		write("network-latency--skipped.json", {
+			schema_version: "1.0",
+			benchmark: "network-latency",
+			skipped: true,
+			skip_reason: "curl not installed",
+		});
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
+		expect(extraction.gaps).toEqual([
+			{
+				scope: "suite",
+				id: "network-latency",
+				outcome: "skipped",
+				reason: "curl not installed",
+			},
+		]);
+	});
+
+	it("returns no contribution for malformed probe JSON", () => {
+		write("network-latency.json", "{");
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.attemptedEmpty).toEqual([]);
+		expect(extraction.contributions).toEqual([]);
 	});
 });

@@ -988,3 +988,47 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		);
 	});
 });
+
+describe("normalizeProviderDir catalogues a network probe artifact", () => {
+	let root: string;
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "norm-network-"));
+	});
+	afterEach(() => {
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("turns responding curl time_total into a MetricResult with no PTS sample source", () => {
+		const suiteDir = join(root, "daytona-vm", "network");
+		mkdirSync(suiteDir, { recursive: true });
+		writeFileSync(
+			join(suiteDir, "network-latency.json"),
+			JSON.stringify({
+				endpoints: [
+					{
+						url: "https://index.crates.io/config.json",
+						host: "index.crates.io",
+						timing_ms: { total: { median: 999 } },
+						curl_records: [{ time_total: 0.050902, response_code: 200, exitcode: 0 }],
+					},
+				],
+			}),
+		);
+
+		const run = normalizeProviderDir(root, "daytona-vm");
+		const metric = run.metrics.find(
+			(entry) => entry.metricId === "network_https_index_crates_io_config_total_ms",
+		);
+		if (!metric) throw new Error("missing network probe metric");
+		expect(metric.samples).toEqual([50.902]);
+		expect(metric.aggregates).toMatchObject({
+			n: 1,
+			p50: 50.902,
+			min: 50.902,
+			max: 50.902,
+			stdev: 0,
+		});
+		expect(metric.sourceFile).toBe("network/network-latency.json");
+		expect(metric.ptsSampleSource).toBeUndefined();
+	});
+});
