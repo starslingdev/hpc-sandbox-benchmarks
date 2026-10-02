@@ -16,8 +16,6 @@ try cat /etc/resolv.conf
 
 echo ""
 echo "=== DNS Resolution ==="
-# dig and jc are the measurement. A missing one skips the probe: getent is not a cold dig
-# and must not become a sample.
 for tool in dig jc; do
 	if ! command -v "$tool" &>/dev/null; then
 		skip_result "${tool} not installed"
@@ -32,14 +30,10 @@ for domain in github.com registry.npmjs.org docker.io pypi.org rubygems.org; do
 	out="$(dig "$domain" 2>/dev/null)" || rc=$?
 	if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
 		echo "(dig failed — exit ${rc})"
-		# Keep dig's own diagnostic (";; connection timed out" vs NXDOMAIN vs REFUSED) — the resolver
-		# behaviour this probe exists to capture. Discarding it left only "(dig failed)".
 		[ -n "$out" ] && printf '%s\n' "$out"
 		continue
 	fi
 	echo "$out"
-	# Structured output via jc, from this same stdout, installed through json_result (lib/bench.sh)
-	# so a swallowed parse failure cannot leave a zero-byte .json behind.
 	if ! printf '%s\n' "$out" | jc --dig 2>/dev/null | json_result "$(task_result_name "$domain")"; then
 		echo "(jc --dig produced no structured record)"
 	fi

@@ -25,8 +25,6 @@ export * from "./harness-metrics.ts";
 export * from "./identifiers.ts";
 // Metric vocabulary: Dimension, Direction and the MetricDef shape every Metric declares.
 export * from "./metrics.ts";
-// Hand-authored network-probe Metrics (HTTPS latency, cold DNS, pinned download) and their target
-// tables.
 export * from "./network-probe-metrics.ts";
 // Pure artifact lifecycle projections used by release composition roots.
 export * from "./provider-artifacts.ts";

@@ -34,6 +34,13 @@ import { gapCauseSchema, gapOutcomeOfCause, gapOutcomeSchema } from "./run.ts";
 
 const SKIP_SUFFIX = "--skipped.json";
 const FAILURE_SUFFIX = "--failed.json";
+
+export const NETWORK_LATENCY_FILE = "network-latency.json";
+export const NETWORK_DOWNLOAD_FILE = "network-download--speed.json";
+
+export function networkDnsFile(domain: string): string {
+	return `network-dns--${domain}.json`;
+}
 const PROVIDER_ARTIFACT_EVIDENCE_FILE = "provider-artifact-evidence.json";
 const PROVIDER_COST_EVIDENCE_FILE = "provider-cost-evidence.json";
 /** The artifact envelope is small: cell, sandbox id, requested ref, and one manifest identity. */

@@ -242,8 +242,7 @@ export const SUITES = {
 	// measurement was structurally unreliable on fast datacenter paths — every trial on
 	// daytona-vm/novita/blaxel died in the memory watchdog and the surviving numbers were
 	// buffer-fill transients); the old leaves and profiles stay runnable manually via
-	// benchmark:network:all. The suite also catalogues latency, cold DNS, and the pinned download
-	// (external endpoint weather, not headlines). Long-synthetic tier: k=2 FIXED (R=3). Convergence is OFF —
+	// benchmark:network:all. Long-synthetic tier: k=2 FIXED (R=3). Convergence is OFF —
 	// the vendored iperf profile carries a documented "trial count stays 2" repo rule (its install.sh), and
 	// the WAN leg reselects the closest public server per run, so repeated in-sandbox passes aren't
 	// like-for-like; the between-machine spread rides the R=3 replicates instead.

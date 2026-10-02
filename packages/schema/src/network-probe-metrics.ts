@@ -1,6 +1,3 @@
-// Hand-authored network-probe Metrics. The closed tables below own the ids. The results parser
-// matches a target by exact URL or filename domain and does not slugify hostnames. No `pts` field:
-// samples come from the curl and dig artifacts, and none of these headline the network dimension.
 import type { MetricDef } from "./metrics.ts";
 
 const MS = "ms";
@@ -11,7 +8,7 @@ const WEATHER = "external endpoint weather, not a headline, not a sandbox-stack 
 
 /**
  * HTTPS latency targets, in catalog order. `url` is the exact curl endpoint the latency task
- * records. The id is not derived from the host.
+ * records.
  */
 export const NETWORK_LATENCY_TARGETS = [
 	{
@@ -91,14 +88,12 @@ export const NETWORK_DNS_TARGETS = [
 	},
 ] as const;
 
-/** The one pinned download. An override URL stays raw and is not a sample of this metric. */
 export const NETWORK_DOWNLOAD_TARGET = {
 	id: "network_download_node_v22_23_1_linux_x64_mbits_per_sec",
 	url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
 	label: "Node 22 download",
 } as const;
 
-/** Catalog ids for the probe slice, latency then DNS then download. */
 export const NETWORK_PROBE_METRIC_IDS: readonly string[] = [
 	...NETWORK_LATENCY_TARGETS.map((target) => target.id),
 	...NETWORK_DNS_TARGETS.map((target) => target.id),
@@ -143,5 +138,4 @@ const downloadMetric: MetricDef = {
 	].join(" "),
 };
 
-/** The non-PTS network-probe Catalog slice, in {@link NETWORK_PROBE_METRIC_IDS} order. */
 export const networkProbeMetrics: MetricDef[] = [...latencyMetrics, ...dnsMetrics, downloadMetric];

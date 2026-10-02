@@ -1,29 +1,16 @@
-// Catalogued samples from the network probe artifacts. The closed tables in
-// `@sandbox-benchmarks/schema` own the ids. A filename or URL that is not in those tables
-// contributes nothing, and so does a malformed body. This function does not throw: a throw
-// inside extract drops the provider shard, including iperf.
 import {
 	NETWORK_DNS_TARGETS,
+	NETWORK_DOWNLOAD_FILE,
 	NETWORK_DOWNLOAD_TARGET,
+	NETWORK_LATENCY_FILE,
 	NETWORK_LATENCY_TARGETS,
+	networkDnsFile,
 } from "@sandbox-benchmarks/schema";
 
-/** One catalogued probe metric's samples from a single artifact. */
 interface NetworkProbeContribution {
 	metricId: string;
-	samples: number[];
+	samples: [number, ...number[]];
 }
-
-// `task_result_name` spells these from the mise task path. The join key is the filename,
-// not a slug of the host.
-const LATENCY_FILENAME = "network-latency.json";
-const DOWNLOAD_FILENAME = "network-download--speed.json";
-const DNS_FILENAME_PREFIX = "network-dns--";
-const DNS_FILENAME_SUFFIX = ".json";
-
-const DNS_METRIC_BY_DOMAIN = new Map<string, string>(
-	NETWORK_DNS_TARGETS.map((target) => [target.domain, target.id]),
-);
 
 type ProbeFile =
 	| { kind: "latency" }
@@ -35,30 +22,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function dnsFile(filename: string): { domain: string; metricId: string } | undefined {
-	if (!filename.startsWith(DNS_FILENAME_PREFIX) || !filename.endsWith(DNS_FILENAME_SUFFIX)) {
-		return undefined;
+	for (const target of NETWORK_DNS_TARGETS) {
+		if (filename === networkDnsFile(target.domain)) {
+			return { domain: target.domain, metricId: target.id };
+		}
 	}
-	const domain = filename.slice(DNS_FILENAME_PREFIX.length, -DNS_FILENAME_SUFFIX.length);
-	const metricId = DNS_METRIC_BY_DOMAIN.get(domain);
-	if (metricId === undefined) return undefined;
-	return { domain, metricId };
+	return undefined;
 }
 
 function probeFile(filename: string): ProbeFile | undefined {
-	if (filename === LATENCY_FILENAME) return { kind: "latency" };
-	if (filename === DOWNLOAD_FILENAME) return { kind: "download" };
+	if (filename === NETWORK_LATENCY_FILE) return { kind: "latency" };
+	if (filename === NETWORK_DOWNLOAD_FILE) return { kind: "download" };
 	const dns = dnsFile(filename);
 	if (dns) return { kind: "dns", domain: dns.domain, metricId: dns.metricId };
 	return undefined;
 }
 
-/** True for a latency, known-domain DNS, or pinned-download artifact. Gap markers are not. */
 export function isNetworkProbeFile(filename: string): boolean {
 	return probeFile(filename) !== undefined;
 }
 
-// Same gate as lib/jq/curl-phases.jq `responded`: a missing exitcode counts as success, and a
-// transport failure is not a latency sample even when time_total is the timeout ceiling.
 function responded(record: Record<string, unknown>): boolean {
 	const exitcode = record.exitcode ?? 0;
 	return exitcode === 0 && typeof record.response_code === "number" && record.response_code > 0;
@@ -85,7 +68,8 @@ function latencyContributions(body: unknown): NetworkProbeContribution[] {
 				if (sample !== undefined) samples.push(sample);
 			}
 		}
-		if (samples.length > 0) contributions.push({ metricId: target.id, samples });
+		const admitted = admit(samples);
+		if (admitted) contributions.push({ metricId: target.id, samples: admitted });
 	}
 	return contributions;
 }
@@ -111,6 +95,12 @@ function dnsRows(body: unknown): unknown[] | undefined {
 	return undefined;
 }
 
+function admit(samples: number[]): [number, ...number[]] | undefined {
+	const [first, ...rest] = samples;
+	if (first === undefined) return undefined;
+	return [first, ...rest];
+}
+
 function dnsContribution(
 	domain: string,
 	metricId: string,
@@ -119,6 +109,7 @@ function dnsContribution(
 	const rows = dnsRows(body);
 	const row = rows?.[0];
 	if (!isRecord(row)) return [];
+	if (row.status !== "NOERROR") return [];
 	if (questionName(row) !== domain) return [];
 	const sample = queryTimeMs(row);
 	if (sample === undefined) return [];
@@ -131,8 +122,6 @@ function downloadExitKept(exitcode: unknown): boolean {
 
 function downloadContribution(body: unknown): NetworkProbeContribution[] {
 	if (!isRecord(body)) return [];
-	// An explicit url that is not the pin is an override. Leave it raw. url_effective may
-	// differ after a redirect and is not a reason to drop the sample.
 	if (typeof body.url === "string" && body.url !== NETWORK_DOWNLOAD_TARGET.url) return [];
 	const httpCode = body.http_code;
 	if (
@@ -171,11 +160,6 @@ function contributionsFor(file: ProbeFile, body: unknown): NetworkProbeContribut
 	}
 }
 
-/**
- * Catalogued samples in one probe artifact. Returns `[]` for an unknown file, a gap marker, or
- * any artifact that does not satisfy the probe's admission rules. Never returns an empty
- * `samples` array, and never throws.
- */
 export function networkProbeContributions(
 	filename: string,
 	body: unknown,

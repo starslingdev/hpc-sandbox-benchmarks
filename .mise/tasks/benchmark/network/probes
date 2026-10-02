@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="DNS, HTTPS latency, and pinned download probes"
+# Orchestrator: no -e — run_task isolates child failures and summary reports them at the end
+# (error-mode conventions: lib/bench.sh).
+set -uo pipefail
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+source "${REPO_ROOT}/lib/bench.sh"
+
+run_task benchmark:network:dns
+run_task benchmark:network:latency
+run_task benchmark:network:download
+
+summary

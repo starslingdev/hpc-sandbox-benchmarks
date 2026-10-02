@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NETWORK_LATENCY_TARGETS } from "@sandbox-benchmarks/schema";
 import { extractProviderDir } from "./extract.ts";
 import { isNetworkProbeFile } from "./network-probes.ts";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
@@ -476,6 +478,14 @@ describe("network probe artifacts", () => {
 		]);
 	});
 
+	it("drops an NXDOMAIN dig even when query_time is present", () => {
+		write("network-dns--github.com.json", [
+			{ query_time: 4, status: "NXDOMAIN", question: { name: "github.com." } },
+		]);
+		const extraction = extractProviderDir(dir, "e2b");
+		expect(extraction.contributions).toEqual([]);
+	});
+
 	it("returns no contribution for malformed probe JSON", () => {
 		write("network-latency.json", "{");
 		const extraction = extractProviderDir(dir, "e2b");
@@ -483,3 +493,60 @@ describe("network probe artifacts", () => {
 		expect(extraction.contributions).toEqual([]);
 	});
 });
+
+const repoRoot = join(import.meta.dir, "../../../..");
+const jqAvailable = (() => {
+	try {
+		execFileSync("jq", ["--version"], { stdio: "ignore" });
+		return true;
+	} catch {
+		return false;
+	}
+})();
+
+(jqAvailable ? describe : describe.skip)(
+	"network probe latency matches curl-phases.jq on recorded curls",
+	() => {
+		it("keeps a sample exactly when jq responded is true", () => {
+			const records = readFileSync(
+				join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"),
+				"utf8",
+			)
+				.split("\n")
+				.filter((line) => line.length > 0)
+				.map((line) => JSON.parse(line) as { url: string });
+			const urls = new Set<string>(NETWORK_LATENCY_TARGETS.map((target) => target.url));
+			const matched = records.filter((record) => urls.has(record.url));
+			expect(matched.length).toBeGreaterThan(0);
+			const endpoints = NETWORK_LATENCY_TARGETS.flatMap((target) => {
+				const curlRecords = matched.filter((record) => record.url === target.url);
+				return curlRecords.length > 0 ? [{ url: target.url, curl_records: curlRecords }] : [];
+			});
+			const dir = mkdtempSync(join(tmpdir(), "extract-jq-"));
+			try {
+				writeFileSync(join(dir, "network-latency.json"), JSON.stringify({ endpoints }));
+				const byId = new Map(
+					extractProviderDir(dir, "e2b").contributions.map((contribution) => [
+						contribution.metricId,
+						contribution.samples.length,
+					]),
+				);
+				for (const target of NETWORK_LATENCY_TARGETS) {
+					const curlRecords = matched.filter((record) => record.url === target.url);
+					if (curlRecords.length === 0) continue;
+					const responded = curlRecords.filter((record) => {
+						const out = execFileSync(
+							"jq",
+							["-L", join(repoRoot, "lib/jq"), "-c", 'include "curl-phases"; responded'],
+							{ input: JSON.stringify(record), encoding: "utf8" },
+						);
+						return out.trim() === "true";
+					}).length;
+					expect(byId.get(target.id) ?? 0).toBe(responded);
+				}
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+	},
+);

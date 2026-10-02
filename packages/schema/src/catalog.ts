@@ -120,12 +120,6 @@ export const catalogSchema = metricDefSchema.array().narrow((cat, ctx) => {
  * the runtime `.assert` turns a malformed entry (bad dimension/direction, missing field) — or a
  * violated PTS-mapping invariant ({@link catalogSchema}) — into a fail-fast at import rather than a
  * silently broken stability contract.
- *
- * The PTS-derived slice (generated + curated) is followed by the hand-authored network-probe
- * Metrics, the harness-measured Metrics (lifecycle + control-plane), and the derived economics
- * Metrics. None of those hand-authored slices carry a `pts` field, so the PTS-mapping invariant
- * skips them while id-uniqueness and the headline-count check below ({@link expectedHeadlines})
- * still cover them.
  */
 export const METRIC_CATALOG: readonly MetricDef[] = catalogSchema.assert([
 	...ptsCurated,

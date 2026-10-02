@@ -23,10 +23,6 @@ ensure_pts || true
 run_task benchmark:network:pts:iperf-localhost
 run_task benchmark:network:pts:iperf-wan
 
-# Catalogued non-headline probes (external endpoint weather). DNS runs before the latency
-# curls because those curls would warm the stub cache for the shared names.
-run_task benchmark:network:dns
-run_task benchmark:network:latency
-run_task benchmark:network:download
+run_task benchmark:network:probes
 
 summary

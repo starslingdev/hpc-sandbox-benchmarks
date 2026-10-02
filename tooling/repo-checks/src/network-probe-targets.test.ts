@@ -1,14 +1,13 @@
-// Drift gate: the network probe tasks name the same targets as the closed catalog tables, in
-// the same order. Bash isn't importable, so this reads the task source. A producer that
-// slugified a host, or pointed a metric at a different URL, would publish samples under the
-// wrong id.
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	NETWORK_DNS_TARGETS,
+	NETWORK_DOWNLOAD_FILE,
 	NETWORK_DOWNLOAD_TARGET,
+	NETWORK_LATENCY_FILE,
 	NETWORK_LATENCY_TARGETS,
+	networkDnsFile,
 } from "@sandbox-benchmarks/schema";
 import { findRepoRoot } from "./lib/workspace.ts";
 
@@ -57,20 +56,25 @@ describe("network probe tasks match the catalog target tables", () => {
 		expect(downloadUrl(taskSource("download"))).toBe(NETWORK_DOWNLOAD_TARGET.url);
 	});
 
-	it("runs DNS before the latency curls", () => {
-		expect(runTasks(taskSource("suite"))).toEqual([
-			"run_task benchmark:network:pts:iperf-localhost",
-			"run_task benchmark:network:pts:iperf-wan",
+	it("runs DNS before the latency curls from one probes task", () => {
+		expect(runTasks(taskSource("probes"))).toEqual([
 			"run_task benchmark:network:dns",
 			"run_task benchmark:network:latency",
 			"run_task benchmark:network:download",
 		]);
-		expect(runTasks(taskSource("all"))).toEqual([
-			"run_task benchmark:network:pts:loopback",
-			"run_task benchmark:network:pts:fast-cli",
-			"run_task benchmark:network:dns",
-			"run_task benchmark:network:latency",
-			"run_task benchmark:network:download",
-		]);
+		expect(runTasks(taskSource("suite"))).toContain("run_task benchmark:network:probes");
+		expect(runTasks(taskSource("all"))).toContain("run_task benchmark:network:probes");
+	});
+
+	it("names probe files the way task_result_name names the task path", () => {
+		const resultFile = (taskRelative: string, suffix?: string): string => {
+			const stem = taskRelative.replaceAll("/", "-");
+			return `${suffix ? `${stem}--${suffix}` : stem}.json`;
+		};
+		expect(NETWORK_LATENCY_FILE).toBe(resultFile("network/latency"));
+		expect(NETWORK_DOWNLOAD_FILE).toBe(resultFile("network/download", "speed"));
+		for (const target of NETWORK_DNS_TARGETS) {
+			expect(networkDnsFile(target.domain)).toBe(resultFile("network/dns", target.domain));
+		}
 	});
 });
