@@ -64,3 +64,30 @@ test("an empty App in another credential environment cannot certify the original
 	).rejects.toThrow("original run");
 	expect(f.calls).toEqual([]);
 });
+
+test("pages history oldest-ward to the anchor and fails a cursor that does not advance", async () => {
+	const history = (pages: ReadonlyArray<ReadonlyArray<{ id: string; createdAt: number }>>) => {
+		const seen: Array<number | undefined> = [];
+		const { client } = fixture();
+		Object.assign(client, {
+			cpClient: {
+				sandboxListV2: async ({ beforeTimestamp }: { beforeTimestamp?: number }) => {
+					seen.push(beforeTimestamp);
+					const page = pages[seen.length - 1] ?? [];
+					return { sandboxes: page.map((row) => ({ ...row, appId: "ap-original" })) };
+				},
+			},
+		});
+		return { client, seen };
+	};
+	const paged = history([
+		[{ id: "sb-newer", createdAt: 9 }],
+		[{ id: "sb-original", createdAt: 4 }],
+	]);
+	await observeModalCleanupApp("sb-original", AbortSignal.timeout(5000), paged.client);
+	expect(paged.seen).toEqual([undefined, 9]);
+	const stalled = history([[{ id: "sb-newer", createdAt: 9 }], [{ id: "sb-newer", createdAt: 9 }]]);
+	await expect(
+		observeModalCleanupApp("sb-original", AbortSignal.timeout(5000), stalled.client),
+	).rejects.toThrow("pagination did not advance");
+});

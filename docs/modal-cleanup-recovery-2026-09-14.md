@@ -21,7 +21,7 @@ excluded from inventory. It is not evidence that it never existed. `foreignCount
 counts entries outside the benchmark App through the repository's two listing paths;
 it does not establish that any of those entries belongs to this benchmark.
 [Installed SDK implementation](../node_modules/modal/dist/index.js), lines 63950–64020;
-[repository inventory](../packages/modal/src/shared.ts), `modalInventory`.
+[repository inventory](https://github.com/starslingdev/hpc-sandbox-benchmarks/blob/16c87480af562c8c47063af2f560008dcb09f03f/packages/modal/src/shared.ts#L591), `modalInventory`.
 
 The latest official reference now describes `experimentalList` as covering both
 generations and permits an omitted App ID. That differs from the installed 0.9
@@ -81,5 +81,5 @@ Modal environment or account proves nothing about the original run. Do not treat
 authentication error, an App lookup failure, partial pagination, or a transient name
 lookup miss as clearance. The repository already avoids broad name-lookup not-found
 translation because nested authentication RPC failures can otherwise be misclassified.
-[Control-plane wrapper](../packages/modal/src/shared.ts), `modalControlPlane` and
+[Control-plane wrapper](https://github.com/starslingdev/hpc-sandbox-benchmarks/blob/16c87480af562c8c47063af2f560008dcb09f03f/packages/modal/src/shared.ts#L189), `modalControlPlane` and
 `modalLifecycle`.

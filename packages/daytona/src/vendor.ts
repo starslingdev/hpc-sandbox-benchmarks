@@ -150,6 +150,12 @@ export function daytonaVendor(
 			throw error;
 		}
 	};
+	// The SDK's get resolves a name as well as an id: a sandbox named like the id is not that one.
+	const byId = async (id: string) => {
+		const found = await lookup(id);
+		if (found && found.id !== id) throw new Error("Daytona returned an unrelated sandbox");
+		return found;
+	};
 
 	return {
 		control: {
@@ -179,9 +185,9 @@ export function daytonaVendor(
 					throw error;
 				}
 			},
-			get: (id) => lookup(id),
+			get: (id) => byId(id),
 			remove: async (id) => {
-				const sandbox = handles.get(id) ?? (await lookup(id))?.raw;
+				const sandbox = handles.get(id) ?? (await byId(id))?.raw;
 				try {
 					if (sandbox) await client.delete(sandbox, DELETE_TIMEOUT_SECS, true);
 				} catch (error) {

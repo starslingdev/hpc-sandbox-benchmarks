@@ -159,7 +159,8 @@ never only by a marker the failed step may not have set. Vendor-family behaviour
 stays on typed passthroughs:
 `snapshots` (on the bound vendor), `accelerator`, `costEvidence`, a harness-owned `createBudget`,
 and `execution` (default `{ syncCapMs: 60_000, durable: "shell-detach" }`; `durable:
-"native-launch"` and `data.launch` must be declared together). `module.specFor(context, { vendor,
+"native-launch"` requires `data.launch`; a `shell-detach` vendor may supply one to bound the kit's
+`detachedShellCommand`). `module.specFor(context, { vendor,
 timing })` lowers the same module against a stubbed transport for provider tests.
 Brezel (a dedicated account recovered by idempotent replay, over an injected `fetch`), Novita
 (a shared account recovered by a server-side marker query, over the loaded SDK), Blaxel, Vercel and

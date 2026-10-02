@@ -12,6 +12,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExecOptions } from "@sandbox-benchmarks/driver";
+import { detachedShellCommand } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { CreateAttempt, Op, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
@@ -33,7 +34,7 @@ export const MODAL_DESTROY_TIMEOUT_MS = 55_000;
 export const MODAL_INVENTORY_TIMEOUT_MS = 60_000;
 export const MODAL_V1_SANDBOX_ID = type(/^sb-[A-Za-z0-9]{22}$/);
 export const MODAL_V2_SANDBOX_ID = type(/^sb-[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
-const MODAL_CONTROL_SANDBOX_ID = type(/^sb-(?:[A-Za-z0-9]{22}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/);
+const MODAL_CONTROL_SANDBOX_ID = MODAL_V1_SANDBOX_ID.or(MODAL_V2_SANDBOX_ID);
 
 export type ModalBackend = "v1" | "v2";
 
@@ -69,9 +70,12 @@ function isModalNotFound(caught: unknown): boolean {
 	}
 }
 
+const controlTimeout = (timeoutMs: string) => `Modal control operation exceeded ${timeoutMs}ms`;
+const CONTROL_TIMEOUT = new RegExp(`^${controlTimeout(String.raw`\d+`)}$`);
+
 /** Exact message the control runner throws when its outer budget elapses. */
 export function modalControlTimeoutMessage(timeoutMs: number): string {
-	return `Modal control operation exceeded ${timeoutMs}ms`;
+	return controlTimeout(String(timeoutMs));
 }
 
 /**
@@ -83,11 +87,11 @@ export function isModalRetryableCreate(error: unknown): boolean {
 		error,
 		(link) =>
 			(link instanceof ClientError && link.code === Status.RESOURCE_EXHAUSTED) ||
-			(link instanceof Error && /^Modal control operation exceeded \d+ms$/.test(link.message)),
+			(link instanceof Error && CONTROL_TIMEOUT.test(link.message)),
 	);
 }
 
-export interface ModalTextProcess {
+interface ModalTextProcess {
 	readonly stdout: { readText(): Promise<unknown> };
 	readonly stderr: { readText(): Promise<unknown> };
 	wait(): Promise<unknown>;
@@ -105,11 +109,31 @@ export interface ModalControlSandbox {
 }
 
 /** One listed sandbox, as the control plane's raw listing reports it. */
-export interface ModalSandboxInfo {
+interface ModalSandboxInfo {
 	readonly id: string;
 	readonly appId: string;
 	readonly name: string;
 	readonly createdAt: number;
+}
+
+/**
+ * A listing's pages, newest first, each fetched before the previous page's oldest creation time,
+ * until an empty page or `pageCap` pages; a cursor that does not advance fails.
+ */
+export async function* modalListingPages<Row extends { readonly createdAt: number }>(
+	list: (beforeTimestamp?: number) => Promise<readonly Row[]>,
+	pageCap = Number.POSITIVE_INFINITY,
+): AsyncGenerator<readonly Row[]> {
+	let before: number | undefined;
+	for (let page = 0; page < pageCap; page++) {
+		const rows = await list(before);
+		const last = rows.at(-1);
+		if (!last) return;
+		yield rows;
+		if (!Number.isFinite(last.createdAt) || (before !== undefined && last.createdAt >= before))
+			throw new Error("Modal listing pagination did not advance");
+		before = last.createdAt;
+	}
 }
 
 /** One listing page (newest first), or all of it older than `beforeTimestamp`. */
@@ -338,7 +362,7 @@ export interface ModalRow<Native> {
 	readonly native?: Native;
 }
 
-export interface ModalVendorOptions<Native> {
+interface ModalVendorOptions<Native> {
 	/** The generation this module creates, owns and lists in the App. */
 	readonly backend: ModalBackend;
 	/** The App every create lands in: the ownership boundary. */
@@ -369,13 +393,13 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 	/** One bounded transaction on an attached sandbox, detached when it is cut short. */
 	const attached = <T>(
 		using: ModalControlRunner,
-		signal: AbortSignal,
+		signal: AbortSignal | undefined,
 		attach: (control: ModalControlPlane) => Promise<ModalControlSandbox>,
 		work: (sandbox: ModalControlSandbox) => Promise<T>,
 	) => {
 		let sandbox: ModalControlSandbox | undefined;
 		return using.run(
-			{ signal },
+			{ ...(signal && { signal }) },
 			async (control) => {
 				sandbox = await attach(control);
 				return work(sandbox);
@@ -383,21 +407,13 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 			() => sandbox?.detach(),
 		);
 	};
-	/** Every running sandbox of one listing, drained by creation time; a stalled cursor fails. */
+	/** Every running sandbox of one listing. */
 	const drain = async (
 		list: (beforeTimestamp?: number) => Promise<readonly ModalSandboxInfo[]>,
 	) => {
 		const rows: ModalSandboxInfo[] = [];
-		let before: number | undefined;
-		for (;;) {
-			const page = await list(before);
-			const last = page.at(-1);
-			if (!last) return rows;
-			if (!Number.isFinite(last.createdAt) || (before !== undefined && last.createdAt >= before))
-				throw new Error("Modal listing pagination did not advance");
-			rows.push(...page);
-			before = last.createdAt;
-		}
+		for await (const page of modalListingPages(list)) rows.push(...page);
+		return rows;
 	};
 	const listed = (row: ModalSandboxInfo) =>
 		({ id: MODAL_CONTROL_SANDBOX_ID.assert(row.id), name: row.name, appId: row.appId }) as const;
@@ -523,14 +539,15 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 				let sandbox: ModalControlSandbox | undefined;
 				let process: ModalTextProcess;
 				try {
-					process = await runner.run(
-						{ ...(execOptions?.signal && { signal: execOptions.signal }) },
+					process = await attached(
+						runner,
+						execOptions?.signal,
 						async (control) => {
 							sandbox = await control.sandboxes.fromId(sandboxId);
-							// Modal 0.9 rejects a defined timeoutMs <= 0: omission leaves the duration open.
-							return sandbox.exec(["sh", "-c", command], { stdout: "pipe", stderr: "pipe" });
+							return sandbox;
 						},
-						() => sandbox?.detach(),
+						// Modal 0.9 rejects a defined timeoutMs <= 0: omission leaves the duration open.
+						(started) => started.exec(["sh", "-c", command], { stdout: "pipe", stderr: "pipe" }),
 					);
 				} catch (caught) {
 					// A normal exec-start rejection does not pass through the runner's abort callback.
@@ -546,6 +563,29 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 				} finally {
 					sandbox?.detach();
 				}
+			},
+			// The kit's shell launcher, bounded whole: attach, exec and its acceptance under the
+			// control budget, which the server also enforces on the exec itself.
+			launch: async ({ sandboxId }, command, execOptions?: ExecOptions) => {
+				const { stderr, exitCode } = await attached(
+					runner,
+					execOptions?.signal,
+					(control) => control.sandboxes.fromId(sandboxId),
+					async (sandbox) => {
+						try {
+							const process = await sandbox.exec(["sh", "-c", detachedShellCommand(command)], {
+								stdout: "pipe",
+								stderr: "pipe",
+								timeoutMs: MODAL_CONTROL_TIMEOUT_MS,
+							});
+							return await modalProcessResult(process, () => sandbox.detach());
+						} finally {
+							sandbox.detach();
+						}
+					},
+				);
+				if (exitCode !== 0)
+					throw new Error(`Modal background launch exited ${exitCode}: ${stderr}`);
 			},
 		},
 	};

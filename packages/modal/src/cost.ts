@@ -19,32 +19,21 @@ export const MODAL_COST_SDK_PROVENANCE =
 /** The hook does not invoke the private SandboxGetResourceUsage RPC. */
 export const modalCostEvidence: ProviderCostEvidenceCapability<"modal-gvisor" | "modal-vm"> = {
 	sdk: MODAL_COST_SDK_PROVENANCE,
-	captureAfterTeardown: async (input) => {
-		const subject = {
-			kind: "sandbox" as const,
-			sandboxId: input.sandboxId,
-			appName: MODAL_APP_NAME,
-		};
-		if (!input.teardown.completed) {
-			return {
-				kind: "missing",
-				cell: input.cell,
-				subject,
-				capturedAt: new Date().toISOString(),
-				sdk: MODAL_COST_SDK_PROVENANCE,
-				reason: "sandbox_teardown_unconfirmed",
-				detail: "Sandbox teardown was not confirmed; no provider usage was considered.",
-			};
-		}
-		return {
-			kind: "missing",
-			cell: input.cell,
-			subject,
-			capturedAt: new Date().toISOString(),
-			sdk: MODAL_COST_SDK_PROVENANCE,
-			reason: "unsupported_public_api",
-			detail:
-				"The generated SandboxGetResourceUsage RPC is private and was not invoked; the installed public Modal SDK exposes no trustworthy sandbox-scoped billed usage endpoint.",
-		};
-	},
+	captureAfterTeardown: async (input) => ({
+		kind: "missing",
+		cell: input.cell,
+		subject: { kind: "sandbox", sandboxId: input.sandboxId, appName: MODAL_APP_NAME },
+		capturedAt: new Date().toISOString(),
+		sdk: MODAL_COST_SDK_PROVENANCE,
+		...(input.teardown.completed
+			? {
+					reason: "unsupported_public_api",
+					detail:
+						"The generated SandboxGetResourceUsage RPC is private and was not invoked; the installed public Modal SDK exposes no trustworthy sandbox-scoped billed usage endpoint.",
+				}
+			: {
+					reason: "sandbox_teardown_unconfirmed",
+					detail: "Sandbox teardown was not confirmed; no provider usage was considered.",
+				}),
+	}),
 };

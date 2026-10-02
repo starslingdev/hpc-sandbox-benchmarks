@@ -5,10 +5,12 @@ Modal's two isolation variants, `modal-vm` (`./vm`, the V1 service with the VM r
 (ADR-0023). `src/vendor.ts` translates the pinned `modal` SDK onto the port; `src/shared.ts` binds
 the real client once per variant in `defineVendorDriver`, and `src/cost.ts` is the cost-evidence
 passthrough. Readiness, cleanup confirmation, recovery, inventory, probes, the `df` disk proof and
-the shell-detach launcher are the kit's. SDK versions are pinned in the root catalog.
+the shell-detach launcher's command are the kit's. SDK versions are pinned in the root catalog.
 
 - Modal 0.9 ignores its client timeouts, so every RPC runs inside a control runner that injects the
-  operation's deadline into the SDK's middleware: 5s for a lookup, poll or exec start, 55s for a
+  operation's deadline into the SDK's middleware: 5s for a lookup, poll, exec start or a whole
+  background launch (`data.launch` runs the kit's detached shell with the server-side exec timeout
+  set too, so a launch never waits on an unbounded result read), 55s for a
   waited terminate or a name lookup, 60s for one listing page, 300s for the create transaction.
 - Every create is named by its ownership marker. A lost create is found by name on both
   generations, this variant's first. Only a sandbox RPC's NOT_FOUND is absence; a native

@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import {
 	describeDriverFailure,
+	detachedShellCommand,
 	FailedCreateCleanupError,
 	isRetryableDriverCreate,
 	launchDetached,
@@ -1043,21 +1044,37 @@ describe("typed passthroughs", () => {
 		await session.destroy();
 	});
 
-	test("native launch and data.launch must be declared together", () => {
+	test("native launch requires data.launch", () => {
 		const world = memoryVendor();
-		const launching: Vendor<MemoryRow, MemoryRow> = {
-			...world.vendor,
-			data: { ...world.vendor.data, launch: async () => {} },
-		};
-		expect(() => moduleOver(() => launching).specFor(context)).toThrow(/declared together/);
-		expect(() =>
-			moduleOver(() => world.vendor, {
-				execution: { syncCapMs: 60_000, durable: "native-launch" },
-			}).specFor(context),
-		).toThrow(/declared together/);
-		expect(() => moduleOver(() => launching).driver(context)).toThrow(
+		const native = moduleOver(() => world.vendor, {
+			execution: { syncCapMs: 60_000, durable: "native-launch" },
+		});
+		expect(() => native.specFor(context)).toThrow(/requires data.launch/);
+		expect(() => native.driver(context)).toThrow(
 			expect.objectContaining({ code: "vendor-contract-violation" }),
 		);
+	});
+
+	test("a shell-detach vendor may supply data.launch, which the session's launch reaches", async () => {
+		const world = memoryVendor();
+		const launched: string[] = [];
+		const launching: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			data: {
+				...world.vendor.data,
+				// A vendor bounds the kit's shell launcher where its plain exec runs unbounded.
+				launch: async (native, command) => {
+					launched.push(command);
+					await world.vendor.data.exec(native, detachedShellCommand(command));
+				},
+			},
+		};
+		const module = moduleOver(() => launching);
+		expect(module.execution).toEqual({ syncCapMs: 60_000, durable: "shell-detach" });
+		const session = await module.driver(context).create(request);
+		await launchDetached(session, "sh -c 'echo done > /tmp/launched'");
+		expect(launched).toEqual(["sh -c 'echo done > /tmp/launched'"]);
+		await session.destroy();
 	});
 
 	test("a native launch reaches the vendor's background API, not the shell detach", async () => {

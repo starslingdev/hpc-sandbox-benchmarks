@@ -157,7 +157,10 @@ export interface DataPlane<Raw, Native> {
 		op: Op,
 	): Promise<Verification>;
 	exec(native: Native, command: string, options?: ExecOptions): Promise<ExecOutcome>;
-	/** Resolves only on genuine background acceptance. Requires `durable: "native-launch"`. */
+	/**
+	 * Resolves only on genuine background acceptance. Required by `durable: "native-launch"`; under
+	 * `shell-detach` it may run the kit's `detachedShellCommand` with a bound the plain exec lacks.
+	 */
 	launch?(native: Native, command: string, options?: ExecOptions): Promise<void>;
 	/** Omitted: the kit's shell fallback serves files and `hasWorkingFilesystem` is false. */
 	readonly files?: {
@@ -217,8 +220,8 @@ export interface VendorTraits {
 	/** `dedicated`: the credential's account is benchmark-only; every live record is owned. */
 	readonly account?: "shared" | "dedicated";
 	/**
-	 * Execution passthrough. Defaults to a 60s synchronous cap over the kit's shell detach; a vendor
-	 * with `data.launch` declares `durable: "native-launch"`, and the two must agree.
+	 * Execution passthrough. Defaults to a 60s synchronous cap over the kit's shell detach.
+	 * `durable: "native-launch"` requires `data.launch`; any other policy may supply one.
 	 */
 	readonly execution?: ExecutionPolicy;
 	readonly timing?: Partial<VendorTiming>;
@@ -426,10 +429,8 @@ function executionOf(
 	launches: boolean | undefined,
 ): ExecutionPolicy {
 	const execution = traits.execution ?? DEFAULT_EXECUTION;
-	if (launches !== undefined && (execution.durable === "native-launch") !== launches)
-		throw new Error(
-			`${provider}: durable "native-launch" and data.launch must be declared together`,
-		);
+	if (execution.durable === "native-launch" && launches === false)
+		throw new Error(`${provider}: durable "native-launch" requires data.launch`);
 	return execution;
 }
 

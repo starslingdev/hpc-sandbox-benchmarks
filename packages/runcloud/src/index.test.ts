@@ -362,6 +362,12 @@ describe("run.cloud end to end through its module", () => {
 		for (const code of [400, 403, 404])
 			expect(transient?.(new RunCloudError(code, "x"))).toBe(false);
 		expect(transient?.(new DOMException("caller stopped", "AbortError"))).toBe(false);
+		// Node's AbortError carries a string code, like a connection error, but is the caller's stop.
+		const nodeAbort = Object.assign(new Error("The operation was aborted"), {
+			name: "AbortError",
+			code: "ABORT_ERR",
+		});
+		expect(transient?.(nodeAbort)).toBe(false);
 		expect(transient?.(new Error("response did not match the schema"))).toBe(false);
 	});
 

@@ -14,6 +14,7 @@ import {
 	MODAL_DESTROY_TIMEOUT_MS,
 	MODAL_INVENTORY_TIMEOUT_MS,
 	modalControlPlane,
+	modalListingPages,
 	modalSandboxId,
 	modalVendor,
 } from "./vendor.ts";
@@ -101,12 +102,17 @@ export function createModalAllocation(configuration: ModalAllocationConfiguratio
 				return new Sandbox(client, created.sandboxId, { isV2: false });
 			}),
 	});
-	const listRunner = createModalControlRunner(createClient, 15_000);
+	const listRunner = createModalControlRunner(
+		(middleware) => modalControlPlane(createClient(middleware)),
+		15_000,
+	);
+	// The environment's running V1 sandboxes, the listing the SDK's own iterator requests.
 	const vendor = removedOnceUnlisted(base, (id, signal) =>
-		listRunner.run({ signal }, async (sdk) => {
-			for await (const candidate of sdk.sandboxes.list()) {
-				if (candidate.sandboxId === id) return true;
-			}
+		listRunner.run({ signal }, async (control) => {
+			const pages = modalListingPages((beforeTimestamp) =>
+				control.sandboxes.list({ beforeTimestamp }),
+			);
+			for await (const page of pages) if (page.some((row) => row.id === id)) return true;
 			return false;
 		}),
 	);

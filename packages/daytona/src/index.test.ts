@@ -192,6 +192,17 @@ describe("Daytona translation", () => {
 		expect(await control.get(randomUUID(), op())).toBeNull();
 	});
 
+	test("a get or remove by id refuses the sandbox the SDK resolved by that name instead", async () => {
+		const org = daytonaOrg();
+		const { control } = vendorOver(org);
+		const id = randomUUID();
+		const namesake = org.allocate(id); // the SDK's get resolves this sandbox's name, not an id
+		await expect(control.get(id, op())).rejects.toThrow("Daytona returned an unrelated sandbox");
+		await expect(control.remove(id, op())).rejects.toThrow("Daytona returned an unrelated sandbox");
+		expect(org.names("delete")).toHaveLength(0);
+		expect(org.rows.get(namesake.id)?.state).toBe("started");
+	});
+
 	test("an inactive snapshot is activated and its refusal is retryable; other refusals are not", async () => {
 		const inactive = daytonaOrg({
 			createError: new DaytonaError("snapshot is inactive", 400),

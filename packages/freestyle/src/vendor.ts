@@ -23,7 +23,7 @@ export const FREESTYLE_BASE_SNAPSHOT = "freestyle/ubuntu";
 export const IMMUTABLE_SNAPSHOT_ID = /^sh-[A-Za-z0-9_-]+$/;
 // Match the shared image's system PATH. The harness adds the user's pinned mise and pnpm dirs.
 // Stock Ubuntu's NVM globals include language servers that change workload test semantics.
-export const FREESTYLE_PATH =
+const FREESTYLE_PATH =
 	"/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 export function freestyleCommand(command: string): string {
 	// Reset inside the guest shell: an exec env alone can be overwritten by stock shell startup.
@@ -36,7 +36,7 @@ export const FREESTYLE_OWNER_KEY = "sandbox-benchmarks-attempt";
 export const FREESTYLE_SLUG = markerSpelling("sandbox-benchmarks-");
 // Longest supported benchmark job is 330 minutes; leave headroom for cleanup.
 export const FREESTYLE_VM_TTL_SECONDS = 6 * 60 * 60;
-export const FREESTYLE_CONTROL_TIMEOUT_MS = 30_000;
+const FREESTYLE_CONTROL_TIMEOUT_MS = 30_000;
 const EXEC_TIMEOUT_MS = 300_000;
 const PAGE_SIZE = 100;
 export const FREESTYLE_SANDBOX_ID = type(/^[A-Za-z0-9_-]+$/);
@@ -52,7 +52,7 @@ const vmRecord = type({
 		storage: "number.integer > 0",
 	},
 });
-export type FreestyleRow = typeof vmRecord.infer;
+type FreestyleRow = typeof vmRecord.infer;
 const pageSchema = type({ vms: vmRecord.array(), totalCount: "number.integer >= 0" });
 const execResult = type({
 	"stdout?": "string | null",

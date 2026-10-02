@@ -17,7 +17,8 @@ The driver is written against the vendor port (ADR-0023):
   load), so the failed create is retryable once teardown is proven, while `stopped` is not; the
   vendor's `last_error` in the boot failure (redacted by the bridge); the allocation's reported CPU
   and memory; a network failure or a timed-out, conflicting, rate-limited or 5xx call as `transient`, so a refused
-  DELETE is asked again at every removal read; and WebSocket exec. Calls inside create are raced
+  DELETE is asked again at every removal read and a create that failed this way is retryable once
+  teardown is proven; and WebSocket exec. Calls inside create are raced
   against a 30 s bound and the caller.
 - `src/index.ts` binds the SDK in `defineVendorDriver`. Readiness and removal are read every 2 s
   (20 minutes for a cold image pull, 50 s for a delete, inside the harness's 60 s destroy timeout);

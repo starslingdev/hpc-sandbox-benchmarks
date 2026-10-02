@@ -106,11 +106,13 @@ const definitive = (error: unknown) => {
 };
 /**
  * The SDK passes fetch failures through raw: a connection error (a TypeError, or a Bun error carrying
- * a string `code`) or the per-call control-plane timeout reached no HTTP status at all.
+ * a string `code`) or the per-call control-plane timeout reached no HTTP status at all. A caller's
+ * abort is no network failure, though Node's AbortError carries a string `code` too.
  */
 const network = (error: unknown) =>
 	error instanceof TypeError ||
 	(error instanceof Error &&
+		error.name !== "AbortError" &&
 		(error.name === "TimeoutError" || typeof (error as { code?: unknown }).code === "string"));
 /** A network failure, timeout, conflict, rate limit or outage: a DELETE refused this way is asked again. */
 const transient = (error: unknown) => {

@@ -8,7 +8,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
-import { FailedCreateCleanupError, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
+import {
+	detachedShellCommand,
+	FailedCreateCleanupError,
+	isRetryableDriverCreate,
+} from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import type { CreateAttempt } from "@sandbox-benchmarks/driver/vendor";
 import { DISK_PROBE, MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
@@ -731,8 +735,8 @@ async function awaitStage(label: string, reached: Promise<void>): Promise<void> 
 }
 
 describe("Modal command results", () => {
-	/** One exec over a fake control plane, recording what the SDK was asked. */
-	const execOver = (
+	/** A vendor over a fake control plane whose exec records what the SDK was asked. */
+	const vendorOver = (
 		process: Parameters<typeof modalProcessResult>[0],
 		seen: unknown[] = [],
 		onDetach = () => {},
@@ -753,7 +757,9 @@ describe("Modal command results", () => {
 					},
 				}) as never,
 			allocate: async () => ({ sandboxId: V1 }),
-		}).data.exec({ sandboxId: V1 }, "exit 7");
+		});
+	const execOver = (...args: Parameters<typeof vendorOver>) =>
+		vendorOver(...args).data.exec({ sandboxId: V1 }, "exit 7");
 	const text = (value: unknown) => ({ readText: async () => value });
 
 	it("preserves the real nonzero exit and split streams, leaving the duration open", async () => {
@@ -766,6 +772,44 @@ describe("Modal command results", () => {
 		expect(seen).toEqual([
 			{ command: ["sh", "-c", "exit 7"], options: { stdout: "pipe", stderr: "pipe" } },
 		]);
+	});
+
+	it("launches the kit's 50ms detached-acceptance shell and bounds the process", async () => {
+		const seen: unknown[] = [];
+		const accepted = { stdout: text(""), stderr: text(""), wait: async () => 0 };
+		await expect(
+			vendorOver(accepted, seen).data.launch?.({ sandboxId: V1 }, "sleep 1"),
+		).resolves.toBeUndefined();
+		expect(seen).toEqual([
+			{
+				command: ["sh", "-c", detachedShellCommand("sleep 1")],
+				options: { stdout: "pipe", stderr: "pipe", timeoutMs: MODAL_CONTROL_TIMEOUT_MS },
+			},
+		]);
+		const missing = { stdout: text(""), stderr: text("command not found"), wait: async () => 127 };
+		await expect(vendorOver(missing).data.launch?.({ sandboxId: V1 }, "missing")).rejects.toThrow(
+			/exited 127: command not found/,
+		);
+	});
+
+	it("bounds the whole launch, result read included, inside the cancellable control runner", async () => {
+		// A result read that never settles until detach cancels its stream, as the SDK's does.
+		let cancel: (() => void) | undefined;
+		const hung = {
+			stdout: text(""),
+			stderr: text(""),
+			wait: () =>
+				new Promise<number>((_, reject) => {
+					cancel = () => reject(new Error("stream closed"));
+				}),
+		};
+		const launch = vendorOver(hung, [], () => cancel?.()).data.launch?.(
+			{ sandboxId: V1 },
+			"sleep 1",
+			{ signal: AbortSignal.timeout(20) },
+		);
+		// Only the runner's abort detaches here, so the cancelled read is the proof of the bound.
+		await expect(launch).rejects.toThrow("stream closed");
 	});
 
 	it("detaches an accepted control channel when exec-start rejects", async () => {
@@ -815,6 +859,48 @@ describe("Modal command results", () => {
 		).rejects.toBe(primary);
 		expect(stderrSettled).toBe(true);
 		expect(detached).toBe(1);
+	});
+
+	it("detaches on the first process failure before joining cancellation-bound siblings", async () => {
+		const primary = new Error("stdout transport failed");
+		let detached = false;
+		const settled = { stderr: false, wait: false };
+		const releases: Array<() => void> = [];
+		// Like the SDK's command-router streams, these siblings settle only once detach cancels them.
+		const cancellationBound = (stream: keyof typeof settled) =>
+			new Promise<string>((resolve) => {
+				const release = () => {
+					settled[stream] = true;
+					resolve("");
+				};
+				if (detached) release();
+				else releases.push(release);
+			});
+		const detach = () => {
+			detached = true;
+			for (const release of releases.splice(0)) release();
+		};
+		const operation = modalProcessResult(
+			{
+				stdout: { readText: async () => Promise.reject(primary) },
+				stderr: { readText: () => cancellationBound("stderr") },
+				wait: () => cancellationBound("wait").then(() => 0),
+			},
+			detach,
+		);
+		const outcome = await Promise.race([
+			operation.then(
+				() => ({ kind: "success" as const }),
+				(error: unknown) => ({ kind: "error" as const, error }),
+			),
+			Bun.sleep(50).then(() => ({ kind: "pending" as const })),
+		]);
+		if (outcome.kind === "pending") {
+			detach();
+			await operation.catch(() => undefined);
+		}
+		expect(outcome).toEqual({ kind: "error", error: primary });
+		expect({ detached, ...settled }).toEqual({ detached: true, stderr: true, wait: true });
 	});
 
 	it("joins started siblings when a later process accessor throws synchronously", async () => {
