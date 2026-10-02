@@ -97,11 +97,17 @@ function phaseOf(status: string | undefined): Phase {
 	}
 }
 
+/**
+ * Ownership is the owner label or the benchmark's name shape, nothing else: an attempt label on a
+ * sandbox that carries neither attributes nothing, so another tenant's copy of it is never deleted.
+ * An owned record's marker is its attempt label, else its name, else the owner-label marker.
+ */
 function markerOf(name: string, labels: Readonly<Record<string, string>> = {}): string | undefined {
+	const named = BENCHMARK_NAME.test(name);
+	if (!named && labels[BLAXEL_OWNER_LABEL] !== "blaxel") return undefined;
 	const attempt = labels[BLAXEL_ATTEMPT_LABEL];
 	if (attempt?.startsWith(MARKER_PREFIX)) return attempt;
-	if (BENCHMARK_NAME.test(name)) return name;
-	return labels[BLAXEL_OWNER_LABEL] === "blaxel" ? OWNER_LABEL_MARKER : attempt;
+	return named ? name : OWNER_LABEL_MARKER;
 }
 
 function record(instance: SandboxInstance): VendorRecord<SandboxInstance> {

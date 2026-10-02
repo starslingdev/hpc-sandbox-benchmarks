@@ -44,6 +44,8 @@ export interface MemoryVendorOptions {
 	readonly seedFiles?: Readonly<Record<string, string>>;
 	/** Serve a server-side marker lookup (`find`) on a shared account too. */
 	readonly lookup?: boolean;
+	/** Serve a server-side readiness wait (`settle`) that answers once a sandbox leaves pending. */
+	readonly settles?: boolean;
 	/** Every control-plane call answers this late, ignoring its signal (a slow or hung transport). */
 	readonly latencyMs?: number;
 	readonly faults?: {
@@ -181,6 +183,15 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 				}
 				return record(row);
 			},
+			...(options.settles && {
+				settle: async (id: string) => {
+					await control("settle");
+					const row = rows.get(id);
+					if (!row) return null;
+					if (row.state === "pending") row.state = faults.failsDuringReadiness ? "failed" : "ready";
+					return record(row);
+				},
+			}),
 			remove: async (id) => {
 				await control("remove");
 				const row = rows.get(id);
@@ -309,6 +320,19 @@ export function vendorContract<Raw, Native>(
 		expect(found.map((record) => record.id)).toContain(mine.id);
 		for (const record of found)
 			if (account === "shared" || record.marker !== undefined) expect(record.marker).toBe(marker);
+	});
+
+	test(`${name}: a server-side readiness wait answers like get`, async () => {
+		const { vendor, account } = make();
+		const settle = vendor.control.settle;
+		if (!settle) return;
+		expect(await settle("does-not-exist", op)).toBeNull();
+		const marker = mint();
+		const created = await create(vendor, marker);
+		const settled = await settle(created.id, op);
+		expect(settled?.id).toBe(created.id);
+		expect(settled?.phase).toBe("ready");
+		if (account === "shared") expect(settled?.marker).toBe(marker);
 	});
 
 	test(`${name}: removal is eventually observed, and "removed" means gone`, async () => {

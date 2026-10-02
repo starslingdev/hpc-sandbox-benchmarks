@@ -44,7 +44,8 @@ type Execution = Partial<{
 }>;
 
 /**
- * A whole Runloop account: creates start `provisioning` and run after a few retrieves, a forced
+ * A whole Runloop account: creates start `provisioning` and run after a few retrieves or at once
+ * under the long poll (which, like the SDK, rejects a Devbox that settled elsewhere), a forced
  * shutdown leaves a `shutdown` tombstone (Runloop never forgets a Devbox), listings page by the
  * last id, and each Devbox has a file store its commands and file API share.
  */
@@ -64,6 +65,7 @@ function runloopAccount(
 	const rows = new Map<string, DevboxView & { retrieves: number; files: Map<string, string> }>();
 	const created: Array<Record<string, unknown>> = [];
 	const shutdowns: unknown[] = [];
+	const waits: Array<[string, unknown]> = [];
 	const commands: string[] = [];
 	let next = 0;
 	let ambiguous = options.ambiguousFirstCreate ?? false;
@@ -130,6 +132,15 @@ function runloopAccount(
 				row.status = options.bootFails ? "failure" : "running";
 			return view(id);
 		},
+		awaitRunning: async (id: string, { longPoll }: { longPoll?: unknown }) => {
+			waits.push([id, longPoll]);
+			const row = rows.get(id);
+			if (!row) throw new NotFoundError(404, undefined, "devbox not found", {});
+			if (row.status === "provisioning") row.status = options.bootFails ? "failure" : "running";
+			if (row.status !== "running")
+				throw new Error(`Devbox ${id} is in non-running state ${row.status}`);
+			return view(id);
+		},
 		shutdown: async (id: string, params: unknown) => {
 			shutdowns.push([id, params]);
 			const row = rows.get(id);
@@ -166,7 +177,7 @@ function runloopAccount(
 		},
 	};
 	const client = { api: { devboxes } } as unknown as RunloopClient;
-	return { client, rows, created, shutdowns, commands, allocate };
+	return { client, rows, created, shutdowns, waits, commands, allocate };
 }
 
 /** The package's own module, lowered over a fake account instead of the real SDK. */
@@ -223,6 +234,26 @@ describe("Runloop translation", () => {
 		expect(await control.remove("dbx_missing", op())).toBe("removed");
 	});
 
+	test("readiness is Runloop's long poll; a Devbox that settled elsewhere is read back by retrieve", async () => {
+		const account = runloopAccount({ readyAfterRetrieves: 1_000 });
+		const { control } = runloopVendor(context, account.client);
+		const settle = control.settle;
+		if (!settle) throw new Error("the adapter declares no server-side readiness wait");
+		const booting = account.allocate({}, "provisioning");
+		expect(await settle(booting, op())).toMatchObject({ id: booting, phase: "ready" });
+		expect(account.waits).toEqual([[booting, { timeoutMs: RUNLOOP_CREATE_TIMEOUT_MS }]]);
+		expect(account.rows.get(booting)?.retrieves).toBe(0);
+		expect(await settle(account.allocate({}, "suspended"), op())).toMatchObject({
+			phase: "failed",
+		});
+		expect(await settle("dbx_missing", op())).toBeNull();
+		const cancelled = new AbortController();
+		cancelled.abort(new Error("attempt deadline"));
+		await expect(
+			settle(account.allocate({}, "suspended"), { signal: cancelled.signal }),
+		).rejects.toThrow("attempt deadline");
+	});
+
 	test("keeps a withheld exit as unknown and refuses truncated or unfinished output", async () => {
 		const outputs: Execution[] = [
 			{ exit_status: null, stdout: "" },
@@ -275,11 +306,14 @@ describe("Runloop end to end through its module", () => {
 	});
 
 	test("a session boots, proves disk within the allowance, runs, launches, files, inventories, and shuts down", async () => {
-		const account = runloopAccount({ readyAfterRetrieves: 2, pageSize: 2 });
+		// Only the long poll can observe this Devbox running: readiness is never a retrieve poll.
+		const account = runloopAccount({ readyAfterRetrieves: 1_000, pageSize: 2 });
 		account.allocate({}, "running"); // another tenant's Devbox
 		account.allocate({}, "failure"); // a tombstone nobody holds
 		const driver = driverOver(account);
 		const session = await driver.create(request);
+		expect(account.waits.map(([id]) => id)).toEqual([session.sandboxRef.id]);
+		expect(account.rows.get(session.sandboxRef.id)?.retrieves).toBe(0);
 		// 39.6 GiB visible on a 40 GB request is filesystem overhead, not a short allocation.
 		expect(account.commands[0]).toBe("df -Pk / | awk 'NR==2 {print $2}'");
 
@@ -310,6 +344,16 @@ describe("Runloop end to end through its module", () => {
 		expect(account.shutdowns.slice(before)).toEqual([[session.sandboxRef.id, { force: "true" }]]);
 		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
+	});
+
+	test("inventory drains an account whose tombstones run past the kit's default page cap", async () => {
+		const account = runloopAccount({ pageSize: 1 });
+		for (let index = 0; index < 150; index++) account.allocate({}, "shutdown");
+		const live = account.allocate({ [RUNLOOP_OWNER_METADATA_KEY]: "runloop" });
+		expect(await driverOver(account).inventory?.list()).toEqual({
+			owned: [{ provider: "runloop", id: live }],
+			foreignCount: 0,
+		});
 	});
 
 	test("an allocation whose root filesystem is short of the request is refused and shut down", async () => {

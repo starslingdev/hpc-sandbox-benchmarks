@@ -1,7 +1,7 @@
 // @sandbox-benchmarks/driver/vendor — the driver authoring module (ADR-0023 §1).
 //
 // A provider package states what is true about its vendor through two ports, the control plane
-// (create/get/remove/page, optionally find/refused/admit) and the data plane (attach/exec,
+// (create/get/remove/page, optionally settle/find/refused/admit) and the data plane (attach/exec,
 // optionally launch/files). This module owns everything provider-neutral, once: readiness,
 // cleanup confirmation, destroy-by-id, probes, the owned/foreign inventory partition,
 // ambiguous-create recovery, the artifact guard, the disk proof and the execution policy. It lowers
@@ -80,6 +80,14 @@ export interface ControlPlane<Raw = unknown> {
 	create(attempt: CreateAttempt, op: Op): Promise<VendorRecord<Raw>>;
 	/** `null` only on the vendor's own not-found; every other failure throws. */
 	get(id: string, op: Op): Promise<VendorRecord<Raw> | null>;
+	/**
+	 * The vendor's server-side readiness wait (a long poll): `get`'s contract, but the call may stay
+	 * open until the record leaves `pending`. Declared, it replaces `get` in the kit's readiness poll,
+	 * so readiness is observed when the vendor reports it rather than at the next poll interval. The
+	 * kit still bounds it by `readyTimeoutMs`, classifies the phase it settles on, and tears the
+	 * allocation down after a failure; a `pending` answer (the wait ended early) is asked again.
+	 */
+	settle?(id: string, op: Op): Promise<VendorRecord<Raw> | null>;
 	/** `removed`: the vendor proved removal (or reported not-found). `accepted`: acknowledgement only. */
 	remove(id: string, op: Op): Promise<"removed" | "accepted">;
 	/** One page of the whole account. The kit drains, caps, and fails closed on a bad cursor. */
@@ -192,6 +200,12 @@ export interface VendorTraits {
 	readonly recovery?: { readonly absenceConfirmationMs?: number; readonly maxAttempts?: number };
 	/** The name the ownership marker travels under at the vendor (default `<provider>-marker`). */
 	readonly markerKey?: string;
+	/**
+	 * How the marker reads at the vendor (default: verbatim). The adapter builds its create request
+	 * and parses records with the same spelling, and the recovery locator prints it, so a cleanup
+	 * diagnostic names the value an operator can find in the vendor's console.
+	 */
+	readonly markerSpelling?: MarkerSpelling;
 	/** Pages one listing may span before the kit treats the cursor as runaway (default 100). */
 	readonly pageCap?: number;
 	/**
@@ -210,6 +224,29 @@ export interface DiskProof {
 
 /** The create-time prefix every kit-minted ownership marker carries. */
 export const MARKER_PREFIX = "benchmark-";
+
+/**
+ * The vendor-visible spelling of an ownership marker: the attempt's UUID under the vendor's own
+ * prefix (a sandbox name, a documented purpose). Built by {@link markerSpelling}, so the two
+ * directions cannot disagree.
+ */
+export interface MarkerSpelling {
+	/** The value a create sends for a kit-minted marker. */
+	toVendor(marker: string): string;
+	/** The kit marker a vendor value spells, or `undefined` when it carries no attempt. */
+	fromVendor(value: string): string | undefined;
+}
+
+/** Spell the kit marker's attempt UUID under `prefix` at the vendor. */
+export function markerSpelling(prefix: string): MarkerSpelling {
+	return Object.freeze({
+		toVendor: (marker: string) => `${prefix}${marker.slice(MARKER_PREFIX.length)}`,
+		fromVendor: (value: string) =>
+			value.startsWith(prefix) && value.length > prefix.length
+				? `${MARKER_PREFIX}${value.slice(prefix.length)}`
+				: undefined,
+	});
+}
 const DEFAULT_EXECUTION: ExecutionPolicy = { syncCapMs: 60_000, durable: "shell-detach" };
 const DEFAULT_TIMING: VendorTiming = {
 	pollMs: 250,
@@ -360,6 +397,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	const { control, data, snapshots } = vendor;
 	const { files, launch } = data;
 	const { refused, transient } = control;
+	const spelling = traits.markerSpelling ?? markerSpelling(MARKER_PREFIX);
 	const timing: VendorTiming = { ...DEFAULT_TIMING, ...traits.timing };
 	const dedicated = traits.account === "dedicated";
 	if (dedicated && !control.find)
@@ -488,11 +526,12 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 
 	async function awaitReady(record: VendorRecord<Raw>, outer?: AbortSignal) {
 		if (record.phase === "ready") return record;
+		const observe = control.settle ?? control.get;
 		return within(
 			timing.readyTimeoutMs,
 			outer,
 			async (o) => {
-				const current = await control.get(record.id, o);
+				const current = await observe(record.id, o);
 				if (isGone(current)) observedGone.add(record.id);
 				if (current === null) throw new Error(`${provider} sandbox disappeared before readiness`);
 				if (current.phase === "ready") return current;
@@ -608,7 +647,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 			locator: (attempt) => ({
 				kind: "marker",
 				key: traits.markerKey ?? `${provider}-marker`,
-				value: attempt.marker,
+				value: spelling.toVendor(attempt.marker),
 			}),
 			...((refused || transient) && {
 				isDefinitive: (error: unknown) =>
@@ -620,7 +659,10 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 					transient?.(error) === true,
 			}),
 			cleanup: async (_compute, locator, operation) => {
-				const ids = await recoveryIds(locator.value, operation.signal);
+				const marker = spelling.fromVendor(locator.value);
+				if (marker === undefined)
+					throw new Error(`${provider} recovery locator spells no ownership marker`);
+				const ids = await recoveryIds(marker, operation.signal);
 				if (ids.length === 0) return { status: "absent" };
 				// Each teardown is independently bounded; run them together, then surface every failure.
 				const outcomes = await Promise.allSettled(ids.map((id) => destroy(id, operation.signal)));

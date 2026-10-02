@@ -15,7 +15,7 @@ import {
 } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { admissionFailures, runConformance } from "@sandbox-benchmarks/driver/conformance";
-import type { Vendor, VendorDriverSpec } from "@sandbox-benchmarks/driver/vendor";
+import type { Vendor, VendorDriverSpec, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import {
 	coverage,
 	DISK_PROBE,
@@ -23,6 +23,7 @@ import {
 	instanceOfAny,
 	MARKER_PREFIX,
 	mapped,
+	markerSpelling,
 	pinned,
 } from "@sandbox-benchmarks/driver/vendor";
 import type { MemoryRow, MemoryVendorOptions } from "@sandbox-benchmarks/driver/vendor/testing";
@@ -141,6 +142,70 @@ describe("readiness, continued", () => {
 		expect(failure).toBeInstanceOf(Error);
 		expect(performance.now() - started).toBeLessThan(5_000);
 		expect(allocations()).toBe(0);
+	});
+});
+
+describe("server-side readiness wait", () => {
+	test("replaces the readiness poll: readiness is observed when the vendor reports it", async () => {
+		const { driver, calls } = bind(
+			{ readyAfterGets: 1_000, settles: true },
+			// A poll interval no test could wait out: only the server-side wait can observe readiness.
+			{ timing: { pollMs: 60_000, readyTimeoutMs: 120_000, deleteTimeoutMs: 1_000 } },
+		);
+		const session = await driver.create(request);
+		expect(calls).toEqual(["create", "settle"]);
+		expect((await session.exec("sh -c 'echo out'")).stdout).toBe("out\n");
+		await session.destroy();
+	});
+
+	test("a wait that settles on a failure is classified and torn down", async () => {
+		const { driver, calls, allocations } = bind({
+			readyAfterGets: 1,
+			settles: true,
+			faults: { failsDuringReadiness: true },
+		});
+		const failure = await driver.create(request).catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "create-failed" });
+		expect(describeDriverFailure(failure)).toContain("entered failed before readiness");
+		expect(calls).toContain("remove");
+		expect(allocations()).toBe(0);
+	});
+
+	test("a wait that ends early is asked again", async () => {
+		const world = memoryVendor({ readyAfterGets: 3 });
+		let waits = 0;
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				// The server-side hold expires twice before the sandbox runs.
+				settle: (id, op) => {
+					waits += 1;
+					return world.vendor.control.get(id, op);
+				},
+			},
+		};
+		await (
+			await moduleOver(() => vendor)
+				.driver(context)
+				.create(request)
+		).destroy();
+		expect(waits).toBe(3);
+	});
+
+	test("the kit's readiness deadline bounds a wait the vendor never ends", async () => {
+		const world = memoryVendor({ readyAfterGets: 1_000 });
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: { ...world.vendor.control, settle: () => new Promise(() => {}) },
+		};
+		const driver = moduleOver(() => vendor, {
+			timing: { pollMs: 0, readyTimeoutMs: 30, deleteTimeoutMs: 1_000 },
+		}).driver(context);
+		const failure = await driver.create(request).catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "create-failed" });
+		expect(describeDriverFailure(failure)).toContain("not ready within 30ms");
+		expect(world.allocations()).toBe(0);
 	});
 });
 
@@ -481,6 +546,54 @@ describe("ambiguous-create recovery", () => {
 		});
 	});
 
+	test("the recovery locator prints the marker as the vendor spells it, and recovers by it", async () => {
+		const spelling = markerSpelling("bench:");
+		const world = memoryVendor({ faults: { createAmbiguous: true } });
+		// The vendor stores the spelled value; the adapter reads its records back through the spelling.
+		const spelled = (records: readonly VendorRecord<MemoryRow>[]) =>
+			records.map(({ marker, ...record }) => {
+				const read = marker === undefined ? undefined : spelling.fromVendor(marker);
+				return { ...record, ...(read && { marker: read }) };
+			});
+		const vendor = (listing: boolean): Vendor<MemoryRow, MemoryRow> => ({
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				create: (attempt, op) =>
+					world.vendor.control.create(
+						{ ...attempt, marker: spelling.toVendor(attempt.marker) },
+						op,
+					),
+				page: async (cursor, op) => {
+					if (!listing) throw new Error("listing unavailable");
+					const page = await world.vendor.control.page(cursor, op);
+					return { ...page, records: spelled(page.records) };
+				},
+			},
+		});
+		const failing = moduleOver(() => vendor(false), { markerSpelling: spelling });
+		const failure = await failing
+			.driver(context)
+			.create(request)
+			.catch((caught) => caught);
+		const { locator } = failure;
+		expect(locator).toEqual({
+			kind: "marker",
+			key: "novita-marker",
+			value: expect.stringMatching(/^bench:[0-9a-f-]{36}$/),
+		});
+		expect(failure.message).toContain(`by marker novita-marker=${locator.value} `);
+		expect(world.live().map((row) => row.marker)).toEqual([locator.value]);
+		// The held cleanup reads the spelled locator back to the kit marker and finds the record.
+		const recovering = moduleOver(() => vendor(true), { markerSpelling: spelling }).specFor(
+			context,
+		);
+		expect(await recovering.createRecovery?.cleanup(recovering.compute, locator, {})).toEqual({
+			status: "destroyed",
+		});
+		expect(world.live()).toHaveLength(0);
+	});
+
 	test("instanceOfAny classifies a typed vendor error anywhere in the cause chain", () => {
 		class QuotaError extends Error {}
 		const refusedByQuota = instanceOfAny(QuotaError);
@@ -815,6 +928,10 @@ describe("port contract", () => {
 	}));
 	vendorContract("memoryVendor (shared, with a marker lookup)", () => ({
 		vendor: memoryVendor({ lookup: true, readyAfterGets: 2 }).vendor,
+		account: "shared",
+	}));
+	vendorContract("memoryVendor (shared, with a server-side readiness wait)", () => ({
+		vendor: memoryVendor({ settles: true, readyAfterGets: 2 }).vendor,
 		account: "shared",
 	}));
 

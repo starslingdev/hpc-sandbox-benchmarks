@@ -405,6 +405,34 @@ describe("Microsandbox Cloud end to end through its module", () => {
 		expect(account.rows.size).toBe(0);
 	});
 
+	test("an unrecoverable rejected create names the sandbox it asked for", async () => {
+		const account = microsandboxAccount({ ambiguousFirstCreate: true });
+		const sdk = {
+			...account.sdk,
+			Sandbox: {
+				...account.sdk.Sandbox,
+				get: async () => {
+					throw new IoError("control plane unavailable");
+				},
+			},
+		} as unknown as MicrosandboxSdk;
+		const failure = await driverFromComputeSpec(
+			"microsandbox-cloud",
+			microsandboxCloud.specFor(context, {
+				vendor: microsandboxVendor(sdk, context),
+				timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+			}),
+			context.resolvedArtifact,
+			[KEY],
+		)
+			.create(request)
+			.catch((caught) => caught);
+		const [name = ""] = account.rows.keys();
+		expect(name).toMatch(/^bench-cloud-[0-9a-f-]{36}$/);
+		expect(failure.locator).toEqual({ kind: "marker", key: "name", value: name });
+		expect(failure.message).toContain(`by marker name=${name} `);
+	});
+
 	test("a listing that repeats its continuation cursor fails closed", async () => {
 		const account = microsandboxAccount({ pageSize: 1, repeatCursor: true });
 		account.allocate("one");

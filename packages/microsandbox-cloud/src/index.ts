@@ -4,7 +4,7 @@
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
 import { Sandbox, withDefaultBackend } from "microsandbox";
 import { MICROSANDBOX_CLOUD_PROVENANCE } from "./provenance.ts";
-import { MICROSANDBOX_SANDBOX_ID, microsandboxVendor } from "./vendor.ts";
+import { MICROSANDBOX_NAME, MICROSANDBOX_SANDBOX_ID, microsandboxVendor } from "./vendor.ts";
 
 export { MICROSANDBOX_CLOUD_PROVENANCE, MICROSANDBOX_SANDBOX_ID };
 
@@ -30,5 +30,6 @@ export default defineVendorDriver("microsandbox-cloud", {
 	createBudget: { owner: "harness", timeoutMs: MICROSANDBOX_CREATE_TIMEOUT_MS },
 	// The attempt's UUID travels in the sandbox name.
 	markerKey: "name",
+	markerSpelling: MICROSANDBOX_NAME,
 	vendor: (context) => microsandboxVendor({ Sandbox, withDefaultBackend }, context),
 });

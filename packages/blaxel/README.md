@@ -9,7 +9,8 @@ The driver is written against the vendor port (ADR-0023):
   memory-coupled shape (2048 MB per vCPU) with a sized ephemeral volume at
   `/mnt/benchmark-volume`, the sandbox name as identity and ownership marker (`benchmark-<uuid>`,
   also written as the `sandbox-benchmarks-attempt` label beside the `sandbox-benchmarks` owner
-  label), statuses as phases (only DEPLOYED is usable; FAILED and deactivated records are owned and
+  label; a sandbox is owned only by the owner label or that name shape, never by an attempt label
+  alone), statuses as phases (only DEPLOYED is usable; FAILED and deactivated records are owned and
   deleted; only TERMINATED or the control plane's 404 is removal), structured refusal codes (400,
   401, 403, 422, 429; only 429 is retryable), native process execution that withholds an exit the
   sandbox never reported, and the post-readiness `prepare`: the `benchmark-keepalive` process that

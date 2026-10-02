@@ -7,6 +7,7 @@ import { NAMESPACE_PROVENANCE } from "./provenance.ts";
 import {
 	NAMESPACE_CONTROL_TIMEOUT_MS,
 	NAMESPACE_INSTANCE_ID,
+	NAMESPACE_PURPOSE,
 	namespaceClient,
 	namespaceVendor,
 } from "./vendor.ts";
@@ -42,5 +43,11 @@ export default defineVendorDriver("namespace", {
 	},
 	// The attempt's UUID travels in the instance's documented purpose.
 	markerKey: "documented_purpose",
+	markerSpelling: NAMESPACE_PURPOSE,
+	// Listings include completed runs (see the adapter's `page`), and the server-side filter that
+	// would leave them out also hides ERROR instances that still hold resources. Their history
+	// accumulates, so the whole account is drained under this cap (100,000 records), not the kit's
+	// default 100 pages.
+	pageCap: 1_000,
 	vendor: (context) => namespaceVendor(context, namespaceClient(context.env.NSC_TOKEN_FILE)),
 });

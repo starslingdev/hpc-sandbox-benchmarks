@@ -7,17 +7,21 @@ import { RUNLOOP_PROVENANCE } from "./provenance.ts";
 import {
 	RUNLOOP_ATTEMPT_METADATA_KEY,
 	RUNLOOP_CONTROL_TIMEOUT_MS,
+	RUNLOOP_CREATE_TIMEOUT_MS,
 	RUNLOOP_SANDBOX_ID,
 	runloopVendor,
 } from "./vendor.ts";
 
-export { RUNLOOP_PROVENANCE, RUNLOOP_SANDBOX_ID };
+export { RUNLOOP_CREATE_TIMEOUT_MS, RUNLOOP_PROVENANCE, RUNLOOP_SANDBOX_ID };
 
 /**
- * A cold Blueprint boot happens inside create: this bounds readiness and is the harness-owned
- * create budget, so the two cannot disagree about how long one attempt may take.
+ * Pages one listing may span. Runloop never forgets a Devbox, so its `shutdown` and `failure`
+ * tombstones accumulate in every listing; its only server-side filter is a single status, and a
+ * union of per-status listings could miss a Devbox that changes status between them, hiding an
+ * allocation from inventory. The whole account is drained instead, under this cap (100,000
+ * records) rather than the kit's default 100 pages.
  */
-export const RUNLOOP_CREATE_TIMEOUT_MS = 20 * 60_000;
+const RUNLOOP_PAGE_CAP = 1_000;
 
 export default defineVendorDriver("runloop", {
 	provenance: RUNLOOP_PROVENANCE,
@@ -30,12 +34,15 @@ export default defineVendorDriver("runloop", {
 	// Long steps leave the single control-plane request for background exec plus done-file polling.
 	execution: { syncCapMs: 60_000, durable: "native-launch" },
 	createBudget: { owner: "harness", timeoutMs: RUNLOOP_CREATE_TIMEOUT_MS },
+	// Readiness is Runloop's own long poll (`settle`); the interval spaces only a retry after a
+	// long poll that ended early, and teardown's retrieves.
 	timing: {
 		pollMs: 1_000,
 		readyTimeoutMs: RUNLOOP_CREATE_TIMEOUT_MS,
 		controlTimeoutMs: RUNLOOP_CONTROL_TIMEOUT_MS,
 	},
 	markerKey: RUNLOOP_ATTEMPT_METADATA_KEY,
+	pageCap: RUNLOOP_PAGE_CAP,
 	// Constructing the SDK performs no I/O; one client per driver keeps the credential in one place.
 	vendor: (context) =>
 		runloopVendor(

@@ -109,20 +109,24 @@ specifiers; adding a named subpath means editing its allowlist and saying why in
 
 ADR-0023 §1: a provider package writes an adapter against two ports and `defineVendorDriver`
 derives the DriverModule. The **control plane** (`create`, `get`, `remove`, `page`, optionally
-`find`, `refused`, `transient`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`, `prepare`)
+`settle`, `find`, `refused`, `transient`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`, `prepare`)
 speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once for every provider:
 
-- readiness — skipped when `create` returns a `ready` record, otherwise polled through `get`;
+- readiness — skipped when `create` returns a `ready` record, otherwise polled through `get`, or
+  through the vendor's server-side wait (`settle`, a long poll) where it has one, still under the
+  kit's deadline, phase classification and teardown;
 - cleanup confirmation — request removal once, then observe removal; an `accepted` delete is not
   removal. A session the kit holds is sent its delete first; destroy-by-id and recovery observe
   first, and a record already observed gone is never sent a delete;
 - destroy-by-id, probes (`observe`/`describe` from `get`, a one-page `list`), and inventory (the
   owned/foreign partition by the kit-minted `benchmark-` ownership marker, draining pages and
-  failing closed on a repeated or omitted cursor);
+  failing closed on a repeated, omitted or runaway cursor: 100 pages unless the module declares a
+  larger `pageCap`, as Runloop and Namespace do for listings that keep terminal history);
 - ambiguous-create recovery — by marker lookup, rejecting unrelated records on a shared account, or
   by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces.
   `refused` failures skip recovery; `transient` failures are reconciled and then marked retryable.
-  The locator names the marker under the vendor's own `markerKey`;
+  The locator names the marker under the vendor's own `markerKey`, spelled as the vendor shows it
+  (`markerSpelling`, the same spelling the adapter creates and parses with);
 - the request proof: the artifact guard and the module's `unsupported` cross-axis refusal before
   any vendor call; after readiness, `admit`, the vendor's `prepare` (a keepalive, or the
   allocation's reported resources, refusing a shape it does not honour), and the `df` disk proof for

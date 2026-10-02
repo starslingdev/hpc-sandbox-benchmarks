@@ -12,7 +12,7 @@ import { Buffer } from "node:buffer";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
 import type { Sandbox } from "@vercel/sandbox";
 import { APIError } from "@vercel/sandbox";
 import { type } from "arktype";
@@ -25,6 +25,8 @@ export type VercelCredentials = Required<
 
 /** Every benchmark create is named with this prefix plus its attempt's UUID; ownership keys on it. */
 export const VERCEL_NAME_PREFIX = "sandbox-benchmarks-";
+/** The sandbox name spells the kit marker's attempt UUID under the Vercel prefix. */
+export const VERCEL_NAME = markerSpelling(VERCEL_NAME_PREFIX);
 /** Second ownership marker, recorded as a tag on the sandbox record (list rows do not carry tags). */
 export const VERCEL_OWNER_TAG = "sandbox-benchmarks";
 export const VERCEL_OWNER_VALUE = "vercel";
@@ -91,9 +93,6 @@ function apiStatus(error: unknown): number | undefined {
 	return status;
 }
 
-/** The sandbox name carries the kit marker's attempt UUID under the Vercel prefix. */
-const nameOf = (marker: string) => `${VERCEL_NAME_PREFIX}${marker.slice(MARKER_PREFIX.length)}`;
-
 /**
  * A record that holds (or is about to hold) a VM, or a stopped record that can still be resumed,
  * owns resources; only `running` is usable. A `failed` or `aborted` record is a dead entry nobody
@@ -108,11 +107,11 @@ function phaseOf(status: string, owned: boolean): Phase {
 }
 
 function record(row: VercelRow): VendorRecord<VercelRow> {
-	const owned = VERCEL_SANDBOX_ID.allows(row.name);
+	const marker = VERCEL_SANDBOX_ID.allows(row.name) ? VERCEL_NAME.fromVendor(row.name) : undefined;
 	return {
 		id: row.name,
-		phase: phaseOf(row.status, owned),
-		...(owned && { marker: `${MARKER_PREFIX}${row.name.slice(VERCEL_NAME_PREFIX.length)}` }),
+		phase: phaseOf(row.status, marker !== undefined),
+		...(marker && { marker }),
 		raw: row,
 	};
 }
@@ -159,7 +158,7 @@ export function vercelVendor(
 				fromSandbox(
 					await sdk.create({
 						...credentials,
-						name: nameOf(marker),
+						name: VERCEL_NAME.toVendor(marker),
 						image: resolvedArtifact.ref,
 						resources: { vcpus: request.spec.vcpus },
 						persistent: false,
@@ -198,7 +197,7 @@ export function vercelVendor(
 			},
 			// The create name is the lookup: an accepted create whose response was lost is findable.
 			find: async (marker, _cursor, op) => {
-				const found = await get(nameOf(marker), op);
+				const found = await get(VERCEL_NAME.toVendor(marker), op);
 				return { records: found ? [found] : [] };
 			},
 			// Typed rejections before allocation; only the API's rate limit is worth waiting out.

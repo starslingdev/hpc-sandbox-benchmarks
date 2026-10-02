@@ -8,7 +8,8 @@ The driver is written against the vendor port (ADR-0023):
 - `src/vendor.ts` is the adapter. It receives the SDK's `Sandbox` statics and translates the v2
   name-keyed API: the OIDC token projected into explicit team/project credentials, a non-persistent
   tagged create named `sandbox-benchmarks-<uuid>` (the name is the identity and carries the
-  attempt's ownership marker), non-resuming lookups, statuses as phases (only `running` is usable;
+  attempt's ownership marker; it is the module's `markerSpelling`, which a recovery diagnostic
+  prints), non-resuming lookups, statuses as phases (only `running` is usable;
   a `failed` or `aborted` record is the benchmark's to delete but no allocation of anyone else's),
   `delete` as permanent removal, typed refusal statuses (400, 401, 403, 404, 422, 429; only 429 is
   retryable), and current-session execution with native detached launch. It declares no files.

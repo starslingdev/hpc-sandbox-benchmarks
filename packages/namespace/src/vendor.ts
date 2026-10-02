@@ -18,12 +18,14 @@ import {
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 export const NAMESPACE_INSTANCE_ID = type(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
 /** Every benchmark create documents this purpose plus its attempt's UUID; ownership keys on it. */
 export const NAMESPACE_PURPOSE_PREFIX = "sandbox-benchmarks:namespace:";
+/** The documented purpose spells the kit marker's attempt UUID under the Namespace prefix. */
+export const NAMESPACE_PURPOSE = markerSpelling(NAMESPACE_PURPOSE_PREFIX);
 export const NAMESPACE_CONTAINER = "main-container";
 export const NAMESPACE_EXIT_SENTINEL = "__sandbox_benchmarks_exit__:";
 export const NAMESPACE_CONTROL_TIMEOUT_MS = 20_000;
@@ -96,14 +98,6 @@ function phaseOf(status: Status): Phase {
 	}
 }
 
-/** The documented purpose carries the kit marker's attempt UUID under the Namespace prefix. */
-const purposeOf = (marker: string) =>
-	`${NAMESPACE_PURPOSE_PREFIX}${marker.slice(MARKER_PREFIX.length)}`;
-const markerOf = (purpose: string) =>
-	purpose.startsWith(NAMESPACE_PURPOSE_PREFIX)
-		? `${MARKER_PREFIX}${purpose.slice(NAMESPACE_PURPOSE_PREFIX.length)}`
-		: undefined;
-
 const codeIn = (codes: readonly Code[]) => (error: unknown) =>
 	matchesAnyCause(error, (cause) => cause instanceof ConnectError && codes.includes(cause.code));
 const notFound = codeIn([Code.NotFound]);
@@ -133,7 +127,7 @@ export function namespaceVendor(
 ): Vendor<NamespaceRow, NamespaceNative> {
 	const control = (signal: AbortSignal) => ({ timeoutMs: NAMESPACE_CONTROL_TIMEOUT_MS, signal });
 	const record = (row: NamespaceRow): VendorRecord<NamespaceRow> => {
-		const marker = markerOf(row.instance.documentedPurpose);
+		const marker = NAMESPACE_PURPOSE.fromVendor(row.instance.documentedPurpose);
 		return {
 			id: row.instance.instanceId,
 			phase: phaseOf(row.instance.status),
@@ -164,7 +158,7 @@ export function namespaceVendor(
 								environment: request.env ?? {},
 							},
 						],
-						documentedPurpose: purposeOf(marker),
+						documentedPurpose: NAMESPACE_PURPOSE.toVendor(marker),
 						deadline: timestampFromDate(new Date(Date.now() + NAMESPACE_INSTANCE_LIFETIME_MS)),
 					}),
 					control(signal),
@@ -201,8 +195,9 @@ export function namespaceVendor(
 					throw error;
 				}
 			},
-			// The SDK's byte cursor travels as base64; completed runs are listed so no retained
-			// allocation is hidden.
+			// The SDK's byte cursor travels as base64. Completed runs are listed so no retained
+			// allocation is hidden: without them the server returns only PENDING, CREATING and
+			// RUNNING, which would hide an ERROR instance that still holds resources.
 			page: async (cursor, { signal }) => {
 				const page = await client.compute.listInstances(
 					{

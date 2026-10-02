@@ -7,6 +7,7 @@ import { VERCEL_PROVENANCE } from "./provenance.ts";
 import {
 	VERCEL_CONTROL_TIMEOUT_MS,
 	VERCEL_MEMORY_GB_PER_VCPU,
+	VERCEL_NAME,
 	VERCEL_SANDBOX_ID,
 	vercelVendor,
 } from "./vendor.ts";
@@ -29,5 +30,6 @@ export default defineVendorDriver("vercel", {
 	timing: { controlTimeoutMs: VERCEL_CONTROL_TIMEOUT_MS },
 	// The attempt's UUID travels in the sandbox name.
 	markerKey: "name",
+	markerSpelling: VERCEL_NAME,
 	vendor: (context) => vercelVendor(Sandbox, context),
 });

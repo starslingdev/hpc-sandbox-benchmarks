@@ -187,17 +187,27 @@ Metrics come from three sources:
 - **Harness-measured** — lifecycle (spawn/exec/snapshot/teardown) and control-plane (info/list)
   timings PTS can't see, measured directly around the provider SDK calls.
   For drivers written against the vendor port (ADR-0023: Brezel, Novita, Blaxel, Namespace,
-  Vercel, Runloop and Microsandbox Cloud), teardown starts with the delete request and ends when
-  removal is observed or proven. Novita's teardown is one `kill`, Runloop's one forced shutdown whose
-  response is the `shutdown` tombstone, Microsandbox Cloud's its stop-then-remove sequence, and
-  Namespace's its destroy followed by reads until DESTROYED (as before). Brezel's begins with its
+  Vercel, Runloop and Microsandbox Cloud), spawn ends when readiness is observed: by the create
+  response itself, by the vendor's server-side wait where it has one (Runloop's `awaitRunning` long
+  poll, as in earlier runs, so no poll interval inflates it), or otherwise by the first status read
+  that sees it ready (Namespace reads every 2 s, as before). Teardown starts with the delete request and ends when
+  removal is observed or proven. Novita's teardown is one `kill`; Runloop's is one forced shutdown
+  when its response is already the `shutdown` tombstone, and otherwise the shutdown counts as
+  acknowledged only and teardown ends when a retrieve observes the tombstone. The tombstone is the
+  expected response: the Devbox status enum has no intermediate shutting-down state, and the SDK's
+  `shutdown` is a single POST returning the server's view with no wait helper after it (unlike
+  `awaitRunning`), but neither its types nor its source guarantee it. Microsandbox Cloud's teardown
+  is its stop-then-remove sequence, and Namespace's its destroy followed by reads until DESTROYED
+  (as before). Brezel's begins with its
   DELETE (earlier Brezel runs read the record first); Blaxel's and Vercel's deletes are now followed
   by reads until the record is gone (earlier runs timed the delete alone, and Vercel's was preceded
   by a lookup, as it still is). The list timing is one page of the whole account: Novita's is
   filtered to live (`running`, `paused`) sandboxes (earlier runs timed one unfiltered page, whose
   server-side default the SDK does not document); Namespace's now includes completed runs, Blaxel's
-  now excludes terminated records, and Vercel's is no longer filtered to benchmark names nor
-  drained across pages.
+  now excludes terminated records, Vercel's is no longer filtered to benchmark names nor
+  drained across pages, and Microsandbox Cloud's is one explicit 100-record page
+  (`listWith(l => l.limit(100))`; earlier runs timed `Sandbox.list()`, the first page at the
+  server's default size, which the SDK does not document).
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).
 
 ## Economics ($/run)

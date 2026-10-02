@@ -11,7 +11,7 @@ import { posix as posixPath } from "node:path";
 import type { DriverContext } from "@sandbox-benchmarks/driver";
 import { shellQuote } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 import type {
 	DefaultBackend,
@@ -36,6 +36,8 @@ export interface MicrosandboxSdk {
 
 /** Every benchmark sandbox is named this way; the name IS the vendor id and the ownership marker. */
 export const MICROSANDBOX_NAME_PREFIX = "bench-cloud-";
+/** The sandbox name spells the kit marker's attempt UUID under the benchmark prefix. */
+export const MICROSANDBOX_NAME = markerSpelling(MICROSANDBOX_NAME_PREFIX);
 export const MICROSANDBOX_SANDBOX_ID = type(
 	/^bench-cloud-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
 );
@@ -64,18 +66,11 @@ export interface MicrosandboxRow {
  */
 const phaseOf = (status: string): Phase => (status === "running" ? "ready" : "failed");
 
-/** The name carries the kit marker's attempt UUID under the benchmark prefix. */
-const nameOf = (marker: string) =>
-	`${MICROSANDBOX_NAME_PREFIX}${marker.slice(MARKER_PREFIX.length)}`;
-
 function record(row: MicrosandboxRow): VendorRecord<MicrosandboxRow> {
-	const owned = MICROSANDBOX_SANDBOX_ID.allows(row.name);
-	return {
-		id: row.name,
-		phase: phaseOf(row.status),
-		...(owned && { marker: `${MARKER_PREFIX}${row.name.slice(MICROSANDBOX_NAME_PREFIX.length)}` }),
-		raw: row,
-	};
+	const marker = MICROSANDBOX_SANDBOX_ID.allows(row.name)
+		? MICROSANDBOX_NAME.fromVendor(row.name)
+		: undefined;
+	return { id: row.name, phase: phaseOf(row.status), ...(marker && { marker }), raw: row };
 }
 
 /**
@@ -223,7 +218,7 @@ export function microsandboxVendor(
 			// `create` returns only once the sandbox is RUNNING (the image pull happens inside it).
 			create: ({ request, marker }, { signal }) => {
 				signal.throwIfAborted();
-				const name = nameOf(marker);
+				const name = MICROSANDBOX_NAME.toVendor(marker);
 				return inBackend(async () => {
 					let builder = Sandbox.builder(name).image(resolvedArtifact.ref);
 					if (request.spec.diskGb !== undefined)
@@ -279,7 +274,7 @@ export function microsandboxVendor(
 				}),
 			// The create name is the lookup: an accepted create whose response was lost is findable.
 			find: async (marker, _cursor, op) => {
-				const found = await get(nameOf(marker), op);
+				const found = await get(MICROSANDBOX_NAME.toVendor(marker), op);
 				return { records: found ? [found] : [] };
 			},
 			// Only a configuration the SDK refused before contacting the control plane proves nothing

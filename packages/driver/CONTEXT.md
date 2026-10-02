@@ -35,7 +35,8 @@ removal (see cleanup confirmation in the benchmark execution context).
 **Ownership marker**:
 The per-attempt value a create carries (label, metadata, name, or idempotency key) that attributes
 an allocation to the benchmark. Inventory and ambiguous-create recovery rest on it; it is never
-inferred from timing or resource shape.
+inferred from timing or resource shape. A vendor may spell it its own way (the attempt's UUID under
+a vendor prefix); recovery diagnostics print that spelling, the value the vendor's console shows.
 
 **Dedicated account**:
 A credential whose vendor account holds only benchmark allocations. Every live record is owned,

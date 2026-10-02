@@ -292,6 +292,31 @@ describe("Vercel end to end through its module", () => {
 		expect(project.rows.size).toBe(0);
 	});
 
+	test("an unrecoverable ambiguous create names the sandbox it asked for", async () => {
+		const project = vercelProject({ ambiguousFirstCreate: true });
+		const sdk = {
+			...project.sdk,
+			get: async () => {
+				throw apiError(503);
+			},
+		} as unknown as VercelSdk;
+		const failure = await driverFromComputeSpec(
+			"vercel",
+			vercel.specFor(context, {
+				vendor: vercelVendor(sdk, context),
+				timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+			}),
+			context.resolvedArtifact,
+			[OIDC_TOKEN],
+		)
+			.create(request)
+			.catch((caught) => caught);
+		const [name] = project.rows.keys();
+		expect(VERCEL_SANDBOX_ID.allows(name)).toBe(true);
+		expect(failure.locator).toEqual({ kind: "marker", key: "name", value: name });
+		expect(failure.message).toContain(`by marker name=${name} `);
+	});
+
 	test("an ambiguous create is found by its name and deleted", async () => {
 		const project = vercelProject({ ambiguousFirstCreate: true });
 		const failure = await driverOver(project)

@@ -361,6 +361,34 @@ describe("Namespace end to end through its module", () => {
 		expect(world.instances.get(other)?.metadata.status).toBe(Status.RUNNING);
 	});
 
+	test("an unrecoverable ambiguous create names the documented purpose it sent", async () => {
+		const world = namespaceWorld({
+			ambiguousFirstCreate: true,
+			compute: {
+				listInstances: () => {
+					throw new ConnectError("listing unavailable", Code.Unavailable);
+				},
+			},
+		});
+		const failure = await driverOver(world)
+			.create(request)
+			.catch((caught) => caught);
+		const purpose = world.instances.get("inst-1")?.metadata.documentedPurpose ?? "";
+		expect(purpose).toMatch(new RegExp(`^${NAMESPACE_PURPOSE_PREFIX}[0-9a-f-]{36}$`));
+		expect(failure.locator).toEqual({ kind: "marker", key: "documented_purpose", value: purpose });
+		expect(failure.message).toContain(`by marker documented_purpose=${purpose} `);
+	});
+
+	test("inventory drains completed runs past the kit's default page cap", async () => {
+		const world = namespaceWorld({ pageSize: 1 });
+		for (let index = 0; index < 150; index++) world.allocate("", Status.DESTROYED);
+		const live = world.allocate(`${NAMESPACE_PURPOSE_PREFIX}leftover`, Status.ERROR);
+		expect(await driverOver(world).inventory?.list()).toEqual({
+			owned: [{ provider: "namespace", id: live }],
+			foreignCount: 0,
+		});
+	});
+
 	test("a listing that repeats its byte cursor fails closed", async () => {
 		const world = namespaceWorld({
 			compute: { listInstances: () => ({ paginationCursor: new Uint8Array([1]) }) },

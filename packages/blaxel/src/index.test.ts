@@ -217,7 +217,7 @@ describe("Blaxel translation", () => {
 		});
 	});
 
-	test("reads statuses as phases and owns by the attempt label, the name shape, or the owner label", async () => {
+	test("reads statuses as phases and owns only by the name shape or the owner label", async () => {
 		const workspace = blaxelWorkspace();
 		const { control } = blaxelVendor(workspace.sdk, context);
 		const read = (name: string, labels: Record<string, string>, status = "DEPLOYED") =>
@@ -231,6 +231,14 @@ describe("Blaxel translation", () => {
 		const labelled = await read("custom-name", { [BLAXEL_OWNER_LABEL]: "blaxel" });
 		expect(labelled?.marker?.startsWith(MARKER_PREFIX)).toBe(true);
 		expect((await read("someones-dev-box", {}))?.marker).toBeUndefined();
+		// An attempt label alone, on neither the owner label nor the benchmark name, attributes nothing.
+		const attemptOnly = await read("their-copy", { [BLAXEL_ATTEMPT_LABEL]: NAMED });
+		expect(attemptOnly?.marker).toBeUndefined();
+		const labelledAttempt = await read("labelled-attempt", {
+			[BLAXEL_OWNER_LABEL]: "blaxel",
+			[BLAXEL_ATTEMPT_LABEL]: NAMED,
+		});
+		expect(labelledAttempt?.marker).toBe(NAMED);
 		expect(await control.get("missing", op())).toBeNull();
 		expect(await control.remove("missing", op())).toBe("removed");
 	});
@@ -294,20 +302,22 @@ describe("Blaxel end to end through its module", () => {
 
 		const labelled = workspace.allocate("custom-name", { [BLAXEL_OWNER_LABEL]: "blaxel" });
 		const named = workspace.allocate(NAMED, {}, "FAILED");
+		// Another tenant's sandbox that copied the attempt label is foreign, never deleted.
+		workspace.allocate("their-copy", { [BLAXEL_ATTEMPT_LABEL]: NAMED });
 		expect(await driver.inventory?.list()).toEqual({
 			owned: [
 				session.sandboxRef,
 				{ provider: "blaxel", id: labelled },
 				{ provider: "blaxel", id: named },
 			],
-			foreignCount: 1,
+			foreignCount: 2,
 		});
 		await driver.destroyById?.({ provider: "blaxel", id: labelled });
 		await driver.destroyById?.({ provider: "blaxel", id: named });
 		await session.destroy();
 		expect(workspace.deletes.at(-1)).toBe(session.sandboxRef.id);
 		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
-		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
+		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 2 });
 	});
 
 	test("a short volume or a memory off the request is refused; a dead keepalive fails; each is deleted", async () => {

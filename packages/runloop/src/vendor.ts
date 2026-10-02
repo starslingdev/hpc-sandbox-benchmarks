@@ -33,6 +33,11 @@ export const RUNLOOP_KEEP_ALIVE_SECONDS = 3 * 60 * 60;
 /** One control-plane round-trip; the kit bounds each call by the same ceiling. */
 export const RUNLOOP_CONTROL_TIMEOUT_MS = 30_000;
 /**
+ * A cold Blueprint boot happens inside create: this bounds the readiness long poll and is the
+ * harness-owned create budget, so the two cannot disagree about how long one attempt may take.
+ */
+export const RUNLOOP_CREATE_TIMEOUT_MS = 20 * 60_000;
+/**
  * Synchronous commands complete through Runloop's execute-and-await long poll. The harness routes
  * every step budgeted at or past the sync cap to the durable path, so this ceiling only backstops
  * a command the harness already gave up on; the harness's own wait-cap binds first.
@@ -85,9 +90,17 @@ export function runloopVendor(
 	client: RunloopClient,
 ): Vendor<DevboxView, DevboxView> {
 	const { devboxes } = client.api;
+	const get = async (id: string, { signal }: { signal: AbortSignal }) => {
+		try {
+			return record(await devboxes.retrieve(id, requestOptions(signal)));
+		} catch (error) {
+			if (notFound(error)) return null;
+			throw error;
+		}
+	};
 	return {
 		control: {
-			// The create acknowledgement is `provisioning`: readiness is observed by retrieve.
+			// The create acknowledgement is `provisioning`: readiness is observed by `settle`.
 			create: async ({ request, marker }, { signal }) =>
 				record(
 					await devboxes.create(
@@ -111,12 +124,25 @@ export function runloopVendor(
 						requestOptions(signal),
 					),
 				),
-			get: async (id, { signal }) => {
+			get,
+			/**
+			 * Runloop's server-side long poll (`wait_for_status`) answers as soon as the Devbox leaves
+			 * its boot states, so readiness is observed when Runloop reports it rather than at the next
+			 * retrieve. The SDK rejects a Devbox that settled anywhere but `running` in prose only, so
+			 * any rejection is followed by one retrieve, whose record is the verdict the kit classifies
+			 * (a transport fault reads `pending` there, and the kit waits again).
+			 */
+			settle: async (id, { signal }) => {
 				try {
-					return record(await devboxes.retrieve(id, requestOptions(signal)));
-				} catch (error) {
-					if (notFound(error)) return null;
-					throw error;
+					return record(
+						await devboxes.awaitRunning(id, {
+							...requestOptions(signal),
+							longPoll: { timeoutMs: RUNLOOP_CREATE_TIMEOUT_MS },
+						}),
+					);
+				} catch {
+					signal.throwIfAborted();
+					return get(id, { signal });
 				}
 			},
 			// Forced shutdown is deterministic even while a snapshot finalizes (Runloop's 409 otherwise).

@@ -57,6 +57,7 @@ interface designs across the three candidates, compared on depth, locality and s
 |---|---|---|
 | Control | `create` | |
 | | `get` | returns `null` only on the vendor's own not-found |
+| | `settle` | optional; the vendor's server-side readiness wait (a long poll) with `get`'s contract, used in place of the kit's readiness poll; the kit still owns its deadline, the classification of the phase it settles on, and teardown |
 | | `remove` | returns `"removed"` when the vendor proved removal, `"accepted"` when it only acknowledged |
 | | `page` | one page of the whole account; the kit drains it and fails closed on a bad cursor |
 | | `find` | optional |
@@ -68,7 +69,10 @@ interface designs across the three candidates, compared on depth, locality and s
 | | `prepare` | optional; post-readiness preparation and the allocation's reported-resource proof |
 
 Both planes speak in provider-neutral `VendorRecord`s carrying a `Phase`. A provider package
-supplies an adapter, which translates only. `defineVendorDriver` derives everything else:
+supplies an adapter, which translates only. Where the vendor spells the ownership marker its own
+way (the attempt's UUID under a vendor prefix in a sandbox name or a documented purpose), the
+module declares one `markerSpelling`; the adapter builds its create request and parses records
+with it, and the recovery locator prints it, so a cleanup diagnostic names what the vendor shows. `defineVendorDriver` derives everything else:
 - readiness
 - cleanup confirmation
 - destroy-by-id
