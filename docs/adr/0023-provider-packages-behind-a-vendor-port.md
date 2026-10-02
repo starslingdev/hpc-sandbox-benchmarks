@@ -66,7 +66,7 @@ interface designs across the three candidates, compared on depth, locality and s
 | | `admit` | optional |
 | Data | `attach`, `exec` | `attach` runs straight after `create`, so a vendor whose create takes no marker applies it there (a rename); a failure is torn down by id |
 | | `launch`, `files` | optional |
-| | `prepare` | optional; post-readiness preparation and the allocation's reported-resource proof |
+| | `prepare` | optional; post-readiness preparation and the allocation's reported-resource proof, including the boot artifact the vendor reports and, under `diskProof: "reported"`, the disk in place of the kit's `df` |
 
 Both planes speak in provider-neutral `VendorRecord`s carrying a `Phase`. A provider package
 supplies an adapter, which translates only. Where the vendor spells the ownership marker its own

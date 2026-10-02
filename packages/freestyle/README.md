@@ -1,6 +1,9 @@
 # @sandbox-benchmarks/freestyle
 
 Native [Freestyle](https://www.freestyle.sh/docs/vms) VM driver; the SDK is pinned in the root catalog.
+`src/vendor.ts` is its adapter on the driver kit's port (ADR-0023) over the SDK and the bounded
+transport in `src/transport.ts`; `src/index.ts` binds it once in `defineVendorDriver`. Readiness,
+cleanup confirmation, recovery, inventory and probes are the kit's.
 Set `FREESTYLE_API_KEY` and pin `FREESTYLE_SNAPSHOT_ID` to a private immutable `sh-…` ID.
 Freestyle is included in the default CPU benchmark selection; `bench-smoke` or the CLI can select
 `freestyle` explicitly for a targeted run. The driver verifies the booted snapshot ID.
@@ -19,14 +22,17 @@ replaced stock runtime trees so Mastra has the required free disk space on the s
 its own Node options explicitly.
 
 The standard target is **4 vCPU / 8 GiB RAM / 40 GiB disk**. Resizing is grow-only from the snapshot's
-4 vCPU / 8 GiB / 32 GiB minimum; create verifies the requested allocation and guest readiness.
+4 vCPU / 8 GiB / 32 GiB minimum; create verifies the requested allocation, including its disk, from
+the VM record (`diskProof: "reported"`, no guest `df`), and guest readiness.
 
 - VMs have a six-hour TTL independent of the create deadline, with idle pausing disabled.
 - Exec and native files use `ubuntu` (passwordless sudo). Long steps use the shared detached runner.
   Missing exit status remains unknown; accepted synchronous commands settle before caller cancellation
   is reported because the API cannot kill them.
-- HTTP 202 polling shares the operation's deadline. Inventory drains all pages within five minutes;
-  teardown has 60 seconds to delete and confirm absence. Pausing does not count as deletion.
+- HTTP 202 polling shares the operation's deadline. Inventory drains 100-VM pages, each within 30
+  seconds, and fails closed if the total moves during the scan; teardown has 60 seconds to delete
+  and confirm absence, read every 500 ms. Pausing does not count as deletion, and a paused or
+  stopped foreign VM is not counted as capacity.
 - Failed-create recovery deletes only an exact attempt-marker match. A lost response remains uncertain
   until ownership and deletion are confirmed; repeated 404s alone do not prove allocation failed.
 - Driver conformance snapshots capture memory and disk, are explicitly deleted, and have a ten-minute

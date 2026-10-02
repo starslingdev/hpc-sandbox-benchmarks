@@ -4,17 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
+import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
+import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
 import { BENCH_JOB_CEILING_MINUTES } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import { FreestyleApiError } from "freestyle";
-import type { FreestyleSpecOptions } from "./index.ts";
+import freestyle, { snapshotBuild } from "./index.ts";
 import {
 	FREESTYLE_OWNER_KEY,
+	FREESTYLE_SLUG,
 	FREESTYLE_VM_TTL_SECONDS,
 	freestyleCommand,
-	freestyleSpec,
-	snapshotBuild,
-} from "./index.ts";
+	freestyleVendor,
+} from "./vendor.ts";
 
 const context = {
 	env: { FREESTYLE_API_KEY: "freestyle-test-sentinel" },
@@ -42,7 +45,7 @@ function fixture(
 		body: Record<string, unknown>,
 		init?: RequestInit,
 	) => Response | undefined | Promise<Response | undefined>,
-	options: FreestyleSpecOptions = {},
+	timing: Partial<VendorTiming> = {},
 	driverContext: DriverContext<"freestyle"> = context,
 ) {
 	let deleted = false;
@@ -74,12 +77,134 @@ function fixture(
 		},
 		{ preconnect: fetch.preconnect },
 	);
-	const spec = freestyleSpec(driverContext, { ...options, fetch: mockFetch });
+	// The package's own module, lowered over the fake transport instead of the real API.
+	const spec = freestyle.specFor(driverContext, {
+		vendor: freestyleVendor(driverContext, mockFetch),
+		timing: { deletePollMs: 0, ...timing },
+	});
 	const driver = driverFromComputeSpec("freestyle", spec, driverContext.resolvedArtifact, [
 		context.env.FREESTYLE_API_KEY,
 	]);
 	return { calls, spec, driver };
 }
+
+/**
+ * A whole Freestyle account over its HTTP API: creates run at once under their slug, a DELETE is
+ * acknowledged and the VM is gone at the next read, listings page by offset, and each guest's shell
+ * answers exit codes and keeps the files written to it.
+ */
+function freestyleAccount() {
+	const vms = new Map<
+		string,
+		ReturnType<typeof row> & { slug: string; files: Map<string, string> }
+	>();
+	let next = 0;
+	const fetchImpl = Object.assign(
+		async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+			const url = new URL(String(input));
+			const method = init?.method ?? "GET";
+			const [, , , name, verb, action] = url.pathname.split("/");
+			const vm =
+				name === undefined
+					? undefined
+					: (vms.get(name) ?? [...vms.values()].find((candidate) => candidate.slug === name));
+			const view = (found: NonNullable<typeof vm>) => {
+				const { files: _, ...rest } = found;
+				return rest;
+			};
+			if (name === undefined && method === "POST") {
+				const body = JSON.parse(String(init?.body));
+				const id = `vm-${++next}`;
+				const created = {
+					...row(id, "running", body.metadata[FREESTYLE_OWNER_KEY]),
+					slug: body.slug,
+				};
+				vms.set(id, { ...created, files: new Map() });
+				return Response.json(view(vms.get(id) as NonNullable<typeof vm>));
+			}
+			if (name === undefined) {
+				const all = [...vms.values()].map(view);
+				const offset = Number(url.searchParams.get("offset") ?? 0);
+				return Response.json({ vms: all.slice(offset, offset + 1), totalCount: all.length });
+			}
+			if (!vm) return missing();
+			if (method === "DELETE" && verb === undefined) {
+				vms.delete(vm.id);
+				return new Response(null, { status: 204 });
+			}
+			if (verb === "exec-await") {
+				const command = String(JSON.parse(String(init?.body)).command);
+				return Response.json({
+					statusCode: command.includes("exit 7") ? 7 : 0,
+					stdout: "",
+					stderr: "",
+				});
+			}
+			const path = url.searchParams.get("path") ?? "";
+			if (verb === "fs" && action === "write") {
+				vm.files.set(path, new TextDecoder().decode(init?.body as Uint8Array));
+				return Response.json({});
+			}
+			if (verb === "fs" && action === "read") return new Response(vm.files.get(path) ?? "");
+			if (verb === "fs" && action === "exists")
+				return Response.json({ exists: vm.files.has(path) });
+			return Response.json(view(vm));
+		},
+		{ preconnect: fetch.preconnect },
+	);
+	return { fetch: fetchImpl, vms };
+}
+
+vendorContract("freestyle adapter", () => ({
+	vendor: freestyleVendor(context, freestyleAccount().fetch),
+	account: "shared",
+}));
+
+describe("Freestyle end to end through its module", () => {
+	test("a session boots, runs, round-trips files, inventories, and is deleted then read absent", async () => {
+		const account = freestyleAccount();
+		const reads: string[] = [];
+		const traced = Object.assign(
+			async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+				reads.push(`${init?.method ?? "GET"} ${new URL(String(input)).pathname}`);
+				return account.fetch(input, init);
+			},
+			{ preconnect: fetch.preconnect },
+		);
+		const driver = driverFromComputeSpec(
+			"freestyle",
+			freestyle.specFor(context, {
+				vendor: freestyleVendor(context, traced),
+				timing: { deletePollMs: 0 },
+			}),
+			context.resolvedArtifact,
+			[context.env.FREESTYLE_API_KEY],
+		);
+		const leftover = `${MARKER_PREFIX}00000000-0000-0000-0000-000000000000`;
+		await freestyleVendor(context, account.fetch).control.create(
+			{ request, marker: leftover },
+			{ signal: new AbortController().signal },
+		);
+		const session = await driver.create(request);
+		expect(session.reportedArtifact).toEqual(context.resolvedArtifact);
+		expect((await session.exec("sh -c 'exit 7'")).exit).toEqual({ kind: "exited", code: 7 });
+		await session.files?.writeText("/tmp/probe", "hello");
+		expect(await session.files?.readFile("/tmp/probe")).toBe("hello");
+		expect(await driver.inventory?.list()).toEqual({
+			owned: [{ provider: "freestyle", id: "vm-1" }, session.sandboxRef],
+			foreignCount: 0,
+		});
+		expect(account.vms.get("vm-1")?.slug).toBe(FREESTYLE_SLUG.toVendor(leftover));
+		reads.length = 0;
+		await session.destroy();
+		expect(reads).toEqual([
+			`DELETE /v5/vms/${session.sandboxRef.id}`,
+			`GET /v5/vms/${session.sandboxRef.id}`,
+		]);
+		await driver.destroyById?.({ provider: "freestyle", id: "vm-1" });
+		expect(account.vms.size).toBe(0);
+	});
+});
 
 describe("Freestyle native SDK driver", () => {
 	test("retains the control-plane snapshot observation for publication evidence", async () => {
@@ -149,7 +274,9 @@ describe("Freestyle native SDK driver", () => {
 
 	test("exposes an array of VM records to the lifecycle list consumer", async () => {
 		const { driver } = fixture((path) =>
-			path === "/v5/vms?limit=100" ? Response.json({ vms: [row()], totalCount: 1 }) : undefined,
+			path === "/v5/vms?limit=100&offset=0"
+				? Response.json({ vms: [row()], totalCount: 1 })
+				: undefined,
 		);
 		expect(await driver.probes?.list?.()).toEqual([row()]);
 	});
@@ -174,7 +301,7 @@ describe("Freestyle native SDK driver", () => {
 		expect(deleteSignal?.aborted).toBe(true);
 	});
 
-	test("bounds the whole inventory scan across multiple pages", async () => {
+	test("bounds every inventory page of a multi-page scan", async () => {
 		let secondSignal: AbortSignal | undefined;
 		const { driver } = fixture(
 			(path, _method, _body, init) => {
@@ -188,7 +315,7 @@ describe("Freestyle native SDK driver", () => {
 					});
 				});
 			},
-			{ inventoryTimeoutMs: 30 },
+			{ controlTimeoutMs: 30 },
 		);
 		await expect(driver.inventory?.list()).rejects.toThrow();
 		expect(secondSignal?.aborted).toBe(true);
@@ -202,17 +329,12 @@ describe("Freestyle native SDK driver", () => {
 				return appeared ? Response.json(row()) : missing();
 		});
 		await expect(
-			spec.compute.sandbox.create({
-				slug: "sandbox-benchmarks-test",
-				snapshotId: "sh-test",
-				marker: "benchmark-test",
-				deadlineMs: 1_000,
-			}),
+			spec.compute.sandbox.create({ request, marker: "benchmark-test" }),
 		).rejects.toThrow("lost response");
 		const locator = { kind: "marker", key: FREESTYLE_OWNER_KEY, value: "benchmark-test" } as const;
 		for (let attempt = 0; attempt < 2; attempt++)
 			await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).rejects.toThrow(
-				"absence is unconfirmed",
+				"cannot prove it absent",
 			);
 		expect(calls.some((call) => call.method === "DELETE")).toBe(false);
 		appeared = true;
@@ -236,12 +358,7 @@ describe("Freestyle native SDK driver", () => {
 				return missing();
 		});
 		await expect(
-			spec.compute.sandbox.create({
-				slug: "sandbox-benchmarks-test",
-				snapshotId: "sh-test",
-				marker: "benchmark-test",
-				deadlineMs: 1_000,
-			}),
+			spec.compute.sandbox.create({ request, marker: "benchmark-test" }),
 		).rejects.toThrow();
 		await expect(
 			spec.createRecovery?.cleanup(
@@ -249,7 +366,7 @@ describe("Freestyle native SDK driver", () => {
 				{ kind: "marker", key: FREESTYLE_OWNER_KEY, value: "benchmark-test" },
 				{},
 			),
-		).rejects.toThrow("absence is unconfirmed");
+		).rejects.toThrow("cannot prove it absent");
 	});
 
 	test("session files do not retain an expired create signal", async () => {
@@ -411,7 +528,7 @@ describe("Freestyle native SDK driver", () => {
 			if (marker === "benchmark-test")
 				await expect(result).resolves.toEqual({ status: "destroyed" });
 			else {
-				await expect(result).rejects.toThrow("unrelated VM");
+				await expect(result).rejects.toThrow("unrelated sandbox");
 				expect(calls.some((call) => call.method === "DELETE")).toBe(false);
 			}
 		}

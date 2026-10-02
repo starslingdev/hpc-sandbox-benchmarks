@@ -140,10 +140,13 @@ speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once fo
   its marker finds the allocation;
 - the request proof: the artifact guard and the module's `unsupported` cross-axis refusal before
   any vendor call; after readiness, `admit`, the vendor's `prepare` (a keepalive, or the
-  allocation's reported resources, refusing a shape it does not honour), and the `df` disk proof for
-  a `runtime-verified` disk axis or a declared `diskProof` (a mount path and a filesystem-overhead
-  allowance in GiB or as a fraction of the request, which also proves a mapped disk; a zero reading
-  is a broken probe, not a small disk).
+  allocation's reported resources, refusing a shape it does not honour, and optionally the boot
+  artifact the control plane reports, which must agree with the request), and the `df` disk proof
+  for a `runtime-verified` disk axis or a declared `diskProof` (a mount path and a
+  filesystem-overhead allowance in GiB or as a fraction of the request, which also proves a mapped
+  disk; a zero reading is a broken probe, not a small disk). `diskProof: "reported"` declares that
+  the allocation's record reports its disk and `prepare` proves it there, so no `df` runs (Daytona
+  and Freestyle).
 
 It lowers onto the ComputeSDK bridge, so coverage proof, id parsing, cleanup double faults,
 redaction and output caps are reused. Every port call outside a poll is bounded
@@ -163,9 +166,16 @@ Brezel (a dedicated account recovered by idempotent replay, over an injected `fe
 Microsandbox Cloud (name-keyed: the sandbox name carries the marker's attempt UUID and is the
 recovery lookup), Namespace and Runloop (recovered by matching the marker over the drained
 account), E2B (a server-side metadata query), run.cloud (name-keyed, with a lost create response
-adopted by reading its name) and boat (renamed to its marker on `attach`, since its create takes no
-name) are written this way: `src/vendor.ts` is the adapter, `src/index.ts` binds the real transport
-once. E2B and Novita speak one protocol through different SDKs, so both adapters are
+adopted by reading its name), boat (renamed to its marker on `attach`, since its create takes no
+name), Daytona (both isolation variants, named by the marker and found by a get by name), Modal
+(both isolation variants: the marker is the sandbox name in the benchmark App, the ownership
+boundary, and a listing's first page is the App's own generation) and Freestyle (marked in
+metadata, found by the attempt's slug, with native snapshots on the `snapshots` passthrough) are
+written this way: `src/vendor.ts` is the adapter, `src/index.ts` (or a variant family's
+`src/shared.ts`) binds the real transport once. Every ComputeSDK-lowered driver is now a vendor
+adapter; Tama alone stays on `defineCliDriver`. Modal's GPU allocation (`./gpu`) is the same
+adapter over the caller's App and image, whose teardown also waits until the environment stops
+listing the sandbox. E2B and Novita speak one protocol through different SDKs, so both adapters are
 `@sandbox-benchmarks/driver/vendor/e2b-protocol`'s `e2bProtocolVendor` over the package's own
 injected SDK, stating only the vendor's differences (its domain, whether its SDK takes a signal,
 its create and command timeouts); the shared module imports no SDK, so the vendor seam holds.

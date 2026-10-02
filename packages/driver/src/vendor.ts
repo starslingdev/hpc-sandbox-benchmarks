@@ -22,6 +22,7 @@ import type {
 	ExecutionPolicy,
 	ProviderCostEvidenceCapability,
 	ProviderId,
+	ResolvedArtifact,
 	SandboxObservation,
 	SnapshotRetention,
 } from "@sandbox-benchmarks/driver";
@@ -129,9 +130,13 @@ export interface ExecOutcome {
 	readonly stderr: string;
 }
 
-/** Whether a ready allocation honours the request: `unsupported` refuses its shape. */
+/**
+ * Whether a ready allocation honours the request: `unsupported` refuses its shape. An honoured
+ * allocation may carry the boot artifact the vendor's control plane reports (the reported
+ * artifact), which must agree with the request before the session is returned.
+ */
 export type Verification =
-	| { readonly status: "honored" }
+	| { readonly status: "honored"; readonly reportedArtifact?: ResolvedArtifact }
 	| { readonly status: "unsupported"; readonly detail: string };
 
 export interface DataPlane<Raw, Native> {
@@ -240,8 +245,10 @@ export interface VendorTraits {
 	/**
 	 * The kit's `df` disk proof. It always runs for a `runtime-verified` disk axis; declaring it
 	 * also proves a mapped disk the guest may not expose in full (a sized volume, a root disk).
+	 * `reported`: the allocation's control-plane record reports its disk and `data.prepare` proves
+	 * it there, so the kit runs no `df`.
 	 */
-	readonly diskProof?: DiskProof;
+	readonly diskProof?: DiskProof | "reported";
 }
 
 export interface DiskProof {
@@ -459,6 +466,8 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	const unresolved = new Set<string>();
 	if (dedicated && !control.find)
 		throw new Error(`${provider}: a dedicated account recovers by replay and needs control.find`);
+	if (traits.diskProof === "reported" && !data.prepare)
+		throw new Error(`${provider}: a reported disk proof is proven by data.prepare`);
 	executionOf(provider, traits, launch !== undefined);
 	const vendorId = (
 		"fromVendor" in traits.sandboxId ? traits.sandboxId.fromVendor : traits.sandboxId
@@ -757,14 +766,17 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				op(operation.signal),
 			);
 			if (prepared?.status === "unsupported") return prepared;
-			const proven = traits.coverage.spec.diskGb === "runtime-verified" || traits.diskProof;
-			if (!proven || request.spec.diskGb === undefined) return { status: "honored" };
-			return verifyDisk(
+			const honored = prepared ?? { status: "honored" };
+			const { diskProof } = traits;
+			if (diskProof === "reported" || request.spec.diskGb === undefined) return honored;
+			if (traits.coverage.spec.diskGb !== "runtime-verified" && !diskProof) return honored;
+			const disk = await verifyDisk(
 				provider,
 				request.spec.diskGb,
 				(command) => data.exec(handle.native, command, operation),
-				traits.diskProof,
+				diskProof,
 			);
+			return disk.status === "honored" ? honored : disk;
 		},
 		hasWorkingFilesystem: files !== undefined,
 		probes: {

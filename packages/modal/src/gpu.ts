@@ -4,10 +4,12 @@
 // runtime image, model and kernel-registry Volumes, prepared allocations, sandbox tags and filesystem
 // snapshots. Workload staging, harness lifetime and reporting stay vendor-neutral in the CLI.
 import type { SandboxSession } from "@sandbox-benchmarks/driver";
+import type { VendorHandle } from "@sandbox-benchmarks/driver/vendor";
 import type { App, Image, Sandbox, Volume } from "modal";
 import { ModalClient } from "modal";
 import type { ModalAllocationOptions } from "./allocation.ts";
 import { createModalAllocation } from "./allocation.ts";
+import type { ModalRow } from "./vendor.ts";
 
 /** A built or restored Modal image. Opaque: only this module turns it back into an SDK image. */
 export interface ModalGpuImage {
@@ -19,8 +21,8 @@ export interface ModalGpuVolume {
 	readonly name: string;
 }
 
-/** The native handle a GPU allocation's sessions carry. */
-export type ModalGpuHandle = Sandbox;
+/** The native handle a GPU allocation's sessions carry: the SDK sandbox on the caller's client. */
+export type ModalGpuHandle = VendorHandle<ModalRow<Sandbox>, Sandbox>;
 
 /** One GPU allocation's resources: reservations, limits, lifetime and network isolation. */
 export type ModalGpuResources = Omit<ModalAllocationOptions, "env" | "volumes">;
@@ -155,7 +157,7 @@ export async function tagModalGpuSandbox(
 	session: SandboxSession<ModalGpuHandle>,
 	tags: Readonly<Record<string, string>>,
 ): Promise<void> {
-	await session.native.setTags({ ...tags });
+	await session.native.native.setTags({ ...tags });
 }
 
 /** Snapshot a GPU sandbox's filesystem into an image that later allocations can boot. */
@@ -163,5 +165,5 @@ export async function snapshotModalGpuSandbox(
 	session: SandboxSession<ModalGpuHandle>,
 	options: { readonly timeoutMs: number; readonly ttlMs: number },
 ): Promise<ModalGpuImage> {
-	return imageHandle(await session.native.snapshotFilesystem({ ...options }));
+	return imageHandle(await session.native.native.snapshotFilesystem({ ...options }));
 }

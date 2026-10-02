@@ -908,6 +908,67 @@ describe("request proof", () => {
 		await (await bind({ diskGb: 10 }, { coverage: mapped() }).driver.create(request)).destroy();
 	});
 
+	test("a reported disk proof is the vendor's preparation, with no guest df", async () => {
+		const commands: string[] = [];
+		const reported = (reportsGb: number) => {
+			const world = memoryVendor({ diskGb: 1 });
+			const driver = moduleOver(
+				() => ({
+					...world.vendor,
+					data: {
+						...world.vendor.data,
+						exec: (native, command, options) => {
+							commands.push(command);
+							return world.vendor.data.exec(native, command, options);
+						},
+						prepare: async (_handle, input) =>
+							reportsGb >= (input.spec.diskGb ?? 0)
+								? { status: "honored" }
+								: { status: "unsupported", detail: `reports ${reportsGb} GiB` },
+					},
+				}),
+				{ diskProof: "reported" },
+			).driver(context);
+			return { world, driver };
+		};
+		const honored = reported(40);
+		await (await honored.driver.create(request)).destroy();
+		expect(commands).not.toContain(DISK_PROBE);
+		const short = reported(30);
+		await expect(short.driver.create(request)).rejects.toMatchObject({
+			code: "invalid-create-request",
+		});
+		expect(short.world.allocations()).toBe(0);
+		// Only a vendor that prepares can report its disk.
+		expect(() =>
+			moduleOver(() => memoryVendor().vendor, { diskProof: "reported" }).specFor(context),
+		).toThrow(/reported disk proof is proven by data.prepare/);
+	});
+
+	test("the vendor's reported artifact reaches the session after the disk proof", async () => {
+		const world = memoryVendor();
+		const driver = moduleOver(() => ({
+			...world.vendor,
+			data: {
+				...world.vendor.data,
+				prepare: async () => ({ status: "honored", reportedArtifact: resolvedArtifact }),
+			},
+		})).driver(context);
+		const session = await driver.create(request);
+		expect(session.reportedArtifact).toEqual(resolvedArtifact);
+		await session.destroy();
+		// A disk the guest does not expose still refuses the allocation the vendor reported.
+		const small = memoryVendor({ diskGb: 10 });
+		const refused = moduleOver(() => ({
+			...small.vendor,
+			data: {
+				...small.vendor.data,
+				prepare: async () => ({ status: "honored", reportedArtifact: resolvedArtifact }),
+			},
+		})).driver(context);
+		await expect(refused.create(request)).rejects.toMatchObject({ code: "invalid-create-request" });
+	});
+
 	test("a zero capacity reading is a broken probe, not a small disk", async () => {
 		const { driver, allocations } = bind({ diskGb: 0 });
 		const failure = await driver.create(request).catch((caught) => caught);

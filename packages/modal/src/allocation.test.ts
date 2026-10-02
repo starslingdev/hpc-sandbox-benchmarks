@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { isDriverError } from "@sandbox-benchmarks/driver";
 import { App, Image, ModalClient } from "modal";
-import { createModalAllocation } from "./allocation.ts";
+import { createModalAllocation, removedOnceUnlisted } from "./allocation.ts";
 
 function configuration(gpu?: string) {
 	const client = new ModalClient({ tokenId: "test-token", tokenSecret: "test-secret" });
@@ -59,5 +59,35 @@ describe("prepared Modal allocation", () => {
 				image: options.client.images.fromRegistry("ubuntu:24.04"),
 			}),
 		).toThrow();
+	});
+});
+
+describe("GPU allocation teardown", () => {
+	test("a terminate is acknowledgement until the environment stops listing the sandbox", async () => {
+		const op = { signal: new AbortController().signal };
+		let exited = false;
+		let listings = 2;
+		const vendor = removedOnceUnlisted(
+			{
+				control: {
+					create: async () => {
+						throw new Error("unused");
+					},
+					get: async (id: string) => ({ id, phase: exited ? "gone" : "ready", raw: {} }),
+					remove: async () => {
+						exited = true;
+						return "removed" as const;
+					},
+					page: async () => ({ records: [] }),
+				},
+				data: { attach: () => ({}), exec: async () => ({ stdout: "", stderr: "" }) },
+			},
+			async () => listings-- > 0,
+		);
+		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "ready" });
+		expect(await vendor.control.remove("sb-1", op)).toBe("accepted");
+		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "deleting" });
+		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "deleting" });
+		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "gone" });
 	});
 });

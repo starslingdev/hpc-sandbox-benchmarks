@@ -125,17 +125,16 @@ describe("Modal GPU platform", () => {
 	test("tags a sandbox and turns its filesystem snapshot into a bootable image", async () => {
 		const { client, gpu } = platform();
 		const calls: unknown[] = [];
-		const session = {
-			native: {
-				setTags: async (tags: Record<string, string>) => {
-					calls.push(tags);
-				},
-				snapshotFilesystem: async (params: unknown) => {
-					calls.push(params);
-					return new Image(client, "im-snapshot", "");
-				},
+		const native = {
+			setTags: async (tags: Record<string, string>) => {
+				calls.push(tags);
 			},
-		} as unknown as SandboxSession<ModalGpuHandle>;
+			snapshotFilesystem: async (params: unknown) => {
+				calls.push(params);
+				return new Image(client, "im-snapshot", "");
+			},
+		};
+		const session = { native: { native } } as unknown as SandboxSession<ModalGpuHandle>;
 		await tagModalGpuSandbox(session, { role: "kernel-cache-seed" });
 		const snapshot = await snapshotModalGpuSandbox(session, { timeoutMs: 1000, ttlMs: 2000 });
 		expect(calls).toEqual([{ role: "kernel-cache-seed" }, { timeoutMs: 1000, ttlMs: 2000 }]);

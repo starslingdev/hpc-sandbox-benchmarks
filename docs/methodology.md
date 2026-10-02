@@ -187,13 +187,18 @@ Metrics come from three sources:
 - **Harness-measured** — lifecycle (spawn/exec/snapshot/teardown) and control-plane (info/list)
   timings PTS can't see, measured directly around the provider SDK calls.
   For drivers written against the vendor port (ADR-0023: Brezel, Novita, Blaxel, Namespace,
-  Vercel, Runloop, Microsandbox Cloud, E2B, boat and run.cloud), spawn ends when readiness is
-  observed: by the create response itself (E2B, as before), by the vendor's server-side wait where
+  Vercel, Runloop, Microsandbox Cloud, E2B, boat, run.cloud, Daytona, Modal and Freestyle), spawn
+  ends when readiness is observed: by the create response itself (E2B, Daytona's started sandbox,
+  Modal's create transaction and Freestyle's running VM, all as before; Modal's spawn still includes
+  its `df` disk probe, Freestyle's its resize and readiness command, and Daytona's proof reads the
+  disk its create reported, with no guest probe), by the vendor's server-side wait where
   it has one (Runloop's `awaitRunning` long poll, as in earlier runs, so no poll interval inflates
   it), or otherwise by the first status read that sees it ready (Namespace, boat and run.cloud read
   every 2 s, as before; boat's spawn still includes its rename, outbound-network wait and disk
   probe). Teardown starts with the delete request and ends when removal is observed or proven.
-  Novita's and E2B's teardown is one `kill`; boat's is its delete followed by reads every second
+  Novita's and E2B's teardown is one `kill`, Daytona's one waited delete and Modal's one waited
+  terminate (as before); Freestyle's is its DELETE followed by reads every 500 ms until the VM 404s
+  (as before); boat's is its delete followed by reads every second
   until the sandbox 404s, and run.cloud's its DELETE followed by reads every 2 s until the
   `destroyed` tombstone or a 404 (both as before). Runloop's is one forced shutdown
   when its response is already the `shutdown` tombstone, and otherwise the shutdown counts as
@@ -214,7 +219,10 @@ Metrics come from three sources:
   server's default size, which the SDK does not document), and run.cloud's is one raw 200-row
   inventory page (earlier runs timed the SDK's `list()`, the first page at the API's default 50
   rows). E2B now records a list timing (one page of live `running`/`paused` sandboxes) where earlier
-  runs recorded none; its info timing is the same `getInfo` call as before.
+  runs recorded none; its info timing is the same `getInfo` call as before. Daytona's list timing
+  drains its whole account as before, and Freestyle's is the same first 100-VM page. Modal now
+  records an info timing (one status poll of the sandbox) and a list timing (the benchmark App's
+  sandboxes of the variant's generation) where earlier runs recorded neither.
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).
 
 ## Economics ($/run)
