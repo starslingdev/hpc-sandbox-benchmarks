@@ -1,0 +1,14 @@
+{
+  "name": "@sandbox-benchmarks/brezel",
+  "private": true,
+  "description": "Brezel provider package: the only importer of @infercrane/brezel.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@infercrane/brezel": "catalog:computesdk",
+    "@sandbox-benchmarks/driver": "workspace:*",
+    "arktype": "catalog:"
+  }
+}

@@ -1,6 +1,6 @@
 // Tama as inert data: the entire provider integration. Tier-1 safe (no imports, no functions).
 
-import type { CliManifest } from "../../kit/cli.ts";
+import type { CliManifest } from "../kit/cli.ts";
 
 export const TAMA_MANIFEST = {
 	kind: "cli",

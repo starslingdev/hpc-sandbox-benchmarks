@@ -1,0 +1,9 @@
+{
+  "name": "@sandbox-benchmarks/driver-vendor-prototype",
+  "private": true,
+  "description": "Prototype of the packages/driver ./vendor, ./vendor/testing and ./artifact subpaths.",
+  "dependencies": {
+    "@sandbox-benchmarks/driver": "workspace:*",
+    "arktype": "catalog:"
+  }
+}

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { ProviderId } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
-import { httpOps } from "../../kit/http.ts";
-import { opsSpec } from "../../kit/ops.ts";
+import { httpOps } from "../kit/http.ts";
+import { opsSpec } from "../kit/ops.ts";
 import { ACME_MANIFEST } from "./manifest.ts";
 
 const env = { ACME_TOKEN: "acme_secret", ACME_URL: "https://acme.test" };

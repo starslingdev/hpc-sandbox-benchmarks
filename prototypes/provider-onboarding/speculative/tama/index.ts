@@ -2,8 +2,8 @@
 // exist: packages/drivers' generated loader calls compileCliManifest(REGISTRY[id].driver) itself.
 // The named exports below exist only so the provider's unmodified legacy test suite can import them.
 
-import { TAMA_PROVENANCE } from "../../../../../packages/tama/src/provenance.ts";
-import { compileCliManifest } from "../../kit/cli.ts";
+import { TAMA_PROVENANCE } from "../../../../packages/tama/src/provenance.ts";
+import { compileCliManifest } from "../kit/cli.ts";
 import { TAMA_MANIFEST } from "./manifest.ts";
 
 const tama = compileCliManifest("tama", TAMA_MANIFEST);

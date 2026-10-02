@@ -1,0 +1,15 @@
+{
+  "name": "@sandbox-benchmarks/novita",
+  "private": true,
+  "description": "Novita provider package: the only importer of novita-sandbox (driver and template bake).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./artifact": "./src/artifact.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "novita-sandbox": "catalog:computesdk",
+    "@sandbox-benchmarks/driver": "workspace:*",
+    "arktype": "catalog:"
+  }
+}

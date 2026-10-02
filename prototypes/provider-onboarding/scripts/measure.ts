@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
-// Count hand-written logical lines (non-blank, not comment-only) for today's drivers and their
-// prototype rewrites. Run after `biome check --write` so both sides use the repo's formatting.
+// Count hand-written logical lines (non-blank, not comment-only) for today's code and the selected
+// design's prototype. Run after `biome check --write` so both sides use the repo's formatting.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "../../..");
-const PROTO = "prototypes/provider-onboarding/src";
+const P = "prototypes/provider-onboarding";
 
 function logical(file: string): number {
 	let inBlock = false;
@@ -26,63 +26,42 @@ function logical(file: string): number {
 	}
 	return count;
 }
-
 const sum = (files: readonly string[]) => files.reduce((total, file) => total + logical(file), 0);
 
-const rows: Array<[string, string, number, number, string]> = [
+const rows: Array<[string, readonly string[], readonly string[], string]> = [
 	[
-		"brezel",
-		"HTTP API (+SDK data plane)",
-		sum(["packages/brezel/src/index.ts"]),
-		sum([`${PROTO}/providers/brezel/manifest.ts`, `${PROTO}/providers/brezel/index.ts`]),
-		"21/21 original tests",
+		"brezel driver",
+		["packages/brezel/src/index.ts"],
+		[`${P}/packages/brezel/src/vendor.ts`, `${P}/packages/brezel/src/index.ts`],
+		"21/21 original tests, unmodified",
 	],
 	[
-		"tama",
-		"CLI only",
-		sum(["packages/tama/src/index.ts"]),
-		sum([`${PROTO}/providers/tama/manifest.ts`]),
-		"11/11 original tests",
+		"novita driver",
+		["packages/novita/src/index.ts"],
+		[
+			`${P}/packages/novita/src/sdk.ts`,
+			`${P}/packages/novita/src/vendor.ts`,
+			`${P}/packages/novita/src/index.ts`,
+		],
+		"6/6 original tests (1 adapted)",
 	],
 	[
-		"novita",
-		"TypeScript SDK",
-		sum(["packages/novita/src/index.ts"]),
-		sum([`${PROTO}/providers/novita/index.ts`]),
-		"6/6 original tests",
-	],
-	[
-		"acme (fixture)",
-		"HTTP API, JSON exec",
-		Number.NaN,
-		sum([`${PROTO}/providers/acme/manifest.ts`]),
-		"3 new tests (meta+driver)",
+		"novita bake",
+		["apps/cli/src/lib/bake/novita.ts"],
+		[`${P}/packages/novita/src/artifact.ts`],
+		"moved into the provider package",
 	],
 ];
-console.log("| provider | interface | today | prototype | proof |\n|---|---|---:|---:|---|");
-for (const [id, kind, before, after, proof] of rows)
-	console.log(`| ${id} | ${kind} | ${Number.isNaN(before) ? "—" : before} | ${after} | ${proof} |`);
-
-const kit = ["ops", "http", "rules", "cli", "manifest", "manifest-schema"].map(
-	(name) => `${PROTO}/kit/${name}.ts`,
+console.log("| module | today | prototype | proof |\n|---|---:|---:|---|");
+for (const [name, before, after, proof] of rows)
+	console.log(`| ${name} | ${sum(before)} | ${sum(after)} | ${proof} |`);
+const kit = [
+	`${P}/packages/driver-vendor/src/vendor.ts`,
+	`${P}/packages/driver-vendor/src/artifact.ts`,
+];
+console.log(
+	`\none-time kit: ${sum(kit)} logical lines; in-memory vendor + contract: ${logical(`${P}/packages/driver-vendor/src/testing.ts`)}`,
 );
 console.log(
-	`\none-time kit cost: ${sum(kit)} logical lines (${kit.map((file) => `${file.split("/").at(-1)}=${logical(file)}`).join(", ")})`,
+	`registry projections: ${logical(`${P}/registry/src/projections.ts`)}; fleet joins: ${logical(`${P}/packages/drivers/src/render.ts`)}; vendor seam check: ${logical(`${P}/tooling/vendor-seam.ts`)}`,
 );
-
-const fleet = [
-	"blaxel",
-	"boat",
-	"brezel",
-	"e2b",
-	"freestyle",
-	"microsandbox-cloud",
-	"namespace",
-	"novita",
-	"runcloud",
-	"runloop",
-	"vercel",
-	"tama",
-];
-console.log("\ntoday's single-file drivers (logical lines):");
-console.log(fleet.map((id) => `${id}=${logical(`packages/${id}/src/index.ts`)}`).join(", "));

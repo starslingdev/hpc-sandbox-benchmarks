@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { normalizeProviderInput } from "@sandbox-benchmarks/schema/provider-meta";
 import { REGISTRY } from "@sandbox-benchmarks/schema/providers";
-import { ACME_MANIFEST } from "../providers/acme/manifest.ts";
-import { BREZEL_CONTROL_PLANE } from "../providers/brezel/manifest.ts";
-import { TAMA_MANIFEST } from "../providers/tama/manifest.ts";
+import { ACME_MANIFEST } from "../acme/manifest.ts";
+import { BREZEL_CONTROL_PLANE } from "../brezel-manifest.ts";
+import { TAMA_MANIFEST } from "../tama/manifest.ts";
 import { manifestFailures } from "./manifest-schema.ts";
 
 const inputs = (id: keyof typeof REGISTRY) =>

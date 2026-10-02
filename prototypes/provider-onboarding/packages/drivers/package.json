@@ -1,0 +1,9 @@
+{
+  "name": "@sandbox-benchmarks/drivers",
+  "private": true,
+  "description": "Generated fleet joins: DRIVERS and ARTIFACT_BUILDERS. The only importer of provider packages.",
+  "dependencies": {
+    "@sandbox-benchmarks/brezel": "workspace:*",
+    "@sandbox-benchmarks/novita": "workspace:*"
+  }
+}

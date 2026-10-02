@@ -138,10 +138,16 @@ describe("Novita account inventory and recovery", () => {
 		}
 	});
 
+	// Changed for the vendor kit: teardown observes before it deletes (cleanup confirmation), so
+	// the test now stubs getInfo too. The three outcomes it asserts are unchanged.
 	test("destroys by canonical id and converges only on Novita's own absence", async () => {
 		const { SandboxNotFoundError } = createRequire(import.meta.url)(
 			"novita-sandbox",
 		) as typeof import("novita-sandbox");
+		const running = { sandboxId: "leftover", state: "running" } as Awaited<
+			ReturnType<typeof Sandbox.getInfo>
+		>;
+		const info = spyOn(Sandbox, "getInfo").mockResolvedValue(running);
 		const kill = spyOn(Sandbox, "kill").mockResolvedValueOnce(true);
 		try {
 			const driver = novita.driver(context);
@@ -156,7 +162,13 @@ describe("Novita account inventory and recovery", () => {
 			await expect(
 				driver.destroyById?.({ provider: "novita", id: "leftover" }),
 			).rejects.toMatchObject({ code: "destroy-failed", provider: "novita" });
+			// Already absent: no destructive call at all.
+			kill.mockClear();
+			info.mockRejectedValueOnce(new SandboxNotFoundError("gone"));
+			await driver.destroyById?.({ provider: "novita", id: "leftover" });
+			expect(kill).not.toHaveBeenCalled();
 		} finally {
+			info.mockRestore();
 			kill.mockRestore();
 		}
 	});

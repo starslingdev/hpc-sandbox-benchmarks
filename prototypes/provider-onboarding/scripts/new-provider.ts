@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
-// Prototype scaffolder: `bun prototypes/provider-onboarding/scripts/new-provider.ts --id acme
-//   --kind http|cli|sdk --vendor Acme --inputs ACME_TOKEN,var:ACME_URL [--sdk acme-sdk@1.2.3]
-//   [--out <dir>]`
+// Prototype scaffolder for the selected design:
+//   bun prototypes/provider-onboarding/scripts/new-provider.ts --id acme --vendor Acme \
+//     --transport sdk|http|cli --inputs ACME_TOKEN,var:ACME_URL [--sdk acme-sdk@1.2.3] [--baked] [--out dir]
 //
-// Writes into --out (a dry-run tree mirroring the repo) rather than the checkout, and prints
-// what it would also edit in place. The SDK template imports `@sandbox-benchmarks/driver/ops` and
-// `ops-testing`: the paths the prototype kits would occupy once promoted into packages/driver. The templates are deliberately thin because the kits own the
-// behavior: a scaffold that has to emit 300 lines is a kit that is missing an abstraction.
+// Every provider gets its own package, the only importer of its vendor library. The package holds
+// a vendor adapter (translation only), the module binding, and, when the registry says the
+// provider bakes an artifact, an artifact builder. The scaffold writes into --out (a dry-run tree)
+// and prints the in-place edits it would make. Templates stay thin because the kit owns lifecycle.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -15,17 +15,21 @@ import { parseArgs } from "node:util";
 const { values } = parseArgs({
 	options: {
 		id: { type: "string" },
-		kind: { type: "string", default: "http" },
 		vendor: { type: "string" },
+		transport: { type: "string", default: "sdk" },
 		inputs: { type: "string", default: "" },
 		sdk: { type: "string" },
+		baked: { type: "boolean", default: false },
 		out: { type: "string", default: "scaffold-out" },
 	},
 });
 const id = values.id ?? "";
 if (!/^[a-z][a-z0-9-]*$/.test(id)) throw new Error("--id must be a kebab-case provider id");
-const kind = values.kind as "http" | "cli" | "sdk";
-const vendor = values.vendor ?? id;
+const transport = values.transport as "sdk" | "http" | "cli";
+const vendorName = values.vendor ?? id;
+const ident = id.replaceAll("-", "_");
+const constant = id.toUpperCase().replaceAll("-", "_");
+const [sdkName, sdkVersion] = (values.sdk ?? "").split(/@(?=[^@]+$)/);
 const inputs = values.inputs
 	.split(",")
 	.filter(Boolean)
@@ -34,155 +38,184 @@ const inputs = values.inputs
 			? `{ name: "${raw.slice(4)}", source: { kind: "variable" } }`
 			: JSON.stringify(raw),
 	);
-const [sdkName, sdkVersion] = (values.sdk ?? "").split(/@(?=[^@]+$)/);
-const constant = id.toUpperCase().replaceAll("-", "_");
 const files = new Map<string, string>();
 
-// Manifest skeletons the author fills in. The generator's arktype scope plus manifestFailures()
-// reject a skeleton left unchanged (TODO paths, an id pattern no row can match).
-const HTTP_STUB = `{
-		kind: "http",
-		transport: { baseUrl: "https://TODO", headers: { Authorization: "Bearer {{env.${inputs[0] ? JSON.parse(inputs[0]) : "TODO"}}}" } },
-		spec: { vcpus: "mapped", memoryGb: "mapped", diskGb: "runtime-verified" },
-		row: { id: "string", status: "string", "label?": "string" },
-		id: { field: "id", pattern: "^TODO$" },
-		create: { path: "/TODO", marker: { field: "label" }, body: { image: "{{request.artifact.ref}}" } },
-		get: { path: "/TODO/{id}" },
-		remove: { path: "/TODO/{id}" },
-		list: { path: "/TODO", select: "items" },
-		phases: { rules: [{ phase: "ready", where: { status: ["running"] } }], otherwise: "pending" },
-		ownership: { account: "shared", markerField: "label" },
-		data: { kind: "json-exec", path: "/TODO/{id}/exec", body: { cmd: "{{command}}" }, result: { exitCode: "exit_code", stdout: "stdout", stderr: "stderr" } },
-	}`;
-const CLI_STUB = `{
-		kind: "cli",
-		label: "${vendor}",
-		binary: { default: "${id}" },
-		secretFlags: [],
-		row: { id: "string", name: "string", status: "string" },
-		id: { field: "id", pattern: "^TODO$" },
-		nameField: "name",
-		timeouts: { commandMs: 60_000, createCeilingMs: 600_000, syncCapMs: 60_000 },
-		spec: { vcpus: "mapped", memoryGb: "mapped", diskGb: "unsupported" },
-		argv: {
-			create: ["create", "{{name}}", "--image", "{{artifact.ref}}", "--json"],
-			list: ["list", "--json"],
-			exec: ["exec", "{{id}}", "--", "bash", "-lc", "{{command}}"],
-			remove: ["delete", "{{id}}"],
-		},
-		phases: { rules: [{ phase: "ready", where: { status: ["running"] } }], otherwise: "pending" },
-		terminalDetail: ["status={{status}}"],
-		notFound: { pattern: "not found", flags: "i" },
-		absenceConfirmationMs: 2_000,
-	}`;
-
-const meta = `import { defineProviderMeta } from "../provider-meta.ts";
+files.set(
+	`packages/schema/src/provider-meta/${id}.ts`,
+	`import { defineProviderMeta } from "../provider-meta.ts";
 
 export default defineProviderMeta("${id}", {
-	displayName: "${vendor}",
-	vendor: "${vendor}",
+	displayName: "${vendorName}",
+	vendor: "${vendorName}",
 	website: "https://TODO",
-	sdkPackage: "${kind === "sdk" ? sdkName : kind === "cli" ? `${id} CLI` : "rest"}",
-	artifact: { kind: "image", boot: { key: "image" } },
+	sdkPackage: ${transport === "cli" ? `{ cli: "${id}" }` : transport === "sdk" ? `"${sdkName}"` : `{ http: "rest" }`},
+	artifact: { kind: "${values.baked ? "baked" : "image"}" },
 	inputs: [${inputs.join(", ")}],
 	isolation: { class: "unknown", technology: "TODO" },
 	pricing: { model: "unavailable", reason: "unpublished" },
 	maturity: { status: "beta", notes: "Scaffolded; opt-in until a committed validation run exists." },
 	specPinning: "settable",
-	transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },${
-		kind === "sdk" ? "" : `\n\tdriver: ${kind === "http" ? HTTP_STUB : CLI_STUB},`
-	}
 });
-`;
-files.set(`packages/schema/src/provider-meta/${id}.ts`, meta);
+`,
+);
 
-if (kind === "sdk") {
-	files.set(
-		`packages/${id}/package.json`,
-		`${JSON.stringify(
-			{
-				name: `@sandbox-benchmarks/${id}`,
-				version: "0.0.0",
-				private: true,
-				type: "module",
-				sideEffects: false,
-				exports: { ".": "./src/index.ts", "./package.json": "./package.json" },
-				scripts: { test: "bun test", typecheck: "tsc --noEmit" },
-				dependencies: {
-					[sdkName ?? "TODO"]: "catalog:computesdk",
-					"@sandbox-benchmarks/driver": "workspace:*",
-					arktype: "catalog:",
-				},
-				devDependencies: {
-					"@repo/tsconfig": "workspace:*",
-					"@types/bun": "catalog:",
-					typescript: "catalog:",
-				},
+const dependencies: Record<string, string> = {
+	"@sandbox-benchmarks/driver": "workspace:*",
+	arktype: "catalog:",
+	...(transport === "sdk" && sdkName ? { [sdkName]: "catalog:computesdk" } : {}),
+};
+files.set(
+	`packages/${id}/package.json`,
+	`${JSON.stringify(
+		{
+			name: `@sandbox-benchmarks/${id}`,
+			version: "0.0.0",
+			private: true,
+			type: "module",
+			sideEffects: false,
+			exports: {
+				".": "./src/index.ts",
+				...(values.baked && { "./artifact": "./src/artifact.ts" }),
+				"./package.json": "./package.json",
 			},
-			null,
-			2,
-		)}\n`,
-	);
+			scripts: { test: "bun test", typecheck: "tsc --noEmit" },
+			dependencies,
+			devDependencies: {
+				"@repo/tsconfig": "workspace:*",
+				"@types/bun": "catalog:",
+				typescript: "catalog:",
+			},
+		},
+		null,
+		2,
+	)}\n`,
+);
+files.set(
+	`packages/${id}/tsconfig.json`,
+	`{\n  "extends": "@repo/tsconfig/library.json",\n  "include": ["src"]\n}\n`,
+);
+
+if (transport === "cli") {
+	// CLI vendors keep the existing declarative CliSpec; its CliRunner is already the transport port.
 	files.set(
-		`packages/${id}/tsconfig.json`,
-		`{\n  "extends": "@repo/tsconfig/library.json",\n  "include": ["src"]\n}\n`,
+		`packages/${id}/src/index.ts`,
+		`import { defineCliDriver, defineCliSpec } from "@sandbox-benchmarks/driver/cli";
+import { type } from "arktype";
+import { ${constant}_PROVENANCE } from "./provenance.ts";
+
+const ROWS = type("string.json.parse").to(type({ id: "string", name: "string", status: "string" }).array());
+
+export default defineCliDriver("${id}", {
+	provenance: ${constant}_PROVENANCE,
+	execution: { syncCapMs: 60_000, durable: "shell-detach" },
+	createAttemptCeilingMs: 10 * 60_000,
+	spec: ({ env, resolvedArtifact }) =>
+		defineCliSpec(ROWS, {
+			binary: "${id}",
+			secretFlags: [],
+			commandTimeoutMs: 60_000,
+			requestCoverage: TODO,
+			create: (request, name) => ["create", name, "--image", resolvedArtifact.ref, "--json"],
+			cleanupCreated: { kind: "lookup", select: (rows, name) => rows.find((row) => row.name === name) ?? null, absenceConfirmationMs: 2_000 },
+			ready: { poll: ["list", "--json"], select: (rows, name) => rows.find((row) => row.name === name) ?? null, classify: (row) => (row.status === "running" ? "ready" : "pending") },
+			sandboxId: { fromRow: (row) => row.id, parse: type(/^TODO$/) },
+			exec: (id, command) => ["exec", id, "--", "bash", "-lc", command],
+			destroy: (id) => ["delete", id],
+			notFound: /not found/i,
+		}),
+});
+`,
+	);
+} else {
+	files.set(
+		`packages/${id}/src/vendor.ts`,
+		`// ${vendorName}'s vendor adapter: translation only. It receives its ${transport === "sdk" ? "SDK" : "fetch transport"}; it never creates one.
+import type { DriverContext } from "@sandbox-benchmarks/driver";
+import type { Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
+import { type } from "arktype";
+
+export const ${constant}_SANDBOX_ID = type(/^TODO$/);
+const row = type({ id: "string", status: "string", "labels?": { "[string]": "string" } });
+type Row = typeof row.infer;
+
+const record = (value: Row): VendorRecord<Row> => ({
+	id: value.id,
+	phase: value.status === "running" ? "ready" : value.status === "deleted" ? "gone" : "pending",
+	...(value.labels?.owner !== undefined && { marker: value.labels.owner }),
+	raw: value,
+});
+
+export function ${ident}Vendor(
+	${transport === "sdk" ? "client: TODO_Client" : "fetch: typeof globalThis.fetch"},
+	{ env, resolvedArtifact }: Pick<DriverContext<"${id}">, "env" | "resolvedArtifact">,
+): Vendor<Row, Row> {
+	return {
+		control: {
+			create: async ({ marker }) => record(TODO),
+			get: async (id) => TODO, // null only on the vendor's typed not-found
+			remove: async (id) => TODO, // "removed" | "accepted"
+			page: async (cursor) => ({ records: TODO, next: TODO }),
+			refused: (error) => undefined,
+		},
+		data: {
+			attach: (value) => value.raw,
+			exec: async (native, command) => TODO,
+		},
+	};
+}
+`,
 	);
 	files.set(
 		`packages/${id}/src/index.ts`,
-		`import type { DriverContext } from "@sandbox-benchmarks/driver";
-import { defineOpsDriver, instanceOfAny, pinnedShape } from "@sandbox-benchmarks/driver/ops";
-import { type } from "arktype";
-import * as sdk from "${sdkName}";
+		`import { defineVendorDriver, mapped } from "@sandbox-benchmarks/driver/vendor";
 import { ${constant}_PROVENANCE } from "./provenance.ts";
+import { ${constant}_SANDBOX_ID, ${ident}Vendor } from "./vendor.ts";
 
-export default defineOpsDriver("${id}", {
+export default defineVendorDriver("${id}", {
 	provenance: ${constant}_PROVENANCE,
-	ops: ({ env, resolvedArtifact }: DriverContext<"${id}">) => {
-		const client = new sdk.Client(/* TODO: env */);
-		return {
-			sandboxId: type(/^TODO$/),
-			coverage: pinnedShape(4, 8),
-			create: ({ marker }) => client.create({ image: resolvedArtifact.ref, labels: { owner: marker } }),
-			get: (id) => client.get(id),
-			remove: (id) => client.delete(id),
-			list: () => client.list(),
-			idOf: (row) => row.id,
-			phase: (row) => (row.status === "running" ? "ready" : "pending"),
-			ownership: { kind: "marker", key: "owner", of: (row) => row.labels?.owner },
-			connect: (row) => client.connect(row.id),
-			exec: (native, command) => native.exec(["bash", "-lc", command]),
-			errors: { notFound: instanceOfAny(sdk.NotFoundError) },
-		};
-	},
+	sandboxId: ${constant}_SANDBOX_ID,
+	coverage: mapped("runtime-verified"),
+	vendor: (context) => ${ident}Vendor(${transport === "sdk" ? "new TODO_Client(context.env)" : "globalThis.fetch"}, context),
 });
 `,
 	);
 	files.set(
-		`packages/${id}/src/index.test.ts`,
-		`import { kitConformance } from "@sandbox-benchmarks/driver/ops-testing";
-import ${id.replaceAll("-", "_")} from "./index.ts";
+		`packages/${id}/src/vendor.test.ts`,
+		`// Translation and the port contract over a stubbed ${transport === "sdk" ? "SDK" : "fetch"}; kit behaviour is tested once in the driver kit.
+import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import { ${ident}Vendor } from "./vendor.ts";
 
-// The shared suite drives create/exec/destroy/inventory/recovery against an in-memory vendor.
-// Add provider-specific edge cases below it; do not re-test kit behavior here.
-kitConformance(${id.replaceAll("-", "_")}, { fake: "in-memory" });
+vendorContract("${id} adapter", () => ({ vendor: ${ident}Vendor(TODO_STUB, TODO_CONTEXT), account: "shared" }));
 `,
 	);
 }
 
+if (values.baked)
+	files.set(
+		`packages/${id}/src/artifact.ts`,
+		`import { defineArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
+
+/** Build \`name\` from the digest-pinned base; return exactly the ref the driver boots. */
+export default defineArtifactBuilder("${id}", async ({ name, base, spec, env, log }) => {
+	TODO;
+	return { ref: name, replaced: "atomic" };
+});
+`,
+	);
+
 const edits = [
 	`packages/schema/src/provider-ids.ts: append "${id}" to PROVIDER_IDS`,
-	...(kind === "sdk" && sdkName && sdkVersion
+	...(transport === "sdk" && sdkName && sdkVersion
 		? [`package.json: workspaces.catalogs.computesdk["${sdkName}"] = "${sdkVersion}"`]
 		: []),
-	"then: bun run generate-providers && bun install && bun test -u (registry snapshot)",
+	"then: bun run generate-providers && bun install && review the registry snapshot diff",
 ];
-
 for (const [file, content] of files) {
 	const path = join(values.out, file);
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, content);
 }
-const lines = [...files.values()].reduce((sum, text) => sum + text.split("\n").length - 1, 0);
+const lines = [...files.values()].reduce((total, text) => total + text.split("\n").length - 1, 0);
 console.log(`scaffolded ${files.size} files (${lines} lines) under ${values.out}:`);
 for (const file of files.keys()) console.log(`  + ${file}`);
 console.log("in-place edits:");
