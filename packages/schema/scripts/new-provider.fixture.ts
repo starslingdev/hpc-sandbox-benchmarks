@@ -2,40 +2,37 @@
 // (new-provider.test.ts) and the end-to-end check (new-provider-e2e.ts), and how that work is
 // counted: lines of the filled file outside its longest common run with the scaffold.
 
-/** One stated value per metadata field a scaffold can leave unfilled. */
-const METADATA: Readonly<Record<string, string>> = {
-	displayName: '"Acme"',
-	vendor: '"Acme"',
-	website: '"https://acme.example"',
-	isolation: '{ class: "microVM", technology: "Firecracker microVM" }',
-	pricing: `{
+/** One stated value per metadata field a scaffold can leave unfilled, for provider `id`. */
+function metadataValues(id: string): Readonly<Record<string, string>> {
+	// Each provider its own vendor, as real ones are: two baked artifacts of one vendor need distinct
+	// release names.
+	const name = id.split("-").map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`);
+	return {
+		displayName: JSON.stringify(name.join(" ")),
+		vendor: JSON.stringify(name.join(" ")),
+		website: JSON.stringify(`https://${id}.example`),
+		isolation: '{ class: "microVM", technology: "Firecracker microVM" }',
+		pricing: `{
 		model: "unavailable",
 		reason: "unpublished",
-		notes: "Acme publishes no sandbox rate.",
+		notes: "No published sandbox rate.",
 	}`,
-	specPinning: '"settable"',
-};
+		specPinning: '"settable"',
+	};
+}
 
 /** State every `unfilled(...)` a scaffolded metadata file holds, as its author would. */
 export function fillMetadata(source: string): string {
+	const values = metadataValues(/defineProviderMeta\("([^"]+)"/.exec(source)?.[1] ?? "");
 	const filled = source
 		.replace("import { defineProviderMeta, unfilled } from", "import { defineProviderMeta } from")
-		.replace(/http: unfilled\([^)]*\)/, 'http: "v1"')
+		.replace(/http: unfilled\((?:[^()]|\([^()]*\))*\)/, 'http: "1.0.0"')
 		.replace(/^(\t)(\w+): unfilled\([\s\S]*?\),$/gm, (_line, indent: string, key: string) => {
-			const value = METADATA[key];
+			const value = values[key];
 			if (value === undefined) throw new Error(`no fill for metadata field ${key}`);
 			return `${indent}${key}: ${value},`;
 		});
 	if (/\bunfilled\b/.test(filled)) throw new Error(`metadata still unfilled:\n${filled}`);
-	return filled;
-}
-
-/** The E2B-protocol adapter's one stated difference: the SDK honours the caller's signal. */
-export function fillE2bAdapter(source: string): string {
-	const filled = source
-		.replace('import { unfilled } from "@sandbox-benchmarks/driver/vendor";\n', "")
-		.replace(/signals: unfilled\([^)]*\),/, "signals: true,");
-	if (/\bunfilled\b/.test(filled)) throw new Error(`adapter still unfilled:\n${filled}`);
 	return filled;
 }
 
@@ -99,93 +96,169 @@ const SKELETON_EXEC = `			exec: async (sandbox, command, options) => unfilled("{
 const STUB_IMPORT = 'import { unfilled } from "@sandbox-benchmarks/driver/vendor";\n';
 
 /**
- * The pinned E2B SDK's specifier, assembled so the vendor-seam check (which reads every source file)
- * does not mistake this fixture's text for an import.
+ * The vendor SDKs `check:new-provider` installs, offline, into its copy of the repository: one per
+ * SDK case, as the npm package its catalog pin resolves to. `acme-sandbox` speaks the E2B protocol,
+ * so it is the pinned E2B SDK under the vendor's own name, the way such SDKs are forks of it.
+ * `@acme/sdk` is a small REST client of its own. Specifiers are assembled so the vendor-seam check
+ * (which reads every source file) does not mistake this fixture's text for an import.
  */
-const E2B = JSON.stringify(["e", "2b"].join(""));
+export function fakeSdks(e2bVersion: string): Record<string, Record<string, string>> {
+	const e2b = JSON.stringify(["e", "2b"].join(""));
+	const manifest = (name: string, dependencies = {}) =>
+		JSON.stringify({
+			name,
+			version: "1.0.0",
+			type: "module",
+			main: "index.js",
+			types: "index.d.ts",
+			dependencies,
+		});
+	return {
+		"acme-sandbox": {
+			"package.json": manifest("acme-sandbox", { [JSON.parse(e2b)]: e2bVersion }),
+			"index.js": `export * from ${e2b};\n`,
+			"index.d.ts": `export * from ${e2b};\n`,
+		},
+		"@acme/sdk": {
+			"package.json": manifest("@acme/sdk"),
+			"index.d.ts": `export interface SandboxInfo {
+	id: string;
+	status: "starting" | "running" | "stopping" | "stopped";
+	labels: Record<string, string>;
+}
+export interface RequestOptions {
+	signal?: AbortSignal;
+}
+export declare class NotFoundError extends Error {}
+export declare class AcmeClient {
+	constructor(options: { apiKey: string; baseUrl?: string });
+	readonly sandboxes: {
+		create(body: { image: string; labels: Record<string, string> }, options?: RequestOptions): Promise<SandboxInfo>;
+		retrieve(id: string, options?: RequestOptions): Promise<SandboxInfo>;
+		delete(id: string, options?: RequestOptions): Promise<void>;
+		list(query: { cursor?: string }, options?: RequestOptions): Promise<{ data: SandboxInfo[]; nextCursor?: string }>;
+		exec(id: string, body: { command: string }, options?: RequestOptions): Promise<{ exitCode: number; stdout: string; stderr: string }>;
+	};
+}
+`,
+			"index.js": `export class NotFoundError extends Error {}
+export class AcmeClient {
+	constructor({ apiKey, baseUrl = "https://api.acme.example" }) {
+		const call = async (method, path, body, options = {}) => {
+			const response = await fetch(new URL(path, baseUrl), {
+				method,
+				signal: options.signal,
+				headers: { authorization: \`Bearer \${apiKey}\`, "content-type": "application/json" },
+				body: body === undefined ? undefined : JSON.stringify(body),
+			});
+			if (response.status === 404) throw new NotFoundError(path);
+			if (!response.ok) throw new Error(\`acme \${response.status}\`);
+			return response.status === 204 ? undefined : response.json();
+		};
+		this.sandboxes = {
+			create: (body, options) => call("POST", "/v1/sandboxes", body, options),
+			retrieve: (id, options) => call("GET", \`/v1/sandboxes/\${id}\`, undefined, options),
+			delete: (id, options) => call("DELETE", \`/v1/sandboxes/\${id}\`, undefined, options),
+			list: ({ cursor }, options) => call("GET", \`/v1/sandboxes\${cursor ? \`?cursor=\${cursor}\` : ""}\`, undefined, options),
+			exec: (id, body, options) => call("POST", \`/v1/sandboxes/\${id}/exec\`, body, options),
+		};
+	}
+}
+`,
+		},
+	};
+}
 
-/** An SDK adapter, written against the pinned `e2b` SDK standing in for a vendor's own SDK. */
+/** `@acme/sdk`, assembled for the vendor-seam check as in {@link fakeSdks}. */
+const ACME_SDK = ["@acme", "sdk"].join("/");
+
+const SDK_IMPORTS = `${SKELETON_IMPORTS}\nimport { unfilled } from "@sandbox-benchmarks/driver/vendor";`;
+
+/** An SDK adapter over the `@acme/sdk` REST client. */
 export function fillSdkAdapter(source: string): string {
 	return rewrite(source, [
 		[
-			`${SKELETON_IMPORTS}\nimport { unfilled } from "@sandbox-benchmarks/driver/vendor";`,
-			'import type { Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";\nimport { instanceOfAny, LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";',
+			'import type { DriverContext } from "@sandbox-benchmarks/driver";',
+			`import type { SandboxInfo } from "${ACME_SDK}";\nimport type { DriverContext } from "@sandbox-benchmarks/driver";`,
 		],
 		[
-			'import { type } from "arktype";',
-			`import { type } from "arktype";\nimport type { Sandbox as Native } from ${E2B};`,
+			SDK_IMPORTS,
+			'import type { Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";\nimport { instanceOfAny } from "@sandbox-benchmarks/driver/vendor";',
 		],
-		[
-			`type Sandbox = Unfilled<"the vendor's sandbox type">;`,
-			`const row = type({ sandboxId: "string", "metadata?": { "[string]": "string" } });
-type Sandbox = typeof row.infer & { readonly native?: Native };`,
-		],
+		[`type Sandbox = Unfilled<"the vendor's sandbox type">;`, "type Sandbox = SandboxInfo;"],
 		[
 			"): Vendor<Sandbox, Sandbox> {",
-			"): Vendor<Sandbox, Native> {\n\tconst auth = { apiKey: env.ACME_SDK_API_KEY };",
+			"): Vendor<Sandbox, Sandbox> {\n\tconst client = new sdk.AcmeClient({ apiKey: env.ACME_SDK_API_KEY });",
 		],
 		[
 			SKELETON_RECORD,
 			`	const record = (sandbox: Sandbox): VendorRecord<Sandbox> => ({
-		id: sandbox.sandboxId,
-		phase: "ready",
-		...(sandbox.metadata?.marker && { marker: sandbox.metadata.marker }),
+		id: sandbox.id,
+		phase: ({ starting: "pending", running: "ready", stopping: "deleting", stopped: "gone" } as const)[sandbox.status],
+		...(sandbox.labels.marker && { marker: sandbox.labels.marker }),
 		raw: sandbox,
 	});`,
 		],
 		[
 			SKELETON_CONTROL,
-			`			create: async ({ marker }, { signal }) => {
-				const metadata = { marker };
-				const options = { ...auth, metadata, timeoutMs: LEAK_EXPIRY_MS, signal };
-				const native = await sdk.Sandbox.create(resolvedArtifact.ref, options);
-				return record({ sandboxId: native.sandboxId, metadata, native });
-			},
+			`			create: async ({ marker }, { signal }) =>
+				record(await client.sandboxes.create({ image: resolvedArtifact.ref, labels: { marker } }, { signal })),
 			// null only on the vendor's own not-found.
-			get: async (id, { signal }) =>
-				record(row.assert(await sdk.Sandbox.getInfo(id, { ...auth, signal }))),
+			get: async (id, { signal }) => record(await client.sandboxes.retrieve(id, { signal })),
 			remove: async (id, { signal }) => {
-				await sdk.Sandbox.kill(id, { ...auth, signal });
-				return "removed";
+				await client.sandboxes.delete(id, { signal });
+				return "accepted";
 			},
-			absent: instanceOfAny(sdk.SandboxNotFoundError),
+			absent: instanceOfAny(sdk.NotFoundError),
 			page: async (cursor, { signal }) => {
-				const query = { state: ["running" as const] };
-				const pages = sdk.Sandbox.list({ ...auth, query, ...(cursor && { nextToken: cursor }) });
-				const records = row.array().assert(await pages.nextItems({ signal })).map(record);
-				return pages.hasNext ? { records, next: pages.nextToken ?? "" } : { records };
-			},`,
-		],
-		[
-			"			attach: ({ raw }) => raw,",
-			`			attach: ({ raw }) => {
-				if (!raw.native) throw new Error("acme-sdk attaches only the sandbox its create returned");
-				return raw.native;
+				const page = await client.sandboxes.list({ ...(cursor && { cursor }) }, { signal });
+				return { records: page.data.map(record), ...(page.nextCursor && { next: page.nextCursor }) };
 			},`,
 		],
 		[
 			SKELETON_EXEC,
-			`			exec: async (native, command) => {
-				try {
-					return await native.commands.run(command, { user: "root" });
-				} catch (error) {
-					if (error instanceof Error && "exitCode" in error && typeof error.exitCode === "number")
-						return { exitCode: error.exitCode, stdout: "", stderr: error.message };
-					throw error;
-				}
-			},`,
+			`			exec: async (sandbox, command, options) =>
+				client.sandboxes.exec(sandbox.id, { command }, { ...(options?.signal && { signal: options.signal }) }),`,
 		],
 	]);
 }
 
-/** The SDK provider's stand-in: the shared E2B-protocol stub, which the `e2b` SDK's surface fits. */
+/** The SDK provider's stand-in: the `@acme/sdk` client over one in-memory account. */
 export function fillSdkTest(source: string): string {
 	return rewrite(source, [
 		[STUB_IMPORT, ""],
-		["import {\n\ttestContext,", "import {\n\te2bProtocolStub,\n\ttestContext,"],
 		[
 			'const stub = (): AcmeSdkSdk => unfilled("an in-memory stand-in for the SDK");',
-			"const stub = (): AcmeSdkSdk => e2bProtocolStub<AcmeSdkSdk>().sdk;",
+			`const stub = (): AcmeSdkSdk => {
+	class NotFoundError extends Error {}
+	const sandboxes = new Map<string, SandboxInfo>();
+	const find = async (id: string) => {
+		const found = sandboxes.get(id);
+		if (!found) throw new NotFoundError(id);
+		return found;
+	};
+	const api: AcmeClient["sandboxes"] = {
+		create: async ({ labels }) => {
+			const created = { id: \`sb-\${sandboxes.size + 1}\`, status: "running" as const, labels };
+			sandboxes.set(created.id, created);
+			return created;
+		},
+		retrieve: find,
+		delete: async (id) => {
+			sandboxes.delete((await find(id)).id);
+		},
+		list: async () => ({ data: [...sandboxes.values()] }),
+		exec: async (_id, { command }) => {
+			const exitCode = Number(/exit (\\d+)/.exec(command)?.[1] ?? 0);
+			return { exitCode, stdout: "", stderr: "" };
+		},
+	};
+	return { NotFoundError, AcmeClient: class { sandboxes = api } } as unknown as AcmeSdkSdk;
+};`,
+		],
+		[
+			'import type { CreateRequest } from "@sandbox-benchmarks/driver";',
+			`import type { AcmeClient, SandboxInfo } from "${ACME_SDK}";\nimport type { CreateRequest } from "@sandbox-benchmarks/driver";`,
 		],
 	]);
 }
@@ -244,34 +317,22 @@ const outcome = type({ exitCode: "number", stdout: "string", stderr: "string" })
 	]);
 }
 
-/** The HTTP provider's stand-in: the REST API above, over one in-memory account. */
+/** The HTTP provider's stand-in: the REST API above as a route table over one in-memory account. */
 export function fillHttpTest(source: string): string {
 	return rewrite(source, [
 		[STUB_IMPORT, ""],
 		[
-			'const stub = (): typeof globalThis.fetch => unfilled("an in-memory stand-in for the API");',
-			`const stub = (): typeof globalThis.fetch => {
-	const sandboxes = new Map<string, { id: string; status: string; marker: string }>();
-	const json = (status: number, body?: unknown) =>
-		new Response(body === undefined ? null : JSON.stringify(body), { status });
-	const api = async (input: string | URL | Request, init?: RequestInit) => {
-		const [, , , id, action] = new URL(String(input)).pathname.split("/");
-		const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-		if (id === undefined) {
-			if (init?.method !== "POST") return json(200, { items: [...sandboxes.values()] });
-			const created = { id: \`sb-\${sandboxes.size + 1}\`, status: "running", marker: body.marker };
-			sandboxes.set(created.id, created);
-			return json(201, created);
-		}
-		const found = sandboxes.get(id);
-		if (!found) return json(404, { error: "not found" });
-		if (init?.method === "DELETE") return json(204, sandboxes.delete(id) && undefined);
-		if (action !== "exec") return json(200, found);
-		const exitCode = Number(/exit (\\d+)/.exec(body.command)?.[1] ?? 0);
-		return json(200, { exitCode, stdout: "", stderr: "" });
-	};
-	return api as typeof globalThis.fetch;
-};`,
+			`const stub = () => restStub(unfilled("the API's routes")).fetch;`,
+			`const stub = () =>
+	restStub<{ id: string; status: string; marker: string }>({
+		"POST /v1/sandboxes": ({ body, add }) => add({ status: "running", marker: body.marker }),
+		"GET /v1/sandboxes": ({ rows }) => ({ items: [...rows.values()] }),
+		"GET /v1/sandboxes/:id": ({ row }) => row,
+		"DELETE /v1/sandboxes/:id": ({ rows, row }) => {
+			rows.delete(row.id);
+		},
+		"POST /v1/sandboxes/:id/exec": ({ body, run }) => run(body.command),
+	}).fetch;`,
 		],
 	]);
 }

@@ -4,7 +4,8 @@
 //   - no port call starts on an already-aborted signal;
 //   - each control-plane read (`get`, `page`, `find`) is bounded by `controlTimeoutMs` and its
 //     operation: the adapter receives the bounded signal, and the read settles at the bound even
-//     where the SDK takes no signal. `create`, `settle` and `remove` may legitimately wait on the
+//     where the SDK takes no signal, rejecting with `ControlReadTimeout` (which a readiness or
+//     cleanup-confirmation poll reads again rather than failing on). `create`, `settle` and `remove` may legitimately wait on the
 //     vendor (a boot, a long poll, a waited delete) and stay within their own budgets;
 //   - a read by id answers for that id: a record with another id (an SDK that also resolves a name)
 //     is refused, never acted on. A removal that must look its sandbox up first reads it through
@@ -29,6 +30,14 @@ import type {
 
 /** The kit's default bound on one control-plane call. */
 export const CONTROL_TIMEOUT_MS = 30_000;
+
+/**
+ * A control-plane read the kit abandoned at its own `controlTimeoutMs`: neither the caller's
+ * cancellation nor an answer from the vendor. A poll may read again; anything else fails on it.
+ */
+export class ControlReadTimeout extends Error {
+	override readonly name = "ControlReadTimeout";
+}
 
 /** Settle with `work`, or reject as soon as `signal` aborts whether or not the work honours it. */
 export function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -100,13 +109,29 @@ export function kitPort<Raw, Native>(
 	const { control, data } = vendor;
 	const { absent } = control;
 	type Read = (id: string, op: Op) => Promise<VendorRecord<Raw> | null>;
-	/** A control-plane read within `controlTimeoutMs`, handed the bounded signal. */
+	/**
+	 * A control-plane read within `controlTimeoutMs`, handed the bounded signal. Expiry of that bound
+	 * (not the operation's own cancellation) rejects with {@link ControlReadTimeout}.
+	 */
 	const capped =
-		<A extends unknown[], T>(read: (...args: [...A, Op]) => Promise<T>) =>
-		(...args: [...A, Op]): Promise<T> => {
+		<A extends unknown[], T>(label: string, read: (...args: [...A, Op]) => Promise<T>) =>
+		async (...args: [...A, Op]): Promise<T> => {
 			const op = args.at(-1) as Op;
 			const rest = args.slice(0, -1) as A;
-			return bounded(op.signal, controlTimeoutMs, (signal) => read(...rest, { ...op, signal }));
+			const limit = AbortSignal.timeout(controlTimeoutMs);
+			const bound = AbortSignal.any([limit, op.signal]);
+			try {
+				return await untilAborted(
+					Promise.resolve().then(() => read(...rest, { ...op, signal: bound })),
+					bound,
+				);
+			} catch (error) {
+				if (limit.aborted && !op.signal.aborted && error === limit.reason)
+					throw new ControlReadTimeout(
+						`${provider} ${label} did not answer within ${controlTimeoutMs}ms`,
+					);
+				throw error;
+			}
 		};
 	/** `get`'s contract: `null` only on the vendor's own not-found. */
 	const observing =
@@ -128,10 +153,10 @@ export function kitPort<Raw, Native>(
 				throw new Error(`${provider} returned an unrelated sandbox for ${id}`);
 			return record;
 		};
-	const lookupGet = started(observing(capped(control.get)), opSignal);
+	const lookupGet = started(observing(capped("get", control.get)), opSignal);
 	const get = identified(lookupGet);
 	const find: ControlPlane<Raw>["find"] = control.find
-		? started(capped(control.find), opSignal)
+		? started(capped("marker lookup", control.find), opSignal)
 		: lookup &&
 			(async (marker, _cursor, op): Promise<VendorPage<Raw>> => {
 				const found = await lookupGet(lookup.toVendor(marker), op);
@@ -154,7 +179,7 @@ export function kitPort<Raw, Native>(
 					throw error;
 				}
 			}, opSignal),
-			page: started(capped(control.page), opSignal),
+			page: started(capped("listing page", control.page), opSignal),
 			...(find && { find }),
 		},
 		data: {

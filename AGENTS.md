@@ -50,7 +50,9 @@ directly:
   <name>@<version>] [--protocol e2b] [--baked]` (CONTRIBUTING.md "Add a provider"); the author fills
   the typed `unfilled(...)` values (metadata, `src/vendor.ts`, a test stand-in or builder where the
   scaffold leaves one) and runs `generate-providers`. `bun run check:new-provider` takes a scaffold
-  of every kind through every gate in a temporary copy (about two minutes; CI's `scaffold` job).
+  of every kind through every repository gate (`check:providers`, `lint`, `lint:workflows`,
+  `lint:shell`, `spell`, `typecheck`, the whole `test`) in a temporary copy (about six minutes; CI's
+  `scaffold` job). A registry-snapshot drift is caught by `bun run test`, not by `check:providers`.
 - Run a CLI bin directly, e.g. `bun apps/cli/src/bin/plan-matrix.ts --list-providers` or
   `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json`. Bins are listed under
   `apps/cli/package.json` `bin`.

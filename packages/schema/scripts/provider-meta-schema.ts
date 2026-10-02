@@ -36,6 +36,15 @@ const quotaDomainSchema = nonemptyStringSchema.narrow((value, ctx) =>
 const kebabIdentifierSchema = nonemptyStringSchema.narrow((value, ctx) =>
 	/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) ? true : ctx.mustBe("a lowercase kebab-case name"),
 );
+// Provenance reports every provider package's library at an exact version (an npm or CLI pin), so
+// an HTTP-only adapter states its API contract the same way, and run records compare like for like.
+const exactVersionSchema = nonemptyStringSchema.narrow((value, ctx) =>
+	/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(
+		value,
+	)
+		? true
+		: ctx.mustBe('an exact semantic version (for example "1.0.0")'),
+);
 const httpUrlSchema = type("string.url").narrow((value) => {
 	const protocol = new URL(value).protocol;
 	return protocol === "http:" || protocol === "https:";
@@ -103,7 +112,7 @@ export const providerMetaSourceSchema = type({
 	website: httpUrlSchema,
 	sdkPackage: nonemptyStringSchema
 		.or(type({ cli: kebabIdentifierSchema }).onUndeclaredKey("reject"))
-		.or(type({ http: singleLineStringSchema }).onUndeclaredKey("reject")),
+		.or(type({ http: exactVersionSchema }).onUndeclaredKey("reject")),
 	"package?": type({
 		directory: kebabIdentifierSchema,
 		entry: kebabIdentifierSchema.narrow((value, ctx) =>

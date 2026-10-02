@@ -113,7 +113,9 @@ derives the DriverModule. The **control plane** (`create`, `get`, `remove`, `pag
 speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit starts no port call on an
 already-cancelled signal; bounds each control-plane read (`get`, `page`, `find`) by
 `controlTimeoutMs`, handing the adapter the bounded signal and racing an SDK that takes none
-(`create`, `settle` and `remove` may wait on the vendor and stay within their own budgets; an
+(a readiness or cleanup-confirmation poll reads again at its cadence after a read that outlived
+that bound, until its own deadline, so a slow read during a boot waits inside the readiness budget;
+`create`, `settle` and `remove` may wait on the vendor and stay within their own budgets; an
 adapter bounds a step the kit does not with the exported `bounded`); refuses a record a read by id
 returns for another id (an SDK whose read also resolves a name), including the read a removal makes
 through `RemoveOp.current` before deleting by handle; and, where the control plane declares
@@ -259,8 +261,12 @@ Everything else that names providers is derived from that registry rather than r
   CLI, its setup action) and leaves only what the vendor makes true as typed `unfilled(...)` values.
   `packages/schema/scripts/new-provider.test.ts` is its cost guard (the files it writes, the files an
   author edits, the adapter skeleton's budget, and that generation then needs no other edit);
-  `bun run check:new-provider` scaffolds, fills and gates a provider of every kind in a temporary
-  copy of the repository.
+  `bun run check:new-provider` scaffolds and fills a provider of every kind in a temporary copy of
+  the repository (each SDK a fake npm package installed offline) and runs every repository gate
+  there: `check:providers`, `lint`, `lint:workflows`, `lint:shell`, `spell`, `typecheck` and the
+  whole `test`, so a requirement on providers that the scaffold and generator do not meet fails it.
+  The registry snapshot is a `bun test` snapshot: its drift fails `bun run test`, not
+  `check:providers`.
 
 Exec transport is not metadata: each driver module's `execution` policy declares its synchronous cap
 and durable route, and the composition root projects it onto the harness's `ProviderTransport`.
@@ -369,7 +375,7 @@ the Run model or builds a document never spawns a browser.
 | `bun run generate-providers` | Regenerates every output derived from provider metadata (registry assembly, driver loader, provenance, managed workflow/env/docs regions, registry snapshot). |
 | `bun run check:providers` | Fails if any generated provider output drifted from the metadata registry. |
 | `bun run new-provider -- --id <id> --kind sdk\|http\|cli` | Scaffolds a provider (`--sdk <name>@<version>`, `--protocol e2b`, `--baked`); see CONTRIBUTING.md "Add a provider". |
-| `bun run check:new-provider` | Scaffolds, fills and gates a provider of every kind in a temporary copy of the repository (CI's `scaffold` job). |
+| `bun run check:new-provider` | Scaffolds and fills a provider of every kind in a temporary copy of the repository and runs every gate there (`check:providers`, `lint`, `lint:workflows`, `lint:shell`, `spell`, `typecheck`, `test`; CI's `scaffold` job). |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 

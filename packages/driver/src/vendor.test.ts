@@ -16,7 +16,12 @@ import {
 	writeTextFile,
 } from "@sandbox-benchmarks/driver";
 import { admissionFailures, runConformance } from "@sandbox-benchmarks/driver/conformance";
-import type { Vendor, VendorDriverSpec, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
+import type {
+	Vendor,
+	VendorDriverSpec,
+	VendorRecord,
+	VendorTiming,
+} from "@sandbox-benchmarks/driver/vendor";
 import {
 	bounded,
 	coverage,
@@ -38,6 +43,7 @@ import {
 	kitPort,
 	MemoryNotFound,
 	memoryVendor,
+	restStub,
 	vendorContract,
 	vendorDriver,
 } from "@sandbox-benchmarks/driver/vendor/testing";
@@ -1318,13 +1324,105 @@ describe("bounded control calls", () => {
 			},
 		};
 		const driver = moduleOver(() => hung, {
-			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 5_000, controlTimeoutMs: 20 },
+			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 200, controlTimeoutMs: 20 },
 		}).driver(context);
 		const started = performance.now();
 		await expect(driver.destroyById?.({ provider: "novita", id: "mem-1" })).rejects.toThrow();
+		// It failed at the delete budget, not at the first read's bound.
+		expect(performance.now() - started).toBeGreaterThanOrEqual(190);
 		expect(performance.now() - started).toBeLessThan(1_000);
-		// The adapter was handed the bounded signal, which the bound aborted.
-		expect(signals[0]?.aborted).toBe(true);
+		// Each read was handed the bounded signal, which its own bound aborted; the confirmation
+		// poll read again until the delete budget, not past it.
+		expect(signals.length).toBeGreaterThan(1);
+		for (const signal of signals) expect(signal.aborted).toBe(true);
+	});
+
+	/**
+	 * A vendor whose reads never answer while `hangs` holds (an SDK that ignores its signal), given
+	 * the read's ordinal and the control calls so far.
+	 */
+	function hangingReads(
+		options: MemoryVendorOptions,
+		hangs: (read: number, calls: readonly string[]) => boolean,
+	) {
+		const world = memoryVendor(options);
+		let reads = 0;
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				get: (id, op) =>
+					hangs(++reads, world.calls) ? new Promise(() => {}) : world.vendor.control.get(id, op),
+			},
+		};
+		const timing = {
+			pollMs: 1,
+			readyTimeoutMs: 1_000,
+			deleteTimeoutMs: 1_000,
+			controlTimeoutMs: 20,
+		};
+		return (extra: Partial<VendorTiming> = {}) => ({
+			...world,
+			reads: () => reads,
+			driver: moduleOver(() => vendor, { timing: { ...timing, ...extra } }).driver(context),
+		});
+	}
+
+	test("a readiness read that outlives its bound is read again until the readiness deadline", async () => {
+		const { driver, reads, allocations } = hangingReads(
+			{ readyAfterGets: 1 },
+			(read) => read <= 2,
+		)();
+		const session = await driver.create(request);
+		expect(reads()).toBe(3);
+		await session.destroy();
+		expect(allocations()).toBe(0);
+	});
+
+	test("readiness that never answers ends at the readiness deadline, and is torn down", async () => {
+		const { driver, allocations } = hangingReads(
+			{ readyAfterGets: 1 },
+			(_read, calls) => !calls.includes("remove"),
+		)({ readyTimeoutMs: 100 });
+		const failure = await driver.create(request).catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "create-failed" });
+		expect(describeDriverFailure(failure)).toContain("not ready within 100ms");
+		expect(allocations()).toBe(0);
+	});
+
+	test("a vendor's own timeout during readiness still fails the create at once", async () => {
+		const world = memoryVendor({ readyAfterGets: 1 });
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				get: async (id, op) => {
+					if (world.calls.includes("remove")) return world.vendor.control.get(id, op);
+					throw new DOMException("the vendor's gateway timed out", "TimeoutError");
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor, {
+			timing: { pollMs: 1, readyTimeoutMs: 10_000, deleteTimeoutMs: 1_000, controlTimeoutMs: 20 },
+		}).driver(context);
+		const started = performance.now();
+		const failure = await driver.create(request).catch((caught) => caught);
+		expect(describeDriverFailure(failure)).toContain("the vendor's gateway timed out");
+		expect(performance.now() - started).toBeLessThan(5_000);
+		expect(world.allocations()).toBe(0);
+	});
+
+	test("a cleanup-confirmation read that outlives its bound is read again until the delete deadline", async () => {
+		let removedAt = 0;
+		const { driver, reads, calls, allocations } = hangingReads({}, (read, seen) => {
+			if (removedAt === 0 && seen.includes("remove")) removedAt = read;
+			return removedAt > 0 && read < removedAt + 2;
+		})();
+		const session = await driver.create(request);
+		await session.destroy();
+		expect(calls.filter((call) => call === "remove")).toHaveLength(1);
+		expect(reads() - removedAt).toBe(2);
+		expect(allocations()).toBe(0);
 	});
 
 	test("bounded races a call the SDK cannot cancel and hands it the bounded signal", async () => {
@@ -1515,6 +1613,48 @@ describe("the vendor's not-found and a cancelled call", () => {
 		await expect(driver.create(request, { signal: cancelled.signal })).rejects.toThrow();
 		expect(world.calls.filter((call) => call === "create")).toHaveLength(creates);
 		await session.destroy();
+	});
+});
+
+describe("restStub, the REST API stand-in", () => {
+	test("routes by method and path, answers 404 for an unknown :id, and runs each sandbox's guest", async () => {
+		const api = restStub<{ readonly id: string; readonly marker: string }>(
+			{
+				"POST /v1/sandboxes": ({ body, add }) => add({ marker: body.marker }),
+				"GET /v1/sandboxes/:id": ({ row }) => row,
+				"DELETE /v1/sandboxes/:id": ({ rows, row }) => {
+					rows.delete(row.id);
+				},
+				"POST /v1/sandboxes/:id/exec": ({ body, run }) => run(body.command),
+			},
+			{ latencyMs: (method) => (method === "GET" ? 50 : 0) },
+		);
+		const call = (method: string, path: string, body?: unknown, signal?: AbortSignal) =>
+			api.fetch(`https://api.test${path}`, {
+				method,
+				...(body !== undefined && { body: JSON.stringify(body) }),
+				...(signal && { signal }),
+			});
+		const created = await (await call("POST", "/v1/sandboxes", { marker: "m" })).json();
+		expect(created).toEqual({ id: "sb-1", marker: "m" });
+		expect(await (await call("GET", "/v1/sandboxes/sb-1")).json()).toEqual(created);
+		const exec = async (command: string) =>
+			(await call("POST", "/v1/sandboxes/sb-1/exec", { command })).json() as Promise<
+				Record<string, unknown>
+			>;
+		expect(await exec("sh -c 'exit 7'")).toEqual({ exitCode: 7, stdout: "", stderr: "" });
+		expect((await exec(DISK_PROBE)).stdout).toBe(`${80 * 1024 * 1024}\n`);
+		await expect(
+			call("GET", "/v1/sandboxes/sb-1", undefined, AbortSignal.timeout(5)),
+		).rejects.toThrow();
+		expect((await call("DELETE", "/v1/sandboxes/sb-1")).status).toBe(204);
+		expect((await call("GET", "/v1/sandboxes/sb-1")).status).toBe(404);
+		await expect(call("PATCH", "/v1/sandboxes")).rejects.toThrow(
+			"no route for PATCH /v1/sandboxes",
+		);
+		expect(api.calls.map(({ method, path }) => `${method} ${path}`)).toContain(
+			"DELETE /v1/sandboxes/sb-1",
+		);
 	});
 });
 

@@ -122,7 +122,16 @@ function validate(spec: NewProvider, read: (file: string) => string | undefined)
 		throw new Error("--kind http has no library to pin; omit --sdk");
 	if (spec.sdk?.version !== undefined && !EXACT_VERSION.test(spec.sdk.version))
 		throw new Error(`--sdk ${spec.sdk.name}@${spec.sdk.version}: pin an exact version`);
+	const pinned = spec.kind === "sdk" && spec.sdk && vendorCatalog(read)[spec.sdk.name];
+	// The vendor seam (ADR-0023 §2): exactly one provider package owns each vendor library.
+	if (pinned)
+		throw new Error(
+			`${spec.sdk?.name} is already pinned at ${pinned} in catalogs.vendors, so a provider package owns it: a provider on the same SDK is an isolation variant of that package (its metadata declares package: { directory, entry } and the package adds src/<entry>.ts), not a new package`,
+		);
 }
+
+const vendorCatalog = (read: (file: string) => string | undefined): Record<string, string> =>
+	JSON.parse(required(read, "package.json")).workspaces.catalogs.vendors;
 
 /**
  * The repository's Biome configuration reduced to layout (format and organized imports): the linter
@@ -181,14 +190,11 @@ export function planProvider(
 		"packages/schema/src/provider-ids.ts",
 		withProviderId(required(read, "packages/schema/src/provider-ids.ts"), spec.id),
 	);
-	if (spec.kind === "sdk" && spec.sdk?.version !== undefined) {
-		const manifest = withCatalogEntry(
-			required(read, "package.json"),
-			spec.sdk.name,
-			spec.sdk.version,
+	if (spec.kind === "sdk" && spec.sdk?.version !== undefined)
+		edit(
+			"package.json",
+			withCatalogEntry(required(read, "package.json"), spec.sdk.name, spec.sdk.version),
 		);
-		if (manifest !== undefined) edit("package.json", manifest);
-	}
 	const cli = spec.kind === "cli" ? (spec.sdk?.name ?? spec.id) : undefined;
 	if (cli !== undefined && read(`.github/actions/setup-${cli}/action.yml`) === undefined)
 		files.set(`.github/actions/setup-${cli}/action.yml`, setupAction(cli, spec.sdk?.version));
@@ -223,20 +229,13 @@ export function withProviderId(source: string, id: string): string {
 	return `${source.slice(0, close)}\t${JSON.stringify(id)},\n${source.slice(close)}`;
 }
 
-/** Pin `name` in the root vendor catalog; `undefined` when it is already pinned there. */
-export function withCatalogEntry(
-	source: string,
-	name: string,
-	version: string,
-): string | undefined {
+/** Pin `name`, which no provider package owns yet, in the root vendor catalog. */
+export function withCatalogEntry(source: string, name: string, version: string): string {
 	const manifest = JSON.parse(source);
 	if (`${JSON.stringify(manifest, null, 2)}\n` !== source)
 		throw new Error("package.json: not in canonical JSON form; format it first");
 	const vendors: Record<string, string> = manifest.workspaces.catalogs.vendors;
-	const pinned = vendors[name];
-	if (pinned === version) return undefined;
-	if (pinned !== undefined)
-		throw new Error(`${name} is already pinned at ${pinned} in catalogs.vendors, not ${version}`);
+	if (vendors[name] !== undefined) throw new Error(`${name} is already in catalogs.vendors`);
 	vendors[name] = version;
 	return `${JSON.stringify(manifest, null, 2)}\n`;
 }
@@ -284,12 +283,15 @@ function metadata(spec: NewProvider, n: Names, cli: string | undefined): string 
 			? JSON.stringify(spec.sdk?.name)
 			: spec.kind === "cli"
 				? `{ cli: ${JSON.stringify(cli)} }`
-				: `{ http: unfilled("the API version the adapter speaks") }`;
+				: `{ http: unfilled('the version of the API contract the adapter speaks, as exact semver ("1.0.0")') }`;
 	const specPinning =
 		spec.protocol === "e2b"
 			? `// E2B protocol: the template pins CPU and memory, not the per-sandbox create.
 	specPinning: "fixed",`
-			: `specPinning: unfilled('"settable" when the create sets CPU and memory, "fixed" when the artifact pins them'),`;
+			: spec.kind === "cli"
+				? `specPinning: unfilled('"settable" when the create sets CPU and memory, "fixed" when the artifact pins them'),`
+				: `// The create sets CPU and memory (\`coverage: mapped()\` in src/index.ts).
+	specPinning: "settable",`;
 	return `import { defineProviderMeta, unfilled } from "../provider-meta.ts";
 
 export default defineProviderMeta(${JSON.stringify(spec.id)}, {
@@ -324,7 +326,12 @@ function readme(spec: NewProvider, n: Names): string {
 			: spec.kind === "cli"
 				? "the `defineCliSpec` table of argv per operation and the JSON rows it parses"
 				: `the ${spec.kind === "sdk" ? "SDK" : "HTTP API"} translated into the control and data planes`;
-	const stub = spec.protocol === "e2b" ? "the shared `e2bProtocolStub`" : "a stand-in";
+	const stub =
+		spec.protocol === "e2b"
+			? "the shared `e2bProtocolStub`"
+			: spec.kind === "http"
+				? "a `restStub` route table"
+				: "a stand-in";
 	const builder = spec.baked
 		? "- `src/artifact.ts` (`./artifact`) bakes the digest-pinned toolchain base into the artifact\n  the driver boots.\n"
 		: "";
@@ -402,10 +409,10 @@ function adapter(spec: NewProvider, n: Names, cli: string | undefined): string {
 		return `// ${n.id}'s vendor adapter: the shared E2B-protocol adapter over the ${sdk} SDK, which it
 // receives and never loads. Readiness, cleanup confirmation, recovery, inventory and the disk proof
 // live in the driver kit (\`@sandbox-benchmarks/driver/vendor\`); state only how ${n.id} differs
-// (\`E2bProtocolOptions\`: its domain, request bounds and command timeout).
+// (\`E2bProtocolOptions\`: its domain, \`signals: true\` where the SDK honours the caller's signal,
+// request bounds and command timeout).
 
 import type { DriverContext } from "@sandbox-benchmarks/driver";
-import { unfilled } from "@sandbox-benchmarks/driver/vendor";
 import { e2bProtocolVendor } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
 import { type } from "arktype";
 import type { Sandbox } from "${sdk}";
@@ -427,7 +434,6 @@ export const ${n.camel}Vendor = (sdk: ${n.pascal}Sdk, { env, resolvedArtifact }:
 		vendor: ${JSON.stringify(n.id)},
 		apiKey: env.${n.credential},
 		template: resolvedArtifact.ref,
-		signals: unfilled("true when the SDK honours the caller's signal on every call"),
 	});
 `;
 	}
@@ -586,19 +592,31 @@ test("a session runs and is destroyed through the module's table", async () => {
 });
 `;
 	const e2b = spec.protocol === "e2b";
+	const sdk = spec.kind === "sdk";
 	const stub = e2b
 		? ""
-		: `
+		: sdk
+			? `
 /**
- * A whole-account stand-in for the ${spec.kind === "sdk" ? "SDK surface" : "API"} ${n.camel}Vendor translates: its sandboxes become ready
- * within a few reads and answer \`sh -c 'exit 7'\` with exit 7, as the port contract assumes.
+ * A whole-account stand-in for the SDK surface ${n.camel}Vendor translates: its sandboxes become
+ * ready within a few reads and answer \`sh -c 'exit 7'\` with exit 7, as the port contract assumes.
  */
-const stub = (): ${spec.kind === "sdk" ? `${n.pascal}Sdk` : "typeof globalThis.fetch"} => unfilled("an in-memory stand-in for the ${spec.kind === "sdk" ? "SDK" : "API"}");
+const stub = (): ${n.pascal}Sdk => unfilled("an in-memory stand-in for the SDK");
+`
+			: `
+/**
+ * A whole-account stand-in for the API ${n.camel}Vendor translates, as a route table from
+ * \`"METHOD /path/:id"\` to the answer: \`add\` allocates a sandbox, \`row\` is the one \`:id\` names,
+ * and \`run\` executes in its guest (\`sh -c 'exit 7'\` exits 7, as the port contract assumes).
+ */
+const stub = () => restStub(unfilled("the API's routes")).fetch;
 `;
 	const make = e2b ? `e2bProtocolStub<${n.pascal}Sdk>().sdk` : "stub()";
 	const testing = e2b
 		? "e2bProtocolStub, testContext, vendorContract, vendorDriver"
-		: "testContext, vendorContract, vendorDriver";
+		: sdk
+			? "testContext, vendorContract, vendorDriver"
+			: "restStub, testContext, vendorContract, vendorDriver";
 	const imports = [
 		'import { expect, test } from "bun:test";',
 		'import type { CreateRequest } from "@sandbox-benchmarks/driver";',

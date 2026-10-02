@@ -43,7 +43,12 @@ import type {
 	ComputeSdkSandboxIdSchema,
 } from "./lib/computesdk.ts";
 import { defineComputeSdkDriver } from "./lib/computesdk.ts";
-import { CONTROL_TIMEOUT_MS, kitPort, untilAborted } from "./lib/vendor-port.ts";
+import {
+	CONTROL_TIMEOUT_MS,
+	ControlReadTimeout,
+	kitPort,
+	untilAborted,
+} from "./lib/vendor-port.ts";
 
 /* ------------------------------------ the ports ------------------------------------ */
 
@@ -60,7 +65,8 @@ export type Phase = "pending" | "ready" | "failed" | "deleting" | "gone";
  * for a probe, the readiness or delete budget for a `settle` or `remove` inside a poll, and
  * `snapshotTimeoutMs` for a snapshot. The kit stops waiting at that bound even if the adapter
  * ignores the signal, and rejects a response that arrives after it, so an adapter states no
- * per-call bound of its own on those calls.
+ * per-call bound of its own on those calls. A read a readiness or cleanup-confirmation poll
+ * abandons at `controlTimeoutMs` is simply read again while the poll's deadline remains.
  */
 export interface Op {
 	readonly signal: AbortSignal;
@@ -232,7 +238,11 @@ export interface VendorTiming {
 	readonly deleteTimeoutMs: number;
 	/** The interval between cleanup-confirmation reads, where it differs from `pollMs`. */
 	readonly deletePollMs?: number;
-	/** The bound on one control-plane call outside a poll: a probe or one listing page. */
+	/**
+	 * The bound on one control-plane read (`get`, `page`, `find`) and on a probe. A read inside a
+	 * readiness or cleanup-confirmation poll that outlives it is read again at the poll's cadence
+	 * until the poll's own deadline; anywhere else it fails the call.
+	 */
 	readonly controlTimeoutMs: number;
 	/** The bound on one snapshot capture or delete. */
 	readonly snapshotTimeoutMs: number;
@@ -649,6 +659,24 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 		return records.filter((record) => !isGone(record));
 	}
 
+	/**
+	 * One read of a poll: `undefined` when the read outlived `controlTimeoutMs`, so the poll reads
+	 * again at its cadence until its own deadline, as it would wait out a slow boot. Every other
+	 * failure, and the caller's cancellation, still ends the poll.
+	 */
+	async function reread(
+		read: (id: string, o: Op) => Promise<VendorRecord<Raw> | null>,
+		id: string,
+		o: Op,
+	): Promise<VendorRecord<Raw> | null | undefined> {
+		try {
+			return await read(id, o);
+		} catch (error) {
+			if (error instanceof ControlReadTimeout) return undefined;
+			throw error;
+		}
+	}
+
 	// Ids this kit has observed gone (or proven removed): a held session is never deleted again.
 	const observedGone = new Set<string>();
 
@@ -688,7 +716,8 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 			async (o) => {
 				const first = order === "remove-first" && !requested;
 				if (first && (await request(o))) return true;
-				const record = await control.get(id, o);
+				const record = await reread(control.get, id, o);
+				if (record === undefined) return null;
 				if (isGone(record)) return true;
 				if (!first && !accepted && record?.phase !== "deleting") return request(o);
 				return null;
@@ -712,7 +741,8 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 			timing.readyTimeoutMs,
 			outer,
 			async (o) => {
-				const current = await observe(record.id, o);
+				const current = await reread(observe, record.id, o);
+				if (current === undefined) return null;
 				if (isGone(current)) observedGone.add(record.id);
 				if (current === null) throw new Error(`${provider} sandbox disappeared before readiness`);
 				if (current.phase === "ready") return current;

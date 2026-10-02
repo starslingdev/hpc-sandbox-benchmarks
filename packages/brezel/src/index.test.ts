@@ -6,7 +6,12 @@ import { describe, expect, spyOn, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
-import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import {
+	kitPort,
+	restStub,
+	vendorContract,
+	vendorDriver,
+} from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import brezel, { BREZEL_SANDBOX_ID } from "./index.ts";
 import { brezelPhase, brezelVendor } from "./vendor.ts";
@@ -49,11 +54,11 @@ function commandStream(stdout: string, stderr: string, exitCode: number): Respon
 }
 
 interface Row {
+	readonly id: string;
 	state: string;
 	revision: string;
 	failureCode?: string;
 	gets: number;
-	readonly files: Map<string, string>;
 }
 
 /**
@@ -73,101 +78,77 @@ function brezelServer(
 		readonly commandDelayMs?: number;
 	} = {},
 ) {
-	const rows = new Map<string, Row>();
-	const keys = new Map<string, string>();
-	const calls: Array<{ method: string; path: string; headers: Headers; body: unknown }> = [];
+	const keys = new Map<string, Row>();
 	let controlDelayMs = 0;
 	let firstCreate = true;
-	const resource = (id: string, row: Row) => ({
-		id,
+	const resource = (row: Row) => ({
+		id: row.id,
 		state: row.state,
 		environment_revision: row.revision,
 		...(row.failureCode && { failure: { code: row.failureCode } }),
 		created_at: "2026-09-28T00:00:00Z",
 	});
-	const delay = (ms: number, signal?: AbortSignal | null) =>
-		new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(resolve, ms);
-			signal?.addEventListener("abort", () => {
-				clearTimeout(timer);
-				reject(signal.reason);
-			});
-		});
-	function run(row: Row, shell: string): Response {
-		if (shell.startsWith("df -Pk")) return commandStream(`${80 * 1024 * 1024}\n`, "", 0);
-		const probe = /^test -e '(.*)'$/.exec(shell);
-		if (probe) return commandStream("", "", row.files.has(probe[1] ?? "") ? 0 : 1);
-		if (shell === "sh -c 'exit 7'") return commandStream("", "", 7);
-		return commandStream("out\n", "err\n", 7);
-	}
-	const route = async (input: string | URL | Request, init: RequestInit = {}) => {
-		const url = new URL(String(input));
-		const method = init.method ?? "GET";
-		const headers = new Headers(init.headers);
-		const body =
-			typeof init.body === "string"
-				? JSON.parse(init.body)
-				: init.body instanceof Uint8Array
-					? new TextDecoder().decode(init.body)
-					: undefined;
-		calls.push({ method, path: `${url.pathname}${url.search}`, headers, body });
-		const commands = url.pathname.endsWith("/commands");
-		const wait = commands ? (options.commandDelayMs ?? 0) : controlDelayMs;
-		if (wait) await delay(wait, init.signal);
-		const [, , , id = "", sub] = url.pathname.split("/");
-		const row = rows.get(id);
-		if (method === "POST" && url.pathname === "/v1/sandboxes") {
-			const key = headers.get("Idempotency-Key") ?? "";
-			if (firstCreate && options.refuseFirstCreate) {
+	const stub = restStub<Row>(
+		{
+			"POST /v1/sandboxes": ({ headers, body, add }) => {
+				const first = firstCreate;
 				firstCreate = false;
-				return json({ error: { code: "refused", message: "refused" } }, options.refuseFirstCreate);
-			}
-			let created = keys.get(key);
-			if (!created) {
-				created = `sbx_${String(rows.size + 1).padStart(32, "0")}`;
-				keys.set(key, created);
-				rows.set(created, {
-					state: (options.readyAfterGets ?? 0) > 0 ? "preparing" : "running",
-					revision: options.bootsRevision ?? body.environment_revision,
-					gets: 0,
-					files: new Map(),
-				});
-			}
-			if (firstCreate && options.ambiguousFirstCreate) {
-				firstCreate = false;
-				throw new TypeError("connection closed after remote acceptance");
-			}
-			firstCreate = false;
-			return json({ resource: resource(created, rows.get(created) as Row) });
-		}
-		if (method === "GET" && url.pathname === "/v1/sandboxes")
-			return json({ sandboxes: [...rows].map(([key, value]) => resource(key, value)) });
-		if (!row) return json({ error: { code: "not_found", message: "no such sandbox" } }, 404);
-		if (method === "GET" && sub === undefined) {
-			row.gets += 1;
-			if (row.state === "preparing" && row.gets >= (options.readyAfterGets ?? 0))
-				row.state = "running";
-			else if (row.state === "deleting") row.state = "deleted";
-			return json(resource(id, row));
-		}
-		if (method === "DELETE" && sub === undefined) {
-			if (row.state !== "deleted") row.state = "deleting";
-			return json({ resource: resource(id, row) });
-		}
-		if (method === "POST" && sub === "commands")
-			return run(row, (body as { argv: string[] }).argv.at(-1) ?? "");
-		const path = url.searchParams.get("path") ?? "";
-		if (method === "PUT" && sub === "files") {
-			row.files.set(path, String(body));
-			return json({ path, size: String(body).length });
-		}
-		if (method === "GET" && sub === "files") {
-			const text = row.files.get(path);
-			return text === undefined ? json({ error: { code: "not_found" } }, 404) : new Response(text);
-		}
-		throw new Error(`unhandled test request ${method} ${url.pathname}`);
-	};
-	const fetch = Object.assign(route, { preconnect() {} }) as typeof globalThis.fetch;
+				if (first && options.refuseFirstCreate)
+					return json(
+						{ error: { code: "refused", message: "refused" } },
+						options.refuseFirstCreate,
+					);
+				const key = headers.get("Idempotency-Key") ?? "";
+				const row =
+					keys.get(key) ??
+					add({
+						state: (options.readyAfterGets ?? 0) > 0 ? "preparing" : "running",
+						revision: options.bootsRevision ?? body.environment_revision,
+						gets: 0,
+					});
+				keys.set(key, row);
+				if (first && options.ambiguousFirstCreate)
+					throw new TypeError("connection closed after remote acceptance");
+				return { resource: resource(row) };
+			},
+			"GET /v1/sandboxes": ({ rows }) => ({ sandboxes: [...rows.values()].map(resource) }),
+			"GET /v1/sandboxes/:id": ({ row }) => {
+				row.gets += 1;
+				if (row.state === "preparing" && row.gets >= (options.readyAfterGets ?? 0))
+					row.state = "running";
+				else if (row.state === "deleting") row.state = "deleted";
+				return resource(row);
+			},
+			"DELETE /v1/sandboxes/:id": ({ row }) => {
+				if (row.state !== "deleted") row.state = "deleting";
+				return { resource: resource(row) };
+			},
+			"POST /v1/sandboxes/:id/commands": ({ body, run }) => {
+				const shell = (body as { argv: string[] }).argv.at(-1) ?? "";
+				if (shell === "fixture") return commandStream("out\n", "err\n", 7);
+				const { stdout, stderr, exitCode } = run(shell);
+				return commandStream(stdout, stderr, exitCode);
+			},
+			"PUT /v1/sandboxes/:id/files": ({ url, body, files }) => {
+				const path = url.searchParams.get("path") ?? "";
+				files.set(path, String(body));
+				return { path, size: String(body).length };
+			},
+			"GET /v1/sandboxes/:id/files": ({ url, files }) => {
+				const text = files.get(url.searchParams.get("path") ?? "");
+				return text === undefined
+					? json({ error: { code: "not_found" } }, 404)
+					: new Response(text);
+			},
+		},
+		{
+			newId: (n) => `sbx_${String(n).padStart(32, "0")}`,
+			latencyMs: (_method, path) =>
+				path.endsWith("/commands") ? (options.commandDelayMs ?? 0) : controlDelayMs,
+			missing: () => json({ error: { code: "not_found", message: "no such sandbox" } }, 404),
+		},
+	);
+	const { fetch, calls, rows } = stub;
 	return {
 		fetch,
 		rows,

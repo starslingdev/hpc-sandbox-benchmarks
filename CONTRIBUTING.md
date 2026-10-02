@@ -55,15 +55,20 @@ A new provider is four steps; everything else is scaffolded or generated.
    sdk`) or the CLI binary and its release (`--kind cli`); `--protocol e2b` binds an E2B-compatible
    SDK to the shared `e2bProtocolVendor`; `--baked` adds the `./artifact` builder for a provider that
    bakes the OCI toolchain base. It appends the id to `PROVIDER_IDS`, pins the SDK in the root
-   `catalogs.vendors`, writes `packages/schema/src/provider-meta/<id>.ts` and `packages/<id>/`
+   `catalogs.vendors` (an SDK already pinned there is refused: its owning package takes the new
+   provider as an isolation variant instead), writes `packages/schema/src/provider-meta/<id>.ts` and
+   `packages/<id>/`
    (manifest, tsconfig, README, `src/index.ts` binding `defineVendorDriver` or `defineCliDriver` with
    defaults, the `src/vendor.ts` adapter skeleton and `src/index.test.ts`), a checksum-pinned
    `.github/actions/setup-<cli>/action.yml` for a CLI, and runs `bun install --ignore-scripts`. Every
-   value only the vendor can answer is left as a typed `unfilled("…")`: typecheck names each one, and
-   `generate-providers` refuses the metadata until it is stated.
+   value only the vendor can answer is left as a typed `unfilled("…")` (an `Unfilled<"…">` for a
+   type): typecheck names each one, `generate-providers` refuses the metadata until it is stated, and
+   a repo check refuses one left in a file typecheck never reads (the CLI setup action's YAML).
 2. **Fill the metadata** — `packages/schema/src/provider-meta/<id>.ts`: display and vendor identity,
-   website, isolation, vetted pricing and spec pinning (and inputs, which default to
-   `<ID>_API_KEY`). Declare `package` only for an isolation variant sharing another provider's
+   website, isolation and vetted pricing (inputs default to `<ID>_API_KEY`; spec pinning is already
+   stated wherever the scaffold's coverage decides it, and only a CLI states it). An HTTP-only
+   provider's `sdkPackage: { http }` is the version of the API contract its adapter speaks, as an
+   exact semantic version like every other provenance pin; bump it when the translation changes. Declare `package` only for an isolation variant sharing another provider's
    package, and `figureLabel` only when the chart label differs from the derived default.
 3. **Write the adapter** — `packages/<id>/src/vendor.ts` translates the vendor onto the vendor port
    (`packages/brezel` and `packages/novita` are the references; `packages/vercel` and
@@ -71,10 +76,12 @@ A new provider is four steps; everything else is scaffolded or generated.
    `prepare`, `packages/boat` a vendor marked on `attach` whose lookups cannot prove absence,
    `packages/daytona` and `packages/modal` isolation variants sharing one adapter, and
    `packages/freestyle` native snapshots on the `snapshots` passthrough). An E2B-protocol adapter is
-   already the shared binding: state only the vendor's differences. An SDK, HTTP or CLI provider also
-   fills the stand-in for its transport in `src/index.test.ts`, which then runs `vendorContract` and a
-   session through `vendorDriver` (an E2B-protocol test needs nothing: it runs over the shared
-   `e2bProtocolStub`). A baking provider writes its builder in `src/artifact.ts`. Add translation
+   the shared binding and final as written, with safe defaults (`signals: false`: the kit bounds every
+   call whether or not the SDK honours a signal); edit it only to state a difference such as the
+   vendor's domain. An SDK, HTTP or CLI provider also fills the stand-in for its transport in
+   `src/index.test.ts`, which then runs `vendorContract` and a session through `vendorDriver`: an HTTP
+   API's is a `restStub` route table (`"METHOD /path/:id"` to its answer, each sandbox a row with a
+   guest shell), an E2B-protocol test needs nothing (it runs over the shared `e2bProtocolStub`). A baking provider writes its builder in `src/artifact.ts`. Add translation
    tests for the vendor's quirks beside the generated ones; kit behaviour is already tested in
    `packages/driver`. Change the generated `src/index.ts` only to tune a trait (`coverage`,
    `execution`, `timing`, `recovery`) away from its default.
@@ -83,16 +90,21 @@ A new provider is four steps; everything else is scaffolded or generated.
    options, workflow input blocks, runner routing, the CLI setup step, `.env.example`, CI
    configuration docs, the privileged-environment checklist) and the registry snapshot
    (`packages/schema/src/__snapshots__/provider-registry.test.ts.snap`). Review that snapshot's diff:
-   it records every fact the registry answers for the new provider. The drift gate rejects stale or
-   hand-edited output.
+   it records every fact the registry answers for the new provider. The drift gate
+   (`check:providers`) rejects stale or hand-edited wiring; a stale snapshot is caught by `bun run
+   test` (the registry test's snapshot comparison), not by `check:providers`.
 
 The rules the scaffold already satisfies, and the gates that hold them: a vendor library is pinned in
 the root `catalogs.vendors` and declared as `catalog:vendors` by its provider package alone (the
 vendor-seam check); `sdkPackage` is a dependency of the provider's own package; filename, tuple key
 and declared id agree (a compile error otherwise); `./artifact` exists exactly for an OCI baker (a
 native-snapshot provider exports `snapshotBuild` from its driver entry instead). The cost guard
-(`packages/schema/scripts/new-provider.test.ts`) and `bun run check:new-provider` (a scaffold of
-every kind, filled and taken through every gate) keep that cost from growing.
+(`packages/schema/scripts/new-provider.test.ts`) and `bun run check:new-provider` keep that cost
+from growing: the latter scaffolds a provider of every kind (each SDK a fake npm package installed
+offline) into a copy of the repository, fills only what each scaffold left, and runs `check:providers`,
+`lint`, `lint:workflows`, `lint:shell`, `spell`, `typecheck` and the whole `test` there. It fails on
+any file it had to touch beyond the scaffold, the fills and the generator's outputs, and on any test
+failure the unmodified tree does not share, so a new hand-wired requirement on providers fails it.
 
 Bring the provider up with a single-provider branch dispatch. Adding it to the default benchmark
 matrix remains a separate promotion decision after live validation.

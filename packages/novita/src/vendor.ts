@@ -34,7 +34,6 @@ export const novitaVendor = (
 		apiKey: env.NOVITA_API_KEY,
 		template: resolvedArtifact.ref,
 		domain: NOVITA_DOMAIN,
-		signals: false,
 		// A cold template boot can outlast the control-plane bound.
 		createRequestTimeoutMs: 300_000,
 		execTimeoutMs: 60_000,

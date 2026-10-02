@@ -85,8 +85,9 @@ export interface ProviderRunnerPolicy {
  *
  * A string is an npm package that must be a runtime dependency of the provider's own package (the
  * generator checks it). `cli` names a vendor CLI whose exact version is pinned by its setup action
- * (`.github/actions/setup-<cli>/action.yml`); `http` names the API version of a vendor reached over
- * plain HTTP with no library to pin.
+ * (`.github/actions/setup-<cli>/action.yml`); `http` is, for a vendor reached over plain HTTP with
+ * no library to pin, the version of the API contract its adapter speaks, as an exact semantic
+ * version like every other provenance pin (bump it when the adapter's translation changes).
  */
 export type ProviderSdkPackage = string | { readonly cli: string } | { readonly http: string };
 
@@ -162,15 +163,22 @@ declare const UNFILLED: unique symbol;
  * A value `bun run new-provider` leaves for a provider's author to state. It is assignable to no
  * metadata field or port signature, so typecheck names every one still open by its hint.
  */
-export interface Unfilled<Hint extends string> {
+export interface UnfilledValue<Hint extends string> {
 	readonly [UNFILLED]: Hint;
 }
+
+/**
+ * A type `bun run new-provider` leaves for a provider's author to state. No hint satisfies its
+ * constraint, so typecheck names every one still open by its hint wherever it is written, used or
+ * not.
+ */
+export type Unfilled<Hint extends never> = Hint;
 
 /**
  * Mark a value the author must still state. Evaluating it throws with its hint, so the registry's
  * validation (and any adapter call that reaches one) fails rather than running on a placeholder.
  */
-export function unfilled<const Hint extends string>(hint: Hint): Unfilled<Hint> {
+export function unfilled<const Hint extends string>(hint: Hint): UnfilledValue<Hint> {
 	throw new Error(`unfilled: ${hint} (left by \`bun run new-provider\`)`);
 }
 

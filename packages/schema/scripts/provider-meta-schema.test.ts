@@ -281,10 +281,15 @@ describe("Tier-3 provider metadata schema", () => {
 		).toThrow(/daytona-vm\/daytona-container: isolation variants must share one pricing object/);
 	});
 
-	test("accepts an npm package, a pinned CLI, or an HTTP API version as sdkPackage", () => {
+	test("accepts an npm package, a pinned CLI, or an exact HTTP API contract version as sdkPackage", () => {
 		expect(() =>
-			validateProviderModules(meta("brezel", { sdkPackage: { http: "2026-09-01" } })),
+			validateProviderModules(meta("brezel", { sdkPackage: { http: "1.2.0" } })),
 		).not.toThrow();
+		// Provenance is an exact pin for every provider package, an HTTP-only one included.
+		for (const loose of ["v1", "2026-09-01", "1.2"])
+			expect(() =>
+				validateProviderModules(meta("brezel", { sdkPackage: { http: loose } })),
+			).toThrow(/sdkPackage/);
 		expect(() =>
 			validateProviderModules(meta("tama", { sdkPackage: { cli: "Tama CLI" } })),
 		).toThrow(/sdkPackage/);

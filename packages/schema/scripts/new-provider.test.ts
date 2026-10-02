@@ -39,82 +39,81 @@ const IDS = "packages/schema/src/provider-ids.ts";
 /** One scaffold per provider kind: the files it writes and the ones its author edits by hand. */
 const KINDS = {
 	"E2B protocol": {
-		spec: args("--id=acme-e2b --kind=sdk --protocol=e2b --sdk=acme-sandbox@1.0.0"),
+		spec: args("--id=probe-e2b --kind=sdk --protocol=e2b --sdk=probe-sandbox@1.0.0"),
 		edited: [IDS, "package.json"],
 		created: [
-			meta("acme-e2b"),
-			...pkg("acme-e2b", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
+			meta("probe-e2b"),
+			...pkg("probe-e2b", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
 		],
-		authored: [meta("acme-e2b"), "packages/acme-e2b/src/vendor.ts"],
-		holes: 1,
-		codeLines: 24,
+		// The shared binding is final as written: only the metadata is the author's.
+		authored: [meta("probe-e2b")],
+		holes: 0,
+		codeLines: 22,
 	},
 	"E2B protocol, baked": {
-		spec: args("--id=acme-baked --kind=sdk --protocol=e2b --sdk=acme-baked-sandbox@1.0.0 --baked"),
+		spec: args(
+			"--id=probe-baked --kind=sdk --protocol=e2b --sdk=probe-baked-sandbox@1.0.0 --baked",
+		),
 		edited: [IDS, "package.json"],
 		created: [
-			meta("acme-baked"),
+			meta("probe-baked"),
 			...pkg(
-				"acme-baked",
+				"probe-baked",
 				...PACKAGE_FILES,
 				"src/vendor.ts",
 				"src/index.test.ts",
 				"src/artifact.ts",
 			),
 		],
-		authored: [
-			meta("acme-baked"),
-			"packages/acme-baked/src/vendor.ts",
-			"packages/acme-baked/src/artifact.ts",
-		],
-		holes: 1,
-		codeLines: 24,
+		authored: [meta("probe-baked"), "packages/probe-baked/src/artifact.ts"],
+		holes: 0,
+		codeLines: 22,
 	},
 	SDK: {
-		spec: args("--id=acme-sdk --kind=sdk --sdk=@acme/sdk@1.2.3"),
+		spec: args("--id=probe-sdk --kind=sdk --sdk=@probe/sdk@1.2.3"),
 		edited: [IDS, "package.json"],
 		created: [
-			meta("acme-sdk"),
-			...pkg("acme-sdk", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
+			meta("probe-sdk"),
+			...pkg("probe-sdk", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
 		],
 		// The test's stand-in for the SDK: a vendor-specific transport cannot be stubbed generically.
 		authored: [
-			meta("acme-sdk"),
-			"packages/acme-sdk/src/vendor.ts",
-			"packages/acme-sdk/src/index.test.ts",
+			meta("probe-sdk"),
+			"packages/probe-sdk/src/vendor.ts",
+			"packages/probe-sdk/src/index.test.ts",
 		],
 		holes: 7,
 		codeLines: 27,
 	},
 	HTTP: {
-		spec: args("--id=acme-http --kind=http"),
+		spec: args("--id=probe-http --kind=http"),
 		edited: [IDS],
 		created: [
-			meta("acme-http"),
-			...pkg("acme-http", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
+			meta("probe-http"),
+			...pkg("probe-http", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
 		],
 		authored: [
-			meta("acme-http"),
-			"packages/acme-http/src/vendor.ts",
-			"packages/acme-http/src/index.test.ts",
+			meta("probe-http"),
+			"packages/probe-http/src/vendor.ts",
+			"packages/probe-http/src/index.test.ts",
 		],
 		holes: 8,
 		codeLines: 49,
 	},
 	CLI: {
-		spec: args("--id=acme-cli --kind=cli --sdk=acme@0.4.2"),
+		spec: args("--id=probe-cli --kind=cli --sdk=probe@0.4.2"),
 		edited: [IDS],
 		created: [
-			".github/actions/setup-acme/action.yml",
-			meta("acme-cli"),
-			...pkg("acme-cli", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
+			".github/actions/setup-probe/action.yml",
+			meta("probe-cli"),
+			...pkg("probe-cli", ...PACKAGE_FILES, "src/vendor.ts", "src/index.test.ts"),
 		],
 		// The CLI's pinned release (its archive URL and checksum) is the vendor's to state.
 		authored: [
-			".github/actions/setup-acme/action.yml",
-			meta("acme-cli"),
-			"packages/acme-cli/src/vendor.ts",
-			"packages/acme-cli/src/index.test.ts",
+			".github/actions/setup-probe/action.yml",
+			meta("probe-cli"),
+			"packages/probe-cli/src/vendor.ts",
+			"packages/probe-cli/src/index.test.ts",
 		],
 		holes: 7,
 		codeLines: 31,
@@ -195,32 +194,32 @@ describe("new-provider: what one scaffold writes and leaves to its author", () =
 		});
 	}
 
-	test("the E2B protocol's adapter is the shared binding with one difference to state", () => {
-		const adapter = plan("E2B protocol").files.get("packages/acme-e2b/src/vendor.ts") ?? "";
+	test("the E2B protocol's adapter is the shared binding, with its safe defaults", () => {
+		const adapter = plan("E2B protocol").files.get("packages/probe-e2b/src/vendor.ts") ?? "";
 		expect(adapter).toContain("e2bProtocolVendor<Sandbox>(sdk, {");
-		expect(adapter.match(/unfilled\("[^"]*"\)/g)).toEqual([
-			`unfilled("true when the SDK honours the caller's signal on every call")`,
-		]);
+		// `signals` defaults to false: the kit bounds every call whether or not the SDK honours one.
+		expect(adapter).not.toMatch(/^\s+signals:/m);
+	});
+
+	test("pre-states spec pinning where the scaffold's coverage already decides it", () => {
+		const pinning = (kind: keyof typeof KINDS) =>
+			/specPinning: ([^\n,]+)/.exec(plan(kind).files.get(meta(KINDS[kind].spec.id)) ?? "")?.[1];
+		expect(pinning("E2B protocol")).toBe('"fixed"');
+		expect(pinning("SDK")).toBe('"settable"');
+		expect(pinning("HTTP")).toBe('"settable"');
+		expect(pinning("CLI")).toStartWith("unfilled(");
 	});
 
 	test("edits in place append the identity and pin the SDK, preserving everything else", () => {
 		const scaffold = plan("SDK");
-		const ids = scaffold.files.get(IDS) ?? "";
-		expect(ids).toBe(
-			(readFrom(REPO_ROOT)(IDS) ?? "").replace('\t"brezel",\n', '\t"brezel",\n\t"acme-sdk",\n'),
+		const last = `\t${JSON.stringify(PROVIDER_IDS.at(-1))},\n`;
+		expect(scaffold.files.get(IDS)).toBe(
+			(readFrom(REPO_ROOT)(IDS) ?? "").replace(last, `${last}\t"probe-sdk",\n`),
 		);
 		const root = JSON.parse(scaffold.files.get("package.json") ?? "{}");
-		expect(root.workspaces.catalogs.vendors["@acme/sdk"]).toBe("1.2.3");
-		const manifest = JSON.parse(scaffold.files.get("packages/acme-sdk/package.json") ?? "{}");
-		expect(manifest.dependencies["@acme/sdk"]).toBe("catalog:vendors");
-		// An SDK already pinned at the same version is reused, not re-pinned.
-		const e2b = JSON.parse(readFrom(REPO_ROOT)("package.json") ?? "{}").workspaces.catalogs.vendors
-			.e2b;
-		const reused = planProvider(
-			args(`--id=acme-reuse --kind=sdk --sdk=e2b@${e2b}`),
-			readFrom(REPO_ROOT),
-		);
-		expect(sorted(reused.edited)).toEqual([IDS]);
+		expect(root.workspaces.catalogs.vendors["@probe/sdk"]).toBe("1.2.3");
+		const manifest = JSON.parse(scaffold.files.get("packages/probe-sdk/package.json") ?? "{}");
+		expect(manifest.dependencies["@probe/sdk"]).toBe("catalog:vendors");
 	});
 
 	test("refuses a scaffold that would collide or pin loosely", () => {
@@ -228,11 +227,16 @@ describe("new-provider: what one scaffold writes and leaves to its author", () =
 		const refused = (line: string) => () => planProvider(args(line), read);
 		expect(refused("--id=e2b --kind=sdk --sdk=e2b@1.0.0")).toThrow("already a registered provider");
 		expect(refused("--id=Acme --kind=http")).toThrow("kebab-case");
-		expect(refused("--id=acme --kind=http --protocol=e2b")).toThrow("use --kind sdk");
-		expect(refused("--id=acme --kind=sdk --sdk=acme-sdk")).toThrow("exact version");
-		expect(refused("--id=acme --kind=sdk --sdk=acme-sdk@^1.0.0")).toThrow("pin an exact version");
-		expect(refused("--id=acme --kind=sdk --sdk=e2b@0.0.1")).toThrow("already pinned at");
-		expect(() => parseNewProviderArgs(["--id=acme"])).toThrow("--kind");
+		expect(refused("--id=probe --kind=http --protocol=e2b")).toThrow("use --kind sdk");
+		expect(refused("--id=probe --kind=sdk --sdk=probe-sdk")).toThrow("exact version");
+		expect(refused("--id=probe --kind=sdk --sdk=probe-sdk@^1.0.0")).toThrow("pin an exact version");
+		// A vendor SDK has one owning package: a second provider on it is that package's variant.
+		const e2b = JSON.parse(read("package.json") ?? "{}").workspaces.catalogs.vendors.e2b;
+		for (const version of [e2b, "0.0.1"])
+			expect(refused(`--id=probe --kind=sdk --sdk=e2b@${version}`)).toThrow(
+				`e2b is already pinned at ${e2b} in catalogs.vendors, so a provider package owns it: a provider on the same SDK is an isolation variant`,
+			);
+		expect(() => parseNewProviderArgs(["--id=probe"])).toThrow("--kind");
 	});
 
 	test("once the metadata is stated, generate-providers leaves no other file to edit", () => {
@@ -255,7 +259,8 @@ describe("new-provider: what one scaffold writes and leaves to its author", () =
 		const before = new Map(
 			scaffolds.flatMap((scaffold) => [...scaffold.files.keys()]).map((file) => [file, read(file)]),
 		);
-		expect(run(root, ["bun", "packages/schema/scripts/generate-providers.ts"]).exitCode).toBe(0);
+		const generation = run(root, ["bun", "packages/schema/scripts/generate-providers.ts"]);
+		expect(generation.exitCode, generation.output).toBe(0);
 		const check = run(root, ["bun", "packages/schema/scripts/generate-providers.ts", "--check"]);
 		expect(check.output).toContain("match the metadata registry");
 

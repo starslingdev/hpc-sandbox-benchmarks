@@ -22,11 +22,13 @@ The provider registry answers the facts other members would otherwise restate: `
 `src/provider-meta/`. `bun run generate-providers` (`scripts/generate-providers.ts`) is the one
 generator for everything derived from that metadata (including the reviewed projection snapshot
 `src/provider-registry.test.ts` holds beside the registry invariants), and `bun run check:providers`
-its drift check. `bun run new-provider` (`scripts/new-provider.ts`) scaffolds a new provider: a plan
+its drift check for the rendered wiring; the snapshot's own drift fails that test under `bun test`. `bun run new-provider` (`scripts/new-provider.ts`) scaffolds a new provider: a plan
 over the files it reads, leaving what only the vendor can answer as typed `unfilled(...)` values
 (`src/provider-meta.ts`). Its cost guard is `scripts/new-provider.test.ts`, and
 `bun run check:new-provider` (`scripts/new-provider-e2e.ts`) takes a filled scaffold of every kind
-through every gate in a temporary copy of the repository.
+through every repository gate (`check:providers`, `lint`, `lint:workflows`, `lint:shell`, `spell`,
+`typecheck`, `test`) in a temporary copy of the repository. An HTTP-only provider's `sdkPackage:
+{ http }` is an exact semantic version, as every provenance pin is.
 
 Provider pricing is also structured here. A published record retains cited component rates, vendor
 units, billing bases, intrinsic quantity rules, plan fees/allowances, and source verification dates.

@@ -6,7 +6,7 @@ import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { FailedCreateCleanupError } from "@sandbox-benchmarks/driver";
 import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import { restStub, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { BENCH_JOB_CEILING_MINUTES } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import { FreestyleApiError } from "freestyle";
@@ -91,65 +91,45 @@ function fixture(
  * answers exit codes and keeps the files written to it.
  */
 function freestyleAccount() {
-	const vms = new Map<
-		string,
-		ReturnType<typeof row> & { slug: string; files: Map<string, string> }
-	>();
-	let next = 0;
-	const fetchImpl = Object.assign(
-		async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-			const url = new URL(String(input));
-			const method = init?.method ?? "GET";
-			const [, , , name, verb, action] = url.pathname.split("/");
-			const vm =
-				name === undefined
-					? undefined
-					: (vms.get(name) ?? [...vms.values()].find((candidate) => candidate.slug === name));
-			const view = (found: NonNullable<typeof vm>) => {
-				const { files: _, ...rest } = found;
-				return rest;
-			};
-			if (name === undefined && method === "POST") {
-				const body = JSON.parse(String(init?.body));
-				const id = `vm-${++next}`;
-				const created = {
-					...row(id, "running", body.metadata[FREESTYLE_OWNER_KEY]),
-					slug: body.slug,
-				};
-				vms.set(id, { ...created, files: new Map() });
-				return Response.json(view(vms.get(id) as NonNullable<typeof vm>));
-			}
-			if (name === undefined) {
-				const all = [...vms.values()].map(view);
+	type Vm = ReturnType<typeof row> & { slug: string };
+	const account = restStub<Vm>(
+		{
+			"POST /v5/vms": ({ body, add }) => {
+				const { id: _, ...created } = row("", "running", body.metadata[FREESTYLE_OWNER_KEY]);
+				return add({ ...created, slug: body.slug });
+			},
+			"GET /v5/vms": ({ url, rows }) => {
 				const offset = Number(url.searchParams.get("offset") ?? 0);
-				return Response.json({ vms: all.slice(offset, offset + 1), totalCount: all.length });
-			}
-			if (!vm) return missing();
-			if (method === "DELETE" && verb === undefined) {
-				vms.delete(vm.id);
-				return new Response(null, { status: 204 });
-			}
-			if (verb === "exec-await") {
-				const command = String(JSON.parse(String(init?.body)).command);
-				return Response.json({
-					statusCode: command.includes("exit 7") ? 7 : 0,
-					stdout: "",
-					stderr: "",
-				});
-			}
-			const path = url.searchParams.get("path") ?? "";
-			if (verb === "fs" && action === "write") {
-				vm.files.set(path, new TextDecoder().decode(init?.body as Uint8Array));
-				return Response.json({});
-			}
-			if (verb === "fs" && action === "read") return new Response(vm.files.get(path) ?? "");
-			if (verb === "fs" && action === "exists")
-				return Response.json({ exists: vm.files.has(path) });
-			return Response.json(view(vm));
+				const all = [...rows.values()];
+				return { vms: all.slice(offset, offset + 1), totalCount: all.length };
+			},
+			"GET /v5/vms/:id": ({ row: vm }) => vm,
+			"POST /v5/vms/:id/resize": ({ row: vm }) => vm,
+			"DELETE /v5/vms/:id": ({ rows, row: vm }) => {
+				rows.delete(vm.id);
+			},
+			"POST /v5/vms/:id/exec-await": ({ body }) => ({
+				statusCode: String(body.command).includes("exit 7") ? 7 : 0,
+				stdout: "",
+				stderr: "",
+			}),
+			"PUT /v5/vms/:id/fs/write": ({ url, body, files }) => {
+				files.set(url.searchParams.get("path") ?? "", body);
+				return {};
+			},
+			"GET /v5/vms/:id/fs/read": ({ url, files }) =>
+				new Response(files.get(url.searchParams.get("path") ?? "") ?? ""),
+			"GET /v5/vms/:id/fs/exists": ({ url, files }) => ({
+				exists: files.has(url.searchParams.get("path") ?? ""),
+			}),
 		},
-		{ preconnect: fetch.preconnect },
+		{
+			newId: (n) => `vm-${n}`,
+			lookup: (name, vms) => vms.get(name) ?? [...vms.values()].find((vm) => vm.slug === name),
+			missing,
+		},
 	);
-	return { fetch: fetchImpl, vms };
+	return { fetch: account.fetch, vms: account.rows };
 }
 
 vendorContract("freestyle adapter", freestyle, () =>

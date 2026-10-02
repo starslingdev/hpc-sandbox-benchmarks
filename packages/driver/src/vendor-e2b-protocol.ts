@@ -94,10 +94,12 @@ export interface E2bProtocolOptions {
 	/** The vendor's control-plane domain, where it is not the SDK's default. */
 	readonly domain?: string;
 	/**
-	 * `true`: the SDK honours the caller's signal on every call. `false`: it does not, so every
-	 * guest call is bounded by the control-plane timeout (the kit starts none on a cancelled signal).
+	 * `true`: the SDK honours the caller's signal on every call, which it then receives. Omitted or
+	 * `false`, the safe reading: it may not, so every guest call is bounded by the control-plane
+	 * timeout (the kit already races each control-plane read and starts no call on a cancelled
+	 * signal).
 	 */
-	readonly signals: boolean;
+	readonly signals?: boolean;
 	/** The create request's own bound, where the SDK's default does not serve. */
 	readonly createRequestTimeoutMs?: number;
 	/** The foreground command timeout, where the SDK's default does not serve. */
@@ -133,7 +135,7 @@ export function e2bProtocolVendor<Native extends E2bProtocolSandbox>(
 	sdk: E2bProtocolSdk<Native>,
 	options: E2bProtocolOptions,
 ): Vendor<E2bProtocolRow<Native>, Native> {
-	const { vendor, apiKey, template, domain, signals } = options;
+	const { vendor, apiKey, template, domain, signals = false } = options;
 	const connection: CallOptions = {
 		apiKey,
 		...(domain !== undefined && { domain }),
