@@ -20,8 +20,9 @@ Boat quirks the driver is built around:
   in the post-create hook, where any failure is torn down by the returned id.
 - Exec is accepted before the guest's outbound network is up; readiness also waits for DNS plus a
   TCP connect to boat.dev.
-- Inventory owns every row with the recovery prefix, stopped or errored ones included, and ignores
-  stopped foreign rows (they hold no compute). A live foreign sandbox blocks admission, so use a
-  Boat account dedicated to the benchmark.
+- Admission inventory includes prefixed live, archiving and errored rows. Confirmed `archived`
+  snapshots are excluded regardless of ownership because they hold no compute. This lets admission
+  converge after the delete-forbidden stop fallback; direct probes still observe retained snapshots
+  as terminal. A live foreign sandbox blocks admission, so use a dedicated Boat account.
 
 Run `bun run --filter @sandbox-benchmarks/boat test` or `typecheck` from the repo root.

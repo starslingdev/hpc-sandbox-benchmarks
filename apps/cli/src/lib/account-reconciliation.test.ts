@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import type { ProviderId, SandboxDriver, SandboxRef } from "@sandbox-benchmarks/driver";
 import { reconcileAccount } from "./account-reconciliation.ts";
+import { openDriver } from "./driver-run.ts";
 
 const ref: SandboxRef = { provider: "tama", id: "machine-owned" };
 
@@ -204,3 +205,69 @@ test("a resource appearing after deletion prevents admission", async () => {
 		reconcileAccount([{ id: "tama", driver: candidate }], { timeoutMs: 100 }),
 	).rejects.toThrow("inventory changed");
 });
+
+for (const initiallyArchived of [true, false]) {
+	test(`Boat admission survives retained archives (initially archived: ${initiallyArchived})`, async () => {
+		const id = "bx_23456789";
+		let archived = initiallyArchived;
+		const mutations: string[] = [];
+		const row = () => ({
+			id,
+			name: "sandbox-benchmarks-owned",
+			state: archived ? "archived" : "ready",
+			type: "default",
+			vcpu: 4,
+			memoryGB: 8,
+			desktopAvailable: false,
+			snapshotAvailable: true,
+		});
+		const preconnect = fetch.preconnect;
+		const fetchApi = spyOn(globalThis, "fetch").mockImplementation(
+			Object.assign(
+				async (...[input, init]: Parameters<typeof fetch>) => {
+					const url = new URL(
+						typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+					);
+					const method = init?.method ?? "GET";
+					if (url.hostname !== "boat.dev") throw new Error("unexpected provider request");
+					let body: unknown;
+					let status = 200;
+					if (method === "GET" && url.pathname === "/api/v1/sandboxes") {
+						body = {
+							ok: true,
+							type: "sandbox.list",
+							sandboxes: [row()],
+							pageInfo: { nextCursor: null, hasMore: false, limit: 100 },
+						};
+					} else if (method === "GET" && url.pathname === `/api/v1/sandboxes/${id}`) {
+						body = { ok: true, type: "sandbox.info", sandbox: row() };
+					} else if (method === "DELETE" && url.pathname === `/api/v1/sandboxes/${id}`) {
+						mutations.push("delete");
+						status = 403;
+						body = { code: "api_key_action_forbidden", message: "delete forbidden" };
+					} else if (method === "POST" && url.pathname === `/api/v1/sandboxes/${id}/stop`) {
+						mutations.push("stop");
+						archived = true;
+						body = { ok: true, type: "sandbox.stopped", id, status: "archived" };
+					} else throw new Error(`unexpected Boat operation ${method} ${url.pathname}`);
+					return Response.json(body, { status });
+				},
+				{ preconnect },
+			),
+		);
+		try {
+			const { driver } = await openDriver("boat", { env: { BOAT_API_KEY: "test-key" } });
+			const result = await reconcileAccount([{ id: "boat", driver }], {
+				timeoutMs: 1000,
+				pollMs: 1,
+			});
+			expect(result.removed).toEqual(initiallyArchived ? [] : [{ provider: "boat", id }]);
+			expect(mutations).toEqual(initiallyArchived ? [] : ["delete", "stop"]);
+			const count = mutations.length;
+			await reconcileAccount([{ id: "boat", driver }], { timeoutMs: 1000, pollMs: 1 });
+			expect(mutations).toHaveLength(count);
+		} finally {
+			fetchApi.mockRestore();
+		}
+	});
+}

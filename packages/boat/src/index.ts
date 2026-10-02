@@ -813,14 +813,15 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 				),
 		},
 		inventory: {
-			// Retained owned rows are eligible for deletion, including archived snapshots. With a
-			// restricted key, already archived rows converge through the idempotent stop fallback.
+			// Archived snapshots retain data but no compute allocation. Exclude them from admission
+			// inventory so a confirmed stop can converge even when the key cannot delete snapshots.
 			list: async (_compute, operation) => {
 				const owned: string[] = [];
 				let foreignCount = 0;
 				for (const row of await completeInventory(sdk(), options, operation)) {
+					if (STOPPED_STATES.has(row.state)) continue;
 					if (row.name.startsWith(`${BOAT_RECOVERY_NAME_PREFIX}-`)) owned.push(row.id);
-					else if (!STOPPED_STATES.has(row.state)) foreignCount += 1;
+					else foreignCount += 1;
 				}
 				return { owned, foreignCount };
 			},

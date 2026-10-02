@@ -732,7 +732,7 @@ describe("boat module policy", () => {
 		expect(boatObservation("ready")).toEqual({ state: "running" });
 	});
 
-	it("inventories every prefixed row as owned and ignores stopped foreign rows", async () => {
+	it("inventories live and failed prefixed rows and ignores archived snapshots", async () => {
 		const client = nativeClient({
 			sandboxes: async () => ({
 				ok: true,
@@ -749,6 +749,10 @@ describe("boat module policy", () => {
 						name: `${BOAT_RECOVERY_NAME_PREFIX}-failed`,
 					}),
 					nativeSandbox("archived", { id: "bx_2345678e", name: "Box 2026-09-21 22:37" }),
+					nativeSandbox("archiving", {
+						id: "bx_2345678f",
+						name: `${BOAT_RECOVERY_NAME_PREFIX}-saving`,
+					}),
 				],
 			}),
 		});
@@ -756,8 +760,8 @@ describe("boat module policy", () => {
 		expect(snapshot).toEqual({
 			owned: [
 				sandboxRef("boat", "bx_23456789"),
-				sandboxRef("boat", "bx_2345678c"),
 				sandboxRef("boat", "bx_2345678d"),
+				sandboxRef("boat", "bx_2345678f"),
 			],
 			foreignCount: 1,
 		});
