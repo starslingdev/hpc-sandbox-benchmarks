@@ -28,8 +28,9 @@ export const NOVITA_SANDBOX_ID = type(/^[A-Za-z0-9_-]+$/);
 export const NOVITA_ATTEMPT_KEY = "sandbox-benchmarks-attempt";
 const CONTROL_TIMEOUT_MS = 5000;
 const AS_ROOT = { user: "root", requestTimeoutMs: CONTROL_TIMEOUT_MS } as const;
+type ListQuery = NonNullable<Parameters<NovitaSdk["Sandbox"]["list"]>[0]>["query"];
 /** A paused sandbox is still an allocation the account owns, so listings cover both live states. */
-const LIVE_STATES = ["running", "paused"];
+const LIVE_STATES: NonNullable<NonNullable<ListQuery>["state"]> = ["running", "paused"];
 
 const row = type({
 	sandboxId: "string >= 1",
@@ -46,11 +47,13 @@ const commandFailure = type({
 	stderr: "string",
 });
 
-/** Both live states own resources; a paused sandbox is not usable until resumed. */
+/**
+ * Both live states own resources; a paused sandbox is not usable until resumed. A state this
+ * adapter does not know is read as failed: it still owns resources and is deleted, never released.
+ */
 function phaseOf(value: NovitaRow): Phase {
 	if (value.state === undefined || value.state === "running") return "ready";
-	if (value.state === "paused") return "pending";
-	throw new Error("Novita returned an unknown state");
+	return value.state === "paused" ? "pending" : "failed";
 }
 
 export function novitaVendor(
@@ -77,20 +80,21 @@ export function novitaVendor(
 		}),
 		raw: value,
 	});
-	// The SDK paginator is stateful: continue the one that issued a cursor, and forget it once
-	// consumed, so the map holds at most one entry per listing in progress.
-	const paginators = new Map<string, ReturnType<NovitaSdk["Sandbox"]["list"]>>();
-	async function page(query: object, cursor: string | undefined): Promise<VendorPage<NovitaRow>> {
-		const paginator =
-			cursor === undefined ? sdk.Sandbox.list({ ...connection, query }) : paginators.get(cursor);
-		if (!paginator) throw new Error("Novita continuation cursor is unknown");
-		if (cursor !== undefined) paginators.delete(cursor);
+	/** One page: a fresh paginator resumed from the vendor's own continuation token. */
+	async function page(
+		query: ListQuery,
+		cursor: string | undefined,
+	): Promise<VendorPage<NovitaRow>> {
+		const paginator = sdk.Sandbox.list({
+			...connection,
+			query,
+			...(cursor !== undefined && { nextToken: cursor }),
+		});
 		const records = rows.assert(await paginator.nextItems()).map(record);
-		if (!paginator.hasNext) return { records };
-		// An omitted token reaches the kit as "", which fails the listing closed.
-		const next = paginator.nextToken ?? "";
-		paginators.set(next, paginator);
-		return { records, next };
+		// The SDK reports more pages exactly when the response carried a token.
+		return paginator.hasNext && paginator.nextToken
+			? { records, next: paginator.nextToken }
+			: { records };
 	}
 
 	return {
@@ -111,8 +115,8 @@ export function novitaVendor(
 			},
 			get: async (id) => {
 				try {
-					const info = await sdk.Sandbox.getInfo(id, connection);
-					return record({ sandboxId: info.sandboxId, state: info.state, metadata: info.metadata });
+					// The whole getInfo payload stays the raw record (the describe probe returns it).
+					return record(row.assert(await sdk.Sandbox.getInfo(id, connection)));
 				} catch (error) {
 					if (notFound(error)) return null;
 					throw error;

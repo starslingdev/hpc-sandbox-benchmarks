@@ -92,17 +92,20 @@ provider's retry predicate before the kit normalizes and redacts them.
 
 ADR-0023 §1: a provider package writes an adapter against two ports and `defineVendorDriver`
 derives the DriverModule. The **control plane** (`create`, `get`, `remove`, `page`, optionally
-`find`, `refused`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`)
+`find`, `refused`, `transient`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`)
 speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once for every provider:
 
 - readiness — skipped when `create` returns a `ready` record, otherwise polled through `get`;
-- cleanup confirmation — observe, request removal once, observe removal; a record already observed
-  gone is never sent a delete, and an `accepted` delete is not removal;
+- cleanup confirmation — request removal once, then observe removal; an `accepted` delete is not
+  removal. A session the kit holds is sent its delete first; destroy-by-id and recovery observe
+  first, and a record already observed gone is never sent a delete;
 - destroy-by-id, probes (`observe`/`describe` from `get`, a one-page `list`), and inventory (the
   owned/foreign partition by the kit-minted `benchmark-` ownership marker, draining pages and
   failing closed on a repeated or omitted cursor);
 - ambiguous-create recovery — by marker lookup, rejecting unrelated records on a shared account, or
-  by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces;
+  by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces.
+  `refused` failures skip recovery; `transient` failures are reconciled and then marked retryable.
+  The locator names the marker under the vendor's own `markerKey`;
 - the artifact guard, the `df` disk proof for a `runtime-verified` disk axis, and `admit`.
 
 It lowers onto the ComputeSDK bridge, so coverage proof, id parsing, cleanup double faults,

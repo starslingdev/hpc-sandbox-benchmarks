@@ -90,6 +90,12 @@ export interface ControlPlane<Raw = unknown> {
 	find?(marker: string, cursor: string | undefined, op: Op): Promise<VendorPage<Raw>>;
 	/** The vendor refused before allocating; `retryable` marks a capacity or rate refusal. */
 	refused?(error: unknown): { readonly retryable: boolean } | undefined;
+	/**
+	 * A transient create failure the harness may retry once the kit has proven nothing remains
+	 * allocated (a gateway or rate error that is not proof of refusal). Independent of `refused`:
+	 * a transient failure is still reconciled.
+	 */
+	transient?(error: unknown): boolean;
 	/** A post-readiness invariant beyond the request axes; returns a reason to reject. */
 	admit?(record: VendorRecord<Raw>): string | undefined;
 }
@@ -158,6 +164,8 @@ export interface VendorTraits {
 	readonly execution?: ExecutionPolicy;
 	readonly timing?: Partial<VendorTiming>;
 	readonly recovery?: { readonly absenceConfirmationMs?: number; readonly maxAttempts?: number };
+	/** The name the ownership marker travels under at the vendor (default `<provider>-marker`). */
+	readonly markerKey?: string;
 	/** Pages one listing may span before the kit treats the cursor as runaway (default 100). */
 	readonly pageCap?: number;
 }
@@ -309,7 +317,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 ) {
 	const { control, data, snapshots } = vendor;
 	const { files, launch } = data;
-	const refused = control.refused;
+	const { refused, transient } = control;
 	const timing: VendorTiming = { ...DEFAULT_TIMING, ...traits.timing };
 	const dedicated = traits.account === "dedicated";
 	if (dedicated && !control.find)
@@ -395,17 +403,30 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		return records.filter((record) => !isGone(record));
 	}
 
+	// Ids this kit has observed gone (or proven removed): a held session is never deleted again.
+	const observedGone = new Set<string>();
+
 	/**
-	 * Cleanup confirmation: observe, request removal once, then observe removal. A record already
-	 * observed gone is never sent a delete; an acknowledged delete is not removal. Resolves whether
-	 * this teardown requested the removal (false: the sandbox was already gone or going).
+	 * Cleanup confirmation: request removal once, then observe removal; an acknowledged delete is
+	 * not removal. `observe-first` (destroy-by-id, recovery: no proof the allocation is live) looks
+	 * before it deletes and never sends a delete to a record already observed gone. `remove-first`
+	 * (a session the kit created and holds) requests removal straight away. Resolves whether this
+	 * teardown requested the removal (false: the sandbox was already gone or going).
 	 */
-	async function destroy(id: string, signal?: AbortSignal): Promise<boolean> {
+	async function destroy(
+		id: string,
+		signal?: AbortSignal,
+		order: "observe-first" | "remove-first" = "observe-first",
+	): Promise<boolean> {
 		let requested = false;
 		await within(
 			timing.deleteTimeoutMs,
 			signal,
 			async (o) => {
+				if (order === "remove-first" && !requested) {
+					requested = true;
+					if ((await control.remove(id, o)) === "removed") return true;
+				}
 				const record = await control.get(id, o);
 				if (isGone(record)) return true;
 				if (!requested && record?.phase !== "deleting") {
@@ -419,6 +440,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 					`${provider} sandbox ${id} was not observed removed within ${timing.deleteTimeoutMs}ms`,
 				),
 		);
+		observedGone.add(id);
 		return requested;
 	}
 
@@ -429,6 +451,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 			outer,
 			async (o) => {
 				const current = await control.get(record.id, o);
+				if (isGone(current)) observedGone.add(record.id);
 				if (current === null) throw new Error(`${provider} sandbox disappeared before readiness`);
 				if (current.phase === "ready") return current;
 				if (current.phase !== "pending")
@@ -464,6 +487,10 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		return records.filter((record) => !isGone(record)).map((record) => vendorId.assert(record.id));
 	}
 
+	/** Teardown of a session the kit created and holds: its allocation is known to exist. */
+	const release = (id: string, signal?: AbortSignal) =>
+		destroy(id, signal, observedGone.has(id) ? "observe-first" : "remove-first");
+
 	const compute = nativeSdkCompute(
 		async (attempt: CreateAttempt, operation): Promise<VendorHandle<Raw, Native>> => {
 			const o = op(operation.signal);
@@ -482,14 +509,14 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 					},
 				);
 				allocatedFailures.add(failure);
-				await destroy(record.id).catch(() => undefined);
+				await release(record.id).catch(() => undefined);
 				throw failure;
 			}
 		},
 		({ record, native }) => ({
 			sandboxId: record.id,
 			runCommand: (command: string, options?: ExecOptions) => data.exec(native, command, options),
-			destroy: () => destroy(record.id),
+			destroy: () => release(record.id),
 			...(files && {
 				filesystem: {
 					readFile: (path: string) => files.read(native, path),
@@ -528,17 +555,25 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		}),
 		lifecycle: {
 			destroy: async (sandbox, ref, operation) => {
-				await destroy(ref?.id ?? sandbox.getInstance().record.id, operation.signal);
+				await release(ref?.id ?? sandbox.getInstance().record.id, operation.signal);
 			},
 		},
 		createRecovery: {
 			absenceConfirmationMs: traits.recovery?.absenceConfirmationMs ?? 2_000,
 			maxAttempts: traits.recovery?.maxAttempts ?? 4,
-			locator: (attempt) => ({ kind: "marker", key: `${provider}-marker`, value: attempt.marker }),
-			...(refused && {
-				isDefinitive: (error: unknown) => !afterAllocation(error) && refused(error) !== undefined,
+			locator: (attempt) => ({
+				kind: "marker",
+				key: traits.markerKey ?? `${provider}-marker`,
+				value: attempt.marker,
+			}),
+			...((refused || transient) && {
+				isDefinitive: (error: unknown) =>
+					refused !== undefined && !afterAllocation(error) && refused(error) !== undefined,
 				isRetryableCreate: (error: unknown) =>
-					!afterAllocation(error) && refused(error)?.retryable === true,
+					(refused !== undefined &&
+						!afterAllocation(error) &&
+						refused(error)?.retryable === true) ||
+					transient?.(error) === true,
 			}),
 			cleanup: async (_compute, locator, operation) => {
 				const ids = await recoveryIds(locator.value, operation.signal);

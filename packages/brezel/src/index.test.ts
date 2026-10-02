@@ -2,7 +2,7 @@
 // router, and a few sessions through the package's own module. Kit behaviour (convergence,
 // deadlines, the inventory partition, recovery mechanics) is tested once in the driver package.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
@@ -235,6 +235,11 @@ describe("Brezel translation", () => {
 			retryable: true,
 		});
 		for (const status of [0, 500, 503]) expect(refused?.(await failure(status))).toBeUndefined();
+		// Gateway errors and rate limits are retryable once reconciliation proves nothing remains.
+		const { transient } = brezelVendor(context, brezelServer().fetch).control;
+		for (const status of [429, 502, 503, 504])
+			expect(transient?.(await failure(status))).toBe(true);
+		for (const status of [0, 400, 500]) expect(transient?.(await failure(status))).toBe(false);
 	});
 
 	test("maps the create, delete, listing and exec requests and keeps the token in Authorization", async () => {
@@ -337,7 +342,10 @@ describe("Brezel end to end through its module", () => {
 			owned: [session.sandboxRef],
 			foreignCount: 0,
 		});
+		// The held session's teardown starts with its DELETE, then observes removal.
+		const before = server.calls.length;
 		await session.destroy();
+		expect(server.calls.slice(before).map((call) => call.method)).toEqual(["DELETE", "GET"]);
 		expect(server.rows.get(id ?? "")?.state).toBe("deleted");
 		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 0 });
@@ -363,6 +371,18 @@ describe("Brezel end to end through its module", () => {
 		expect(isRetryableDriverCreate(error)).toBe(true);
 		expect(server.creates()).toHaveLength(1);
 		expect(server.rows.size).toBe(0);
+	});
+
+	test("a gateway failure is reconciled by replay before it is marked retryable", async () => {
+		const server = brezelServer({ refuseFirstCreate: 503 });
+		const error = await driverOver(server)
+			.create(request)
+			.catch((caught) => caught);
+		expect(isRetryableDriverCreate(error)).toBe(true);
+		const keys = server.creates().map((call) => call.headers.get("Idempotency-Key"));
+		expect(keys.length).toBeGreaterThanOrEqual(2);
+		expect(new Set(keys).size).toBe(1);
+		expect([...server.rows.values()].map((row) => row.state)).toEqual(["deleted"]);
 	});
 
 	test("an allocation booted from another environment revision is rejected and deleted", async () => {
@@ -396,5 +416,53 @@ describe("Brezel end to end through its module", () => {
 		server.setControlDelay(30);
 		await expect(driver.destroyById?.(session.sandboxRef)).rejects.toThrow();
 		expect(server.deletes()).toHaveLength(0);
+	});
+});
+
+describe("Brezel's production binding", () => {
+	/** `brezel.driver(context)` exactly as the fleet loads it, over a spied global fetch. */
+	function production(server: ReturnType<typeof brezelServer>) {
+		const fetch = spyOn(globalThis, "fetch").mockImplementation(server.fetch);
+		try {
+			return { driver: brezel.driver(context), fetch };
+		} catch (error) {
+			fetch.mockRestore();
+			throw error;
+		}
+	}
+
+	test("the default module sends the bearer token and Idempotency-Key through globalThis.fetch", async () => {
+		const server = brezelServer();
+		const { driver, fetch } = production(server);
+		try {
+			const session = await driver.create(request);
+			const [post] = server.creates();
+			expect(post?.headers.get("Authorization")).toBe(`Bearer ${TOKEN}`);
+			expect(post?.headers.get("Idempotency-Key")).toMatch(/^benchmark-[0-9a-f-]{36}$/);
+			expect(post?.body).toMatchObject({ environment_revision: REVISION });
+			expect(JSON.stringify(post?.body)).not.toContain(TOKEN);
+			await session.destroy();
+			expect(fetch).toHaveBeenCalled();
+		} finally {
+			fetch.mockRestore();
+		}
+	});
+
+	test("the pinned 4 vCPU / 8 GiB shape refuses other requests before any create call", async () => {
+		const server = brezelServer();
+		const { driver, fetch } = production(server);
+		try {
+			for (const input of [
+				{ ...request, spec: { ...TARGET_SPEC, vcpus: 8 } },
+				{ ...request, env: { OVERRIDE: "yes" } },
+				{ ...request, artifact: { kind: "image" as const, ref: "example/image" } },
+			])
+				await expect(driver.create(input)).rejects.toMatchObject({
+					code: "invalid-create-request",
+				});
+			expect(server.calls).toHaveLength(0);
+		} finally {
+			fetch.mockRestore();
+		}
 	});
 });

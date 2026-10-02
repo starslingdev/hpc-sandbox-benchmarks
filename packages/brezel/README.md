@@ -42,6 +42,8 @@ readiness deadline, then rejects an allocation booted from another environment r
 Allocations expire after two hours on the qualified endpoint; detached execution does not extend
 that limit. Control requests honor caller cancellation. Accepted commands run to their bounded
 completion before cancellation is reported. Only 400, 401, 403, 404 and 429 create responses are
-refusals (429 is retryable); anything else is reconciled. Cleanup retains ownership of failed or
+refusals (429 is retryable); anything else is reconciled by replay, and a 502, 503 or 504 is then
+retryable. A session's teardown starts with its DELETE and ends when removal is observed;
+destroy-by-id and recovery read the record first. Cleanup retains ownership of failed or
 paused records until deletion, expiry, a 404, or an explicit backend verdict confirms absence
 (`backend_resource_missing` or `backend_capacity_unavailable`).

@@ -16,5 +16,7 @@ export default defineVendorDriver("brezel", {
 	account: "dedicated",
 	timing: { controlTimeoutMs: BREZEL_CONTROL_TIMEOUT_MS },
 	recovery: { absenceConfirmationMs: 1000, maxAttempts: 3 },
+	// The ownership marker is the create's Idempotency-Key.
+	markerKey: "Idempotency-Key",
 	vendor: (context) => brezelVendor(context, globalThis.fetch),
 });

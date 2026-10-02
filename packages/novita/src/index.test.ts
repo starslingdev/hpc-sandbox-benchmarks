@@ -2,7 +2,8 @@
 // and a few sessions through the package's own module. Kit behaviour (convergence, deadlines, the
 // inventory partition, recovery mechanics) is tested once in the driver package.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { createRequire } from "node:module";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
@@ -42,7 +43,8 @@ class CommandExitError extends Error {
 
 interface StubRow {
 	sandboxId: string;
-	state: "running" | "paused";
+	/** `snapshotting` stands in for a state the adapter does not know. */
+	state: "running" | "paused" | "snapshotting";
 	metadata: Record<string, string>;
 	files: Map<string, string>;
 }
@@ -126,14 +128,23 @@ function stubNovita(
 			calls.push({ name: "getInfo", options: getOptions });
 			const found = rows.get(id);
 			if (!found) throw new SandboxNotFoundError(id);
-			return { sandboxId: found.sandboxId, state: found.state, metadata: found.metadata };
+			return {
+				sandboxId: found.sandboxId,
+				templateId: "toolchain-test",
+				state: found.state,
+				metadata: found.metadata,
+				cpuCount: 4,
+			};
 		},
 		kill: async (id: string, killOptions: unknown) => {
 			calls.push({ name: "kill", options: killOptions });
 			if (!rows.delete(id)) throw new SandboxNotFoundError(id);
 			return true;
 		},
-		list: (listOptions: { query: { state?: string[]; metadata?: Record<string, string> } }) => {
+		list: (listOptions: {
+			query: { state?: string[]; metadata?: Record<string, string> };
+			nextToken?: string;
+		}) => {
 			calls.push({ name: "list", options: listOptions });
 			const { state, metadata } = listOptions.query;
 			const items = [...rows.values()]
@@ -149,19 +160,23 @@ function stubNovita(
 					state: live,
 					metadata: labels,
 				}));
+			// Stateless like the SDK's paginator: a token resumes a fresh listing at its offset, and
+			// `hasNext` is true exactly while a token is held.
 			const size = options.pageSize ?? 100;
-			let start = 0;
+			let token = listOptions.nextToken;
+			let fetched = false;
 			return {
 				get hasNext() {
-					return start < items.length;
+					return !fetched || token !== undefined;
 				},
 				get nextToken() {
-					return start < items.length ? `token-${start}` : undefined;
+					return token;
 				},
 				nextItems: async () => {
-					const slice = items.slice(start, start + size);
-					start += size;
-					return slice;
+					const from = Number(token?.replace("token-", "") ?? 0);
+					fetched = true;
+					token = from + size < items.length ? `token-${from + size}` : undefined;
+					return items.slice(from, from + size);
 				},
 			};
 		},
@@ -211,6 +226,9 @@ describe("Novita translation", () => {
 			marker: "benchmark-y",
 		});
 		expect(await control.get("missing", op())).toBeNull();
+		// A state the adapter does not know still owns resources: failed, never released.
+		const unknown = stub.allocate({}, "snapshotting");
+		expect(await control.get(unknown, op())).toMatchObject({ phase: "failed" });
 	});
 
 	test("classifies refusals by the SDK's typed errors only; a rate limit is retryable", () => {
@@ -286,7 +304,10 @@ describe("Novita end to end through its module", () => {
 			foreignCount: 1,
 		});
 		await driver.destroyById?.({ provider: "novita", id: paused });
+		// The held session's teardown is a single kill, which proves removal.
+		const before = stub.calls.length;
 		await session.destroy();
+		expect(stub.calls.slice(before).map((call) => call.name)).toEqual(["kill"]);
 		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
 
@@ -303,6 +324,22 @@ describe("Novita end to end through its module", () => {
 		}
 	});
 
+	test("a sandbox in an unknown state is observed running, described in full, and killed", async () => {
+		const stub = stubNovita();
+		const driver = driverOver(stub);
+		const id = stub.allocate({ [NOVITA_ATTEMPT_KEY]: `${MARKER_PREFIX}odd` }, "snapshotting");
+		const ref = { provider: "novita" as const, id };
+		expect(await driver.probes?.observe(ref)).toEqual({ state: "running" });
+		expect(await driver.probes?.describe?.(ref)).toMatchObject({
+			sandboxId: id,
+			templateId: "toolchain-test",
+			cpuCount: 4,
+		});
+		await driver.destroyById?.(ref);
+		expect(stub.count("kill")).toBe(1);
+		expect(await driver.probes?.observe(ref)).toEqual({ state: "absent" });
+	});
+
 	test("an ambiguous create is found by its marker and killed", async () => {
 		const stub = stubNovita({ ambiguousFirstCreate: true });
 		const error = await driverOver(stub)
@@ -317,8 +354,58 @@ describe("Novita end to end through its module", () => {
 	test("recovery rejects a row another attempt owns and never kills it", async () => {
 		const stub = stubNovita({ ambiguousFirstCreate: true, looseLookup: true });
 		const other = stub.allocate({ [NOVITA_ATTEMPT_KEY]: `${MARKER_PREFIX}other-attempt` });
-		await expect(driverOver(stub).create(request)).rejects.toThrow();
+		const failure = await driverOver(stub)
+			.create(request)
+			.catch((caught) => caught);
+		// The double fault keeps the locator under Novita's own metadata key.
+		expect(failure.locator).toMatchObject({ kind: "marker", key: NOVITA_ATTEMPT_KEY });
 		expect(stub.count("kill")).toBe(0);
 		expect(stub.rows.has(other)).toBe(true);
+	});
+});
+
+describe("Novita's production binding", () => {
+	// The same CJS module instance the package loader binds, so its statics can be spied.
+	const { Sandbox, AuthenticationError } = createRequire(import.meta.url)(
+		"novita-sandbox",
+	) as typeof import("novita-sandbox");
+
+	test("the default module keeps the account key in the regional control plane's apiKey", async () => {
+		const create = spyOn(Sandbox, "create").mockRejectedValueOnce(
+			new AuthenticationError("invalid test key"),
+		);
+		try {
+			const failure = await novita
+				.driver(context)
+				.create(request)
+				.catch((caught) => caught);
+			expect(failure).toMatchObject({ code: "create-failed" });
+			expect(create).toHaveBeenCalledTimes(1); // a refusal: never reconciled
+			const [template, options] = create.mock.calls[0] ?? [];
+			expect(template).toBe("toolchain-test");
+			expect(options).toMatchObject({ apiKey: KEY, domain: NOVITA_DOMAIN });
+			expect(options).not.toHaveProperty("headers");
+			expect(options).not.toHaveProperty("envs");
+		} finally {
+			create.mockRestore();
+		}
+	});
+
+	test("the pinned 4 vCPU / 8 GiB template refuses other requests before any create call", async () => {
+		const create = spyOn(Sandbox, "create");
+		try {
+			const driver = novita.driver(context);
+			for (const input of [
+				{ ...request, spec: { vcpus: 8, memoryGb: 8 } },
+				{ ...request, env: { OVERRIDE: "yes" } },
+				{ ...request, artifact: { kind: "baked" as const, ref: "other" } },
+			])
+				await expect(driver.create(input)).rejects.toMatchObject({
+					code: "invalid-create-request",
+				});
+			expect(create).not.toHaveBeenCalled();
+		} finally {
+			create.mockRestore();
+		}
 	});
 });

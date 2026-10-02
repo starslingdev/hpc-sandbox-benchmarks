@@ -186,6 +186,11 @@ Metrics come from three sources:
   one metric per scale, disambiguated by a `pts.scale` pin the mapping also matches on.
 - **Harness-measured** — lifecycle (spawn/exec/snapshot/teardown) and control-plane (info/list)
   timings PTS can't see, measured directly around the provider SDK calls.
+  For drivers written against the vendor port (ADR-0023; Brezel and Novita so far), teardown
+  starts with the delete request and ends when removal is observed or proven: Novita's teardown is
+  one `kill`, and Brezel's begins with its DELETE (earlier Brezel runs read the record first). The
+  Novita list timing is one page filtered to live (`running`, `paused`) sandboxes; earlier runs
+  timed one unfiltered page, whose server-side default the SDK does not document.
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).
 
 ## Economics ($/run)

@@ -23,7 +23,7 @@ separately. Launch acceptance is not command completion or success.
 
 **Vendor port**:
 The control-plane and data-plane operations a provider package translates from its vendor
-(create, get, remove, page, and optionally find, refused, and admit; attach and exec, and
+(create, get, remove, page, and optionally find, refused, transient, and admit; attach and exec, and
 optionally launch and files). It is not a driver: the driver kit derives the driver from it.
 Snapshots, accelerators, and cost evidence are passthroughs beside the port, not port operations.
 

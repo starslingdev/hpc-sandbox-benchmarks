@@ -60,7 +60,8 @@ interface designs across the three candidates, compared on depth, locality and s
 | | `remove` | returns `"removed"` when the vendor proved removal, `"accepted"` when it only acknowledged |
 | | `page` | one page of the whole account; the kit drains it and fails closed on a bad cursor |
 | | `find` | optional |
-| | `refused` | optional |
+| | `refused` | optional; the vendor refused before allocating |
+| | `transient` | optional; retryable once the kit proved nothing remains allocated |
 | | `admit` | optional |
 | Data | `attach`, `exec` | |
 | | `launch`, `files` | optional |
@@ -163,9 +164,11 @@ Invariants plus one reviewed registry snapshot replace the hard-coded id lists.
   only vendor translation, plus an artifact builder when it bakes. Lifecycle fixes land once.
 - **Provider tests.** They test translation and quirks over a stubbed transport. Kit behaviour is
   tested once.
-- **Teardown observes before it deletes.** A vendor whose delete already proves removal pays one
-  extra read per teardown; no destructive call is ever sent for an allocation already observed
-  gone.
+- **Teardown of a held session deletes first; every other teardown observes first.** The kit
+  created and holds a session's allocation, so it requests removal and then observes it (one call
+  when the delete proves removal). Destroy-by-id and recovery hold no such proof: they observe
+  before they delete, so a vendor whose delete already proves removal pays one extra read there.
+  No destructive call is ever sent for an allocation already observed gone.
 - **Create acknowledgements and readiness.** A create response proves readiness only when the
   adapter says so. Adapters whose create acknowledgement is not readiness evidence report
   `pending`.

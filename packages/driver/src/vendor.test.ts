@@ -85,7 +85,7 @@ describe("readiness", () => {
 	test("a create response that proves readiness skips the poll", async () => {
 		const { driver, calls } = bind();
 		await (await driver.create(request)).destroy();
-		expect(calls.slice(0, 2)).toEqual(["create", "get"]); // the get is teardown's observation
+		expect(calls).toEqual(["create", "remove", "get"]); // no readiness get; then teardown
 	});
 
 	test("a sandbox that never becomes ready is torn down, not returned", async () => {
@@ -107,6 +107,17 @@ describe("readiness, continued", () => {
 		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
 		expect(calls).toContain("remove");
 		expect(allocations()).toBe(0);
+	});
+
+	test("a held sandbox observed gone during readiness is never sent a delete", async () => {
+		const world = memoryVendor({ readyAfterGets: 1 });
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: { ...world.vendor.control, get: async () => null },
+		};
+		const driver = moduleOver(() => vendor).driver(context);
+		await expect(driver.create(request)).rejects.toMatchObject({ code: "create-failed" });
+		expect(world.calls).not.toContain("remove");
 	});
 
 	test("does not accept readiness observed beyond its deadline", async () => {
@@ -184,17 +195,33 @@ describe("allocation before attach", () => {
 });
 
 describe("cleanup confirmation", () => {
-	test("an acknowledged delete is not removal: teardown observes the sandbox gone", async () => {
+	test("a held session is sent its delete first, and an acknowledged delete is not removal", async () => {
+		const { driver, calls, allocations } = bind({ removalAfterGets: 1 });
+		const session = await driver.create(request);
+		calls.length = 0;
+		await session.destroy();
+		expect(calls).toEqual(["remove", "get", "get"]);
+		expect(allocations()).toBe(0);
+		calls.length = 0;
+		await session.destroy(); // convergent: never deleted again
+		expect(calls).not.toContain("remove");
+	});
+
+	test("destroy-by-id observes before it deletes", async () => {
 		const { driver, calls, allocations } = bind();
-		await (await driver.create(request)).destroy();
-		expect(calls.slice(-3)).toEqual(["get", "remove", "get"]);
+		const session = await driver.create(request);
+		calls.length = 0;
+		await driver.destroyById?.(session.sandboxRef);
+		expect(calls).toEqual(["get", "remove", "get"]);
 		expect(allocations()).toBe(0);
 	});
 
 	test("a delete that proves removal ends teardown without further polling", async () => {
 		const { driver, calls } = bind({ removal: "removed" });
-		await (await driver.create(request)).destroy();
-		expect(calls.slice(-2)).toEqual(["get", "remove"]);
+		const session = await driver.create(request);
+		calls.length = 0;
+		await session.destroy();
+		expect(calls).toEqual(["remove"]);
 	});
 
 	test("never issues a delete for a sandbox already observed gone", async () => {
@@ -213,7 +240,7 @@ describe("cleanup confirmation, continued", () => {
 		const session = await driver.create(request);
 		await vendor.control.remove(session.sandboxRef.id, { signal: new AbortController().signal });
 		calls.length = 0;
-		await session.destroy();
+		await driver.destroyById?.(session.sandboxRef);
 		expect(calls).toEqual(["get", "get"]);
 	});
 
@@ -406,6 +433,52 @@ describe("ambiguous-create recovery", () => {
 		const error = await driver.create(request).catch((caught) => caught);
 		expect(isRetryableDriverCreate(error)).toBe(true);
 		expect(calls).toEqual(["create"]);
+	});
+
+	test("a transient failure is reconciled before it is marked retryable", async () => {
+		class GatewayError extends Error {}
+		const world = memoryVendor({ faults: { createAmbiguous: true } });
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				create: (attempt, op) =>
+					world.vendor.control.create(attempt, op).catch((cause: unknown) => {
+						throw new GatewayError("502 after acceptance", { cause });
+					}),
+				refused: undefined,
+				transient: instanceOfAny(GatewayError),
+			},
+		};
+		const driver = moduleOver(() => vendor).driver(context);
+		const error = await driver.create(request).catch((caught) => caught);
+		expect(isRetryableDriverCreate(error)).toBe(true);
+		expect(world.calls).toContain("page"); // reconciled, not treated as a refusal
+		expect(world.allocations()).toBe(0);
+		const retried = await driver.create(request);
+		expect(world.allocations()).toBe(1); // the retry allocates exactly once
+		await retried.destroy();
+	});
+
+	test("the recovery locator carries the vendor's own marker key", async () => {
+		const world = memoryVendor({ faults: { createAmbiguous: true } });
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				// Recovery cannot list the account, so the double fault exposes the locator it held.
+				page: async () => {
+					throw new Error("listing unavailable");
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor, { markerKey: "attempt-label" }).driver(context);
+		const failure = await driver.create(request).catch((caught) => caught);
+		expect(failure.locator).toMatchObject({
+			kind: "marker",
+			key: "attempt-label",
+			value: expect.stringMatching(new RegExp(`^${MARKER_PREFIX}`)),
+		});
 	});
 
 	test("instanceOfAny classifies a typed vendor error anywhere in the cause chain", () => {

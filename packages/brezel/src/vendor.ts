@@ -52,6 +52,8 @@ const notFound = statusIn([404]);
 // a harness retry.
 const refusal = statusIn([400, 401, 403, 404, 429]);
 const rateLimited = statusIn([429]);
+// Gateway failures prove nothing about allocation: reconciled first, then retryable.
+const transient = statusIn([429, 502, 503, 504]);
 const decoder = new TextDecoder();
 
 /**
@@ -154,6 +156,7 @@ export function brezelVendor(
 				records: [record(await post(marker, signal))],
 			}),
 			refused: (error) => (refusal(error) ? { retryable: rateLimited(error) } : undefined),
+			transient,
 			admit: (ready) =>
 				ready.raw.environment_revision === env.BREZEL_ENVIRONMENT_REVISION
 					? undefined
