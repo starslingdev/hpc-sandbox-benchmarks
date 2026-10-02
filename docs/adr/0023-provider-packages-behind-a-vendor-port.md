@@ -65,6 +65,7 @@ interface designs across the three candidates, compared on depth, locality and s
 | | `admit` | optional |
 | Data | `attach`, `exec` | |
 | | `launch`, `files` | optional |
+| | `prepare` | optional; post-readiness preparation and the allocation's reported-resource proof |
 
 Both planes speak in provider-neutral `VendorRecord`s carrying a `Phase`. A provider package
 supplies an adapter, which translates only. `defineVendorDriver` derives everything else:

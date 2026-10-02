@@ -1,10 +1,24 @@
 # @sandbox-benchmarks/vercel
 
-Owns the vercel driver implementation, SDK dependencies, and behavioral tests.
-The fleet loader selects this package lazily; shared session mechanics live in
-`@sandbox-benchmarks/driver`. SDK versions are pinned in the root catalog.
+Owns the Vercel Sandbox driver, its `@vercel/sandbox` dependency, and its tests. The fleet loader
+selects this package lazily. SDK versions are pinned in the root catalog.
 
-Run `bun run --filter @sandbox-benchmarks/vercel test` or `typecheck` from the repo root.
+The driver is written against the vendor port (ADR-0023):
+
+- `src/vendor.ts` is the adapter. It receives the SDK's `Sandbox` statics and translates the v2
+  name-keyed API: the OIDC token projected into explicit team/project credentials, a non-persistent
+  tagged create named `sandbox-benchmarks-<uuid>` (the name is the identity and carries the
+  attempt's ownership marker), non-resuming lookups, statuses as phases (only `running` is usable;
+  a `failed` or `aborted` record is the benchmark's to delete but no allocation of anyone else's),
+  `delete` as permanent removal, typed refusal statuses (400, 401, 403, 404, 422, 429; only 429 is
+  retryable), and current-session execution with native detached launch. It declares no files.
+- `src/index.ts` binds the SDK in `defineVendorDriver`, refusing a request off the 2 GiB/vCPU line
+  before any call. Readiness, cleanup confirmation, inventory, recovery (a lookup by the create's
+  name) and the root disk proof come from `@sandbox-benchmarks/driver/vendor`.
+
+`src/index.test.ts` tests the translation, runs `vendorContract` over a stub SDK, and drives
+sessions through the module's `specFor` seam. Run `bun run --filter @sandbox-benchmarks/vercel test`
+or `typecheck` from the repo root.
 
 ## Validate Vercel locally
 

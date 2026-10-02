@@ -502,6 +502,87 @@ describe("request proof", () => {
 		expect(allocations()).toBe(0);
 	});
 
+	test("the vendor's preparation runs after readiness; its refusal or failure tears down", async () => {
+		const prepared: string[] = [];
+		for (const [verdict, code] of [
+			[{ status: "unsupported", detail: "reports 4096 MB" }, "invalid-create-request"],
+			[new Error("keepalive never started"), "create-failed"],
+		] as const) {
+			const world = memoryVendor({ readyAfterGets: 1 });
+			const driver = moduleOver(() => ({
+				...world.vendor,
+				data: {
+					...world.vendor.data,
+					prepare: async ({ record }, input) => {
+						prepared.push(`${record.phase} ${input.spec.memoryGb}`);
+						if (verdict instanceof Error) throw verdict;
+						return verdict;
+					},
+				},
+			})).driver(context);
+			const failure = await driver.create(request).catch((caught) => caught);
+			expect(failure).toMatchObject({ code });
+			if (code === "invalid-create-request")
+				expect(describeDriverFailure(failure)).toContain("reports 4096 MB");
+			expect(world.allocations()).toBe(0);
+		}
+		expect(prepared).toEqual(["ready 8", "ready 8"]);
+	});
+
+	test("a declared disk proof covers a mapped disk at its mount, within the allowance", async () => {
+		const withProof = (allowanceGb?: number) =>
+			bind(
+				{ diskGb: 10, mounts: { "/mnt/benchmark-volume": 39.6 } },
+				{
+					coverage: mapped(),
+					diskProof: { path: "/mnt/benchmark-volume", ...(allowanceGb && { allowanceGb }) },
+				},
+			);
+		const honored = withProof(1);
+		await (await honored.driver.create(request)).destroy();
+		const short = withProof();
+		await expect(short.driver.create(request)).rejects.toMatchObject({
+			code: "invalid-create-request",
+		});
+		expect(short.allocations()).toBe(0);
+		// A mapped disk without a declared proof is trusted to the create, whatever the root reports.
+		await (await bind({ diskGb: 10 }, { coverage: mapped() }).driver.create(request)).destroy();
+	});
+
+	test("an exit the vendor never reported stays unknown", async () => {
+		const world = memoryVendor();
+		const driver = moduleOver(() => ({
+			...world.vendor,
+			data: {
+				...world.vendor.data,
+				exec: async (native, command) => {
+					const { exitCode, ...output } = await world.vendor.data.exec(native, command);
+					return command === "killed" ? output : { exitCode, ...output };
+				},
+			},
+		})).driver(context);
+		const session = await driver.create(request);
+		expect((await session.exec("killed")).exit.kind).toBe("unknown");
+		await session.destroy();
+	});
+
+	test("a module's cross-axis refusal rejects the shape before any vendor call", async () => {
+		const { driver, calls } = bind(
+			{},
+			{
+				unsupported: ({ spec }) =>
+					spec.memoryGb === spec.vcpus * 2 ? undefined : "memory is coupled to 2 GiB per vCPU",
+			},
+		);
+		const failure = await driver
+			.create({ ...request, spec: { ...request.spec, memoryGb: 16 } })
+			.catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "invalid-create-request" });
+		expect(describeDriverFailure(failure)).toContain("coupled to 2 GiB per vCPU");
+		expect(calls).toEqual([]);
+		await (await driver.create(request)).destroy();
+	});
+
 	test("refuses a request artifact other than the resolved one before any vendor call", async () => {
 		const { driver, calls } = bind();
 		await expect(

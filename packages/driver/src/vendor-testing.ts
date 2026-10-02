@@ -5,9 +5,15 @@
 // transport.
 
 import { expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { ProviderId } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { DISK_PROBE, drainPages, MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import {
+	DISK_PROBE,
+	diskProbe,
+	drainPages,
+	MARKER_PREFIX,
+} from "@sandbox-benchmarks/driver/vendor";
 import { guestShell } from "./lib/guest.fixture.ts";
 
 export interface MemoryRow {
@@ -32,6 +38,8 @@ export interface MemoryVendorOptions {
 	readonly foreign?: number;
 	/** The root filesystem capacity the guest reports to the kit's disk proof. */
 	readonly diskGb?: number;
+	/** Capacities (GiB) of further mounts the guest reports to a disk proof of their path. */
+	readonly mounts?: Readonly<Record<string, number>>;
 	/** Files present in every guest before the kit runs (an in-image marker, for fingerprinting). */
 	readonly seedFiles?: Readonly<Record<string, string>>;
 	/** Serve a server-side marker lookup (`find`) on a shared account too. */
@@ -64,7 +72,8 @@ class Refused extends Error {
 
 /**
  * An in-memory vendor account. Each sandbox is a guest shell faithful to the commands the kit emits
- * (exec, the shell-detach launcher, the files fallback) and answers {@link DISK_PROBE}.
+ * (exec, the shell-detach launcher, the files fallback) and answers {@link DISK_PROBE} (and the
+ * probe of each declared mount).
  */
 export function memoryVendor(options: MemoryVendorOptions = {}) {
 	const rows = new Map<string, MemoryRow>();
@@ -73,6 +82,10 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 	const calls: string[] = [];
 	const faults = options.faults ?? {};
 	let next = 0;
+	const capacities = new Map([
+		[DISK_PROBE, options.diskGb ?? 80],
+		...Object.entries(options.mounts ?? {}).map(([path, gb]) => [diskProbe(path), gb] as const),
+	]);
 	const allocate = (marker?: string, state: Phase = "pending"): MemoryRow => {
 		const row: MemoryRow = {
 			id: `mem-${++next}`,
@@ -87,10 +100,12 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 		guests.set(
 			row.id,
 			guestShell(files, {
-				answer: (command) =>
-					command === DISK_PROBE
-						? { stdout: `${(options.diskGb ?? 80) * 1024 * 1024}\n`, code: 0 }
-						: undefined,
+				answer: (command) => {
+					const gb = capacities.get(command);
+					return gb === undefined
+						? undefined
+						: { stdout: `${Math.round(gb * 1024 * 1024)}\n`, code: 0 };
+				},
 			}),
 		);
 		return row;
@@ -247,7 +262,9 @@ export function vendorContract<Raw, Native>(
 		deadlineMs: 1,
 	} as const;
 	const create = (vendor: Vendor<Raw, Native>, marker: string) =>
-		vendor.control.create({ request, marker: `${MARKER_PREFIX}${marker}` }, op);
+		vendor.control.create({ request, marker }, op);
+	// Markers of the shape the kit mints: a vendor may encode the attempt UUID in a strict name.
+	const mint = () => `${MARKER_PREFIX}${randomUUID()}`;
 	const drain = (
 		fetch: (
 			cursor: string | undefined,
@@ -266,7 +283,8 @@ export function vendorContract<Raw, Native>(
 
 	test(`${name}: a created sandbox is observable, listable and attributable`, async () => {
 		const { vendor, account } = make();
-		const created = await create(vendor, "contract");
+		const marker = mint();
+		const created = await create(vendor, marker);
 		const observed = await vendor.control.get(created.id, op);
 		expect(observed?.id).toBe(created.id);
 		const listed = (await drain((cursor) => vendor.control.page(cursor, op))).filter(
@@ -274,8 +292,7 @@ export function vendorContract<Raw, Native>(
 		);
 		expect(listed).toHaveLength(1);
 		if (account === "shared")
-			for (const record of [created, observed, ...listed])
-				expect(record?.marker).toBe(`${MARKER_PREFIX}contract`);
+			for (const record of [created, observed, ...listed]) expect(record?.marker).toBe(marker);
 	});
 
 	test(`${name}: a marker lookup returns only what the marker attributes`, async () => {
@@ -285,18 +302,18 @@ export function vendorContract<Raw, Native>(
 			expect(account).toBe("shared"); // a dedicated account recovers by replay, through find
 			return;
 		}
-		const mine = await create(vendor, "find-mine");
-		await create(vendor, "find-other");
-		const found = await drain((cursor) => find(`${MARKER_PREFIX}find-mine`, cursor, op));
+		const marker = mint();
+		const mine = await create(vendor, marker);
+		await create(vendor, mint());
+		const found = await drain((cursor) => find(marker, cursor, op));
 		expect(found.map((record) => record.id)).toContain(mine.id);
 		for (const record of found)
-			if (account === "shared" || record.marker !== undefined)
-				expect(record.marker).toBe(`${MARKER_PREFIX}find-mine`);
+			if (account === "shared" || record.marker !== undefined) expect(record.marker).toBe(marker);
 	});
 
 	test(`${name}: removal is eventually observed, and "removed" means gone`, async () => {
 		const { vendor } = make();
-		const created = await create(vendor, "remove");
+		const created = await create(vendor, mint());
 		let outcome = await vendor.control.remove(created.id, op);
 		for (let polls = 0; outcome !== "removed" && polls < 20; polls++) {
 			const current = await vendor.control.get(created.id, op);
@@ -309,7 +326,7 @@ export function vendorContract<Raw, Native>(
 
 	test(`${name}: a ready sandbox attaches, executes, and round-trips files`, async () => {
 		const { vendor } = make();
-		let current: VendorRecord<Raw> | null = await create(vendor, "data");
+		let current: VendorRecord<Raw> | null = await create(vendor, mint());
 		for (let polls = 0; current?.phase === "pending" && polls < 20; polls++)
 			current = await vendor.control.get(current.id, op);
 		if (current === null) throw new Error("the created sandbox disappeared before readiness");

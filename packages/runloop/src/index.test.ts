@@ -1,179 +1,197 @@
+// Runloop tested at the vendor seam: the adapter's translation over a fake Devbox API, the port
+// contract, and sessions through the package's own module. Kit behaviour (convergence, deadlines,
+// the inventory partition, recovery mechanics) is tested once in the driver package.
+
 import { describe, expect, test } from "bun:test";
-import type { Runloop } from "@runloop/api-client";
-import { AuthenticationError, NotFoundError, RateLimitError } from "@runloop/api-client";
-import type { CreateRequest } from "@sandbox-benchmarks/driver";
-import { sandboxRef } from "@sandbox-benchmarks/driver";
+import {
+	AuthenticationError,
+	BadRequestError,
+	NotFoundError,
+	RateLimitError,
+} from "@runloop/api-client";
+import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
+import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
-import type { RunloopClient } from "./index.ts";
-import runloopDriver, {
+import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
+import runloop, { RUNLOOP_CREATE_TIMEOUT_MS, RUNLOOP_SANDBOX_ID } from "./index.ts";
+import type { DevboxView, RunloopClient } from "./vendor.ts";
+import {
 	RUNLOOP_ATTEMPT_METADATA_KEY,
-	RUNLOOP_CREATE_TIMEOUT_MS,
-	RUNLOOP_EXECUTION,
 	RUNLOOP_KEEP_ALIVE_SECONDS,
 	RUNLOOP_OWNER_METADATA_KEY,
-	RUNLOOP_PROVENANCE,
-	RUNLOOP_READINESS,
-	RUNLOOP_SANDBOX_ID,
-	runloopSpec,
-} from "./index.ts";
+	runloopVendor,
+} from "./vendor.ts";
 
-type DevboxView = Runloop.Devboxes.DevboxView;
-
-const context = {
-	env: { RUNLOOP_API_KEY: "rl_test-key" },
+const KEY = "rl_test-key";
+const context: DriverContext<"runloop"> = {
+	env: { RUNLOOP_API_KEY: KEY },
 	artifact: { kind: "baked" },
 	resolvedArtifact: { kind: "baked", ref: "sandbox-benchmarks-toolchain-v8" },
-} as const;
-
+};
 const request: CreateRequest = {
 	spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
 	artifact: context.resolvedArtifact,
 	deadlineMs: RUNLOOP_CREATE_TIMEOUT_MS,
 };
+const op = () => ({ signal: new AbortController().signal });
+type Execution = Partial<{
+	status: string;
+	exit_status: number | null;
+	stdout: string;
+	stderr: string;
+	stdout_truncated: boolean;
+}>;
 
-function devbox(overrides: Partial<DevboxView> = {}): DevboxView {
-	return {
-		id: "dbx_abc123",
-		status: "running",
-		create_time_ms: 1_700_000_000_000,
-		end_time_ms: null,
-		capabilities: [],
-		launch_parameters: {},
-		metadata: {},
-		state_transitions: [],
-		...overrides,
-	} as DevboxView;
-}
-
-/** A Stainless page promise: awaitable for one page, async-iterable across the whole cursor. */
-function page(rows: readonly DevboxView[]) {
-	return Object.assign(Promise.resolve({ getPaginatedItems: () => [...rows] }), {
-		[Symbol.asyncIterator]: async function* () {
-			yield* rows;
-		},
-	});
-}
-
-interface FakeState {
-	rows: DevboxView[];
-	created: unknown[];
-	awaited: unknown[];
-	shutdown: unknown[];
-	commands: string[];
-	async: string[];
-	written: Array<{ path: string; contents: string }>;
-	awaitRunningFailure?: Error;
-	shutdownFailure?: Error;
-	diskCapacityGb: number;
-	exec?: (command: string) => Runloop.Devboxes.DevboxAsyncExecutionDetailView;
-}
-
-function fakeClient(overrides: Partial<FakeState> = {}) {
-	const state: FakeState = {
-		rows: [],
-		created: [],
-		awaited: [],
-		shutdown: [],
-		commands: [],
-		async: [],
-		written: [],
-		diskCapacityGb: 39.6,
-		...overrides,
+/**
+ * A whole Runloop account: creates start `provisioning` and run after a few retrieves, a forced
+ * shutdown leaves a `shutdown` tombstone (Runloop never forgets a Devbox), listings page by the
+ * last id, and each Devbox has a file store its commands and file API share.
+ */
+function runloopAccount(
+	options: {
+		readonly readyAfterRetrieves?: number;
+		readonly pageSize?: number;
+		readonly diskCapacityGb?: number;
+		/** The first create allocates and then loses its response. */
+		readonly ambiguousFirstCreate?: boolean;
+		/** Booting Devboxes end in `failure` instead of running. */
+		readonly bootFails?: boolean;
+		readonly exec?: (command: string) => Execution;
+		readonly executionId?: string;
+	} = {},
+) {
+	const rows = new Map<string, DevboxView & { retrieves: number; files: Map<string, string> }>();
+	const created: Array<Record<string, unknown>> = [];
+	const shutdowns: unknown[] = [];
+	const commands: string[] = [];
+	let next = 0;
+	let ambiguous = options.ambiguousFirstCreate ?? false;
+	const allocate = (
+		metadata: Record<string, string> = {},
+		status: DevboxView["status"] = "running",
+	) => {
+		const id = `dbx_${++next}`;
+		rows.set(id, {
+			id,
+			status,
+			metadata,
+			create_time_ms: 0,
+			capabilities: [],
+			launch_parameters: {},
+			state_transitions: [],
+			retrieves: 0,
+			files: new Map(),
+		} as unknown as DevboxView & { retrieves: number; files: Map<string, string> });
+		return id;
 	};
-	const completed = (
-		exit_status: number | null,
-		stdout: string,
-		extra: Partial<Runloop.Devboxes.DevboxAsyncExecutionDetailView> = {},
-	): Runloop.Devboxes.DevboxAsyncExecutionDetailView => ({
-		devbox_id: "dbx_abc123",
-		execution_id: "exe_1",
-		status: "completed",
-		exit_status,
-		stdout,
-		stderr: "",
-		...extra,
-	});
-	const client = {
-		api: {
-			devboxes: {
-				create: async (params: unknown) => {
-					state.created.push(params);
-					return devbox({ status: "provisioning" });
-				},
-				awaitRunning: async (id: string, options: unknown) => {
-					state.awaited.push([id, options]);
-					if (state.awaitRunningFailure) throw state.awaitRunningFailure;
-					return devbox({ status: "running" });
-				},
-				retrieve: async (id: string) => {
-					const row = state.rows.find((entry) => entry.id === id);
-					if (!row) throw new NotFoundError(404, undefined, "devbox not found", {});
-					return row;
-				},
-				list: () => page(state.rows),
-				shutdown: async (id: string, params: unknown) => {
-					state.shutdown.push([id, params]);
-					if (state.shutdownFailure) throw state.shutdownFailure;
-					return devbox({ id, status: "shutdown" });
-				},
-				executeAndAwaitCompletion: async (_id: string, params: { command: string }) => {
-					state.commands.push(params.command);
-					if (state.exec) return state.exec(params.command);
-					if (params.command.startsWith("df -Pk"))
-						return completed(0, `${Math.round(state.diskCapacityGb * 1024 * 1024)}\n`);
-					if (params.command.startsWith("test -e")) return completed(0, "");
-					return completed(0, `ran: ${params.command}`);
-				},
-				executeAsync: async (_id: string, params: { command: string }) => {
-					state.async.push(params.command);
-					return { devbox_id: "dbx_abc123", execution_id: "exe_bg", status: "running" };
-				},
-				readFileContents: async (_id: string, params: { file_path: string }) =>
-					`contents of ${params.file_path}`,
-				writeFileContents: async (_id: string, params: { file_path: string; contents: string }) => {
-					state.written.push({ path: params.file_path, contents: params.contents });
-					return { devbox_id: "dbx_abc123", exit_status: 0, stdout: "", stderr: "" };
-				},
-			},
-		},
-	} as unknown as RunloopClient;
-	return { client, state };
-}
-
-function driverWith(overrides: Partial<FakeState> = {}) {
-	const { client, state } = fakeClient(overrides);
-	const spec = runloopSpec(context, () => client);
-	return {
-		state,
-		spec,
-		driver: driverFromComputeSpec("runloop", spec, context.resolvedArtifact, ["rl_test-key"]),
+	const view = (id: string) => {
+		const { retrieves: _, files: __, ...devbox } = rows.get(id) ?? {};
+		return devbox as DevboxView;
 	};
+	const running = (id: string) => {
+		const row = rows.get(id);
+		if (row?.status !== "running") throw new Error(`devbox ${id} is not running`);
+		return row;
+	};
+	const run = (id: string, command: string): Execution => {
+		const files = running(id).files;
+		commands.push(command);
+		const custom = options.exec?.(command);
+		if (custom) return custom;
+		if (command.startsWith("df -Pk"))
+			return {
+				exit_status: 0,
+				stdout: `${Math.round((options.diskCapacityGb ?? 39.6) * 1024 ** 2)}\n`,
+			};
+		const exit = /^sh -c 'exit (\d+)'$/.exec(command);
+		if (exit) return { exit_status: Number(exit[1]), stdout: "" };
+		const exists = /^test -e '(.*)'$/.exec(command);
+		if (exists) return { exit_status: files.has(exists[1] ?? "") ? 0 : 1, stdout: "" };
+		const echo = /^echo (\S+) > (\S+)$/.exec(command);
+		if (echo) files.set(echo[2] ?? "", `${echo[1]}\n`);
+		return { exit_status: 0, stdout: `ran: ${command}` };
+	};
+	const devboxes = {
+		create: async (params: Record<string, unknown>) => {
+			created.push(params);
+			const id = allocate(params.metadata as Record<string, string>, "provisioning");
+			if (ambiguous) {
+				ambiguous = false;
+				throw new TypeError("connection reset after the vendor accepted the create");
+			}
+			return view(id);
+		},
+		retrieve: async (id: string) => {
+			const row = rows.get(id);
+			if (!row) throw new NotFoundError(404, undefined, "devbox not found", {});
+			row.retrieves += 1;
+			if (row.status === "provisioning" && row.retrieves >= (options.readyAfterRetrieves ?? 1))
+				row.status = options.bootFails ? "failure" : "running";
+			return view(id);
+		},
+		shutdown: async (id: string, params: unknown) => {
+			shutdowns.push([id, params]);
+			const row = rows.get(id);
+			if (!row) throw new NotFoundError(404, undefined, "devbox not found", {});
+			row.status = "shutdown";
+			return view(id);
+		},
+		list: async (query: { limit: number; starting_after?: string }) => {
+			const all = [...rows.keys()];
+			const from = query.starting_after === undefined ? 0 : all.indexOf(query.starting_after) + 1;
+			const size = Math.min(query.limit, options.pageSize ?? 100);
+			const items = all.slice(from, from + size).map(view);
+			return { has_more: from + size < all.length, getPaginatedItems: () => items };
+		},
+		executeAndAwaitCompletion: async (id: string, params: { command: string }) => ({
+			devbox_id: id,
+			execution_id: "exe_1",
+			status: "completed",
+			stderr: "",
+			...run(id, params.command),
+		}),
+		executeAsync: async (id: string, params: { command: string }) => {
+			run(id, params.command);
+			return { devbox_id: id, execution_id: options.executionId ?? "exe_bg", status: "running" };
+		},
+		readFileContents: async (id: string, params: { file_path: string }) => {
+			const body = running(id).files.get(params.file_path);
+			if (body === undefined) throw new Error(`${params.file_path}: no such file`);
+			return body;
+		},
+		writeFileContents: async (id: string, params: { file_path: string; contents: string }) => {
+			running(id).files.set(params.file_path, params.contents);
+			return { devbox_id: id, exit_status: 0, stdout: "", stderr: "" };
+		},
+	};
+	const client = { api: { devboxes } } as unknown as RunloopClient;
+	return { client, rows, created, shutdowns, commands, allocate };
 }
 
-describe("Runloop module policy", () => {
-	test("declares its native SDK provenance, ready-on-create readiness, and a harness-owned budget", () => {
-		expect(runloopDriver.id).toBe("runloop");
-		expect(runloopDriver.provenance).toEqual(RUNLOOP_PROVENANCE);
-		expect(RUNLOOP_PROVENANCE.packageName).toBe("@runloop/api-client");
-		expect(runloopDriver.readiness).toEqual(RUNLOOP_READINESS);
-		expect(runloopDriver.execution).toEqual(RUNLOOP_EXECUTION);
-		expect(runloopDriver.createBudget).toEqual({
-			owner: "harness",
-			timeoutMs: RUNLOOP_CREATE_TIMEOUT_MS,
-		});
-		expect(RUNLOOP_SANDBOX_ID.assert("dbx_abc123")).toBe("dbx_abc123");
-		expect(() => RUNLOOP_SANDBOX_ID.assert("sb-abc")).toThrow();
-	});
-});
+/** The package's own module, lowered over a fake account instead of the real SDK. */
+function driverOver(account: ReturnType<typeof runloopAccount>) {
+	return driverFromComputeSpec(
+		"runloop",
+		runloop.specFor(context, {
+			vendor: runloopVendor(context, account.client),
+			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
+		}),
+		context.resolvedArtifact,
+		[KEY],
+	);
+}
 
-describe("Runloop create", () => {
-	test("boots the resolved Blueprint at the target size with an ownership marker and awaits running", async () => {
-		const { driver, state } = driverWith();
-		const session = await driver.create(request);
-		expect(session.sandboxRef).toEqual(sandboxRef("runloop", "dbx_abc123"));
-		expect(state.created).toHaveLength(1);
-		const created = state.created[0] as Record<string, unknown>;
-		expect(created).toMatchObject({
+describe("Runloop translation", () => {
+	test("creates the resolved Blueprint at the target size, named and stamped with its marker", async () => {
+		const account = runloopAccount();
+		const { control } = runloopVendor(context, account.client);
+		const marker = `${MARKER_PREFIX}attempt`;
+		const created = await control.create({ request, marker }, op());
+		expect(created).toMatchObject({ phase: "pending", marker });
+		expect(account.created[0]).toEqual({
+			name: marker,
+			metadata: { [RUNLOOP_OWNER_METADATA_KEY]: "runloop", [RUNLOOP_ATTEMPT_METADATA_KEY]: marker },
 			blueprint_name: context.resolvedArtifact.ref,
 			launch_parameters: {
 				resource_size_request: "CUSTOM_SIZE",
@@ -183,204 +201,157 @@ describe("Runloop create", () => {
 				keep_alive_time_seconds: RUNLOOP_KEEP_ALIVE_SECONDS,
 			},
 		});
-		expect(created.name).toMatch(/^benchmark-[0-9a-f-]{36}$/);
-		expect(created.metadata).toEqual({
-			[RUNLOOP_OWNER_METADATA_KEY]: "runloop",
-			[RUNLOOP_ATTEMPT_METADATA_KEY]: created.name,
-		});
-		expect(state.awaited).toEqual([
-			[
-				"dbx_abc123",
-				expect.objectContaining({ longPoll: { timeoutMs: RUNLOOP_CREATE_TIMEOUT_MS } }),
-			],
-		]);
-		// The credential never enters the create request the guest could observe.
-		expect(JSON.stringify(created)).not.toContain("rl_test-key");
-		// Disk was verified in-guest after allocation, with the filesystem overhead allowance.
-		expect(state.commands.some((command) => command.startsWith("df -Pk"))).toBe(true);
-		await session.destroy();
-		expect(state.shutdown).toEqual([["dbx_abc123", { force: "true" }]]);
 	});
 
-	test("rejects artifact, hardware, accelerator, and environment drift before allocation", async () => {
-		const { driver, state } = driverWith();
+	test("reads tombstones as gone, suspension as owned, and ownership from either metadata key", async () => {
+		const account = runloopAccount();
+		const { control } = runloopVendor(context, account.client);
+		const read = async (metadata: Record<string, string>, status: DevboxView["status"]) =>
+			control.get(account.allocate(metadata, status), op());
+		expect(await read({}, "shutdown")).toMatchObject({ phase: "gone" });
+		expect(await read({}, "failure")).toMatchObject({ phase: "gone" });
+		expect(await read({}, "suspended")).toMatchObject({ phase: "failed" });
+		expect(await read({}, "initializing")).toMatchObject({ phase: "pending" });
+		const attempt = await read({ [RUNLOOP_ATTEMPT_METADATA_KEY]: "benchmark-legacy" }, "running");
+		expect(attempt).toMatchObject({ phase: "ready", marker: "benchmark-legacy" });
+		const ownerOnly = await read({ [RUNLOOP_OWNER_METADATA_KEY]: "runloop" }, "running");
+		expect(ownerOnly?.marker?.startsWith(MARKER_PREFIX)).toBe(true);
+		expect((await read({ [RUNLOOP_ATTEMPT_METADATA_KEY]: "theirs" }, "running"))?.marker).toBe(
+			"theirs",
+		);
+		expect(await control.get("dbx_missing", op())).toBeNull();
+		expect(await control.remove("dbx_missing", op())).toBe("removed");
+	});
+
+	test("keeps a withheld exit as unknown and refuses truncated or unfinished output", async () => {
+		const outputs: Execution[] = [
+			{ exit_status: null, stdout: "" },
+			{ exit_status: 0, stdout: "cut", stdout_truncated: true },
+			{ status: "running" },
+		];
+		const account = runloopAccount({ exec: () => outputs.shift() ?? {} });
+		const { data } = runloopVendor(context, account.client);
+		const native = await data.attach(
+			{ id: "dbx_1", phase: "ready", raw: { id: account.allocate() } as DevboxView },
+			op(),
+		);
+		expect(await data.exec(native, "true")).toEqual({ stdout: "", stderr: "" });
+		await expect(data.exec(native, "cat big")).rejects.toThrow("truncated");
+		await expect(data.exec(native, "sleep")).rejects.toThrow("ended in status running");
+		const noHandle = runloopAccount({ executionId: "" });
+		const silent = runloopVendor(context, noHandle.client).data;
+		await expect(
+			silent.launch?.({ id: noHandle.allocate() } as DevboxView, "sleep 60"),
+		).rejects.toThrow("no execution id");
+	});
+
+	test("classifies refusals by the SDK's typed errors only; a rate limit is retryable", () => {
+		const { refused } = runloopVendor(context, runloopAccount().client).control;
+		expect(refused?.(new AuthenticationError(401, undefined, "bad key", {}))).toEqual({
+			retryable: false,
+		});
+		expect(refused?.(new BadRequestError(400, undefined, "bad", {}))).toEqual({ retryable: false });
+		expect(refused?.(new RateLimitError(429, undefined, "slow", {}))).toEqual({ retryable: true });
+		expect(refused?.(new Error("HTTP 429 rate limit"))).toBeUndefined();
+	});
+});
+
+vendorContract("runloop adapter", () => ({
+	vendor: runloopVendor(context, runloopAccount({ pageSize: 1, readyAfterRetrieves: 2 }).client),
+	account: "shared",
+}));
+
+describe("Runloop end to end through its module", () => {
+	test("declares identity, native-launch durability, and a harness-owned create budget", () => {
+		expect(runloop.id).toBe("runloop");
+		expect(runloop.provenance.packageName).toBe("@runloop/api-client");
+		expect(runloop.execution).toEqual({ syncCapMs: 60_000, durable: "native-launch" });
+		expect(runloop.createBudget).toEqual({
+			owner: "harness",
+			timeoutMs: RUNLOOP_CREATE_TIMEOUT_MS,
+		});
+		expect(RUNLOOP_SANDBOX_ID.allows("dbx_abc123")).toBe(true);
+		expect(RUNLOOP_SANDBOX_ID.allows("sb-abc")).toBe(false);
+	});
+
+	test("a session boots, proves disk within the allowance, runs, launches, files, inventories, and shuts down", async () => {
+		const account = runloopAccount({ readyAfterRetrieves: 2, pageSize: 2 });
+		account.allocate({}, "running"); // another tenant's Devbox
+		account.allocate({}, "failure"); // a tombstone nobody holds
+		const driver = driverOver(account);
+		const session = await driver.create(request);
+		// 39.6 GiB visible on a 40 GB request is filesystem overhead, not a short allocation.
+		expect(account.commands[0]).toBe("df -Pk / | awk 'NR==2 {print $2}'");
+
+		expect((await session.exec("sh -c 'exit 7'")).exit).toEqual({ kind: "exited", code: 7 });
+		await session.launch?.("echo done > /tmp/done");
+		expect(await session.files?.readFile("/tmp/done")).toBe("done\n");
+		await session.files?.writeText("/tmp/y", "payload");
+		expect(await session.files?.exists("/tmp/y")).toBe(true);
+		expect(await session.files?.readFile("/tmp/y")).toBe("payload");
+
+		const ownerOnly = account.allocate({ [RUNLOOP_OWNER_METADATA_KEY]: "runloop" });
+		const suspended = account.allocate(
+			{ [RUNLOOP_ATTEMPT_METADATA_KEY]: `${MARKER_PREFIX}legacy` },
+			"suspended",
+		);
+		expect(await driver.inventory?.list()).toEqual({
+			owned: [
+				session.sandboxRef,
+				{ provider: "runloop", id: ownerOnly },
+				{ provider: "runloop", id: suspended },
+			],
+			foreignCount: 1,
+		});
+		await driver.destroyById?.({ provider: "runloop", id: suspended });
+		await driver.destroyById?.({ provider: "runloop", id: ownerOnly });
+		const before = account.shutdowns.length;
+		await session.destroy();
+		expect(account.shutdowns.slice(before)).toEqual([[session.sandboxRef.id, { force: "true" }]]);
+		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
+		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
+	});
+
+	test("an allocation whose root filesystem is short of the request is refused and shut down", async () => {
+		const account = runloopAccount({ diskCapacityGb: 30 });
+		const failure = await driverOver(account)
+			.create(request)
+			.catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "invalid-create-request", provider: "runloop" });
+		expect(account.shutdowns).toEqual([["dbx_1", { force: "true" }]]);
+	});
+
+	test("a Devbox that fails to boot is a failed create and leaves nothing held", async () => {
+		const account = runloopAccount({ bootFails: true });
+		const failure = await driverOver(account)
+			.create(request)
+			.catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "create-failed", provider: "runloop" });
+		expect(await driverOver(account).inventory?.list()).toEqual({ owned: [], foreignCount: 0 });
+	});
+
+	test("an ambiguous create is recovered only by its exact attempt marker", async () => {
+		const account = runloopAccount({ ambiguousFirstCreate: true, pageSize: 1 });
+		const other = account.allocate({ [RUNLOOP_ATTEMPT_METADATA_KEY]: `${MARKER_PREFIX}other` });
+		const failure = await driverOver(account)
+			.create(request)
+			.catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "create-failed" });
+		expect(isRetryableDriverCreate(failure)).toBe(false);
+		expect(account.shutdowns).toEqual([["dbx_2", { force: "true" }]]);
+		expect(account.rows.get(other)?.status).toBe("running");
+	});
+
+	test("the default module refuses artifact, accelerator, and environment drift before any call", async () => {
+		const driver = runloop.driver(context);
 		for (const invalid of [
 			{ ...request, artifact: { kind: "baked" as const, ref: "some-other-blueprint" } },
 			{ ...request, gpu: { model: "H100", count: 1 } },
 			{ ...request, env: { X: "1" } },
-		]) {
-			const error = await driver.create(invalid).catch((caught: unknown) => caught);
-			expect(error).toMatchObject({ code: "invalid-create-request", provider: "runloop" });
-		}
-		expect(state.created).toHaveLength(0);
-	});
-
-	test("tears down an allocation whose root filesystem is smaller than requested", async () => {
-		const { driver, state } = driverWith({ diskCapacityGb: 30 });
-		const error = await driver.create(request).catch((caught: unknown) => caught);
-		expect(error).toMatchObject({
-			code: "invalid-create-request",
-			provider: "runloop",
-			ref: { provider: "runloop", id: "dbx_abc123" },
-		});
-		expect(state.shutdown).toEqual([["dbx_abc123", { force: "true" }]]);
-	});
-
-	test("shuts down an accepted Devbox that never reaches running and reports the create failure", async () => {
-		const { driver, state } = driverWith({ awaitRunningFailure: new Error("boot failed") });
-		const error = await driver.create(request).catch((caught: unknown) => caught);
-		expect(error).toMatchObject({ code: "create-failed", provider: "runloop" });
-		expect(state.shutdown).toEqual([["dbx_abc123", { force: "true" }]]);
-	});
-
-	test("classifies typed refusals and never regexes vendor prose", () => {
-		const { spec } = driverWith();
-		const recovery = spec.createRecovery;
-		if (!recovery) throw new Error("missing create recovery");
-		expect(recovery.isDefinitive?.(new AuthenticationError(401, undefined, "bad key", {}))).toBe(
-			true,
-		);
-		expect(recovery.isRetryableCreate?.(new RateLimitError(429, undefined, "slow", {}))).toBe(true);
-		expect(recovery.isDefinitive?.(new Error("HTTP 429 rate limit"))).toBe(false);
-		expect(recovery.isRetryableCreate?.(new Error("capacity"))).toBe(false);
-		expect(recovery.locator({ name: "benchmark-x", blueprint_name: "b" })).toEqual({
-			kind: "marker",
-			key: RUNLOOP_ATTEMPT_METADATA_KEY,
-			value: "benchmark-x",
-		});
-	});
-
-	test("recovers an ambiguous create only by its exact attempt marker", async () => {
-		const marker = "benchmark-00000000-0000-4000-8000-000000000000";
-		const { spec, state } = driverWith({
-			rows: [
-				devbox({ id: "dbx_mine", metadata: { [RUNLOOP_ATTEMPT_METADATA_KEY]: marker } }),
-				devbox({ id: "dbx_other", metadata: { [RUNLOOP_ATTEMPT_METADATA_KEY]: "benchmark-z" } }),
-				devbox({
-					id: "dbx_gone",
-					status: "shutdown",
-					metadata: { [RUNLOOP_ATTEMPT_METADATA_KEY]: marker },
-				}),
-			],
-		});
-		const locator = { kind: "marker", key: RUNLOOP_ATTEMPT_METADATA_KEY, value: marker } as const;
-		expect(await spec.createRecovery?.cleanup(spec.compute, locator, {})).toEqual({
-			status: "destroyed",
-		});
-		expect(state.shutdown).toEqual([["dbx_mine", { force: "true" }]]);
-		state.rows = state.rows.filter((row) => row.id !== "dbx_mine");
-		expect(await spec.createRecovery?.cleanup(spec.compute, locator, {})).toEqual({
-			status: "absent",
-		});
-	});
-});
-
-describe("Runloop commands and files", () => {
-	test("runs synchronous commands to completion and keeps a withheld exit status as evidence", async () => {
-		const { driver, state } = driverWith();
-		const session = await driver.create(request);
-		expect(await session.exec("echo hi")).toMatchObject({
-			exit: { kind: "exited", code: 0 },
-			stdout: "ran: echo hi",
-		});
-		state.exec = () => ({
-			devbox_id: "dbx_abc123",
-			execution_id: "exe_2",
-			status: "completed",
-			exit_status: null,
-			stdout: "",
-			stderr: "",
-		});
-		expect((await session.exec("true")).exit.kind).toBe("unknown");
-		state.exec = () => ({
-			devbox_id: "dbx_abc123",
-			execution_id: "exe_3",
-			status: "completed",
-			exit_status: 0,
-			stdout: "cut",
-			stderr: "",
-			stdout_truncated: true,
-		});
-		await expect(session.exec("cat big")).rejects.toMatchObject({ code: "exec-failed" });
-		state.exec = () => ({
-			devbox_id: "dbx_abc123",
-			execution_id: "exe_4",
-			status: "running",
-		});
-		await expect(session.exec("sleep")).rejects.toMatchObject({ code: "exec-failed" });
-	});
-
-	test("launches background work through the native async execution and exposes files", async () => {
-		const { driver, state } = driverWith();
-		const session = await driver.create(request);
-		await session.launch?.("nohup sleep 60 &");
-		expect(state.async).toEqual(["nohup sleep 60 &"]);
-		expect(await session.files?.readFile("/tmp/x")).toBe("contents of /tmp/x");
-		expect(await session.files?.exists("/tmp/x")).toBe(true);
-		await session.files?.writeText("/tmp/y", "payload");
-		expect(state.written).toEqual([{ path: "/tmp/y", contents: "payload" }]);
-	});
-});
-
-describe("Runloop account inventory and recovery", () => {
-	test("owns by either metadata key, skips terminal records, and counts the rest as foreign", async () => {
-		const { driver } = driverWith({
-			rows: [
-				devbox({ id: "dbx_owned1", metadata: { [RUNLOOP_OWNER_METADATA_KEY]: "runloop" } }),
-				devbox({
-					id: "dbx_owned2",
-					status: "suspended",
-					metadata: { [RUNLOOP_ATTEMPT_METADATA_KEY]: "benchmark-legacy" },
-				}),
-				devbox({ id: "dbx_failed", status: "failure", metadata: {} }),
-				devbox({ id: "dbx_foreign", metadata: {} }),
-				devbox({
-					id: "dbx_gone",
-					status: "shutdown",
-					metadata: { [RUNLOOP_OWNER_METADATA_KEY]: "runloop" },
-				}),
-			],
-		});
-		expect(await driver.inventory?.list()).toEqual({
-			owned: [sandboxRef("runloop", "dbx_owned1"), sandboxRef("runloop", "dbx_owned2")],
-			foreignCount: 1,
-		});
-	});
-
-	test("observes live, terminal, and absent Devboxes", async () => {
-		const { driver } = driverWith({
-			rows: [
-				devbox({ id: "dbx_live", status: "running" }),
-				devbox({ id: "dbx_failed", status: "failure" }),
-				devbox({ id: "dbx_down", status: "shutdown" }),
-			],
-		});
-		expect(await driver.probes?.observe(sandboxRef("runloop", "dbx_live"))).toEqual({
-			state: "running",
-		});
-		expect(await driver.probes?.observe(sandboxRef("runloop", "dbx_failed"))).toEqual({
-			state: "terminal",
-		});
-		expect(await driver.probes?.observe(sandboxRef("runloop", "dbx_down"))).toEqual({
-			state: "absent",
-		});
-		expect(await driver.probes?.observe(sandboxRef("runloop", "dbx_missing"))).toEqual({
-			state: "absent",
-		});
-	});
-
-	test("destroys by id with a forced shutdown and converges only on the SDK's not-found", async () => {
-		const { driver, state } = driverWith();
-		await driver.destroyById?.(sandboxRef("runloop", "dbx_leftover"));
-		expect(state.shutdown).toEqual([["dbx_leftover", { force: "true" }]]);
-		state.shutdownFailure = new NotFoundError(404, undefined, "gone", {});
-		await driver.destroyById?.(sandboxRef("runloop", "dbx_leftover"));
-		state.shutdownFailure = new Error("control plane unavailable");
-		await expect(driver.destroyById?.(sandboxRef("runloop", "dbx_leftover"))).rejects.toMatchObject(
-			{ code: "destroy-failed", provider: "runloop" },
-		);
-		await expect(driver.destroyById?.(sandboxRef("e2b", "dbx_leftover"))).rejects.toMatchObject({
-			code: "invalid-sandbox-ref",
-		});
+		])
+			await expect(driver.create(invalid)).rejects.toMatchObject({
+				code: "invalid-create-request",
+				provider: "runloop",
+			});
 	});
 });

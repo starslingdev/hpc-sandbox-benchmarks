@@ -186,11 +186,18 @@ Metrics come from three sources:
   one metric per scale, disambiguated by a `pts.scale` pin the mapping also matches on.
 - **Harness-measured** — lifecycle (spawn/exec/snapshot/teardown) and control-plane (info/list)
   timings PTS can't see, measured directly around the provider SDK calls.
-  For drivers written against the vendor port (ADR-0023; Brezel and Novita so far), teardown
-  starts with the delete request and ends when removal is observed or proven: Novita's teardown is
-  one `kill`, and Brezel's begins with its DELETE (earlier Brezel runs read the record first). The
-  Novita list timing is one page filtered to live (`running`, `paused`) sandboxes; earlier runs
-  timed one unfiltered page, whose server-side default the SDK does not document.
+  For drivers written against the vendor port (ADR-0023: Brezel, Novita, Blaxel, Namespace,
+  Vercel, Runloop and Microsandbox Cloud), teardown starts with the delete request and ends when
+  removal is observed or proven. Novita's teardown is one `kill`, Runloop's one forced shutdown whose
+  response is the `shutdown` tombstone, Microsandbox Cloud's its stop-then-remove sequence, and
+  Namespace's its destroy followed by reads until DESTROYED (as before). Brezel's begins with its
+  DELETE (earlier Brezel runs read the record first); Blaxel's and Vercel's deletes are now followed
+  by reads until the record is gone (earlier runs timed the delete alone, and Vercel's was preceded
+  by a lookup, as it still is). The list timing is one page of the whole account: Novita's is
+  filtered to live (`running`, `paused`) sandboxes (earlier runs timed one unfiltered page, whose
+  server-side default the SDK does not document); Namespace's now includes completed runs, Blaxel's
+  now excludes terminated records, and Vercel's is no longer filtered to benchmark names nor
+  drained across pages.
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).
 
 ## Economics ($/run)

@@ -44,8 +44,8 @@ import type { SdkProvenance } from "@sandbox-benchmarks/schema";
 export type Phase = "pending" | "ready" | "failed" | "deleting" | "gone";
 
 /**
- * Every port call receives a signal. `create` and `attach` carry the create attempt's signal (the
- * harness owns that budget); every other call's signal also aborts when the kit's own bound for
+ * Every port call receives a signal. `create`, `attach` and `prepare` carry the create attempt's
+ * signal (the harness owns that budget); every other call's signal also aborts when the kit's own bound for
  * it expires: the readiness or delete budget inside a poll, `controlTimeoutMs` for a single
  * control-plane call, `snapshotTimeoutMs` for a snapshot. The kit stops waiting at that bound even
  * if the adapter ignores the signal, and rejects a response that arrives after it.
@@ -102,13 +102,29 @@ export interface ControlPlane<Raw = unknown> {
 }
 
 export interface ExecOutcome {
-	readonly exitCode: number;
+	/** Omitted when the vendor did not report the guest's exit: recorded as unknown, never zero. */
+	readonly exitCode?: number;
 	readonly stdout: string;
 	readonly stderr: string;
 }
 
+/** Whether a ready allocation honours the request: `unsupported` refuses its shape. */
+export type Verification =
+	| { readonly status: "honored" }
+	| { readonly status: "unsupported"; readonly detail: string };
+
 export interface DataPlane<Raw, Native> {
 	attach(record: VendorRecord<Raw>, op: Op): Native | Promise<Native>;
+	/**
+	 * Post-readiness preparation the vendor requires (a keepalive) and proof of mapped request axes
+	 * the allocation itself reports (its configured resources). A throw fails the create; either way
+	 * the kit tears the allocation down. Runs before the kit's disk proof.
+	 */
+	prepare?(
+		handle: VendorHandle<Raw, Native>,
+		request: CreateRequest,
+		op: Op,
+	): Promise<Verification>;
 	exec(native: Native, command: string, options?: ExecOptions): Promise<ExecOutcome>;
 	/** Resolves only on genuine background acceptance. Requires `durable: "native-launch"`. */
 	launch?(native: Native, command: string, options?: ExecOptions): Promise<void>;
@@ -160,6 +176,11 @@ export interface VendorTiming {
 export interface VendorTraits {
 	readonly sandboxId: ComputeSdkSandboxIdSchema;
 	readonly coverage: ComputeSdkCreateRequestCoverage;
+	/**
+	 * A combination of axes the vendor cannot honour (CPU coupled to memory, a disk the image
+	 * requires): the reason the request is refused before any vendor call.
+	 */
+	readonly unsupported?: (request: CreateRequest) => string | undefined;
 	/** `dedicated`: the credential's account is benchmark-only; every live record is owned. */
 	readonly account?: "shared" | "dedicated";
 	/**
@@ -173,6 +194,18 @@ export interface VendorTraits {
 	readonly markerKey?: string;
 	/** Pages one listing may span before the kit treats the cursor as runaway (default 100). */
 	readonly pageCap?: number;
+	/**
+	 * The kit's `df` disk proof. It always runs for a `runtime-verified` disk axis; declaring it
+	 * also proves a mapped disk the guest may not expose in full (a sized volume, a root disk).
+	 */
+	readonly diskProof?: DiskProof;
+}
+
+export interface DiskProof {
+	/** The mount the requested capacity must land on (default `/`). */
+	readonly path?: string;
+	/** Capacity a formatted filesystem legitimately loses to its own metadata (default 0). */
+	readonly allowanceGb?: number;
 }
 
 /** The create-time prefix every kit-minted ownership marker carries. */
@@ -232,8 +265,11 @@ export const instanceOfAny =
 
 /* ------------------------------------ mechanics ------------------------------------ */
 
-/** The disk-capacity probe command; exported so test vendors answer the same command the kit runs. */
-export const DISK_PROBE = "df -Pk / | awk 'NR==2 {print $2}'";
+/** The disk-capacity probe of `path`; exported so test vendors answer the command the kit runs. */
+export const diskProbe = (path = "/") =>
+	`df -Pk ${path === "/" ? path : shellQuote(path)} | awk 'NR==2 {print $2}'`;
+/** The root filesystem's disk-capacity probe. */
+export const DISK_PROBE = diskProbe();
 
 function bounded(timeoutMs: number, signal?: AbortSignal): AbortSignal {
 	return AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
@@ -285,17 +321,18 @@ export async function verifyDisk(
 	provider: ProviderId,
 	requestedGb: number,
 	exec: (command: string) => Promise<ExecOutcome>,
-) {
-	const result = await exec(DISK_PROBE);
+	{ path = "/", allowanceGb = 0 }: DiskProof = {},
+): Promise<Verification> {
+	const result = await exec(diskProbe(path));
 	if (result.exitCode !== 0 || !/^\d+$/.test(result.stdout.trim()))
 		throw new Error(`${provider} disk capacity probe failed`);
 	const capacityGb = Number(result.stdout.trim()) / 1024 / 1024;
-	return capacityGb >= requestedGb
-		? ({ status: "honored" } as const)
-		: ({
+	return capacityGb + allowanceGb >= requestedGb
+		? { status: "honored" }
+		: {
 				status: "unsupported",
-				detail: `requested ${requestedGb} GiB but allocation exposes ${capacityGb.toFixed(2)} GiB`,
-			} as const);
+				detail: `requested ${requestedGb} GiB but ${path === "/" ? "allocation" : path} exposes ${capacityGb.toFixed(2)} GiB`,
+			};
 }
 
 function executionOf(
@@ -547,6 +584,8 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 					(resolved.kind === "none" ||
 						(request.artifact.kind !== "none" && request.artifact.ref === resolved.ref));
 				if (!same) unsupported(`request artifact differs from the resolved ${provider} artifact`);
+				const refusal = traits.unsupported?.(request);
+				if (refusal !== undefined) unsupported(refusal);
 				return { request, marker: `${MARKER_PREFIX}${randomUUID()}` };
 			},
 		},
@@ -604,10 +643,19 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 			const ready = await awaitReady(handle.record, operation.signal);
 			const reason = control.admit?.(ready);
 			if (reason) throw new Error(`${provider} rejected the allocation: ${reason}`);
-			if (traits.coverage.spec.diskGb !== "runtime-verified" || request.spec.diskGb === undefined)
-				return { status: "honored" };
-			return verifyDisk(provider, request.spec.diskGb, (command) =>
-				data.exec(handle.native, command, operation),
+			const prepared = await data.prepare?.(
+				{ record: ready, native: handle.native },
+				request,
+				op(operation.signal),
+			);
+			if (prepared?.status === "unsupported") return prepared;
+			const proven = traits.coverage.spec.diskGb === "runtime-verified" || traits.diskProof;
+			if (!proven || request.spec.diskGb === undefined) return { status: "honored" };
+			return verifyDisk(
+				provider,
+				request.spec.diskGb,
+				(command) => data.exec(handle.native, command, operation),
+				traits.diskProof,
 			);
 		},
 		hasWorkingFilesystem: files !== undefined,

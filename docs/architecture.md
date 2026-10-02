@@ -109,7 +109,7 @@ specifiers; adding a named subpath means editing its allowlist and saying why in
 
 ADR-0023 §1: a provider package writes an adapter against two ports and `defineVendorDriver`
 derives the DriverModule. The **control plane** (`create`, `get`, `remove`, `page`, optionally
-`find`, `refused`, `transient`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`)
+`find`, `refused`, `transient`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`, `prepare`)
 speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once for every provider:
 
 - readiness — skipped when `create` returns a `ready` record, otherwise polled through `get`;
@@ -123,7 +123,11 @@ speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once fo
   by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces.
   `refused` failures skip recovery; `transient` failures are reconciled and then marked retryable.
   The locator names the marker under the vendor's own `markerKey`;
-- the artifact guard, the `df` disk proof for a `runtime-verified` disk axis, and `admit`.
+- the request proof: the artifact guard and the module's `unsupported` cross-axis refusal before
+  any vendor call; after readiness, `admit`, the vendor's `prepare` (a keepalive, or the
+  allocation's reported resources, refusing a shape it does not honour), and the `df` disk proof for
+  a `runtime-verified` disk axis or a declared `diskProof` (a mount path and filesystem-overhead
+  allowance, which also proves a mapped disk).
 
 It lowers onto the ComputeSDK bridge, so coverage proof, id parsing, cleanup double faults,
 redaction and output caps are reused. Every port call outside a poll is bounded
@@ -135,9 +139,12 @@ stays on typed passthroughs:
 and `execution` (default `{ syncCapMs: 60_000, durable: "shell-detach" }`; `durable:
 "native-launch"` and `data.launch` must be declared together). `module.specFor(context, { vendor,
 timing })` lowers the same module against a stubbed transport for provider tests.
-Brezel (a dedicated account recovered by idempotent replay, over an injected `fetch`) and Novita
-(a shared account recovered by a server-side marker query, over the loaded SDK) are written this
-way: `src/vendor.ts` is the adapter, `src/index.ts` binds the real transport once.
+Brezel (a dedicated account recovered by idempotent replay, over an injected `fetch`), Novita
+(a shared account recovered by a server-side marker query, over the loaded SDK), Blaxel, Vercel and
+Microsandbox Cloud (name-keyed: the sandbox name carries the marker's attempt UUID and is the
+recovery lookup), and Namespace and Runloop (recovered by matching the marker over the drained
+account) are written this way: `src/vendor.ts` is the adapter, `src/index.ts` binds the real
+transport once.
 
 `@sandbox-benchmarks/driver/vendor/testing` holds `memoryVendor` (an in-memory account with a fault
 script, a guest shell that answers the kit's commands, and leak detectors) and `vendorContract`
