@@ -43,7 +43,7 @@ export const networkLatencyTargetSchema = type({
 }).onUndeclaredKey("reject");
 export type NetworkLatencyTarget = typeof networkLatencyTargetSchema.infer;
 
-/** One cold-DNS target. `domain` names `network-dns--<domain>.json` and is jc's question name. */
+/** One cold-DNS target: the dns task resolves a fresh random name under `domain` for this Metric. */
 export const networkDnsTargetSchema = type({
 	id: /^network_dns_cold_[a-z0-9_]+_ms$/,
 	domain: domainSchema,
@@ -126,15 +126,19 @@ export const NETWORK_DNS_TARGETS: readonly NetworkDnsTarget[] = networkDnsTarget
 	.array()
 	.narrow(uniqueTargets("domain"))
 	.assert([
-		{ id: "network_dns_cold_github_com_ms", domain: "github.com", label: "github.com DNS" },
+		{ id: "network_dns_cold_github_com_ms", domain: "github.com", label: "github.com cold DNS" },
 		{
 			id: "network_dns_cold_registry_npmjs_org_ms",
 			domain: "registry.npmjs.org",
-			label: "registry.npmjs.org DNS",
+			label: "registry.npmjs.org cold DNS",
 		},
-		{ id: "network_dns_cold_docker_io_ms", domain: "docker.io", label: "docker.io DNS" },
-		{ id: "network_dns_cold_pypi_org_ms", domain: "pypi.org", label: "pypi.org DNS" },
-		{ id: "network_dns_cold_rubygems_org_ms", domain: "rubygems.org", label: "rubygems.org DNS" },
+		{ id: "network_dns_cold_docker_io_ms", domain: "docker.io", label: "docker.io cold DNS" },
+		{ id: "network_dns_cold_pypi_org_ms", domain: "pypi.org", label: "pypi.org cold DNS" },
+		{
+			id: "network_dns_cold_rubygems_org_ms",
+			domain: "rubygems.org",
+			label: "rubygems.org cold DNS",
+		},
 	]);
 
 export const NETWORK_DOWNLOAD_TARGET: NetworkDownloadTarget = networkDownloadTargetSchema.assert({
@@ -171,8 +175,10 @@ export const networkProbeMetrics: readonly MetricDef[] = [
 			direction: "LIB",
 			label: target.label,
 			description: [
-				`Cold DNS lookup of ${target.domain}.`,
-				"The sample is one cold dig and cache-warmed lookups are not included.",
+				`Cache-miss DNS lookup in ${target.domain}: one dig of a fresh random name under it,`,
+				"which no resolver can have cached, so the resolver must ask the zone's authoritative",
+				"servers (whose delegation is warm). NXDOMAIN and wildcard answers both count;",
+				"dig reports whole ms, so 0 means under 1 ms.",
 				`This is ${WEATHER}.`,
 			].join(" "),
 		}),

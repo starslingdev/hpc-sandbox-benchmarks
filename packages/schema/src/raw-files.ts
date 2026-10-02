@@ -38,8 +38,13 @@ const FAILURE_SUFFIX = "--failed.json";
 export const NETWORK_LATENCY_FILE = "network-latency.json";
 export const NETWORK_DOWNLOAD_FILE = "network-download--speed.json";
 
-export function networkDnsFile(domain: string): string {
-	return `network-dns--${domain}.json`;
+/**
+ * The dns task's cache-miss lookup under <domain> — the only DNS artifact that carries a Metric. Its
+ * plain `network-dns--<domain>.json` sibling is resolver provenance whose timing is usually a cache
+ * hit, and stays deliberately unmatched so no re-normalization can publish it as a cold lookup.
+ */
+export function networkDnsColdFile(domain: string): string {
+	return `network-dns--cold--${domain}.json`;
 }
 const PROVIDER_ARTIFACT_EVIDENCE_FILE = "provider-artifact-evidence.json";
 const PROVIDER_COST_EVIDENCE_FILE = "provider-cost-evidence.json";

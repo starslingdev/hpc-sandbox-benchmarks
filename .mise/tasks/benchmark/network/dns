@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
-#MISE description="DNS resolver identity and resolution timing for common registries"
+#MISE description="DNS resolver identity, plus cache-miss resolution timing for common registries"
 # Tolerant probe: no -e — report whatever the sandbox exposes (error-mode conventions:
 # lib/bench.sh). Sandbox resolvers differ wildly (host stub vs provider DNS vs public), and slow
 # resolution taxes every clone/install a real CI job does.
 #
-# Each domain is resolved ONCE, with the structured record parsed from the same bytes the log shows —
-# a second dig for jc would measure a cache-warmed resolver query, systematically underreporting the
-# very number this probe exists to capture.
+# Two lookups per domain, each a single dig whose structured record is parsed from the same bytes
+# the log shows (a second dig for jc would re-measure a now-cached answer):
+#
+#   * `network-dns--<domain>.json` — the domain itself: which resolver answered, with what records.
+#     Provenance only. Its timing is NOT a cold lookup and publishes no Metric: a provider's shared
+#     resolver, a node-local cache or an earlier step in the same sandbox (PTS installs fetch from
+#     github.com) usually has these popular names cached, which is why it read 0-4 ms everywhere.
+#   * `network-dns--cold--<domain>.json` — a fresh random name under the domain
+#     (`sbx-<16 hex>.<domain>`), the catalogued cold-DNS Metric. No resolver can hold an answer for a
+#     name that has never been asked, so this is a guaranteed cache miss: the resolver must go to the
+#     domain's authoritative servers. The plain lookup runs first, so the zone's delegation is
+#     deliberately warm and the reading is the resolver's round trip to those servers. The answer is
+#     NXDOMAIN, or NOERROR where the zone has a wildcard (github.com, pypi.org) — both are complete
+#     answers. Each random name is asked exactly ONCE: a repeat is served from cache (measured: a
+#     40 ms cold pypi.org name answered in 4 ms the second time).
+#
+# dig reports whole milliseconds, so a 0 is a sub-millisecond answer, not a missing one.
 #
 # The default DOMAINS are the catalogued cold-DNS Metrics (packages/schema/src/network-probe-metrics.ts,
 # drift-gated by tooling/repo-checks/src/network-probe-targets.test.ts); domains passed as arguments
@@ -34,18 +48,32 @@ for tool in dig jc; do
 	fi
 done
 
-for domain in "${DOMAINS[@]}"; do
-	echo ""
-	echo "--- $domain ---"
-	rc=0
-	out="$(dig "$domain" 2>/dev/null)" || rc=$?
+# One dig of <name>, logged and installed as <result-name>.json via jc. Returns non-zero (with the
+# reason logged) when dig fails or jc yields no record, so nothing partial is ever installed.
+dig_record() {
+	local name="$1" result="$2" out rc=0
+	out="$(dig "$name" 2>/dev/null)" || rc=$?
 	if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
 		echo "(dig failed — exit ${rc})"
 		[ -n "$out" ] && printf '%s\n' "$out"
-		continue
+		return 1
 	fi
 	echo "$out"
-	if ! printf '%s\n' "$out" | jc --dig 2>/dev/null | json_result "$(task_result_name "$domain")"; then
+	if ! printf '%s\n' "$out" | jc --dig 2>/dev/null | json_result "$result"; then
 		echo "(jc --dig produced no structured record)"
+		return 1
 	fi
+}
+
+for domain in "${DOMAINS[@]}"; do
+	echo ""
+	echo "--- $domain ---"
+	dig_record "$domain" "$(task_result_name "$domain")"
+
+	# 64 random bits: a label no resolver anywhere has been asked before. Lowercase hex keeps it a
+	# valid DNS label and lets the parser recognise exactly this shape.
+	nonce="sbx-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+	echo ""
+	echo "--- ${nonce}.${domain} (cache miss) ---"
+	dig_record "${nonce}.${domain}" "$(task_result_name "cold--${domain}")"
 done

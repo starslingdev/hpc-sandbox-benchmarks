@@ -2,7 +2,8 @@
  * The catalogued network probe artifacts (.mise/tasks/benchmark/network/{latency,dns,download}) parsed
  * into Metric samples. Each artifact has one arktype schema that validates the producer's shape AND
  * pipes it into contributions, so a record this module accepts is a measurement by construction: an
- * HTTP error body, an NXDOMAIN answer, or a download of some other payload simply fails its schema.
+ * HTTP error body, a lookup the resolver could have cached, or a download of some other payload
+ * simply fails its schema.
  *
  * A file that fails its schema contributes nothing rather than throwing. Every Metric here is declared
  * by the network suite, so the normalizer's suite-shortfall diff already reports the absence as a gap;
@@ -16,7 +17,7 @@ import {
 	NETWORK_LATENCY_FILE,
 	NETWORK_LATENCY_TARGETS,
 	NETWORK_PROBE_METRIC_IDS,
-	networkDnsFile,
+	networkDnsColdFile,
 } from "@sandbox-benchmarks/schema";
 import type { ArkErrors } from "arktype";
 import { type } from "arktype";
@@ -63,16 +64,27 @@ const latencyArtifact = type({
 	)
 	.to(contributionsSchema);
 
+/** The dns task's single-use label: `sbx-` and 64 random bits as lowercase hex. */
+const CACHE_MISS_LABEL = "sbx-[0-9a-f]{16}";
+
 /**
- * `jc --dig` for one cold query: exactly one answer row, NOERROR, for the domain the file is named
- * after (dig spells the question fully qualified; both spellings are the same name).
+ * `jc --dig` for one cache-miss query: exactly one answer row, for a fresh random name under the
+ * domain the file is named after (dig may spell it fully qualified). Only that question shape is a
+ * guaranteed cache miss, so a lookup of the domain itself — which resolvers routinely answer from
+ * cache — fails the schema however the file got its name. NXDOMAIN is the normal answer for a random
+ * name and NOERROR the answer under a wildcard (github.com, pypi.org); both are complete resolutions.
+ * SERVFAIL, REFUSED and timeouts are not, and fail the schema.
  */
-const dnsArtifact = (target: NetworkDnsTarget) =>
+const dnsColdArtifact = (target: NetworkDnsTarget) =>
 	type([
 		{
-			status: "'NOERROR'",
+			status: "'NOERROR' | 'NXDOMAIN'",
 			query_time: "number.integer >= 0",
-			question: { name: type.enumerated(target.domain, `${target.domain}.`) },
+			question: {
+				// Catalog domains are `[a-z0-9-.]` only (networkDnsTargetSchema), so `.` is the one
+				// character to escape.
+				name: new RegExp(`^${CACHE_MISS_LABEL}\\.${target.domain.replaceAll(".", "\\.")}\\.?$`),
+			},
 		},
 	])
 		.pipe(([answer]) => [{ metricId: target.id, samples: [answer.query_time] }])
@@ -103,8 +115,8 @@ const PROBE_PARSERS: ReadonlyMap<string, ProbeParser> = new Map<string, ProbePar
 	[NETWORK_LATENCY_FILE, latencyArtifact],
 	[NETWORK_DOWNLOAD_FILE, downloadArtifact],
 	...NETWORK_DNS_TARGETS.map((target): [string, ProbeParser] => [
-		networkDnsFile(target.domain),
-		dnsArtifact(target),
+		networkDnsColdFile(target.domain),
+		dnsColdArtifact(target),
 	]),
 ]);
 

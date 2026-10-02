@@ -3,7 +3,7 @@ import {
 	NETWORK_DOWNLOAD_FILE,
 	NETWORK_DOWNLOAD_TARGET,
 	NETWORK_LATENCY_FILE,
-	networkDnsFile,
+	networkDnsColdFile,
 } from "@sandbox-benchmarks/schema";
 import { isNetworkProbeFile, networkProbeContributions } from "./network-probes.ts";
 
@@ -22,8 +22,10 @@ describe("isNetworkProbeFile", () => {
 	it("matches exactly the catalogued artifact names", () => {
 		expect(isNetworkProbeFile(NETWORK_LATENCY_FILE)).toBe(true);
 		expect(isNetworkProbeFile(NETWORK_DOWNLOAD_FILE)).toBe(true);
-		expect(isNetworkProbeFile(networkDnsFile("github.com"))).toBe(true);
-		expect(isNetworkProbeFile(networkDnsFile("example.com"))).toBe(false);
+		expect(isNetworkProbeFile(networkDnsColdFile("github.com"))).toBe(true);
+		expect(isNetworkProbeFile(networkDnsColdFile("example.com"))).toBe(false);
+		// The plain lookup is resolver provenance — usually a cache hit, never a cold Metric.
+		expect(isNetworkProbeFile("network-dns--github.com.json")).toBe(false);
 		expect(isNetworkProbeFile("network-latency--skipped.json")).toBe(false);
 	});
 });
@@ -55,24 +57,44 @@ describe("latency artifact", () => {
 	});
 });
 
-describe("dns artifact", () => {
-	const file = networkDnsFile("github.com");
+describe("dns cache-miss artifact", () => {
+	const file = networkDnsColdFile("github.com");
+	const nonce = "sbx-0123456789abcdef.github.com.";
 	const answer = (overrides: Record<string, unknown> = {}) => ({
-		status: "NOERROR",
+		status: "NXDOMAIN",
 		query_time: 14,
-		question: { name: "github.com.", class: "IN", type: "A" },
+		question: { name: nonce, class: "IN", type: "A" },
 		...overrides,
 	});
 
-	it("publishes the one cold query time", () => {
-		expect(networkProbeContributions(file, [answer()])).toEqual([
+	it.each([
+		["an NXDOMAIN answer", answer()],
+		["a wildcard NOERROR answer", answer({ status: "NOERROR" })],
+		["a name without the trailing dot", answer({ question: { name: nonce.slice(0, -1) } })],
+	])("publishes the one query time for %s", (_, row) => {
+		expect(networkProbeContributions(file, [row])).toEqual([
 			{ metricId: "network_dns_cold_github_com_ms", samples: [14] },
 		]);
 	});
 
+	it("keeps a sub-millisecond answer as 0 ms", () => {
+		expect(networkProbeContributions(file, [answer({ query_time: 0 })])).toEqual([
+			{ metricId: "network_dns_cold_github_com_ms", samples: [0] },
+		]);
+	});
+
 	it.each([
-		["NXDOMAIN", [answer({ status: "NXDOMAIN" })]],
-		["another domain", [answer({ question: { name: "gitlab.com." } })]],
+		["the domain itself (cacheable)", [answer({ question: { name: "github.com." } })]],
+		[
+			"a random name under another domain",
+			[answer({ question: { name: "sbx-0123456789abcdef.gitlab.com." } })],
+		],
+		[
+			"a name whose label is not the single-use shape",
+			[answer({ question: { name: "www.github.com." } })],
+		],
+		["a suffix lookalike", [answer({ question: { name: "sbx-0123456789abcdef.notgithub.com." } })]],
+		["SERVFAIL", [answer({ status: "SERVFAIL" })]],
 		["more than one answer", [answer(), answer()]],
 		["a non-integer query time", [answer({ query_time: 1.5 })]],
 		["a bare object", answer()],

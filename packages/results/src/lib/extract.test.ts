@@ -287,15 +287,22 @@ describe("network probe artifacts", () => {
 		]);
 	});
 
-	it("keeps one cold dig query time", () => {
+	it("keeps one cache-miss dig query time and ignores the cacheable plain lookup", () => {
 		write("network-dns--github.com.json", [
-			{ query_time: 14, status: "NOERROR", question: { name: "github.com." } },
+			{ query_time: 0, status: "NOERROR", question: { name: "github.com." } },
+		]);
+		write("network-dns--cold--github.com.json", [
+			{
+				query_time: 14,
+				status: "NXDOMAIN",
+				question: { name: "sbx-0123456789abcdef.github.com." },
+			},
 		]);
 		expect(extractProviderDir(dir, "e2b").contributions).toEqual([
 			{
 				metricId: "network_dns_cold_github_com_ms",
 				samples: [14],
-				sourceFile: "network-dns--github.com.json",
+				sourceFile: "network-dns--cold--github.com.json",
 			},
 		]);
 	});
