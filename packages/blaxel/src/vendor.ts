@@ -115,7 +115,15 @@ function record(instance: SandboxInstance): VendorRecord<SandboxInstance> {
 	if (typeof name !== "string" || name.length === 0)
 		throw new Error("Blaxel returned a sandbox without a name");
 	const marker = markerOf(name, instance.metadata.labels);
-	return { id: name, phase: phaseOf(instance.status), ...(marker && { marker }), raw: instance };
+	return {
+		id: name,
+		phase: phaseOf(instance.status),
+		...(marker && { marker }),
+		// A sandbox on its way out holds nothing the benchmark competes with: another tenant's is not
+		// counted against admission, and an owned one is still torn down.
+		...(instance.status === "DELETING" && { stopped: true }),
+		raw: instance,
+	};
 }
 
 /**

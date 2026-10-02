@@ -114,7 +114,9 @@ export function requestedBaseImage(argv: string[]): string | undefined {
 
 /**
  * The `--bake-reports <dir>` a promote reads its candidates' build results from: the candidate
- * refs every bake report in the directory recorded. A native snapshot boots the immutable ID its
+ * refs every bake report in the directory recorded, each for its own provider only (the one its
+ * `bake-<id>.json` file is named for, or the `provider` it states), so one cell's report cannot pin
+ * another provider's candidate. A native snapshot boots the immutable ID its
  * builder returned, which no name derives, so promote pins exactly the ID its bake validated
  * rather than looking one up by name. Absent → no recorded results (a native-snapshot candidate
  * then fails its re-validation as unresolved).
@@ -131,11 +133,23 @@ export function candidateBuildResults(argv: string[]): Partial<Record<BakedProvi
 		.filter((name) => name.endsWith(".json"))
 		.sort()) {
 		const report = JSON.parse(readFileSync(join(dir, file), "utf8")) as {
+			provider?: unknown;
 			candidate?: { artifacts?: Record<string, unknown> };
 		};
+		// A report speaks only for its own cell's provider: the one its file is named for
+		// (`bake-<id>.json`, as each matrix cell uploads it) or the one it names.
+		const named = /^bake-(.+)\.json$/.exec(file)?.[1];
+		const stated = typeof report.provider === "string" ? report.provider : undefined;
+		if (named !== undefined && stated !== undefined && named !== stated)
+			throw new Error(`${file}: names provider ${stated}, not ${named}`);
+		const own = stated ?? named;
 		for (const [id, ref] of Object.entries(report.candidate?.artifacts ?? {})) {
 			if (!PROVIDERS.some((provider) => provider.id === id) || !isBakedProviderId(id as ProviderId))
 				throw new Error(`${file}: ${id} is not a baked provider`);
+			if (id !== own)
+				throw new Error(
+					`${file}: records ${id}'s candidate, but a report may only record its own provider's${own === undefined ? " (it names none)" : ` (${own})`}`,
+				);
 			if (typeof ref !== "string" || ref === "")
 				throw new Error(`${file}: ${id} recorded no candidate artifact ref`);
 			const known = results[id as BakedProviderId];
@@ -254,6 +268,8 @@ if (import.meta.main) {
 				const built = await buildProviderArtifact(target.id, {
 					phase: "candidate",
 					base: pinnedBaseImage,
+					// The candidate name is mutable by design: each bake rebuilds it.
+					replace: "allowed",
 					log: (m) => log(`    ${m}`),
 				});
 				buildResults[target.id] = built.ref;

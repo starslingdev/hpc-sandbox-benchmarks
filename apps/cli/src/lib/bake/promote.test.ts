@@ -3,6 +3,7 @@ import {
 	effectivePromotionRequirements,
 	fullPromotionResult,
 	promotionScopeAfterValidation,
+	versionReplacement,
 } from "./promote.ts";
 
 describe("effectivePromotionRequirements", () => {
@@ -74,5 +75,16 @@ describe("fullPromotionResult", () => {
 	test("fails when the immutable image commit fails or never happens", () => {
 		expect(fullPromotionResult([{ provider: "image", status: "failed" }]).ok).toBe(false);
 		expect(fullPromotionResult([{ provider: "runloop", status: "failed" }]).ok).toBe(false);
+	});
+});
+
+describe("versionReplacement", () => {
+	test("a backfill onto the live version never lets a builder delete and recreate its artifact", () => {
+		expect(versionReplacement(true, false)).toBe("forbidden");
+	});
+
+	test("a full release builds unpublished names, and --force asks for regeneration", () => {
+		expect(versionReplacement(false, false)).toBe("allowed");
+		expect(versionReplacement(false, true)).toBe("allowed");
 	});
 });

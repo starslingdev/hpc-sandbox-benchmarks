@@ -19,11 +19,14 @@ export { BOAT_PROVENANCE, BOAT_SANDBOX_ID };
 
 const BOAT_API_BASE = "https://boat.dev/api/v1";
 const BOAT_READY_TIMEOUT_MS = 8 * 60_000;
+/** A delete that conflicts with a snapshot in progress is asked again no sooner than this. */
+const BOAT_DELETE_RETRY_MS = 5_000;
 /**
- * A delete that conflicts with a snapshot is asked again at every read, then the sandbox is watched
- * to its 404: six bounded requests with 5s between them, then a minute.
+ * The delete budget: room for six bounded delete requests 5s apart, then a minute to watch the
+ * sandbox to its 404. Removal is read every second throughout; a refused delete is asked again only
+ * once {@link BOAT_DELETE_RETRY_MS} has passed since the last.
  */
-const BOAT_DELETE_TIMEOUT_MS = 6 * BOAT_CONTROL_TIMEOUT_MS + 5 * 5_000 + 60_000;
+const BOAT_DELETE_TIMEOUT_MS = 6 * BOAT_CONTROL_TIMEOUT_MS + 5 * BOAT_DELETE_RETRY_MS + 60_000;
 /** Every bound one create can spend: the retried create, readiness, egress, rename, disk probe, teardown. */
 export const BOAT_CREATE_CEILING_MS =
 	BOAT_CREATE_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +
@@ -52,10 +55,12 @@ export default defineVendorDriver("boat", {
 	diskProof: {},
 	execution: { syncCapMs: 60_000, durable: "native-launch" },
 	createBudget: { owner: "harness", timeoutMs: BOAT_CREATE_CEILING_MS },
-	// Readiness reads every 2s; removal is read every second until the deleted sandbox 404s.
+	// Readiness reads every 2s; removal is read every second until the deleted sandbox 404s, and a
+	// refused delete is asked again at most every 5s.
 	timing: {
 		pollMs: 2_000,
 		deletePollMs: 1_000,
+		removeRetryMs: BOAT_DELETE_RETRY_MS,
 		readyTimeoutMs: BOAT_READY_TIMEOUT_MS,
 		deleteTimeoutMs: BOAT_DELETE_TIMEOUT_MS,
 		controlTimeoutMs: BOAT_CONTROL_TIMEOUT_MS,

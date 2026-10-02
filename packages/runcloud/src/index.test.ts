@@ -328,6 +328,23 @@ describe("run.cloud end to end through its module", () => {
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
 	});
 
+	test("uses one deadline for the entire inventory rather than resetting it for every page", async () => {
+		const account = runcloudAccount({ pageSize: 1 });
+		for (let i = 0; i < 10; i++) account.allocate(`someone-else-${i}`);
+		const page = account.transport.page;
+		// Every page answers well inside its own bound; together they outlast the inventory's.
+		account.transport.page = async (cursor, signal) => {
+			await Bun.sleep(40);
+			return page(cursor, signal);
+		};
+		const driver = vendorDriver(runcloud, context, {
+			vendor: vendorOver(account),
+			timing: { controlTimeoutMs: 1_000, inventoryTimeoutMs: 100 },
+		});
+		await expect(driver.inventory?.list()).rejects.toMatchObject({ code: "probe-failed" });
+		expect(account.names("page").length).toBeLessThan(10);
+	});
+
 	test("a DELETE refused by the network, an outage or a conflict is asked again; a definitive one is not", async () => {
 		const connectionReset = Object.assign(new Error("socket closed"), { code: "ECONNRESET" });
 		const account = runcloudAccount({

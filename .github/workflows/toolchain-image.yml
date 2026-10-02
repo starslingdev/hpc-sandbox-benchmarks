@@ -424,6 +424,12 @@ jobs:
       - name: Set up Blaxel CLI
         if: matrix.provider == 'blaxel'
         uses: ./.github/actions/setup-blaxel-cli
+      # One step per pinned vendor CLI (sdkPackage { cli }) a candidate boot drives, from its setup-<cli> action.
+      # >>> generated: provider-cli-setup-bake — bun run generate-providers
+      - name: Set up the tama CLI
+        if: matrix.provider == 'tama'
+        uses: ./.github/actions/setup-tama
+      # <<< end generated: provider-cli-setup-bake
       # Namespace stores only its tenant id: the shared action federates through GitHub OIDC and exposes
       # the same `namespace.outputs.token-file` contract in every managed lane. Keeping the producer
       # id/output identical is what lets provider metadata describe this input without lane-specific
@@ -656,6 +662,12 @@ jobs:
       - name: Set up Blaxel CLI
         if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel')
         uses: ./.github/actions/setup-blaxel-cli
+      # One step per pinned vendor CLI (sdkPackage { cli }) a revalidation boot drives, from its setup-<cli> action.
+      # >>> generated: provider-cli-setup-promote — bun run generate-providers
+      - name: Set up the tama CLI
+        if: contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'tama')
+        uses: ./.github/actions/setup-tama
+      # <<< end generated: provider-cli-setup-promote
       # Namespace federates through GitHub OIDC into the pinned tenant. Promote is a serial transaction,
       # so the shared action runs once when Namespace is in scope and gives this lane the same
       # `namespace.outputs.token-file` contract as validation and benchmarks. continue-on-error keeps

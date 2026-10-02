@@ -83,9 +83,11 @@ export function defineModalDriver<P extends ModalProviderId>(provider: P) {
 		execution: MODAL_EXECUTION,
 		costEvidence: modalCostEvidence,
 		markerKey: "name",
-		// One listing page drains a whole generation; a delete waits for the sandbox to exit.
+		// One listing page drains a whole generation, and the whole listing shares the same minute;
+		// a delete waits for the sandbox to exit.
 		timing: {
 			controlTimeoutMs: MODAL_INVENTORY_TIMEOUT_MS,
+			inventoryTimeoutMs: MODAL_INVENTORY_TIMEOUT_MS,
 			deleteTimeoutMs: MODAL_DESTROY_TIMEOUT_MS,
 		},
 		vendor: ({ env, resolvedArtifact }) => {

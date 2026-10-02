@@ -343,8 +343,11 @@ export function renderSetupSecretChecklist(): string {
 	return chunks.map((chunk) => `echo "  ${chunk.join(", ")}"`).join("\n");
 }
 
-/** One setup step per pinned vendor CLI, run only when a provider that drives it is selected. */
-export function renderCliSetupSteps(indent = "      "): string {
+/**
+ * One setup step per pinned vendor CLI, run only when a provider that drives it is selected: in
+ * every lane that boots that provider (benchmarks, candidate bake, version promote).
+ */
+export function renderCliSetupSteps(lane: WiringLane, indent = "      "): string {
 	const owners = new Map<string, ProviderId[]>();
 	for (const id of PROVIDER_IDS) {
 		const source = providerMeta(id).sdkPackage;
@@ -355,7 +358,7 @@ export function renderCliSetupSteps(indent = "      "): string {
 		.map(([cli, ids]) =>
 			[
 				`${indent}- name: Set up the ${cli} CLI`,
-				`${indent}  if: ${ownerCondition(ids, "batch")}`,
+				`${indent}  if: ${ownerCondition(ids, lane)}`,
 				`${indent}  uses: ./.github/actions/setup-${cli}`,
 			].join("\n"),
 		)
@@ -399,7 +402,17 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 		{
 			file: ".github/workflows/bench-suite.yml",
 			label: "provider-cli-setup",
-			body: renderCliSetupSteps(),
+			body: renderCliSetupSteps("batch"),
+		},
+		{
+			file: ".github/workflows/toolchain-image.yml",
+			label: "provider-cli-setup-bake",
+			body: renderCliSetupSteps("matrix"),
+		},
+		{
+			file: ".github/workflows/toolchain-image.yml",
+			label: "provider-cli-setup-promote",
+			body: renderCliSetupSteps("release-scope"),
 		},
 		{
 			file: ".github/workflows/bench-suite.yml",

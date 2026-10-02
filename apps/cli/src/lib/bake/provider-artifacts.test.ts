@@ -63,6 +63,7 @@ describe("buildProviderArtifact", () => {
 		const result = await buildProviderArtifact("blaxel", {
 			phase: "candidate",
 			base: DIGEST,
+			replace: "allowed",
 			log: (line) => logs.push(line),
 		});
 		const name = bakedArtifactName("blaxel", "candidate");
@@ -79,7 +80,12 @@ describe("buildProviderArtifact", () => {
 	test("surfaces the vendor CLI's failure as the build's", async () => {
 		fakeBlaxelCli(4);
 		await expect(
-			buildProviderArtifact("blaxel", { phase: "version", base: DIGEST, log: () => {} }),
+			buildProviderArtifact("blaxel", {
+				phase: "version",
+				base: DIGEST,
+				replace: "allowed",
+				log: () => {},
+			}),
 		).rejects.toThrow(`${bakedArtifactName("blaxel", "version")} failed (exit 4)`);
 	});
 
@@ -89,6 +95,7 @@ describe("buildProviderArtifact", () => {
 			buildProviderArtifact("blaxel", {
 				phase: "candidate",
 				base: "ghcr.io/o/toolchain:v9-candidate",
+				replace: "allowed",
 				log: () => {},
 			}),
 		).rejects.toThrow("must be digest-pinned");
@@ -97,7 +104,7 @@ describe("buildProviderArtifact", () => {
 
 	test("refuses a native-snapshot version build without its revalidated candidate", async () => {
 		await expect(
-			buildProviderArtifact("freestyle", { phase: "version", log: () => {} }),
+			buildProviderArtifact("freestyle", { phase: "version", replace: "allowed", log: () => {} }),
 		).rejects.toThrow("needs the revalidated candidate");
 	});
 });

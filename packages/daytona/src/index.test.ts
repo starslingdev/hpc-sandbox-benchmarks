@@ -19,7 +19,12 @@ import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import container from "./container.ts";
 import type { DaytonaClient } from "./vendor.ts";
-import { DAYTONA_SANDBOX_ID, daytonaCommands, daytonaVendor } from "./vendor.ts";
+import {
+	DAYTONA_LISTING_TIMEOUT_MS,
+	DAYTONA_SANDBOX_ID,
+	daytonaCommands,
+	daytonaVendor,
+} from "./vendor.ts";
 import vm from "./vm.ts";
 
 const KEY = "dtn_test-key";
@@ -352,6 +357,15 @@ describe("Daytona end to end through each variant's module", () => {
 		}
 		expect([vm.id, container.id]).toEqual(["daytona-vm", "daytona-container"]);
 		expect(DAYTONA_SANDBOX_ID.allows(randomUUID())).toBe(true);
+	});
+
+	test("the list probe drains the whole account in one call, under a bound sized for that", async () => {
+		const org = daytonaOrg();
+		for (let i = 0; i < 3; i++) org.allocate(`dev-box-${i}`);
+		expect(await driverOver(org).probes?.list?.()).toHaveLength(3);
+		expect(org.names("list")).toHaveLength(1);
+		for (const module of [vm, container])
+			expect(module.traits.timing?.controlTimeoutMs).toBe(DAYTONA_LISTING_TIMEOUT_MS);
 	});
 
 	test("a session boots, runs, launches, snapshots, inventories and is destroyed", async () => {

@@ -6,7 +6,12 @@ import { Daytona } from "@daytona/sdk";
 import { defineVendorDriver, pinned, VERBATIM_MARKER } from "@sandbox-benchmarks/driver/vendor";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaId } from "./vendor.ts";
-import { DAYTONA_CONTROL_TIMEOUT_MS, DAYTONA_SANDBOX_ID, daytonaVendor } from "./vendor.ts";
+import {
+	DAYTONA_CONTROL_TIMEOUT_MS,
+	DAYTONA_LISTING_TIMEOUT_MS,
+	DAYTONA_SANDBOX_ID,
+	daytonaVendor,
+} from "./vendor.ts";
 
 export type { DaytonaId };
 export { DAYTONA_SANDBOX_ID };
@@ -23,6 +28,9 @@ export function defineDaytonaDriver<P extends DaytonaId>(id: P) {
 		// anything past a conservative 60s takes native background launch plus done-file polling.
 		execution: { syncCapMs: 60_000, durable: "native-launch" },
 		markerKey: "name",
+		// One listing page is the whole account (the SDK drains its own cursor); every other read is
+		// already bounded by the SDK's per-request timeout.
+		timing: { controlTimeoutMs: DAYTONA_LISTING_TIMEOUT_MS },
 		// Every create is named by its marker, so a lost create is looked up by that name.
 		recovery: { lookup: VERBATIM_MARKER },
 		// Lazy: the client is built only when a driver is bound, never on import.

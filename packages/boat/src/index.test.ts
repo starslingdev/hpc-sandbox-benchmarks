@@ -176,7 +176,13 @@ const fast: BoatVendorOptions = {
 function driverOver(client: BoatClient) {
 	return vendorDriver(boat, context, {
 		vendor: boatVendor(client, fast),
-		timing: { pollMs: 0, deletePollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 },
+		timing: {
+			pollMs: 0,
+			deletePollMs: 0,
+			removeRetryMs: 0,
+			readyTimeoutMs: 1_000,
+			deleteTimeoutMs: 1_000,
+		},
 	});
 }
 
@@ -374,6 +380,8 @@ describe("boat end to end through its module", () => {
 		await session.destroy();
 		expect(account.names("deleteSandbox")).toHaveLength(3);
 		expect(account.rows.size).toBe(0);
+		// In production a refused delete is re-sent at most every 5s, though removal is read each second.
+		expect(boat.traits.timing).toMatchObject({ deletePollMs: 1_000, removeRetryMs: 5_000 });
 	});
 
 	test("a failed rename whose delete also fails keeps a cleanup that deletes by id", async () => {

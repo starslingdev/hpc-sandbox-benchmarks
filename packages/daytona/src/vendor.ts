@@ -23,6 +23,12 @@ export type DaytonaId = "daytona-vm" | "daytona-container";
 export const DAYTONA_SANDBOX_ID = type("string.uuid");
 /** The bound on one SDK request. */
 export const DAYTONA_CONTROL_TIMEOUT_MS = 10_000;
+/**
+ * The kit's bound on one control-plane call. A listing page drains the whole account through the
+ * SDK's own cursor (one SDK request per vendor page, each within {@link DAYTONA_CONTROL_TIMEOUT_MS}),
+ * so it is not one request's bound: a minute, as Modal's whole-generation page has.
+ */
+export const DAYTONA_LISTING_TIMEOUT_MS = 60_000;
 /** The create and waited-delete bounds the SDK takes, in seconds. */
 const CREATE_TIMEOUT_SECS = 300;
 const DELETE_TIMEOUT_SECS = 30;
@@ -184,7 +190,7 @@ export function daytonaVendor(
 				}
 			},
 			absent: notFound,
-			// The SDK drains its own cursor; the whole account is one page.
+			// The SDK drains its own cursor and exposes none, so the whole account is one page.
 			page: async (_cursor, { signal }) => {
 				const records = [];
 				for await (const sandbox of client.list()) {

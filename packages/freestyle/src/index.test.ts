@@ -629,4 +629,25 @@ describe("Freestyle as a native-snapshot build target", () => {
 		).toBe(true);
 		await session.destroy();
 	});
+
+	test("deletes and refuses a captured snapshot whose ID is not an immutable sh- ID", async () => {
+		for (const retention of ["durable", "ephemeral"] as const) {
+			const { driver, calls } = fixture((path) =>
+				path === "/v5/vms/vm-test/snapshot"
+					? Response.json({ snapshotId: "release-slug", snapshot: { autoDeleteSeconds: null } })
+					: undefined,
+			);
+			const session = await driver.create(request);
+			const failure = await driver.snapshots
+				?.create(session, { retention })
+				.catch((error: unknown) => error);
+			expect(failure).toMatchObject({ code: "snapshot-failed" });
+			expect(
+				calls.some(
+					(call) => call.method === "DELETE" && call.path === "/v5/snapshots/release-slug",
+				),
+			).toBe(true);
+			await session.destroy();
+		}
+	});
 });

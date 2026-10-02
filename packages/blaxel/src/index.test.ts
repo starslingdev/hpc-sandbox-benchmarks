@@ -219,7 +219,7 @@ describe("Blaxel translation", () => {
 		expect(await read("a", {}, "DEPLOYING")).toMatchObject({ phase: "pending" });
 		expect(await read("b", {}, "FAILED")).toMatchObject({ phase: "failed" });
 		expect(await read("c", {}, "DEACTIVATED")).toMatchObject({ phase: "failed" });
-		expect(await read("d", {}, "DELETING")).toMatchObject({ phase: "deleting" });
+		expect(await read("d", {}, "DELETING")).toMatchObject({ phase: "deleting", stopped: true });
 		expect(await read("e", {}, "TERMINATED")).toMatchObject({ phase: "gone" });
 		expect((await read(NAMED, {}))?.marker).toBe(NAMED);
 		const labelled = await read("custom-name", { [BLAXEL_OWNER_LABEL]: "blaxel" });
@@ -315,6 +315,8 @@ describe("Blaxel end to end through its module", () => {
 		const named = workspace.allocate(NAMED, {}, "FAILED");
 		// Another tenant's sandbox that copied the attempt label is foreign, never deleted.
 		workspace.allocate("their-copy", { [BLAXEL_ATTEMPT_LABEL]: NAMED });
+		// Another tenant's sandbox mid-delete holds nothing the benchmark competes with.
+		workspace.allocate("their-leaving-box", {}, "DELETING");
 		expect(await driver.inventory?.list()).toEqual({
 			owned: [
 				session.sandboxRef,

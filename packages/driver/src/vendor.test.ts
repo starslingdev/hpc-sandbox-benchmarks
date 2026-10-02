@@ -453,6 +453,73 @@ describe("a refused removal request", () => {
 		expect(allocations()).toBe(1);
 	});
 
+	test("a refused removal is asked again no sooner than removeRetryMs, though read at the cleanup cadence", async () => {
+		const world = memoryVendor();
+		const requests: number[] = [];
+		let left = 3;
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				remove: async (id, op) => {
+					requests.push(performance.now());
+					if (left-- > 0) throw new ConflictError("snapshot in progress");
+					return world.vendor.control.remove(id, op);
+				},
+				transient: instanceOfAny(ConflictError),
+			},
+		};
+		const driver = moduleOver(() => vendor, {
+			timing: {
+				pollMs: 0,
+				deletePollMs: 2,
+				removeRetryMs: 30,
+				readyTimeoutMs: 1_000,
+				deleteTimeoutMs: 1_000,
+			},
+		}).driver(context);
+		const session = await driver.create(request);
+		world.calls.length = 0;
+		await session.destroy();
+		expect(requests).toHaveLength(4);
+		for (let i = 1; i < requests.length; i++)
+			expect((requests[i] ?? 0) - (requests[i - 1] ?? 0)).toBeGreaterThanOrEqual(29);
+		// Removal was read at the 2ms cadence in between, not only before each request.
+		expect(world.calls.filter((call) => call === "get").length).toBeGreaterThan(requests.length);
+		expect(world.allocations()).toBe(0);
+	});
+
+	test("a removal whose own lookup times out is asked again within the delete budget", async () => {
+		const world = memoryVendor();
+		let lookups = 0;
+		let removing = false;
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				get: (id, op) =>
+					removing && ++lookups === 1 ? new Promise(() => {}) : world.vendor.control.get(id, op),
+				// A vendor that deletes through a handle it looks up first.
+				remove: async (id, op) => {
+					removing = true;
+					try {
+						const current = await op.current();
+						return current ? world.vendor.control.remove(id, op) : "removed";
+					} finally {
+						removing = false;
+					}
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor, {
+			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000, controlTimeoutMs: 20 },
+		}).driver(context);
+		const session = await driver.create(request);
+		await session.destroy();
+		expect(lookups).toBeGreaterThan(1);
+		expect(world.allocations()).toBe(0);
+	});
+
 	test("a budget that ends on a transient refusal reports the vendor's refusal", async () => {
 		const { driver, allocations } = refusingDeletes(
 			1_000,
@@ -532,6 +599,33 @@ describe("inventory", () => {
 			owned: [session.sandboxRef],
 			foreignCount: 1,
 		});
+	});
+
+	test("one budget bounds the whole listing, not each page, and cancels the page in flight", async () => {
+		const world = memoryVendor({ pageSize: 1, foreign: 10 });
+		const signals: AbortSignal[] = [];
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				// Each page answers well inside its own bound, ignoring its signal.
+				page: async (cursor, op) => {
+					signals.push(op.signal);
+					await Bun.sleep(30);
+					return world.vendor.control.page(cursor, op);
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor, {
+			timing: { pollMs: 0, controlTimeoutMs: 1_000, inventoryTimeoutMs: 100 },
+		}).driver(context);
+		const started = performance.now();
+		await expect(driver.inventory?.list()).rejects.toMatchObject({ code: "probe-failed" });
+		// It failed at the listing's budget, a few pages in, not at any page's own bound.
+		expect(performance.now() - started).toBeLessThan(500);
+		expect(signals.length).toBeGreaterThan(1);
+		expect(signals.length).toBeLessThan(10);
+		for (const signal of signals) expect(signal.aborted).toBe(true);
 	});
 
 	test("a dedicated account owns every live sandbox", async () => {
@@ -1335,6 +1429,32 @@ describe("bounded control calls", () => {
 		// poll read again until the delete budget, not past it.
 		expect(signals.length).toBeGreaterThan(1);
 		for (const signal of signals) expect(signal.aborted).toBe(true);
+	});
+
+	test("a read still in flight when a poll's deadline ends is cancelled before teardown returns", async () => {
+		const world = memoryVendor();
+		const signals: AbortSignal[] = [];
+		const hung: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				get: (_id, { signal }) => {
+					signals.push(signal);
+					return new Promise(() => {});
+				},
+			},
+		};
+		// Each read's own bound outlasts the delete budget: only the poll's end can cancel it.
+		const driver = moduleOver(() => hung, {
+			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 50, controlTimeoutMs: 10_000 },
+		}).driver(context);
+		const started = performance.now();
+		await expect(driver.destroyById?.({ provider: "novita", id: "mem-1" })).rejects.toMatchObject({
+			code: "destroy-failed",
+		});
+		expect(performance.now() - started).toBeLessThan(1_000);
+		expect(signals).toHaveLength(1);
+		expect(signals[0]?.aborted).toBe(true);
 	});
 
 	/**

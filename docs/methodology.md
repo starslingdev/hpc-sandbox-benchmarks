@@ -220,9 +220,10 @@ Metrics come from three sources:
   inventory page (earlier runs timed the SDK's `list()`, the first page at the API's default 50
   rows). E2B now records a list timing (one page of live `running`/`paused` sandboxes) where earlier
   runs recorded none; its info timing is the same `getInfo` call as before. Daytona's list timing
-  drains its whole account as before, and Freestyle's is the same first 100-VM page. Modal now
-  records an info timing (one status poll of the sandbox) and a list timing (the benchmark App's
-  sandboxes of the variant's generation) where earlier runs recorded neither.
+  drains its whole account as before, and Freestyle's is the same first 100-VM page. Modal's info
+  timing is the same `fromId` lookup and status poll as before (earlier runs timed it through the
+  observe probe); its list timing (the benchmark App's sandboxes of the variant's generation) is
+  new, where earlier runs recorded none.
 - **Derived (economics)** — never measured; computed from pricing + measured runtime (below).
 
 ## Economics ($/run)

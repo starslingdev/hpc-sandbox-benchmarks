@@ -202,23 +202,34 @@ export function freestyleVendor(
 		snapshots: {
 			create: async ({ record: { id } }, { signal }, retention) => {
 				const vm = api(signal, EXEC_TIMEOUT_MS).vms.ref(id);
+				/** A capture the caller never learns: deleted here rather than left behind. */
+				const refuse = async (snapshotId: string, reason: string): Promise<never> => {
+					await api()
+						.vms.snapshots.delete(snapshotId)
+						.catch(() => {});
+					throw new Error(reason);
+				};
+				/** Only an immutable `sh-` ID is bootable as a benchmark artifact. */
+				const immutable = async (snapshotId: string) => {
+					if (!IMMUTABLE_SNAPSHOT_ID.test(snapshotId))
+						await refuse(snapshotId, "Freestyle captured a snapshot without an immutable sh- ID");
+					return { snapshotId };
+				};
 				// A lifecycle measurement's snapshot carries a ten-minute expiry as a cleanup backstop.
 				if (retention !== "durable")
-					return snapshotResult.assert(await vm.snapshot({ ttlSeconds: 600 }));
+					return immutable(
+						snapshotResult.assert(await vm.snapshot({ ttlSeconds: 600 })).snapshotId,
+					);
 				const created = durableSnapshotResult.assert(await vm.snapshot({ autoDeleteSeconds: -1 }));
 				if (
 					(created.snapshot.ttlSeconds ?? -1) > 0 ||
 					(created.snapshot.autoDeleteSeconds ?? -1) > 0
-				) {
-					// The caller never learns this ID, so it is deleted here rather than left to expire.
-					await api()
-						.vms.snapshots.delete(created.snapshotId)
-						.catch(() => {});
-					throw new Error(
+				)
+					await refuse(
+						created.snapshotId,
 						"Freestyle plan applies snapshot expiry; a durable benchmark artifact requires a plan without automatic snapshot deletion",
 					);
-				}
-				return { snapshotId: created.snapshotId };
+				return immutable(created.snapshotId);
 			},
 			delete: async (snapshotId, { signal }) => {
 				try {

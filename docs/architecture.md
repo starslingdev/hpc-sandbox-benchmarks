@@ -114,7 +114,8 @@ speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit starts no por
 already-cancelled signal; bounds each control-plane read (`get`, `page`, `find`) by
 `controlTimeoutMs`, handing the adapter the bounded signal and racing an SDK that takes none
 (a readiness or cleanup-confirmation poll reads again at its cadence after a read that outlived
-that bound, until its own deadline, so a slow read during a boot waits inside the readiness budget;
+that bound, until its own deadline, so a slow read during a boot waits inside the readiness budget,
+and when the poll ends the signal of a read still in flight aborts with it;
 `create`, `settle` and `remove` may wait on the vendor and stay within their own budgets; an
 adapter bounds a step the kit does not with the exported `bounded`); refuses a record a read by id
 returns for another id (an SDK whose read also resolves a name), including the read a removal makes
@@ -136,16 +137,19 @@ only on 429), `httpClassifiers` (the REST reading of a status as `refused`, `tra
 - cleanup confirmation — request removal, then observe removal; an `accepted` delete is not
   removal. A session the kit holds is sent its delete first; destroy-by-id and recovery observe
   first, and a record already observed gone is never sent a delete. A `transient` refusal of the
-  delete (a conflicting operation, an outage) is asked again after the next read while
-  `deleteTimeoutMs` remains, and is the reported failure if the budget ends on it; any other
-  refusal ends teardown at once. Removal is read every `pollMs`, or every `deletePollMs` where the
-  module's cleanup cadence differs from its readiness cadence;
+  delete (a conflicting operation, an outage), or a removal whose own `RemoveOp.current` lookup
+  outlived `controlTimeoutMs`, is asked again at a later read, no sooner than `removeRetryMs` after
+  the last request (default: the cleanup cadence; boat's is 5s), while `deleteTimeoutMs` remains,
+  and is the reported failure if the budget ends on it; any other refusal ends teardown at once.
+  Removal is read every `pollMs`, or every `deletePollMs` where the module's cleanup cadence differs
+  from its readiness cadence;
 - destroy-by-id, probes (`observe`/`describe` from `get`, a one-page `list`), and inventory (the
   owned/foreign partition by the kit-minted `benchmark-` ownership marker, where a `stopped` foreign
   record holds no compute and is not counted while a `stopped` owned one is a leftover, draining pages and
   failing closed on a repeated, omitted or runaway cursor, or a sandbox listed twice: 100 pages
   unless the module declares a larger `pageCap`, as Runloop and Namespace do for listings that keep
-  terminal history);
+  terminal history; the whole listing shares one `inventoryTimeoutMs` budget, 5 minutes unless the
+  module declares another, as Modal does for its one-minute enumeration);
 - ambiguous-create recovery — by marker lookup (`find`, or, where the module declares
   `recovery.lookup`, a `get` of the marker's spelling: the create named the sandbox by it),
   rejecting unrelated records on a shared account, or by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces.
@@ -167,7 +171,8 @@ only on 429), `httpClassifiers` (the REST reading of a status as `refused`, `tra
 
 It lowers onto the ComputeSDK bridge, so coverage proof, id parsing, cleanup double faults,
 redaction and output caps are reused. Every port call outside a poll is bounded
-(`controlTimeoutMs` for probes and listing pages, `snapshotTimeoutMs` for snapshots), and a response
+(`controlTimeoutMs` for probes and listing pages, `inventoryTimeoutMs` for a whole listing,
+`snapshotTimeoutMs` for snapshots), and a response
 arriving after its bound is rejected. A module's declared traits are deeply frozen. `create` is the only step before the vendor returns an id:
 `attach` (before readiness), readiness, `admit`, `prepare` and the disk proof run on the bridge's
 post-create path, so a failure in any of them tears the allocation down by that id and, if teardown
@@ -230,7 +235,11 @@ lazy loader per baked provider, typed per id, deriving the native-snapshot build
 (`apps/cli/src/lib/bake/provider-artifacts.ts`) derives the name, resolves the digest-pinned base
 once when an in-scope provider bakes from it, calls the loader, and records each build's `ref` as the
 candidate's `buildResults`. Bake reports carry those refs, and promote pins them (`--bake-reports`),
-so a native snapshot is promoted by the immutable ID its bake validated. Mirrored artifacts (Vercel)
+so a native snapshot is promoted by the immutable ID its bake validated; each report may supply only
+its own provider's ref (the one its `bake-<id>.json` file is named for, or the `provider` it states).
+A version build says whether it may replace an existing name: a partial promote (a backfill onto the
+live version) without `--force` forbids it, so a builder that replaces destructively (Daytona's
+snapshot) refuses rather than delete a published artifact. Mirrored artifacts (Vercel)
 promote by a registry retag in the CLI, which imports no vendor library for it.
 
 `DriverError.vendorHttpStatus` carries HTTP response status; `vendorExitCode` carries process exit

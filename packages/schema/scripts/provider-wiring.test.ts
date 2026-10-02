@@ -24,6 +24,7 @@ import {
 	renderAccountConcurrencyGroup,
 	renderCiSecretTable,
 	renderCiVariableTable,
+	renderCliSetupSteps,
 	renderDotenvValue,
 	renderDriversIndex,
 	renderDriversPackage,
@@ -239,6 +240,32 @@ describe("provider wiring projections", () => {
 				expect(matches[0]?.if).toBe(renderPreAuthCondition(binding.preAuth, lane, "").slice(4));
 			}
 		}
+	});
+
+	test("sets up every pinned vendor CLI in benchmark, bake, and promote, scoped to its owners", () => {
+		const lanes = [
+			{ file: ".github/workflows/bench-suite.yml", job: "bench", lane: "batch" as const },
+			{ file: ".github/workflows/toolchain-image.yml", job: "bake", lane: "matrix" as const },
+			{
+				file: ".github/workflows/toolchain-image.yml",
+				job: "publish",
+				lane: "release-scope" as const,
+			},
+		];
+		const clis = PROVIDER_IDS.flatMap((id) => {
+			const source = REGISTRY[id].sdkPackage;
+			return typeof source === "object" && "cli" in source ? [{ id, cli: source.cli }] : [];
+		});
+		expect(clis.length).toBeGreaterThan(0);
+		for (const { id, cli } of clis)
+			for (const { file, job, lane } of lanes) {
+				const matches = workflowJobSteps(file, job).filter(
+					(step) => step.uses === `./.github/actions/setup-${cli}`,
+				);
+				expect(matches, `setup-${cli} in ${file} jobs.${job}`).toHaveLength(1);
+				expect(renderCliSetupSteps(lane)).toContain(`if: ${matches[0]?.if}`);
+				expect(String(matches[0]?.if)).toContain(`'${id}'`);
+			}
 	});
 
 	test("keeps retired pre-auth actions managed and unconditionally disabled", () => {

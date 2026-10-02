@@ -62,11 +62,12 @@ export type Phase = "pending" | "ready" | "failed" | "deleting" | "gone";
  * Every port call receives a signal. `create`, `attach` and `prepare` carry the create attempt's
  * signal (the harness owns that budget); every other call's signal also aborts when the kit's own
  * bound for it expires: `controlTimeoutMs` for each control-plane read (`get`, `page`, `find`) and
- * for a probe, the readiness or delete budget for a `settle` or `remove` inside a poll, and
- * `snapshotTimeoutMs` for a snapshot. The kit stops waiting at that bound even if the adapter
- * ignores the signal, and rejects a response that arrives after it, so an adapter states no
- * per-call bound of its own on those calls. A read a readiness or cleanup-confirmation poll
- * abandons at `controlTimeoutMs` is simply read again while the poll's deadline remains.
+ * for a probe, the readiness or delete budget for every call inside that poll, `inventoryTimeoutMs`
+ * for every page of one listing, and `snapshotTimeoutMs` for a snapshot. The kit stops waiting at
+ * that bound even if the adapter ignores the signal, and rejects a response that arrives after it,
+ * so an adapter states no per-call bound of its own on those calls. A read a readiness or
+ * cleanup-confirmation poll abandons at `controlTimeoutMs` is simply read again while the poll's
+ * deadline remains; when the poll ends, the signal of a read still in flight aborts with it.
  */
 export interface Op {
 	readonly signal: AbortSignal;
@@ -75,7 +76,8 @@ export interface Op {
 /**
  * A removal's operation. `current` is the kit's own `get` of the id being removed (bounded,
  * identity-checked, the vendor's not-found read as `null`), for a vendor that deletes through a
- * handle it must look up first.
+ * handle it must look up first. A lookup that outlives `controlTimeoutMs` fails the removal the way
+ * a transient refusal does: the kit asks again within the delete budget.
  */
 export interface RemoveOp<Raw = unknown> extends Op {
 	current(): Promise<VendorRecord<Raw> | null>;
@@ -151,8 +153,8 @@ export interface ControlPlane<Raw = unknown> {
 	/**
 	 * A transient failure (a gateway, rate or conflict error that is not proof of refusal). A create
 	 * the harness may retry once the kit has proven nothing remains allocated; independent of
-	 * `refused`, it is still reconciled. A removal the kit asks again at its next read while the
-	 * delete budget remains.
+	 * `refused`, it is still reconciled. A removal the kit asks again at a later read, no sooner than
+	 * `removeRetryMs`, while the delete budget remains.
 	 */
 	transient?(error: unknown): boolean;
 	/** A post-readiness invariant beyond the request axes; returns a reason to reject. */
@@ -239,11 +241,22 @@ export interface VendorTiming {
 	/** The interval between cleanup-confirmation reads, where it differs from `pollMs`. */
 	readonly deletePollMs?: number;
 	/**
+	 * The least interval between two removal requests after the vendor refused one as transient (or
+	 * a removal's own lookup timed out), where it differs from the cleanup-confirmation cadence.
+	 * Removal is still read at that cadence in between.
+	 */
+	readonly removeRetryMs?: number;
+	/**
 	 * The bound on one control-plane read (`get`, `page`, `find`) and on a probe. A read inside a
 	 * readiness or cleanup-confirmation poll that outlives it is read again at the poll's cadence
 	 * until the poll's own deadline; anywhere else it fails the call.
 	 */
 	readonly controlTimeoutMs: number;
+	/**
+	 * The bound on one whole listing (the account's inventory, a recovery lookup): every page it
+	 * drains shares it, so a slow vendor cannot stretch a listing page by page.
+	 */
+	readonly inventoryTimeoutMs: number;
 	/** The bound on one snapshot capture or delete. */
 	readonly snapshotTimeoutMs: number;
 }
@@ -354,6 +367,7 @@ const DEFAULT_TIMING: VendorTiming = {
 	readyTimeoutMs: 180_000,
 	deleteTimeoutMs: 60_000,
 	controlTimeoutMs: CONTROL_TIMEOUT_MS,
+	inventoryTimeoutMs: 5 * 60_000,
 	snapshotTimeoutMs: 600_000,
 };
 const DEFAULT_PAGE_CAP = 100;
@@ -622,8 +636,10 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 	}
 
 	/**
-	 * Poll within one bounded budget. Every port call shares the bounded signal, so expiry cancels
-	 * the call in flight; an expiry (rather than the caller's own cancellation) becomes `expired()`.
+	 * Poll within one bounded budget. Every port call shares the bounded signal, which aborts when
+	 * the poll ends however it ends, so a read still in flight at the deadline (an SDK that ignores
+	 * its signal) is cancelled rather than left running; an expiry (rather than the caller's own
+	 * cancellation) becomes `expired()`.
 	 */
 	async function within<T>(
 		deadlineMs: number,
@@ -632,7 +648,8 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 		expired: () => unknown,
 		intervalMs = timing.pollMs,
 	): Promise<T> {
-		const o = op(budget(deadlineMs, outer));
+		const ended = new AbortController();
+		const o = op(AbortSignal.any([budget(deadlineMs, outer), ended.signal]));
 		try {
 			return await pollUntilReady({
 				provider,
@@ -646,15 +663,50 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 				o.signal.aborted || (isDriverError(error) && error.code === "readiness-timeout");
 			if (outer?.aborted || !timedOut) throw error;
 			throw expired();
+		} finally {
+			ended.abort(new Error(`${provider} poll ended`));
 		}
 	}
 
-	async function liveRecords(signal?: AbortSignal): Promise<VendorRecord<Raw>[]> {
-		const records = await drainPages(
-			provider,
-			(cursor) => call("listing page", signal, (o) => control.page(cursor, o)),
-			op(signal),
-			{ ...(traits.pageCap !== undefined && { pageCap: traits.pageCap }) },
+	/**
+	 * One whole listing within `inventoryTimeoutMs`: every page shares that budget and the caller's
+	 * signal (each page is still bounded on its own by `controlTimeoutMs`), and a page in flight when
+	 * the budget ends is cancelled with it.
+	 */
+	async function listing<T>(
+		label: string,
+		outer: AbortSignal | undefined,
+		drain: (signal: AbortSignal) => Promise<T>,
+	): Promise<T> {
+		const timeoutMs = timing.inventoryTimeoutMs;
+		const deadline = Date.now() + timeoutMs;
+		const ended = new AbortController();
+		const signal = AbortSignal.any([budget(timeoutMs, outer), ended.signal]);
+		const expired = () => new Error(`${provider} ${label} did not complete within ${timeoutMs}ms`);
+		try {
+			signal.throwIfAborted();
+			const result = await untilAborted(drain(signal), signal);
+			// The last page can answer after the budget but before the timer callback gets a turn.
+			if (Date.now() >= deadline) throw expired();
+			return result;
+		} catch (error) {
+			if (!outer?.aborted && (signal.aborted || Date.now() >= deadline)) throw expired();
+			throw error;
+		} finally {
+			ended.abort(new Error(`${provider} ${label} ended`));
+		}
+	}
+
+	const pageCap = { ...(traits.pageCap !== undefined && { pageCap: traits.pageCap }) };
+
+	async function liveRecords(outer?: AbortSignal): Promise<VendorRecord<Raw>[]> {
+		const records = await listing("listing", outer, (signal) =>
+			drainPages(
+				provider,
+				(cursor) => call("listing page", signal, (o) => control.page(cursor, o)),
+				op(signal),
+				pageCap,
+			),
 		);
 		return records.filter((record) => !isGone(record));
 	}
@@ -685,27 +737,32 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 	 * removal. `observe-first` (destroy-by-id, recovery: no proof the allocation is live) looks
 	 * before it deletes and never sends a delete to a record already observed gone. `remove-first`
 	 * (a session the kit created and holds) requests removal straight away. A transient refusal of
-	 * the request is asked again after the next read, while the delete budget remains. Resolves
-	 * whether this teardown requested the removal (false: the sandbox was already gone or going).
+	 * the request, or a removal whose own lookup (`RemoveOp.current`) outlived `controlTimeoutMs`, is
+	 * asked again at a later read, no sooner than `removeRetryMs` after the last request, while the
+	 * delete budget remains. Resolves whether this teardown requested the removal (false: the
+	 * sandbox was already gone or going).
 	 */
 	async function destroy(
 		id: string,
 		signal?: AbortSignal,
 		order: "observe-first" | "remove-first" = "observe-first",
 	): Promise<boolean> {
+		const retryMs = timing.removeRetryMs ?? timing.deletePollMs ?? timing.pollMs;
 		let requested = false;
 		let accepted = false;
+		let lastRequest = Number.NEGATIVE_INFINITY;
 		// The last transient refusal: if the budget ends on it, it is the diagnostic, not the timeout.
 		let refusal: { readonly error: unknown } | undefined;
 		const request = async (o: Op) => {
 			requested = true;
+			lastRequest = Date.now();
 			try {
 				const outcome = await control.remove(id, o);
 				accepted = true;
 				refusal = undefined;
 				return outcome === "removed" ? true : null;
 			} catch (error) {
-				if (!transient?.(error)) throw error;
+				if (!(error instanceof ControlReadTimeout) && !transient?.(error)) throw error;
 				refusal = { error };
 				return null;
 			}
@@ -719,7 +776,8 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 				const record = await reread(control.get, id, o);
 				if (record === undefined) return null;
 				if (isGone(record)) return true;
-				if (!first && !accepted && record?.phase !== "deleting") return request(o);
+				const due = Date.now() - lastRequest >= retryMs;
+				if (!first && !accepted && due && record?.phase !== "deleting") return request(o);
 				return null;
 			},
 			() =>
@@ -765,21 +823,23 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 	async function recoveryIds(marker: string, signal?: AbortSignal): Promise<string[]> {
 		const lookup = control.find;
 		const records = lookup
-			? await drainPages(
-					provider,
-					(cursor) => call("recovery lookup", signal, (o) => lookup(marker, cursor, o)),
-					op(signal),
-					{
-						...(traits.pageCap !== undefined && { pageCap: traits.pageCap }),
-						// A lookup may be a loose filter; the kit, not each adapter, refuses to tear down
-						// anything the marker does not attribute to this attempt. A dedicated account's
-						// replay may omit the marker, but never carries a different one.
-						inspect: (page) => {
-							for (const record of page)
-								if (record.marker !== marker && !(dedicated && record.marker === undefined))
-									throw new Error(`${provider} recovery returned an unrelated sandbox`);
+			? await listing("recovery lookup", signal, (bound) =>
+					drainPages(
+						provider,
+						(cursor) => call("recovery lookup", bound, (o) => lookup(marker, cursor, o)),
+						op(bound),
+						{
+							...pageCap,
+							// A lookup may be a loose filter; the kit, not each adapter, refuses to tear down
+							// anything the marker does not attribute to this attempt. A dedicated account's
+							// replay may omit the marker, but never carries a different one.
+							inspect: (page) => {
+								for (const record of page)
+									if (record.marker !== marker && !(dedicated && record.marker === undefined))
+										throw new Error(`${provider} recovery returned an unrelated sandbox`);
+							},
 						},
-					},
+					),
 				)
 			: (await liveRecords(signal)).filter((record) => record.marker === marker);
 		return records.filter((record) => !isGone(record)).map((record) => vendorId.assert(record.id));

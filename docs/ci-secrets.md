@@ -390,8 +390,9 @@ measurements; they are not release artifacts and are never selected for ordinary
 
 run.cloud needs `RUN_CLOUD_API_KEY`. Its SDK reads the key directly from the benchmark process; the adapter never adds it to sandbox metadata, create-time environment variables, or guest commands.
 
-tama needs `TAMA_TOKEN`, minted with `tama tokens create`. It publishes no SDK, so the bench cell
-installs the checksum-pinned CLI (`.github/actions/setup-tama`) and the adapter drives that binary as a
+tama needs `TAMA_TOKEN`, minted with `tama tokens create`. It publishes no SDK, so every lane that boots
+it (the bench cell, the toolchain bake cell and the promote's revalidation) installs the
+checksum-pinned CLI (`.github/actions/setup-tama`) and the adapter drives that binary as a
 subprocess. The token is adopted into the CLI's own profile on the first control-plane call and never
 reaches sandbox metadata, create-time environment variables, or guest commands; every diagnostic that
 quotes an argument vector redacts it. A fresh runner has no profile, so the secret is what authenticates

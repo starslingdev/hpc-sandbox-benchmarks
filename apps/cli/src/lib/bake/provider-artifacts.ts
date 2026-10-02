@@ -52,6 +52,11 @@ export interface ArtifactBuildInputs {
 	readonly base?: string;
 	/** A version build of a native snapshot boots the immutable candidate just revalidated. */
 	readonly candidate?: string;
+	/**
+	 * Whether the build may replace an existing artifact of its name: the caller knows whether that
+	 * name may already be published (see `versionReplacement`).
+	 */
+	readonly replace: "allowed" | "forbidden";
 	readonly log: Log;
 }
 
@@ -60,20 +65,21 @@ export interface ArtifactBuildInputs {
  * bake and version promote call this same function; the registry-derived name and, for a native
  * snapshot, the candidate it boots are all that differ.
  *
- * Every phase may replace the name: a candidate is mutable, version names are unpublished until
- * the base retag commits them, and `--force` asks for an in-place regeneration. A builder that can
- * only replace destructively says so in its result.
+ * The caller says whether the name may be replaced: a candidate is mutable, but a version name a
+ * backfill builds onto the live version may already be published. A builder that can only replace
+ * destructively refuses a forbidden replacement before it deletes, and says in its result when it
+ * replaced destructively.
  */
 export async function buildProviderArtifact(
 	id: BakedProviderId,
 	inputs: ArtifactBuildInputs,
 ): Promise<ArtifactBuildResult> {
-	const { phase, log } = inputs;
+	const { phase, replace, log } = inputs;
 	const name = bakedArtifactName(id, phase);
 	const common = {
 		name,
 		spec: releaseConfig.targetSpec,
-		replace: "allowed",
+		replace,
 		log,
 		signal: releaseBuildOwnership.signal,
 	} as const;

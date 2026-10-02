@@ -146,6 +146,17 @@ export function effectivePromotionRequirements(
 	return [...new Set([...configured, ...(isPartialScope(only) ? (only ?? []) : [])])];
 }
 
+/**
+ * Whether a version build may replace an existing artifact of its name. A full promote builds names
+ * no published version references yet (step 1 refused an existing version), and `--force` asks for
+ * an in-place regeneration. A partial promote without it backfills onto the live version, where the
+ * name may already be a published artifact: a builder that can only replace destructively must
+ * refuse rather than delete it and recreate it.
+ */
+export function versionReplacement(partial: boolean, force: boolean): "allowed" | "forbidden" {
+	return partial && !force ? "forbidden" : "allowed";
+}
+
 export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<PromoteResult> {
 	const { force = false, only, candidates = {} } = options;
 	const partial = isPartialScope(only);
@@ -306,6 +317,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 							const built = await buildProviderArtifact(target.id, {
 								phase: "version",
 								base: pinnedBaseImage,
+								replace: versionReplacement(partial, force),
 								...(candidates[target.id] !== undefined && { candidate: candidates[target.id] }),
 								log: (m) => log(`    ${m}`),
 							});

@@ -87,13 +87,43 @@ describe("candidateBuildResults", () => {
 		}
 	});
 
+	test("a report supplies only its own provider's candidate", () => {
+		const dir = reports({
+			"report.json": { provider: "freestyle", candidate: { artifacts: { freestyle: "sh-abc" } } },
+		});
+		try {
+			expect(candidateBuildResults(["--bake-reports", dir])).toEqual({ freestyle: "sh-abc" });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+		const cases = [
+			// One cell's report naming another provider's candidate.
+			{ "bake-e2b.json": { candidate: { artifacts: { freestyle: "sh-forged" } } } },
+			{ "a.json": { provider: "e2b", candidate: { artifacts: { freestyle: "sh-forged" } } } },
+			// A report that names no provider at all.
+			{ "a.json": { candidate: { artifacts: { freestyle: "sh-a" } } } },
+			// A file name and a stated provider that disagree.
+			{ "bake-freestyle.json": { provider: "e2b", candidate: { artifacts: { e2b: "t" } } } },
+		];
+		for (const files of cases) {
+			const dir = reports(files);
+			try {
+				expect(() => candidateBuildResults(["--bake-reports", dir])).toThrow(
+					/its own provider's|names provider/,
+				);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		}
+	});
+
 	test("rejects a non-baked id, an empty ref, and reports that disagree", () => {
 		const cases = [
-			{ "a.json": { candidate: { artifacts: { "modal-gvisor": "x" } } } },
-			{ "a.json": { candidate: { artifacts: { freestyle: "" } } } },
+			{ "bake-modal-gvisor.json": { candidate: { artifacts: { "modal-gvisor": "x" } } } },
+			{ "bake-freestyle.json": { candidate: { artifacts: { freestyle: "" } } } },
 			{
-				"a.json": { candidate: { artifacts: { freestyle: "sh-a" } } },
-				"b.json": { candidate: { artifacts: { freestyle: "sh-b" } } },
+				"bake-freestyle.json": { candidate: { artifacts: { freestyle: "sh-a" } } },
+				"b.json": { provider: "freestyle", candidate: { artifacts: { freestyle: "sh-b" } } },
 			},
 		];
 		for (const files of cases) {
