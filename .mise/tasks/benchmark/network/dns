@@ -7,9 +7,20 @@
 # Each domain is resolved ONCE, with the structured record parsed from the same bytes the log shows —
 # a second dig for jc would measure a cache-warmed resolver query, systematically underreporting the
 # very number this probe exists to capture.
+#
+# The default DOMAINS are the catalogued cold-DNS Metrics (packages/schema/src/network-probe-metrics.ts,
+# drift-gated by tooling/repo-checks/src/network-probe-targets.test.ts); domains passed as arguments
+# are resolved and recorded the same way but publish no Metric.
+#USAGE arg "[domain]..." var=#true help="Domains to resolve instead of the catalogued list"
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
+
+DOMAINS=(github.com registry.npmjs.org docker.io pypi.org rubygems.org)
+# usage hands a variadic arg over shell-quoted; eval is how mise documents splitting it back out.
+if [ -n "${usage_domain:-}" ]; then
+	eval "DOMAINS=(${usage_domain})"
+fi
 
 echo "=== DNS Resolver ==="
 try cat /etc/resolv.conf
@@ -23,7 +34,7 @@ for tool in dig jc; do
 	fi
 done
 
-for domain in github.com registry.npmjs.org docker.io pypi.org rubygems.org; do
+for domain in "${DOMAINS[@]}"; do
 	echo ""
 	echo "--- $domain ---"
 	rc=0

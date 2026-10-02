@@ -30,13 +30,28 @@
 # restraint is the difference between a probe that finishes in a minute and one that spends
 # endpoints x samples x connect-timeout doing it. The aggregate keeps this honest: `attempted` stays
 # at the configured sample count while `recorded` drops to 1.
+#
+# The defaults are what the network suite runs and what the Catalog publishes: each ENDPOINTS url is
+# matched by exact string to a Metric (packages/schema/src/network-probe-metrics.ts, drift-gated by
+# tooling/repo-checks/src/network-probe-targets.test.ts). Endpoints passed as arguments are probed
+# and recorded the same way but publish no Metric.
+#USAGE flag "--samples <count>" default="30" help="Fresh connections per endpoint"
+#USAGE flag "--connect-timeout <seconds>" default="5" help="curl --connect-timeout per sample"
+#USAGE flag "--max-time <seconds>" default="20" help="curl --max-time per sample"
+#USAGE arg "[url]..." var=#true help="Endpoints to probe instead of the catalogued list"
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
-SAMPLES=30
-CONNECT_TIMEOUT_SECONDS=5
-MAX_TIME_SECONDS=20
+SAMPLES="${usage_samples:?}"
+CONNECT_TIMEOUT_SECONDS="${usage_connect_timeout:?}"
+MAX_TIME_SECONDS="${usage_max_time:?}"
+for setting in "--samples=${SAMPLES}" "--connect-timeout=${CONNECT_TIMEOUT_SECONDS}" "--max-time=${MAX_TIME_SECONDS}"; do
+	if ! [[ "${setting#*=}" =~ ^[1-9][0-9]*$ ]]; then
+		echo "error: ${setting%%=*} must be a positive integer (got '${setting#*=}')" >&2
+		exit 2
+	fi
+done
 # The endpoints a CI job actually talks to, one URL per host, using each service's real entry point
 # rather than its marketing root: a container pull begins at `/v2/` and a cargo build begins at the
 # sparse index's config.json, so those are what get measured. Responses are kept small on purpose —
@@ -61,6 +76,10 @@ ENDPOINTS=(
 	"https://crates.io/"
 	"https://index.crates.io/config.json"
 )
+# usage hands a variadic arg over shell-quoted; eval is how mise documents splitting it back out.
+if [ -n "${usage_url:-}" ]; then
+	eval "ENDPOINTS=(${usage_url})"
+fi
 
 # The probe IS curl, and its product IS the aggregate — so both tools are hard requirements, and a
 # missing one is recorded as the skip marker the normalizer expects (skip_result in lib/bench.sh)

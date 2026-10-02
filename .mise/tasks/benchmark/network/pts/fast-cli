@@ -29,7 +29,7 @@ fi
 
 # The repaired fast-cli package performs sustained transfers through Netflix's fast.com CDN and
 # emits download/upload throughput plus idle/loaded latency from one JSON-producing invocation.
-run_pts_benchmark "pts/fast-cli-1.0.0" "pts_fast-cli"
+run_pts_benchmark "pts/${profile}" "pts_fast-cli"
 
 # PTS returns zero and writes a composite even when every trial failed. Treat the suite as successful
 # only when its four result parsers each emitted a numeric value; this caught missing Chrome libraries

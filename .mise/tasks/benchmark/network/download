@@ -15,9 +15,11 @@
 #
 # The version is pinned here as a literal and deliberately NOT read from packages/templates pins.ts
 # nodeVersion. Comparability across runs requires identical bytes, so bumping the toolchain must
-# never silently change what this probe weighs. Override DOWNLOAD_URL to point at anything else
-# (a bigger payload on a fast link, an internal mirror on an air-gapped one); DOWNLOAD_MAX_SECONDS
-# caps how long the transfer may run.
+# never silently change what this probe weighs. The --url default is the catalogued payload
+# (packages/schema/src/network-probe-metrics.ts, drift-gated by
+# tooling/repo-checks/src/network-probe-targets.test.ts); point it anywhere else (a bigger payload on
+# a fast link, an internal mirror on an air-gapped one) and the record is kept but publishes no Metric.
+# --max-seconds caps how long the transfer may run. Each flag also reads its DOWNLOAD_* variable.
 #
 # The probe runs curl ONCE, writing the native `%{json}` write-out as the structured result and
 # rendering the human-readable log line from that JSON — a second curl for display would double the
@@ -30,12 +32,35 @@
 # redirect restarts curl's timers on a second connection and reports only the last one. -L stays
 # here because the download legitimately redirects to a CDN and the transfer IS the measurement,
 # wherever it is served from.
+#USAGE flag "--url <url>" env="DOWNLOAD_URL" default="https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz" help="Payload to download"
+#USAGE flag "--max-seconds <seconds>" env="DOWNLOAD_MAX_SECONDS" default="120" help="curl --max-time for the transfer"
+#USAGE flag "--accept <media-type>" env="DOWNLOAD_ACCEPT" default="application/octet-stream" help="Accept header sent to api.github.com URLs"
 set -uo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 source "${REPO_ROOT}/lib/bench.sh"
 
-DOWNLOAD_URL="${DOWNLOAD_URL:-https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz}"
-DOWNLOAD_MAX_SECONDS="${DOWNLOAD_MAX_SECONDS:-120}"
+DOWNLOAD_URL="${usage_url:?}"
+DOWNLOAD_MAX_SECONDS="${usage_max_seconds:?}"
+DOWNLOAD_ACCEPT="${usage_accept:?}"
+if ! [[ "$DOWNLOAD_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+	echo "error: --max-seconds must be a positive integer (got '${DOWNLOAD_MAX_SECONDS}')" >&2
+	exit 2
+fi
+
+# The probe IS curl — without it there is nothing to measure, so record the skip marker the
+# normalizer expects (skip_result in lib/bench.sh) rather than exiting silently. Checked before any
+# scratch file exists, so the early exit has nothing to clean up.
+if ! command -v curl &>/dev/null; then
+	skip_result "curl not installed" "$(task_result_name "speed")"
+	exit 0
+fi
+
+# Scratch files, removed on every exit path: the -D header dump and, for an authenticated GitHub API
+# download, the token file. The trap is armed before either is created.
+HEADERS_TMP=""
+AUTH_HEADER_FILE=""
+trap 'rm -f "$HEADERS_TMP" "$AUTH_HEADER_FILE"' EXIT
+HEADERS_TMP="$(mktemp)"
 
 # api.github.com is a first-class target here — `gh release download` and every tool that resolves an
 # artifact through the REST API takes this path, so it is worth measuring — but it needs handling no
@@ -62,7 +87,6 @@ DOWNLOAD_MAX_SECONDS="${DOWNLOAD_MAX_SECONDS:-120}"
 # argv is world-readable through ps and /proc/<pid>/cmdline for as long as curl runs, and curl blanks
 # only its own auth options, never a custom header. Sandboxes are usually single-tenant, but "usually"
 # is not a property to lean a token on when the alternative costs three lines.
-DOWNLOAD_ACCEPT="${DOWNLOAD_ACCEPT:-application/octet-stream}"
 GITHUB_API_NOTE=""
 curl_args=(-sSL --max-time "$DOWNLOAD_MAX_SECONDS" -o /dev/null -w '%{json}')
 if [[ "$DOWNLOAD_URL" == https://api.github.com/* ]]; then
@@ -78,21 +102,12 @@ if [[ "$DOWNLOAD_URL" == https://api.github.com/* ]]; then
 	fi
 fi
 
-# The probe IS curl — without it there is nothing to measure, so record the skip marker the
-# normalizer expects (skip_result in lib/bench.sh) rather than exiting silently.
-if ! command -v curl &>/dev/null; then
-	skip_result "curl not installed" "$(task_result_name "speed")"
-	exit 0
-fi
-
 echo "=== Download Speed Test ==="
 echo "Downloading ${DOWNLOAD_URL}"
 [ -n "$GITHUB_API_NOTE" ] && echo "(${GITHUB_API_NOTE})"
 echo "(capped at ${DOWNLOAD_MAX_SECONDS}s — a transfer cut short still reports a valid rate)"
 
 SPEED_JSON="$(result_path "$(task_result_name "speed")")"
-HEADERS_TMP="$(mktemp)"
-trap 'rm -f "$HEADERS_TMP" "${AUTH_HEADER_FILE:-}"' EXIT
 
 # First occurrence of a response header across the whole redirect chain. First, not last, because the
 # rate-limit budget is reported by api.github.com on the 302 — the storage host it forwards to knows
@@ -101,38 +116,46 @@ first_header() {
 	grep -i "^${1}:" "$HEADERS_TMP" 2>/dev/null | head -n 1 | cut -d: -f2- | tr -d '\r' | xargs
 }
 
-# Fold the throttling state into the record. It lives in RESPONSE HEADERS, which curl's write-out
-# does not carry, and it is what tells a later reader whether a small or slow result was the network
-# or the budget — unrecoverable after the fact from the artifact alone.
+# Shape curl's native record into the artifact, in one jq pass:
+#
+#   * Drop `certs`. curl inlines the peer's full PEM chain into every `%{json}` record — measured at
+#     ~25KB of a ~26KB record here — and a throughput probe never reads it. The handshake facts worth
+#     keeping (num_certs, ssl_verify_result) are separate fields and survive; the latency probe drops
+#     the same field for the same reason.
+#   * Fold in the throttling state. It lives in RESPONSE HEADERS, which curl's write-out does not
+#     carry, and it is what tells a later reader whether a small or slow result was the network or
+#     the budget — unrecoverable after the fact from the artifact alone. The header names are
+#     GitHub's spelling of a convention many hosts share, so nothing here is gated on the host: a
+#     mirror or registry that throttles the URL is exactly as worth recording, and the field is
+#     named for the mechanism rather than for one vendor.
 #
 # stdin is consumed FIRST, and that ordering is load-bearing: bash starts every stage of a pipeline
 # at once, so a stage that reads the header file before draining stdin runs at t≈0, before curl has
 # written a single header, and would silently find an empty quota on every run. Reading the record
 # first blocks until curl has finished and its -D dump is complete.
 #
-# The header names are GitHub's spelling of a convention many hosts share, so nothing here is gated
-# on the host: a mirror or registry that throttles DOWNLOAD_URL is exactly as worth recording, and
-# the field is named for the mechanism rather than for one vendor. Passthrough when jq is absent or
-# no budget was advertised — the native record alone is still valid provenance.
-augment_with_ratelimit() {
-	local record remaining reset used
+# Passthrough when jq is absent — the native record alone is still valid provenance.
+shape_record() {
+	local record
 	record="$(cat)"
-	remaining="$(first_header x-ratelimit-remaining)"
-	reset="$(first_header x-ratelimit-reset)"
-	used="$(first_header x-ratelimit-used)"
-	if ! command -v jq &>/dev/null || [ -z "$remaining" ]; then
+	if ! have jq; then
 		printf '%s' "$record"
 		return 0
 	fi
-	printf '%s' "$record" | jq -c --arg remaining "$remaining" --arg reset "$reset" --arg used "$used" \
-		'. + {ratelimit: {remaining: $remaining, reset: $reset, used: $used}}'
+	printf '%s' "$record" | jq -c \
+		--arg remaining "$(first_header x-ratelimit-remaining)" \
+		--arg reset "$(first_header x-ratelimit-reset)" \
+		--arg used "$(first_header x-ratelimit-used)" '
+		del(.certs)
+		| if $remaining == "" then . else . + {ratelimit: {remaining: $remaining, reset: $reset, used: $used}} end
+	'
 }
 
 # -sS, and stderr NOT discarded: the %{json} write-out goes to stdout (piped onward), so curl's
 # diagnostic on stderr can't corrupt the result — and it is the whole story when the probe fails
 # (DNS vs TLS vs proxy refusal), which is precisely what a network probe exists to record.
 curl "${curl_args[@]}" -D "$HEADERS_TMP" "$DOWNLOAD_URL" |
-	augment_with_ratelimit |
+	shape_record |
 	json_result "$(task_result_name "speed")"
 # The ends of the pipeline are reported separately, because they answer different questions. curl
 # emits its write-out record even when the transfer fails, so a non-zero curl with a written record
@@ -155,7 +178,7 @@ fi
 # it were this one's — a reused sandbox is exactly where that lie would be believed.
 if [ "${probe_status[2]}" -ne 0 ]; then
 	echo "(no structured record written)"
-elif ! command -v jq &>/dev/null; then
+elif ! have jq; then
 	cat "$SPEED_JSON"
 else
 	# One pass, two outputs. An HTTP error is a SUCCESSFUL transfer as far as curl is concerned — a
