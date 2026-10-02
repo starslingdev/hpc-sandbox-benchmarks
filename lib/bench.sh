@@ -873,6 +873,24 @@ run_pts_benchmark() {
 	# would be empty, `find … -newer ""` would error out to no match, and the leaf would record a benign
 	# "produced no composite.xml" skip for what is really a broken sandbox. Guard it explicitly and fail
 	# the leaf loudly (red job + recorded gap) instead.
+	# Start this leaf's save name empty. PTS MERGES a batch-run into an existing result dir of the
+	# same name (see _configure_pts_batch), so a re-run of the SAME leaf on a long-lived host appends
+	# its <Entry> after the previous run's in every <Result>: the composite then carries both runs,
+	# assert_pts_numeric_values counts twice the values and reds the leaf, and on a leaf without that
+	# assert the extractor (results/pts.ts reads the first valued <Entry>) publishes the STALE run's
+	# number as this one's. Fresh CI sandboxes never see it; manual re-runs always do. The dir is the
+	# running user's own PTS state, so no SUDO; a removal that fails leaves the merge in place, so it
+	# fails the leaf loudly rather than publishing a mixed composite.
+	local stale
+	for stale in "$(pts_user_dir)/test-results/${save_name}" "$(pts_user_dir)/test-results/${save_name}"-[0-9]*; do
+		[ -e "$stale" ] || continue
+		if ! rm -rf "$stale"; then
+			echo "ERROR: could not clear previous ${save_name} results at ${stale}" >&2
+			fail_result "could not clear previous PTS results for ${test_name}" "$prefix"
+			return 1
+		fi
+	done
+
 	local run_stamp
 	if ! run_stamp="$(mktemp)"; then
 		echo "ERROR: could not create pre-run stamp for ${test_name} (mktemp failed)" >&2
