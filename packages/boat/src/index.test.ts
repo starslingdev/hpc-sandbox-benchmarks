@@ -644,7 +644,7 @@ describe("boat module policy", () => {
 			new Configuration({
 				basePath: "https://boat.invalid/api/v1",
 				accessToken: "test-key",
-				fetchApi: async (input, init) => {
+				fetchApi: async (...[input, init]: Parameters<typeof fetch>) => {
 					const path = new URL(String(input)).pathname;
 					requests.push(`${init?.method ?? "GET"} ${path}`);
 					let body: unknown;
