@@ -100,6 +100,11 @@ export interface ProviderPackageLocation {
 	readonly entry: string;
 }
 
+/** The generated provenance constant for one provider package: `<DIRECTORY>_PROVENANCE`. */
+export function provenanceConstant(directory: string): string {
+	return `${directory.toUpperCase().replaceAll("-", "_")}_PROVENANCE`;
+}
+
 /** The inert object authored in `provider-meta/<id>.ts`. */
 export interface ProviderMetaSource {
 	readonly displayName: string;
@@ -149,6 +154,24 @@ export function defineProviderMeta<const P extends ProviderId, const M extends P
 	meta: M,
 ): ProviderMetaModule<P, M> {
 	return { id, meta };
+}
+
+declare const UNFILLED: unique symbol;
+
+/**
+ * A value `bun run new-provider` leaves for a provider's author to state. It is assignable to no
+ * metadata field or port signature, so typecheck names every one still open by its hint.
+ */
+export interface Unfilled<Hint extends string> {
+	readonly [UNFILLED]: Hint;
+}
+
+/**
+ * Mark a value the author must still state. Evaluating it throws with its hint, so the registry's
+ * validation (and any adapter call that reaches one) fails rather than running on a placeholder.
+ */
+export function unfilled<const Hint extends string>(hint: Hint): Unfilled<Hint> {
+	throw new Error(`unfilled: ${hint} (left by \`bun run new-provider\`)`);
 }
 
 export function normalizeProviderInput(input: ProviderInput): NormalizedProviderInput {

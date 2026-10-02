@@ -8,7 +8,12 @@ import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { E2B_ATTEMPT_KEY } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
-import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import type { E2bProtocolStubOptions } from "@sandbox-benchmarks/driver/vendor/testing";
+import {
+	e2bProtocolStub,
+	vendorContract,
+	vendorDriver,
+} from "@sandbox-benchmarks/driver/vendor/testing";
 import novita, { NOVITA_DOMAIN, NOVITA_SANDBOX_ID } from "./index.ts";
 import type { NovitaSdk } from "./vendor.ts";
 import { novitaVendor } from "./vendor.ts";
@@ -30,172 +35,14 @@ class SandboxNotFoundError extends Error {}
 class AuthenticationError extends Error {}
 class InvalidArgumentError extends Error {}
 class RateLimitError extends Error {}
-class CommandExitError extends Error {
-	override readonly name = "CommandExitError";
-	constructor(
-		readonly exitCode: number,
-		readonly stdout = "",
-		readonly stderr = "",
-	) {
-		super(`exit ${exitCode}`);
-	}
-}
 
-interface StubRow {
-	sandboxId: string;
-	/** `snapshotting` stands in for a state the adapter does not know. */
-	state: "running" | "paused" | "snapshotting";
-	metadata: Record<string, string>;
-	files: Map<string, string>;
-}
-
-/**
- * A whole-account stand-in for the novita-sandbox statics the adapter uses. Every call records its
- * options, so tests can see which channel the credential rode.
- */
-function stubNovita(
-	options: {
-		readonly pageSize?: number;
-		/** The first create allocates and then loses its response. */
-		readonly ambiguousFirstCreate?: boolean;
-		/** The metadata query is ignored: a lookup returns every live row (a loose filter). */
-		readonly looseLookup?: boolean;
-		/** The launch handle's process id. */
-		readonly launchPid?: number;
-	} = {},
-) {
-	const rows = new Map<string, StubRow>();
-	const calls: Array<{ name: string; options: unknown }> = [];
-	let next = 0;
-	let ambiguous = options.ambiguousFirstCreate ?? false;
-	const allocate = (metadata: Record<string, string>, state: StubRow["state"] = "running") => {
-		const sandboxId = `i${++next}`;
-		rows.set(sandboxId, { sandboxId, state, metadata, files: new Map() });
-		return sandboxId;
-	};
-	const reachable = (id: string) => {
-		const found = rows.get(id);
-		if (found?.state !== "running") throw new Error(`sandbox ${id} is not running`);
-		return found;
-	};
-	const native = (sandboxId: string) => ({
-		sandboxId,
-		commands: {
-			run: async (command: string, runOptions: { background: boolean }) => {
-				calls.push({ name: "commands.run", options: runOptions });
-				const guest = reachable(sandboxId);
-				if (runOptions.background) {
-					const echo = /echo (\S+) > ([^\s']+)/.exec(command);
-					if (echo) guest.files.set(echo[2] ?? "", `${echo[1]}\n`);
-					return { pid: options.launchPid ?? 42 };
-				}
-				if (command.startsWith("df -Pk"))
-					return { exitCode: 0, stdout: `${80 * 1024 * 1024}\n`, stderr: "" };
-				const exit = /^sh -c 'exit (\d+)'$/.exec(command);
-				if (exit) throw new CommandExitError(Number(exit[1]));
-				return { exitCode: 0, stdout: "out\n", stderr: "err\n" };
-			},
-		},
-		files: {
-			read: async (path: string, fileOptions: unknown) => {
-				calls.push({ name: "files.read", options: fileOptions });
-				const text = reachable(sandboxId).files.get(path);
-				if (text === undefined) throw new Error(`${path}: no such file`);
-				return text;
-			},
-			write: async (path: string, text: string, fileOptions: unknown) => {
-				calls.push({ name: "files.write", options: fileOptions });
-				reachable(sandboxId).files.set(path, text);
-				return { path };
-			},
-			exists: async (path: string, fileOptions: unknown) => {
-				calls.push({ name: "files.exists", options: fileOptions });
-				return reachable(sandboxId).files.has(path);
-			},
-		},
+/** The shared E2B-protocol stand-in, carrying Novita's typed errors and info fields. */
+const stubNovita = (options: E2bProtocolStubOptions = {}) =>
+	e2bProtocolStub<NovitaSdk>({
+		info: { templateId: "toolchain-test", cpuCount: 4 },
+		errors: { SandboxNotFoundError, AuthenticationError, InvalidArgumentError, RateLimitError },
+		...options,
 	});
-	const Sandbox = {
-		create: async (template: string, createOptions: { metadata: Record<string, string> }) => {
-			calls.push({ name: "create", options: { template, ...createOptions } });
-			const sandboxId = allocate(createOptions.metadata);
-			if (ambiguous) {
-				ambiguous = false;
-				throw new TypeError("connection reset after the vendor accepted the create");
-			}
-			return native(sandboxId);
-		},
-		getInfo: async (id: string, getOptions: unknown) => {
-			calls.push({ name: "getInfo", options: getOptions });
-			const found = rows.get(id);
-			if (!found) throw new SandboxNotFoundError(id);
-			return {
-				sandboxId: found.sandboxId,
-				templateId: "toolchain-test",
-				state: found.state,
-				metadata: found.metadata,
-				cpuCount: 4,
-			};
-		},
-		kill: async (id: string, killOptions: unknown) => {
-			calls.push({ name: "kill", options: killOptions });
-			if (!rows.delete(id)) throw new SandboxNotFoundError(id);
-			return true;
-		},
-		list: (listOptions: {
-			query: { state?: string[]; metadata?: Record<string, string> };
-			nextToken?: string;
-		}) => {
-			calls.push({ name: "list", options: listOptions });
-			const { state, metadata } = listOptions.query;
-			const items = [...rows.values()]
-				.filter((value) => !state || state.includes(value.state))
-				.filter(
-					(value) =>
-						options.looseLookup ||
-						!metadata ||
-						Object.entries(metadata).every(([key, wanted]) => value.metadata[key] === wanted),
-				)
-				.map(({ sandboxId, state: live, metadata: labels }) => ({
-					sandboxId,
-					state: live,
-					metadata: labels,
-				}));
-			// Stateless like the SDK's paginator: a token resumes a fresh listing at its offset, and
-			// `hasNext` is true exactly while a token is held.
-			const size = options.pageSize ?? 100;
-			let token = listOptions.nextToken;
-			let fetched = false;
-			return {
-				get hasNext() {
-					return !fetched || token !== undefined;
-				},
-				get nextToken() {
-					return token;
-				},
-				nextItems: async () => {
-					const from = Number(token?.replace("token-", "") ?? 0);
-					fetched = true;
-					token = from + size < items.length ? `token-${from + size}` : undefined;
-					return items.slice(from, from + size);
-				},
-			};
-		},
-	};
-	const sdk = {
-		Sandbox,
-		SandboxNotFoundError,
-		AuthenticationError,
-		InvalidArgumentError,
-		RateLimitError,
-	} as unknown as NovitaSdk;
-	return {
-		sdk,
-		rows,
-		calls,
-		allocate,
-		count: (name: string) => calls.filter((c) => c.name === name).length,
-	};
-}
 
 /** The package's own module, lowered over a stub SDK instead of the real one. */
 function driverOver(stub: ReturnType<typeof stubNovita>) {
@@ -246,11 +93,14 @@ describe("Novita translation", () => {
 		await control.find?.("benchmark-z", undefined, op());
 		expect(stub.calls.map((call) => call.options)).toMatchObject([
 			{ apiKey: KEY, domain: NOVITA_DOMAIN, query: { state: ["running", "paused"] } },
+			// The SDK takes no signal, so a page is fetched without one.
+			undefined,
 			{
 				apiKey: KEY,
 				domain: NOVITA_DOMAIN,
 				query: { metadata: { [E2B_ATTEMPT_KEY]: "benchmark-z" } },
 			},
+			undefined,
 		]);
 	});
 

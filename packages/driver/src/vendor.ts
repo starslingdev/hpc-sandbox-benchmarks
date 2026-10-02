@@ -444,6 +444,8 @@ export function httpClassifiers(status: (error: unknown) => number | undefined) 
 
 /* ------------------------------------ mechanics ------------------------------------ */
 
+/** A translation `bun run new-provider` left for the adapter's author: a type error until written. */
+export { type Unfilled, unfilled } from "@sandbox-benchmarks/schema/provider-meta";
 /** The kit's abortable wait, for an adapter that paces its own vendor retries. */
 export { abortableDelay } from "./lib/poll.ts";
 /**

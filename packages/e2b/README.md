@@ -23,5 +23,5 @@ The driver is written against the vendor port (ADR-0023):
 `src/artifact.ts` (`./artifact`) builds the E2B template from the digest-pinned toolchain base through
 the pinned `@e2b/cli`, over an injectable build-command transport.
 
-`src/index.test.ts` tests the translation, runs `vendorContract` over a stub SDK, and drives sessions
+`src/index.test.ts` tests the translation, runs `vendorContract` over the shared `e2bProtocolStub` (with the SDK's own error classes), and drives sessions
 through the kit's `vendorDriver` and its production binding. Run `bun run --filter @sandbox-benchmarks/e2b test` or `typecheck` from the repo root.

@@ -93,6 +93,36 @@ jobs:
       - name: Spell (typos)
         run: bun run spell
 
+  # The new-provider scaffold end to end (`check:new-provider`): it scaffolds a provider of every
+  # kind into a copy of the repository, states what each scaffold leaves unfilled, regenerates, and
+  # runs the drift check, lint, the whole typecheck and the new packages' tests there. It installs
+  # and typechecks a second tree, so it runs beside `check` rather than inside `bun run test`.
+  scaffold:
+    name: New-provider scaffold end to end
+    runs-on: starsling-ubuntu-24.04-2
+    # Same fork-PR posture as `check`: this gate runs only for pushes and same-repo pull requests.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+          # See `check`: this runner's setup-bun cache restores without a working bun.
+          no-cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Scaffold, fill and gate a provider of every kind
+        run: bun run check:new-provider
+
   # The Chrome-backed figures suite, kept out of `check` because it cannot share that job's runner:
   # `starsling-ubuntu-24.04-2` runs the job as root, and Chrome refuses to start its sandbox as root
   # ("Running as root without --no-sandbox is not supported"). Dropping the sandbox to fit the runner

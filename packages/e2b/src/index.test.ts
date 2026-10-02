@@ -11,7 +11,12 @@ import {
 	E2B_CONTROL_TIMEOUT_MS,
 	E2B_LIVE_STATES,
 } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
-import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import type { E2bProtocolStubOptions } from "@sandbox-benchmarks/driver/vendor/testing";
+import {
+	e2bProtocolStub,
+	vendorContract,
+	vendorDriver,
+} from "@sandbox-benchmarks/driver/vendor/testing";
 import {
 	AuthenticationError,
 	CommandExitError,
@@ -38,161 +43,25 @@ const request: CreateRequest = {
 };
 const op = () => ({ signal: new AbortController().signal });
 
-interface StubRow {
-	sandboxId: string;
-	/** `snapshotting` stands in for a state the adapter does not know. */
-	state: "running" | "paused" | "snapshotting";
-	metadata: Record<string, string>;
-	files: Map<string, string>;
-}
-
-/**
- * A whole-account stand-in for the e2b statics the adapter uses, with the SDK's own error classes.
- * Every call records its options, so tests can see the credential, user and timeouts it carried.
- */
-function stubE2b(
-	options: {
-		readonly pageSize?: number;
-		readonly diskGb?: number;
-		/** The first create allocates and then loses its response. */
-		readonly ambiguousFirstCreate?: boolean;
-		/** A listing reports more pages but withholds the continuation token. */
-		readonly omitsToken?: boolean;
-		readonly launchPid?: number;
-		/** A nonzero exit arrives as a same-shaped error from another copy of the SDK. */
-		readonly foreignExit?: boolean;
-	} = {},
-) {
-	const rows = new Map<string, StubRow>();
-	const calls: Array<{ name: string; options: unknown }> = [];
-	let next = 0;
-	let ambiguous = options.ambiguousFirstCreate ?? false;
-	const allocate = (metadata: Record<string, string>, state: StubRow["state"] = "running") => {
-		const sandboxId = `i${++next}`;
-		rows.set(sandboxId, { sandboxId, state, metadata, files: new Map() });
-		return sandboxId;
-	};
-	const reachable = (id: string) => {
-		const found = rows.get(id);
-		if (found?.state !== "running") throw new Error(`sandbox ${id} is not running`);
-		return found;
-	};
-	const native = (sandboxId: string) => ({
-		sandboxId,
-		commands: {
-			run: async (command: string, runOptions: { background: boolean }) => {
-				calls.push({ name: "commands.run", options: runOptions });
-				const guest = reachable(sandboxId);
-				if (runOptions.background) {
-					const echo = /echo (\S+) > ([^\s']+)/.exec(command);
-					if (echo) guest.files.set(echo[2] ?? "", `${echo[1]}\n`);
-					return { pid: options.launchPid ?? 42 };
-				}
-				if (command.startsWith("df -Pk"))
-					return { exitCode: 0, stdout: `${(options.diskGb ?? 80) * 1024 * 1024}\n`, stderr: "" };
-				const exit = /^sh -c 'exit (\d+)'$/.exec(command);
-				if (exit) {
-					const exitCode = Number(exit[1]);
-					throw options.foreignExit
-						? { name: "CommandExitError", exitCode, stdout: "foreign", stderr: "" }
-						: new CommandExitError({ exitCode, stdout: "", stderr: "failed", error: "exit" });
-				}
-				return { exitCode: 0, stdout: "out\n", stderr: "err\n" };
-			},
-		},
-		files: {
-			read: async (path: string, fileOptions: unknown) => {
-				calls.push({ name: "files.read", options: fileOptions });
-				const text = reachable(sandboxId).files.get(path);
-				if (text === undefined) throw new Error(`${path}: no such file`);
-				return text;
-			},
-			write: async (path: string, text: string, fileOptions: unknown) => {
-				calls.push({ name: "files.write", options: fileOptions });
-				reachable(sandboxId).files.set(path, text);
-				return { path };
-			},
-			exists: async (path: string, fileOptions: unknown) => {
-				calls.push({ name: "files.exists", options: fileOptions });
-				return reachable(sandboxId).files.has(path);
-			},
-		},
-	});
-	const Sandbox = {
-		create: async (template: string, createOptions: { metadata: Record<string, string> }) => {
-			calls.push({ name: "create", options: { template, ...createOptions } });
-			const sandboxId = allocate(createOptions.metadata);
-			if (ambiguous) {
-				ambiguous = false;
-				throw new TypeError("connection reset after the vendor accepted the create");
-			}
-			return native(sandboxId);
-		},
-		getInfo: async (id: string, getOptions: unknown) => {
-			calls.push({ name: "getInfo", options: getOptions });
-			const found = rows.get(id);
-			if (!found) throw new SandboxNotFoundError(id);
-			return { sandboxId: id, templateId: "tpl", state: found.state, metadata: found.metadata };
-		},
+/** The shared E2B-protocol stand-in, carrying the e2b SDK's own error classes and envelope. */
+const stubE2b = ({
+	foreignExit,
+	...options
+}: E2bProtocolStubOptions & {
+	/** A nonzero exit arrives as a same-shaped error from another copy of the SDK. */
+	readonly foreignExit?: boolean;
+} = {}) =>
+	e2bProtocolStub<E2bSdk>({
+		info: { templateId: "tpl" },
 		// Like the SDK: false for a sandbox E2B no longer knows.
-		kill: async (id: string, killOptions: unknown) => {
-			calls.push({ name: "kill", options: killOptions });
-			return rows.delete(id);
-		},
-		list: (listOptions: {
-			query: { state?: string[]; metadata?: Record<string, string> };
-			nextToken?: string;
-		}) => {
-			calls.push({ name: "list", options: listOptions });
-			const { state, metadata } = listOptions.query;
-			const items = [...rows.values()]
-				.filter((value) => !state || state.includes(value.state))
-				.filter(
-					(value) =>
-						!metadata ||
-						Object.entries(metadata).every(([key, wanted]) => value.metadata[key] === wanted),
-				)
-				.map(({ sandboxId, state: live, metadata: labels }) => ({
-					sandboxId,
-					state: live,
-					metadata: labels,
-				}));
-			// Stateless like the SDK's paginator: a token resumes a fresh listing at its offset.
-			const size = options.pageSize ?? 100;
-			let token = listOptions.nextToken;
-			let fetched = false;
-			return {
-				get hasNext() {
-					return !fetched || token !== undefined;
-				},
-				get nextToken() {
-					return options.omitsToken ? undefined : token;
-				},
-				nextItems: async (pageOptions: unknown) => {
-					calls.push({ name: "nextItems", options: pageOptions });
-					const from = Number(token?.replace("token-", "") ?? 0);
-					fetched = true;
-					token = from + size < items.length ? `token-${from + size}` : undefined;
-					return items.slice(from, from + size);
-				},
-			};
-		},
-	};
-	const sdk = {
-		Sandbox,
-		SandboxNotFoundError,
-		AuthenticationError,
-		InvalidArgumentError,
-		RateLimitError,
-	} as unknown as E2bSdk;
-	return {
-		sdk,
-		rows,
-		calls,
-		allocate,
-		count: (name: string) => calls.filter((call) => call.name === name).length,
-	};
-}
+		killMissing: "false",
+		errors: { SandboxNotFoundError, AuthenticationError, InvalidArgumentError, RateLimitError },
+		exitError: (exitCode) =>
+			foreignExit
+				? { name: "CommandExitError", exitCode, stdout: "foreign", stderr: "" }
+				: new CommandExitError({ exitCode, stdout: "", stderr: "failed", error: "exit" }),
+		...options,
+	});
 
 /** The package's own module, lowered over a stub SDK instead of the real one. */
 function driverOver(stub: ReturnType<typeof stubE2b>) {

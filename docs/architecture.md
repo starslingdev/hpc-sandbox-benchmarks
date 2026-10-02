@@ -251,13 +251,22 @@ Everything else that names providers is derived from that registry rather than r
   `sdkPackage` is a runtime dependency of its own provider package and that a `{ cli }` vendor has a
   setup action pinning an exact version) and `./artifact` exactness (an OCI baker exports one; no other
   provider does; a native-snapshot baker's driver exports `snapshotBuild`), and writes the registry
-  assembly, the driver and artifact-builder loaders, each package's provenance, and the managed workflow, env and docs regions. `bun run check:providers` is
-  its drift check.
+  assembly, the driver and artifact-builder loaders, each package's provenance, the managed workflow,
+  env and docs regions (including one setup step per pinned vendor CLI) and the reviewed registry
+  snapshot. `bun run check:providers` is its drift check;
+- one scaffolder, `bun run new-provider`, which writes everything mechanical about a new provider
+  (its `PROVIDER_IDS` entry, catalog pin, metadata module, package, adapter skeleton, tests and, for a
+  CLI, its setup action) and leaves only what the vendor makes true as typed `unfilled(...)` values.
+  `packages/schema/scripts/new-provider.test.ts` is its cost guard (the files it writes, the files an
+  author edits, the adapter skeleton's budget, and that generation then needs no other edit);
+  `bun run check:new-provider` scaffolds, fills and gates a provider of every kind in a temporary
+  copy of the repository.
 
 Exec transport is not metadata: each driver module's `execution` policy declares its synchronous cap
 and durable route, and the composition root projects it onto the harness's `ProviderTransport`.
 `packages/schema/src/provider-registry.test.ts` holds the registry invariants and the one reviewed
-snapshot of every projection, so a new provider is reviewed as one snapshot diff.
+snapshot of every projection (refreshed by `generate-providers`), so a new provider is reviewed as one
+snapshot diff.
 
 ## Driver end-to-end validation (`driver-check`)
 
@@ -357,8 +366,10 @@ the Run model or builds a document never spawns a browser.
 | `bun run lint:docker`| `hadolint` on the toolchain-image Dockerfiles (`packages/templates/images`). |
 | `bun run smoke`      | Boot each provider's sandbox from the baked image and smoke-test it (providers without credentials are skipped). |
 | `bun run check:catalog-drift` | Fails if the generated PTS catalog drifted from the vendored profiles. |
-| `bun run generate-providers` | Regenerates every output derived from provider metadata (registry assembly, driver loader, provenance, managed workflow/env/docs regions). |
+| `bun run generate-providers` | Regenerates every output derived from provider metadata (registry assembly, driver loader, provenance, managed workflow/env/docs regions, registry snapshot). |
 | `bun run check:providers` | Fails if any generated provider output drifted from the metadata registry. |
+| `bun run new-provider -- --id <id> --kind sdk\|http\|cli` | Scaffolds a provider (`--sdk <name>@<version>`, `--protocol e2b`, `--baked`); see CONTRIBUTING.md "Add a provider". |
+| `bun run check:new-provider` | Scaffolds, fills and gates a provider of every kind in a temporary copy of the repository (CI's `scaffold` job). |
 
 Run a single bin during development: `bun apps/cli/src/bin/plan-matrix.ts`.
 

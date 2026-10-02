@@ -43,58 +43,59 @@ bun run --filter @sandbox-benchmarks/schema generate-catalog   # regenerate from
 bun run check:catalog-drift                                    # fail if the committed draft drifted
 bun run generate-providers                                     # regenerate everything provider metadata projects
 bun run check:providers                                        # fail if any generated provider output drifted
+bun run check:new-provider                                     # scaffold, fill and gate a provider of every kind
 ```
 
 ## Add a provider
 
-1. **Identity + metadata** — append the id to `PROVIDER_IDS` in
-   [`packages/schema/src/provider-ids.ts`](./packages/schema/src/provider-ids.ts), then add the one
-   hand-authored `packages/schema/src/provider-meta/<id>.ts` module. Declare display/vendor identity,
-   inputs, artifact lifecycle, isolation, vetted pricing, maturity, and spec pinning there, plus the
-   vendor library its package pins as `sdkPackage`: an npm package name, `{ cli }` for a CLI pinned
-   by `.github/actions/setup-<cli>/action.yml`, or `{ http }` for an HTTP-only API version. Declare
-   `package` only for an isolation variant sharing another provider's package, and `figureLabel`
-   only when the chart label differs from the derived default.
-2. **Driver package** — add `packages/<id>` with a default-exported DriverModule. An SDK or HTTP
-   vendor writes `src/vendor.ts`, an adapter that receives its transport or SDK and translates it
-   onto the vendor port, and `src/index.ts`, which binds the real transport once in
-   `defineVendorDriver` (`packages/brezel` and `packages/novita` are the references; `packages/vercel`
-   and `packages/microsandbox-cloud` show a name-keyed vendor, `packages/blaxel` a post-readiness
+A new provider is four steps; everything else is scaffolded or generated.
+
+1. **Scaffold** — `bun run new-provider -- --id <id> --kind sdk|http|cli [--sdk <name>@<version>]
+   [--protocol e2b] [--baked]`. `--sdk` names the vendor's npm SDK at an exact version (`--kind
+   sdk`) or the CLI binary and its release (`--kind cli`); `--protocol e2b` binds an E2B-compatible
+   SDK to the shared `e2bProtocolVendor`; `--baked` adds the `./artifact` builder for a provider that
+   bakes the OCI toolchain base. It appends the id to `PROVIDER_IDS`, pins the SDK in the root
+   `catalogs.vendors`, writes `packages/schema/src/provider-meta/<id>.ts` and `packages/<id>/`
+   (manifest, tsconfig, README, `src/index.ts` binding `defineVendorDriver` or `defineCliDriver` with
+   defaults, the `src/vendor.ts` adapter skeleton and `src/index.test.ts`), a checksum-pinned
+   `.github/actions/setup-<cli>/action.yml` for a CLI, and runs `bun install --ignore-scripts`. Every
+   value only the vendor can answer is left as a typed `unfilled("…")`: typecheck names each one, and
+   `generate-providers` refuses the metadata until it is stated.
+2. **Fill the metadata** — `packages/schema/src/provider-meta/<id>.ts`: display and vendor identity,
+   website, isolation, vetted pricing and spec pinning (and inputs, which default to
+   `<ID>_API_KEY`). Declare `package` only for an isolation variant sharing another provider's
+   package, and `figureLabel` only when the chart label differs from the derived default.
+3. **Write the adapter** — `packages/<id>/src/vendor.ts` translates the vendor onto the vendor port
+   (`packages/brezel` and `packages/novita` are the references; `packages/vercel` and
+   `packages/microsandbox-cloud` show a name-keyed vendor, `packages/blaxel` a post-readiness
    `prepare`, `packages/boat` a vendor marked on `attach` whose lookups cannot prove absence,
    `packages/daytona` and `packages/modal` isolation variants sharing one adapter, and
-   `packages/freestyle` native snapshots on the `snapshots` passthrough; a
-   vendor of the E2B protocol, like `packages/e2b`, passes its own SDK to `e2bProtocolVendor` from
-   `@sandbox-benchmarks/driver/vendor/e2b-protocol` and states only its differences). Its tests cover
-   the adapter's translation, run `vendorContract` over a stubbed transport, and drive a few sessions
-   through `vendorDriver` from `@sandbox-benchmarks/driver/vendor/testing`; kit behaviour is
-   already tested in `packages/driver`. Its `execution`
-   policy (synchronous cap and durable route) is the only declaration of the provider's exec
-   transport, and its `package.json` must depend on the `sdkPackage` library. Every vendor library
-   the package uses goes in the root `catalogs.vendors` and is declared as `catalog:vendors` by this
-   package alone; no other workspace member may declare or import it (the vendor-seam check). Run
-   `bun run generate-providers`, then review the generated registry index, driver and
-   artifact-builder loaders, provenance, and managed workflow/docs/env regions. Filename, tuple key, and declared id
-   disagreement is a compile error; malformed descriptor semantics, a missing driver module, and an
-   `sdkPackage` the package does not depend on fail the generator. Then update and review the one
-   registry snapshot (`bun test -u src/provider-registry.test.ts` in `packages/schema`), which records
-   every fact the registry answers for the new provider.
-3. **Artifact builder** — only a provider whose registry artifact bakes from the OCI toolchain base
-   (`baseImageUse(id) === "bakes"`) adds `src/artifact.ts` (`src/<entry>/artifact.ts` for an isolation
-   variant), exported as `./artifact` (`./<entry>/artifact`): a `defineArtifactBuilder` that receives
-   everything through its build request (derived name, digest-pinned base, target spec, parsed
-   credentials, images directory) and takes its vendor client or CLI transport as a factory parameter,
-   with the default export binding the real one. Its tests drive that factory over fakes. A
-   native-snapshot provider adds no `./artifact`; its driver entry exports `snapshotBuild` (the stock
-   base and how to read the booted identity) and its builder is derived from the driver's snapshot
-   capability. The generator fails when `./artifact` exactness is violated and emits the
-   `ARTIFACT_BUILDERS` join the release lane calls; providers using a stock or shared image get no
-   builder.
-4. **Generated wiring** — do not hand-edit provider choice/input regions. Provider metadata generates
-   the smoke dispatch options, three least-privilege workflow input blocks, runner routing,
-   `.env.example`, CI configuration docs, and the privileged-environment checklist. The drift gate
-   rejects stale or hand-edited output.
-5. Bring the provider up with a single-provider branch dispatch. Adding it to the default benchmark
-   matrix remains a separate promotion decision after live validation.
+   `packages/freestyle` native snapshots on the `snapshots` passthrough). An E2B-protocol adapter is
+   already the shared binding: state only the vendor's differences. An SDK, HTTP or CLI provider also
+   fills the stand-in for its transport in `src/index.test.ts`, which then runs `vendorContract` and a
+   session through `vendorDriver` (an E2B-protocol test needs nothing: it runs over the shared
+   `e2bProtocolStub`). A baking provider writes its builder in `src/artifact.ts`. Add translation
+   tests for the vendor's quirks beside the generated ones; kit behaviour is already tested in
+   `packages/driver`. Change the generated `src/index.ts` only to tune a trait (`coverage`,
+   `execution`, `timing`, `recovery`) away from its default.
+4. **Generate** — `bun run generate-providers` renders the registry index, the driver and
+   artifact-builder loaders, provenance, the managed workflow/docs/env regions (smoke dispatch
+   options, workflow input blocks, runner routing, the CLI setup step, `.env.example`, CI
+   configuration docs, the privileged-environment checklist) and the registry snapshot
+   (`packages/schema/src/__snapshots__/provider-registry.test.ts.snap`). Review that snapshot's diff:
+   it records every fact the registry answers for the new provider. The drift gate rejects stale or
+   hand-edited output.
+
+The rules the scaffold already satisfies, and the gates that hold them: a vendor library is pinned in
+the root `catalogs.vendors` and declared as `catalog:vendors` by its provider package alone (the
+vendor-seam check); `sdkPackage` is a dependency of the provider's own package; filename, tuple key
+and declared id agree (a compile error otherwise); `./artifact` exists exactly for an OCI baker (a
+native-snapshot provider exports `snapshotBuild` from its driver entry instead). The cost guard
+(`packages/schema/scripts/new-provider.test.ts`) and `bun run check:new-provider` (a scaffold of
+every kind, filled and taken through every gate) keep that cost from growing.
+
+Bring the provider up with a single-provider branch dispatch. Adding it to the default benchmark
+matrix remains a separate promotion decision after live validation.
 
 ## Add a suite
 

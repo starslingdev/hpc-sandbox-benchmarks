@@ -94,7 +94,8 @@ redaction and output caps are reused, not reimplemented.
 
 `@sandbox-benchmarks/driver/vendor/testing` provides the test adapters:
 - `memoryVendor`, the in-memory adapter that makes the seam real;
-- `vendorContract`, the port contract every adapter must pass.
+- `vendorContract`, the port contract every adapter must pass;
+- `e2bProtocolStub`, the stand-in SDK every E2B-protocol package (and its scaffold) tests over.
 
 > **Amendment (legacy removal).** Once every SDK and HTTP driver was a vendor adapter, the bridge
 > became internal to `packages/driver`: its `./computesdk` and `./native` subpaths and authoring
@@ -184,8 +185,25 @@ Invariants plus one reviewed registry snapshot replace the hard-coded id lists.
 
 ## Consequences
 
-- **What a new provider costs.** Its metadata file, one `PROVIDER_IDS` line, and a package holding
-  only vendor translation, plus an artifact builder when it bakes. Lifecycle fixes land once.
+- **What a new provider costs.** Its metadata file and its adapter, plus an artifact builder when it
+  bakes; `bun run new-provider` scaffolds everything else (the `PROVIDER_IDS` line, the catalog pin,
+  the package, its entry and tests) and `generate-providers` derives the rest. Lifecycle fixes land
+  once. Measured by `check:new-provider`, which fills each scaffold the way an author would and takes
+  it through every gate (lines are hand-written lines in the files the author edits; pricing there is
+  `unavailable`, so a published price list adds its components to the metadata):
+
+  | Provider kind | Scaffolder writes | Author edits | Hand-written lines |
+  |---|---|---|---|
+  | E2B-protocol SDK | 8 files, +1 to pin a new SDK | metadata, `vendor.ts` | 11 (10 + 1) |
+  | ... that bakes | 9 files, +1 | ... and `artifact.ts` | 16 (10 + 1 + 5) |
+  | SDK | 8 files, +1 | metadata, `vendor.ts`, the test's SDK stand-in | 61 (11 + 48 + 2) |
+  | HTTP | 8 files | metadata, `vendor.ts`, the test's API stand-in | 68 (12 + 34 + 22) |
+  | CLI | 9 files (with its setup action) | the action's pin, metadata, `vendor.ts`, the test's CLI stand-in | 59 (2 + 11 + 27 + 19) |
+
+  `generate-providers` then rewrites 11 files for one provider. Before this ADR a provider meant
+  roughly 21 hand-edited files. The cost guard (`packages/schema/scripts/new-provider.test.ts`)
+  fails if the scaffold writes another file, leaves another file to edit, or grows its adapter
+  skeleton.
 - **Provider tests.** They test translation and quirks over a stubbed transport. Kit behaviour is
   tested once.
 - **Teardown of a held session deletes first; every other teardown observes first.** The kit

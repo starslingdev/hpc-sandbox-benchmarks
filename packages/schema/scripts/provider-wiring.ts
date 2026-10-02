@@ -343,6 +343,25 @@ export function renderSetupSecretChecklist(): string {
 	return chunks.map((chunk) => `echo "  ${chunk.join(", ")}"`).join("\n");
 }
 
+/** One setup step per pinned vendor CLI, run only when a provider that drives it is selected. */
+export function renderCliSetupSteps(indent = "      "): string {
+	const owners = new Map<string, ProviderId[]>();
+	for (const id of PROVIDER_IDS) {
+		const source = providerMeta(id).sdkPackage;
+		if (typeof source === "object" && "cli" in source)
+			owners.set(source.cli, [...(owners.get(source.cli) ?? []), id]);
+	}
+	return [...owners]
+		.map(([cli, ids]) =>
+			[
+				`${indent}- name: Set up the ${cli} CLI`,
+				`${indent}  if: ${ownerCondition(ids, "batch")}`,
+				`${indent}  uses: ./.github/actions/setup-${cli}`,
+			].join("\n"),
+		)
+		.join("\n\n");
+}
+
 export function generatedProviderRegions(): GeneratedRegion[] {
 	const preAuthRegions = preAuthBindings().flatMap(({ preAuth }) => [
 		{
@@ -376,6 +395,11 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 			file: ".github/workflows/toolchain-image.yml",
 			label: "provider-account-group-bake",
 			body: renderAccountConcurrencyGroup(),
+		},
+		{
+			file: ".github/workflows/bench-suite.yml",
+			label: "provider-cli-setup",
+			body: renderCliSetupSteps(),
 		},
 		{
 			file: ".github/workflows/bench-suite.yml",

@@ -39,12 +39,18 @@ on this host VM install it on demand (the update script does not).
 The command contract lives in the root `package.json` and `docs/architecture.md`; run those scripts
 directly:
 - `bun run lint`, `bun run typecheck`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
-  `bun run check:providers`, `bun run lint:shell`, `bun run lint:docker`.
+  `bun run check:providers`, `bun run lint:shell`, `bun run lint:docker`, `bun run check:new-provider`.
 - A vendor SDK is declared (as `catalog:vendors`) and imported by exactly one provider package; the CLI
   reaches providers through `@sandbox-benchmarks/drivers` or the allowlisted `@sandbox-benchmarks/modal/gpu`
   and `/cleanup-observation` subpaths. `tooling/repo-checks/src/vendor-seam.test.ts` enforces it.
 - Provider metadata edits are followed by `bun run generate-providers` (the one generator for the
-  registry assembly, driver loader, provenance and managed workflow/env/docs regions).
+  registry assembly, driver loader, provenance, managed workflow/env/docs regions and the registry
+  snapshot).
+- A new provider starts from `bun run new-provider -- --id <id> --kind sdk|http|cli [--sdk
+  <name>@<version>] [--protocol e2b] [--baked]` (CONTRIBUTING.md "Add a provider"); the author fills
+  the typed `unfilled(...)` values (metadata, `src/vendor.ts`, a test stand-in or builder where the
+  scaffold leaves one) and runs `generate-providers`. `bun run check:new-provider` takes a scaffold
+  of every kind through every gate in a temporary copy (about two minutes; CI's `scaffold` job).
 - Run a CLI bin directly, e.g. `bun apps/cli/src/bin/plan-matrix.ts --list-providers` or
   `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json`. Bins are listed under
   `apps/cli/package.json` `bin`.

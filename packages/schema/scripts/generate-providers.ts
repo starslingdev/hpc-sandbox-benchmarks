@@ -2,7 +2,8 @@
 // `generate-providers`: the one generator for everything derived from provider metadata (ADR-0006,
 // ADR-0023). It validates the hand-authored descriptor modules, renders the correlated registry
 // assembly from the dependency-free identity tuple, then renders the wiring that projects the
-// registry into workflows, docs, env examples, provenance and the driver loader.
+// registry into workflows, docs, env examples, provenance and the driver loader, and refreshes the
+// reviewed registry snapshot.
 //
 // `--check` renders the same files and fails when any committed byte differs, which is the drift
 // check CI runs. Comparing content rather than `git diff` also catches a
@@ -18,6 +19,10 @@ import { validateProviderModules } from "./provider-meta-schema.ts";
 const SCHEMA_ROOT = resolve(import.meta.dir, "..");
 export const REPO_ROOT = resolve(SCHEMA_ROOT, "../..");
 const REGISTRY_FILE = relative(REPO_ROOT, resolve(SCHEMA_ROOT, "src/provider-meta/index.ts"));
+const REGISTRY_SNAPSHOT = relative(
+	REPO_ROOT,
+	resolve(SCHEMA_ROOT, "src/__snapshots__/provider-registry.test.ts.snap"),
+);
 
 function identifier(id: string): string {
 	return id.replaceAll("-", "_");
@@ -87,13 +92,35 @@ async function renderWiring(): Promise<Map<string, string>> {
 	return renderProviderWiringFiles(REPO_ROOT);
 }
 
-/** Validate the metadata, then write the registry assembly followed by every wiring output. */
+/**
+ * The reviewed registry snapshot (src/provider-registry.test.ts) projects the same metadata, so it is
+ * refreshed in the same run; its diff is what a reviewer reads for a new or changed provider.
+ */
+function refreshRegistrySnapshot(): void {
+	const refresh = Bun.spawnSync(
+		["bun", "test", "--update-snapshots", "./src/provider-registry.test.ts"],
+		{ cwd: SCHEMA_ROOT, stdout: "pipe", stderr: "pipe" },
+	);
+	if (refresh.exitCode !== 0)
+		throw new Error(`refreshing the registry snapshot failed:\n${refresh.stderr}`);
+}
+
+/**
+ * Validate the metadata, then write the registry assembly followed by every wiring output and the
+ * registry snapshot.
+ */
 export async function generateProviders(): Promise<number> {
 	validateProviderModules(await loadProviderModules());
 	await Bun.write(resolve(REPO_ROOT, REGISTRY_FILE), renderProviderRegistry());
 	const wiring = await renderWiring();
 	for (const [file, content] of wiring) await Bun.write(resolve(REPO_ROOT, file), content);
-	return wiring.size + 1;
+	refreshRegistrySnapshot();
+	return wiring.size + 2;
+}
+
+/** Every file `generate-providers` writes, repository-relative. */
+export async function generatedProviderFiles(): Promise<string[]> {
+	return [REGISTRY_FILE, ...(await renderWiring()).keys(), REGISTRY_SNAPSHOT];
 }
 
 /** Validate the metadata and name every committed output a fresh generation would change. */

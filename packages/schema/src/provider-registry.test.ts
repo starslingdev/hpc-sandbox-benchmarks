@@ -1,7 +1,8 @@
 // The registry's answers to every fact other packages used to restate by hand. Two layers: invariants
 // that never need an edit when a provider is added, and ONE reviewed snapshot of the projection.
-// Adding a provider is `bun test -u` plus a one-file snapshot diff, which keeps the "a human must
-// look at the new row" property the hand-maintained id lists existed for.
+// `bun run generate-providers` refreshes the snapshot, so adding a provider is a one-file snapshot
+// diff, which keeps the "a human must look at the new row" property the hand-maintained id lists
+// existed for.
 
 import { describe, expect, test } from "bun:test";
 import { candidateArtifact, releaseUnscopable } from "./provider-artifacts.ts";

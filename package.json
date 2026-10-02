@@ -64,6 +64,8 @@
     "check:catalog-drift": "bun --filter '@sandbox-benchmarks/schema' check:catalog-drift",
     "generate-providers": "bun --filter '@sandbox-benchmarks/schema' generate-providers",
     "check:providers": "bun --filter '@sandbox-benchmarks/schema' check:providers",
+    "new-provider": "bun packages/schema/scripts/new-provider.ts",
+    "check:new-provider": "bun packages/schema/scripts/new-provider-e2e.ts",
     "prepare": "lefthook install"
   },
   "devDependencies": {

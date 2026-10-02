@@ -20,9 +20,13 @@ The provider registry answers the facts other members would otherwise restate: `
 `provenanceConstant`, `candidateArtifact`, `releaseUnscopable`, `figureLabel`, and
 `declaredIsolationClass` are pure projections of the inert metadata modules in
 `src/provider-meta/`. `bun run generate-providers` (`scripts/generate-providers.ts`) is the one
-generator for everything derived from that metadata, and `bun run check:providers` its drift check;
-`src/provider-registry.test.ts` holds the registry invariants and the one reviewed projection
-snapshot.
+generator for everything derived from that metadata (including the reviewed projection snapshot
+`src/provider-registry.test.ts` holds beside the registry invariants), and `bun run check:providers`
+its drift check. `bun run new-provider` (`scripts/new-provider.ts`) scaffolds a new provider: a plan
+over the files it reads, leaving what only the vendor can answer as typed `unfilled(...)` values
+(`src/provider-meta.ts`). Its cost guard is `scripts/new-provider.test.ts`, and
+`bun run check:new-provider` (`scripts/new-provider-e2e.ts`) takes a filled scaffold of every kind
+through every gate in a temporary copy of the repository.
 
 Provider pricing is also structured here. A published record retains cited component rates, vendor
 units, billing bases, intrinsic quantity rules, plan fees/allowances, and source verification dates.

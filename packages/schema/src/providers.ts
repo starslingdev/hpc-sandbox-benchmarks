@@ -352,10 +352,7 @@ export function providerPackage(id: ProviderId): ProviderPackage {
 	};
 }
 
-/** The generated provenance constant for one provider package: `<DIRECTORY>_PROVENANCE`. */
-export function provenanceConstant(directory: string): string {
-	return `${directory.toUpperCase().replaceAll("-", "_")}_PROVENANCE`;
-}
+export { provenanceConstant } from "./provider-meta.ts";
 
 /**
  * The concise label a chart uses for a provider. Isolation variants sharing one package are one
