@@ -142,6 +142,11 @@ export function workflowAxes(plan: ExperimentPlan, account?: string, wave?: stri
 			throw new Error("account requires explicit wave collection partitions");
 		return waves;
 	}
+	return workflowBatchAxis(plan, account, wave);
+}
+
+/** Typed worker rows shared by normal and repair workflows. */
+export function workflowBatchAxis(plan: ExperimentPlan, account: string, wave: string) {
 	if (!BENCHMARK_WAVE_ORDER.some((candidate) => candidate === wave))
 		throw new Error("unknown collection wave");
 	const selected = plan.batches.filter(

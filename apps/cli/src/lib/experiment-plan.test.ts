@@ -741,7 +741,7 @@ import {
 	buildLeaderboard,
 	renderLeaderboardMarkdown,
 } from "@sandbox-benchmarks/results";
-import { planExperimentRepair } from "./experiment-repair.ts";
+import { planExperimentRepair, repairWorkflowAxes } from "./experiment-repair.ts";
 
 function replacementFor(recovery: ReturnType<typeof plan>, replicate = 0): AttemptWithRun {
 	const a = successful();
@@ -1003,4 +1003,36 @@ test("replacement cleanup recovery keeps its own workflow provenance in the repa
 	expect(result.run?.experiment?.cleanupRecoveries?.[0]?.workflowRun).toBe(recovery.id);
 	expect(result.run?.experiment?.cleanupRecoveries?.[0]?.planDigest).toBe(recovery.digest);
 	expect(result.run?.runId).toBe(source.id);
+});
+
+test("recovery workflow dispatches mixed realworld suites through their shared wave", () => {
+	const suites = ["realworld-mastra", "realworld-better-auth", "realworld-openclaw"];
+	const source = planExperiment({
+		id: "experiment-1",
+		sha,
+		createdOn: "2026-09-10",
+		cells: suites.map((suite) => ({ ...cell(), id: `e2b-${suite}-r0`, quotaDomain: "e2b", suite })),
+	});
+	const { plan: recovery } = planExperimentRepair(source, [], repairIdentity);
+	expect(recovery.batches).toHaveLength(1);
+	expect(recovery.batches[0]?.cells).toHaveLength(3);
+	expect(repairWorkflowAxes(recovery)).toEqual({
+		memory_axis: { include: [] },
+		system_axis: { include: [] },
+		realworld_axis: {
+			include: [{ account: "e2b", providers: '["e2b"]', suite: "realworld", batch_id: "batch-0" }],
+		},
+	});
+	expect(
+		repairWorkflowAxes(
+			planExperiment({
+				id: "single",
+				sha,
+				createdOn: "2026-09-10",
+				cells: [{ ...cell(), quotaDomain: "e2b" }],
+			}),
+		).memory_axis,
+	).toEqual({
+		include: [{ account: "e2b", providers: '["e2b"]', suite: "memory", batch_id: "batch-0" }],
+	});
 });

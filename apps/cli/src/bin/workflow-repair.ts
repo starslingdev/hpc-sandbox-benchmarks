@@ -6,7 +6,7 @@ import { experimentRepairSchema } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { readExperimentAttempts, writeImmutableJson } from "../lib/experiment-artifacts.ts";
 import { ROUND_BATCH_LIMIT } from "../lib/experiment-plan.ts";
-import { planExperimentRepair } from "../lib/experiment-repair.ts";
+import { planExperimentRepair, repairWorkflowAxes } from "../lib/experiment-repair.ts";
 import { githubExperimentStore } from "../lib/experiment-store.ts";
 import { downloadExperimentAttempts, downloadExperimentPlan } from "../lib/experiment-transfer.ts";
 import { githubAccountJournal, githubGitRequest } from "../lib/github-account-journal.ts";
@@ -48,6 +48,7 @@ if (command === "plan") {
 		)
 	)
 		throw new Error("recovery exceeds bounded Actions matrix/account queue limits");
+	const axes = repairWorkflowAxes(plan);
 	mkdirSync("recovery/manifest", { recursive: true });
 	writeImmutableJson("recovery/manifest/plan.json", plan);
 	writeImmutableJson("recovery/manifest/repair.json", repair);
@@ -56,27 +57,8 @@ if (command === "plan") {
 	const output = type("string >= 1").assert(process.env.GITHUB_OUTPUT);
 	const waves = [...new Set(plan.batches.map((b) => b.wave))];
 	appendFileSync(output, `waves=${JSON.stringify(waves)}\nsource_sha=${sourcePlan.sha}\n`);
-	for (const [key, wave] of [
-		["memory_axis", "synthetic-memory"],
-		["system_axis", "synthetic-system"],
-		["realworld_axis", "realworld"],
-	] as const) {
-		const include = plan.batches
-			.filter((b) => b.wave === wave)
-			.map((b) => {
-				const cells = plan.cells.filter((c) => b.cells.includes(c.id));
-				const suite = cells[0]?.suite;
-				if (!suite || cells.some((c) => c.suite !== suite))
-					throw new Error("repair batch mixes suites");
-				return {
-					account: b.quotaDomain,
-					providers: JSON.stringify([...new Set(cells.map((c) => c.provider))]),
-					suite,
-					batch_id: b.id,
-				};
-			});
-		appendFileSync(output, `${key}=${JSON.stringify({ include })}\n`);
-	}
+	for (const [key, axis] of Object.entries(axes))
+		appendFileSync(output, `${key}=${JSON.stringify(axis)}\n`);
 	console.log(
 		`Frozen ${repair.cells.length} replacement cells; original measurements are retained for all other cells.`,
 	);

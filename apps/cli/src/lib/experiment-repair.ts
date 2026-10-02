@@ -7,6 +7,7 @@ import {
 import type { ExperimentPlan } from "@sandbox-benchmarks/schema";
 import { experimentRepairSchema } from "@sandbox-benchmarks/schema";
 import { planExperiment } from "./experiment-plan.ts";
+import { workflowBatchAxis } from "./workflow-experiment.ts";
 
 export function planExperimentRepair(
 	source: ExperimentPlan,
@@ -43,4 +44,29 @@ export function planExperimentRepair(
 		})),
 	};
 	return { plan, repair: experimentRepairSchema.assert({ ...body, digest: evidenceDigest(body) }) };
+}
+
+/** Use the normal worker contract: a mixed-suite batch is named for its wave. */
+export function repairWorkflowAxes(plan: ExperimentPlan) {
+	return Object.fromEntries(
+		(
+			[
+				["memory_axis", "synthetic-memory"],
+				["system_axis", "synthetic-system"],
+				["realworld_axis", "realworld"],
+			] as const
+		).map(([key, wave]) => [
+			key,
+			{
+				include: plan.accounts.flatMap((account) =>
+					workflowBatchAxis(plan, account.quotaDomain, wave).map((entry) => ({
+						account: account.quotaDomain,
+						providers: JSON.stringify(entry.providers),
+						suite: entry.suite,
+						batch_id: entry.batch,
+					})),
+				),
+			},
+		]),
+	);
 }
