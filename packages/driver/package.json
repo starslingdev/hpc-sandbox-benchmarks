@@ -14,7 +14,10 @@
     "./package.json": "./package.json",
     "./computesdk": "./src/computesdk.ts",
     "./native": "./src/native.ts",
-    "./errors": "./src/errors.ts"
+    "./errors": "./src/errors.ts",
+    "./vendor": "./src/vendor.ts",
+    "./vendor/testing": "./src/vendor-testing.ts",
+    "./artifact": "./src/artifact.ts"
   },
   "scripts": {
     "test": "bun test",

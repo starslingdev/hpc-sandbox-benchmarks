@@ -23,8 +23,9 @@ separately. Launch acceptance is not command completion or success.
 
 **Vendor port**:
 The control-plane and data-plane operations a provider package translates from its vendor
-(create, get, remove, page, and optionally find; attach and exec, and optionally launch and files).
-It is not a driver: the driver kit derives the driver from it.
+(create, get, remove, page, and optionally find, refused, and admit; attach and exec, and
+optionally launch and files). It is not a driver: the driver kit derives the driver from it.
+Snapshots, accelerators, and cost evidence are passthroughs beside the port, not port operations.
 
 **Phase**:
 The provider-neutral reading of one control-plane record: pending, ready, failed, deleting, or
@@ -43,3 +44,8 @@ and an ambiguous create is recovered by replaying its idempotent create.
 **Provider package**:
 A provider's only importer of its vendor libraries. It exposes a driver and, when the provider
 bakes an image from the toolchain base, an artifact builder.
+
+**Artifact builder**:
+A provider package's build of its boot artifact from a digest-pinned toolchain base. It returns
+exactly the reference its driver boots and states how a same-name predecessor was replaced; a
+destructive replace (delete, then create) leaves the name unresolvable until the create succeeds.

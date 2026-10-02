@@ -10,6 +10,7 @@ import {
 } from "./conformance.ts";
 import type { DriverModule } from "./lib/define.ts";
 import { DriverError } from "./lib/errors.ts";
+import { guestShell } from "./lib/guest.fixture.ts";
 import type { ExecutionPolicy } from "./lib/policy.ts";
 import type {
 	CreateRequest,
@@ -67,108 +68,17 @@ function fakeDriver(options: FakeOptions = {}): {
 	let destroyAttempts = 0;
 	let allocations = 0;
 
-	// A shell faithful to exactly the command shapes the kit emits. This matters: the "fallback is
-	// tested, not skipped" rule is only true if the fake actually executes base64-chunked writes,
-	// `mv`, and `cat` rather than pattern-matching them away.
-	const unquote = (value: string): string =>
-		value.startsWith("'") && value.endsWith("'")
-			? value.slice(1, -1).replaceAll(`'\\''`, "'")
-			: value;
-
-	const runSimple = (raw: string): { stdout: string; code: number } => {
-		const command = raw.trim();
-		if (command.length === 0 || /^sleep /.test(command)) return { stdout: "", code: 0 };
-
-		const exitCode = /^exit (\d+)$/.exec(command);
-		if (exitCode?.[1] !== undefined) return { stdout: "", code: Number(exitCode[1]) };
-
-		const nohup = /^nohup \/bin\/sh -lc ('(?:[^']|'\\'')*')/.exec(command);
-		if (nohup?.[1] !== undefined) {
-			// runSimple, not runScript: the inner is a single `sh -c '…; …'` invocation, and splitting
-			// on `;` before unquoting tears the quoted script apart — which silently broke the
-			// shell-detach fallback this fake exists to exercise.
-			if (!options.swallowLaunch) runSimple(unquote(nohup[1]));
-			return { stdout: "", code: 0 };
-		}
-
-		const nested = /^sh -c ('(?:[^']|'\\'')*')$/.exec(command);
-		// Propagate the inner status: a wrapper that swallowed it would make the fake itself commit
-		// the exit-code fabrication this suite exists to catch.
-		if (nested?.[1] !== undefined) return runScript(unquote(nested[1]));
-
-		const truncate = /^: > (\S+)$/.exec(command);
-		if (truncate?.[1] !== undefined) {
-			files.set(unquote(truncate[1]), "");
-			return { stdout: "", code: 0 };
-		}
-
-		const append = /^printf '%s' '([^']*)' \| base64 -d >> (\S+)$/.exec(command);
-		if (append?.[1] !== undefined && append[2] !== undefined) {
-			const path = unquote(append[2]);
-			const decoded = Buffer.from(append[1], "base64").toString("utf8");
-			files.set(path, (files.get(path) ?? "") + decoded);
-			return { stdout: "", code: 0 };
-		}
-
-		const move = /^mv (\S+) (\S+)$/.exec(command);
-		if (move?.[1] !== undefined && move[2] !== undefined) {
-			const from = unquote(move[1]);
-			const to = unquote(move[2]);
-			const body = files.get(from);
-			if (body === undefined) return { stdout: "", code: 1 };
-			files.delete(from);
-			files.set(to, body);
-			return { stdout: "", code: 0 };
-		}
-
-		const read = /^cat (\S+)$/.exec(command);
-		if (read?.[1] !== undefined) {
-			const body = files.get(unquote(read[1]));
-			return body === undefined ? { stdout: "", code: 1 } : { stdout: body, code: 0 };
-		}
-
-		const remove = /^rm -f (\S+)$/.exec(command);
-		if (remove?.[1] !== undefined) {
-			files.delete(unquote(remove[1]));
-			return { stdout: "", code: 0 };
-		}
-
-		const redirect = /^echo (\S+) > (\S+)$/.exec(command);
-		if (redirect?.[1] !== undefined && redirect[2] !== undefined) {
-			files.set(unquote(redirect[2]), `${redirect[1]}\n`);
-			return { stdout: "", code: 0 };
-		}
-
-		if (command === "echo out") return { stdout: "out\n", code: 0 };
-		if (command === "echo err 1>&2") return { stdout: "", code: 0 };
-		if (command.startsWith("nvidia-smi")) return { stdout: "NVIDIA H100 80GB HBM3\n", code: 0 };
-		return { stdout: "", code: 0 };
-	};
-
-	/** Run a `;`-separated script, stopping at the first nonzero status. */
-	const runScript = (script: string): { stdout: string; code: number } => {
-		let stdout = "";
-		let code = 0;
-		for (const part of script.split(";")) {
-			const result = runSimple(part);
-			stdout += result.stdout;
-			code = result.code;
-			if (code !== 0) break;
-		}
-		return { stdout, code };
-	};
+	const guest = guestShell(files, {
+		...(options.swallowLaunch ? { swallowLaunch: true } : {}),
+		answer: (command) =>
+			command.startsWith("nvidia-smi") ? { stdout: "NVIDIA H100 80GB HBM3\n", code: 0 } : undefined,
+	});
 
 	const exec = async (command: string): Promise<ExecResult> => {
 		const override = options.exitFor?.(command);
-		// The launch wrapper carries shell bookkeeping past the nohup; only its head is modelled.
-		const script = command.startsWith("nohup ")
-			? (command.split(" & child=$!")[0] ?? command)
-			: command;
-		// runSimple, not runScript: splitting on `;` first would tear apart a quoted `sh -c '…; …'`.
-		const result = runSimple(script);
-		const stderr = script.includes("echo err 1>&2") ? "err\n" : "";
+		const result = guest(command);
 		const exit: Exit = override ?? { kind: "exited", code: result.code };
-		return { exit, stdout: result.stdout, stderr, durationMs: 1, truncated: false };
+		return { exit, stdout: result.stdout, stderr: result.stderr, durationMs: 1, truncated: false };
 	};
 
 	const session = (requested: ResolvedArtifact): SandboxSession => {

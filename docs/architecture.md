@@ -82,11 +82,47 @@ Each provider family owns a workspace package: for example, `packages/blaxel` ex
 subpaths. Implementations, SDK dependencies, behavioral tests, and generated SDK provenance stay
 in that provider package. `packages/drivers` contains only the generated, correlated lazy loader.
 
-The SDK-free kit exposes `@sandbox-benchmarks/driver/computesdk`, `/native`, and `/errors` as explicit
-subpaths. Native SDK request and handle types flow through the declarative mapper without a second
-request schema. External values are parsed at their trust boundaries; trusted requests are passed
-internally without revalidation. SDK errors reach the provider's retry predicate before the kit
-normalizes and redacts them.
+The SDK-free kit exposes `@sandbox-benchmarks/driver/computesdk`, `/native`, `/errors`, `/vendor`,
+`/vendor/testing` and `/artifact` as explicit subpaths. Native SDK request and handle types flow
+through the declarative mapper without a second request schema. External values are parsed at their
+trust boundaries; trusted requests are passed internally without revalidation. SDK errors reach the
+provider's retry predicate before the kit normalizes and redacts them.
+
+### Driver authoring (`@sandbox-benchmarks/driver/vendor`)
+
+ADR-0023 §1: a provider package writes an adapter against two ports and `defineVendorDriver`
+derives the DriverModule. The **control plane** (`create`, `get`, `remove`, `page`, optionally
+`find`, `refused`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`)
+speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit owns, once for every provider:
+
+- readiness — skipped when `create` returns a `ready` record, otherwise polled through `get`;
+- cleanup confirmation — observe, request removal once, observe removal; a record already observed
+  gone is never sent a delete, and an `accepted` delete is not removal;
+- destroy-by-id, probes (`observe`/`describe` from `get`, a one-page `list`), and inventory (the
+  owned/foreign partition by the kit-minted `benchmark-` ownership marker, draining pages and
+  failing closed on a repeated or omitted cursor);
+- ambiguous-create recovery — by marker lookup, rejecting unrelated records on a shared account, or
+  by idempotent replay on a dedicated account; teardowns run concurrently and any failure surfaces;
+- the artifact guard, the `df` disk proof for a `runtime-verified` disk axis, and `admit`.
+
+It lowers onto the ComputeSDK bridge, so coverage proof, id parsing, cleanup double faults,
+redaction and output caps are reused. Vendor-family behaviour stays on typed passthroughs:
+`snapshots` (on the bound vendor), `accelerator`, `costEvidence`, a harness-owned `createBudget`,
+and `execution` (default `{ syncCapMs: 60_000, durable: "shell-detach" }`; `durable:
+"native-launch"` and `data.launch` must be declared together). `module.specFor(context, { vendor,
+timing })` lowers the same module against a stubbed transport for provider tests.
+
+`@sandbox-benchmarks/driver/vendor/testing` holds `memoryVendor` (an in-memory account with a fault
+script, a guest shell that answers the kit's commands, and leak detectors) and `vendorContract`
+(the port contract every adapter passes). Kit behaviour is tested once against `memoryVendor`,
+including ADR-0008's kit tier, which admits a module built over it.
+
+`@sandbox-benchmarks/driver/artifact` (arktype-free) is the release lane's build seam:
+`defineArtifactBuilder(id, build)` takes a derived name, a digest-pinned base, the toolchain images
+directory, parsed credentials, the target spec and a `replace` permission, and returns the exact
+`ref` its driver boots plus how a same-name predecessor was replaced (`none`, `atomic`, or
+`destructive` for Daytona's delete-then-create). A version build also receives the revalidated
+candidate's ref, which a native-snapshot builder (Freestyle) promotes instead of rebuilding.
 
 `DriverError.vendorHttpStatus` carries HTTP response status; `vendorExitCode` carries process exit
 status. Only the HTTP field participates in the 429 retry rule. CLI readiness can return
