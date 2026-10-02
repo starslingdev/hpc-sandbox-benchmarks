@@ -146,7 +146,7 @@ The original attempt stays failed and is not rewritten. See
 ### Retry failed and missing cells with an explicit repair
 
 After merging the recovery workflow to main, resolve all owned allocations and correct provider
-credentials (Boat requires delete permission; Vercel requires access to the configured project).
+credentials (Boat requires get/list/stop permission; Vercel requires access to the configured project).
 Dispatch **Recover benchmark**, not GitHub's **Re-run failed jobs**:
 
 ```sh
@@ -179,3 +179,11 @@ After the dataset PR is merged, dispatch **Update leaderboard** with the origina
 Do not rerun jobs of the recovery workflow; a new dispatch freezes a new repair manifest. Expired or
 changed original evidence is refused. Very large repair selections exceeding 256 batches or 64 batches
 for one account are refused rather than overflowing GitHub's bounded matrix/account queues.
+
+Historical repairs execute their frozen original source, including its cleanup implementation.
+Merging a new Boat driver does not change that code in an old experiment. If its key cannot delete,
+stop the exact retained Boat IDs and run `recover-experiment-cleanup` against the downloaded recovery
+plan and attempt artifacts after the workflow completes. The command verifies the frozen repair
+manifest when the workflow commit differs from the benchmark source, observes archived boxes as
+terminal, and appends cleanup attestations without rewriting measurements. Then backfill using
+`recovery_run_id`. Boat archives retain snapshot data; they do not hold compute capacity.

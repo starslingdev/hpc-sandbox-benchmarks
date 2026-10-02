@@ -8,7 +8,10 @@ Boat quirks the driver is built around:
 
 - Boat snapshots every running sandbox about once a minute, and `stop` archives the sandbox with
   that snapshot chain. Teardown is therefore `deleteSandbox`, which removes the sandbox and its
-  snapshots. Its deletion operation settles at `blocked` rather than `completed`, so the driver
+  snapshots. If deletion returns `403 api_key_action_forbidden`, cleanup falls back to `stop` and
+  confirms `archived` (or 404) before releasing ownership. Snapshot data is retained on that path;
+  `archiving`, errors, and request acceptance alone never confirm cleanup. The key must allow
+  get/list/stop as well as create. Other permission errors still fail closed. Its deletion operation settles at `blocked` rather than `completed`, so the driver
   proves teardown by observing the sandbox 404, not by the operation status.
 - Create pins `machineProvider: "baremetal"` (the fastest machine boat offers). `@boatdev/sdk`
   1.0.0's create serializer drops unknown fields, so the driver merges it into create's JSON body

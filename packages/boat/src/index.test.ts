@@ -142,6 +142,12 @@ function nativeClient(overrides: Partial<BoatClient> = {}): BoatClient {
 				commandRequest.command.startsWith("df -Pk") ? `${80 * 1024 * 1024}\n` : "",
 			);
 		},
+		stop: async ({ sandboxId }) => ({
+			ok: true,
+			type: "sandbox.stopped",
+			id: sandboxId,
+			status: "archived",
+		}),
 		sandboxes: async () =>
 			({
 				ok: true,
@@ -558,6 +564,119 @@ describe("boat module policy", () => {
 		});
 		await driver(client).destroyById?.(sandboxRef("boat", "bx_23456789"));
 		expect(deletes).toBe(3);
+	});
+
+	it("releases a delete-forbidden allocation only after stop is observed archived", async () => {
+		let stops = 0;
+		let polls = 0;
+		const client = nativeClient({
+			deleteSandbox: async () => {
+				throw vendorError(403, "api_key_action_forbidden");
+			},
+			stop: async ({ sandboxId }) => {
+				stops++;
+				return { ok: true, type: "sandbox.stopped", id: sandboxId, status: "archiving" };
+			},
+			get: async () => ({
+				ok: true,
+				type: "sandbox.info",
+				sandbox: nativeSandbox(++polls < 3 ? "archiving" : "archived"),
+			}),
+		});
+		await driver(client).destroyById?.(sandboxRef("boat", "bx_23456789"));
+		expect(stops).toBe(1);
+		expect(polls).toBe(3);
+		expect(await driver(client).probes?.observe(sandboxRef("boat", "bx_23456789"))).toEqual({
+			state: "terminal",
+		});
+	});
+
+	it("does not release a delete-forbidden allocation when stop is forbidden", async () => {
+		const client = nativeClient({
+			deleteSandbox: async () => {
+				throw vendorError(403, "api_key_action_forbidden");
+			},
+			stop: async () => {
+				throw vendorError(403, "api_key_action_forbidden");
+			},
+		});
+		await expect(
+			driver(client).destroyById?.(sandboxRef("boat", "bx_23456789")),
+		).rejects.toMatchObject({ code: "destroy-failed" });
+	});
+
+	for (const state of ["archiving", "ready", "error"] as const) {
+		it(`does not release a delete-forbidden allocation while stop leaves it ${state}`, async () => {
+			const client = nativeClient({
+				deleteSandbox: async () => {
+					throw vendorError(403, "api_key_action_forbidden");
+				},
+				get: async () => ({ ok: true, type: "sandbox.info", sandbox: nativeSandbox(state) }),
+			});
+			await expect(
+				driver(client, { deleteConfirmMs: 5, deletePollMs: 1 }).destroyById?.(
+					sandboxRef("boat", "bx_23456789"),
+				),
+			).rejects.toMatchObject({ code: "destroy-failed" });
+		});
+	}
+
+	it("does not stop an already archived allocation again", async () => {
+		let stops = 0;
+		const client = nativeClient({
+			deleteSandbox: async () => {
+				throw vendorError(403, "api_key_action_forbidden");
+			},
+			get: async () => ({ ok: true, type: "sandbox.info", sandbox: nativeSandbox("archived") }),
+			stop: async ({ sandboxId }) => {
+				stops++;
+				return { ok: true, type: "sandbox.stopped", id: sandboxId, status: "archived" };
+			},
+		});
+		await driver(client).destroyById?.(sandboxRef("boat", "bx_23456789"));
+		expect(stops).toBe(0);
+	});
+
+	it("uses the real SDK stop endpoint after the exact delete permission refusal", async () => {
+		let stopped = false;
+		const requests: string[] = [];
+		const client = new BoatApi(
+			new Configuration({
+				basePath: "https://boat.invalid/api/v1",
+				accessToken: "test-key",
+				fetchApi: async (input, init) => {
+					const path = new URL(String(input)).pathname;
+					requests.push(`${init?.method ?? "GET"} ${path}`);
+					let body: unknown;
+					let status = 200;
+					if (init?.method === "DELETE") {
+						body = { ok: false, code: "api_key_action_forbidden" };
+						status = 403;
+					} else if (path.endsWith("/stop")) {
+						expect(init?.method).toBe("POST");
+						expect(init?.body).toBeUndefined();
+						stopped = true;
+						body = { ok: true, type: "sandbox.stopped", id: "bx_23456789", status: "archived" };
+					} else
+						body = {
+							ok: true,
+							type: "sandbox.info",
+							sandbox: nativeSandbox(stopped ? "archived" : "ready"),
+						};
+					return new Response(JSON.stringify(body), {
+						status,
+						headers: { "Content-Type": "application/json" },
+					});
+				},
+			}),
+		);
+		await driver(client).destroyById?.(sandboxRef("boat", "bx_23456789"));
+		expect(requests).toEqual([
+			"DELETE /api/v1/sandboxes/bx_23456789",
+			"GET /api/v1/sandboxes/bx_23456789",
+			"POST /api/v1/sandboxes/bx_23456789/stop",
+			"GET /api/v1/sandboxes/bx_23456789",
+		]);
 	});
 
 	it("reports the vendor refusal when deletion cannot be accepted", async () => {

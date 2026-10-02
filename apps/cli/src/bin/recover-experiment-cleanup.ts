@@ -1,9 +1,15 @@
 #!/usr/bin/env bun
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { type } from "arktype";
 import { recoverExperimentCleanup } from "../lib/cleanup-recovery.ts";
+import { verifyCleanupWorkflowSource } from "../lib/cleanup-workflow.ts";
 import { isDriverProviderId, openDriver } from "../lib/driver-run.ts";
 import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-artifacts.ts";
+import { githubExperimentStore } from "../lib/experiment-store.ts";
+import { downloadExperimentPlan } from "../lib/experiment-transfer.ts";
 import { githubAccountJournal, githubGitRequest } from "../lib/github-account-journal.ts";
 import { observeModalCleanupApp } from "../lib/modal-cleanup-observation.ts";
 
@@ -43,7 +49,23 @@ const result = await recoverExperimentCleanup({
 		const run = type({ status: "'completed'", head_sha: "string" }).assert(
 			await request("GET", `/actions/runs/${id}`),
 		);
-		if (run.head_sha !== sha) throw new Error("original workflow source mismatch");
+		if (run.head_sha === sha) verifyCleanupWorkflowSource(plan, run);
+		else {
+			const directory = mkdtempSync(join(tmpdir(), "cleanup-repair-"));
+			try {
+				const frozen = await downloadExperimentPlan(githubExperimentStore(id), id, directory);
+				const repair = type({ sourceRun: "string" }).assert(
+					JSON.parse(readFileSync(join(directory, "repair.json"), "utf8")),
+				);
+				verifyCleanupWorkflowSource(plan, run, {
+					plan: frozen,
+					repair,
+					sourceWorkflow: await request("GET", `/actions/runs/${repair.sourceRun}`),
+				});
+			} finally {
+				rmSync(directory, { recursive: true, force: true });
+			}
+		}
 		for (const status of ["queued", "in_progress", "waiting", "pending", "requested"]) {
 			const runs = type({ total_count: "number.integer >= 0" }).assert(
 				await request("GET", `/actions/runs?status=${status}&per_page=1`),

@@ -2,9 +2,9 @@
 // schemas below; their inferred types are the only vendor records used past that boundary. Shared
 // driver-kit utilities own polling, cause traversal, request validation, and session mechanics.
 //
-// Teardown is deleteSandbox, never stop: boat snapshots a running sandbox about once a minute and
-// stop archives the sandbox with its whole snapshot chain, so a stop-based teardown leaves every
-// allocation's disk behind on the account forever. Delete removes the sandbox and its snapshots.
+// Teardown prefers deletion to remove snapshot chains. A key explicitly forbidden from deleting
+// falls back to stop, which releases compute while retaining the disk. Both paths verify the
+// control-plane state; an accepted stop or an archiving/error row does not prove release.
 //
 // Create pins the bare-metal machine provider. The SDK's CreateSandboxRequest serializer drops
 // fields it does not know, so machineProvider is merged into create's body by an init override;
@@ -73,7 +73,11 @@ export const BOAT_CREATE_CEILING_MS =
 	BOAT_CONTROL_TIMEOUT_MS + // disk capacity probe
 	BOAT_CLEANUP_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +
 	(BOAT_CLEANUP_ATTEMPTS - 1) * BOAT_CLEANUP_RETRY_MS +
-	BOAT_DELETE_CONFIRM_MS;
+	BOAT_DELETE_CONFIRM_MS +
+	BOAT_CONTROL_TIMEOUT_MS + // observe before stop fallback
+	BOAT_CLEANUP_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +
+	(BOAT_CLEANUP_ATTEMPTS - 1) * BOAT_CLEANUP_RETRY_MS +
+	BOAT_DELETE_CONFIRM_MS; // confirm stop fallback
 export const BOAT_CREATE_BUDGET = {
 	owner: "harness",
 	timeoutMs: BOAT_CREATE_CEILING_MS,
@@ -94,7 +98,7 @@ export const BOAT_REQUEST_COVERAGE = {
 const READY_STATES: ReadonlySet<string> = new Set(["ready", "idle", "running"]);
 const TERMINAL_BOOT_STATES: ReadonlySet<string> = new Set(["error", "archived", "archiving"]);
 // Stopped rows hold no compute ("a stopped sandbox costs nothing"). A foreign one is therefore not
-// capacity this benchmark competes with; an owned one is still a leftover to delete.
+// capacity this benchmark competes with; an owned one can still be deleted if the key permits.
 const STOPPED_STATES: ReadonlySet<string> = new Set(["archived"]);
 
 const boatSandboxSchema = type({
@@ -151,7 +155,7 @@ export type BoatCreateOptions = typeof boatCreateOptionsSchema.infer;
 export type BoatAllocation = BoatSandbox & { readonly recoveryName: string };
 export type BoatClient = Pick<
 	BoatApi,
-	"create" | "get" | "update" | "deleteSandbox" | "command" | "sandboxes"
+	"create" | "get" | "update" | "deleteSandbox" | "stop" | "command" | "sandboxes"
 >;
 
 export interface BoatSpecOptions {
@@ -269,6 +273,64 @@ function isBoatTransient(error: unknown): boolean {
 	);
 }
 
+async function isDeleteActionForbidden(error: unknown): Promise<boolean> {
+	if (!(error instanceof ResponseError) || error.response.status !== 403) return false;
+	try {
+		const body = boatErrorBodySchema(await error.response.clone().text());
+		return !(body instanceof type.errors) && body.code === "api_key_action_forbidden";
+	} catch {
+		return false;
+	}
+}
+
+/** Retain the disk when deletion is unavailable, but confirm compute has actually stopped. */
+async function stopSandbox(
+	client: BoatClient,
+	sandboxId: string,
+	options: BoatSpecOptions,
+	operation: DriverOperationOptions,
+): Promise<void> {
+	try {
+		if (STOPPED_STATES.has((await getSandbox(client, sandboxId, operation)).state)) return;
+	} catch (error) {
+		if (isBoatNotFound(error)) return;
+		throw error;
+	}
+	const attempts = positiveInteger(options.cleanupAttempts, BOAT_CLEANUP_ATTEMPTS);
+	for (let attempt = 1; ; attempt++) {
+		try {
+			const accepted = type({ id: BOAT_SANDBOX_ID }).assert(
+				await client.stop({ sandboxId }, requestInit(operation)),
+			);
+			if (accepted.id !== sandboxId) throw new Error("boat stop targets another sandbox");
+			break;
+		} catch (error) {
+			if (isBoatNotFound(error)) return;
+			if (!isBoatTransient(error) || attempt >= attempts) throw error;
+			await delay(
+				nonnegativeNumber(options.cleanupRetryMs, BOAT_CLEANUP_RETRY_MS),
+				operation.signal,
+			);
+		}
+	}
+	await pollUntilReady({
+		provider: "boat",
+		deadlineMs: positiveInteger(options.deleteConfirmMs, BOAT_DELETE_CONFIRM_MS),
+		intervalMs: nonnegativeNumber(options.deletePollMs, BOAT_DELETE_POLL_MS),
+		signal: operation.signal,
+		poll: async () => {
+			try {
+				return STOPPED_STATES.has((await getSandbox(client, sandboxId, operation)).state)
+					? true
+					: null;
+			} catch (error) {
+				if (isBoatNotFound(error)) return true;
+				throw error;
+			}
+		},
+	});
+}
+
 async function deletionRefusalDiagnostic(error: ResponseError): Promise<string> {
 	const status = error.response.status;
 	try {
@@ -283,8 +345,7 @@ async function deletionRefusalDiagnostic(error: ResponseError): Promise<string> 
 }
 
 /**
- * A listed or fetched row is never `absent`: deletion is the only teardown and a deleted sandbox
- * 404s. `archiving` is still saving its disk and may be refused back to running, so it is live.
+ * A listed or fetched row is never `absent`: deletion 404s; a completed stop is `terminal`. `archiving` is still saving its disk and may be refused back to running, so it is live.
  */
 export function boatObservation(state: string): SandboxObservation {
 	if (state === "error" || STOPPED_STATES.has(state)) return { state: "terminal" };
@@ -355,8 +416,8 @@ async function waitForEgress(
 }
 
 /**
- * Delete the sandbox and every snapshot it accumulated, then prove it is gone. Idempotent: a
- * repeated delete returns the same accepted operation and an unknown id is already absent.
+ * Prefer deleting accumulated snapshots; fall back to confirmed stop only for the exact key-policy
+ * refusal. Idempotent: an absent sandbox or an already archived stop fallback is released.
  */
 async function deleteSandbox(
 	client: BoatClient,
@@ -379,6 +440,11 @@ async function deleteSandbox(
 			break;
 		} catch (error) {
 			if (isBoatNotFound(error)) return;
+			if (await isDeleteActionForbidden(error)) {
+				console.warn("boat delete is forbidden by key policy; stopping and retaining snapshots");
+				await stopSandbox(client, sandboxId, options, operation);
+				return;
+			}
 			if (!isBoatTransient(error) || attempt >= attempts) {
 				if (error instanceof ResponseError) console.error(await deletionRefusalDiagnostic(error));
 				throw error;
@@ -747,8 +813,8 @@ export function boatSpec({ env }: DriverContext<"boat">, options: BoatSpecOption
 				),
 		},
 		inventory: {
-			// Every owned row is a leftover to delete, stopped and errored ones included: deletion is
-			// the only teardown, so a row still listed under our prefix is data this benchmark left.
+			// Retained owned rows are eligible for deletion, including archived snapshots. With a
+			// restricted key, already archived rows converge through the idempotent stop fallback.
 			list: async (_compute, operation) => {
 				const owned: string[] = [];
 				let foreignCount = 0;
