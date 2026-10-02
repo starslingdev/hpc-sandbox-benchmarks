@@ -16,9 +16,10 @@ export const MASK_PHOROMATIC =
 
 type NovitaEnv = { readonly NOVITA_API_KEY: string };
 
-/** Builder over an injected SDK; the default export binds the real one. */
-export function novitaArtifactBuilder(sdk: Pick<NovitaSdk, "Template">) {
+/** Builder over an injected SDK; the default export binds the real one lazily, on first build. */
+export function novitaArtifactBuilder(load: () => Pick<NovitaSdk, "Template">) {
 	return defineArtifactBuilder("novita", async (request: ArtifactBuildRequest<NovitaEnv>) => {
+		const sdk = load();
 		const template = sdk
 			.Template()
 			.fromImage(request.base.digestRef)
@@ -38,4 +39,4 @@ export function novitaArtifactBuilder(sdk: Pick<NovitaSdk, "Template">) {
 	});
 }
 
-export default novitaArtifactBuilder(loadNovitaSdk());
+export default novitaArtifactBuilder(loadNovitaSdk);

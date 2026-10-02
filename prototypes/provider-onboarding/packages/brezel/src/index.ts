@@ -1,7 +1,7 @@
 import type { DriverContext } from "@sandbox-benchmarks/driver";
 import { BREZEL_PROVENANCE } from "../../../../../packages/brezel/src/provenance.ts";
 import type { VendorTiming } from "../../driver-vendor/src/vendor.ts";
-import { defineVendorDriver, pinned, vendorSpec } from "../../driver-vendor/src/vendor.ts";
+import { defineVendorDriver, pinned } from "../../driver-vendor/src/vendor.ts";
 import { BREZEL_SANDBOX_ID, brezelVendor } from "./vendor.ts";
 
 export { BREZEL_SANDBOX_ID };
@@ -20,10 +20,8 @@ export default brezel;
 export interface BrezelSpecOptions extends Partial<VendorTiming> {
 	readonly fetch?: typeof globalThis.fetch;
 }
-export const brezelSpec = (context: DriverContext<"brezel">, seams: BrezelSpecOptions = {}) =>
-	vendorSpec(
-		"brezel",
-		context,
-		{ ...brezel.traits, timing: seams },
-		brezelVendor(context, { fetch: seams.fetch ?? globalThis.fetch }),
-	);
+export const brezelSpec = (
+	context: DriverContext<"brezel">,
+	{ fetch, ...timing }: BrezelSpecOptions = {},
+) =>
+	brezel.specFor(context, { timing, ...(fetch && { vendor: brezelVendor(context, { fetch }) }) });

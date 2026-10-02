@@ -11,6 +11,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
+import { provenanceConstant } from "../registry/src/projections.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -25,10 +26,13 @@ const { values } = parseArgs({
 });
 const id = values.id ?? "";
 if (!/^[a-z][a-z0-9-]*$/.test(id)) throw new Error("--id must be a kebab-case provider id");
-const transport = values.transport as "sdk" | "http" | "cli";
+const TRANSPORTS = ["sdk", "http", "cli"] as const;
+const transport = TRANSPORTS.find((name) => name === values.transport);
+if (!transport) throw new Error(`--transport must be one of ${TRANSPORTS.join(", ")}`);
 const vendorName = values.vendor ?? id;
 const ident = id.replaceAll("-", "_");
 const constant = id.toUpperCase().replaceAll("-", "_");
+const provenance = provenanceConstant(id);
 const [sdkName, sdkVersion] = (values.sdk ?? "").split(/@(?=[^@]+$)/);
 const inputs = values.inputs
 	.split(",")
@@ -38,6 +42,22 @@ const inputs = values.inputs
 			? `{ name: "${raw.slice(4)}", source: { kind: "variable" } }`
 			: JSON.stringify(raw),
 	);
+// Everything that differs by vendor transport, in one place.
+const port = {
+	sdk: {
+		meta: `"${sdkName}"`,
+		noun: "SDK",
+		param: "client: TODO_Client",
+		bind: "new TODO_Client(context.env)",
+	},
+	http: {
+		meta: '{ http: "rest" }',
+		noun: "fetch transport",
+		param: "fetch: typeof globalThis.fetch",
+		bind: "globalThis.fetch",
+	},
+	cli: { meta: `{ cli: "${id}" }`, noun: "CLI runner", param: "", bind: "" },
+}[transport];
 const files = new Map<string, string>();
 
 files.set(
@@ -48,7 +68,7 @@ export default defineProviderMeta("${id}", {
 	displayName: "${vendorName}",
 	vendor: "${vendorName}",
 	website: "https://TODO",
-	sdkPackage: ${transport === "cli" ? `{ cli: "${id}" }` : transport === "sdk" ? `"${sdkName}"` : `{ http: "rest" }`},
+	sdkPackage: ${port.meta},
 	artifact: { kind: "${values.baked ? "baked" : "image"}" },
 	inputs: [${inputs.join(", ")}],
 	isolation: { class: "unknown", technology: "TODO" },
@@ -101,12 +121,12 @@ if (transport === "cli") {
 		`packages/${id}/src/index.ts`,
 		`import { defineCliDriver, defineCliSpec } from "@sandbox-benchmarks/driver/cli";
 import { type } from "arktype";
-import { ${constant}_PROVENANCE } from "./provenance.ts";
+import { ${provenance} } from "./provenance.ts";
 
 const ROWS = type("string.json.parse").to(type({ id: "string", name: "string", status: "string" }).array());
 
 export default defineCliDriver("${id}", {
-	provenance: ${constant}_PROVENANCE,
+	provenance: ${provenance},
 	execution: { syncCapMs: 60_000, durable: "shell-detach" },
 	createAttemptCeilingMs: 10 * 60_000,
 	spec: ({ env, resolvedArtifact }) =>
@@ -129,7 +149,7 @@ export default defineCliDriver("${id}", {
 } else {
 	files.set(
 		`packages/${id}/src/vendor.ts`,
-		`// ${vendorName}'s vendor adapter: translation only. It receives its ${transport === "sdk" ? "SDK" : "fetch transport"}; it never creates one.
+		`// ${vendorName}'s vendor adapter: translation only. It receives its ${port.noun}; it never creates one.
 import type { DriverContext } from "@sandbox-benchmarks/driver";
 import type { Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
@@ -146,7 +166,7 @@ const record = (value: Row): VendorRecord<Row> => ({
 });
 
 export function ${ident}Vendor(
-	${transport === "sdk" ? "client: TODO_Client" : "fetch: typeof globalThis.fetch"},
+	${port.param},
 	{ env, resolvedArtifact }: Pick<DriverContext<"${id}">, "env" | "resolvedArtifact">,
 ): Vendor<Row, Row> {
 	return {
@@ -168,20 +188,20 @@ export function ${ident}Vendor(
 	files.set(
 		`packages/${id}/src/index.ts`,
 		`import { defineVendorDriver, mapped } from "@sandbox-benchmarks/driver/vendor";
-import { ${constant}_PROVENANCE } from "./provenance.ts";
+import { ${provenance} } from "./provenance.ts";
 import { ${constant}_SANDBOX_ID, ${ident}Vendor } from "./vendor.ts";
 
 export default defineVendorDriver("${id}", {
-	provenance: ${constant}_PROVENANCE,
+	provenance: ${provenance},
 	sandboxId: ${constant}_SANDBOX_ID,
 	coverage: mapped("runtime-verified"),
-	vendor: (context) => ${ident}Vendor(${transport === "sdk" ? "new TODO_Client(context.env)" : "globalThis.fetch"}, context),
+	vendor: (context) => ${ident}Vendor(${port.bind}, context),
 });
 `,
 	);
 	files.set(
 		`packages/${id}/src/vendor.test.ts`,
-		`// Translation and the port contract over a stubbed ${transport === "sdk" ? "SDK" : "fetch"}; kit behaviour is tested once in the driver kit.
+		`// Translation and the port contract over a stubbed ${port.noun}; kit behaviour is tested once in the driver kit.
 import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
 import { ${ident}Vendor } from "./vendor.ts";
 

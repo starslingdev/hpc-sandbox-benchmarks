@@ -3,6 +3,9 @@
 import { createRequire } from "node:module";
 
 export type NovitaSdk = typeof import("novita-sandbox");
-export const loadNovitaSdk = (): NovitaSdk =>
-	createRequire(import.meta.url)("novita-sandbox") as NovitaSdk;
+let sdk: NovitaSdk | undefined;
+export const loadNovitaSdk = (): NovitaSdk => {
+	sdk ??= createRequire(import.meta.url)("novita-sandbox") as NovitaSdk;
+	return sdk;
+};
 export const NOVITA_DOMAIN = "us-phx-1.sandbox.novita.ai";

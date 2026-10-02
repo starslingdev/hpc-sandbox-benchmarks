@@ -1,17 +1,22 @@
 // Novita's vendor adapter: translation only. It receives the SDK; it never loads it.
 
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
-import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { type } from "arktype";
 import type { Sandbox as NativeSandbox } from "novita-sandbox";
 import type { Vendor, VendorPage, VendorRecord } from "../../driver-vendor/src/vendor.ts";
+import { instanceOfAny } from "../../driver-vendor/src/vendor.ts";
 import type { NovitaSdk } from "./sdk.ts";
 import { NOVITA_DOMAIN } from "./sdk.ts";
 
 export const NOVITA_SANDBOX_ID = type(/^[A-Za-z0-9_-]+$/);
 const KEY = "sandbox-benchmarks-attempt";
 const AS_ROOT = { user: "root", requestTimeoutMs: 5000 } as const;
-const row = type({ sandboxId: "string >= 1", "metadata?": { "[string]": "string" } });
+const row = type({
+	sandboxId: "string >= 1",
+	"state?": "string",
+	"metadata?": { "[string]": "string" },
+});
+const rows = row.array();
 type Row = typeof row.infer & { readonly native?: NativeSandbox };
 const commandFailure = type({
 	name: "'CommandExitError'",
@@ -25,28 +30,29 @@ export function novitaVendor(
 	{ env, resolvedArtifact }: Pick<DriverContext<"novita">, "env" | "resolvedArtifact">,
 ): Vendor<Row, NativeSandbox> {
 	const connection = { apiKey: env.NOVITA_API_KEY, domain: NOVITA_DOMAIN, requestTimeoutMs: 5000 };
-	const is =
-		(...classes: ReadonlyArray<abstract new (...args: never[]) => unknown>) =>
-		(error: unknown) =>
-			matchesAnyCause(error, (cause) => classes.some((errorClass) => cause instanceof errorClass));
-	const notFound = is(sdk.SandboxNotFoundError);
-	// Every live state owns resources; Novita's create returns a running sandbox.
+	const notFound = instanceOfAny(sdk.SandboxNotFoundError);
+	const refusal = instanceOfAny(
+		sdk.AuthenticationError,
+		sdk.InvalidArgumentError,
+		sdk.RateLimitError,
+	);
+	const rateLimited = instanceOfAny(sdk.RateLimitError);
+	// Both live states own resources; only a running sandbox is usable (create returns one).
 	const record = (value: Row): VendorRecord<Row> => ({
 		id: value.sandboxId,
-		phase: "ready",
+		phase: value.state === "paused" ? "pending" : "ready",
 		...(value.metadata?.[KEY] !== undefined && { marker: value.metadata[KEY] }),
 		raw: value,
 	});
-	// The SDK paginator is stateful; continue the one that issued the cursor.
+	// The SDK paginator is stateful; continue the one that issued the cursor, and forget it once
+	// consumed so the map holds at most one entry per drain in progress.
 	const paginators = new Map<string, ReturnType<NovitaSdk["Sandbox"]["list"]>>();
 	async function page(query: object, cursor: string | undefined): Promise<VendorPage<Row>> {
 		const paginator =
 			cursor === undefined ? sdk.Sandbox.list({ ...connection, query }) : paginators.get(cursor);
 		if (!paginator) throw new Error("Novita continuation cursor is unknown");
-		const records = row
-			.array()
-			.assert(await paginator.nextItems())
-			.map(record);
+		if (cursor !== undefined) paginators.delete(cursor);
+		const records = rows.assert(await paginator.nextItems()).map(record);
 		if (!paginator.hasNext) return { records };
 		const next = paginator.nextToken ?? "";
 		paginators.set(next, paginator);
@@ -69,7 +75,7 @@ export function novitaVendor(
 					const info = await sdk.Sandbox.getInfo(id, connection);
 					if (info.state !== "running" && info.state !== "paused")
 						throw new Error("Novita returned an unknown state");
-					return record({ sandboxId: info.sandboxId, metadata: info.metadata });
+					return record({ sandboxId: info.sandboxId, state: info.state, metadata: info.metadata });
 				} catch (error) {
 					if (notFound(error)) return null;
 					throw error;
@@ -86,10 +92,7 @@ export function novitaVendor(
 			},
 			page: (cursor) => page({ state: ["running", "paused"] }, cursor),
 			find: (marker, cursor) => page({ metadata: { [KEY]: marker } }, cursor),
-			refused: (error) =>
-				is(sdk.AuthenticationError, sdk.InvalidArgumentError, sdk.RateLimitError)(error)
-					? { retryable: is(sdk.RateLimitError)(error) }
-					: undefined,
+			refused: (error) => (refusal(error) ? { retryable: rateLimited(error) } : undefined),
 		},
 		data: {
 			attach: (value) => value.raw.native ?? sdk.Sandbox.connect(value.id, connection),

@@ -1,6 +1,6 @@
 import type { DriverContext } from "@sandbox-benchmarks/driver";
 import { NOVITA_PROVENANCE } from "../../../../../packages/novita/src/provenance.ts";
-import { defineVendorDriver, pinned, vendorSpec } from "../../driver-vendor/src/vendor.ts";
+import { defineVendorDriver, pinned } from "../../driver-vendor/src/vendor.ts";
 import { loadNovitaSdk, NOVITA_DOMAIN } from "./sdk.ts";
 import { NOVITA_SANDBOX_ID, novitaVendor } from "./vendor.ts";
 
@@ -16,5 +16,4 @@ const novita = defineVendorDriver("novita", {
 export default novita;
 
 /** Seam kept only so the provider's legacy test suite can inspect the lowered spec. */
-export const novitaSpec = (context: DriverContext<"novita">) =>
-	vendorSpec("novita", context, novita.traits, novitaVendor(loadNovitaSdk(), context));
+export const novitaSpec = (context: DriverContext<"novita">) => novita.specFor(context);

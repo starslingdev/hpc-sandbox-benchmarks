@@ -42,6 +42,10 @@ const statusIn = (statuses: readonly number[]) => (error: unknown) =>
 		(cause) => cause instanceof BrezelError && statuses.includes(cause.status),
 	);
 const notFound = statusIn([404]);
+// Refused before allocation; only a rate limit is worth a harness retry.
+const refusal = statusIn([400, 401, 403, 404, 429]);
+const rateLimited = statusIn([429]);
+const decoder = new TextDecoder();
 
 /** `fetch` is the injected transport: production passes globalThis.fetch, tests a fake. */
 export function brezelVendor(
@@ -138,10 +142,7 @@ export function brezelVendor(
 			find: async (marker, _cursor, { signal }) => ({
 				records: [record(await post(marker, signal))],
 			}),
-			refused: (error) =>
-				statusIn([400, 401, 403, 404, 429])(error)
-					? { retryable: statusIn([429, 502, 503, 504])(error) }
-					: undefined,
+			refused: (error) => (refusal(error) ? { retryable: rateLimited(error) } : undefined),
 			admit: (ready) =>
 				ready.raw.environment_revision === env.BREZEL_ENVIRONMENT_REVISION
 					? undefined
@@ -157,7 +158,7 @@ export function brezelVendor(
 				return { exitCode: result.exitCode, stdout: result.stdoutText, stderr: result.stderrText };
 			},
 			files: {
-				read: async (native, path) => new TextDecoder().decode(await native.readFile(path)),
+				read: async (native, path) => decoder.decode(await native.readFile(path)),
 				write: async (native, path, text) => {
 					await native.writeFile(path, text);
 				},

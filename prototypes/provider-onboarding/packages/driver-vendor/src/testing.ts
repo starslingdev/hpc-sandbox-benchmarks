@@ -4,7 +4,9 @@
 // their translation, then run vendorContract against their adapter over a stubbed transport.
 
 import { expect, test } from "bun:test";
+import type { ProviderId } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "./vendor.ts";
+import { DISK_PROBE, drainPages } from "./vendor.ts";
 
 export interface MemRow {
 	readonly id: string;
@@ -68,7 +70,7 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 		return {
 			records: slice.map(record),
 			...(more && {
-				next: options.faults?.pageRepeatsCursor ? String(start) || "0" : String(start + size),
+				next: options.faults?.pageRepeatsCursor ? String(start) : String(start + size),
 			}),
 		};
 	};
@@ -128,7 +130,7 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 		data: {
 			attach: (value) => value.raw,
 			exec: async (_row, command) => {
-				if (command.startsWith("df -Pk"))
+				if (command === DISK_PROBE)
 					return { exitCode: 0, stdout: `${(options.diskGb ?? 80) * 1024 * 1024}\n`, stderr: "" };
 				return { exitCode: 0, stdout: `ran: ${command}\n`, stderr: "" };
 			},
@@ -174,14 +176,13 @@ export function vendorContract<Raw, Native>(
 		const { vendor, account } = make();
 		const created = await vendor.control.create({ request, marker: "benchmark-contract" }, op);
 		expect((await vendor.control.get(created.id, op))?.id).toBe(created.id);
-		let cursor: string | undefined;
-		const ids: string[] = [];
-		do {
-			const page = await vendor.control.page(cursor, op);
-			ids.push(...page.records.map((record) => record.id));
-			cursor = page.next;
-		} while (cursor);
-		expect(ids).toContain(created.id);
+		// Drained with the kit's own fail-closed cursor rules, so a looping cursor fails, not hangs.
+		const records = await drainPages(
+			name as ProviderId,
+			(cursor) => vendor.control.page(cursor, op),
+			op,
+		);
+		expect(records.map((record) => record.id)).toContain(created.id);
 		if (account === "shared") expect(created.marker).toBe("benchmark-contract");
 	});
 	test(`${name}: removal is eventually observed`, async () => {

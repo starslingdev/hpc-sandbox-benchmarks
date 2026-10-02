@@ -42,7 +42,7 @@ Facts the sub-agents established, and that I verified before selecting:
   - a normalised `VendorRecord`;
   - not-found expressed as a value (`get → null`, `remove → "removed"`), so no not-found classifier;
   - the kit drains paginated listings and fails closed on a repeated cursor;
-  - `withVendor` for test injection;
+  - a module-level test seam (`specFor`, the successor of D's `withVendor`) for injecting a stubbed vendor;
   - a shared `vendorContract` suite plus an in-memory `memoryVendor`, so the seam has two real adapters.
 - **From A:**
   - no readiness knob: a `ready` record returned from `create` skips the poll;

@@ -50,7 +50,7 @@ defineVendorDriver(id, {
   provenance, sandboxId, coverage: pinned(4, 8) | mapped(...),
   account?: "shared" | "dedicated", durable?: "native-launch", timing?, recovery?, syncCapMs?,
   vendor: (context) => ({ control, data }),     // the ONE place the package binds its SDK / fetch
-})  // → DriverModule & { withVendor(bind) }
+})  // → DriverModule & { specFor(context, { vendor?, timing? }) }
 ```
 
 **What the kit derives** from the ports, once, for every provider:
@@ -69,7 +69,7 @@ defineVendorDriver(id, {
 parsing, cleanup double faults, redaction and output caps are reused, not reimplemented.
 
 **Dependency category:** true external. The provider package is the production adapter. The
-module's `withVendor` lets tests bind a stub. `memoryVendor` is the second adapter that makes the
+module's `specFor` lowers it against a stubbed vendor or timing for tests. `memoryVendor` is the second adapter that makes the
 seam real, and `vendorContract` is the reusable port-contract suite.
 
 ### 1.2 The provider package as the only vendor seam (candidate 2)

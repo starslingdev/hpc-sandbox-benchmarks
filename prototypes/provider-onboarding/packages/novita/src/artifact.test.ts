@@ -31,7 +31,7 @@ describe("novita artifact builder (moved out of apps/cli)", () => {
 	test("builds the pinned base under the given name with the target shape and regional credentials", async () => {
 		const { calls, sdk } = fakeTemplateSdk();
 		const lines: string[] = [];
-		const result = await novitaArtifactBuilder(sdk).build({
+		const result = await novitaArtifactBuilder(() => sdk).build({
 			name: "toolchain-v1-candidate",
 			base: { digestRef: "ghcr.io/x/toolchain@sha256:abc" },
 			spec: { vcpus: 4, memoryGb: 8 },

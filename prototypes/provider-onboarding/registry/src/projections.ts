@@ -9,13 +9,17 @@ import type { IsolationClass, ProviderArtifact } from "@sandbox-benchmarks/schem
 import type { BakedProviderId, MirroredProviderId } from "@sandbox-benchmarks/schema/providers";
 import {
 	bakedArtifactName,
+	baseImageUse,
 	isBakedProviderId,
 	REGISTRY,
 } from "@sandbox-benchmarks/schema/providers";
 
+/** Retyped `sdkPackage`: an npm package, a pinned CLI, or an HTTP-only vendor's API version. */
+export type SdkPackage = string | { readonly cli: string } | { readonly http: string };
+
 /** The proposed metadata fields, as an overlay on today's provider-meta files. */
 export interface ProposedMeta {
-	readonly sdkPackage?: string | { readonly cli: string } | { readonly http: string };
+	readonly sdkPackage?: SdkPackage;
 	readonly package?: { readonly directory: string; readonly entry: string };
 	readonly figureLabel?: string;
 }
@@ -24,22 +28,17 @@ export const PROPOSED_META: Readonly<Partial<Record<ProviderId, ProposedMeta>>> 
 	runloop: { sdkPackage: "@runloop/api-client" }, // stale today: "@computesdk/runloop"
 	namespace: { sdkPackage: "@namespacelabs/sdk" }, // stale today: "@computesdk/namespace"
 	tama: { sdkPackage: { cli: "tama" } }, // today: the string "tama CLI", sniffed by suffix
-	"daytona-vm": { package: { directory: "daytona", entry: "vm" }, figureLabel: "Daytona" },
-	"daytona-container": {
-		package: { directory: "daytona", entry: "container" },
-		figureLabel: "Daytona",
-	},
-	"modal-gvisor": { package: { directory: "modal", entry: "gvisor" }, figureLabel: "Modal" },
-	"modal-vm": { package: { directory: "modal", entry: "vm" }, figureLabel: "Modal" },
+	"daytona-vm": { package: { directory: "daytona", entry: "vm" } },
+	"daytona-container": { package: { directory: "daytona", entry: "container" } },
+	"modal-gvisor": { package: { directory: "modal", entry: "gvisor" } },
+	"modal-vm": { package: { directory: "modal", entry: "vm" } },
 	"microsandbox-cloud": { figureLabel: "microsandbox" },
 	vercel: { figureLabel: "Vercel" },
 };
 
 const proposed = (id: ProviderId): ProposedMeta => PROPOSED_META[id] ?? {};
 
-export function sdkPackage(
-	id: ProviderId,
-): string | { readonly cli: string } | { readonly http: string } {
+export function sdkPackage(id: ProviderId): SdkPackage {
 	return proposed(id).sdkPackage ?? REGISTRY[id].sdkPackage;
 }
 
@@ -55,6 +54,30 @@ export function providerPackage(id: ProviderId) {
 		file: `packages/${directory}/src/${entry}.ts`,
 	};
 }
+
+/** Where a baking provider's artifact builder lives (`./artifact`, or `./<variant>/artifact`). */
+export function artifactLocation(id: ProviderId) {
+	const { directory, packageName, subpath } = providerPackage(id);
+	const artifactSubpath = subpath === "." ? "./artifact" : `${subpath}/artifact`;
+	return {
+		directory,
+		packageName,
+		subpath: artifactSubpath,
+		specifier: `${packageName}/${artifactSubpath.slice(2)}`,
+	};
+}
+
+/** Read each package manifest once, however many isolation variants share it. */
+export function memoize<V>(load: (key: string) => V): (key: string) => V {
+	const cache = new Map<string, V>();
+	return (key) => {
+		if (!cache.has(key)) cache.set(key, load(key));
+		return cache.get(key) as V;
+	};
+}
+
+export const provenanceConstant = (directory: string) =>
+	`${directory.toUpperCase().replaceAll("-", "_")}_PROVENANCE`;
 
 /** Candidate refs keyed by artifact kind, so the bag no longer grows one field per provider. */
 export interface CandidateRefs {
@@ -82,7 +105,8 @@ export function candidateArtifact(
 		}
 		case "baked": {
 			if (!isBakedProviderId(id)) throw new Error(`${id} is not a baked provider`);
-			if ("source" in artifact && artifact.source === "native-snapshot") {
+			if (baseImageUse(id) !== "bakes") {
+				// Native snapshots: the boot ref is the builder's immutable result, not the name.
 				const ref = refs.buildResults[id];
 				if (!ref) throw new Error(`${id} candidate snapshot ID was not resolved`);
 				return { kind: "baked", ref };
@@ -104,7 +128,14 @@ export function releaseUnscopable(): Partial<Record<ProviderId, string>> {
 
 /** Replaces figures' id-prefix map. */
 export function figureLabel(id: ProviderId): string {
-	return proposed(id).figureLabel ?? REGISTRY[id].displayName;
+	const override = proposed(id).figureLabel;
+	if (override) return override;
+	// Isolation variants sharing one package are one vendor on a chart.
+	const { directory } = providerPackage(id);
+	const shared = PROVIDER_IDS.some(
+		(other) => other !== id && providerPackage(other).directory === directory,
+	);
+	return shared ? REGISTRY[id].vendor : REGISTRY[id].displayName;
 }
 
 /** Replaces the leaderboard's substring sniffing over the technology string. */
@@ -125,15 +156,12 @@ export function declaredIsolationClass(id: ProviderId): "gvisor" | "container" |
 
 /** Replaces renderDriversProvenance's hand-written entry table. One constant per package. */
 export function provenanceEntries() {
-	const byDirectory = new Map<
-		string,
-		{ constant: string; source: ReturnType<typeof sdkPackage> }
-	>();
+	const byDirectory = new Map<string, { constant: string; source: SdkPackage }>();
 	for (const id of PROVIDER_IDS) {
 		const { directory } = providerPackage(id);
 		if (byDirectory.has(directory)) continue;
 		byDirectory.set(directory, {
-			constant: `${directory.toUpperCase().replaceAll("-", "_")}_PROVENANCE`,
+			constant: provenanceConstant(directory),
 			source: sdkPackage(id),
 		});
 	}
@@ -147,14 +175,15 @@ export function provenanceEntries() {
  */
 export function sdkPackageFailures(
 	dependenciesOf: (directory: string) => Readonly<Record<string, string>>,
-	sdkPackageOf: (id: ProviderId) => ReturnType<typeof sdkPackage> = sdkPackage,
+	sdkPackageOf: (id: ProviderId) => SdkPackage = sdkPackage,
 ): string[] {
+	const dependenciesFor = memoize(dependenciesOf);
 	const failures: string[] = [];
 	for (const id of PROVIDER_IDS) {
 		const source = sdkPackageOf(id);
 		if (typeof source !== "string" || source.endsWith(" CLI")) continue;
 		const { directory } = providerPackage(id);
-		if (!(source in dependenciesOf(directory)))
+		if (!(source in dependenciesFor(directory)))
 			failures.push(`${id}: sdkPackage ${source} is not a dependency of packages/${directory}`);
 	}
 	return failures;

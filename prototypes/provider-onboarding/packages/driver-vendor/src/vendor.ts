@@ -18,6 +18,7 @@ import type {
 import { pollUntilReady, shellQuote } from "@sandbox-benchmarks/driver";
 import type { ComputeSdkCreateRequestCoverage } from "@sandbox-benchmarks/driver/computesdk";
 import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
+import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
 import type { Type } from "arktype";
 
@@ -153,13 +154,23 @@ export function coverage(
 	};
 }
 
+/* ------------------------------- error classification ------------------------------- */
+
+/** A cause-chain classifier over typed vendor errors, shared by every SDK adapter. */
+export const instanceOfAny =
+	(...classes: ReadonlyArray<abstract new (...args: never[]) => unknown>) =>
+	(error: unknown): boolean =>
+		matchesAnyCause(error, (cause) => classes.some((errorClass) => cause instanceof errorClass));
+
 /* ------------------------------------ lowering ------------------------------------ */
 
 interface Handle<Raw, Native> {
-	readonly id: string;
 	readonly record: VendorRecord<Raw>;
 	readonly native: Native;
 }
+
+/** The disk-capacity probe command; exported so test vendors answer the same command the kit runs. */
+export const DISK_PROBE = "df -Pk / | awk 'NR==2 {print $2}'";
 
 function bounded(timeoutMs: number, signal?: AbortSignal): AbortSignal {
 	return AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
@@ -189,7 +200,7 @@ export async function drainPages<Raw>(
 	}
 }
 
-/** Lower one bound vendor onto the ComputeSDK bridge. Exported for tests and legacy seams. */
+/** Lower one bound vendor onto the ComputeSDK bridge. */
 export function vendorSpec<P extends ProviderId, Raw, Native>(
 	provider: P,
 	context: DriverContext<P>,
@@ -197,32 +208,41 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	vendor: Vendor<Raw, Native>,
 ) {
 	const { control, data } = vendor;
+	const { files, launch, refused } = { ...data, refused: control.refused };
 	const timing = { ...DEFAULT_TIMING, ...traits.timing };
 	const dedicated = traits.account === "dedicated";
 	if (dedicated && !control.find)
 		throw new Error(`${provider}: a dedicated account recovers by replay and needs control.find`);
-	if ((traits.durable === "native-launch") !== (data.launch !== undefined))
+	if ((traits.durable === "native-launch") !== (launch !== undefined))
 		throw new Error(
 			`${provider}: durable "native-launch" and data.launch must be declared together`,
 		);
 	const op = (signal?: AbortSignal): Op => ({ signal: signal ?? new AbortController().signal });
 	const isGone = (record: VendorRecord<Raw> | null) => record === null || record.phase === "gone";
+	const owned = (record: VendorRecord<Raw>) =>
+		dedicated || (record.marker?.startsWith(MARKER_PREFIX) ?? false);
+
+	async function liveRecords(signal?: AbortSignal): Promise<VendorRecord<Raw>[]> {
+		const o = op(signal);
+		const records = await drainPages(provider, (cursor) => control.page(cursor, o), o);
+		return records.filter((record) => !isGone(record));
+	}
 
 	/** Cleanup confirmation: observe, request removal once, then observe removal. */
 	async function destroy(id: string, signal?: AbortSignal): Promise<void> {
-		const deadline = bounded(timing.deleteTimeoutMs, signal);
+		const o = op(bounded(timing.deleteTimeoutMs, signal));
 		let requested = false;
 		await pollUntilReady({
 			provider,
 			deadlineMs: timing.deleteTimeoutMs,
 			intervalMs: timing.pollMs,
-			signal: deadline,
+			signal: o.signal,
 			poll: async () => {
-				const record = await control.get(id, op(deadline));
+				const record = await control.get(id, o);
 				if (isGone(record)) return true;
 				if (!requested && record?.phase !== "deleting") {
 					requested = true;
-					if ((await control.remove(id, op(deadline))) === "removed") return true;
+					if ((await control.remove(id, o)) === "removed") return true;
 				}
 				return null;
 			},
@@ -231,14 +251,14 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 
 	async function awaitReady(record: VendorRecord<Raw>, outer?: AbortSignal) {
 		if (record.phase === "ready") return record;
-		const signal = bounded(timing.readyTimeoutMs, outer);
+		const o = op(bounded(timing.readyTimeoutMs, outer));
 		return pollUntilReady({
 			provider,
 			deadlineMs: timing.readyTimeoutMs,
 			intervalMs: timing.pollMs,
-			signal,
+			signal: o.signal,
 			poll: async () => {
-				const current = await control.get(record.id, op(signal));
+				const current = await control.get(record.id, o);
 				if (current === null) throw new Error(`${provider} sandbox disappeared before readiness`);
 				if (current.phase === "ready") return current;
 				if (current.phase !== "pending")
@@ -248,58 +268,51 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		});
 	}
 
-	function owned(record: VendorRecord<Raw>): boolean {
-		return dedicated || (record.marker?.startsWith(MARKER_PREFIX) ?? false);
-	}
-
 	async function recoveryIds(marker: string, signal?: AbortSignal): Promise<string[]> {
 		const lookup = control.find;
-		const checkMarkers = (records: readonly VendorRecord<Raw>[]) => {
-			if (dedicated) return;
-			for (const record of records)
-				if (record.marker !== marker)
-					throw new Error(`${provider} recovery returned an unrelated sandbox`);
-		};
-		const records = lookup
-			? await drainPages(
-					provider,
-					(cursor) => lookup(marker, cursor, op(signal)),
-					op(signal),
-					checkMarkers,
-				)
-			: (
-					await drainPages(provider, (cursor) => control.page(cursor, op(signal)), op(signal))
-				).filter((record) => record.marker === marker);
+		if (!lookup)
+			return (await liveRecords(signal))
+				.filter((record) => record.marker === marker)
+				.map((record) => record.id);
+		const o = op(signal);
+		const records = await drainPages(
+			provider,
+			(cursor) => lookup(marker, cursor, o),
+			o,
+			(page) => {
+				if (dedicated) return;
+				for (const record of page)
+					if (record.marker !== marker)
+						throw new Error(`${provider} recovery returned an unrelated sandbox`);
+			},
+		);
 		return records.filter((record) => !isGone(record)).map((record) => record.id);
 	}
 
 	const compute = nativeSdkCompute(
 		async (attempt: CreateAttempt, operation): Promise<Handle<Raw, Native>> => {
-			const record = await control.create(attempt, op(operation.signal));
-			operation.signal?.throwIfAborted();
-			return { id: record.id, record, native: await data.attach(record, op(operation.signal)) };
+			const o = op(operation.signal);
+			const record = await control.create(attempt, o);
+			o.signal.throwIfAborted();
+			return { record, native: await data.attach(record, o) };
 		},
-		(handle) => ({
-			sandboxId: handle.id,
-			runCommand: (command: string, options?: ExecOptions) =>
-				data.exec(handle.native, command, options),
-			destroy: () => destroy(handle.id),
-			...(data.files && {
+		({ record, native }) => ({
+			sandboxId: record.id,
+			runCommand: (command: string, options?: ExecOptions) => data.exec(native, command, options),
+			destroy: () => destroy(record.id),
+			...(files && {
 				filesystem: {
-					readFile: (path: string) =>
-						(data.files as NonNullable<typeof data.files>).read(handle.native, path),
+					readFile: (path: string) => files.read(native, path),
 					exists: async (path: string) =>
-						data.files?.exists
-							? data.files.exists(handle.native, path)
-							: (await data.exec(handle.native, `test -e ${shellQuote(path)}`)).exitCode === 0,
-					writeFile: (path: string, text: string) =>
-						(data.files as NonNullable<typeof data.files>).write(handle.native, path, text),
+						files.exists
+							? files.exists(native, path)
+							: (await data.exec(native, `test -e ${shellQuote(path)}`)).exitCode === 0,
+					writeFile: (path: string, text: string) => files.write(native, path, text),
 				},
 			}),
 		}),
 	);
 
-	const launch = data.launch;
 	return computeSdkSpec(compute, {
 		sandboxId: traits.sandboxId,
 		createOptions: {
@@ -324,19 +337,22 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		}),
 		lifecycle: {
 			destroy: (sandbox, ref, operation) =>
-				destroy(ref?.id ?? sandbox.getInstance().id, operation.signal),
+				destroy(ref?.id ?? sandbox.getInstance().record.id, operation.signal),
 		},
 		createRecovery: {
 			absenceConfirmationMs: traits.recovery?.absenceConfirmationMs ?? 2_000,
 			maxAttempts: traits.recovery?.maxAttempts ?? 4,
 			locator: (attempt) => ({ kind: "marker", key: `${provider}-marker`, value: attempt.marker }),
-			...(control.refused && {
-				isDefinitive: (error: unknown) => control.refused?.(error) !== undefined,
-				isRetryableCreate: (error: unknown) => control.refused?.(error)?.retryable === true,
+			...(refused && {
+				isDefinitive: (error: unknown) => refused(error) !== undefined,
+				isRetryableCreate: (error: unknown) => refused(error)?.retryable === true,
 			}),
 			cleanup: async (_compute, locator, operation) => {
 				const ids = await recoveryIds(locator.value, operation.signal);
-				for (const id of ids) await destroy(id, operation.signal);
+				// Each teardown is independently bounded; run them together, then surface any failure.
+				const outcomes = await Promise.allSettled(ids.map((id) => destroy(id, operation.signal)));
+				const failed = outcomes.find((outcome) => outcome.status === "rejected");
+				if (failed) throw failed.reason;
 				return ids.length > 0 ? { status: "destroyed" } : { status: "absent" };
 			},
 		},
@@ -350,7 +366,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				data.exec(handle.native, command, operation),
 			);
 		},
-		hasWorkingFilesystem: data.files !== undefined,
+		hasWorkingFilesystem: files !== undefined,
 		probes: {
 			observe: async (_compute, ref): Promise<SandboxObservation> => ({
 				state: isGone(await control.get(ref.id, op())) ? "absent" : "running",
@@ -361,17 +377,13 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		},
 		inventory: {
 			list: async (_compute, operation) => {
-				const live = (
-					await drainPages(
-						provider,
-						(cursor) => control.page(cursor, op(operation.signal)),
-						op(operation.signal),
-					)
-				).filter((record) => !isGone(record));
-				return {
-					owned: live.filter(owned).map((record) => record.id),
-					foreignCount: live.filter((record) => !owned(record)).length,
-				};
+				const ownedIds: string[] = [];
+				let foreignCount = 0;
+				for (const record of await liveRecords(operation.signal)) {
+					if (owned(record)) ownedIds.push(record.id);
+					else foreignCount += 1;
+				}
+				return { owned: ownedIds, foreignCount };
 			},
 		},
 		destroyById: (_compute, ref, operation) => destroy(ref.id, operation.signal),
@@ -384,7 +396,7 @@ export async function verifyDisk(
 	requestedGb: number,
 	exec: (command: string) => Promise<ExecOutcome>,
 ) {
-	const result = await exec("df -Pk / | awk 'NR==2 {print $2}'");
+	const result = await exec(DISK_PROBE);
 	if (result.exitCode !== 0 || !/^\d+$/.test(result.stdout.trim()))
 		throw new Error(`${provider} disk capacity probe failed`);
 	const capacityGb = Number(result.stdout.trim()) / 1024 / 1024;
@@ -405,8 +417,9 @@ interface ModulePolicy {
 
 /**
  * Define a provider's DriverModule from its vendor. `vendor(context)` is the composition point:
- * the only place the package binds its real SDK, client, or transport. `withVendor` returns the
- * same module bound to another vendor (an in-memory or stubbed adapter) for tests.
+ * the only place the package binds its real SDK, client, or transport. `specFor` lowers the same
+ * module against another vendor or timing (a stubbed transport in tests), so packages never
+ * restate their binding.
  */
 export function defineVendorDriver<P extends ProviderId, Raw, Native>(
 	provider: P,
@@ -414,16 +427,22 @@ export function defineVendorDriver<P extends ProviderId, Raw, Native>(
 		VendorTraits & { readonly vendor: (context: DriverContext<P>) => Vendor<Raw, Native> },
 ) {
 	const { provenance, vendor, ...traits } = module;
-	const build = (bind: (context: DriverContext<P>) => Vendor<Raw, Native>) =>
-		defineComputeSdkDriver(provider, {
-			provenance,
-			readiness: { startup: "create-returns-ready" },
-			execution: {
-				syncCapMs: traits.syncCapMs ?? 60_000,
-				durable: traits.durable ?? "shell-detach",
-			},
-			spec: (context) => vendorSpec(provider, context, traits, bind(context)),
-		});
-	// DriverModules are frozen; the vendor seam travels beside the module, not inside it.
-	return Object.freeze({ ...build(vendor), traits, withVendor: build });
+	const specFor = (
+		context: DriverContext<P>,
+		overrides: { vendor?: Vendor<Raw, Native>; timing?: Partial<VendorTiming> } = {},
+	) =>
+		vendorSpec(
+			provider,
+			context,
+			{ ...traits, timing: { ...traits.timing, ...overrides.timing } },
+			overrides.vendor ?? vendor(context),
+		);
+	const driver = defineComputeSdkDriver(provider, {
+		provenance,
+		readiness: { startup: "create-returns-ready" },
+		execution: { syncCapMs: traits.syncCapMs ?? 60_000, durable: traits.durable ?? "shell-detach" },
+		spec: (context) => specFor(context),
+	});
+	// DriverModules are frozen; the test seam travels beside the module, not inside it.
+	return Object.freeze({ ...driver, specFor });
 }

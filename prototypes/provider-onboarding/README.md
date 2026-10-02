@@ -39,16 +39,16 @@ they become the subpaths named in each file header.
 
 | Module | Today | Prototype | Proof |
 |---|---:|---:|---|
-| Brezel driver | 300 | 176 | 21/21 original tests, unmodified |
-| Novita driver | 243 | 141 | 6/6 original tests (1 adapted) |
+| Brezel driver | 308 | 174 | 21/21 original tests, unmodified |
+| Novita driver | 243 | 145 | 6/6 original tests (1 adapted) |
 | Novita bake | 27 | 27 | moved into the provider package |
 
 The written-once shared code is:
-- the kit: 371 lines;
+- the kit: 382 lines;
 - the in-memory vendor plus port contract: 175 lines;
-- the registry projections: 125 lines;
-- the fleet joins: 60 lines;
-- the vendor-seam check: 55 lines.
+- the registry projections: 150 lines;
+- the fleet joins: 49 lines;
+- the vendor-seam check: 50 lines.
 
 The prototype driver counts include seams kept only so the legacy suites run unmodified.
 

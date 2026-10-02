@@ -4,28 +4,16 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { stripComments } from "../../../tooling/repo-checks/src/lib/workspace.ts";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 const P = "prototypes/provider-onboarding";
 
-function logical(file: string): number {
-	let inBlock = false;
-	let count = 0;
-	for (const raw of readFileSync(resolve(ROOT, file), "utf8").split("\n")) {
-		const line = raw.trim();
-		if (inBlock) {
-			if (line.includes("*/")) inBlock = false;
-			continue;
-		}
-		if (line === "" || line.startsWith("//")) continue;
-		if (line.startsWith("/*")) {
-			inBlock = !line.includes("*/");
-			continue;
-		}
-		count++;
-	}
-	return count;
-}
+/** Non-blank lines once comments are stripped by the repo-checks scanner. */
+const logical = (file: string): number =>
+	stripComments(readFileSync(resolve(ROOT, file), "utf8"))
+		.split("\n")
+		.filter((line) => line.trim() !== "").length;
 const sum = (files: readonly string[]) => files.reduce((total, file) => total + logical(file), 0);
 
 const rows: Array<[string, readonly string[], readonly string[], string]> = [
