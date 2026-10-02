@@ -16,7 +16,7 @@ The driver is written against the vendor port (ADR-0023):
   `destroyed` as one the host gave up on (the per-sandbox rootfs build corrupts under concurrent
   load), so the failed create is retryable once teardown is proven, while `stopped` is not; the
   vendor's `last_error` in the boot failure (redacted by the bridge); the allocation's reported CPU
-  and memory; a timed-out, conflicting, rate-limited or 5xx call as `transient`, so a refused
+  and memory; a network failure or a timed-out, conflicting, rate-limited or 5xx call as `transient`, so a refused
   DELETE is asked again at every removal read; and WebSocket exec. Calls inside create are raced
   against a 30 s bound and the caller.
 - `src/index.ts` binds the SDK in `defineVendorDriver`. Readiness and removal are read every 2 s

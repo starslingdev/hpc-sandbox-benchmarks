@@ -55,7 +55,7 @@ function runcloudAccount(
 		readonly removalAfterGets?: number;
 		readonly diskGb?: number;
 		/** DELETE refusals, in order, before the account accepts one. */
-		readonly destroyErrors?: RunCloudError[];
+		readonly destroyErrors?: Error[];
 		/** Create outcomes in order: a refusal, or a response lost after (hidden) allocation. */
 		readonly creates?: Array<RunCloudError | { readonly lost: true; readonly hidden?: boolean }>;
 	} = {},
@@ -340,13 +340,20 @@ describe("run.cloud end to end through its module", () => {
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
 	});
 
-	test("a DELETE refused by an outage or conflict is asked again; a definitive one is not", async () => {
+	test("a DELETE refused by the network, an outage or a conflict is asked again; a definitive one is not", async () => {
+		const connectionReset = Object.assign(new Error("socket closed"), { code: "ECONNRESET" });
 		const account = runcloudAccount({
-			destroyErrors: [new RunCloudError(503, "unavailable"), new RunCloudError(409, "busy")],
+			destroyErrors: [
+				new TypeError("fetch failed"),
+				connectionReset,
+				new DOMException("timed out", "TimeoutError"),
+				new RunCloudError(503, "unavailable"),
+				new RunCloudError(409, "busy"),
+			],
 		});
 		const session = await driverOver(account).create(request);
 		await session.destroy();
-		expect(account.names("destroy")).toHaveLength(3);
+		expect(account.names("destroy")).toHaveLength(6);
 		expect(account.rows.get(session.sandboxRef.id)?.state).toBe("destroyed");
 
 		const { transient } = vendorOver(account).control;
@@ -354,6 +361,8 @@ describe("run.cloud end to end through its module", () => {
 			expect(transient?.(new RunCloudError(code, "x"))).toBe(true);
 		for (const code of [400, 403, 404])
 			expect(transient?.(new RunCloudError(code, "x"))).toBe(false);
+		expect(transient?.(new DOMException("caller stopped", "AbortError"))).toBe(false);
+		expect(transient?.(new Error("response did not match the schema"))).toBe(false);
 	});
 
 	test("an allocation short of the request by more than 3% is refused and destroyed", async () => {

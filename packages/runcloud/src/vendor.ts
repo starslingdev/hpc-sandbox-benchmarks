@@ -104,10 +104,19 @@ const definitive = (error: unknown) => {
 	const code = status(error);
 	return code !== undefined && code >= 400 && code < 500 && code !== 408 && code !== 409;
 };
-/** A timeout, conflict, rate limit or outage: a DELETE refused this way is asked again. */
+/**
+ * The SDK passes fetch failures through raw: a connection error (a TypeError, or a Bun error carrying
+ * a string `code`) or the per-call control-plane timeout reached no HTTP status at all.
+ */
+const network = (error: unknown) =>
+	error instanceof TypeError ||
+	(error instanceof Error &&
+		(error.name === "TimeoutError" || typeof (error as { code?: unknown }).code === "string"));
+/** A network failure, timeout, conflict, rate limit or outage: a DELETE refused this way is asked again. */
 const transient = (error: unknown) => {
 	const code = status(error);
-	return code === 408 || code === 409 || code === 429 || (code !== undefined && code >= 500);
+	if (code === undefined) return !isDriverError(error) && network(error);
+	return code === 408 || code === 409 || code === 429 || code >= 500;
 };
 
 /** One SDK call raced against its bound and the caller: the SDK's create and list take no signal. */
