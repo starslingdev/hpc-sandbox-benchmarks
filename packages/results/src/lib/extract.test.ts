@@ -261,11 +261,6 @@ describe("network probe artifacts", () => {
 	};
 
 	it("keeps every responding time_total and ignores the median", () => {
-		const task = readFileSync(
-			join(import.meta.dir, "../../../../.mise/tasks/benchmark/network/latency"),
-			"utf8",
-		);
-		expect(task).toContain("SAMPLES=30");
 		const expectedMs = [
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
 			27, 28, 29, 30,

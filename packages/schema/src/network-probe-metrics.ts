@@ -1,98 +1,147 @@
+// The catalogued network probes: which endpoints the curl/dig probes under
+// .mise/tasks/benchmark/network measure, and the Metric each one publishes. arktype-first like the
+// rest of the Catalog — every target table is validated at import, and the target and Metric types are
+// inferred from the schemas below rather than written out a second time.
+import type { Traversal } from "arktype";
+import { type } from "arktype";
 import type { MetricDef } from "./metrics.ts";
+import { metricDefSchema } from "./metrics.ts";
 
-const MS = "ms";
-const MBITS_PER_SEC = "Mbits/sec";
-const LIB = "LIB";
-const HIB = "HIB";
 const WEATHER = "external endpoint weather, not a headline, not a sandbox-stack measurement";
 
-/**
- * HTTPS latency targets, in catalog order. `url` is the exact curl endpoint the latency task
- * records.
- */
-export const NETWORK_LATENCY_TARGETS = [
-	{
-		id: "network_https_github_com_total_ms",
-		url: "https://github.com/",
-		label: "github.com HTTPS",
-	},
-	{
-		id: "network_https_api_github_com_total_ms",
-		url: "https://api.github.com/",
-		label: "api.github.com HTTPS",
-	},
-	{
-		id: "network_https_raw_githubusercontent_com_total_ms",
-		url: "https://raw.githubusercontent.com/",
-		label: "raw.githubusercontent.com HTTPS",
-	},
-	{
-		id: "network_https_registry_npmjs_org_total_ms",
-		url: "https://registry.npmjs.org/",
-		label: "registry.npmjs.org HTTPS",
-	},
-	{
-		id: "network_https_pypi_org_total_ms",
-		url: "https://pypi.org/",
-		label: "pypi.org HTTPS",
-	},
-	{
-		id: "network_https_files_pythonhosted_org_total_ms",
-		url: "https://files.pythonhosted.org/",
-		label: "files.pythonhosted.org HTTPS",
-	},
-	{
-		id: "network_https_ghcr_io_v2_total_ms",
-		url: "https://ghcr.io/v2/",
-		label: "ghcr.io/v2 HTTPS",
-	},
-	{
-		id: "network_https_gcr_io_v2_total_ms",
-		url: "https://gcr.io/v2/",
-		label: "gcr.io/v2 HTTPS",
-	},
-	{
-		id: "network_https_auth_docker_io_registry_token_total_ms",
-		url: "https://auth.docker.io/token?service=registry.docker.io",
-		label: "auth.docker.io token HTTPS",
-	},
-	{
-		id: "network_https_crates_io_total_ms",
-		url: "https://crates.io/",
-		label: "crates.io HTTPS",
-	},
-	{
-		id: "network_https_index_crates_io_config_total_ms",
-		url: "https://index.crates.io/config.json",
-		label: "index.crates.io config HTTPS",
-	},
-] as const;
+/** A registrable DNS name as the dns task passes it to dig: lowercase labels, no trailing dot. */
+const domainSchema = type(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/);
 
 /**
- * Cold DNS targets, in catalog order. `domain` is the exact name in `network-dns--<domain>.json`
- * and the jc question name (trailing dot stripped).
+ * Narrow a target table to unique ids AND unique keys (url / domain). A repeated key would publish one
+ * measurement under two Metrics; a repeated id would silently merge two endpoints into one Metric.
  */
-export const NETWORK_DNS_TARGETS = [
-	{ id: "network_dns_cold_github_com_ms", domain: "github.com", label: "github.com DNS" },
-	{
-		id: "network_dns_cold_registry_npmjs_org_ms",
-		domain: "registry.npmjs.org",
-		label: "registry.npmjs.org DNS",
-	},
-	{ id: "network_dns_cold_docker_io_ms", domain: "docker.io", label: "docker.io DNS" },
-	{ id: "network_dns_cold_pypi_org_ms", domain: "pypi.org", label: "pypi.org DNS" },
-	{
-		id: "network_dns_cold_rubygems_org_ms",
-		domain: "rubygems.org",
-		label: "rubygems.org DNS",
-	},
-] as const;
+function uniqueTargets<key extends string>(key: key) {
+	return (targets: readonly ({ id: string } & Record<key, string>)[], ctx: Traversal) => {
+		const ids = new Set<string>();
+		const keys = new Set<string>();
+		for (const target of targets) {
+			if (ids.has(target.id)) return ctx.reject({ expected: `unique ids (repeated ${target.id})` });
+			if (keys.has(target[key])) {
+				return ctx.reject({ expected: `unique ${key}s (repeated ${target[key]})` });
+			}
+			ids.add(target.id);
+			keys.add(target[key]);
+		}
+		return true;
+	};
+}
 
-export const NETWORK_DOWNLOAD_TARGET = {
+/**
+ * One HTTPS latency target. `url` is the exact curl endpoint the latency task records — and the key
+ * its `network-latency.json` endpoints are matched on, so it must be byte-identical to the task's list.
+ */
+export const networkLatencyTargetSchema = type({
+	id: /^network_https_[a-z0-9_]+_total_ms$/,
+	url: "string.url",
+	label: "string >= 1",
+}).onUndeclaredKey("reject");
+export type NetworkLatencyTarget = typeof networkLatencyTargetSchema.infer;
+
+/** One cold-DNS target. `domain` names `network-dns--<domain>.json` and is jc's question name. */
+export const networkDnsTargetSchema = type({
+	id: /^network_dns_cold_[a-z0-9_]+_ms$/,
+	domain: domainSchema,
+	label: "string >= 1",
+}).onUndeclaredKey("reject");
+export type NetworkDnsTarget = typeof networkDnsTargetSchema.infer;
+
+/** The pinned download payload. `url` is the download task's default and the record's `url`. */
+export const networkDownloadTargetSchema = type({
+	id: /^network_download_[a-z0-9_]+_mbits_per_sec$/,
+	url: "string.url",
+	label: "string >= 1",
+}).onUndeclaredKey("reject");
+export type NetworkDownloadTarget = typeof networkDownloadTargetSchema.infer;
+
+/** HTTPS latency targets, in catalog order (the order the latency task probes them). */
+export const NETWORK_LATENCY_TARGETS: readonly NetworkLatencyTarget[] = networkLatencyTargetSchema
+	.array()
+	.narrow(uniqueTargets("url"))
+	.assert([
+		{
+			id: "network_https_github_com_total_ms",
+			url: "https://github.com/",
+			label: "github.com HTTPS",
+		},
+		{
+			id: "network_https_api_github_com_total_ms",
+			url: "https://api.github.com/",
+			label: "api.github.com HTTPS",
+		},
+		{
+			id: "network_https_raw_githubusercontent_com_total_ms",
+			url: "https://raw.githubusercontent.com/",
+			label: "raw.githubusercontent.com HTTPS",
+		},
+		{
+			id: "network_https_registry_npmjs_org_total_ms",
+			url: "https://registry.npmjs.org/",
+			label: "registry.npmjs.org HTTPS",
+		},
+		{
+			id: "network_https_pypi_org_total_ms",
+			url: "https://pypi.org/",
+			label: "pypi.org HTTPS",
+		},
+		{
+			id: "network_https_files_pythonhosted_org_total_ms",
+			url: "https://files.pythonhosted.org/",
+			label: "files.pythonhosted.org HTTPS",
+		},
+		{
+			id: "network_https_ghcr_io_v2_total_ms",
+			url: "https://ghcr.io/v2/",
+			label: "ghcr.io/v2 HTTPS",
+		},
+		{
+			id: "network_https_gcr_io_v2_total_ms",
+			url: "https://gcr.io/v2/",
+			label: "gcr.io/v2 HTTPS",
+		},
+		{
+			id: "network_https_auth_docker_io_registry_token_total_ms",
+			url: "https://auth.docker.io/token?service=registry.docker.io",
+			label: "auth.docker.io token HTTPS",
+		},
+		{
+			id: "network_https_crates_io_total_ms",
+			url: "https://crates.io/",
+			label: "crates.io HTTPS",
+		},
+		{
+			id: "network_https_index_crates_io_config_total_ms",
+			url: "https://index.crates.io/config.json",
+			label: "index.crates.io config HTTPS",
+		},
+	]);
+
+/** Cold DNS targets, in catalog order (the order the dns task resolves them). */
+export const NETWORK_DNS_TARGETS: readonly NetworkDnsTarget[] = networkDnsTargetSchema
+	.array()
+	.narrow(uniqueTargets("domain"))
+	.assert([
+		{ id: "network_dns_cold_github_com_ms", domain: "github.com", label: "github.com DNS" },
+		{
+			id: "network_dns_cold_registry_npmjs_org_ms",
+			domain: "registry.npmjs.org",
+			label: "registry.npmjs.org DNS",
+		},
+		{ id: "network_dns_cold_docker_io_ms", domain: "docker.io", label: "docker.io DNS" },
+		{ id: "network_dns_cold_pypi_org_ms", domain: "pypi.org", label: "pypi.org DNS" },
+		{ id: "network_dns_cold_rubygems_org_ms", domain: "rubygems.org", label: "rubygems.org DNS" },
+	]);
+
+export const NETWORK_DOWNLOAD_TARGET: NetworkDownloadTarget = networkDownloadTargetSchema.assert({
 	id: "network_download_node_v22_23_1_linux_x64_mbits_per_sec",
 	url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
 	label: "Node 22 download",
-} as const;
+});
 
 export const NETWORK_PROBE_METRIC_IDS: readonly string[] = [
 	...NETWORK_LATENCY_TARGETS.map((target) => target.id),
@@ -100,42 +149,43 @@ export const NETWORK_PROBE_METRIC_IDS: readonly string[] = [
 	NETWORK_DOWNLOAD_TARGET.id,
 ];
 
-const latencyMetrics: MetricDef[] = NETWORK_LATENCY_TARGETS.map((target) => ({
-	id: target.id,
-	dimension: "network",
-	unit: MS,
-	direction: LIB,
-	headline: false,
-	label: target.label,
-	description: `HTTPS total time to ${target.url}. This is ${WEATHER}.`,
-}));
+/** Every probe Metric is a non-headline network Metric; only the unit, direction and prose vary. */
+const probeMetric = (
+	def: Pick<MetricDef, "id" | "unit" | "direction" | "label" | "description">,
+): MetricDef => metricDefSchema.assert({ ...def, dimension: "network", headline: false });
 
-const dnsMetrics: MetricDef[] = NETWORK_DNS_TARGETS.map((target) => ({
-	id: target.id,
-	dimension: "network",
-	unit: MS,
-	direction: LIB,
-	headline: false,
-	label: target.label,
-	description: [
-		`Cold DNS lookup of ${target.domain}.`,
-		"The sample is one cold dig and cache-warmed lookups are not included.",
-		`This is ${WEATHER}.`,
-	].join(" "),
-}));
-
-const downloadMetric: MetricDef = {
-	id: NETWORK_DOWNLOAD_TARGET.id,
-	dimension: "network",
-	unit: MBITS_PER_SEC,
-	direction: HIB,
-	headline: false,
-	label: NETWORK_DOWNLOAD_TARGET.label,
-	description: [
-		`Sustained download of ${NETWORK_DOWNLOAD_TARGET.url}.`,
-		"decimal Mbits/sec from bytes/sec * 8 / 1e6, HTTP error bodies omitted, exit 28 kept.",
-		`This is ${WEATHER}.`,
-	].join(" "),
-};
-
-export const networkProbeMetrics: MetricDef[] = [...latencyMetrics, ...dnsMetrics, downloadMetric];
+export const networkProbeMetrics: readonly MetricDef[] = [
+	...NETWORK_LATENCY_TARGETS.map((target) =>
+		probeMetric({
+			id: target.id,
+			unit: "ms",
+			direction: "LIB",
+			label: target.label,
+			description: `HTTPS total time to ${target.url}. This is ${WEATHER}.`,
+		}),
+	),
+	...NETWORK_DNS_TARGETS.map((target) =>
+		probeMetric({
+			id: target.id,
+			unit: "ms",
+			direction: "LIB",
+			label: target.label,
+			description: [
+				`Cold DNS lookup of ${target.domain}.`,
+				"The sample is one cold dig and cache-warmed lookups are not included.",
+				`This is ${WEATHER}.`,
+			].join(" "),
+		}),
+	),
+	probeMetric({
+		id: NETWORK_DOWNLOAD_TARGET.id,
+		unit: "Mbits/sec",
+		direction: "HIB",
+		label: NETWORK_DOWNLOAD_TARGET.label,
+		description: [
+			`Sustained download of ${NETWORK_DOWNLOAD_TARGET.url}.`,
+			"decimal Mbits/sec from bytes/sec * 8 / 1e6, HTTP error bodies omitted, exit 28 kept.",
+			`This is ${WEATHER}.`,
+		].join(" "),
+	}),
+];
